@@ -121,17 +121,24 @@ A pitel buffer is plain markdown. Headings delimit messages: >
   # @assistant
 
 Everything between headings is message content. Everything before the first
-heading is ignored by the parser — that is where the session header lives:
+heading is ignored by the parser — that is where the session metadata lives,
+as YAML frontmatter (treesitter highlights it as YAML):
 
-  <!-- pitel session · moonshot/kimi-k3 · started 2026-09-26 14:42 · 1,500 in / 42 out · $0.0034
-       try: moonshot/kimi-k3 · deepseek/deepseek-v4-pro · openai/gpt-5.6-sol
-  -->
+  ---
+  provider: moonshot
+  model: kimi-k3
+  started: 2026-09-26 14:42
+  tokens_in: 1500
+  tokens_out: 42
+  cost: 0.0034
+  # try: moonshot/kimi-k3 · deepseek/deepseek-v4-pro · openai/gpt-5.6-sol
+  ---
 
-The first line is human-readable AND machine state. The provider/model combo
-(pi-style scoped name) is authoritative: EDIT IT to switch models — the next
-send uses whatever the header says, and the winbar follows. The optional
-`try:` line lists valid combos from setup({ models = ... }). Token totals
-and cost are folded in after each reply, see |pitel-markers|.
+The provider/model fields are authoritative: EDIT THEM to switch models —
+the next send uses whatever the frontmatter says, and the winbar follows.
+The optional `# try:` comment lists valid combos from
+setup({ models = ... }). Token totals and cost are folded in after each
+reply, see |pitel-markers|.
 
 ==============================================================================
 6. MARKERS                                                    *pitel-markers*
@@ -272,12 +279,14 @@ R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
     of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
 
-R14 The session header's provider/model combo is authoritative.
-    At send time (and in the winbar) the combo is parsed from the header
-    line; buffer vars and config are only fallbacks. Why: the buffer is
-    the only state (R1) — the active model is conversation state, so it
+R14 The frontmatter's provider/model is authoritative.
+    At send time (and in the winbar) they are parsed from the YAML
+    frontmatter; buffer vars and config are only fallbacks. Why: the buffer
+    is the only state (R1) — the active model is conversation state, so it
     lives in the buffer where the user can see and edit it. There is no
-    model-switch command on purpose.
+    model-switch command on purpose. Frontmatter (not a custom comment
+    format) because it is a standard: YAML highlighting for free, trivial
+    key/value parsing, and new fields don't break the parser.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

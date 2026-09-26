@@ -42,13 +42,32 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
-local HEADER_HEAD = "^<!%-%- pitel session"
+--- Scan the frontmatter; returns a table of its key/value pairs (and the
+--- end line in _end), or nil when there is none.
+local function frontmatter(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 20, false)
+  if lines[1] ~= "---" then
+    return nil
+  end
+  local fm = {}
+  for i = 2, #lines do
+    if lines[i] == "---" then
+      fm._end = i
+      return fm
+    end
+    local k, v = lines[i]:match("^(%S+):%s*(.-)%s*$")
+    if k then
+      fm[k] = v
+    end
+  end
+  return nil -- unterminated
+end
 
---- provider/model combo from the header line, nil if not parseable.
+--- provider/model combo from the frontmatter, nil if not parseable.
 local function header_combo(buf)
-  local l = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  if l then
-    return l:match("^<!%-%- pitel session · ([%w_.:-]+)/([%w_.:-]+)")
+  local fm = frontmatter(buf)
+  if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
+    return fm.provider, fm.model
   end
 end
 
@@ -235,23 +254,12 @@ local function append_block(buf, block)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
 
--- ─── Session header (model, date, tokens, cost) ────────────────────────────
+-- ─── Session header (YAML frontmatter) ─────────────────────────────────────
 
--- A comment block at the top of the buffer, before the first heading (so
--- parse_buffer ignores it). The first line is human-readable AND machine
--- state: provider/model combo, started date, exact token totals with comma
--- grouping, optional cost. Editing the combo switches the model (R14).
-
-local function fmt_num(n) -- 1234567 -> "1,234,567"
-  local s = tostring(n)
-  while true do
-    local k
-    s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
-    if k == 0 then
-      return s
-    end
-  end
-end
+-- Session metadata is YAML frontmatter at the very top of the buffer,
+-- before the first heading (so parse_buffer ignores it). Standard format:
+-- treesitter highlights it as YAML, fields are trivial to parse and edit.
+-- Editing provider/model switches the model (R14).
 
 local function header_state(buf)
   local u = vim.b[buf].pitel_usage or {}
@@ -266,45 +274,56 @@ end
 local function render_header(buf)
   local s = header_state(buf)
   local provider, model = current_combo(buf)
-  local line = ("<!-- pitel session · %s/%s · started %s · %s in / %s out"):format(
-    provider,
-    model,
-    s.started,
-    fmt_num(s.prompt),
-    fmt_num(s.completion)
-  )
+  local lines = {
+    "---",
+    "provider: " .. provider,
+    "model: " .. model,
+    "started: " .. s.started,
+    "tokens_in: " .. s.prompt,
+    "tokens_out: " .. s.completion,
+  }
   if s.cost then
-    line = line .. string.format(" · $%.4f", s.cost)
+    table.insert(lines, "cost: " .. string.format("%.6g", s.cost)) -- keep precision: parsed back on reopen
   end
-  local lines
   if M.config.models and #M.config.models > 0 then
-    lines = { line, "     try: " .. table.concat(M.config.models, " · "), "-->", "" }
-  else
-    lines = { line .. " -->", "" }
+    table.insert(lines, "# try: " .. table.concat(M.config.models, " · "))
   end
+  table.insert(lines, "---")
+  table.insert(lines, "")
 
-  local first = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  if first and first:match(HEADER_HEAD) then
-    -- replace existing header block (up to and including the closing -->)
-    for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, 10, false)) do
-      if l:match("^%-%->") then
-        vim.api.nvim_buf_set_lines(buf, 0, i, false, lines)
-        return
-      end
-    end
+  local fm = frontmatter(buf)
+  if fm then
+    -- replace existing frontmatter block (--- .. --- inclusive)
+    vim.api.nvim_buf_set_lines(buf, 0, fm._end, false, lines)
+  else
+    vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
   end
-  vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
 end
 
---- Restore combo/started/usage from the header of a reopened session
---- buffer. Handles the current format and older one-line/JSON formats.
+--- Restore combo/started/usage from the frontmatter of a reopened session
+--- buffer. Falls back to the old comment header formats if present.
 local function parse_header(buf)
+  local fm = frontmatter(buf)
+  if fm then
+    if fm.provider and fm.model then
+      vim.b[buf].pitel_provider = fm.provider
+      vim.b[buf].pitel_model = fm.model
+    end
+    vim.b[buf].pitel_started = fm.started
+    vim.b[buf].pitel_usage = {
+      prompt = tonumber(fm.tokens_in) or 0,
+      completion = tonumber(fm.tokens_out) or 0,
+      cost = tonumber(fm.cost),
+    }
+    return true
+  end
+  -- legacy: <!-- pitel session ... --> header (one-liner or with JSON line)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
   local first = lines[1]
-  if not (first and first:match(HEADER_HEAD)) then
+  if not (first and first:match("^<!%-%- pitel session")) then
     return false
   end
-  local p, m = header_combo(buf)
+  local p, m = first:match("pitel session · ([%w_.:-]+)/([%w_.:-]+)")
   if p then
     vim.b[buf].pitel_provider = p
     vim.b[buf].pitel_model = m
@@ -323,7 +342,6 @@ local function parse_header(buf)
     }
     return true
   end
-  -- old format: JSON on line 2
   for i = 2, #lines do
     local ok, data = pcall(vim.json.decode, lines[i])
     if ok and type(data) == "table" and data.started then
