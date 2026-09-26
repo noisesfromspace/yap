@@ -204,16 +204,20 @@ end
 
 -- ─── Session header (date, tokens, cost) ───────────────────────────────────
 
--- A comment block at the top of the buffer, before the first heading (so
--- parse_buffer ignores it). Two content lines: a human-readable summary and
--- a JSON line that the state survives save/reopen through.
+-- A one-line comment at the top of the buffer, before the first heading (so
+-- parse_buffer ignores it). The human-readable line IS the machine state:
+-- exact numbers with comma grouping, parsed back on reopen.
 local HEADER_HEAD = "^<!%-%- pitel session"
 
-local function fmt_tokens(n)
-  if n >= 1000 then
-    return string.format("%.1fk", n / 1000)
+local function fmt_num(n) -- 1234567 -> "1,234,567"
+  local s = tostring(n)
+  while true do
+    local k
+    s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+    if k == 0 then
+      return s
+    end
   end
-  return tostring(n)
 end
 
 local function header_state(buf)
@@ -228,35 +232,54 @@ end
 
 local function render_header(buf)
   local s = header_state(buf)
-  local pretty = ("<!-- pitel session · started %s · %s in / %s out"):format(
+  local line = ("<!-- pitel session · started %s · %s in / %s out"):format(
     s.started,
-    fmt_tokens(s.prompt),
-    fmt_tokens(s.completion)
+    fmt_num(s.prompt),
+    fmt_num(s.completion)
   )
   if s.cost then
-    pretty = pretty .. string.format(" · $%.4f", s.cost)
+    line = line .. string.format(" · $%.4f", s.cost)
   end
-  local lines = { pretty, vim.json.encode(s), "-->", "" }
+  line = line .. " -->"
 
   local first = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
   if first and first:match(HEADER_HEAD) then
     -- replace existing header block (up to and including the closing -->)
     for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, 10, false)) do
       if l:match("^%-%->") then
-        vim.api.nvim_buf_set_lines(buf, 0, i, false, lines)
+        vim.api.nvim_buf_set_lines(buf, 0, i, false, { line, "" })
         return
       end
     end
   end
-  vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
+  vim.api.nvim_buf_set_lines(buf, 0, 0, false, { line, "" })
 end
 
 --- Restore started/usage from the header of a reopened session buffer.
+--- Handles the current one-line format and the old two-line JSON format.
 local function parse_header(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
-  if not (lines[1] and lines[1]:match(HEADER_HEAD)) then
+  local first = lines[1]
+  if not (first and first:match(HEADER_HEAD)) then
     return false
   end
+  local started, pin, pout, cost = first:match(
+    "started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out · %$([%d.]+) %-%->$"
+  )
+  if not started then
+    started, pin, pout =
+      first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out %-%->$")
+  end
+  if started then
+    vim.b[buf].pitel_started = started
+    vim.b[buf].pitel_usage = {
+      prompt = tonumber((pin:gsub(",", ""))),
+      completion = tonumber((pout:gsub(",", ""))),
+      cost = cost and tonumber(cost) or nil,
+    }
+    return true
+  end
+  -- old format: JSON on line 2
   for i = 2, #lines do
     local ok, data = pcall(vim.json.decode, lines[i])
     if ok and type(data) == "table" and data.started then

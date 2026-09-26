@@ -121,12 +121,10 @@ A pitel buffer is plain markdown. Headings delimit messages: >
 Everything between headings is message content. Everything before the first
 heading is ignored by the parser — that is where the session header lives:
 
-  <!-- pitel session · started 2026-09-26 14:33 · 1.5k in / 42 out · $0.0034
-  {"started":"2026-09-26 14:33","prompt":1500,"completion":42,"cost":0.0034}
-  -->
+  <!-- pitel session · started 2026-09-26 14:42 · 1,500 in / 42 out · $0.0034 -->
 
-The JSON line is the machine-readable copy of the totals; it is what makes
-the counters survive save/reopen. After each reply the binary reports token
+The human-readable line IS the machine state: exact numbers with comma
+grouping, parsed back on reopen. After each reply the binary reports token
 usage (see |pitel-markers|) and the header is refreshed.
 
 ==============================================================================
