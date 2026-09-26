@@ -18,6 +18,8 @@ end, { desc = "Stop the in-flight pitel request" })
 vim.api.nvim_create_user_command("PitelReload", function()
   local old_config = require("pitel").config
   package.loaded.pitel = nil
+  package.loaded["pitel.session"] = nil
+  package.loaded["pitel.fold"] = nil
   require("pitel").setup(old_config)
   local src = debug.getinfo(require("pitel").send, "S").source:sub(2)
   vim.notify("pitel: reloaded from " .. src)
@@ -28,4 +30,14 @@ vim.api.nvim_create_user_command("PitelUse", function(cmd)
 end, {
   nargs = "+",
   desc = "Switch provider/model for this buffer: :PitelUse {provider} {model}",
+})
+
+vim.api.nvim_create_user_command("PitelSessions", function(cmd)
+  require("pitel").sessions(cmd.fargs[1])
+end, {
+  nargs = "?",
+  complete = function()
+    return { "all" }
+  end,
+  desc = "Pick a saved pitel session to resume (:PitelSessions all for every project)",
 })

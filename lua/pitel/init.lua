@@ -23,6 +23,78 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
+-- ─── Winbar (busy indicator, provider/model) ──────────────────────────────
+
+local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local spinner_tick = 0
+local spinner_timer = nil
+
+-- Forward declaration: `running` is defined with the send logic below.
+local running
+
+local function winbar_hl(text, group)
+  return "%#Pitel" .. group .. "#" .. text .. "%*"
+end
+
+local function render_winbar(buf)
+  local provider = vim.b[buf].pitel_provider or M.config.provider
+  local model = vim.b[buf].pitel_model or M.config.model
+  local parts = {
+    winbar_hl(" " .. provider .. " / " .. model .. " ", "Model"),
+    "%=",
+  }
+  if running and running[buf] then
+    local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
+    table.insert(parts, winbar_hl(" " .. frame .. " busy ", "Busy"))
+  else
+    table.insert(parts, winbar_hl(" ○ idle ", "Idle"))
+  end
+  return table.concat(parts, "")
+end
+
+local function refresh_winbar(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local bar = render_winbar(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.wo[win].winbar = bar
+    end
+  end
+end
+
+local function spinner_stop_if_idle()
+  if spinner_timer and not next(running) then
+    spinner_timer:stop()
+    spinner_timer:close()
+    spinner_timer = nil
+  end
+end
+
+local function spinner_start()
+  if spinner_timer then
+    return
+  end
+  spinner_timer = vim.uv.new_timer()
+  spinner_timer:start(0, 100, vim.schedule_wrap(function()
+    spinner_tick = spinner_tick + 1
+    for buf in pairs(running) do
+      refresh_winbar(buf)
+    end
+    spinner_stop_if_idle()
+  end))
+end
+
+local function define_winbar_hl()
+  local links = { Model = "Keyword", Busy = "DiagnosticOk", Idle = "Comment" }
+  for name, link in pairs(links) do
+    vim.api.nvim_set_hl(0, "Pitel" .. name, { default = true, link = link })
+  end
+end
+
+define_winbar_hl()
+
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
 --- Parse a pitel buffer into a message list.
@@ -78,7 +150,7 @@ end
 -- ─── Send ──────────────────────────────────────────────────────────────────
 
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
-local running = {}
+running = {}
 
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send()
@@ -98,6 +170,8 @@ function M.send()
   local model = vim.b[buf].pitel_model or M.config.model
 
   append_text(buf, "\n# @assistant\n\n")
+  refresh_winbar(buf)
+  spinner_start()
 
   local payload = vim.json.encode({ messages = messages })
   local stderr_chunks = {}
@@ -118,6 +192,8 @@ function M.send()
     end,
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
+    refresh_winbar(buf)
+    spinner_stop_if_idle()
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks):gsub("%s+$", "")
       append_text(buf, "\n\n<!-- pitel error: " .. (err ~= "" and err or ("exit " .. result.code)) .. " -->\n")
@@ -125,6 +201,7 @@ function M.send()
       return
     end
     append_text(buf, "\n\n# @user\n\n")
+    require("pitel.session").save(buf)
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
     end
@@ -140,6 +217,8 @@ function M.stop()
   if handle then
     handle:kill(15)
     running[buf] = nil
+    refresh_winbar(buf)
+    spinner_stop_if_idle()
   end
 end
 
@@ -161,26 +240,10 @@ local TEMPLATE = {
   "",
 }
 
---- Open a new pitel chat buffer.
-function M.new(opts)
-  opts = opts or {}
-  vim.cmd("enew")
-  local buf = vim.api.nvim_get_current_buf()
+-- Keymaps and buffer options shared by new and reopened session buffers.
+local function setup_buffer(buf)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
-  vim.b[buf].pitel_provider = opts.provider or M.config.provider
-  vim.b[buf].pitel_model = opts.model or M.config.model
-
-  local lines = vim.deepcopy(TEMPLATE)
-  for i, l in ipairs(lines) do
-    if l == "@PITEL_SYSTEM@" then
-      lines[i] = vim.b[buf].pitel_system or M.config.system
-    end
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_set_name(buf, "pitel://" .. buf)
-  vim.bo[buf].modified = false
-  vim.api.nvim_win_set_cursor(0, { #lines, 0 })
 
   local map = function(mode, lhs, rhs, desc)
     vim.keymap.set(mode, lhs, rhs, { buffer = buf, silent = true, desc = desc })
@@ -191,7 +254,50 @@ function M.new(opts)
     M.send()
   end, "pitel: send")
 
+  require("pitel.fold").setup_buffer(buf)
+  refresh_winbar(buf)
+end
+
+--- Open a new pitel chat buffer.
+function M.new(opts)
+  opts = opts or {}
+  vim.cmd("enew")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.b[buf].pitel_provider = opts.provider or M.config.provider
+  vim.b[buf].pitel_model = opts.model or M.config.model
+
+  local lines = vim.deepcopy(TEMPLATE)
+  for i, l in ipairs(lines) do
+    if l == "@PITEL_SYSTEM@" then
+      lines[i] = vim.b[buf].pitel_system or M.config.system
+    end
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  -- Named after creation time (bufnr for uniqueness) so `:ls` is
+  -- meaningful before the first save renames it to the session file.
+  vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
+  vim.bo[buf].modified = false
+  vim.api.nvim_win_set_cursor(0, { #lines, 0 })
+
+  setup_buffer(buf)
+
   return buf
+end
+
+--- Open a saved session file as a pitel buffer.
+function M.open(path)
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  local buf = vim.api.nvim_get_current_buf()
+  vim.b[buf].pitel_path = path
+  setup_buffer(buf)
+  return buf
+end
+
+--- Pick a saved session and open it. scope: "cwd" (default) or "all".
+function M.sessions(scope)
+  require("pitel.session").pick({ scope = scope }, function(path)
+    M.open(path)
+  end)
 end
 
 --- Switch provider/model for the current buffer.
@@ -203,6 +309,7 @@ function M.use(provider, model)
   if model and model ~= "" then
     vim.b[buf].pitel_model = model
   end
+  refresh_winbar(buf)
   vim.notify(("pitel: %s / %s"):format(vim.b[buf].pitel_provider, vim.b[buf].pitel_model))
 end
 
