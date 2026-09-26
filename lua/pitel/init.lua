@@ -113,6 +113,28 @@ define_winbar_hl()
 
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
+--- Normalize spacing: every message heading is preceded by exactly one
+--- blank line (except at the top of the buffer), and the buffer has no
+--- trailing blank lines. Keeps blocks visually separated no matter how
+--- the user edited the buffer.
+local function normalize_spacing(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local out = {}
+  for _, line in ipairs(lines) do
+    if line:match(HEAD) and #out > 0 then
+      while out[#out] == "" do
+        table.remove(out)
+      end
+      table.insert(out, "")
+    end
+    table.insert(out, line)
+  end
+  while out[#out] == "" do
+    table.remove(out)
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
+end
+
 --- Parse a pitel buffer into a message list.
 --- Lines before the first heading are ignored (header comments).
 --- `<!-- pitel:thinking -->` regions are excluded: thinking is shown in
@@ -187,6 +209,7 @@ function M.send()
     return
   end
 
+  normalize_spacing(buf)
   local messages = M.parse_buffer(buf)
   if #messages == 0 then
     vim.notify("pitel: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
@@ -224,6 +247,7 @@ function M.send()
     running[buf] = nil
     refresh_winbar(buf)
     spinner_stop_if_idle()
+    normalize_spacing(buf)
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks):gsub("%s+$", "")
       append_text(buf, "\n\n<!-- pitel error: " .. (err ~= "" and err or ("exit " .. result.code)) .. " -->\n")
