@@ -28,6 +28,13 @@ function M.save(buf)
     return
   end
   local path = vim.b[buf].pitel_path
+  local bufname = vim.api.nvim_buf_get_name(buf)
+  -- Follow buffer renames (:file, :saveas): renaming the file IS session
+  -- naming, and :saveas to a new file IS forking.
+  if path and bufname ~= "" and bufname ~= path and not bufname:match("^%a+://") then
+    path = bufname
+    vim.b[buf].pitel_path = path
+  end
   if not path then
     local dir = session_dir(vim.fn.getcwd())
     vim.fn.mkdir(dir, "p")
@@ -72,18 +79,21 @@ function M.list(scope)
   for _, dir in ipairs(dirs) do
     for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
       local lines = vim.fn.readfile(path, "", 200)
-      local ts = vim.fn.fnamemodify(path, ":t"):match("^(%d+%-%d+)") or ""
+      local stem = vim.fn.fnamemodify(path, ":t:r")
+      -- Auto-generated names start with the timestamp; anything else is a
+      -- user-chosen session name, shown as-is.
+      local ts = stem:match("^(%d+%-%d+)")
       local snippet = first_user_snippet(lines)
-      local label = ts .. "  " .. (snippet ~= "" and snippet or "(no user message)")
+      local label = (ts or stem) .. "  " .. (snippet ~= "" and snippet or "(no user message)")
       if scope == "all" then
         label = label .. "  —  " .. vim.fn.fnamemodify(dir, ":t")
       end
-      table.insert(items, { path = path, created = ts, text = label })
+      table.insert(items, { path = path, mtime = vim.fn.getftime(path), text = label })
     end
   end
 
   table.sort(items, function(a, b)
-    return a.created > b.created
+    return a.mtime > b.mtime
   end)
   return items
 end
