@@ -202,6 +202,23 @@ local function append_text(buf, text)
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
 end
 
+--- Append whole lines as a new block, separated from the buffer's current
+--- end by exactly one blank line (R7), no matter how the buffer ends.
+--- All structural appends (headings, error markers) go through here.
+local function append_block(buf, block)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local n = vim.api.nvim_buf_line_count(buf)
+  local keep = n
+  while keep > 1 and vim.api.nvim_buf_get_lines(buf, keep - 1, keep, false)[1] == "" do
+    keep = keep - 1
+  end
+  local lines = vim.deepcopy(block)
+  table.insert(lines, 1, "")
+  vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
+end
+
 -- ─── Session header (date, tokens, cost) ───────────────────────────────────
 
 -- A one-line comment at the top of the buffer, before the first heading (so
@@ -325,7 +342,10 @@ running = {}
 --- parse-excluded marker in the buffer as a record.
 local function report_error(buf, err)
   errors[buf] = err
-  append_text(buf, "\n\n<!-- pitel:error\n" .. err .. "\n-->\n")
+  local block = { "<!-- pitel:error" }
+  vim.list_extend(block, vim.split(err, "\n", { plain = true }))
+  table.insert(block, "-->")
+  append_block(buf, block)
   refresh_winbar(buf)
   vim.notify("pitel: " .. err, vim.log.levels.ERROR)
 end
@@ -349,7 +369,7 @@ function M.send()
   local provider = vim.b[buf].pitel_provider or M.config.provider
   local model = vim.b[buf].pitel_model or M.config.model
 
-  append_text(buf, "\n# @assistant\n\n")
+  append_block(buf, { "# @assistant", "" })
   -- Fold history to the outline; the new assistant block is last, so it
   -- stays open while it streams.
   require("pitel.fold").apply_default_folds(buf)
@@ -384,7 +404,7 @@ function M.send()
     end
     consume_usage(buf)
     normalize_spacing(buf)
-    append_text(buf, "\n\n# @user\n\n")
+    append_block(buf, { "# @user", "" })
     require("pitel.session").save(buf)
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })

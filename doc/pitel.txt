@@ -230,7 +230,11 @@ R6  Adjacent same-role blocks are merged on send; empty blocks dropped.
 R7  Exactly one blank line between message blocks.
     normalize_spacing runs at send start and on completion; it collapses
     blank runs before headings, inserts missing ones and trims trailing
-    blanks. Why: readable diffs, stable folds.
+    blanks. Structural appends (headings, error markers) go through
+    append_block(), which trims trailing blanks and prepends exactly one
+    blank line itself — never append a heading with append_text().
+    Why: readable diffs, stable folds. (Bug of record: hand-rolled "\n"
+    prefixes broke separation when trailing-blank trimming was added.)
 
 R8  Sessions are plain markdown files; file operations are the session
     operations. Autosave only after a COMPLETED reply (never on error).
