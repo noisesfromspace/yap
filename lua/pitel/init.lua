@@ -99,11 +99,14 @@ define_winbar_hl()
 
 --- Parse a pitel buffer into a message list.
 --- Lines before the first heading are ignored (header comments).
+--- `<!-- pitel:thinking -->` regions are excluded: thinking is shown in
+--- the buffer but never sent back to the provider.
 --- Adjacent same-role blocks are merged (providers require alternation).
 --- Empty blocks are dropped.
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
+  local in_thinking = false
 
   local function flush()
     if not role then
@@ -123,12 +126,20 @@ function M.parse_buffer(buf)
   end
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    local r = line:match(HEAD)
-    if r and roles[r] then
-      flush()
-      role = roles[r]
+    if line:match("^<!%-%- pitel:thinking") then
+      in_thinking = true
+    elseif in_thinking then
+      if line:match("%-%->") then
+        in_thinking = false
+      end
     else
-      table.insert(acc, line)
+      local r = line:match(HEAD)
+      if r and roles[r] then
+        flush()
+        role = roles[r]
+      else
+        table.insert(acc, line)
+      end
     end
   end
   flush()

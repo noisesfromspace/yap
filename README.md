@@ -81,6 +81,14 @@ file, so `:w` works too.
 - `<Tab>` — toggle fold
 - `]m`/`[m` — next/prev message · `]u`/`[u` user · `]a`/`[a` assistant
 
+### Thinking blocks
+
+Models that stream reasoning via the OpenAI-compatible `reasoning_content`
+field (Moonshot/Kimi, DeepSeek) have their thinking wrapped in
+`<!-- pitel:thinking -->` inside the assistant block. It renders in the
+buffer (and folds away with the block) but `parse_buffer` excludes it from
+the message array — thinking is never sent back to the provider.
+
 ## Deliberately not built (yet)
 
 - **Tools / tool-call pairing.** Assistant `tool_calls` and their results have

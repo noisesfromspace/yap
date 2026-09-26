@@ -91,6 +91,11 @@ type streamChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
+			// ReasoningContent is the OpenAI-compatible thinking field
+			// (DeepSeek, Moonshot/Kimi). Streamed wrapped in a
+			// <!-- pitel:thinking --> marker, which parse_buffer excludes
+			// from the message array on the next send.
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 	} `json:"choices"`
 }
@@ -161,7 +166,10 @@ func send(providerName, model string) error {
 	}
 
 	// SSE stream: lines of "data: {json}", terminated by "data: [DONE]".
+	// Thinking (reasoning_content) arrives before content; it is wrapped in
+	// an HTML comment marker that the Lua side strips on parse.
 	out := bufio.NewWriter(os.Stdout)
+	inThinking := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -178,11 +186,28 @@ func send(providerName, model string) error {
 			continue // keep-alive pings and other non-chunk events
 		}
 		for _, c := range chunk.Choices {
+			if c.Delta.ReasoningContent != "" {
+				if !inThinking {
+					out.WriteString("<!-- pitel:thinking\n")
+					inThinking = true
+				}
+				out.WriteString(c.Delta.ReasoningContent)
+				out.Flush()
+			}
 			if c.Delta.Content != "" {
+				if inThinking {
+					out.WriteString("\n-->\n\n")
+					inThinking = false
+				}
 				out.WriteString(c.Delta.Content)
 				out.Flush()
 			}
 		}
+	}
+	if inThinking {
+		// Stream ended mid-thinking (or the model emitted nothing else):
+		// close the marker so the block stays parseable.
+		out.WriteString("\n-->\n")
 	}
 	out.Flush()
 	if err := scanner.Err(); err != nil {
