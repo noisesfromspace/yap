@@ -8,9 +8,10 @@ local M = {}
 local HEAD = "^# @(%a+)%s*$"
 
 -- The four view levels, bound to <leader>1..4 (same keys as fruit).
--- roles = which heading roles stay open; nil = open everything.
+-- Level 1 (outline) is fruit's default fold state: only user prompts and
+-- the last block open. roles = which heading roles stay open; nil = all.
 M.views = {
-  { key = "1", label = "outline",      roles = {} },
+  { key = "1", label = "outline" },
   { key = "2", label = "user",         roles = { "user" } },
   { key = "3", label = "conversation", roles = { "user", "assistant" } },
   { key = "4", label = "full",         roles = nil },
@@ -51,6 +52,34 @@ function M.text(start, finish)
   return string.format("▸ @%s │ %s  (%d lines)", role, preview, finish - start + 1)
 end
 
+-- ─── Default fold state (ported from fruit.nvim) ──────────────────────────
+
+-- Fruit's closing logic: fold everything except user prompts (the visible
+-- outline) and the last block (newest activity stays visible).
+function M.apply_default_folds(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd("silent! normal! zM")
+        local last_head = nil
+        for lnum = 1, vim.api.nvim_buf_line_count(buf) do
+          local role = vim.fn.getline(lnum):match(HEAD)
+          if role then
+            last_head = lnum
+            if role == "user" then
+              pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
+            end
+          end
+        end
+        if last_head then
+          pcall(vim.cmd, string.format("silent! %dfoldopen!", last_head))
+        end
+      end)
+    end
+  end
+end
+
 -- ─── View levels ───────────────────────────────────────────────────────────
 
 local function open_roles(roles)
@@ -68,7 +97,9 @@ function M.set_view_level(level)
   if not view then
     return
   end
-  if view.roles then
+  if level == 1 then
+    M.apply_default_folds()
+  elseif view.roles then
     open_roles(view.roles)
   else
     vim.cmd("silent! normal! zR")
@@ -118,7 +149,8 @@ function M.setup_buffer(buf)
   vim.wo.foldmethod = "expr"
   vim.wo.foldexpr = "v:lua.require'pitel.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'pitel.fold'.text()"
-  vim.wo.foldlevel = 99 -- start fully open (view 4)
+  vim.wo.foldlevel = 99 -- expr folds start computable; default state applied below
+  M.apply_default_folds(buf)
 
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })

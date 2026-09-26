@@ -181,6 +181,9 @@ function M.send()
   local model = vim.b[buf].pitel_model or M.config.model
 
   append_text(buf, "\n# @assistant\n\n")
+  -- Fold history to the outline; the new assistant block is last, so it
+  -- stays open while it streams.
+  require("pitel.fold").apply_default_folds(buf)
   refresh_winbar(buf)
   spinner_start()
 
