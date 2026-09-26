@@ -48,6 +48,14 @@ type Provider struct {
 
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
+	// Optional per-model pricing in USD per 1M tokens; used to compute the
+	// cost field in the pitel:usage marker.
+	Pricing map[string]Pricing `json:"pricing"`
+}
+
+type Pricing struct {
+	Input  float64 `json:"input"`
+	Output float64 `json:"output"`
 }
 
 func configPath() string {
@@ -82,6 +90,10 @@ type chatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Stream   bool      `json:"stream"`
+	// Ask the provider to end the stream with a token-usage chunk.
+	StreamOptions *struct {
+		IncludeUsage bool `json:"include_usage"`
+	} `json:"stream_options,omitempty"`
 }
 
 type streamChunk struct {
@@ -95,6 +107,11 @@ type streamChunk struct {
 			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 	} `json:"choices"`
+	// Final chunk when stream_options.include_usage is set (choices empty).
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
 type apiError struct {
@@ -132,7 +149,14 @@ func send(providerName, model string) error {
 		return errors.New("request contains no messages")
 	}
 
-	body, err := json.Marshal(chatRequest{Model: model, Messages: req.Messages, Stream: true})
+	body, err := json.Marshal(chatRequest{
+		Model:         model,
+		Messages:      req.Messages,
+		Stream:        true,
+		StreamOptions: &struct {
+			IncludeUsage bool `json:"include_usage"`
+		}{IncludeUsage: true},
+	})
 	if err != nil {
 		return err
 	}
@@ -169,6 +193,10 @@ func send(providerName, model string) error {
 	inThinking := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	var usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	}
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -181,6 +209,9 @@ func send(providerName, model string) error {
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // keep-alive pings and other non-chunk events
+		}
+		if chunk.Usage != nil {
+			usage = chunk.Usage
 		}
 		for _, c := range chunk.Choices {
 			if c.Delta.ReasoningContent != "" {
@@ -205,6 +236,16 @@ func send(providerName, model string) error {
 		// Stream ended mid-thinking (or the model emitted nothing else):
 		// close the marker so the block stays parseable.
 		out.WriteString("\n-->\n")
+	}
+	if usage != nil {
+		// Reported as a parse-excluded marker; the Lua side folds it into
+		// the session header and removes the line.
+		m := map[string]any{"prompt": usage.PromptTokens, "completion": usage.CompletionTokens}
+		if p, ok := cfg.Pricing[model]; ok {
+			m["cost"] = float64(usage.PromptTokens)/1e6*p.Input + float64(usage.CompletionTokens)/1e6*p.Output
+		}
+		b, _ := json.Marshal(m)
+		fmt.Fprintf(out, "\n<!-- pitel:usage %s -->\n", b)
 	}
 	out.Flush()
 	if err := scanner.Err(); err != nil {

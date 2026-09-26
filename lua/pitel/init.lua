@@ -153,6 +153,7 @@ function M.parse_buffer(buf)
 
   local function flush()
     if not role then
+      acc = {} -- pre-heading lines (session header) are not a message
       return
     end
     local text = table.concat(acc, "\n")
@@ -199,6 +200,97 @@ local function append_text(buf, text)
   local row = vim.api.nvim_buf_line_count(buf) - 1
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
+end
+
+-- ─── Session header (date, tokens, cost) ───────────────────────────────────
+
+-- A comment block at the top of the buffer, before the first heading (so
+-- parse_buffer ignores it). Two content lines: a human-readable summary and
+-- a JSON line that the state survives save/reopen through.
+local HEADER_HEAD = "^<!%-%- pitel session"
+
+local function fmt_tokens(n)
+  if n >= 1000 then
+    return string.format("%.1fk", n / 1000)
+  end
+  return tostring(n)
+end
+
+local function header_state(buf)
+  local u = vim.b[buf].pitel_usage or {}
+  return {
+    started = vim.b[buf].pitel_started or os.date("%Y-%m-%d %H:%M"),
+    prompt = u.prompt or 0,
+    completion = u.completion or 0,
+    cost = u.cost,
+  }
+end
+
+local function render_header(buf)
+  local s = header_state(buf)
+  local pretty = ("<!-- pitel session · started %s · %s in / %s out"):format(
+    s.started,
+    fmt_tokens(s.prompt),
+    fmt_tokens(s.completion)
+  )
+  if s.cost then
+    pretty = pretty .. string.format(" · $%.4f", s.cost)
+  end
+  local lines = { pretty, vim.json.encode(s), "-->", "" }
+
+  local first = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+  if first and first:match(HEADER_HEAD) then
+    -- replace existing header block (up to and including the closing -->)
+    for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, 10, false)) do
+      if l:match("^%-%->") then
+        vim.api.nvim_buf_set_lines(buf, 0, i, false, lines)
+        return
+      end
+    end
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
+end
+
+--- Restore started/usage from the header of a reopened session buffer.
+local function parse_header(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
+  if not (lines[1] and lines[1]:match(HEADER_HEAD)) then
+    return false
+  end
+  for i = 2, #lines do
+    local ok, data = pcall(vim.json.decode, lines[i])
+    if ok and type(data) == "table" and data.started then
+      vim.b[buf].pitel_started = data.started
+      vim.b[buf].pitel_usage = { prompt = data.prompt or 0, completion = data.completion or 0, cost = data.cost }
+      return true
+    end
+  end
+  return true
+end
+
+--- Find the pitel:usage marker the binary appended for this turn, fold its
+--- numbers into the session totals, remove the marker and refresh the header.
+local function consume_usage(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    local json = lines[i]:match("^<!%-%- pitel:usage (.+) %-%->$")
+    if json then
+      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
+      local ok, data = pcall(vim.json.decode, json)
+      if ok and type(data) == "table" then
+        local s = header_state(buf)
+        s.prompt = s.prompt + (data.prompt or 0)
+        s.completion = s.completion + (data.completion or 0)
+        if data.cost then
+          s.cost = (s.cost or 0) + data.cost
+        end
+        vim.b[buf].pitel_started = s.started
+        vim.b[buf].pitel_usage = { prompt = s.prompt, completion = s.completion, cost = s.cost }
+      end
+      render_header(buf)
+      return
+    end
+  end
 end
 
 -- ─── Send ──────────────────────────────────────────────────────────────────
@@ -267,6 +359,8 @@ function M.send()
       report_error(buf, err ~= "" and err or ("exit " .. result.code))
       return
     end
+    consume_usage(buf)
+    normalize_spacing(buf)
     append_text(buf, "\n\n# @user\n\n")
     require("pitel.session").save(buf)
     if vim.api.nvim_get_current_buf() == buf then
@@ -327,11 +421,13 @@ function M.new(opts)
   vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.b[buf].pitel_started = os.date("%Y-%m-%d %H:%M")
+  render_header(buf)
   -- Named after creation time (bufnr for uniqueness) so `:ls` is
   -- meaningful before the first save renames it to the session file.
   vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
   vim.bo[buf].modified = false
-  vim.api.nvim_win_set_cursor(0, { #lines, 0 })
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
 
@@ -343,6 +439,11 @@ function M.open(path)
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].pitel_path = path
+  if not parse_header(buf) then
+    -- Pre-header session: adopt the file's mtime as the start date.
+    vim.b[buf].pitel_started = os.date("%Y-%m-%d %H:%M", vim.fn.getftime(path))
+  end
+  render_header(buf)
   setup_buffer(buf)
   return buf
 end

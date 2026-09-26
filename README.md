@@ -53,12 +53,17 @@ require("pitel").setup({
     "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" },
     "deepseek": { "base_url": "https://api.deepseek.com/v1", "api_key_env": "DEEPSEEK_API_KEY" },
     "openai":   { "base_url": "https://api.openai.com/v1",   "api_key_env": "OPENAI_API_KEY" }
+  },
+  "pricing": {
+    "kimi-k3": { "input": 0.60, "output": 2.50 }
   }
 }
 ```
 
 API keys come from the named environment variables. Anthropic/Gemini-native
 protocols are not implemented yet; use OpenRouter in the meantime.
+`pricing` is optional (USD per 1M tokens) and enables the cost figure in
+the session header.
 
 ## `~/.pitel`
 
@@ -89,6 +94,22 @@ so `:w` works too.
 - `<leader>1` outline · `<leader>2` user only · `<leader>3` conversation · `<leader>4` full
 - `<Tab>` — toggle fold
 - `]m`/`[m` — next/prev message · `]u`/`[u` user · `]a`/`[a` assistant
+
+### Session header
+
+Every buffer starts with a comment block (ignored by the parser) that tracks
+the session:
+
+```
+<!-- pitel session · started 2026-09-26 14:33 · 1.5k in / 42 out · $0.0034
+-->
+```
+
+The binary asks providers for token usage (`stream_options.include_usage`)
+and reports it as a `pitel:usage` marker at the end of each reply; the Lua
+side folds it into the running totals, refreshes the header and removes the
+marker. The state lives in a JSON line inside the header, so it survives
+saving and reopening sessions.
 
 ### Thinking blocks
 
