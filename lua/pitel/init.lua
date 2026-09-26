@@ -16,8 +16,24 @@ M.config = {
   bin = "pitel", -- path to the pitel binary
   provider = "moonshot",
   model = "kimi-k3",
+  -- System prompt for new buffers: read from agents_file if it exists
+  -- (pi-style ~/.pitel/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
+  agents_file = vim.fn.expand("~/.pitel/AGENTS.md"),
 }
+
+local function system_prompt()
+  local f = io.open(M.config.agents_file, "r")
+  if f then
+    local text = f:read("*a")
+    f:close()
+    text = text:gsub("%s+$", "")
+    if text ~= "" then
+      return text
+    end
+  end
+  return M.config.system
+end
 
 local HEAD = "^# @(%a+)%s*$"
 
@@ -238,22 +254,6 @@ end
 
 -- ─── Buffers ───────────────────────────────────────────────────────────────
 
-local TEMPLATE = {
-  "<!-- pitel buffer — this text before the first heading is ignored.",
-  "",
-  "  The buffer IS the conversation. Delete, edit or insert any block.",
-  "  `# @system` / `# @user` / `# @assistant` delimit messages.",
-  "  Send: <C-s>   Stop: :PitelStop   Switch model: :PitelUse {provider} {model}",
-  "-->",
-  "",
-  "# @system",
-  "",
-  "@PITEL_SYSTEM@", -- replaced with the configured system prompt
-  "",
-  "# @user",
-  "",
-}
-
 -- Keymaps and buffer options shared by new and reopened session buffers.
 local function setup_buffer(buf)
   vim.bo[buf].filetype = "markdown"
@@ -280,12 +280,9 @@ function M.new(opts)
   vim.b[buf].pitel_provider = opts.provider or M.config.provider
   vim.b[buf].pitel_model = opts.model or M.config.model
 
-  local lines = vim.deepcopy(TEMPLATE)
-  for i, l in ipairs(lines) do
-    if l == "@PITEL_SYSTEM@" then
-      lines[i] = vim.b[buf].pitel_system or M.config.system
-    end
-  end
+  local lines = { "# @system", "" }
+  vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
+  vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   -- Named after creation time (bufnr for uniqueness) so `:ls` is
   -- meaningful before the first save renames it to the session file.

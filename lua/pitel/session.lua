@@ -9,7 +9,7 @@
 local M = {}
 
 local function sessions_root()
-  return vim.fn.stdpath("data") .. "/pitel/sessions"
+  return vim.fn.expand("~/.pitel/sessions")
 end
 
 local function cwd_slug(cwd)

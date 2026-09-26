@@ -10,7 +10,7 @@
 //
 // request.json: {"messages":[{"role":"system|user|assistant","content":"..."}]}
 //
-// Providers are configured in ~/.config/pitel/config.json:
+// Providers are configured in ~/.pitel/config.json:
 //
 //	{
 //	  "providers": {
@@ -51,11 +51,8 @@ type Config struct {
 }
 
 func configPath() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "pitel", "config.json")
-	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "pitel", "config.json")
+	return filepath.Join(home, ".pitel", "config.json")
 }
 
 func loadConfig() (*Config, error) {

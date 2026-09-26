@@ -45,7 +45,7 @@ require("pitel").setup({
 
 ## Provider config
 
-`~/.config/pitel/config.json` — any OpenAI-compatible endpoint:
+`~/.pitel/config.json` — any OpenAI-compatible endpoint:
 
 ```json
 {
@@ -60,6 +60,15 @@ require("pitel").setup({
 API keys come from the named environment variables. Anthropic/Gemini-native
 protocols are not implemented yet; use OpenRouter in the meantime.
 
+## `~/.pitel`
+
+Everything pitel owns lives in `~/.pitel` (pi-style):
+
+- `config.json` — providers (above)
+- `AGENTS.md` — system prompt for new chat buffers (configurable via
+  `setup({ agents_file = ... })`); falls back to `config.system` when absent
+- `sessions/<project-slug>/` — autosaved markdown session files
+
 ## Usage
 
 - `:Pitel` — new chat buffer
@@ -70,8 +79,8 @@ protocols are not implemented yet; use OpenRouter in the meantime.
 
 The winbar shows `provider / model` and a busy spinner while a request is
 in flight. Sessions are plain markdown, autosaved after every reply under
-`stdpath("data")/pitel/sessions/<project>/` — the buffer is renamed to the
-file, so `:w` works too.
+`~/.pitel/sessions/<project>/` — the buffer is renamed to the file,
+so `:w` works too.
 
 ### Folding & navigation (ported from fruit.nvim)
 
