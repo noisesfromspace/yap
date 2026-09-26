@@ -45,9 +45,6 @@ truth, and that can be a text buffer. Consequences:
                                                                 *:PitelStop*
 :PitelStop              Kill the in-flight request for the current buffer.
 
-                                                                 *:PitelUse*
-:PitelUse {p} {m}       Switch provider/model for the current buffer.
-
                                                             *:PitelSessions*
 :PitelSessions [all]    Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project.
@@ -80,6 +77,11 @@ Lua setup: >lua
     bin = "pitel",        -- path to the Go binary
     provider = "moonshot",
     model = "kimi-k3",
+    models = {             -- optional: valid combos, shown in the header
+      "moonshot/kimi-k3",
+      "deepseek/deepseek-v4-pro",
+      "openai/gpt-5.6-sol",
+    },
     system = "...",       -- fallback system prompt
     agents_file = vim.fn.expand("~/.pitel/AGENTS.md"),
   })
@@ -121,11 +123,15 @@ A pitel buffer is plain markdown. Headings delimit messages: >
 Everything between headings is message content. Everything before the first
 heading is ignored by the parser — that is where the session header lives:
 
-  <!-- pitel session · started 2026-09-26 14:42 · 1,500 in / 42 out · $0.0034 -->
+  <!-- pitel session · moonshot/kimi-k3 · started 2026-09-26 14:42 · 1,500 in / 42 out · $0.0034
+       try: moonshot/kimi-k3 · deepseek/deepseek-v4-pro · openai/gpt-5.6-sol
+  -->
 
-The human-readable line IS the machine state: exact numbers with comma
-grouping, parsed back on reopen. After each reply the binary reports token
-usage (see |pitel-markers|) and the header is refreshed.
+The first line is human-readable AND machine state. The provider/model combo
+(pi-style scoped name) is authoritative: EDIT IT to switch models — the next
+send uses whatever the header says, and the winbar follows. The optional
+`try:` line lists valid combos from setup({ models = ... }). Token totals
+and cost are folded in after each reply, see |pitel-markers|.
 
 ==============================================================================
 6. MARKERS                                                    *pitel-markers*
@@ -265,6 +271,13 @@ R12 No tool calls. OpenAI/Anthropic require assistant tool_calls to be
 R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
     of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
+
+R14 The session header's provider/model combo is authoritative.
+    At send time (and in the winbar) the combo is parsed from the header
+    line; buffer vars and config are only fallbacks. Why: the buffer is
+    the only state (R1) — the active model is conversation state, so it
+    lives in the buffer where the user can see and edit it. There is no
+    model-switch command on purpose.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

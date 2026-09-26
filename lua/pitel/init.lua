@@ -16,6 +16,9 @@ M.config = {
   bin = "pitel", -- path to the pitel binary
   provider = "moonshot",
   model = "kimi-k3",
+  -- Optional list of valid "provider/model" combos, shown as a hint line
+  -- in the session header (pi's scoped model names).
+  models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.pitel/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
@@ -39,6 +42,26 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
+local HEADER_HEAD = "^<!%-%- pitel session"
+
+--- provider/model combo from the header line, nil if not parseable.
+local function header_combo(buf)
+  local l = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+  if l then
+    return l:match("^<!%-%- pitel session · ([%w_.:-]+)/([%w_.:-]+)")
+  end
+end
+
+--- The combo pitel will send with: the header is authoritative, then the
+--- per-buffer var, then the global config.
+local function current_combo(buf)
+  local p, m = header_combo(buf)
+  if p then
+    return p, m
+  end
+  return vim.b[buf].pitel_provider or M.config.provider, vim.b[buf].pitel_model or M.config.model
+end
+
 -- ─── Winbar (busy indicator, provider/model) ──────────────────────────────
 
 local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
@@ -56,8 +79,7 @@ end
 local errors = {}
 
 local function render_winbar(buf)
-  local provider = vim.b[buf].pitel_provider or M.config.provider
-  local model = vim.b[buf].pitel_model or M.config.model
+  local provider, model = current_combo(buf)
   local parts = {
     winbar_hl(" " .. provider .. " / " .. model .. " ", "Model"),
     "%=",
@@ -73,16 +95,12 @@ local function render_winbar(buf)
   return table.concat(parts, "")
 end
 
-local function refresh_winbar(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  local bar = render_winbar(buf)
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.wo[win].winbar = bar
-    end
-  end
+--- Winbar expression: the winbar is set to a self-evaluating `%!` call of
+--- this function, so it always reflects current buffer state on redraw —
+--- no imperative refresh calls anywhere.
+function M.winbar(buf)
+  buf = buf or tonumber(vim.g.actual_curbuf) or vim.api.nvim_get_current_buf()
+  return render_winbar(buf)
 end
 
 local function spinner_stop_if_idle()
@@ -100,9 +118,7 @@ local function spinner_start()
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(0, 100, vim.schedule_wrap(function()
     spinner_tick = spinner_tick + 1
-    for buf in pairs(running) do
-      refresh_winbar(buf)
-    end
+    vim.cmd.redrawstatus() -- re-evaluates the winbar expression
     spinner_stop_if_idle()
   end))
 end
@@ -219,12 +235,12 @@ local function append_block(buf, block)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
 
--- ─── Session header (date, tokens, cost) ───────────────────────────────────
+-- ─── Session header (model, date, tokens, cost) ────────────────────────────
 
--- A one-line comment at the top of the buffer, before the first heading (so
--- parse_buffer ignores it). The human-readable line IS the machine state:
--- exact numbers with comma grouping, parsed back on reopen.
-local HEADER_HEAD = "^<!%-%- pitel session"
+-- A comment block at the top of the buffer, before the first heading (so
+-- parse_buffer ignores it). The first line is human-readable AND machine
+-- state: provider/model combo, started date, exact token totals with comma
+-- grouping, optional cost. Editing the combo switches the model (R14).
 
 local function fmt_num(n) -- 1234567 -> "1,234,567"
   local s = tostring(n)
@@ -249,7 +265,10 @@ end
 
 local function render_header(buf)
   local s = header_state(buf)
-  local line = ("<!-- pitel session · started %s · %s in / %s out"):format(
+  local provider, model = current_combo(buf)
+  local line = ("<!-- pitel session · %s/%s · started %s · %s in / %s out"):format(
+    provider,
+    model,
     s.started,
     fmt_num(s.prompt),
     fmt_num(s.completion)
@@ -257,35 +276,43 @@ local function render_header(buf)
   if s.cost then
     line = line .. string.format(" · $%.4f", s.cost)
   end
-  line = line .. " -->"
+  local lines
+  if M.config.models and #M.config.models > 0 then
+    lines = { line, "     try: " .. table.concat(M.config.models, " · "), "-->", "" }
+  else
+    lines = { line .. " -->", "" }
+  end
 
   local first = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
   if first and first:match(HEADER_HEAD) then
     -- replace existing header block (up to and including the closing -->)
     for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, 10, false)) do
       if l:match("^%-%->") then
-        vim.api.nvim_buf_set_lines(buf, 0, i, false, { line, "" })
+        vim.api.nvim_buf_set_lines(buf, 0, i, false, lines)
         return
       end
     end
   end
-  vim.api.nvim_buf_set_lines(buf, 0, 0, false, { line, "" })
+  vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
 end
 
---- Restore started/usage from the header of a reopened session buffer.
---- Handles the current one-line format and the old two-line JSON format.
+--- Restore combo/started/usage from the header of a reopened session
+--- buffer. Handles the current format and older one-line/JSON formats.
 local function parse_header(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
   local first = lines[1]
   if not (first and first:match(HEADER_HEAD)) then
     return false
   end
-  local started, pin, pout, cost = first:match(
-    "started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out · %$([%d.]+) %-%->$"
-  )
+  local p, m = header_combo(buf)
+  if p then
+    vim.b[buf].pitel_provider = p
+    vim.b[buf].pitel_model = m
+  end
+  local started, pin, pout, cost =
+    first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out · %$([%d.]+)")
   if not started then
-    started, pin, pout =
-      first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out %-%->$")
+    started, pin, pout = first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out")
   end
   if started then
     vim.b[buf].pitel_started = started
@@ -346,7 +373,6 @@ local function report_error(buf, err)
   vim.list_extend(block, vim.split(err, "\n", { plain = true }))
   table.insert(block, "-->")
   append_block(buf, block)
-  refresh_winbar(buf)
   vim.notify("pitel: " .. err, vim.log.levels.ERROR)
 end
 
@@ -366,14 +392,16 @@ function M.send()
   end
 
   errors[buf] = nil
-  local provider = vim.b[buf].pitel_provider or M.config.provider
-  local model = vim.b[buf].pitel_model or M.config.model
+  -- The header's provider/model combo is authoritative (R14); sync the
+  -- buffer vars so the winbar and future header renders agree.
+  local provider, model = current_combo(buf)
+  vim.b[buf].pitel_provider = provider
+  vim.b[buf].pitel_model = model
 
   append_block(buf, { "# @assistant", "" })
   -- Fold history to the outline; the new assistant block is last, so it
   -- stays open while it streams.
   require("pitel.fold").apply_default_folds(buf)
-  refresh_winbar(buf)
   spinner_start()
 
   local payload = vim.json.encode({ messages = messages })
@@ -394,7 +422,6 @@ function M.send()
     end,
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
-    refresh_winbar(buf)
     spinner_stop_if_idle()
     normalize_spacing(buf)
     if result.code ~= 0 then
@@ -427,7 +454,6 @@ function M.stop()
   if handle then
     handle:kill(15)
     running[buf] = nil
-    refresh_winbar(buf)
     spinner_stop_if_idle()
   end
 end
@@ -449,7 +475,10 @@ local function setup_buffer(buf)
   end, "pitel: send")
 
   require("pitel.fold").setup_buffer(buf)
-  refresh_winbar(buf)
+
+  -- Self-evaluating winbar: a pure function of buffer state (R14 combo
+  -- edits included), refreshed by Neovim on every redraw.
+  vim.wo.winbar = "%!v:lua.require'pitel'.winbar()"
 end
 
 --- Open a new pitel chat buffer.
@@ -496,19 +525,6 @@ function M.sessions(scope)
   require("pitel.session").pick({ scope = scope }, function(path)
     M.open(path)
   end)
-end
-
---- Switch provider/model for the current buffer.
-function M.use(provider, model)
-  local buf = vim.api.nvim_get_current_buf()
-  if provider and provider ~= "" then
-    vim.b[buf].pitel_provider = provider
-  end
-  if model and model ~= "" then
-    vim.b[buf].pitel_model = model
-  end
-  refresh_winbar(buf)
-  vim.notify(("pitel: %s / %s"):format(vim.b[buf].pitel_provider, vim.b[buf].pitel_model))
 end
 
 function M.setup(opts)

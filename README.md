@@ -33,8 +33,10 @@ Providers live in `~/.pitel/config.json` (any OpenAI-compatible endpoint):
 - `:Pitel` — new chat buffer
 - `<C-s>` — send the whole buffer
 - `:PitelStop` — kill the in-flight request
-- `:PitelUse moonshot kimi-k3` — switch provider/model per buffer
 - `:PitelSessions [all]` — resume a saved session
+
+Switch models by editing the `provider/model` combo in the session header at
+the top of the buffer.
 
 ## Documentation
 

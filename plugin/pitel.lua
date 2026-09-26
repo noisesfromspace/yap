@@ -25,13 +25,6 @@ vim.api.nvim_create_user_command("PitelReload", function()
   vim.notify("pitel: reloaded from " .. src)
 end, { desc = "Reload the pitel Lua module (development)" })
 
-vim.api.nvim_create_user_command("PitelUse", function(cmd)
-  require("pitel").use(cmd.fargs[1], cmd.fargs[2])
-end, {
-  nargs = "+",
-  desc = "Switch provider/model for this buffer: :PitelUse {provider} {model}",
-})
-
 vim.api.nvim_create_user_command("PitelSessions", function(cmd)
   require("pitel").sessions(cmd.fargs[1])
 end, {
