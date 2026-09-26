@@ -1,7 +1,7 @@
 # pitel
 
-*pi + gptel*: the conversation is an editable Neovim markdown buffer; the Go
-binary is just a provider client. No TUI, no hidden state.
+*Inspired by pi and gptel*: the conversation is an editable Neovim markdown
+buffer; the Go binary is just a provider client. No TUI, no hidden state.
 
 Chat LLM APIs are stateless — every request sends the full message array, so
 whoever holds the array holds the truth. In pitel that's a text buffer:

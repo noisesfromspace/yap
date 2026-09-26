@@ -1,4 +1,4 @@
-*pitel.txt*  pi + gptel: the conversation is an editable markdown buffer
+*pitel.txt*  LLM chat in an editable markdown buffer (inspired by pi/gptel)
 
 CONTENTS                                                     *pitel-contents*
 
