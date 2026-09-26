@@ -52,6 +52,9 @@ local function winbar_hl(text, group)
   return "%#Pitel" .. group .. "#" .. text .. "%*"
 end
 
+-- Last backend error per buffer; shown in the winbar until the next send.
+local errors = {}
+
 local function render_winbar(buf)
   local provider = vim.b[buf].pitel_provider or M.config.provider
   local model = vim.b[buf].pitel_model or M.config.model
@@ -62,6 +65,8 @@ local function render_winbar(buf)
   if running and running[buf] then
     local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
     table.insert(parts, winbar_hl(" " .. frame .. " busy ", "Busy"))
+  elseif errors[buf] then
+    table.insert(parts, winbar_hl(" ✗ error ", "Error"))
   else
     table.insert(parts, winbar_hl(" ○ idle ", "Idle"))
   end
@@ -103,7 +108,7 @@ local function spinner_start()
 end
 
 local function define_winbar_hl()
-  local links = { Model = "Keyword", Busy = "DiagnosticOk", Idle = "Comment" }
+  local links = { Model = "Keyword", Busy = "DiagnosticOk", Idle = "Comment", Error = "DiagnosticError" }
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Pitel" .. name, { default = true, link = link })
   end
@@ -137,14 +142,14 @@ end
 
 --- Parse a pitel buffer into a message list.
 --- Lines before the first heading are ignored (header comments).
---- `<!-- pitel:thinking -->` regions are excluded: thinking is shown in
---- the buffer but never sent back to the provider.
+--- `<!-- pitel:... -->` regions (thinking, errors) are excluded: they are
+--- shown in the buffer but never sent back to the provider.
 --- Adjacent same-role blocks are merged (providers require alternation).
 --- Empty blocks are dropped.
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
-  local in_thinking = false
+  local in_marker = false
 
   local function flush()
     if not role then
@@ -164,11 +169,11 @@ function M.parse_buffer(buf)
   end
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match("^<!%-%- pitel:thinking") then
-      in_thinking = true
-    elseif in_thinking then
+    if line:match("^<!%-%- pitel:%a+") then
+      in_marker = true
+    elseif in_marker then
       if line:match("%-%->") then
-        in_thinking = false
+        in_marker = false
       end
     else
       local r = line:match(HEAD)
@@ -201,6 +206,15 @@ end
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
 running = {}
 
+--- Record a backend error: notify, persist it in the winbar, and leave a
+--- parse-excluded marker in the buffer as a record.
+local function report_error(buf, err)
+  errors[buf] = err
+  append_text(buf, "\n\n<!-- pitel:error\n" .. err .. "\n-->\n")
+  refresh_winbar(buf)
+  vim.notify("pitel: " .. err, vim.log.levels.ERROR)
+end
+
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send()
   local buf = vim.api.nvim_get_current_buf()
@@ -216,6 +230,7 @@ function M.send()
     return
   end
 
+  errors[buf] = nil
   local provider = vim.b[buf].pitel_provider or M.config.provider
   local model = vim.b[buf].pitel_model or M.config.model
 
@@ -229,8 +244,7 @@ function M.send()
   local payload = vim.json.encode({ messages = messages })
   local stderr_chunks = {}
 
-  local handle
-  handle = vim.system({ M.config.bin, "send", "--provider", provider, "--model", model }, {
+  local ok, handle = pcall(vim.system, { M.config.bin, "send", "--provider", provider, "--model", model }, {
     stdin = payload,
     text = true,
     stdout = vim.schedule_wrap(function(_, data)
@@ -250,8 +264,7 @@ function M.send()
     normalize_spacing(buf)
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks):gsub("%s+$", "")
-      append_text(buf, "\n\n<!-- pitel error: " .. (err ~= "" and err or ("exit " .. result.code)) .. " -->\n")
-      vim.notify("pitel: " .. err, vim.log.levels.ERROR)
+      report_error(buf, err ~= "" and err or ("exit " .. result.code))
       return
     end
     append_text(buf, "\n\n# @user\n\n")
@@ -260,6 +273,12 @@ function M.send()
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
     end
   end))
+
+  if not ok then
+    spinner_stop_if_idle()
+    report_error(buf, tostring(handle))
+    return
+  end
 
   running[buf] = handle
 end
