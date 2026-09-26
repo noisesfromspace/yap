@@ -1,0 +1,268 @@
+*pitel.txt*  pi + gptel: the conversation is an editable markdown buffer
+
+CONTENTS                                                     *pitel-contents*
+
+  1. Introduction ......... |pitel-introduction|
+  2. Commands ............. |pitel-commands|
+  3. Keymaps .............. |pitel-keymaps|
+  4. Configuration ........ |pitel-configuration|
+  5. Buffer format ........ |pitel-buffer|
+  6. Markers .............. |pitel-markers|
+  7. Sessions ............. |pitel-sessions|
+  8. Folding & navigation . |pitel-folding|
+  9. Winbar ............... |pitel-winbar|
+ 10. Lua <-> Go protocol .. |pitel-protocol|
+ 11. Business rules ....... |pitel-rules|
+
+==============================================================================
+1. INTRODUCTION                                          *pitel-introduction*
+
+pitel is an LLM chat plugin where the conversation lives in a plain editable
+markdown buffer. A small Go binary (`pitel`) is only a provider client: it
+reads the message array on stdin and streams the reply to stdout. There is
+no TUI, and no hidden conversation state anywhere.
+
+The idea is stolen from gptel (Emacs): chat LLM APIs are stateless — every
+request sends the full message array, so whoever holds the array holds the
+truth, and that can be a text buffer. Consequences:
+
+- Deleting a block removes it from the conversation: that is branching.
+- Editing an assistant reply changes what the model "said".
+- Writing your own `# @assistant` block steers the model (prefill).
+- Yanking, undo, folds and rendering are just Neovim. `:undotree` is a
+  free branch navigator.
+
+==============================================================================
+2. COMMANDS                                                  *pitel-commands*
+
+                                                                    *:Pitel*
+:Pitel                  Open a new chat buffer.
+
+                                                                *:PitelSend*
+:PitelSend              Send the whole buffer to the provider and stream the
+                        reply into the buffer.
+
+                                                                *:PitelStop*
+:PitelStop              Kill the in-flight request for the current buffer.
+
+                                                                 *:PitelUse*
+:PitelUse {p} {m}       Switch provider/model for the current buffer.
+
+                                                            *:PitelSessions*
+:PitelSessions [all]    Pick a saved session to resume. Default scope is the
+                        current project (cwd); "all" lists every project.
+
+                                                               *:PitelReload*
+:PitelReload            Reload the Lua modules (development).
+
+==============================================================================
+3. KEYMAPS                                                    *pitel-keymaps*
+
+Set only in pitel buffers.
+
+  <C-s> (n, i)          Send the buffer.
+  <Tab>                 Toggle fold.
+  ]m  [m                Next / previous message heading.
+  ]u  [u                Next / previous user message.
+  ]a  [a                Next / previous assistant message.
+  <leader>1             View: outline (fruit default fold state, see
+                        |pitel-folding|).
+  <leader>2             View: only user messages open.
+  <leader>3             View: conversation (user + assistant open).
+  <leader>4             View: everything open.
+
+==============================================================================
+4. CONFIGURATION                                        *pitel-configuration*
+
+Lua setup: >lua
+
+  require("pitel").setup({
+    bin = "pitel",        -- path to the Go binary
+    provider = "moonshot",
+    model = "kimi-k3",
+    system = "...",       -- fallback system prompt
+    agents_file = vim.fn.expand("~/.pitel/AGENTS.md"),
+  })
+<
+`agents_file` is the system prompt for new buffers and is read per buffer,
+so edits apply to the next chat. When missing or empty, `system` is used.
+
+~/.pitel (pi-style home):
+
+  config.json           Providers and optional pricing: >json
+
+    {
+      "providers": {
+        "moonshot": { "base_url": "https://api.moonshot.ai/v1",
+                      "api_key_env": "MOONSHOT_API_KEY" }
+      },
+      "pricing": {
+        "kimi-k3": { "input": 0.60, "output": 2.50 }
+      }
+    }
+<
+                        Any OpenAI-compatible /chat/completions endpoint
+                        works. API keys come from the named env vars.
+                        `pricing` (USD per 1M tokens) enables the cost in
+                        the session header; omit it to track tokens only.
+
+  AGENTS.md             Default system prompt (see above).
+  sessions/<cwd-slug>/  Autosaved session files, see |pitel-sessions|.
+
+==============================================================================
+5. BUFFER FORMAT                                                *pitel-buffer*
+
+A pitel buffer is plain markdown. Headings delimit messages: >
+
+  # @system
+  # @user
+  # @assistant
+
+Everything between headings is message content. Everything before the first
+heading is ignored by the parser — that is where the session header lives:
+
+  <!-- pitel session · started 2026-09-26 14:33 · 1.5k in / 42 out · $0.0034
+  {"started":"2026-09-26 14:33","prompt":1500,"completion":42,"cost":0.0034}
+  -->
+
+The JSON line is the machine-readable copy of the totals; it is what makes
+the counters survive save/reopen. After each reply the binary reports token
+usage (see |pitel-markers|) and the header is refreshed.
+
+==============================================================================
+6. MARKERS                                                    *pitel-markers*
+
+HTML comment regions of the form `<!-- pitel:<word>` ... `-->` are shown in
+the buffer but NEVER sent to the provider; the parser skips them.
+
+  <!-- pitel:thinking   Reasoning streamed via the OpenAI-compatible
+                        `reasoning_content` field (Kimi, DeepSeek). Folded
+                        away with the assistant block.
+
+  <!-- pitel:error      Backend error record, left after a failed send.
+
+  <!-- pitel:usage      Token usage reported at end of stream. Consumed
+                        immediately: folded into the session header and the
+                        line is removed.
+
+==============================================================================
+7. SESSIONS                                                  *pitel-sessions*
+
+A session is just the buffer's markdown written to a file — the buffer IS
+the serialization, there is no other format. Files live under
+~/.pitel/sessions/<cwd-slug>/ and are autosaved after every completed reply.
+On first save the buffer is renamed to the file, so `:w` works too.
+
+File operations are the session operations (pi equivalents, but manual):
+
+  :file new-name.md     Name a session; the picker shows the chosen name.
+  :saveas copy.md       Fork: the original file is untouched, the buffer
+                        continues as the copy.
+  delete a block + send Branch the conversation.
+
+==============================================================================
+8. FOLDING & NAVIGATION                                        *pitel-folding*
+
+`# @role` headings are folds (foldexpr); a closed fold shows the role and
+the first content line. The default fold state is ported from fruit.nvim:
+
+  everything closed EXCEPT user prompts (the visible outline) and the last
+  block (newest activity stays visible).
+
+This state is applied on buffer setup and at send start, so history
+collapses while the new reply streams in visibly. <leader>1 reapplies it.
+Navigation keymaps jump between headings, see |pitel-keymaps|.
+
+==============================================================================
+9. WINBAR                                                      *pitel-winbar*
+
+The winbar shows `provider / model` on the left and a state on the right:
+
+  ⠋ busy    A request is in flight (driven by the job table).
+  ○ idle    Nothing running.
+  ✗ error   The last send failed (vim.notify fired too); cleared on the
+            next send.
+
+==============================================================================
+10. LUA <-> GO PROTOCOL                                      *pitel-protocol*
+
+  stdin   {"messages":[{"role":"user","content":"..."}, ...]}
+  argv    pitel send --provider NAME --model MODEL
+  stdout  raw assistant text, streamed; thinking and usage wrapped in
+          |pitel-markers|
+  stderr  error message, exit 1
+
+The binary is stdlib-only Go, built with CGO_ENABLED=0.
+
+==============================================================================
+11. BUSINESS RULES                                             *pitel-rules*
+
+The invariants below are the design contract of this plugin. Each rule
+exists for a reason; change the code and the rule together. AI assistants
+editing this repository MUST keep this section up-to-date.
+
+R1  The buffer is the only conversation state.
+    Neither the Lua side nor the Go binary may keep message state between
+    turns. Why: branching by deletion, prefill by editing, and undo-tree
+    navigation only work if the buffer is the single source of truth.
+
+R2  `<!-- pitel:* -->` marker regions are display-only.
+    The parser must skip every `<!-- pitel:<word>` region; none of them may
+    reach the provider. Why: thinking re-sent to the API pollutes or breaks
+    the conversation, and error records are not user content. (Bug of
+    record: the first error comment WAS sent back as assistant content.)
+
+R3  Lines before the first heading are ignored.
+    The session header lives there. The parser's flush must clear the
+    accumulator when no role is set. (Bug of record: pre-heading text was
+    prepended to the first message until this was fixed.)
+
+R4  The binary emits plain text and pitel markers only. No ANSI, no
+    padding, no rendering. Why: markdown rendering is the user's
+    ft=markdown setup; cell-based TUIs break Neovim yanking.
+
+R5  Wire protocol is OpenAI-compatible /chat/completions SSE only.
+    Covers OpenAI, DeepSeek, Moonshot/Kimi, OpenRouter, z.ai and local
+    servers. Anthropic/Gemini-native: use OpenRouter until (if ever)
+    implemented.
+
+R6  Adjacent same-role blocks are merged on send; empty blocks dropped.
+    Why: providers require role alternation.
+
+R7  Exactly one blank line between message blocks.
+    normalize_spacing runs at send start and on completion; it collapses
+    blank runs before headings, inserts missing ones and trims trailing
+    blanks. Why: readable diffs, stable folds.
+
+R8  Sessions are plain markdown files; file operations are the session
+    operations. Autosave only after a COMPLETED reply (never on error).
+    save() follows buffer renames so :file names and :saveas forks. Why:
+    no second serialization format to keep in sync.
+
+R9  Errors surface three ways: vim.notify (transient), winbar error state
+    (persistent until next send), and a parse-excluded buffer marker
+    (record). Spawn failures of the binary are caught and reported the
+    same way.
+
+R10 Default fold state = fruit.nvim's: user prompts plus the last block
+    open, rest closed. Applied on setup and at send start — not on stream
+    completion, because that would fold the reply the user is reading.
+
+R11 Streaming appends at the end of the buffer, fully async (gptel-style:
+    the buffer stays editable while a reply streams in). Editing above the
+    streaming block is safe; typing inside/below it interleaves with the
+    stream. Accepted trade-off; the fix (extmark insertion point) is
+    documented as future work, not done.
+
+R12 No tool calls. OpenAI/Anthropic require assistant tool_calls to be
+    followed by matching tool-result messages; naive block deletion can
+    orphan pairs and the API rejects the request ("Dragon 2"). When tools
+    land, history must be sanitized around tool pairs or tool blocks must
+    be atomic/read-only.
+
+R13 No MCP. The author's tools are thin HTTP wrappers that are less code
+    as native Go functions than an MCP client; MCP also has no equivalent
+    of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:
