@@ -20,9 +20,11 @@ whoever holds the array holds the truth — and that can be a text buffer.
 ## Layout
 
 ```
-main.go            Go binary `pitel`: stdin JSON → streamed stdout. stdlib only.
-lua/pitel/init.lua Buffer parsing, streaming append, send/stop.
-plugin/pitel.lua   User commands.
+main.go              Go binary `pitel`: stdin JSON → streamed stdout. stdlib only.
+lua/pitel/init.lua   Buffer parsing, streaming append, send/stop, winbar.
+lua/pitel/fold.lua   Heading folds, view levels, message navigation (from fruit.nvim).
+lua/pitel/session.lua Session persistence (markdown files) and picker.
+plugin/pitel.lua     User commands.
 ```
 
 ## Build & install
@@ -64,6 +66,20 @@ protocols are not implemented yet; use OpenRouter in the meantime.
 - `<C-s>` (normal/insert) or `:PitelSend` — send the whole buffer
 - `:PitelStop` — kill the in-flight request
 - `:PitelUse moonshot kimi-k3` — switch provider/model for this buffer
+- `:PitelSessions [all]` — resume a saved session (default: cwd project only)
+
+The winbar shows `provider / model` and a busy spinner while a request is
+in flight. Sessions are plain markdown, autosaved after every reply under
+`stdpath("data")/pitel/sessions/<project>/` — the buffer is renamed to the
+file, so `:w` works too.
+
+### Folding & navigation (ported from fruit.nvim)
+
+`# @role` headings are folds; a closed fold shows role + first line.
+
+- `<leader>1` outline · `<leader>2` user only · `<leader>3` conversation · `<leader>4` full
+- `<Tab>` — toggle fold
+- `]m`/`[m` — next/prev message · `]u`/`[u` user · `]a`/`[a` assistant
 
 ## Deliberately not built (yet)
 
