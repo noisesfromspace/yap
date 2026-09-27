@@ -144,7 +144,8 @@ reply, see |pitel-markers|.
 6. MARKERS                                                    *pitel-markers*
 
 HTML comment regions of the form `<!-- pitel:<word>` ... `-->` are shown in
-the buffer but NEVER sent to the provider; the parser skips them.
+the buffer but NEVER sent to the provider as buffer text; the parser skips
+them (one exception: pitel:tool, which is TRANSFORMED — see below).
 
   <!-- pitel:thinking   Reasoning streamed via the OpenAI-compatible
                         `reasoning_content` field (Kimi, DeepSeek). Folded
@@ -153,8 +154,42 @@ the buffer but NEVER sent to the provider; the parser skips them.
   <!-- pitel:error      Backend error record, left after a failed send.
 
   <!-- pitel:usage      Token usage reported at end of stream. Consumed
-                        immediately: folded into the session header and the
-                        line is removed.
+                        immediately: folded into the session frontmatter and
+                        the line is removed.
+
+Tool blocks                                                *pitel-tool-block*
+
+A tool call and its result are ONE region inside an assistant block: >
+
+  <!-- pitel:tool {"id":"call_1","name":"edit","arguments":{...}} -->
+  Successfully replaced 1 block(s) in main.go.
+  <!-- pitel:ui
+  ```diff
+  @@ -10,3 +10,3 @@
+  -old line
+  +new line
+  ```
+  -->
+  <!-- /pitel:tool -->
+<
+  Header line     The complete call as single-line JSON. Storage AND
+                  context: parse_buffer rebuilds the assistant tool_calls
+                  message from it.
+
+  Result text     Exactly what the model received; in context. edit/write
+                  tools return confirmations (pi/Codex pattern), read-like
+                  tools return (truncated) content.
+
+  <!-- pitel:ui   Optional display-only payload (a rendered unified diff
+                  for edits). Parse-excluded like thinking: editing or
+                  deleting it changes nothing. Pure decoration.
+
+parse_buffer transforms the region into the API message pair: an assistant
+message with `tool_calls`, followed by `tool` messages with matching
+`tool_call_id`. Deleting the region deletes the pair — orphaned tool calls
+are impossible by construction (R12). Sanitizer: a region outside an
+assistant block is skipped; a missing/empty result becomes an empty result
+(still paired); a malformed header skips the region with a notification.
 
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*
@@ -217,11 +252,12 @@ R1  The buffer is the only conversation state.
     turns. Why: branching by deletion, prefill by editing, and undo-tree
     navigation only work if the buffer is the single source of truth.
 
-R2  `<!-- pitel:* -->` marker regions are display-only.
-    The parser must skip every `<!-- pitel:<word>` region; none of them may
-    reach the provider. Why: thinking re-sent to the API pollutes or breaks
-    the conversation, and error records are not user content. (Bug of
-    record: the first error comment WAS sent back as assistant content.)
+R2  `<!-- pitel:* -->` marker regions are never sent as buffer text.
+    The parser skips them (thinking, error, usage, pitel:ui) or transforms
+    them (pitel:tool becomes structured tool_call/tool messages — the raw
+    region text is still never sent). Why: thinking or display payloads
+    re-sent to the API pollute or break the conversation. (Bug of record:
+    the first error comment WAS sent back as assistant content.)
 
 R3  Lines before the first heading are ignored.
     The session header lives there. The parser's flush must clear the
@@ -269,11 +305,18 @@ R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     stream. Accepted trade-off; the fix (extmark insertion point) is
     documented as future work, not done.
 
-R12 No tool calls. OpenAI/Anthropic require assistant tool_calls to be
-    followed by matching tool-result messages; naive block deletion can
-    orphan pairs and the API rejects the request ("Dragon 2"). When tools
-    land, history must be sanitized around tool pairs or tool blocks must
-    be atomic/read-only.
+R12 One buffer region = one tool pair.
+    A pitel:tool region holds the call (single-line JSON header) and the
+    result text together; parsing emits BOTH the assistant tool_calls
+    message and the tool result message from it. Deleting the region
+    deletes the pair, so orphaned tool_calls (which APIs reject) are
+    impossible by construction — gptel's solution to the pairing problem.
+    Result content policy: edit/write tools return short confirmations,
+    read-like tools return truncated content (pi: 2000 lines / 50KB);
+    pretty payloads (diffs) go in parse-excluded pitel:ui subsections.
+    Deferred: parse-time elision of old results (clear_tool_uses-style
+    compaction) and tool-block sanitizing beyond the rules in
+    |pitel-tool-block|.
 
 R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
