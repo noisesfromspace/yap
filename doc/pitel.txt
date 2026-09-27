@@ -91,24 +91,14 @@ so edits apply to the next chat. When missing or empty, `system` is used.
 
 ~/.pitel (pi-style home):
 
-  config.json           Providers, optional pricing, and tools: >json
+  config.json           Providers and optional pricing: >json
 
     {
       "providers": {
         "moonshot": { "base_url": "https://api.moonshot.ai/v1",
                       "api_key_env": "MOONSHOT_API_KEY" }
       },
-      "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } },
-      "max_tool_iterations": 8,
-      "tools": {
-        "fetch": {
-          "description": "Fetch a URL and return its text",
-          "schema": { "type": "object",
-            "properties": { "url": { "type": "string" } },
-            "required": ["url"] },
-          "command": ["pitel-tool-fetch"]
-        }
-      }
+      "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
     }
 <
                         Any OpenAI-compatible /chat/completions endpoint
@@ -117,18 +107,19 @@ so edits apply to the next chat. When missing or empty, `system` is used.
                         the session frontmatter; omit it to track tokens
                         only.
 
-                        Tools are subprocesses (the basic plugin
-                        mechanism): the call arguments (JSON) go to the
-                        command's stdin, stdout is the result sent back
-                        to the model. If stdout parses as
-                        {"result": "...", "ui": "..."}, the "ui" text
-                        becomes a display-only pitel:ui section
-                        (|pitel-tool-block|). The binary runs the whole
-                        agent loop in one process; max_tool_iterations
-                        bounds it (default 8).
-
   AGENTS.md             Default system prompt (see above).
   sessions/<cwd-slug>/  Autosaved session files, see |pitel-sessions|.
+
+Tools                                                        *pitel-tools*
+
+Tools are NOT configured anywhere — they are Go files in the tools/
+package of the pitel source tree, one file per tool, each
+self-registering in init(). Adding or changing a tool = editing a file
+and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
+model) and optionally a ui payload (display-only pitel:ui section,
+see |pitel-tool-block|). The binary runs the whole agent loop in one
+process, bounded at 8 iterations per send. Built-ins: ls, read, fetch
+(read-only).
 
 ==============================================================================
 5. BUFFER FORMAT                                                *pitel-buffer*
@@ -259,9 +250,9 @@ The winbar shows `provider / model` on the left and a state on the right:
   stderr  error message, exit 1
 
 The binary runs the agent loop internally: when the model requests tool
-calls it executes them (subprocesses from config.json), emits one
-pitel:tool region per pair, and re-sends until the final answer or
-max_tool_iterations. The binary is stdlib-only Go, built CGO_ENABLED=0.
+calls it executes them (compiled-in tools, see |pitel-tools|), emits one
+pitel:tool region per pair, and re-sends until the final answer or the
+iteration bound. The binary is stdlib-only Go, built CGO_ENABLED=0.
 
 ==============================================================================
 11. BUSINESS RULES                                             *pitel-rules*
@@ -344,6 +335,14 @@ R12 One buffer region = one tool pair.
 R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
     of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
+
+R15 Tools are compiled-in Go files, one per file in tools/.
+    Each file self-registers via init(); adding a tool = adding a file
+    and recompiling. Not config files (the author wants tool code, not
+    opaque declarations), not subprocesses (recompiling is accepted and
+    the binary stays self-contained). Read-only tools only (ls, read,
+    fetch) until an explicit decision on file-mutating tools — that is a
+    separate design conversation (confirmation, allowlists).
 
 R14 The frontmatter's provider/model is authoritative.
     At send time (and in the winbar) they are parsed from the YAML
