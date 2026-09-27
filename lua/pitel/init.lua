@@ -231,7 +231,8 @@ function M.parse_buffer(buf)
         table.insert(tools, tool)
         tool = nil
       elseif line:match("^<!%-%- pitel:ui") then
-        in_marker = true
+        -- Single-line form closes on the same line.
+        in_marker = not line:match("%-%->")
       elseif in_marker then
         if line:match("%-%->") then
           in_marker = false
@@ -272,7 +273,9 @@ function M.parse_buffer(buf)
       elseif line:match("^<!%-%- pitel:tool") then
         skipping = true -- region outside an assistant block: orphan, skip
       elseif line:match("^<!%-%- pitel:%a+") then
-        in_marker = true
+        -- Single-line markers (`<!-- pitel:usage {...} -->`) close on the
+        -- same line; otherwise the next content line would be swallowed.
+        in_marker = not line:match("%-%->")
       else
         local r = line:match(HEAD)
         if r and roles[r] then
