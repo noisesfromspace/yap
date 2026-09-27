@@ -240,6 +240,12 @@ are impossible by construction (R12). Sanitizer: a region outside an
 assistant block is skipped; a missing/empty result becomes an empty result
 (still paired); a malformed header skips the region with a notification.
 
+Marker regions close on a line that is exactly `-->`; content merely
+containing it never closes early. The binary neutralizes collisions in
+arbitrary model/tool output: a bare `-->` line becomes `-- >`, and a
+result line starting with a pitel marker opener gets a zero-width space
+after `<!--`.
+
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*
 

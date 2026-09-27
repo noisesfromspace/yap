@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -131,6 +132,48 @@ type turn struct {
 	prompt, completion int
 }
 
+// lineEscaper buffers streamed thinking to line granularity so bare
+// `-->` lines can be neutralized before they reach the buffer — they
+// would close the pitel:thinking marker early (chunks split mid-line,
+// so per-chunk checks don't work).
+type lineEscaper struct {
+	w   *bufio.Writer
+	buf []byte
+}
+
+func (l *lineEscaper) WriteString(s string) {
+	l.buf = append(l.buf, s...)
+	flushed := false
+	for {
+		i := bytes.IndexByte(l.buf, '\n')
+		if i < 0 {
+			break
+		}
+		line := string(l.buf[:i])
+		l.buf = l.buf[i+1:]
+		if line == "-->" {
+			line = "-- >"
+		}
+		l.w.WriteString(line + "\n")
+		flushed = true
+	}
+	if flushed {
+		l.w.Flush()
+	}
+}
+
+func (l *lineEscaper) Flush() {
+	if len(l.buf) > 0 {
+		line := string(l.buf)
+		if line == "-->" {
+			line = "-- >"
+		}
+		l.w.WriteString(line)
+		l.buf = nil
+	}
+	l.w.Flush()
+}
+
 // streamCompletion performs one streaming chat completion, writing text and
 // thinking markers to out as they arrive, and returns what the model said.
 func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*turn, error) {
@@ -166,6 +209,7 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 	t := &turn{}
 	callArgs := map[int]*ToolCall{} // by delta index
 	inThinking := false
+	esc := &lineEscaper{w: out} // for thinking text
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -194,11 +238,11 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 					out.WriteString("<!-- pitel:thinking\n")
 					inThinking = true
 				}
-				out.WriteString(c.Delta.ReasoningContent)
-				out.Flush()
+				esc.WriteString(c.Delta.ReasoningContent)
 			}
 			if c.Delta.Content != "" {
 				if inThinking {
+					esc.Flush()
 					out.WriteString("\n-->\n\n")
 					inThinking = false
 				}
@@ -229,13 +273,20 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 	if inThinking {
 		// Stream ended mid-thinking (or the model emitted nothing else):
 		// close the marker so the block stays parseable.
+		esc.Flush()
 		out.WriteString("\n-->\n")
 	}
-	for i := 0; i < len(callArgs); i++ {
-		if tc, ok := callArgs[i]; ok {
-			tc.Type = "function"
-			t.calls = append(t.calls, *tc)
-		}
+	// Providers should use contiguous 0-based indices, but don't assume:
+	// collect and sort the keys so sparse indices can't silently drop calls.
+	idxs := make([]int, 0, len(callArgs))
+	for i := range callArgs {
+		idxs = append(idxs, i)
+	}
+	sort.Ints(idxs)
+	for _, i := range idxs {
+		tc := callArgs[i]
+		tc.Type = "function"
+		t.calls = append(t.calls, *tc)
 	}
 	return t, nil
 }
@@ -245,9 +296,37 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 // JSON inside the marker, which the Lua side folds closed by default.
 const toolHeaderMaxSingle = 120
 
+// escapeBareArrow neutralizes lines that are exactly `-->`: they would
+// close a thinking/ui marker early (the Lua side closes markers on
+// bare-`-->` lines only). Rare, but model output is arbitrary text.
+func escapeBareArrow(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l == "-->" {
+			lines[i] = "-- >"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// escapeMarkerPrefixes neutralizes lines in tool results that start with
+// a pitel marker opener — they would end the tool region early during
+// parsing. A zero-width space keeps the display identical.
+func escapeMarkerPrefixes(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, "<!-- pitel:") || strings.HasPrefix(l, "<!-- /pitel:") {
+			lines[i] = "<!--\u200b" + strings.TrimPrefix(l, "<!--")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // emitToolBlock writes a completed pitel:tool region (header = full call,
 // result text, optional display-only ui section) to the stream.
 func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
+	result = escapeMarkerPrefixes(result)
+	ui = escapeBareArrow(ui)
 	var args any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		args = call.Function.Arguments // malformed/truncated JSON: keep raw

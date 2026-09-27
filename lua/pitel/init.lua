@@ -235,7 +235,7 @@ function M.parse_buffer(buf)
         -- Single-line form closes on the same line.
         in_marker = not line:match("%-%->")
       elseif in_marker then
-        if line:match("%-%->") then
+        if line:match("^%-%->$") then
           in_marker = false
         end
       else
@@ -272,7 +272,9 @@ function M.parse_buffer(buf)
         table.insert(header_acc, line)
       end
     elseif in_marker then
-      if line:match("%-%->") then
+      -- Markers close on a line that is exactly `-->`; content lines
+      -- merely containing `-->` (diffs, prose) must not close early.
+      if line:match("^%-%->$") then
         in_marker = false
       end
     else

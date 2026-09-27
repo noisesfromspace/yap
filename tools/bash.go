@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -49,15 +49,25 @@ func runBash(a *bashArgs) (string, string, error) {
 		}
 		cmd.Dir = a.Cwd
 	}
-	// Stdout and Stderr are the same writer: os/exec serializes the writes.
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	// Stream output to a temp file instead of accumulating in memory: a
+	// runaway command must not OOM the binary. Stdout and Stderr are the
+	// same *os.File, so the child gets one fd for both — output is
+	// interleaved like a terminal.
+	out, err := os.CreateTemp("", "pitel-bash-*.log")
+	if err != nil {
+		return "", "", err
+	}
+	outPath := out.Name()
+	cmd.Stdout = out
+	cmd.Stderr = out
 	cmd.Stdin = nil // /dev/null
 
 	if err := cmd.Start(); err != nil {
+		out.Close()
+		os.Remove(outPath)
 		return "", "", err
 	}
+	out.Close() // the child has its own fd
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	track(pgid)
 	defer untrack(pgid)
@@ -66,7 +76,6 @@ func runBash(a *bashArgs) (string, string, error) {
 	go func() { done <- cmd.Wait() }()
 
 	timedOut := false
-	var err error
 	select {
 	case err = <-done:
 	case <-time.After(timeout):
@@ -79,17 +88,19 @@ func runBash(a *bashArgs) (string, string, error) {
 	if ee, ok := err.(*exec.ExitError); ok {
 		exit = ee.ExitCode() // -1 when killed by signal
 	} else if err != nil {
+		os.Remove(outPath)
 		return "", "", fmt.Errorf("run: %w", err)
 	}
 
-	text, truncated := tailTruncate(buf.String())
+	var size int64
+	if st, statErr := os.Stat(outPath); statErr == nil {
+		size = st.Size()
+	}
+	text, truncated := readTail(outPath, size)
 	if truncated {
-		f, terr := os.CreateTemp("", "pitel-bash-*.log")
-		if terr == nil {
-			f.WriteString(buf.String())
-			f.Close()
-			text = fmt.Sprintf("[truncated: showing tail; full output (%d bytes) at %s]\n%s", buf.Len(), f.Name(), text)
-		}
+		text = fmt.Sprintf("[truncated: showing tail; full output (%d bytes) at %s]\n%s", size, outPath, text)
+	} else {
+		os.Remove(outPath) // no reason to keep it: the result has everything
 	}
 	if strings.TrimSpace(text) == "" {
 		text = "(no output)"
@@ -103,21 +114,32 @@ func runBash(a *bashArgs) (string, string, error) {
 	return text, "", nil
 }
 
-// tailTruncate keeps the LAST bashMaxLines lines / bashMaxBytes bytes —
-// for command output the tail is usually the relevant part (pi does the
-// same for bash, while read truncates from the head).
-func tailTruncate(s string) (string, bool) {
-	if len(s) <= bashMaxBytes && strings.Count(s, "\n")+1 <= bashMaxLines {
-		return s, false
+// readTail reads the end of the file at path, keeping the LAST
+// bashMaxLines lines / bashMaxBytes bytes — for command output the tail
+// is usually the relevant part (pi does the same for bash, while read
+// truncates from the head). Reports whether anything was cut.
+func readTail(path string, size int64) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
 	}
-	if len(s) > bashMaxBytes {
-		s = s[len(s)-bashMaxBytes:]
+	defer f.Close()
+	truncated := false
+	if size > bashMaxBytes {
+		if _, err := f.Seek(size-bashMaxBytes, io.SeekStart); err == nil {
+			truncated = true
+		}
+	}
+	data, _ := io.ReadAll(f)
+	s := string(data)
+	if truncated {
 		if i := strings.IndexByte(s, '\n'); i >= 0 {
 			s = s[i+1:] // drop the partial first line
 		}
 	}
 	if lines := strings.Split(s, "\n"); len(lines) > bashMaxLines {
 		s = strings.Join(lines[len(lines)-bashMaxLines:], "\n")
+		truncated = true
 	}
-	return s, true
+	return s, truncated
 }
