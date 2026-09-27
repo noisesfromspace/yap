@@ -203,16 +203,34 @@ A tool call and its result are ONE region inside an assistant block: >
   -->
   <!-- /pitel:tool -->
 <
-  Header line     The complete call as single-line JSON. Storage AND
-                  context: parse_buffer rebuilds the assistant tool_calls
-                  message from it.
+  Header          The complete call as JSON. Storage AND context:
+                  parse_buffer rebuilds the assistant tool_calls message
+                  from it. Two forms: single-line when short (≤ 120
+                  chars, typical for bash/ls/read), otherwise
+                  pretty-printed multi-line JSON between `<!-- pitel:tool`
+                  and `-->`: >
+
+  <!-- pitel:tool
+  {
+    "id": "write_0_a3317f99",
+    "name": "write",
+    "arguments": { "content": "...", "path": "/tmp/x.md" }
+  }
+  -->
+<
+                  Multi-line headers fold closed by default (a level-2
+                  fold with `▸ tool: <name>` foldtext; za to inspect) —
+                  the pitel:ui diff below is the visual record, so the
+                  arguments are never shown twice. Single-line headers
+                  stay unfolded.
 
   Result text     Exactly what the model received; in context. edit/write
                   tools return confirmations (pi/Codex pattern), read-like
                   tools return (truncated) content.
 
   <!-- pitel:ui   Optional display-only payload (a rendered unified diff
-                  for edits). Parse-excluded like thinking: editing or
+                  for edits and writes — creates included, as an all-`+`
+                  diff). Parse-excluded like thinking: editing or
                   deleting it changes nothing. Pure decoration.
 
 parse_buffer transforms the region into the API message pair: an assistant

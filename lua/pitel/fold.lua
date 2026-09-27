@@ -7,6 +7,11 @@ local M = {}
 
 local HEAD = "^# @(%a+)%s*$"
 
+-- Multi-line pitel:tool headers (long calls: write/edit) open a level-2
+-- fold; the closing `-->` line is part of the fold. Single-line headers
+-- stay unfolded level-1 content.
+local TOOL_HEAD = "^<!%-%- pitel:tool$"
+
 -- The four view levels, bound to <leader>1..4 (same keys as fruit).
 -- Level 1 (outline) is fruit's default fold state: only user prompts and
 -- the last block open. roles = which heading roles stay open; nil = all.
@@ -24,8 +29,27 @@ end
 -- ─── foldexpr / foldtext ───────────────────────────────────────────────────
 
 function M.expr(lnum)
-  if vim.fn.getline(lnum):match(HEAD) then
+  local line = vim.fn.getline(lnum)
+  if line:match(HEAD) then
     return ">1"
+  end
+  if line:match(TOOL_HEAD) then
+    return ">2"
+  end
+  -- Inside a multi-line tool header (including its --> closer)? Scan up:
+  -- the nearest structural line decides. Pretty-printed JSON never starts
+  -- a line with `<!--` or `-->`, so the scan is bounded and unambiguous.
+  for i = lnum - 1, 1, -1 do
+    local s = vim.fn.getline(i)
+    if s:match(TOOL_HEAD) then
+      return "2"
+    end
+    if s:match(HEAD) or s:match("^<!%-%-") then
+      break
+    end
+    if s:match("^%-%->") then
+      return "1" -- follows a closed header: block content, not fold
+    end
   end
   return "="
 end
@@ -33,7 +57,21 @@ end
 function M.text(start, finish)
   start = start or vim.v.foldstart
   finish = finish or vim.v.foldend
-  local role = vim.fn.getline(start):match(HEAD) or "?"
+  local first = vim.fn.getline(start)
+
+  if first:match(TOOL_HEAD) then
+    local name = "?"
+    for lnum = start + 1, math.min(finish, start + 12) do
+      local n = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
+      if n then
+        name = n
+        break
+      end
+    end
+    return string.format("▸ tool: %s  (%d lines)", name, finish - start + 1)
+  end
+
+  local role = first:match(HEAD) or "?"
 
   local preview = ""
   for lnum = start + 1, finish do
@@ -53,6 +91,16 @@ function M.text(start, finish)
 end
 
 -- ─── Default fold state (ported from fruit.nvim) ──────────────────────────
+
+-- Tool-argument folds stay closed in every message-structure view: the
+-- pitel:ui diff is the visual record, the JSON is inspectable with za.
+local function close_tool_folds()
+  for lnum = 1, vim.api.nvim_buf_line_count(0) do
+    if vim.fn.getline(lnum):match(TOOL_HEAD) then
+      pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
+    end
+  end
+end
 
 -- Fruit's closing logic: fold everything except user prompts (the visible
 -- outline) and the last block (newest activity stays visible).
@@ -75,6 +123,7 @@ function M.apply_default_folds(buf)
         if last_head then
           pcall(vim.cmd, string.format("silent! %dfoldopen!", last_head))
         end
+        close_tool_folds()
       end)
     end
   end
@@ -90,6 +139,7 @@ local function open_roles(roles)
       pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
     end
   end
+  close_tool_folds()
 end
 
 function M.set_view_level(level)

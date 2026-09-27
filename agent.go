@@ -240,6 +240,11 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 	return t, nil
 }
 
+// toolHeaderMaxSingle is the longest header kept on one line; longer
+// calls (write/edit content) are emitted as pretty-printed multi-line
+// JSON inside the marker, which the Lua side folds closed by default.
+const toolHeaderMaxSingle = 120
+
 // emitToolBlock writes a completed pitel:tool region (header = full call,
 // result text, optional display-only ui section) to the stream.
 func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
@@ -247,12 +252,18 @@ func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		args = call.Function.Arguments // malformed/truncated JSON: keep raw
 	}
-	header, _ := json.Marshal(map[string]any{
-		"id":        call.ID,
-		"name":      call.Function.Name,
-		"arguments": args,
-	})
-	fmt.Fprintf(out, "\n\n<!-- pitel:tool %s -->\n%s\n", header, result)
+	// Struct, not map: stable key order (id, name, arguments).
+	header, _ := json.Marshal(struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Arguments any    `json:"arguments"`
+	}{call.ID, call.Function.Name, args})
+	if len(header) <= toolHeaderMaxSingle {
+		fmt.Fprintf(out, "\n\n<!-- pitel:tool %s -->\n%s\n", header, result)
+	} else {
+		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
+		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n%s\n", pretty, result)
+	}
 	if ui != "" {
 		fmt.Fprintf(out, "<!-- pitel:ui\n%s\n-->\n", ui)
 	}

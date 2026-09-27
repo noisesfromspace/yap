@@ -191,6 +191,7 @@ function M.parse_buffer(buf)
   local tool = nil -- open region: { call = <wire call>, result = {lines} }
   local skipping = false -- skipping a region (bad header / wrong role)
   local in_marker = false
+  local header_acc = nil -- collecting a multi-line tool header
 
   local function flush()
     if not role then
@@ -244,6 +245,32 @@ function M.parse_buffer(buf)
       if line:match("^<!%-%- /pitel:tool") then
         skipping = false
       end
+    elseif header_acc then
+      -- Multi-line tool header: JSON lines until the closing `-->`.
+      if line:match("^%-%->%s*$") then
+        local ok, h = pcall(vim.json.decode, table.concat(header_acc, "\n"))
+        if ok and type(h) == "table" and h.id and h.name then
+          local args = h.arguments
+          tool = {
+            id = h.id,
+            call = {
+              id = h.id,
+              type = "function",
+              ["function"] = {
+                name = h.name,
+                arguments = type(args) == "string" and args or vim.json.encode(args),
+              },
+            },
+            result = {},
+          }
+        else
+          skipping = true
+          vim.notify("pitel: malformed pitel:tool header, region skipped", vim.log.levels.WARN)
+        end
+        header_acc = nil
+      else
+        table.insert(header_acc, line)
+      end
     elseif in_marker then
       if line:match("%-%->") then
         in_marker = false
@@ -270,6 +297,8 @@ function M.parse_buffer(buf)
           skipping = true
           vim.notify("pitel: malformed pitel:tool header, region skipped", vim.log.levels.WARN)
         end
+      elseif line:match("^<!%-%- pitel:tool%s*$") and role == "assistant" then
+        header_acc = {} -- multi-line header form (long calls)
       elseif line:match("^<!%-%- pitel:tool") then
         skipping = true -- region outside an assistant block: orphan, skip
       elseif line:match("^<!%-%- pitel:%a+") then

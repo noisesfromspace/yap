@@ -29,10 +29,9 @@ func init() {
 			if err := os.WriteFile(a.Path, []byte(a.Content), 0o644); err != nil {
 				return "", "", err
 			}
-			ui := ""
-			if readErr == nil {
-				ui = unifiedDiff(a.Path, string(old), a.Content)
-			}
+			// Always diff, creates included (old = ""): the pitel:ui diff
+			// is the visual record since long argument headers are folded.
+			ui := unifiedDiff(a.Path, string(old), a.Content)
 			return fmt.Sprintf("Successfully wrote %d bytes to %s", len(a.Content), a.Path), ui, nil
 		})
 }
