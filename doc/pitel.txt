@@ -241,10 +241,13 @@ assistant block is skipped; a missing/empty result becomes an empty result
 (still paired); a malformed header skips the region with a notification.
 
 Marker regions close on a line that is exactly `-->`; content merely
-containing it never closes early. The binary neutralizes collisions in
-arbitrary model/tool output: a bare `-->` line becomes `-- >`, and a
-result line starting with a pitel marker opener gets a zero-width space
-after `<!--`.
+containing it never closes early for OUR parser. Markdown renderers are
+stricter: HTML comments are character-based, so ANY `-->` — even inline
+in backticked prose — would close the comment early. The binary
+therefore neutralizes every `-->` to `-- >` inside comment regions
+(streamed thinking via a line-buffering escaper, since chunks split
+mid-line; ui payloads; error text), and a tool-result line starting
+with a pitel marker opener gets a zero-width space after `<!--`.
 
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*

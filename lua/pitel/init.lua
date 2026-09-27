@@ -469,8 +469,10 @@ running = {}
 --- parse-excluded marker in the buffer as a record.
 local function report_error(buf, err)
   errors[buf] = err
+  -- The marker is an HTML comment: neutralize any `-->` in the error
+  -- text so it can't close the comment early for markdown renderers.
   local block = { "<!-- pitel:error" }
-  vim.list_extend(block, vim.split(err, "\n", { plain = true }))
+  vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   append_block(buf, block)
   vim.notify("pitel: " .. err, vim.log.levels.ERROR)

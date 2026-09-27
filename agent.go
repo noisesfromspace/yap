@@ -132,10 +132,12 @@ type turn struct {
 	prompt, completion int
 }
 
-// lineEscaper buffers streamed thinking to line granularity so bare
-// `-->` lines can be neutralized before they reach the buffer — they
-// would close the pitel:thinking marker early (chunks split mid-line,
-// so per-chunk checks don't work).
+// lineEscaper buffers streamed thinking to line granularity so `-->`
+// sequences can be neutralized before they reach the buffer. HTML
+// comments are character-based: ANY `-->` — even inline inside
+// backticks — closes the pitel:thinking comment for markdown
+// renderers, not just bare lines (chunks split mid-line, so per-chunk
+// replacement doesn't work).
 type lineEscaper struct {
 	w   *bufio.Writer
 	buf []byte
@@ -149,12 +151,8 @@ func (l *lineEscaper) WriteString(s string) {
 		if i < 0 {
 			break
 		}
-		line := string(l.buf[:i])
+		l.w.WriteString(escapeComment(string(l.buf[:i])) + "\n")
 		l.buf = l.buf[i+1:]
-		if line == "-->" {
-			line = "-- >"
-		}
-		l.w.WriteString(line + "\n")
 		flushed = true
 	}
 	if flushed {
@@ -164,11 +162,7 @@ func (l *lineEscaper) WriteString(s string) {
 
 func (l *lineEscaper) Flush() {
 	if len(l.buf) > 0 {
-		line := string(l.buf)
-		if line == "-->" {
-			line = "-- >"
-		}
-		l.w.WriteString(line)
+		l.w.WriteString(escapeComment(string(l.buf)))
 		l.buf = nil
 	}
 	l.w.Flush()
@@ -296,17 +290,12 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 // JSON inside the marker, which the Lua side folds closed by default.
 const toolHeaderMaxSingle = 120
 
-// escapeBareArrow neutralizes lines that are exactly `-->`: they would
-// close a thinking/ui marker early (the Lua side closes markers on
-// bare-`-->` lines only). Rare, but model output is arbitrary text.
-func escapeBareArrow(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		if l == "-->" {
-			lines[i] = "-- >"
-		}
-	}
-	return strings.Join(lines, "\n")
+// escapeComment neutralizes every `-->` in text that lives inside an
+// HTML comment region (thinking, ui): HTML comments are not line-based,
+// so even an inline `-->` (e.g. in backticked prose) closes the comment
+// early for markdown renderers. A space keeps the text readable.
+func escapeComment(s string) string {
+	return strings.ReplaceAll(s, "-->", "-- >")
 }
 
 // escapeMarkerPrefixes neutralizes lines in tool results that start with
@@ -326,7 +315,7 @@ func escapeMarkerPrefixes(s string) string {
 // result text, optional display-only ui section) to the stream.
 func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
 	result = escapeMarkerPrefixes(result)
-	ui = escapeBareArrow(ui)
+	ui = escapeComment(ui)
 	var args any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		args = call.Function.Arguments // malformed/truncated JSON: keep raw
