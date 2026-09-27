@@ -64,6 +64,8 @@ truth, and that can be a text buffer. Consequences:
 Set only in pitel buffers.
 
   <C-s> (n, i)          Send the buffer.
+  <leader>m             Change model (picker over setup({ models = ... }),
+                        see |:PitelChangeModel|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.

@@ -473,6 +473,9 @@ local function setup_buffer(buf)
     vim.cmd.stopinsert()
     M.send()
   end, "pitel: send")
+  map("n", "<leader>m", function()
+    M.change_model()
+  end, "pitel: change model")
 
   require("pitel.fold").setup_buffer(buf)
 
