@@ -15,6 +15,16 @@ vim.api.nvim_create_user_command("PitelStop", function()
   require("pitel").stop()
 end, { desc = "Stop the in-flight pitel request" })
 
+vim.api.nvim_create_user_command("PitelChangeModel", function(cmd)
+  require("pitel").change_model(cmd.fargs[1])
+end, {
+  nargs = "?",
+  complete = function()
+    return require("pitel").config.models or {}
+  end,
+  desc = "Change the provider/model combo for the current buffer (no arg: pick from configured models)",
+})
+
 vim.api.nvim_create_user_command("PitelReload", function()
   local old_config = require("pitel").config
   package.loaded.pitel = nil

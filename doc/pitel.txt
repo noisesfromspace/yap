@@ -45,6 +45,12 @@ truth, and that can be a text buffer. Consequences:
                                                                 *:PitelStop*
 :PitelStop              Kill the in-flight request for the current buffer.
 
+                                                        *:PitelChangeModel*
+:PitelChangeModel {provider/model}
+                        Change the provider/model combo for the current
+                        buffer. Without an argument, pick from the
+                        setup({ models = ... }) list via vim.ui.select.
+
                                                             *:PitelSessions*
 :PitelSessions [all]    Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project.
@@ -104,8 +110,7 @@ so edits apply to the next chat. When missing or empty, `system` is used.
                         Any OpenAI-compatible /chat/completions endpoint
                         works. API keys come from the named env vars.
                         `pricing` (USD per 1M tokens) enables the cost in
-                        the session frontmatter; omit it to track tokens
-                        only.
+                        the winbar; omit it to track tokens only.
 
   AGENTS.md             Default system prompt (see above).
   sessions/<cwd-slug>/  Autosaved session files, see |pitel-sessions|.
@@ -152,24 +157,15 @@ A pitel buffer is plain markdown. Headings delimit messages: >
   # @assistant
 
 Everything between headings is message content. Everything before the first
-heading is ignored by the parser — that is where the session metadata lives,
-as YAML frontmatter (treesitter highlights it as YAML):
+heading is ignored by the parser (legacy frontmatter in old session files
+stays inert).
 
-  ---
-  provider: moonshot
-  model: kimi-k3
-  started: 2026-09-26 14:42
-  tokens_in: 1500
-  tokens_out: 42
-  cost: 0.0034
-  # try: moonshot/kimi-k3 · deepseek/deepseek-v4-pro · openai/gpt-5.6-sol
-  ---
-
-The provider/model fields are authoritative: EDIT THEM to switch models —
-the next send uses whatever the frontmatter says, and the winbar follows.
-The optional `# try:` comment lists valid combos from
-setup({ models = ... }). Token totals and cost are folded in after each
-reply, see |pitel-markers|.
+Session metadata is NOT stored in the buffer — it lives in the winbar
+(|pitel-winbar|): the provider/model combo on the left, token totals, cost
+and the state glyph on the right. The combo comes from per-buffer vars set
+by :PitelNew / |:PitelChangeModel|, falling back to setup() defaults.
+Totals accumulate in memory for the lifetime of the buffer; reopening a
+session starts them from zero.
 
 ==============================================================================
 6. MARKERS                                                    *pitel-markers*
@@ -185,7 +181,7 @@ them (one exception: pitel:tool, which is TRANSFORMED — see below).
   <!-- pitel:error      Backend error record, left after a failed send.
 
   <!-- pitel:usage      Token usage reported at end of stream. Consumed
-                        immediately: folded into the session frontmatter and
+                        immediately: folded into the winbar totals and
                         the line is removed.
 
 Tool blocks                                                *pitel-tool-block*
@@ -274,20 +270,24 @@ the first content line. The default fold state is ported from fruit.nvim:
   block (newest activity stays visible).
 
 This state is applied once when a session buffer is opened. Sends never
-touch fold state: streaming appends at the end, tool header folds close
-themselves chunk by chunk, and the frontmatter refreshes in place
-(constant line count). <leader>1 reapplies the default view manually.
-Navigation keymaps jump between headings, see |pitel-keymaps|.
+touch fold state: streaming appends at the end, and tool header folds
+close themselves chunk by chunk. <leader>1 reapplies the default view
+manually. Navigation keymaps jump between headings, see |pitel-keymaps|.
 
 ==============================================================================
 9. WINBAR                                                      *pitel-winbar*
 
-The winbar shows `provider / model` on the left and a state on the right:
+The winbar is the session dashboard. Left: the provider/model combo.
+Right: token totals and cost for this buffer (accumulated over its
+lifetime, compact k-format), then the state glyph pinned to the far
+right edge:
 
   ⠋ busy    A request is in flight (driven by the job table).
   ○ idle    Nothing running.
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
+
+Example: `moonshot/kimi-k3` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
 
 ==============================================================================
 10. LUA <-> GO PROTOCOL                                      *pitel-protocol*
@@ -364,10 +364,8 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
 
 R10 Default fold state = fruit.nvim's: user prompts plus the last block
     open, rest closed. Applied ONLY when a session buffer is opened —
-    never during a send (streaming appends don't disturb folds, tool
-    header folds close chunk by chunk as they appear, and the frontmatter
-    is refreshed in place with a constant line count so it can't shift
-    the folds below).
+    never during a send (streaming appends don't disturb folds, and tool
+    header folds close chunk by chunk as they appear).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the
@@ -405,14 +403,15 @@ R15 Tools are compiled-in Go files, one per file in tools/.
     bubblewrap (Codex's Linux choice), not command-pattern allowlists
     (documented as bypassable).
 
-R14 The frontmatter's provider/model is authoritative.
-    At send time (and in the winbar) they are parsed from the YAML
-    frontmatter; buffer vars and config are only fallbacks. Why: the buffer
-    is the only state (R1) — the active model is conversation state, so it
-    lives in the buffer where the user can see and edit it. There is no
-    model-switch command on purpose. Frontmatter (not a custom comment
-    format) because it is a standard: YAML highlighting for free, trivial
-    key/value parsing, and new fields don't break the parser.
+R14 Session metadata lives in the winbar, not the buffer.
+    provider/model come from per-buffer vars (:PitelNew,
+    :PitelChangeModel) with config as fallback; token/cost totals
+    accumulate in memory per buffer. The buffer holds only the
+    conversation (R1, strictly); reopening a session starts totals from
+    zero and uses the current default combo. (This replaced an earlier
+    design with YAML frontmatter in the buffer: editing a yaml key to
+    switch models was clever but the frontmatter fought R7 — every
+    metadata update was a non-local buffer edit.)
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

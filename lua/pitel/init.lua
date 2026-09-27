@@ -16,8 +16,8 @@ M.config = {
   bin = "pitel", -- path to the pitel binary
   provider = "moonshot",
   model = "kimi-k3",
-  -- Optional list of valid "provider/model" combos, shown as a hint line
-  -- in the session header (pi's scoped model names).
+  -- Optional list of "provider/model" combos offered by
+  -- :PitelChangeModel (pi's scoped model names).
   models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.pitel/AGENTS.md), otherwise this fallback.
@@ -42,42 +42,9 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
---- Scan the frontmatter; returns a table of its key/value pairs (and the
---- end line in _end), or nil when there is none.
-local function frontmatter(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 20, false)
-  if lines[1] ~= "---" then
-    return nil
-  end
-  local fm = {}
-  for i = 2, #lines do
-    if lines[i] == "---" then
-      fm._end = i
-      return fm
-    end
-    local k, v = lines[i]:match("^(%S+):%s*(.-)%s*$")
-    if k then
-      fm[k] = v
-    end
-  end
-  return nil -- unterminated
-end
-
---- provider/model combo from the frontmatter, nil if not parseable.
-local function header_combo(buf)
-  local fm = frontmatter(buf)
-  if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
-    return fm.provider, fm.model
-  end
-end
-
---- The combo pitel will send with: the header is authoritative, then the
---- per-buffer var, then the global config.
+--- The combo pitel will send with: per-buffer vars (set by :PitelNew),
+--- falling back to the global config.
 local function current_combo(buf)
-  local p, m = header_combo(buf)
-  if p then
-    return p, m
-  end
   return vim.b[buf].pitel_provider or M.config.provider, vim.b[buf].pitel_model or M.config.model
 end
 
@@ -97,12 +64,30 @@ end
 -- Last backend error per buffer; shown in the winbar until the next send.
 local errors = {}
 
+local function fmt_tokens(n)
+  if n >= 1000 then
+    return string.format("%.1fk", n / 1000)
+  end
+  return tostring(n)
+end
+
+-- Layout: identity on the left (which model am I talking to), activity
+-- on the right — usage totals first, then the state glyph pinned to the
+-- far right edge so it never moves as numbers grow.
 local function render_winbar(buf)
   local provider, model = current_combo(buf)
   local parts = {
-    winbar_hl(" " .. provider .. " / " .. model .. " ", "Model"),
+    winbar_hl(" " .. provider .. "/" .. model .. " ", "Model"),
     "%=",
   }
+  local u = vim.b[buf].pitel_usage
+  if u and (u.prompt > 0 or u.completion > 0) then
+    local usage = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
+    if u.cost then
+      usage = usage .. " · " .. string.format("$%.4g", u.cost)
+    end
+    table.insert(parts, winbar_hl(" " .. usage .. " ", "Idle"))
+  end
   if running and running[buf] then
     local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
     table.insert(parts, winbar_hl(" " .. frame .. " busy ", "Busy"))
@@ -154,7 +139,8 @@ define_winbar_hl()
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
 --- Parse a pitel buffer into a message list.
---- Lines before the first heading are ignored (frontmatter).
+--- Lines before the first heading are ignored (legacy frontmatter in
+--- old session files stays inert).
 --- `<!-- pitel:... -->` marker regions (thinking, error, ui) are excluded.
 --- `<!-- pitel:tool -->` regions are TRANSFORMED (R12): the header becomes
 --- an assistant tool_calls entry, the body becomes the tool result message.
@@ -173,7 +159,7 @@ function M.parse_buffer(buf)
 
   local function flush()
     if not role then
-      acc = {} -- pre-heading lines (frontmatter) are not a message
+      acc = {} -- pre-heading lines (legacy frontmatter) are not a message
       return
     end
     local text = table.concat(acc, "\n")
@@ -329,114 +315,8 @@ local function append_block(buf, block)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
 
--- ─── Session header (YAML frontmatter) ─────────────────────────────────────
-
--- Session metadata is YAML frontmatter at the very top of the buffer,
--- before the first heading (so parse_buffer ignores it). Standard format:
--- treesitter highlights it as YAML, fields are trivial to parse and edit.
--- Editing provider/model switches the model (R14).
-
-local function header_state(buf)
-  local u = vim.b[buf].pitel_usage or {}
-  return {
-    started = vim.b[buf].pitel_started or os.date("%Y-%m-%d %H:%M"),
-    prompt = u.prompt or 0,
-    completion = u.completion or 0,
-    cost = u.cost,
-  }
-end
-
-local function render_header(buf)
-  local s = header_state(buf)
-  local provider, model = current_combo(buf)
-  local lines = {
-    "---",
-    "provider: " .. provider,
-    "model: " .. model,
-    "started: " .. s.started,
-    "tokens_in: " .. s.prompt,
-    "tokens_out: " .. s.completion,
-  }
-  if s.cost then
-    table.insert(lines, "cost: " .. string.format("%.6g", s.cost)) -- keep precision: parsed back on reopen
-  end
-  if M.config.models and #M.config.models > 0 then
-    table.insert(lines, "# try: " .. table.concat(M.config.models, " · "))
-  end
-  table.insert(lines, "---")
-  table.insert(lines, "")
-
-  local fm = frontmatter(buf)
-  if fm then
-    -- Replace the frontmatter AND one following blank line (the rendered
-    -- block ends with its own blank): replacing exactly what we render
-    -- keeps the line count constant, so header refreshes never shift the
-    -- lines below (which would churn fold state on every completion).
-    local region_end = fm._end
-    if vim.api.nvim_buf_get_lines(buf, region_end, region_end + 1, false)[1] == "" then
-      region_end = region_end + 1
-    end
-    vim.api.nvim_buf_set_lines(buf, 0, region_end, false, lines)
-  else
-    vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
-  end
-end
-
---- Restore combo/started/usage from the frontmatter of a reopened session
---- buffer. Falls back to the old comment header formats if present.
-local function parse_header(buf)
-  local fm = frontmatter(buf)
-  if fm then
-    if fm.provider and fm.model then
-      vim.b[buf].pitel_provider = fm.provider
-      vim.b[buf].pitel_model = fm.model
-    end
-    vim.b[buf].pitel_started = fm.started
-    vim.b[buf].pitel_usage = {
-      prompt = tonumber(fm.tokens_in) or 0,
-      completion = tonumber(fm.tokens_out) or 0,
-      cost = tonumber(fm.cost),
-    }
-    return true
-  end
-  -- legacy: <!-- pitel session ... --> header (one-liner or with JSON line)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
-  local first = lines[1]
-  if not (first and first:match("^<!%-%- pitel session")) then
-    return false
-  end
-  local p, m = first:match("pitel session · ([%w_.:-]+)/([%w_.:-]+)")
-  if p then
-    vim.b[buf].pitel_provider = p
-    vim.b[buf].pitel_model = m
-  end
-  local started, pin, pout, cost =
-    first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out · %$([%d.]+)")
-  if not started then
-    started, pin, pout = first:match("started ([%d%-]+ [%d:]+) · ([%d,]+) in / ([%d,]+) out")
-  end
-  if started then
-    vim.b[buf].pitel_started = started
-    vim.b[buf].pitel_usage = {
-      prompt = tonumber((pin:gsub(",", ""))),
-      completion = tonumber((pout:gsub(",", ""))),
-      cost = cost and tonumber(cost) or nil,
-    }
-    return true
-  end
-  for i = 2, #lines do
-    local ok, data = pcall(vim.json.decode, lines[i])
-    if ok and type(data) == "table" and data.started then
-      vim.b[buf].pitel_started = data.started
-      vim.b[buf].pitel_usage = { prompt = data.prompt or 0, completion = data.completion or 0, cost = data.cost }
-      return true
-    end
-  end
-  return true
-end
-
 --- Find the pitel:usage marker the binary appended for this turn, fold its
---- numbers into the session totals, remove the marker and refresh the header.
+--- numbers into the buffer's session totals (winbar), and remove the marker.
 local function consume_usage(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i = #lines, 1, -1 do
@@ -445,16 +325,14 @@ local function consume_usage(buf)
       vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
       local ok, data = pcall(vim.json.decode, json)
       if ok and type(data) == "table" then
-        local s = header_state(buf)
-        s.prompt = s.prompt + (data.prompt or 0)
-        s.completion = s.completion + (data.completion or 0)
+        local u = vim.b[buf].pitel_usage or { prompt = 0, completion = 0 }
+        u.prompt = u.prompt + (data.prompt or 0)
+        u.completion = u.completion + (data.completion or 0)
         if data.cost then
-          s.cost = (s.cost or 0) + data.cost
+          u.cost = (u.cost or 0) + data.cost
         end
-        vim.b[buf].pitel_started = s.started
-        vim.b[buf].pitel_usage = { prompt = s.prompt, completion = s.completion, cost = s.cost }
+        vim.b[buf].pitel_usage = u
       end
-      render_header(buf)
       return
     end
   end
@@ -493,8 +371,9 @@ function M.send()
   end
 
   errors[buf] = nil
-  -- The header's provider/model combo is authoritative (R14); sync the
-  -- buffer vars so the winbar and future header renders agree.
+  -- provider/model come from the buffer vars (set by :PitelNew /
+  -- :PitelChangeModel), falling back to config; sync them so the winbar
+  -- and this send agree.
   local provider, model = current_combo(buf)
   vim.b[buf].pitel_provider = provider
   vim.b[buf].pitel_model = model
@@ -597,8 +476,8 @@ local function setup_buffer(buf)
 
   require("pitel.fold").setup_buffer(buf)
 
-  -- Self-evaluating winbar: a pure function of buffer state (R14 combo
-  -- edits included), refreshed by Neovim on every redraw.
+  -- Self-evaluating winbar: a pure function of buffer state, refreshed
+  -- by Neovim on every redraw.
   vim.wo.winbar = "%!v:lua.require'pitel'.winbar()"
 end
 
@@ -614,8 +493,6 @@ function M.new(opts)
   vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.b[buf].pitel_started = os.date("%Y-%m-%d %H:%M")
-  render_header(buf)
   -- Named after creation time (bufnr for uniqueness) so `:ls` is
   -- meaningful before the first save renames it to the session file.
   vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
@@ -632,13 +509,35 @@ function M.open(path)
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].pitel_path = path
-  if not parse_header(buf) then
-    -- Pre-header session: adopt the file's mtime as the start date.
-    vim.b[buf].pitel_started = os.date("%Y-%m-%d %H:%M", vim.fn.getftime(path))
-  end
-  render_header(buf)
   setup_buffer(buf)
   return buf
+end
+
+--- Change the provider/model combo for the current buffer.
+--- With an argument: "provider/model". Without: pick from config.models.
+function M.change_model(combo)
+  local buf = vim.api.nvim_get_current_buf()
+  if not combo then
+    local models = M.config.models
+    if not models or #models == 0 then
+      vim.notify("pitel: pass provider/model, or configure setup({ models = {...}})", vim.log.levels.WARN)
+      return
+    end
+    vim.ui.select(models, { prompt = "pitel model" }, function(choice)
+      if choice then
+        M.change_model(choice)
+      end
+    end)
+    return
+  end
+  local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  if not provider then
+    vim.notify("pitel: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
+    return
+  end
+  vim.b[buf].pitel_provider = provider
+  vim.b[buf].pitel_model = model
+  vim.notify("pitel: " .. provider .. "/" .. model)
 end
 
 --- Pick a saved session and open it. scope: "cwd" (default) or "all".
