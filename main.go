@@ -39,7 +39,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "send: --provider and --model are required")
 			os.Exit(2)
 		}
-		if err := send(*provider, *model); err != nil {
+		if err := send(*provider, *model, os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "pitel:", err)
 			os.Exit(1)
 		}

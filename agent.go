@@ -339,7 +339,7 @@ func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
 	out.Flush()
 }
 
-func send(providerName, model string) error {
+func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -358,7 +358,7 @@ func send(providerName, model string) error {
 	}
 
 	var req Request
-	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read request from stdin: %w", err)
 	}
 	if len(req.Messages) == 0 {
@@ -366,7 +366,7 @@ func send(providerName, model string) error {
 	}
 
 	url := strings.TrimRight(prov.BaseURL, "/") + "/chat/completions"
-	out := bufio.NewWriter(os.Stdout)
+	out := bufio.NewWriter(outw)
 	messages := req.Messages
 	var totPrompt, totCompletion int
 

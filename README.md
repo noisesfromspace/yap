@@ -32,11 +32,18 @@ Providers live in `~/.pitel/config.json` (any OpenAI-compatible endpoint):
 
 - `:Pitel` — new chat buffer
 - `<C-s>` — send the whole buffer
+- `<leader>m` / `:PitelChangeModel` — switch models (queries the providers
+  in config.json for their model lists)
 - `:PitelStop` — kill the in-flight request
 - `:PitelSessions [all]` — resume a saved session
 
-Switch models by editing the `provider/model` combo in the session header at
-the top of the buffer.
+Provider/model, token totals and cost live in the winbar.
+
+## Testing
+
+```sh
+tests/run.sh   # go test ./... plus headless-Neovim suites against local mocks
+```
 
 ## Documentation
 
