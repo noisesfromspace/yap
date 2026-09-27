@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -301,7 +302,17 @@ func escapeComment(s string) string {
 // escapeMarkerPrefixes neutralizes lines in tool results that start with
 // a pitel marker opener — they would end the tool region early during
 // parsing. A zero-width space keeps the display identical.
+//
+// `<style` and `<script` open tags get the same treatment: in a raw-HTML
+// tool result (fetch returns pages as-is) treesitter's combined HTML
+// injection hands the style/script content to the css/javascript
+// parsers, whose raw-text injection ranges then bleed to the end of the
+// buffer — everything after renders as css/js. Neutralizing the open tag
+// keeps the document a fragment and the parse bounded.
+var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
+
 func escapeMarkerPrefixes(s string) string {
+	s = rawTextTagRe.ReplaceAllString(s, "<​$1$2")
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		if strings.HasPrefix(l, "<!-- pitel:") || strings.HasPrefix(l, "<!-- /pitel:") {

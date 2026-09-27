@@ -51,7 +51,7 @@ func TestSendToolLoop(t *testing.T) {
 				`{"choices": [{"delta": {"reasoning_content": "let me think\n--"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": ">\nabout `+"`"+`<!-- x -"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": "->`+"`"+` inline\n"}}]}`,
-				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /pitel:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second; echo '~~~lua'\"}"}}]}}]}`,
+				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /pitel:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second; echo '~~~lua'; echo '<!doctype html><style>body{x:y}</style>'\"}"}}]}}]}`,
 				`{"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}`,
 				`{"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}`,
 			)
@@ -96,8 +96,13 @@ func TestSendToolLoop(t *testing.T) {
 		t.Fatalf("missing output:\n%s", s)
 	}
 	// unbalanced fence in the result closed before the region ends
-	if !strings.Contains(s, "second\n~~~lua\n\n~~~\n<!-- /pitel:tool -->") {
+	if !strings.Contains(s, "\n~~~\n<!-- /pitel:tool -->") {
 		t.Fatalf("fence not balanced:\n%s", s)
+	}
+	// <style> neutralized with a zero-width space (raw-HTML results poison
+	// treesitter's combined html/css/js injections)
+	if !strings.Contains(s, "<​style>") || strings.Contains(s, "<style") {
+		t.Fatalf("style tag not neutralized:\n%s", s)
 	}
 
 	// second request: assistant tool_calls + tool results, correctly paired

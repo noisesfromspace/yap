@@ -257,6 +257,13 @@ buffer as a code block in every CommonMark renderer (treesitter
 included). The binary appends a closing fence at the end of the result
 when its fences don't balance.
 
+Raw HTML results (fetch returns pages as-is) carry one more renderer
+hazard: treesitter's combined HTML injection hands <style>/<script>
+content to the css/javascript parsers, and those raw-text injection
+ranges bleed to the end of the buffer — everything after the result
+renders as css/js. The binary neutralizes the open tags with a
+zero-width space after `<` (display-identical, bounded parse).
+
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*
 
