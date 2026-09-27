@@ -39,6 +39,22 @@ Providers live in `~/.pitel/config.json` (any OpenAI-compatible endpoint):
 
 Provider/model, token totals and cost live in the winbar.
 
+## Rendering
+
+pitel buffers are plain markdown: thinking/tool/error blocks are HTML
+comments, results are raw markdown, and the content is kept
+CommonMark-sane (no stray `-->` inside comments, fences always
+balanced). Any markdown renderer works — pitel itself only uses folds
+and never conceal, so it stays out of your renderer's way.
+
+[touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
+complements pitel: a treesitter-based markdown rendering plugin that is
+pitel-aware — it colors the `pitel:thinking` / `tool` / `error` /
+`usage` comment labels and paints a whole tool region (header, result,
+diff) as one block. But any renderer you already use — render-markdown,
+markview, or just treesitter highlighting — works the same on a pitel
+buffer as on any other markdown file.
+
 ## Testing
 
 ```sh
