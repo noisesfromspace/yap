@@ -270,8 +270,10 @@ the first content line. The default fold state is ported from fruit.nvim:
   everything closed EXCEPT user prompts (the visible outline) and the last
   block (newest activity stays visible).
 
-This state is applied on buffer setup and at send start, so history
-collapses while the new reply streams in visibly. <leader>1 reapplies it.
+This state is applied once when a session buffer is opened. Sends never
+touch fold state: streaming appends at the end, tool header folds close
+themselves chunk by chunk, and the frontmatter refreshes in place
+(constant line count). <leader>1 reapplies the default view manually.
 Navigation keymaps jump between headings, see |pitel-keymaps|.
 
 ==============================================================================
@@ -335,14 +337,17 @@ R5  Wire protocol is OpenAI-compatible /chat/completions SSE only.
 R6  Adjacent same-role blocks are merged on send; empty blocks dropped.
     Why: providers require role alternation.
 
-R7  Exactly one blank line between message blocks.
-    normalize_spacing runs at send start and on completion; it collapses
-    blank runs before headings, inserts missing ones and trims trailing
-    blanks. Structural appends (headings, error markers) go through
+R7  Exactly one blank line between message blocks, enforced LOCALLY at
+    every write: structural appends (headings, error markers) go through
     append_block(), which trims trailing blanks and prepends exactly one
-    blank line itself — never append a heading with append_text().
-    Why: readable diffs, stable folds. (Bug of record: hand-rolled "\n"
-    prefixes broke separation when trailing-blank trimming was added.)
+    blank line itself — never append a heading with append_text(). The
+    binary separates streamed tool blocks with blank lines. There is no
+    buffer-wide normalize pass: sends never rewrite existing lines, so
+    what you see before ctrl-s is byte-identical to what gets sent.
+    Why: readable diffs, stable folds, gptel-like staticness.
+    (Bug of record: hand-rolled "\n" prefixes broke separation when
+    trailing-blank trimming was added; a buffer-wide normalize pass made
+    every send rewrite the whole buffer and churn fold state.)
 
 R8  Sessions are plain markdown files; file operations are the session
     operations. Autosave only after a COMPLETED reply (never on error).
@@ -355,8 +360,11 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     same way.
 
 R10 Default fold state = fruit.nvim's: user prompts plus the last block
-    open, rest closed. Applied on setup and at send start — not on stream
-    completion, because that would fold the reply the user is reading.
+    open, rest closed. Applied ONLY when a session buffer is opened —
+    never during a send (streaming appends don't disturb folds, tool
+    header folds close chunk by chunk as they appear, and the frontmatter
+    is refreshed in place with a constant line count so it can't shift
+    the folds below).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the

@@ -153,28 +153,6 @@ define_winbar_hl()
 
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
---- Normalize spacing: every message heading is preceded by exactly one
---- blank line (except at the top of the buffer), and the buffer has no
---- trailing blank lines. Keeps blocks visually separated no matter how
---- the user edited the buffer.
-local function normalize_spacing(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local out = {}
-  for _, line in ipairs(lines) do
-    if line:match(HEAD) and #out > 0 then
-      while out[#out] == "" do
-        table.remove(out)
-      end
-      table.insert(out, "")
-    end
-    table.insert(out, line)
-  end
-  while out[#out] == "" do
-    table.remove(out)
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
-end
-
 --- Parse a pitel buffer into a message list.
 --- Lines before the first heading are ignored (frontmatter).
 --- `<!-- pitel:... -->` marker regions (thinking, error, ui) are excluded.
@@ -390,8 +368,15 @@ local function render_header(buf)
 
   local fm = frontmatter(buf)
   if fm then
-    -- replace existing frontmatter block (--- .. --- inclusive)
-    vim.api.nvim_buf_set_lines(buf, 0, fm._end, false, lines)
+    -- Replace the frontmatter AND one following blank line (the rendered
+    -- block ends with its own blank): replacing exactly what we render
+    -- keeps the line count constant, so header refreshes never shift the
+    -- lines below (which would churn fold state on every completion).
+    local region_end = fm._end
+    if vim.api.nvim_buf_get_lines(buf, region_end, region_end + 1, false)[1] == "" then
+      region_end = region_end + 1
+    end
+    vim.api.nvim_buf_set_lines(buf, 0, region_end, false, lines)
   else
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, lines)
   end
@@ -499,7 +484,6 @@ function M.send()
     return
   end
 
-  normalize_spacing(buf)
   local messages = M.parse_buffer(buf)
   if #messages == 0 then
     vim.notify("pitel: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
@@ -514,9 +498,9 @@ function M.send()
   vim.b[buf].pitel_model = model
 
   append_block(buf, { "# @assistant", "" })
-  -- Fold history to the outline; the new assistant block is last, so it
-  -- stays open while it streams.
-  require("pitel.fold").apply_default_folds(buf)
+  -- Sends never touch fold state or rewrite existing lines: the buffer is
+  -- always in its final format, streaming only appends at the end, and
+  -- tool-argument folds close chunk by chunk in the stdout handler.
   spinner_start()
 
   local payload = vim.json.encode({ messages = messages })
@@ -543,14 +527,12 @@ function M.send()
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
     spinner_stop_if_idle()
-    normalize_spacing(buf)
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks):gsub("%s+$", "")
       report_error(buf, err ~= "" and err or ("exit " .. result.code))
       return
     end
     consume_usage(buf)
-    normalize_spacing(buf)
     -- The binary can complete "successfully" with an embedded error
     -- marker (e.g. empty completion, max tool iterations): surface it.
     do
