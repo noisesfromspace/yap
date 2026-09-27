@@ -48,8 +48,12 @@ truth, and that can be a text buffer. Consequences:
                                                         *:PitelChangeModel*
 :PitelChangeModel {provider/model}
                         Change the provider/model combo for the current
-                        buffer. Without an argument, pick from the
-                        setup({ models = ... }) list via vim.ui.select.
+                        buffer. Without an argument, pick a combo via
+                        vim.ui.select. The picker is filled from
+                        setup({ models = ... }) when configured,
+                        otherwise by querying every provider in
+                        config.json (GET /models) — no duplicate model
+                        configuration needed.
 
                                                             *:PitelSessions*
 :PitelSessions [all]    Pick a saved session to resume. Default scope is the
@@ -64,8 +68,7 @@ truth, and that can be a text buffer. Consequences:
 Set only in pitel buffers.
 
   <C-s> (n, i)          Send the buffer.
-  <leader>m             Change model (picker over setup({ models = ... }),
-                        see |:PitelChangeModel|).
+  <leader>m             Change model (picker, see |:PitelChangeModel|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.

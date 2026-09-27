@@ -43,6 +43,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "pitel:", err)
 			os.Exit(1)
 		}
+	case "models":
+		if err := models(); err != nil {
+			fmt.Fprintln(os.Stderr, "pitel:", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)

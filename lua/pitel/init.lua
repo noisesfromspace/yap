@@ -16,8 +16,9 @@ M.config = {
   bin = "pitel", -- path to the pitel binary
   provider = "moonshot",
   model = "kimi-k3",
-  -- Optional list of "provider/model" combos offered by
-  -- :PitelChangeModel (pi's scoped model names).
+  -- Optional override list of "provider/model" combos for
+  -- :PitelChangeModel. When unset, the picker queries every provider
+  -- in config.json for its model list (GET /models).
   models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.pitel/AGENTS.md), otherwise this fallback.
@@ -517,19 +518,36 @@ function M.open(path)
 end
 
 --- Change the provider/model combo for the current buffer.
---- With an argument: "provider/model". Without: pick from config.models.
+--- With an argument: "provider/model". Without: pick from setup()'s
+--- models list, or — when that isn't configured — from `pitel models`,
+--- which queries every provider in config.json (GET /models).
 function M.change_model(combo)
   local buf = vim.api.nvim_get_current_buf()
   if not combo then
-    local models = M.config.models
-    if not models or #models == 0 then
-      vim.notify("pitel: pass provider/model, or configure setup({ models = {...}})", vim.log.levels.WARN)
+    local function pick(items)
+      vim.ui.select(items, { prompt = "pitel model" }, function(choice)
+        if choice then
+          M.change_model(choice)
+        end
+      end)
+    end
+    if M.config.models and #M.config.models > 0 then
+      pick(M.config.models)
       return
     end
-    vim.ui.select(models, { prompt = "pitel model" }, function(choice)
-      if choice then
-        M.change_model(choice)
-      end
+    vim.system({ M.config.bin, "models" }, { text = true }, function(res)
+      vim.schedule(function()
+        local combos = {}
+        for line in (res.stdout or ""):gmatch("[^\n]+") do
+          table.insert(combos, line)
+        end
+        if #combos == 0 then
+          local err = (res.stderr or ""):gsub("%s+$", "")
+          vim.notify("pitel: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+          return
+        end
+        pick(combos)
+      end)
     end)
     return
   end
