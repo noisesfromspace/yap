@@ -526,6 +526,11 @@ function M.send()
     stdout = vim.schedule_wrap(function(_, data)
       if data then
         append_text(buf, data)
+        -- Tool-argument folds don't close themselves as they stream in
+        -- (expr folds only get state from explicit commands), and the
+        -- opener may arrive chunks before its fold exists — so close on
+        -- every chunk; foldclose is a no-op when there's nothing to do.
+        require("pitel.fold").close_tool_folds(buf)
       end
     end),
     stderr = function(_, data)

@@ -94,10 +94,20 @@ end
 
 -- Tool-argument folds stay closed in every message-structure view: the
 -- pitel:ui diff is the visual record, the JSON is inspectable with za.
-local function close_tool_folds()
-  for lnum = 1, vim.api.nvim_buf_line_count(0) do
-    if vim.fn.getline(lnum):match(TOOL_HEAD) then
-      pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
+-- Also called during streaming: newly appended folds default to open.
+function M.close_tool_folds(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_call(win, function()
+        for lnum = 1, vim.api.nvim_buf_line_count(buf) do
+          -- foldclose on an already-closed fold closes its PARENT, so
+          -- only close when the line is not inside any closed fold.
+          if vim.fn.getline(lnum):match(TOOL_HEAD) and vim.fn.foldclosed(lnum) == -1 then
+            pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
+          end
+        end
+      end)
     end
   end
 end
@@ -123,7 +133,7 @@ function M.apply_default_folds(buf)
         if last_head then
           pcall(vim.cmd, string.format("silent! %dfoldopen!", last_head))
         end
-        close_tool_folds()
+        M.close_tool_folds(buf)
       end)
     end
   end
@@ -139,7 +149,7 @@ local function open_roles(roles)
       pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
     end
   end
-  close_tool_folds()
+  M.close_tool_folds()
 end
 
 function M.set_view_level(level)
