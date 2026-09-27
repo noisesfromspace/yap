@@ -332,11 +332,57 @@ func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
 		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
 		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n%s\n", pretty, result)
 	}
+	// Results are raw markdown in the buffer. A fence left open (truncated
+	// read/bash output, or a file that genuinely contains a lone ``` line)
+	// would swallow the rest of the buffer as a code block in every
+	// CommonMark renderer, treesitter included. Close it before the ui
+	// block so that still parses as a comment.
+	if fence := unclosedFence(strings.Split(result, "\n")); fence != "" {
+		out.WriteString(fence + "\n")
+	}
 	if ui != "" {
 		fmt.Fprintf(out, "<!-- pitel:ui\n%s\n-->\n", ui)
 	}
 	out.WriteString("<!-- /pitel:tool -->\n")
 	out.Flush()
+}
+
+// unclosedFence returns the fence run left open at the end of lines
+// (e.g. "```"), or "" when all fences balance. Follows CommonMark: an
+// opener is up to 3 spaces + a run of >=3 backticks or tildes; a closer
+// is a run of the same char at least as long.
+func unclosedFence(lines []string) string {
+	var char byte
+	var n int
+	for _, l := range lines {
+		t := strings.TrimLeft(l, " ")
+		if len(l)-len(t) > 3 {
+			continue
+		}
+		c, k := fenceRun(t)
+		if n == 0 {
+			if k >= 3 {
+				char, n = c, k
+			}
+		} else if c == char && k >= n {
+			char, n = 0, 0
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return strings.Repeat(string(char), n)
+}
+
+func fenceRun(s string) (byte, int) {
+	if s == "" || (s[0] != '`' && s[0] != '~') {
+		return 0, 0
+	}
+	i := 0
+	for i < len(s) && s[i] == s[0] {
+		i++
+	}
+	return s[0], i
 }
 
 func send(providerName, model string, in io.Reader, outw io.Writer) error {

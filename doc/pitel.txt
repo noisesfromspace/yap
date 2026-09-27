@@ -250,6 +250,13 @@ therefore neutralizes every `-->` to `-- >` inside comment regions
 mid-line; ui payloads; error text), and a tool-result line starting
 with a pitel marker opener gets a zero-width space after `<!--`.
 
+Tool RESULT lines are raw markdown (not inside a comment), so a fence
+left open in result text — truncated read/bash output, or a file that
+genuinely contains a lone ``` line — would swallow the rest of the
+buffer as a code block in every CommonMark renderer (treesitter
+included). The binary appends a closing fence at the end of the result
+when its fences don't balance.
+
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*
 

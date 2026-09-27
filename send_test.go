@@ -51,7 +51,7 @@ func TestSendToolLoop(t *testing.T) {
 				`{"choices": [{"delta": {"reasoning_content": "let me think\n--"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": ">\nabout `+"`"+`<!-- x -"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": "->`+"`"+` inline\n"}}]}`,
-				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /pitel:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second\"}"}}]}}]}`,
+				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /pitel:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second; echo '~~~lua'\"}"}}]}}]}`,
 				`{"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}`,
 				`{"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}`,
 			)
@@ -95,6 +95,10 @@ func TestSendToolLoop(t *testing.T) {
 	if !strings.Contains(s, "second") || !strings.Contains(s, "done") {
 		t.Fatalf("missing output:\n%s", s)
 	}
+	// unbalanced fence in the result closed before the region ends
+	if !strings.Contains(s, "second\n~~~lua\n\n~~~\n<!-- /pitel:tool -->") {
+		t.Fatalf("fence not balanced:\n%s", s)
+	}
 
 	// second request: assistant tool_calls + tool results, correctly paired
 	if secondRequest == nil {
@@ -116,6 +120,28 @@ func TestSendToolLoop(t *testing.T) {
 	}
 	if tools[0].(map[string]any)["tool_call_id"] != "c1" || tools[1].(map[string]any)["tool_call_id"] != "c2" {
 		t.Fatalf("tool_call_id order: %v", tools)
+	}
+}
+
+func TestUnclosedFence(t *testing.T) {
+	cases := []struct {
+		lines []string
+		want  string
+	}{
+		{[]string{"plain", "text"}, ""},
+		{[]string{"```lua", "local x = 1", "```"}, ""},
+		{[]string{"```lua", "local x = 1"}, "```"},
+		{[]string{"~~~", "tildes"}, "~~~"},
+		{[]string{"````", "x", "```"}, "````"},                 // closer must match length
+		{[]string{"```", "x", "```", "y", "```"}, "```"},      // re-open after close
+		{[]string{"    ```", "indented four spaces is code"}, ""}, // >3 indent: not a fence
+		{[]string{"  ```go", "up to 3 spaces ok"}, "```"},
+		{[]string{"```", "x", "~~~", "y"}, "```"},               // tilde doesn't close backtick
+	}
+	for _, c := range cases {
+		if got := unclosedFence(c.lines); got != c.want {
+			t.Errorf("unclosedFence(%q) = %q, want %q", c.lines, got, c.want)
+		}
 	}
 }
 
