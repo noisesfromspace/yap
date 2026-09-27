@@ -119,7 +119,15 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only pitel:ui section,
 see |pitel-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 8 iterations per send. Built-ins: ls, read, fetch
-(read-only).
+(read-only), and bash.
+
+bash runs commands non-interactively (stdin is /dev/null) in their own
+process group: on timeout (default 120s, model-adjustable) the whole
+group is SIGKILLed, and :PitelStop takes in-flight commands down with
+the binary. Output is truncated to the LAST 2000 lines / 50KB with the
+full output in a temp file; a non-zero exit is reported to the model,
+not treated as an error. There is deliberately no sandbox and no
+confirmation prompt (R15).
 
 ==============================================================================
 5. BUFFER FORMAT                                                *pitel-buffer*
@@ -340,9 +348,13 @@ R15 Tools are compiled-in Go files, one per file in tools/.
     Each file self-registers via init(); adding a tool = adding a file
     and recompiling. Not config files (the author wants tool code, not
     opaque declarations), not subprocesses (recompiling is accepted and
-    the binary stays self-contained). Read-only tools only (ls, read,
-    fetch) until an explicit decision on file-mutating tools — that is a
-    separate design conversation (confirmation, allowlists).
+    the binary stays self-contained). bash is deliberately included
+    without sandbox or confirmation — the author runs pi the same way
+    and accepts the risk. Its safety mechanics are operational, not
+    authorizing: own process group, group kill on timeout and on
+    :PitelStop, tail-truncation, closed stdin. If sandboxing is ever
+    wanted, the evidence-backed direction is bubblewrap (Codex's Linux
+    choice), not command-pattern allowlists (documented as bypassable).
 
 R14 The frontmatter's provider/model is authoritative.
     At send time (and in the winbar) they are parsed from the YAML

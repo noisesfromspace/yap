@@ -9,6 +9,8 @@ package tools
 import (
 	"encoding/json"
 	"sort"
+	"sync"
+	"syscall"
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
@@ -43,4 +45,24 @@ func All() []*Tool {
 		out = append(out, registry[n])
 	}
 	return out
+}
+
+// ─── Running process groups ──────────────────────────────────────────────────
+
+var (
+	runningMu sync.Mutex
+	running   = map[int]bool{}
+)
+
+func track(pgid int)   { runningMu.Lock(); running[pgid] = true; runningMu.Unlock() }
+func untrack(pgid int) { runningMu.Lock(); delete(running, pgid); runningMu.Unlock() }
+
+// KillAll SIGKILLs every tracked tool process group; used on interrupt so
+// :PitelStop takes in-flight commands down with the binary.
+func KillAll() {
+	runningMu.Lock()
+	defer runningMu.Unlock()
+	for pgid := range running {
+		syscall.Kill(-pgid, syscall.SIGKILL)
+	}
 }

@@ -13,7 +13,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"pitel/tools"
 )
@@ -288,6 +290,18 @@ func send(providerName, model string) error {
 	out := bufio.NewWriter(os.Stdout)
 	messages := req.Messages
 	var totPrompt, totCompletion int
+
+	// :PitelStop kills this process; take in-flight tool commands (own
+	// process groups) down with it instead of orphaning them.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		<-sig
+		tools.KillAll()
+		fmt.Fprintln(os.Stderr, "interrupted")
+		os.Exit(1)
+	}()
 
 	for iter := 0; ; iter++ {
 		t, err := streamCompletion(chatRequest{
