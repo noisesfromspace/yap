@@ -2,7 +2,6 @@ package tools
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,31 +17,22 @@ const (
 	bashMaxBytes       = 50 * 1024
 )
 
-func init() {
-	Register(&Tool{
-		Name: "bash",
-		Description: "Execute a bash command. Returns combined stdout/stderr and the exit code " +
-			"(a non-zero exit is reported, not an error). Output is truncated to the LAST " +
-			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. " +
-			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
-		Schema: `{"type":"object","properties":{
-			"command":{"type":"string","description":"bash command to execute"},
-			"timeout":{"type":"integer","description":"timeout in seconds (default 120)"},
-			"cwd":{"type":"string","description":"working directory (default: pitel's, i.e. the Neovim cwd)"}},
-			"required":["command"]}`,
-		Run: runBash,
-	})
+type bashArgs struct {
+	Command string `json:"command" jsonschema:"description=bash command to execute"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
+	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 }
 
-func runBash(args json.RawMessage) (string, string, error) {
-	var a struct {
-		Command string `json:"command"`
-		Timeout int    `json:"timeout"`
-		Cwd     string `json:"cwd"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return "", "", err
-	}
+func init() {
+	Register("bash",
+		"Execute a bash command. Returns combined stdout/stderr and the exit code "+
+			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
+			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
+			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
+		runBash)
+}
+
+func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}

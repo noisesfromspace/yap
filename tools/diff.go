@@ -1,55 +1,104 @@
 package tools
 
 import (
-	"os"
-	"os/exec"
+	"fmt"
 	"strings"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// unifiedDiff returns "diff -u" output for old vs new content of path, or
-// "" when diff(1) is unavailable or the inputs are too large. The output
-// is display-only (pitel:ui) and never sent to the model, so any failure
-// degrades to no ui section rather than a tool error.
+// unifiedDiff returns unified-diff output for old vs new content of path,
+// or "" when the inputs are identical or too large. Display-only
+// (pitel:ui), never sent to the model — any imperfection degrades
+// gracefully. Self-contained (sergi/go-diff, line mode).
 func unifiedDiff(path, oldContent, newContent string) string {
 	const maxDiffBytes = 512 * 1024
 	if oldContent == newContent || len(oldContent)+len(newContent) > maxDiffBytes {
 		return ""
 	}
-	diffBin, err := exec.LookPath("diff")
-	if err != nil {
-		return ""
-	}
-	old := writeTemp(oldContent)
-	if old == "" {
-		return ""
-	}
-	defer os.Remove(old)
-	new := writeTemp(newContent)
-	if new == "" {
-		return ""
-	}
-	defer os.Remove(new)
+	dmp := diffmatchpatch.New()
+	c1, c2, lineArray := dmp.DiffLinesToChars(oldContent, newContent)
+	diffs := dmp.DiffCharsToLines(dmp.DiffMain(c1, c2, false), lineArray)
 
-	cmd := exec.Command(diffBin, "-u", "--label", "a/"+path, "--label", "b/"+path, old, new)
-	out, err := cmd.Output()
-	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
-		err = nil // diff exits 1 when files differ — that is the expected case
+	type l struct {
+		typ  diffmatchpatch.Operation
+		text string
 	}
-	if err != nil {
-		return ""
+	var ls []l
+	for _, d := range diffs {
+		parts := strings.SplitAfter(d.Text, "\n")
+		if parts[len(parts)-1] == "" {
+			parts = parts[:len(parts)-1]
+		}
+		for _, p := range parts {
+			ls = append(ls, l{d.Type, strings.TrimSuffix(p, "\n")})
+		}
 	}
-	return strings.TrimRight(string(out), "\n")
-}
 
-func writeTemp(content string) string {
-	f, err := os.CreateTemp("", "pitel-diff-*")
-	if err != nil {
+	var changed []int
+	for i, x := range ls {
+		if x.typ != diffmatchpatch.DiffEqual {
+			changed = append(changed, i)
+		}
+	}
+	if len(changed) == 0 {
 		return ""
 	}
-	defer f.Close()
-	if _, err := f.WriteString(content); err != nil {
-		os.Remove(f.Name())
-		return ""
+
+	const ctx = 3
+	var out strings.Builder
+	fmt.Fprintf(&out, "--- a/%s\n+++ b/%s\n", path, path)
+
+	start := max(changed[0]-ctx, 0)
+	for ci := 0; ci < len(changed); {
+		// Extend the hunk while the next change's context window would
+		// overlap this one (a gap of fewer than 2*ctx equal lines).
+		end := changed[ci] + ctx + 1
+		j := ci
+		for j+1 < len(changed) && changed[j+1] < changed[j]+2*ctx+1 {
+			j++
+			end = changed[j] + ctx + 1
+		}
+		end = min(end, len(ls))
+
+		oldStart, newStart := 1, 1
+		for k := 0; k < start; k++ {
+			if ls[k].typ != diffmatchpatch.DiffInsert {
+				oldStart++
+			}
+			if ls[k].typ != diffmatchpatch.DiffDelete {
+				newStart++
+			}
+		}
+		oldCount, newCount := 0, 0
+		for k := start; k < end; k++ {
+			switch ls[k].typ {
+			case diffmatchpatch.DiffEqual:
+				oldCount++
+				newCount++
+			case diffmatchpatch.DiffDelete:
+				oldCount++
+			case diffmatchpatch.DiffInsert:
+				newCount++
+			}
+		}
+		fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", oldStart, oldCount, newStart, newCount)
+		for k := start; k < end; k++ {
+			switch ls[k].typ {
+			case diffmatchpatch.DiffEqual:
+				out.WriteString(" " + ls[k].text + "\n")
+			case diffmatchpatch.DiffDelete:
+				out.WriteString("-" + ls[k].text + "\n")
+			case diffmatchpatch.DiffInsert:
+				out.WriteString("+" + ls[k].text + "\n")
+			}
+		}
+
+		if j+1 >= len(changed) {
+			break
+		}
+		start = max(changed[j+1]-ctx, end)
+		ci = j + 1
 	}
-	return f.Name()
+	return strings.TrimRight(out.String(), "\n")
 }

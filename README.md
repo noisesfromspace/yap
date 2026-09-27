@@ -12,7 +12,7 @@ native Neovim yanking.
 ## Build & install
 
 ```sh
-CGO_ENABLED=0 go build -o ~/go/bin/pitel .   # pure Go, stdlib only
+CGO_ENABLED=0 go build -o ~/go/bin/pitel .   # pure Go, no cgo
 ```
 
 Add this repo as a Neovim plugin (any plugin manager, or

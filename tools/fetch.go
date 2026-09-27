@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,20 +11,14 @@ import (
 // fetchMaxBytes caps the body sent to the model.
 const fetchMaxBytes = 50 * 1024
 
+type fetchArgs struct {
+	URL string `json:"url" jsonschema:"description=http(s) URL to fetch"`
+}
+
 func init() {
-	Register(&Tool{
-		Name:        "fetch",
-		Description: "Fetch a URL over HTTP(S) and return the response body as text (truncated to 50KB).",
-		Schema: `{"type":"object","properties":{
-			"url":{"type":"string","description":"http(s) URL to fetch"}},
-			"required":["url"]}`,
-		Run: func(args json.RawMessage) (string, string, error) {
-			var a struct {
-				URL string `json:"url"`
-			}
-			if err := json.Unmarshal(args, &a); err != nil {
-				return "", "", err
-			}
+	Register("fetch",
+		"Fetch a URL over HTTP(S) and return the response body as text (truncated to 50KB).",
+		func(a *fetchArgs) (string, string, error) {
 			if !strings.HasPrefix(a.URL, "http://") && !strings.HasPrefix(a.URL, "https://") {
 				return "", "", fmt.Errorf("only http(s) URLs supported")
 			}
@@ -47,6 +40,5 @@ func init() {
 				text = string(body[:fetchMaxBytes]) + "\n[truncated at 50KB]"
 			}
 			return text, "", nil
-		},
-	})
+		})
 }

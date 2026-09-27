@@ -1,23 +1,19 @@
 package tools
 
 import (
-	"encoding/json"
 	"os"
 	"sort"
 	"strings"
 )
 
+type lsArgs struct {
+	Path string `json:"path,omitempty" jsonschema:"description=directory to list (default: current working directory)"`
+}
+
 func init() {
-	Register(&Tool{
-		Name:        "ls",
-		Description: "List entries of a directory (directories end with /). Use an absolute path.",
-		Schema: `{"type":"object","properties":{
-			"path":{"type":"string","description":"directory to list (default: current working directory)"}}}`,
-		Run: func(args json.RawMessage) (string, string, error) {
-			var a struct {
-				Path string `json:"path"`
-			}
-			json.Unmarshal(args, &a)
+	Register("ls",
+		"List entries of a directory (directories end with /). Use an absolute path.",
+		func(a *lsArgs) (string, string, error) {
 			dir := a.Path
 			if dir == "" {
 				dir = "."
@@ -36,6 +32,5 @@ func init() {
 			}
 			sort.Strings(names)
 			return strings.Join(names, "\n"), "", nil
-		},
-	})
+		})
 }

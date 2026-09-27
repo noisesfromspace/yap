@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -13,32 +12,21 @@ import (
 // not overlap. The result is a short confirmation; the unified diff is
 // display-only via the ui payload.
 
-type editOp struct {
-	OldText string `json:"oldText"`
-	NewText string `json:"newText"`
+type editArgs struct {
+	Path  string `json:"path" jsonschema:"description=path to the file (relative or absolute)"`
+	Edits []struct {
+		OldText string `json:"oldText" jsonschema:"description=exact text; must be unique in the file and not overlap other edits"`
+		NewText string `json:"newText" jsonschema:"description=replacement text"`
+	} `json:"edits" jsonschema:"description=one or more targeted replacements"`
 }
 
 func init() {
-	Register(&Tool{
-		Name: "edit",
-		Description: "Make precise file edits with exact text replacement, including multiple " +
-			"disjoint edits in one call. Each edits[].oldText is matched against the original " +
-			"file, must occur exactly once (include more context if ambiguous), and must not " +
+	Register("edit",
+		"Make precise file edits with exact text replacement, including multiple "+
+			"disjoint edits in one call. Each edits[].oldText is matched against the original "+
+			"file, must occur exactly once (include more context if ambiguous), and must not "+
 			"overlap another edit. To create files use write.",
-		Schema: `{"type":"object","properties":{
-			"path":{"type":"string","description":"path to the file (relative or absolute)"},
-			"edits":{"type":"array","description":"one or more targeted replacements","items":{"type":"object","properties":{
-				"oldText":{"type":"string","description":"exact text, unique in the file, not overlapping other edits"},
-				"newText":{"type":"string","description":"replacement text"}},"required":["oldText","newText"]}}},
-			"required":["path","edits"]}`,
-		Run: func(args json.RawMessage) (string, string, error) {
-			var a struct {
-				Path  string   `json:"path"`
-				Edits []editOp `json:"edits"`
-			}
-			if err := json.Unmarshal(args, &a); err != nil {
-				return "", "", err
-			}
+		func(a *editArgs) (string, string, error) {
 			if len(a.Edits) == 0 {
 				return "", "", fmt.Errorf("no edits given")
 			}
@@ -95,6 +83,5 @@ func init() {
 			}
 			ui := unifiedDiff(a.Path, orig, content)
 			return fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(a.Edits), a.Path), ui, nil
-		},
-	})
+		})
 }

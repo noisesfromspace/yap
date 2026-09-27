@@ -2,15 +2,23 @@
 // self-registering in init(). Adding or changing a tool = editing a file
 // here and recompiling (CGO_ENABLED=0).
 //
-// Read-only tools only, until an explicit decision on file-mutating tools
-// (doc: R15).
+// Tools define an Args struct; the JSON schema sent to the provider is
+// generated from it by reflection (invopop/jsonschema), and incoming
+// model arguments are validated against the compiled schema
+// (santhosh-tekuri/jsonschema) before Run is called — hand-written
+// schemas and raw unmarshal errors are both gone.
 package tools
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"sync"
 	"syscall"
+
+	"github.com/invopop/jsonschema"
+	schema "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
@@ -18,14 +26,58 @@ import (
 type Tool struct {
 	Name        string
 	Description string
-	Schema      string // parameters JSON schema, sent to the provider
-	Run         func(args json.RawMessage) (result, ui string, err error)
+	Schema      json.RawMessage // generated from the tool's Args struct
+	compiled    *schema.Schema
+	run         func(args json.RawMessage) (result, ui string, err error)
 }
 
 var registry = map[string]*Tool{}
 
-// Register adds a tool; called from each tool file's init().
-func Register(t *Tool) { registry[t.Name] = t }
+// Register adds a tool; called from each tool file's init(). T is the
+// tool's argument struct: json tags name the parameters (omitempty =
+// optional), jsonschema tags carry descriptions.
+func Register[T any](name, description string, run func(args *T) (result, ui string, err error)) {
+	r := &jsonschema.Reflector{ExpandedStruct: true} // inline, no $ref/$defs: providers accept plain schemas
+	s := r.Reflect(new(T))
+	s.Version = "" // omit $schema; providers do not need it
+	schemaJSON, err := json.Marshal(s)
+	if err != nil {
+		panic(fmt.Sprintf("tools: %s: reflect schema: %v", name, err))
+	}
+	doc, err := schema.UnmarshalJSON(bytes.NewReader(schemaJSON))
+	if err != nil {
+		panic(fmt.Sprintf("tools: %s: parse schema: %v", name, err))
+	}
+	c := schema.NewCompiler()
+	if err := c.AddResource("schema.json", doc); err != nil {
+		panic(fmt.Sprintf("tools: %s: %v", name, err))
+	}
+	compiled, err := c.Compile("schema.json")
+	if err != nil {
+		panic(fmt.Sprintf("tools: %s: compile schema: %v", name, err))
+	}
+	registry[name] = &Tool{
+		Name:        name,
+		Description: description,
+		Schema:      schemaJSON,
+		compiled:    compiled,
+		run: func(raw json.RawMessage) (string, string, error) {
+			var v any
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return "", "", fmt.Errorf("invalid arguments: %v", err)
+			}
+			if err := compiled.Validate(v); err != nil {
+				// The model sees this and can correct its call.
+				return "", "", fmt.Errorf("invalid arguments: %v", err)
+			}
+			var args T
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return "", "", fmt.Errorf("invalid arguments: %v", err)
+			}
+			return run(&args)
+		},
+	}
+}
 
 // Get returns a tool by name.
 func Get(name string) (*Tool, bool) {
@@ -45,6 +97,11 @@ func All() []*Tool {
 		out = append(out, registry[n])
 	}
 	return out
+}
+
+// Run executes the tool's validated run function.
+func (t *Tool) Run(args json.RawMessage) (result, ui string, err error) {
+	return t.run(args)
 }
 
 // ─── Running process groups ──────────────────────────────────────────────────

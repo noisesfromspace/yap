@@ -121,6 +121,10 @@ see |pitel-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 8 iterations per send. Built-ins: ls, read, fetch,
 bash, write, edit.
 
+Tool parameters are declared as a Go struct per tool; the schema sent
+to the provider is generated from it by reflection, and incoming
+arguments are validated against the compiled schema before Run.
+
 write creates or overwrites files (creating parent directories); edit
 does exact-text replacement with pi's semantics: every edits[].oldText
 is matched against the ORIGINAL file, must occur exactly once, and
