@@ -176,48 +176,111 @@ local function normalize_spacing(buf)
 end
 
 --- Parse a pitel buffer into a message list.
---- Lines before the first heading are ignored (header comments).
---- `<!-- pitel:... -->` regions (thinking, errors) are excluded: they are
---- shown in the buffer but never sent back to the provider.
---- Adjacent same-role blocks are merged (providers require alternation).
+--- Lines before the first heading are ignored (frontmatter).
+--- `<!-- pitel:... -->` marker regions (thinking, error, ui) are excluded.
+--- `<!-- pitel:tool -->` regions are TRANSFORMED (R12): the header becomes
+--- an assistant tool_calls entry, the body becomes the tool result message.
+--- Adjacent same-role blocks are merged (providers require alternation),
+--- except tool-bearing assistant messages, which must stay adjacent to
+--- their results.
 --- Empty blocks are dropped.
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
+  local tools = {} -- pitel:tool regions collected in the current block
+  local tool = nil -- open region: { call = <wire call>, result = {lines} }
+  local skipping = false -- skipping a region (bad header / wrong role)
   local in_marker = false
 
   local function flush()
     if not role then
-      acc = {} -- pre-heading lines (session header) are not a message
+      acc = {} -- pre-heading lines (frontmatter) are not a message
       return
     end
     local text = table.concat(acc, "\n")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if text ~= "" then
+    if #tools > 0 then
+      -- Tool-bearing assistant message + its results; never merged.
+      local calls = {}
+      for _, t in ipairs(tools) do
+        table.insert(calls, t.call)
+      end
+      table.insert(messages, { role = "assistant", content = text, tool_calls = calls })
+      for _, t in ipairs(tools) do
+        local result = table.concat(t.result, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+        table.insert(messages, { role = "tool", tool_call_id = t.id, content = result })
+      end
+    elseif text ~= "" then
       local last = messages[#messages]
-      if last and last.role == role then
+      -- Don't merge onto a tool-bearing assistant message: its results
+      -- must directly follow it.
+      if last and last.role == role and not last.tool_calls then
         last.content = last.content .. "\n\n" .. text
       else
         table.insert(messages, { role = role, content = text })
       end
     end
     acc = {}
+    tools = {}
   end
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match("^<!%-%- pitel:%a+") then
-      in_marker = true
+    if tool then
+      -- Inside a pitel:tool region: collect the result, skip pitel:ui.
+      if line:match("^<!%-%- /pitel:tool") then
+        table.insert(tools, tool)
+        tool = nil
+      elseif line:match("^<!%-%- pitel:ui") then
+        in_marker = true
+      elseif in_marker then
+        if line:match("%-%->") then
+          in_marker = false
+        end
+      else
+        table.insert(tool.result, line)
+      end
+    elseif skipping then
+      if line:match("^<!%-%- /pitel:tool") then
+        skipping = false
+      end
     elseif in_marker then
       if line:match("%-%->") then
         in_marker = false
       end
     else
-      local r = line:match(HEAD)
-      if r and roles[r] then
-        flush()
-        role = roles[r]
+      local header = line:match("^<!%-%- pitel:tool (.+) %-%->%s*$")
+      if header and role == "assistant" then
+        local ok, h = pcall(vim.json.decode, header)
+        if ok and type(h) == "table" and h.id and h.name then
+          local args = h.arguments
+          tool = {
+            id = h.id,
+            call = {
+              id = h.id,
+              type = "function",
+              ["function"] = {
+                name = h.name,
+                arguments = type(args) == "string" and args or vim.json.encode(args),
+              },
+            },
+            result = {},
+          }
+        else
+          skipping = true
+          vim.notify("pitel: malformed pitel:tool header, region skipped", vim.log.levels.WARN)
+        end
+      elseif line:match("^<!%-%- pitel:tool") then
+        skipping = true -- region outside an assistant block: orphan, skip
+      elseif line:match("^<!%-%- pitel:%a+") then
+        in_marker = true
       else
-        table.insert(acc, line)
+        local r = line:match(HEAD)
+        if r and roles[r] then
+          flush()
+          role = roles[r]
+        else
+          table.insert(acc, line)
+        end
       end
     end
   end

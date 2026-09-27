@@ -91,22 +91,41 @@ so edits apply to the next chat. When missing or empty, `system` is used.
 
 ~/.pitel (pi-style home):
 
-  config.json           Providers and optional pricing: >json
+  config.json           Providers, optional pricing, and tools: >json
 
     {
       "providers": {
         "moonshot": { "base_url": "https://api.moonshot.ai/v1",
                       "api_key_env": "MOONSHOT_API_KEY" }
       },
-      "pricing": {
-        "kimi-k3": { "input": 0.60, "output": 2.50 }
+      "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } },
+      "max_tool_iterations": 8,
+      "tools": {
+        "fetch": {
+          "description": "Fetch a URL and return its text",
+          "schema": { "type": "object",
+            "properties": { "url": { "type": "string" } },
+            "required": ["url"] },
+          "command": ["pitel-tool-fetch"]
+        }
       }
     }
 <
                         Any OpenAI-compatible /chat/completions endpoint
                         works. API keys come from the named env vars.
                         `pricing` (USD per 1M tokens) enables the cost in
-                        the session header; omit it to track tokens only.
+                        the session frontmatter; omit it to track tokens
+                        only.
+
+                        Tools are subprocesses (the basic plugin
+                        mechanism): the call arguments (JSON) go to the
+                        command's stdin, stdout is the result sent back
+                        to the model. If stdout parses as
+                        {"result": "...", "ui": "..."}, the "ui" text
+                        becomes a display-only pitel:ui section
+                        (|pitel-tool-block|). The binary runs the whole
+                        agent loop in one process; max_tool_iterations
+                        bounds it (default 8).
 
   AGENTS.md             Default system prompt (see above).
   sessions/<cwd-slug>/  Autosaved session files, see |pitel-sessions|.
@@ -232,13 +251,17 @@ The winbar shows `provider / model` on the left and a state on the right:
 ==============================================================================
 10. LUA <-> GO PROTOCOL                                      *pitel-protocol*
 
-  stdin   {"messages":[{"role":"user","content":"..."}, ...]}
+  stdin   {"messages":[...]}  (roles system/user/assistant/tool; assistant
+          messages may carry tool_calls, tool messages carry tool_call_id)
   argv    pitel send --provider NAME --model MODEL
-  stdout  raw assistant text, streamed; thinking and usage wrapped in
-          |pitel-markers|
+  stdout  raw assistant text, streamed; thinking, tool blocks and usage
+          wrapped in |pitel-markers|
   stderr  error message, exit 1
 
-The binary is stdlib-only Go, built with CGO_ENABLED=0.
+The binary runs the agent loop internally: when the model requests tool
+calls it executes them (subprocesses from config.json), emits one
+pitel:tool region per pair, and re-sends until the final answer or
+max_tool_iterations. The binary is stdlib-only Go, built CGO_ENABLED=0.
 
 ==============================================================================
 11. BUSINESS RULES                                             *pitel-rules*
