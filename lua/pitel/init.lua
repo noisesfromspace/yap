@@ -512,6 +512,23 @@ function M.send()
     end
     consume_usage(buf)
     normalize_spacing(buf)
+    -- The binary can complete "successfully" with an embedded error
+    -- marker (e.g. empty completion, max tool iterations): surface it.
+    do
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      for i = #lines, 1, -1 do
+        local l = lines[i]
+        if l:match("^# @%a+") then
+          break
+        end
+        local err = l:match("^<!%-%- pitel:error$") and lines[i + 1]
+        if err then
+          errors[buf] = err
+          vim.notify("pitel: " .. err, vim.log.levels.WARN)
+          break
+        end
+      end
+    end
     append_block(buf, { "# @user", "" })
     require("pitel.session").save(buf)
     if vim.api.nvim_get_current_buf() == buf then

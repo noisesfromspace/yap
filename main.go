@@ -232,6 +232,7 @@ func executeTool(t Tool, arguments string) (string, string) {
 type turn struct {
 	text               string
 	calls              []ToolCall
+	finishReason       string
 	prompt, completion int
 }
 
@@ -290,6 +291,9 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 			t.completion += chunk.Usage.CompletionTokens
 		}
 		for _, c := range chunk.Choices {
+			if c.FinishReason != nil {
+				t.finishReason = *c.FinishReason
+			}
 			if c.Delta.ReasoningContent != "" {
 				if !inThinking {
 					out.WriteString("<!-- pitel:thinking\n")
@@ -414,6 +418,16 @@ func send(providerName, model string) error {
 		totCompletion += t.completion
 
 		if len(t.calls) == 0 {
+			if strings.TrimSpace(t.text) == "" {
+				// An empty completion is always an anomaly (provider hiccup,
+				// token budget eaten by reasoning, model expected tools that
+				// are not configured). Never fail silently.
+				reason := t.finishReason
+				if reason == "" {
+					reason = "unknown"
+				}
+				fmt.Fprintf(out, "\n\n<!-- pitel:error\nmodel returned an empty completion (finish_reason: %s)\n-->", reason)
+			}
 			break // final answer streamed; turn complete
 		}
 		if iter+1 >= maxIter {
