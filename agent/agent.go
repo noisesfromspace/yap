@@ -405,18 +405,23 @@ func trailingNL(s string) int {
 // the region closer.
 func emitToolResult(out *bufio.Writer, result, ui string) {
 	result = escapeMarkerPrefixes(result)
-	ui = escapeComment(ui)
 	out.WriteString(result + "\n")
 	// Results are raw markdown in the buffer. A fence left open (truncated
 	// read/bash output, or a file that genuinely contains a lone ``` line)
 	// would swallow the rest of the buffer as a code block in every
 	// CommonMark renderer, treesitter included. Close it before the ui
-	// block so that still parses as a comment.
+	// block so that still parses.
 	if fence := unclosedFence(strings.Split(result, "\n")); fence != "" {
 		out.WriteString(fence + "\n")
 	}
 	if ui != "" {
-		fmt.Fprintf(out, "<!-- pitel:ui\n%s\n-->\n", ui)
+		// The ui diff used to live INSIDE a `<!-- pitel:ui … -->` comment,
+		// where treesitter never parses a fence — a comment is one leaf
+		// html_block node, so a ```diff inside it got no highlighting.
+		// Paired one-line markers leave the fence at block level, so the
+		// markdown grammar parses it and injects the diff parser.
+		fence := backtickFence(ui)
+		fmt.Fprintf(out, "<!-- pitel:ui -->\n%sdiff\n%s\n%s\n<!-- /pitel:ui -->\n", fence, ui, fence)
 	}
 	// Regions self-terminate with exactly one blank line (R7).
 	out.WriteString("<!-- /pitel:tool -->\n\n")
@@ -450,6 +455,22 @@ func unclosedFence(lines []string) string {
 	return strings.Repeat(string(char), n)
 }
 
+// backtickFence returns a run of backticks one longer than any run in s
+// (min 3), so s can be embedded in a fenced block it cannot close early.
+func backtickFence(s string) string {
+	max := 0
+	for _, l := range strings.Split(s, "\n") {
+		if c, k := fenceRun(strings.TrimLeft(l, " ")); c == '`' && k > max {
+			max = k
+		}
+	}
+	n := max + 1
+	if n < 3 {
+		n = 3
+	}
+	return strings.Repeat("`", n)
+}
+
 // fenceResult wraps a content-bearing tool result in a fenced code
 // block (with a language info string when detectable) so the chat
 // buffer's markdown parser renders it as code, not prose — raw file
@@ -463,17 +484,7 @@ func fenceResult(name, argsJSON, result string) string {
 	if !ok {
 		return result
 	}
-	max := 0
-	for _, l := range strings.Split(result, "\n") {
-		if c, k := fenceRun(strings.TrimLeft(l, " ")); c == '`' && k > max {
-			max = k
-		}
-	}
-	n := max + 1
-	if n < 3 {
-		n = 3
-	}
-	fence := strings.Repeat("`", n)
+	fence := backtickFence(result)
 	return fence + lang + "\n" + strings.TrimRight(result, "\n") + "\n" + fence
 }
 

@@ -21,4 +21,9 @@ assert(vim.fn.foldclosed(opener) == opener, "streamed tool fold not closed: " ..
 local header = vim.api.nvim_buf_get_lines(buf, opener - 1, opener, false)[1]
 assert(header:match('"content":"%[%d+ lines%]"'), "write header not slimmed: " .. header)
 assert(not header:match("line one about dogs"), "slimmed header leaks content: " .. header)
+-- the ui diff is a paired-marker + ```diff fence at block level, so
+-- treesitter injects the diff parser (not a comment, which wouldn't parse)
+local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+assert(text:match("<!%-%- pitel:ui %-%->\n```diff"), "ui diff not fenced as diff: " .. text)
+assert(text:match("```\n<!%-%- /pitel:ui %-%->"), "ui diff fence not closed: " .. text)
 print("OK e2e")

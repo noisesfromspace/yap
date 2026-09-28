@@ -172,6 +172,7 @@ function M.parse_buffer(buf)
   local tool = nil -- open region: { call = <wire call>, result = {lines} }
   local skipping = false -- skipping a region (bad header / wrong role)
   local in_marker = false
+  local ui_paired = false -- inside a paired `<!-- pitel:ui --> … <!-- /pitel:ui -->` diff
   local header_acc = nil -- collecting a multi-line tool header
 
   local function flush()
@@ -209,12 +210,21 @@ function M.parse_buffer(buf)
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
       -- Inside a pitel:tool region: collect the result, skip the
-      -- display-only pitel:ui section.
+      -- display-only pitel:ui section (legacy multi-line comment form,
+      -- or the paired form: `<!-- pitel:ui -->` … fence …
+      -- `<!-- /pitel:ui -->`).
       if line:match("^<!%-%- /pitel:tool") then
         table.insert(tools, tool)
         tool = nil
+        ui_paired = false
+      elseif line:match("^<!%-%- /pitel:ui") then
+        ui_paired = false
+      elseif ui_paired then
+        -- block-level diff content between the paired markers
+      elseif line:match("^<!%-%- pitel:ui %-%->%s*$") then
+        ui_paired = true
       elseif line:match("^<!%-%- pitel:ui") then
-        -- Single-line form closes on the same line; multi-line never does.
+        -- legacy multi-line comment form: skip until a bare `-->`
         in_marker = not line:match("%-%->")
       elseif in_marker then
         if line:match("^%-%->$") then

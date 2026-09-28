@@ -236,13 +236,13 @@ A tool call and its result are ONE region inside an assistant block: >
 
   <!-- pitel:tool {"id":"call_1","name":"edit","arguments":{...}} -->
   Successfully replaced 1 block(s) in main.go.
-  <!-- pitel:ui
+  <!-- pitel:ui -->
   ```diff
   @@ -10,3 +10,3 @@
   -old line
   +new line
   ```
-  -->
+  <!-- /pitel:ui -->
   <!-- /pitel:tool -->
 <
   Header          The complete call as JSON. Storage AND context:
@@ -277,10 +277,14 @@ A tool call and its result are ONE region inside an assistant block: >
                   time. Live output is followed via |:PitelLive| (R16),
                   never written into the buffer.
 
-  <!-- pitel:ui   Optional display-only payload (a rendered unified diff
-                  for edits and writes — creates included, as an all-`+`
-                  diff). Parse-excluded like thinking: editing or
-                  deleting it changes nothing. Pure decoration.
+  <!-- pitel:ui   Optional display-only payload: a rendered unified diff
+                  for edits and writes (creates included, as an all-`+`
+                  diff), fenced as ```diff between paired one-line
+                  markers. Block level — unlike thinking, not an HTML
+                  comment — so treesitter parses the fence and injects
+                  the diff parser for real +/-/@ highlighting. Parse-
+                  excluded like thinking: editing or deleting it changes
+                  nothing. Pure decoration.
 
 parse_buffer transforms the region into the API message pair: an assistant
 message with `tool_calls`, followed by `tool` messages with matching
@@ -295,7 +299,7 @@ stricter: HTML comments are character-based, so ANY `-->` — even inline
 in backticked prose — would close the comment early. The binary
 therefore neutralizes every `-->` to `-- >` inside comment regions
 (streamed thinking via a line-buffering escaper, since chunks split
-mid-line; ui payloads; error text). A backslash can't do that job:
+mid-line; error text). A backslash can't do that job:
 `\-->` still CONTAINS the `-->` a character-based scanner looks for.
 
 Everywhere else the rule is one VISIBLE backslash-escape, valid
