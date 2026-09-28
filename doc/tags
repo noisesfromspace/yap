@@ -1,10 +1,12 @@
 :Pitel	pitel.txt	/*:Pitel*
 :PitelChangeModel	pitel.txt	/*:PitelChangeModel*
+:PitelClear	pitel.txt	/*:PitelClear*
 :PitelLive	pitel.txt	/*:PitelLive*
 :PitelReload	pitel.txt	/*:PitelReload*
 :PitelSend	pitel.txt	/*:PitelSend*
 :PitelSessions	pitel.txt	/*:PitelSessions*
 :PitelStop	pitel.txt	/*:PitelStop*
+pitel-audit	pitel.txt	/*pitel-audit*
 pitel-buffer	pitel.txt	/*pitel-buffer*
 pitel-commands	pitel.txt	/*pitel-commands*
 pitel-configuration	pitel.txt	/*pitel-configuration*

@@ -13,6 +13,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"sync"
 	"syscall"
@@ -20,6 +22,19 @@ import (
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+// eventOut receives `pitel:event {json}` lines for the Lua side (a var
+// so tests can capture it). Kept separate from stdout, which carries
+// buffer content. Events are the audit trail: tool calls (full
+// arguments), results, and turn summaries — the Lua side appends them
+// to the session's audit log.
+var eventOut io.Writer = os.Stderr
+
+// EmitEvent writes one pitel:event line (JSON) to eventOut.
+func EmitEvent(v any) {
+	b, _ := json.Marshal(v)
+	fmt.Fprintf(eventOut, "pitel:event %s\n", b)
+}
 
 // Tool is a single callable tool. result is sent back to the model; ui is
 // an optional display-only payload for the buffer (pitel:ui, R12).

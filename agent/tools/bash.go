@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -23,13 +22,6 @@ type bashArgs struct {
 	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
 	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 }
-
-// eventOut receives `pitel:event {json}` lines for the Lua side (a var
-// so tests can capture it). bash reports tool_start with the path of
-// the temp file its output streams into — the live view (:PitelLive)
-// just tails that file; nothing but the final result touches the chat
-// buffer.
-var eventOut io.Writer = os.Stderr
 
 func init() {
 	Register("bash",
@@ -67,8 +59,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		return "", "", err
 	}
 	outPath := out.Name()
-	ev, _ := json.Marshal(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
-	fmt.Fprintf(eventOut, "pitel:event %s\n", ev)
+	EmitEvent(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
 	cmd.Stdin = nil // /dev/null
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -96,8 +87,7 @@ func runBash(a *bashArgs) (string, string, error) {
 	}
 	// The log is complete; let the Lua side drain it before a small
 	// (untruncated) log is removed below.
-	evEnd, _ := json.Marshal(map[string]string{"type": "tool_end", "name": "bash"})
-	fmt.Fprintf(eventOut, "pitel:event %s\n", evEnd)
+	EmitEvent(map[string]string{"type": "tool_end", "name": "bash"})
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {

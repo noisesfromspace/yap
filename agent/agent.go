@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"syscall"
 
 	"boers.email/pitel/agent/tools"
@@ -365,9 +366,15 @@ func escapeMarkerPrefixes(s string) string {
 // before a long-running tool's result. Blocks carry no leading
 // newlines; the caller pads (one blank line between blocks, R7).
 func emitToolHeader(out *bufio.Writer, call ToolCall) {
-	var args any
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-		args = call.Function.Arguments // malformed/truncated JSON: keep raw
+	// write/edit carry their full content in the arguments; the header
+	// (and with it the model's own history on later turns) keeps only
+	// the shape — the pitel:ui diff shows the change and the audit log
+	// has the full arguments (R12).
+	args, ok := tools.SlimArgs(call.Function.Name, call.Function.Arguments)
+	if !ok {
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			args = call.Function.Arguments // malformed/truncated JSON: keep raw
+		}
 	}
 	// Struct, not map: stable key order (id, name, arguments).
 	header, _ := json.Marshal(struct {
@@ -455,6 +462,7 @@ func fenceRun(s string) (byte, int) {
 }
 
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
+	start := time.Now()
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -559,6 +567,11 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		// log file (:PitelLive), never written into this buffer.
 		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
 		for _, call := range t.calls {
+			// Audit trail (pitel:event on stderr): the full call before
+			// it runs, the full result after. The Lua side appends these
+			// to the session's audit log, which is what makes slimmed
+			// headers and :PitelClear lossless.
+			tools.EmitEvent(map[string]any{"type": "tool_call", "name": call.Function.Name, "args": call.Function.Arguments})
 			tool, ok := tools.Get(call.Function.Name)
 			var result, ui string
 			if !ok {
@@ -576,6 +589,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				}
 				emitToolResult(out, result, ui)
 			}
+			tools.EmitEvent(map[string]any{"type": "tool_result", "name": call.Function.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
@@ -592,6 +606,11 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		b, _ := json.Marshal(m)
 		pad()
 		fmt.Fprintf(out, "<!-- pitel:usage %s -->\n", b)
+		// Audit: one turn journal line (tail buffer + audit log).
+		m["type"] = "turn_end"
+		m["model"] = model
+		m["ms"] = time.Since(start).Milliseconds()
+		tools.EmitEvent(m)
 	}
 	out.Flush()
 	return nil

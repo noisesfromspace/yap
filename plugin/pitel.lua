@@ -19,6 +19,13 @@ vim.api.nvim_create_user_command("PitelLive", function()
   require("harness").live()
 end, { desc = "Open a terminal tailing the running tool's log" })
 
+vim.api.nvim_create_user_command("PitelClear", function(cmd)
+  require("harness").clear(0, tonumber(cmd.args))
+end, {
+  nargs = "?",
+  desc = "Clear old tool results from the context (full output stays in the audit log); arg: how many to keep (default 2)",
+})
+
 vim.api.nvim_create_user_command("PitelChangeModel", function(cmd)
   require("harness").change_model(cmd.fargs[1])
 end, {

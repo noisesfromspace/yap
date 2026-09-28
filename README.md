@@ -36,7 +36,13 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
   in config.json for their model lists)
 - `:PitelStop` — kill the in-flight request
 - `:PitelLive` / `<leader>l` — watch tool output live: one persistent
-  `pitel://<session>-tail` buffer with a `$ command` header per call
+  `pitel://<session>-tail` buffer with a `$ command` header per call.
+  Everything in it (plus full tool arguments and results) is persisted
+  to an append-only audit log at `~/.pitel/audit/<cwd-slug>/<session>.log`
+- `:PitelClear [keep]` — slim the context: replace all but the last
+  `keep` (default 2) tool result bodies with a pointer to the audit
+  log. write/edit tool headers are always slimmed (`[N lines]`); the
+  diff below them shows the change
 - `:PitelSessions [all]` — resume a saved session
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in

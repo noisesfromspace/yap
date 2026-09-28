@@ -23,7 +23,7 @@ CGO_ENABLED=0 go test ./... || exit 1
 fail=0
 run() { # name port [mock]
   local name="$1" port="$2" mock="${3:-}"
-  rm -rf "$TESTHOME/.pitel/sessions"
+  rm -rf "$TESTHOME/.pitel"
   if [ "$mock" = "mock_models.py" ]; then
     cat > "$TESTHOME/.config/pitel.json" <<EOF
 {"providers": {"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "MOONSHOT_API_KEY"},
@@ -66,9 +66,10 @@ run pitel_e2e_tool_test 18133 mock_tool.py
 run pitel_toolparse_test 18133 mock_tool.py
 run pitel_e2e_livetool 18141 mock_stream.py
 run pitel_e2e_streamfold 18135 mock_write.py
+run pitel_audit_test 18135 mock_write.py
 run pitel_picker_test 18137 mock_models.py
 for t in pitel_fold_test pitel_detailfold_test pitel_think_test pitel_error_test pitel_ml_test \
-         pitel_streamfold_test pitel_marker_test pitel_model_test pitel_map_test; do
+         pitel_streamfold_test pitel_marker_test pitel_model_test pitel_map_test pitel_clear_test; do
   run "$t" 18132
 done
 

@@ -50,9 +50,24 @@ truth, and that can be a text buffer. Consequences:
                         pitel://<session>-tail buffer that accumulates
                         every tool call's output (a `$ command` header
                         per call, drained from the tool's temp log while
-                        it runs, see |pitel-protocol|). Opens it in a
-                        split scrolled to the bottom, or focuses the
-                        existing window. Never opens by itself.
+                        it runs, see |pitel-protocol|), one journal line
+                        per non-bash tool call and per turn. Opens it in
+                        a split scrolled to the bottom, or focuses the
+                        existing window. Never opens by itself. The
+                        tail is the live view; everything in it (plus
+                        full tool arguments and results) is persisted
+                        in the audit log, see |pitel-audit|.
+
+                                                                *:PitelClear*
+:PitelClear [keep]      Slim the context: replace the result bodies of
+                        all but the last [keep] (default 2) pitel:tool
+                        regions with a one-line placeholder. Headers
+                        (the model's tool_calls history) and pitel:ui
+                        diffs stay; the full output is in the audit log
+                        (|pitel-audit|). Old tool output is the biggest
+                        context consumer in long sessions and is usually
+                        stale or re-fetchable — clearing it is the cheap
+                        alternative to compacting the conversation.
 
                                                         *:PitelChangeModel*
 :PitelChangeModel {provider/model}
@@ -167,6 +182,13 @@ truncated to the LAST 2000 lines / 50KB with the full output kept in
 the temp file; a non-zero exit is reported to the model, not treated
 as an error. There is deliberately no sandbox and no confirmation
 prompt (R15).
+
+write/edit tool headers in the buffer are SLIMMED (R12): the arguments
+show `[N lines]` / `[N edits, +A/-B lines]` instead of the content —
+the pitel:ui diff below shows the change, the file on disk is the
+ground truth, and the full arguments are in the audit log. Every tool
+call and result is also emitted as a pitel:event and persisted there,
+see |pitel-audit|.
 
 ==============================================================================
 5. BUFFER FORMAT                                                *pitel-buffer*
@@ -315,6 +337,24 @@ File operations are the session operations (pi equivalents, but manual):
                         continues as the copy.
   delete a block + send Branch the conversation.
 
+AUDIT LOG                                                        *pitel-audit*
+
+The session file holds the context; the audit log holds everything the
+context doesn't carry. ~/.pitel/audit/<cwd-slug>/<session>.log (same
+parent as the sessions dir), append-only, survives restarts (unlike
+the tail buffer, which is its ephemeral live view). Written from
+|pitel-protocol| events:
+
+  === <ts> $ <command>          a bash call, followed by its full output
+  === <ts> <tool> <args json>   any other tool call, FULL arguments
+  --- <ts> <tool> (<n> bytes)   result record (+ full result text for
+                                non-bash tools)
+  # <ts> turn <model>: <in> in · <out> out · $<cost> · <s>s
+                                one journal line per completed send
+
+This is what makes the slimmed write/edit headers (R12) and |:PitelClear|
+lossless: anything removed from the context exists here verbatim.
+
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *pitel-folding*
 
@@ -373,11 +413,19 @@ Example: `moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
   argv    pitel send --provider NAME --model MODEL
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
           wrapped in |pitel-markers|
-  stderr  error message, exit 1. Also carries progress lines of the
-          form `pitel:event {"type":"tool_start","name":"bash","log":…,
-          "command":…}` and `…{"type":"tool_end",…}`; the Lua side
-          routes them to the winbar and the tail buffer (|:PitelLive|),
-          the rest is error text.
+  stderr  error message, exit 1. Also carries `pitel:event {json}`
+          progress lines; the Lua side routes them to the winbar, the
+          tail buffer (|:PitelLive|) and the audit log (|pitel-audit|):
+            tool_start   {"type","name":"bash","log","command"} — bash's
+                         output streams into `log`; tail it for live view
+            tool_end     bash's log is complete
+            tool_call    {"type","name","args"} — every tool before it
+                         runs, full arguments (the buffer header keeps
+                         only slimmed write/edit args, R12)
+            tool_result  {"type","name","bytes","result"} — full result
+            turn_end     {"type","model","prompt","completion","cost",?,
+                         "ms"} — one per completed send
+          The rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool
 calls it executes them (compiled-in tools, see |pitel-tools|), emits one
@@ -480,9 +528,22 @@ R12 One buffer region = one tool pair.
     Result content policy: edit/write tools return short confirmations,
     read-like tools return truncated content (pi: 2000 lines / 50KB);
     pretty payloads (diffs) go in parse-excluded pitel:ui subsections.
-    Deferred: parse-time elision of old results (clear_tool_uses-style
-    compaction) and tool-block sanitizing beyond the rules in
-    |pitel-tool-block|.
+    write/edit headers are slimmed at emission time (`[N lines]` for
+    content, `[N edits, +A/-B lines]` for edits): the header doubles as
+    the model's own tool_calls history, and kilobytes of file content
+    there buy nothing the pitel:ui diff and the file on disk don't
+    already show (Anthropic's clear_tool_inputs is the same idea); the
+    full arguments are in the audit log. Old result bodies can be
+    cleared explicitly with |:PitelClear|.
+
+R17 The audit log is the durable record of everything the context
+    doesn't carry. ~/.pitel/audit/<cwd-slug>/<session>.log (same parent
+    as the sessions dir), append-only, written by the Lua side from
+    pitel:event lines: full tool arguments, streamed bash output, full
+    results, and one journal line per turn (model, tokens, cost, ms).
+    The tail buffer is its live view — ephemeral; the audit file
+    survives restarts. This split is what makes slimmed headers (R12)
+    and |:PitelClear| lossless.
 
 R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
@@ -520,9 +581,11 @@ R16 Live tool output never enters the chat buffer.
     pitel:event stderr line, the Lua side drains new bytes into the
     tail (a `$ command` header per call), and :PitelLive opens it. The
     chat buffer only gets one-shot, append-only writes: the tool header
-    when the call commits, the result when it finishes. Why: output
-    exists in exactly one place at any moment, and the buffer format
-    has no transient states to repair.
+    when the call commits, the result when it finishes. The single
+    sanctioned exception to append-only is |:PitelClear| — an explicit
+    user command that replaces old tool result bodies with a pointer
+    to the audit log (R17). Why: output exists in exactly one place at
+    any moment, and the buffer format has no transient states to repair.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

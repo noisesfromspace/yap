@@ -362,7 +362,51 @@ live = {}
 -- Per-chat-buffer persistent tail: every tool call appends a
 -- `$ command` header and its output (drained from the temp log) to ONE
 -- nofile buffer, pitel://<session>-tail. :PitelLive opens it.
-local tails = {} -- chat buf → { bufnr, offset, has_content }
+local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
+
+-- The tail buffer is ephemeral; the AUDIT LOG is its durable form:
+-- ~/.pitel/audit/<cwd-slug>/<session>.log (same parent as the sessions
+-- dir). Everything shown in the tail is appended there too, plus the
+-- full tool_call arguments (the buffer's pitel:tool headers keep only
+-- slimmed write/edit args, R12) and one journal line per turn — so
+-- nothing the context doesn't carry is ever lost, which is what makes
+-- :PitelClear safe. Append-only, survives restarts.
+local function audit_path(buf)
+  local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
+  local path = vim.b[buf].pitel_path
+  local base = path and vim.fn.fnamemodify(path, ":t:r")
+    or vim.api.nvim_buf_get_name(buf):gsub("^pitel://", ""):gsub("[^%w%._-]", "-")
+  return ("%s/.pitel/audit/%s/%s.log"):format(vim.fn.expand("~"), slug, base)
+end
+
+local function audit_write(buf, lines)
+  local t = tails[buf]
+  if not t then
+    return
+  end
+  if not t.audit then
+    t.audit = audit_path(buf)
+    vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p")
+  end
+  vim.fn.writefile(lines, t.audit, "a")
+end
+
+--- Point the audit log at the session file's name once one exists
+--- (the first save assigns pitel_path; earlier turns were logged under
+--- the pitel:// buffer name).
+local function audit_follow(buf)
+  local t = tails[buf]
+  if not t or not t.audit or not vim.b[buf].pitel_path then
+    return
+  end
+  local want = audit_path(buf)
+  if want ~= t.audit and vim.fn.filereadable(want) == 0 then
+    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
+    if os.rename(t.audit, want) then
+      t.audit = want
+    end
+  end
+end
 
 local function ensure_tail(buf)
   local t = tails[buf]
@@ -406,6 +450,9 @@ drain_tail = function(buf)
     return
   end
   append_text(t.bufnr, data)
+  -- the audit log gets the same bytes (a line split across two drains
+  -- lands as two log lines; cosmetic)
+  audit_write(buf, vim.split(data:gsub("\n$", ""), "\n", { plain = true }))
   -- keep a visible tail window scrolled to the bottom
   for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
     vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
@@ -422,12 +469,114 @@ local function handle_event(buf, json_line)
     live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time() }
     local t = ensure_tail(buf)
     t.offset = 0
-    append_text(t.bufnr, (t.has_content and "\n" or "") .. "$ " .. (ev.command or ev.name or "tool") .. "\n")
+    local header = "$ " .. (ev.command or ev.name or "tool")
+    append_text(t.bufnr, (t.has_content and "\n" or "") .. header .. "\n")
     t.has_content = true
+    audit_write(buf, { ("=== %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), header) })
   elseif ev.type == "tool_end" then
     drain_tail(buf) -- the log is complete; a small one is about to be deleted
     live[buf] = nil
+  elseif ev.type == "tool_call" then
+    -- Full arguments, emitted for every tool before it runs. bash's
+    -- tool_start above already logged its command (that IS its args).
+    if ev.name ~= "bash" then
+      local t = ensure_tail(buf)
+      audit_write(buf, { ("=== %s %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.args or "") })
+      local target = ""
+      local ok2, a = pcall(vim.json.decode, ev.args or "")
+      if ok2 and type(a) == "table" then
+        target = a.path or a.url or a.command or ""
+      end
+      append_text(t.bufnr, (t.has_content and "\n" or "") .. ("• %s %s\n"):format(ev.name, target))
+      t.has_content = true
+    end
+  elseif ev.type == "tool_result" then
+    -- The full result text lands in the audit log — :PitelClear can
+    -- then remove it from the context without losing anything. bash's
+    -- output was already streamed to the log from its temp file.
+    local lines = {}
+    if ev.name ~= "bash" and ev.result then
+      vim.list_extend(lines, vim.split(ev.result, "\n", { plain = true }))
+    end
+    table.insert(lines, ("--- %s %s (%s bytes)"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.bytes or "?"))
+    audit_write(buf, lines)
+  elseif ev.type == "turn_end" then
+    local t = ensure_tail(buf)
+    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
+    local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
+      os.date("%Y-%m-%dT%H:%M:%S"), ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000)
+    append_text(t.bufnr, (t.has_content and "\n" or "") .. line .. "\n")
+    t.has_content = true
+    audit_write(buf, { line })
   end
+end
+
+--- :PitelClear [keep] — replace the bodies of all but the last `keep`
+--- (default 2) pitel:tool regions with a placeholder; the full output
+--- stays in the audit log. Headers (the model's own tool_calls history)
+--- and pitel:ui diffs stay. This is the one sanctioned rewrite of
+--- existing lines (R16): the user owns the document, and clearing old
+--- tool output is what keeps long sessions inside the context window.
+function M.clear(buf, keep)
+  buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
+  if running[buf] then
+    vim.notify("pitel: send in flight, not clearing", vim.log.levels.WARN)
+    return
+  end
+  keep = keep or 2
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  -- collect tool regions as { first body line, last body line } (1-based,
+  -- inclusive); the body runs from after the header to the pitel:ui
+  -- opener or the region closer
+  local regions = {}
+  local i = 1
+  while i <= #lines do
+    local body_start
+    if lines[i]:match("^<!%-%- pitel:tool .+ %-%->%s*$") then
+      body_start = i + 1 -- single-line header
+    elseif lines[i]:match("^<!%-%- pitel:tool%s*$") then
+      local j = i + 1 -- multi-line header: body after its closing -->
+      while j <= #lines and not lines[j]:match("^%-%->%s*$") do
+        j = j + 1
+      end
+      body_start = j + 1
+    end
+    if body_start then
+      local j = body_start
+      while j <= #lines
+        and not lines[j]:match("^<!%-%- pitel:ui")
+        and not lines[j]:match("^<!%-%- /pitel:tool")
+      do
+        j = j + 1
+      end
+      table.insert(regions, { body_start, j - 1 })
+      i = j
+    else
+      i = i + 1
+    end
+  end
+  local placeholder = ("[output cleared — full output in the audit log: %s]")
+    :format(vim.fn.fnamemodify(audit_path(buf), ":t"))
+  local cleared = 0
+  for r = 1, #regions - keep do
+    local s, e = regions[r][1], regions[r][2]
+    if e >= s and not lines[s]:match("^%[output cleared") then
+      vim.api.nvim_buf_set_lines(buf, s - 1, e, false, { placeholder })
+      cleared = cleared + 1
+      local delta = (e - s + 1) - 1 -- replaced that many lines with one
+      for r2 = r + 1, #regions do
+        regions[r2][1], regions[r2][2] = regions[r2][1] - delta, regions[r2][2] - delta
+      end
+      lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    end
+  end
+  if cleared > 0 then
+    require("harness.session").save(buf)
+  end
+  vim.notify(
+    ("pitel: cleared %d tool result%s (kept the last %d)"):format(cleared, cleared == 1 and "" or "s", keep),
+    vim.log.levels.INFO
+  )
 end
 
 --- Open the session's tail buffer (:PitelLive): one persistent log of
@@ -600,6 +749,7 @@ function M.send()
     end
     append_block(buf, { "# @user", "" })
     require("harness.session").save(buf)
+    audit_follow(buf) -- first save named the session; rename the log to match
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
     end
