@@ -86,12 +86,14 @@ func TestSendToolLoop(t *testing.T) {
 		t.Fatalf("raw --> inside thinking region:\n%s", s)
 	}
 
-	// both sparse-index calls executed, two well-formed regions
-	if strings.Count(s, "<!-- pitel:tool") != 2 || strings.Count(s, "<!-- /pitel:tool -->") != 2 {
+	// both sparse-index calls executed, two well-formed regions (count
+	// line-anchored: the escaped \<!-- /pitel:tool --> result line also
+	// contains the closer as a substring)
+	if strings.Count(s, "\n<!-- pitel:tool") != 2 || strings.Count(s, "\n<!-- /pitel:tool -->\n") != 2 {
 		t.Fatalf("tool regions wrong (sparse indices dropped?):\n%s", s)
 	}
-	// marker line inside the result escaped with a zero-width space
-	if !strings.Contains(s, "<!--​ /pitel:tool -->") {
+	// marker line inside the result escaped with a visible backslash
+	if !strings.Contains(s, "\\<!-- /pitel:tool -->") {
 		t.Fatalf("result marker line not escaped:\n%s", s)
 	}
 	if !strings.Contains(s, "second") || !strings.Contains(s, "done") {
@@ -101,9 +103,9 @@ func TestSendToolLoop(t *testing.T) {
 	if !strings.Contains(s, "\n~~~\n<!-- /pitel:tool -->") {
 		t.Fatalf("fence not balanced:\n%s", s)
 	}
-	// <style> neutralized with a zero-width space (raw-HTML results poison
+	// <style> neutralized with a backslash (raw-HTML results poison
 	// treesitter's combined html/css/js injections)
-	if !strings.Contains(s, "<​style>") || strings.Contains(s, "<style") {
+	if unescaped := strings.ReplaceAll(s, "\\<style", ""); strings.Contains(unescaped, "<style") {
 		t.Fatalf("style tag not neutralized:\n%s", s)
 	}
 

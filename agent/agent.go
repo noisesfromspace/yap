@@ -134,27 +134,18 @@ type turn struct {
 }
 
 // lineEscaper buffers streamed text to line granularity so dangerous
-// sequences can be neutralized before they reach the buffer. Two modes:
-//
-//   - escapeComment (thinking): ANY `-->` closes the HTML comment for
-//     renderers, even inline — so every one is neutralized. Chunks split
-//     mid-line, so per-chunk replacement doesn't work.
-//   - escapeMarkerPrefixes (tool output): pitel: opener lines and
-//     <style>/<script> open tags (a raw-HTML result poisons treesitter's
-//     css/js injections to end-of-buffer).
+// sequences can be neutralized before they reach the buffer. Used for
+// thinking text: ANY `-->` closes the HTML comment for renderers, even
+// inline — so every one is neutralized. Chunks split mid-line, so
+// per-chunk replacement doesn't work.
 type lineEscaper struct {
-	w       *bufio.Writer
-	buf     []byte
-	esc     func(string) string
-	closing bool // Flush must emit a final unterminated line
+	w   *bufio.Writer
+	buf []byte
+	esc func(string) string
 }
 
 func newCommentEscaper(w *bufio.Writer) *lineEscaper {
 	return &lineEscaper{w: w, esc: escapeComment}
-}
-
-func newMarkerEscaper(w *bufio.Writer) *lineEscaper {
-	return &lineEscaper{w: w, esc: escapeMarkerPrefixes, closing: true}
 }
 
 func (l *lineEscaper) WriteString(s string) {
@@ -176,13 +167,7 @@ func (l *lineEscaper) WriteString(s string) {
 
 func (l *lineEscaper) Flush() {
 	if len(l.buf) > 0 {
-		s := l.esc(string(l.buf))
-		l.w.WriteString(s)
-		if l.closing {
-			// The region closer goes on its own line; an unterminated
-			// final line would swallow it.
-			l.w.WriteString("\n")
-		}
+		l.w.WriteString(l.esc(string(l.buf)))
 		l.buf = nil
 	}
 	l.w.Flush()
@@ -313,29 +298,37 @@ const toolHeaderMaxSingle = 120
 // escapeComment neutralizes every `-->` in text that lives inside an
 // HTML comment region (thinking, ui): HTML comments are not line-based,
 // so even an inline `-->` (e.g. in backticked prose) closes the comment
-// early for markdown renderers. A space keeps the text readable.
+// early for markdown renderers. A space keeps the text readable. (A
+// backslash-escape can't work here: `\-->` still CONTAINS the `-->`
+// sequence a character-based comment scanner looks for.)
 func escapeComment(s string) string {
 	return strings.ReplaceAll(s, "-->", "-- >")
 }
 
-// escapeMarkerPrefixes neutralizes lines in tool results that start with
-// a pitel marker opener — they would end the tool region early during
-// parsing. A zero-width space keeps the display identical.
+// escapeMarkerPrefixes neutralizes dangerous constructs in tool results
+// (raw markdown in the buffer) with a VISIBLE backslash-escape, valid
+// CommonMark for ASCII punctuation: renderers show the literal text,
+// treesitter sees an escape instead of a tag, and the line-start-anchored
+// Lua parser never matches. No invisible bytes (a ZWSP breaks
+// markdown_inline's html_tag grammar and renders as a literal <200b>;
+// a soft hyphen hides corruption from the user while still reaching
+// registers and the model).
 //
-// `<style` and `<script` open tags get the same treatment: in a raw-HTML
-// tool result (fetch returns pages as-is) treesitter's combined HTML
-// injection hands the style/script content to the css/javascript
-// parsers, whose raw-text injection ranges then bleed to the end of the
-// buffer — everything after renders as css/js. Neutralizing the open tag
-// keeps the document a fragment and the parse bounded.
+// Two cases:
+//   - lines starting with a pitel marker opener — they would end the
+//     tool region early during parsing;
+//   - `<style`/`<script` open tags — in a raw-HTML result (fetch returns
+//     pages as-is) treesitter's combined HTML injection hands their
+//     content to the css/javascript parsers, whose raw-text injection
+//     ranges then bleed to the end of the buffer.
 var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
 
 func escapeMarkerPrefixes(s string) string {
-	s = rawTextTagRe.ReplaceAllString(s, "<​$1$2")
+	s = rawTextTagRe.ReplaceAllString(s, "\\<$1$2")
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		if strings.HasPrefix(l, "<!-- pitel:") || strings.HasPrefix(l, "<!-- /pitel:") {
-			lines[i] = "<!--\u200b" + strings.TrimPrefix(l, "<!--")
+			lines[i] = "\\" + l
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -344,10 +337,9 @@ func escapeMarkerPrefixes(s string) string {
 // emitToolHeader writes the pitel:tool opener (full call as JSON)
 // immediately when the model commits to the call — the arguments are
 // visible in the buffer while the tool runs, and the gap to the result
-// honestly represents execution time. Returns a StreamEmit that renders
-// live tool output into a display-only <!-- pitel:stream --> region, and
-// its closer. Not used for unknown tools (nothing streams).
-func emitToolHeader(out *bufio.Writer, call ToolCall) (emit tools.StreamFunc, closeStream func()) {
+// honestly represents execution time. Flushed so the header lands
+// before a long-running tool's result.
+func emitToolHeader(out *bufio.Writer, call ToolCall) {
 	var args any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		args = call.Function.Arguments // malformed/truncated JSON: keep raw
@@ -364,25 +356,7 @@ func emitToolHeader(out *bufio.Writer, call ToolCall) (emit tools.StreamFunc, cl
 		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
 		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n", pretty)
 	}
-
-	esc := newMarkerEscaper(out)
-	open := false
-	emit = func(chunk string) {
-		if !open {
-			out.WriteString("<!-- pitel:stream\n")
-			open = true
-		}
-		esc.WriteString(chunk)
-	}
-	closeStream = func() {
-		if !open {
-			return
-		}
-		esc.Flush()
-		out.WriteString("-->\n")
-		open = false
-	}
-	return emit, closeStream
+	out.Flush()
 }
 
 // emitToolResult finishes an open pitel:tool region: the result text
@@ -526,8 +500,8 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		// history, execute each call, and emit one pitel:tool region per
 		// call+result pair (R12) — both to the buffer and to the history.
 		// The header lands BEFORE the tool runs so the call is visible
-		// while it executes; live output streams into a display-only
-		// pitel:stream region inside it.
+		// while it executes; live output is followed via the tool's own
+		// log file (:PitelLive), never written into this buffer.
 		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
 		for _, call := range t.calls {
 			tool, ok := tools.Get(call.Function.Name)
@@ -536,20 +510,12 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				result = "error: unknown tool " + call.Function.Name
 				emitToolResult(out, "\n\n"+result, "")
 			} else {
-				emit, closeStream := emitToolHeader(out, call)
+				emitToolHeader(out, call)
 				var err error
-				result, ui, err = tool.RunStream(json.RawMessage(call.Function.Arguments), emit)
-				closeStream()
+				result, ui, err = tool.Run(json.RawMessage(call.Function.Arguments))
 				if err != nil {
 					result = "error: " + err.Error()
 					ui = ""
-				}
-				// A streaming tool that truncated its result cut the
-				// beginning the live stream region holds — keep the region.
-				// Otherwise the region duplicates the result byte-for-byte
-				// and the Lua side deletes it after the turn.
-				if tools.Truncated(call.Function.Name) {
-					out.WriteString("<!-- pitel:keepstream -->\n")
 				}
 				emitToolResult(out, result, ui)
 			}

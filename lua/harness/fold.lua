@@ -11,7 +11,6 @@ local HEAD = "^# @(%a+)%s*$"
 --   <!-- pitel:tool        long call header, closes on -->
 --   <!-- pitel:thinking    model reasoning, closes on -->
 --   <!-- pitel:ui          diff display, closes on -->
---   <!-- pitel:stream      live tool output, closes on -->
 --   <!-- pitel:error       backend error record, closes on -->
 -- Single-line headers (`<!-- pitel:tool {...} -->`, `<!-- pitel:usage … -->`)
 -- stay unfolded level-1 content.
@@ -123,7 +122,7 @@ function M.level()
   return lvl
 end
 
--- Close every level-2 (tool header, thinking, ui, stream, error) fold,
+-- Close every level-2 (tool header, thinking, ui, error) fold,
 -- leaving message folds untouched. Deterministic: scans for region
 -- openers and closes only when that fold isn't already closed (closing
 -- an already-closed fold would close its parent).
@@ -142,9 +141,6 @@ function M.close_detail_folds(buf)
     end
   end
 end
-
--- Backwards-compatible name for the streaming hook in init.lua.
-M.close_tool_folds = M.close_detail_folds
 
 -- Open/close state per view, applied with unconditional zM/zR first so a
 -- keypress always lands on the same state no matter what was open.

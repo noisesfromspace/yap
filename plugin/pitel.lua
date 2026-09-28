@@ -15,6 +15,10 @@ vim.api.nvim_create_user_command("PitelStop", function()
   require("harness").stop()
 end, { desc = "Stop the in-flight pitel request" })
 
+vim.api.nvim_create_user_command("PitelLive", function()
+  require("harness").live()
+end, { desc = "Open a terminal tailing the running tool's log" })
+
 vim.api.nvim_create_user_command("PitelChangeModel", function(cmd)
   require("harness").change_model(cmd.fargs[1])
 end, {

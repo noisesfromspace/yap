@@ -45,6 +45,13 @@ truth, and that can be a text buffer. Consequences:
                                                                 *:PitelStop*
 :PitelStop              Kill the in-flight request for the current buffer.
 
+                                                                *:PitelLive*
+:PitelLive              Open a terminal tailing the running tool's log
+                        file (bash announces it via a pitel:event line,
+                        see |pitel-protocol|). Focus returns to the
+                        window you were in. Opens automatically while a
+                        tool runs unless auto_open_live = false.
+
                                                         *:PitelChangeModel*
 :PitelChangeModel {provider/model}
                         Change the provider/model combo for the current
@@ -69,6 +76,7 @@ Set only in pitel buffers.
 
   <C-s> (n, i)          Send the buffer.
   <leader>m             Change model (picker, see |:PitelChangeModel|).
+  <leader>l             Watch live tool output (see |:PitelLive|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
@@ -94,6 +102,7 @@ Lua setup: >lua
     },
     system = "...",       -- fallback system prompt
     agents_file = "~/.config/pitel/AGENTS.md",
+    auto_open_live = true, -- open the live tool view when a tool starts
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
@@ -146,10 +155,13 @@ display-only pitel:ui section (|pitel-tool-block|).
 bash runs commands non-interactively (stdin is /dev/null) in their own
 process group: on timeout (default 120s, model-adjustable) the whole
 group is SIGKILLed, and :PitelStop takes in-flight commands down with
-the binary. Output is truncated to the LAST 2000 lines / 50KB with the
-full output in a temp file; a non-zero exit is reported to the model,
-not treated as an error. There is deliberately no sandbox and no
-confirmation prompt (R15).
+the binary. Output streams into a temp file; the binary announces the
+path on stderr (pitel:event, see |pitel-protocol|) and :PitelLive tails
+it — live output never enters the chat buffer (R16). The result is
+truncated to the LAST 2000 lines / 50KB with the full output kept in
+the temp file; a non-zero exit is reported to the model, not treated
+as an error. There is deliberately no sandbox and no confirmation
+prompt (R15).
 
 ==============================================================================
 5. BUFFER FORMAT                                                *pitel-buffer*
@@ -229,18 +241,11 @@ A tool call and its result are ONE region inside an assistant block: >
                   tools return confirmations (pi/Codex pattern), read-like
                   tools return (truncated) content.
 
-  <!-- pitel:stream   Display-only live output while a tool runs (bash
-                  command output, throttled to ~100ms line-aligned
-                  chunks). Parse-excluded like pitel:ui — never sent to
-                  the model. When the result kept the full output, the
-                  region duplicates it byte-for-byte and the Lua side
-                  DELETES it once the turn completes. When the result is
-                  truncated, the binary appends `<!-- pitel:keepstream -->`
-                  after the region's `-->`: the stream holds the
-                  beginning the tail result cut away, so the region
-                  stays (the keepstream line itself is consumed). The
-                  header lands BEFORE the tool runs, so the call (and
-                  its arguments) is visible while it executes.
+                  The header lands BEFORE the tool runs, so the call
+                  (and its arguments) is visible while it executes;
+                  the gap to the result honestly represents execution
+                  time. Live output is followed via |:PitelLive| (R16),
+                  never written into the buffer.
 
   <!-- pitel:ui   Optional display-only payload (a rendered unified diff
                   for edits and writes — creates included, as an all-`+`
@@ -260,8 +265,19 @@ stricter: HTML comments are character-based, so ANY `-->` — even inline
 in backticked prose — would close the comment early. The binary
 therefore neutralizes every `-->` to `-- >` inside comment regions
 (streamed thinking via a line-buffering escaper, since chunks split
-mid-line; ui payloads; error text), and a tool-result line starting
-with a pitel marker opener gets a zero-width space after `<!--`.
+mid-line; ui payloads; error text). A backslash can't do that job:
+`\-->` still CONTAINS the `-->` a character-based scanner looks for.
+
+Everywhere else the rule is one VISIBLE backslash-escape, valid
+CommonMark for ASCII punctuation, applied once at write time: a
+tool-result line starting with a pitel marker opener becomes
+`\<!-- pitel:…`, and <style>/<script> open tags become `\<style` /
+`\<script`. Renderers show the literal text, treesitter sees an escape
+instead of a tag, and the line-start-anchored Lua parser never matches.
+Invisible bytes were rejected: a zero-width space breaks
+markdown_inline's html_tag grammar (the comment fails to parse and the
+ZWSP renders as a literal <200b>), and a soft hyphen hides the
+mutation from the user while still reaching registers and the model.
 
 Tool RESULT lines are raw markdown (not inside a comment), so a fence
 left open in result text — truncated read/bash output, or a file that
@@ -270,12 +286,12 @@ buffer as a code block in every CommonMark renderer (treesitter
 included). The binary appends a closing fence at the end of the result
 when its fences don't balance.
 
-Raw HTML results (fetch returns pages as-is) carry one more renderer
-hazard: treesitter's combined HTML injection hands <style>/<script>
-content to the css/javascript parsers, and those raw-text injection
-ranges bleed to the end of the buffer — everything after the result
-renders as css/js. The binary neutralizes the open tags with a
-zero-width space after `<` (display-identical, bounded parse).
+Why the <style>/<script> escaping matters: raw HTML results (fetch
+returns pages as-is) let treesitter's combined HTML injection hand
+their content to the css/javascript parsers, and those raw-text
+injection ranges bleed to the end of the buffer — everything after the
+result renders as css/js. The backslash-escaped open tag keeps the
+document a fragment and the parse bounded.
 
 ==============================================================================
 7. SESSIONS                                                  *pitel-sessions*
@@ -299,9 +315,8 @@ File operations are the session operations (pi equivalents, but manual):
 
 `# @role` headings are folds (foldexpr); a closed fold shows the role and
 the first content line. Multi-line `pitel:` comment regions (thinking,
-tool headers, ui diffs, live tool output) are level-2 folds inside the
-message fold; a closed one shows its kind (`▸ pitel:thinking`, `▸ tool:
-write`).
+tool headers, ui diffs) are level-2 folds inside the message fold; a
+closed one shows its kind (`▸ pitel:thinking`, `▸ tool: write`).
 
 Three views, bound to <leader>1..3, each applied unconditionally so a
 keypress always lands on the same state:
@@ -325,7 +340,9 @@ thinking folded). Right: token totals and cost for this
 buffer (accumulated over its lifetime, compact k-format), then the state
 glyph pinned to the far right edge:
 
-  ⠋ busy    A request is in flight (driven by the job table).
+  ⠋ busy    A request is in flight (driven by the job table). While a
+            tool runs, its name and elapsed time replace "busy"
+            (`⠋ bash 12s`).
   ○ idle    Nothing running.
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
@@ -340,7 +357,10 @@ Example: `moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
   argv    pitel send --provider NAME --model MODEL
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
           wrapped in |pitel-markers|
-  stderr  error message, exit 1
+  stderr  error message, exit 1. May also carry progress lines of the
+          form `pitel:event {"type":"tool_start","name":"bash","log":…}`;
+          the Lua side routes them to the winbar and |:PitelLive|, the
+          rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool
 calls it executes them (compiled-in tools, see |pitel-tools|), emits one
@@ -460,6 +480,17 @@ R14 Session metadata lives in the winbar, not the buffer.
     design with YAML frontmatter in the buffer: editing a yaml key to
     switch models was clever but the frontmatter fought R7 — every
     metadata update was a non-local buffer edit.)
+
+R16 Live tool output never enters the chat buffer.
+    The buffer is the parseable conversation document (R1); streaming
+    command output into it forces incremental escaping, dangling-region
+    repair and post-turn dedup (the pitel:stream/keepstream design this
+    rule replaced). Instead the tool's own log file is the live view:
+    bash announces its temp file via a pitel:event stderr line and
+    :PitelLive tails it. The buffer only gets one-shot, append-only
+    writes: the tool header when the call commits, the result when it
+    finishes. Why: output exists in exactly one place at any moment,
+    and the buffer format has no transient states to repair.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

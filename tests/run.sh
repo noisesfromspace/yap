@@ -62,7 +62,7 @@ run pitel_static_test 18132 mock_slow.py
 run pitel_block_test 18132 mock_slow.py
 run pitel_e2e_tool_test 18133 mock_tool.py
 run pitel_toolparse_test 18133 mock_tool.py
-run pitel_e2e_toolstream 18141 mock_stream.py
+run pitel_e2e_livetool 18141 mock_stream.py
 run pitel_e2e_streamfold 18135 mock_write.py
 run pitel_picker_test 18137 mock_models.py
 for t in pitel_fold_test pitel_detailfold_test pitel_think_test pitel_error_test pitel_ml_test \

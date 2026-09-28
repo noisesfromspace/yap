@@ -1,5 +1,6 @@
 :Pitel	pitel.txt	/*:Pitel*
 :PitelChangeModel	pitel.txt	/*:PitelChangeModel*
+:PitelLive	pitel.txt	/*:PitelLive*
 :PitelReload	pitel.txt	/*:PitelReload*
 :PitelSend	pitel.txt	/*:PitelSend*
 :PitelSessions	pitel.txt	/*:PitelSessions*

@@ -24,6 +24,9 @@ M.config = {
   -- (pi-style ~/.config/pitel/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
   agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/AGENTS.md",
+  -- Open a split tailing a tool's log the moment it starts running
+  -- (:PitelLive opens it manually).
+  auto_open_live = true,
 }
 
 local function system_prompt()
@@ -55,8 +58,10 @@ local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 local spinner_tick = 0
 local spinner_timer = nil
 
--- Forward declaration: `running` is defined with the send logic below.
+-- Forward declarations: `running` and `live` are defined with the send
+-- logic below.
 local running
+local live
 
 local function winbar_hl(text, group)
   return "%#Pitel" .. group .. "#" .. text .. "%*"
@@ -92,7 +97,9 @@ local function render_winbar(buf)
   end
   if running and running[buf] then
     local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
-    table.insert(parts, winbar_hl(" " .. frame .. " busy ", "Busy"))
+    local l = live and live[buf]
+    local state = l and (frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s") or (frame .. " busy")
+    table.insert(parts, winbar_hl(" " .. state .. " ", "Busy"))
   elseif errors[buf] then
     table.insert(parts, winbar_hl(" ✗ error ", "Error"))
   else
@@ -193,12 +200,12 @@ function M.parse_buffer(buf)
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
-      -- Inside a pitel:tool region: collect the result, skip pitel:ui and
-      -- the pitel:stream display region (both display-only).
+      -- Inside a pitel:tool region: collect the result, skip the
+      -- display-only pitel:ui section.
       if line:match("^<!%-%- /pitel:tool") then
         table.insert(tools, tool)
         tool = nil
-      elseif line:match("^<!%-%- pitel:ui") or line:match("^<!%-%- pitel:stream%s*$") then
+      elseif line:match("^<!%-%- pitel:ui") then
         -- Single-line form closes on the same line; multi-line never does.
         in_marker = not line:match("%-%->")
       elseif in_marker then
@@ -318,41 +325,6 @@ local function append_block(buf, block)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
 
---- Delete display-only pitel:stream regions whose tool result kept the
---- full output. The binary marks regions to KEEP with a `pitel:keepstream`
---- line right after the stream region's `-->` (a truncated result cut the
---- beginning the stream holds). Any stream region NOT so marked duplicates
---- its result byte-for-byte and is removed; keepstream lines are removed
---- either way.
-local function prune_stream_regions(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  -- Collect line ranges to delete, from the bottom up so deletions don't
-  -- shift earlier ranges.
-  local ranges = {}
-  local i = 1
-  while i <= #lines do
-    if lines[i]:match("^<!%-%- pitel:stream%s*$") then
-      -- Find this stream region's closer.
-      local closer = i
-      while closer <= #lines and not lines[closer]:match("^%-%->%s*$") do
-        closer = closer + 1
-      end
-      local keep = lines[closer + 1] and lines[closer + 1]:match("^<!%-%- pitel:keepstream%s*%-%->%s*$")
-      if keep then
-        table.insert(ranges, 1, { closer + 1, closer + 1 }) -- drop only the marker
-      else
-        table.insert(ranges, 1, { i, closer }) -- drop the whole region
-      end
-      i = closer + 1
-    else
-      i = i + 1
-    end
-  end
-  for _, r in ipairs(ranges) do
-    vim.api.nvim_buf_set_lines(buf, r[1] - 1, r[2], false, {})
-  end
-end
-
 --- Find the pitel:usage marker the binary appended for this turn, fold its
 --- numbers into the buffer's session totals (winbar), and remove the marker.
 local function consume_usage(buf)
@@ -381,6 +353,42 @@ end
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
 running = {}
 
+-- Live tool per buffer while a send is in flight: { name, log, since }.
+-- Set from the binary's `pitel:event` stderr lines (bash announces the
+-- temp file its output streams into), cleared on process exit.
+live = {}
+
+--- Handle one `pitel:event {json}` line from the binary's stderr.
+local function handle_event(buf, json_line)
+  local ok, ev = pcall(vim.json.decode, json_line)
+  if not ok or type(ev) ~= "table" then
+    return
+  end
+  if ev.type == "tool_start" and ev.log then
+    live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time() }
+    if M.config.auto_open_live then
+      M.live(buf)
+    end
+  end
+end
+
+--- Open a terminal tailing the running tool's log file (:PitelLive).
+--- Focus returns to the window the user was in — auto-open during a
+--- send must not steal it.
+function M.live(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local l = live[buf]
+  if not l then
+    vim.notify("pitel: no tool running (the live view tails bash's log while it runs)", vim.log.levels.WARN)
+    return
+  end
+  local prev = vim.api.nvim_get_current_win()
+  vim.cmd("botright 12split")
+  vim.fn.termopen({ "tail", "-f", l.log })
+  vim.bo.bufhidden = "wipe"
+  vim.api.nvim_set_current_win(prev)
+end
+
 --- Record a backend error: notify, persist it in the winbar, and leave a
 --- parse-excluded marker in the buffer as a record.
 local function report_error(buf, err)
@@ -394,45 +402,42 @@ local function report_error(buf, err)
   vim.notify("pitel: " .. err, vim.log.levels.ERROR)
 end
 
---- Close dangling comment regions left by an interrupted stream.
---- :PitelStop kills the binary, which os.Exit()s without emitting the
---- closers for a region it was mid-way through (pitely:thinking,
---- pitel:stream, or the pitel:tool region itself). The Lua parser only
---- closes tool regions on `<!-- /pitel:tool` — a missing one would
---- swallow the rest of the buffer into the tool result on the next
---- send. Idempotent; cheap enough to run on every process exit.
+--- Close dangling regions left by an interrupted stream. :PitelStop
+--- kills the binary, which os.Exit()s without emitting the closers for
+--- whatever it was mid-way through: a thinking comment (close with
+--- `-->`), a multi-line tool header (an unterminated comment: `-->`,
+--- then the region closer), or a tool region whose header landed but
+--- whose result didn't (`<!-- /pitel:tool -->`). Two flags suffice:
+--- model text/thinking and tool regions never interleave. Idempotent;
+--- cheap enough to run on every process exit.
 local function repair_stream_tail(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local last_head, opener = 0, nil
-  for i, line in ipairs(lines) do
-    if line:match("^# @%a+%s*$") then
-      last_head = i
-    elseif line:match("^<!%-%- /pitel:") or line == "-->" then
-      opener = nil
-    elseif line:match("^<!%-%- pitel:%a+.*%-%->%s*$") then
-      opener = nil -- single-line form (pitel:tool {…} -->, pitel:usage …)
-    else
-      opener = line:match("^<!%-%- (pitel:%a+)%s*$") or opener
+  local in_tool, comment_open = false, false
+  for _, line in ipairs(lines) do
+    if line:match("^<!%-%- /pitel:tool") then
+      in_tool = false
+    elseif line:match("^<!%-%- pitel:tool%s*$") then
+      in_tool, comment_open = true, true -- multi-line header comment
+    elseif line:match("^<!%-%- pitel:tool .+ %-%-%>%s*$") then
+      in_tool = true -- single-line header: comment closed, region open
+    elseif line:match("^<!%-%- pitel:%a+%s*$") then
+      comment_open = true
+    elseif line == "-->" then
+      comment_open = false
     end
   end
-  if opener then
-    local block = { "-->" }
-    if opener == "pitel:tool" then
-      -- A tool region without a result pair is invalid; close it.
-      table.insert(block, "<!-- /pitel:tool -->")
-    end
+  local block = {}
+  if comment_open then
+    table.insert(block, "-->")
+  end
+  if in_tool then
+    table.insert(block, "<!-- /pitel:tool -->")
+  end
+  if #block > 0 then
     vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, block)
-  end
-  -- An orphan `/pitel:tool` AFTER the last heading means the tool
-  -- region opener itself never arrived (killed before the header).
-  for i = #lines, last_head + 1, -1 do
-    if lines[i]:match("^<!%-%- /pitel:tool") then
-      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
-      return
-    end
   end
 end
 
@@ -466,6 +471,7 @@ function M.send()
 
   local payload = vim.json.encode({ messages = messages })
   local stderr_chunks = {}
+  local stderr_partial = "" -- event lines can split across chunks
 
   local ok, handle = pcall(vim.system, { M.config.bin, "send", "--provider", provider, "--model", model }, {
     stdin = payload,
@@ -476,31 +482,50 @@ function M.send()
         -- Tool-argument folds don't close themselves as they stream in
         -- (expr folds only get state from explicit commands). Only scan
         -- when the chunk can open such a fold — the multi-line tool
-        -- header — because close_tool_folds is an O(lines) main-loop
-        -- scan and streamed output (live pitel:stream, model text)
-        -- arrives in small chunks; scanning per chunk makes typing
-        -- sluggish in long sessions.
+        -- header — because close_detail_folds is an O(lines) main-loop
+        -- scan and streamed model text arrives in small chunks;
+        -- scanning per chunk makes typing sluggish in long sessions.
         if data:find("<!%-%- pitel:tool%s*$") or data:find("\n<!%-%- pitel:tool%s*\n") then
-          require("harness.fold").close_tool_folds(buf)
+          require("harness.fold").close_detail_folds(buf)
         end
       end
     end),
-    stderr = function(_, data)
-      if data then
-        table.insert(stderr_chunks, data)
+    stderr = vim.schedule_wrap(function(_, data)
+      if not data then
+        return
       end
-    end,
+      -- stderr mixes error text with `pitel:event {json}` lines (tool
+      -- progress); route complete lines, keep the rest for errors.
+      stderr_partial = stderr_partial .. data
+      while true do
+        local i = stderr_partial:find("\n", 1, true)
+        if not i then
+          break
+        end
+        local line = stderr_partial:sub(1, i - 1)
+        stderr_partial = stderr_partial:sub(i + 1)
+        local ev = line:match("^pitel:event (.+)$")
+        if ev then
+          handle_event(buf, ev)
+        else
+          table.insert(stderr_chunks, line)
+        end
+      end
+    end),
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
+    live[buf] = nil
     spinner_stop_if_idle()
     repair_stream_tail(buf)
+    if stderr_partial ~= "" then
+      table.insert(stderr_chunks, stderr_partial)
+    end
     if result.code ~= 0 then
-      local err = table.concat(stderr_chunks):gsub("%s+$", "")
+      local err = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
       report_error(buf, err ~= "" and err or ("exit " .. result.code))
       return
     end
     consume_usage(buf)
-    prune_stream_regions(buf)
     -- The binary can complete "successfully" with an embedded error
     -- marker (e.g. empty completion, max tool iterations): surface it.
     do
@@ -563,6 +588,9 @@ local function setup_buffer(buf)
   map("n", "<leader>m", function()
     M.change_model()
   end, "pitel: change model")
+  map("n", "<leader>l", function()
+    M.live()
+  end, "pitel: live tool output")
 
   require("harness.fold").setup_buffer(buf)
 
