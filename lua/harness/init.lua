@@ -24,9 +24,6 @@ M.config = {
   -- (pi-style ~/.config/pitel/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
   agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/AGENTS.md",
-  -- Open a split tailing a tool's log the moment it starts running
-  -- (:PitelLive opens it manually).
-  auto_open_live = true,
 }
 
 local function system_prompt()
@@ -58,10 +55,11 @@ local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 local spinner_tick = 0
 local spinner_timer = nil
 
--- Forward declarations: `running` and `live` are defined with the send
--- logic below.
+-- Forward declarations: `running`, `live` and `drain_tail` are defined
+-- with the send logic below.
 local running
 local live
+local drain_tail
 
 local function winbar_hl(text, group)
   return "%#Pitel" .. group .. "#" .. text .. "%*"
@@ -131,6 +129,9 @@ local function spinner_start()
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(0, 100, vim.schedule_wrap(function()
     spinner_tick = spinner_tick + 1
+    for b in pairs(running) do
+      drain_tail(b) -- pull new tool output into the tail buffers
+    end
     vim.cmd.redrawstatus() -- re-evaluates the winbar expression
     spinner_stop_if_idle()
   end))
@@ -353,10 +354,63 @@ end
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
 running = {}
 
--- Live tool per buffer while a send is in flight: { name, log, since }.
--- Set from the binary's `pitel:event` stderr lines (bash announces the
--- temp file its output streams into), cleared on process exit.
+-- Live tool per buffer while it runs: { name, log, since }. Set from
+-- the binary's `pitel:event` stderr lines (bash announces the temp file
+-- its output streams into), cleared on tool_end / process exit.
 live = {}
+
+-- Per-chat-buffer persistent tail: every tool call appends a
+-- `$ command` header and its output (drained from the temp log) to ONE
+-- nofile buffer, pitel://<session>-tail. :PitelLive opens it.
+local tails = {} -- chat buf → { bufnr, offset, has_content }
+
+local function ensure_tail(buf)
+  local t = tails[buf]
+  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
+    return t
+  end
+  local tail = vim.api.nvim_create_buf(true, true) -- listed scratch buffer
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name:match("^pitel://") then
+    name = name .. "-tail"
+  else
+    name = "pitel://" .. vim.fn.fnamemodify(name, ":t") .. "-tail"
+  end
+  vim.api.nvim_buf_set_name(tail, name)
+  vim.bo[tail].bufhidden = "hide"
+  t = { bufnr = tail, offset = 0 }
+  tails[buf] = t
+  return t
+end
+
+--- Append newly written bytes of the running tool's log to the tail
+--- buffer (called on the spinner tick, on tool_end, and on process
+--- exit). Defined via the forward declaration: the spinner ticks
+--- before this section runs.
+drain_tail = function(buf)
+  local t, l = tails[buf], live[buf]
+  if not t or not l then
+    return
+  end
+  local fd = vim.uv.fs_open(l.log, "r", 438)
+  if not fd then
+    return
+  end
+  local stat = vim.uv.fs_fstat(fd)
+  local data = stat and stat.size > t.offset and vim.uv.fs_read(fd, stat.size - t.offset, t.offset) or nil
+  if stat then
+    t.offset = stat.size
+  end
+  vim.uv.fs_close(fd)
+  if not data then
+    return
+  end
+  append_text(t.bufnr, data)
+  -- keep a visible tail window scrolled to the bottom
+  for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
+    vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
+  end
+end
 
 --- Handle one `pitel:event {json}` line from the binary's stderr.
 local function handle_event(buf, json_line)
@@ -366,29 +420,33 @@ local function handle_event(buf, json_line)
   end
   if ev.type == "tool_start" and ev.log then
     live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time() }
-    if M.config.auto_open_live then
-      M.live(buf)
-    end
+    local t = ensure_tail(buf)
+    t.offset = 0
+    append_text(t.bufnr, (t.has_content and "\n" or "") .. "$ " .. (ev.command or ev.name or "tool") .. "\n")
+    t.has_content = true
+  elseif ev.type == "tool_end" then
+    drain_tail(buf) -- the log is complete; a small one is about to be deleted
+    live[buf] = nil
   end
 end
 
---- Open a terminal tailing the running tool's log file (:PitelLive).
---- Focus returns to the window the user was in — auto-open during a
---- send must not steal it.
+--- Open the session's tail buffer (:PitelLive): one persistent log of
+--- every tool call's output, not a new terminal per call.
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  local l = live[buf]
-  if not l then
-    vim.notify("pitel: no tool running (the live view tails bash's log while it runs)", vim.log.levels.WARN)
+  local t = tails[buf]
+  if not t or not vim.api.nvim_buf_is_valid(t.bufnr) then
+    vim.notify("pitel: no tool output yet (the tail fills while bash runs)", vim.log.levels.WARN)
     return
   end
-  local prev = vim.api.nvim_get_current_win()
-  -- :new, not :split — termopen refuses to take over a modified buffer
-  -- (and a split of the chat buffer usually is one).
-  vim.cmd("botright 12new")
-  vim.fn.termopen({ "tail", "-f", l.log })
-  vim.bo.bufhidden = "wipe"
-  vim.api.nvim_set_current_win(prev)
+  local wins = vim.fn.win_findbuf(t.bufnr)
+  if #wins > 0 then
+    vim.api.nvim_set_current_win(wins[1])
+  else
+    vim.cmd("botright 12split")
+    vim.api.nvim_win_set_buf(0, t.bufnr)
+  end
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 
 --- Record a backend error: notify, persist it in the winbar, and leave a
@@ -520,6 +578,7 @@ function M.send()
     end),
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
+    drain_tail(buf) -- final bytes; a killed tool never sent tool_end
     live[buf] = nil
     spinner_stop_if_idle()
     repair_stream_tail(buf)

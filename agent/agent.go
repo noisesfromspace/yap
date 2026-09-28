@@ -131,6 +131,9 @@ type turn struct {
 	calls              []ToolCall
 	finishReason       string
 	prompt, completion int
+	// Buffer-write state at return, for block spacing in the agent loop.
+	outWrote bool // anything was written (false: cursor still on the empty line)
+	outTrail int  // trailing newlines of everything written
 }
 
 // lineEscaper buffers streamed text to line granularity so dangerous
@@ -175,7 +178,10 @@ func (l *lineEscaper) Flush() {
 
 // streamCompletion performs one streaming chat completion, writing text and
 // thinking markers to out as they arrive, and returns what the model said.
-func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*turn, error) {
+// wrote reports whether earlier output already sits in the buffer (tool
+// regions of previous iterations): the first write of a turn gets one
+// leading blank only when nothing has been written yet.
+func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer, wrote bool) (*turn, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -209,6 +215,15 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 	callArgs := map[int]*ToolCall{} // by delta index
 	inThinking := false
 	esc := newCommentEscaper(out) // for thinking text
+	// The first block of the whole turn gets one leading blank (the
+	// cursor sits on the empty line after the # @assistant heading);
+	// everything after that self-terminates with a blank line.
+	firstWrite := func() {
+		if !wrote {
+			out.WriteString("\n")
+			wrote = true
+		}
+	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -234,6 +249,7 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 			}
 			if c.Delta.ReasoningContent != "" {
 				if !inThinking {
+					firstWrite()
 					out.WriteString("<!-- pitel:thinking\n")
 					inThinking = true
 				}
@@ -245,6 +261,7 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 					out.WriteString("\n-->\n\n")
 					inThinking = false
 				}
+				firstWrite()
 				out.WriteString(c.Delta.Content)
 				t.text += c.Delta.Content
 				out.Flush()
@@ -273,7 +290,14 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 		// Stream ended mid-thinking (or the model emitted nothing else):
 		// close the marker so the block stays parseable.
 		esc.Flush()
-		out.WriteString("\n-->\n")
+		out.WriteString("\n-->\n\n")
+	}
+	t.outWrote = wrote
+	switch {
+	case t.text != "":
+		t.outTrail = trailingNL(t.text)
+	case wrote:
+		t.outTrail = 2 // thinking-only turn: closed with a blank line
 	}
 	// Providers should use contiguous 0-based indices, but don't assume:
 	// collect and sort the keys so sparse indices can't silently drop calls.
@@ -338,7 +362,8 @@ func escapeMarkerPrefixes(s string) string {
 // immediately when the model commits to the call — the arguments are
 // visible in the buffer while the tool runs, and the gap to the result
 // honestly represents execution time. Flushed so the header lands
-// before a long-running tool's result.
+// before a long-running tool's result. Blocks carry no leading
+// newlines; the caller pads (one blank line between blocks, R7).
 func emitToolHeader(out *bufio.Writer, call ToolCall) {
 	var args any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
@@ -351,12 +376,21 @@ func emitToolHeader(out *bufio.Writer, call ToolCall) {
 		Arguments any    `json:"arguments"`
 	}{call.ID, call.Function.Name, args})
 	if len(header) <= toolHeaderMaxSingle {
-		fmt.Fprintf(out, "\n\n<!-- pitel:tool %s -->\n", header)
+		fmt.Fprintf(out, "<!-- pitel:tool %s -->\n", header)
 	} else {
 		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
-		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n", pretty)
+		fmt.Fprintf(out, "<!-- pitel:tool\n%s\n-->\n", pretty)
 	}
 	out.Flush()
+}
+
+// trailingNL counts the newline characters at the end of s.
+func trailingNL(s string) int {
+	n := 0
+	for n < len(s) && s[len(s)-1-n] == '\n' {
+		n++
+	}
+	return n
 }
 
 // emitToolResult finishes an open pitel:tool region: the result text
@@ -377,7 +411,8 @@ func emitToolResult(out *bufio.Writer, result, ui string) {
 	if ui != "" {
 		fmt.Fprintf(out, "<!-- pitel:ui\n%s\n-->\n", ui)
 	}
-	out.WriteString("<!-- /pitel:tool -->\n")
+	// Regions self-terminate with exactly one blank line (R7).
+	out.WriteString("<!-- /pitel:tool -->\n\n")
 	out.Flush()
 }
 
@@ -450,6 +485,21 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	messages := req.Messages
 	var totPrompt, totCompletion int
 
+	// Block spacing (R7): blocks never start with newlines and
+	// self-terminate with exactly one blank line; pad() bridges the
+	// transitions (heading → first block, streamed text → tool header).
+	wrote, trail := false, 0
+	pad := func() {
+		if !wrote {
+			out.WriteString("\n") // cursor sits on the empty line after the heading
+			wrote, trail = true, 1
+			return
+		}
+		for ; trail < 2; trail++ {
+			out.WriteString("\n")
+		}
+	}
+
 	// :PitelStop kills this process; take in-flight tool commands (own
 	// process groups) down with it instead of orphaning them.
 	sig := make(chan os.Signal, 1)
@@ -471,12 +521,15 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			StreamOptions: &struct {
 				IncludeUsage bool `json:"include_usage"`
 			}{IncludeUsage: true},
-		}, url, apiKey, out)
+		}, url, apiKey, out, wrote)
 		if err != nil {
 			return err
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
+		if t.outWrote {
+			wrote, trail = true, t.outTrail
+		}
 
 		if len(t.calls) == 0 {
 			if strings.TrimSpace(t.text) == "" {
@@ -487,12 +540,14 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				if reason == "" {
 					reason = "unknown"
 				}
-				fmt.Fprintf(out, "\n\n<!-- pitel:error\nmodel returned an empty completion (finish_reason: %s)\n-->", reason)
+				pad()
+				fmt.Fprintf(out, "<!-- pitel:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
 			}
 			break // final answer streamed; turn complete
 		}
 		if iter+1 >= maxToolIterations {
-			fmt.Fprintf(out, "\n\n<!-- pitel:error\nmax tool iterations (%d) reached\n-->\n", maxToolIterations)
+			pad()
+			fmt.Fprintf(out, "<!-- pitel:error\nmax tool iterations (%d) reached\n-->\n\n", maxToolIterations)
 			break
 		}
 
@@ -508,8 +563,10 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			var result, ui string
 			if !ok {
 				result = "error: unknown tool " + call.Function.Name
-				emitToolResult(out, "\n\n"+result, "")
+				pad()
+				emitToolResult(out, result, "")
 			} else {
+				pad()
 				emitToolHeader(out, call)
 				var err error
 				result, ui, err = tool.Run(json.RawMessage(call.Function.Arguments))
@@ -519,9 +576,9 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				}
 				emitToolResult(out, result, ui)
 			}
+			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
-		out.WriteString("\n")
 		out.Flush()
 	}
 
@@ -533,7 +590,8 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			m["cost"] = float64(totPrompt)/1e6*p.Input + float64(totCompletion)/1e6*p.Output
 		}
 		b, _ := json.Marshal(m)
-		fmt.Fprintf(out, "\n<!-- pitel:usage %s -->\n", b)
+		pad()
+		fmt.Fprintf(out, "<!-- pitel:usage %s -->\n", b)
 	}
 	out.Flush()
 	return nil

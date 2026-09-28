@@ -80,21 +80,28 @@ func TestBashToolStartEvent(t *testing.T) {
 	if _, _, err := run(t, "bash", `{"command":"echo hi"}`); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	line := strings.TrimSpace(buf.String())
-	jsonLine, ok := strings.CutPrefix(line, "pitel:event ")
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected tool_start + tool_end events, got: %q", buf.String())
+	}
+	jsonLine, ok := strings.CutPrefix(lines[0], "pitel:event ")
 	if !ok {
-		t.Fatalf("no pitel:event line: %q", line)
+		t.Fatalf("no pitel:event line: %q", lines[0])
 	}
 	var ev struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-		Log  string `json:"log"`
+		Type    string `json:"type"`
+		Name    string `json:"name"`
+		Log     string `json:"log"`
+		Command string `json:"command"`
 	}
 	if err := json.Unmarshal([]byte(jsonLine), &ev); err != nil {
 		t.Fatalf("event not JSON: %v", err)
 	}
-	if ev.Type != "tool_start" || ev.Name != "bash" || !strings.Contains(ev.Log, "pitel-bash-") {
+	if ev.Type != "tool_start" || ev.Name != "bash" || !strings.Contains(ev.Log, "pitel-bash-") || ev.Command != "echo hi" {
 		t.Fatalf("bad event: %+v", ev)
+	}
+	if !strings.Contains(lines[1], `"tool_end"`) {
+		t.Fatalf("no tool_end event: %q", lines[1])
 	}
 }
 

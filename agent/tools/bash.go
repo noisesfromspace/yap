@@ -67,7 +67,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		return "", "", err
 	}
 	outPath := out.Name()
-	ev, _ := json.Marshal(map[string]string{"type": "tool_start", "name": "bash", "log": outPath})
+	ev, _ := json.Marshal(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
 	fmt.Fprintf(eventOut, "pitel:event %s\n", ev)
 	cmd.Stdin = nil // /dev/null
 	cmd.Stdout = out
@@ -94,6 +94,10 @@ func runBash(a *bashArgs) (string, string, error) {
 		syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
+	// The log is complete; let the Lua side drain it before a small
+	// (untruncated) log is removed below.
+	evEnd, _ := json.Marshal(map[string]string{"type": "tool_end", "name": "bash"})
+	fmt.Fprintf(eventOut, "pitel:event %s\n", evEnd)
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {

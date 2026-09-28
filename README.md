@@ -35,8 +35,8 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
 - `<leader>m` / `:PitelChangeModel` — switch models (queries the providers
   in config.json for their model lists)
 - `:PitelStop` — kill the in-flight request
-- `:PitelLive` / `<leader>l` — watch a running tool's output (opens a
-  terminal tailing the tool's log; opens automatically by default)
+- `:PitelLive` / `<leader>l` — watch tool output live: one persistent
+  `pitel://<session>-tail` buffer with a `$ command` header per call
 - `:PitelSessions [all]` — resume a saved session
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in

@@ -46,11 +46,13 @@ truth, and that can be a text buffer. Consequences:
 :PitelStop              Kill the in-flight request for the current buffer.
 
                                                                 *:PitelLive*
-:PitelLive              Open a terminal tailing the running tool's log
-                        file (bash announces it via a pitel:event line,
-                        see |pitel-protocol|). Focus returns to the
-                        window you were in. Opens automatically while a
-                        tool runs unless auto_open_live = false.
+:PitelLive              Open the session's tail buffer: one persistent
+                        pitel://<session>-tail buffer that accumulates
+                        every tool call's output (a `$ command` header
+                        per call, drained from the tool's temp log while
+                        it runs, see |pitel-protocol|). Opens it in a
+                        split scrolled to the bottom, or focuses the
+                        existing window. Never opens by itself.
 
                                                         *:PitelChangeModel*
 :PitelChangeModel {provider/model}
@@ -102,7 +104,6 @@ Lua setup: >lua
     },
     system = "...",       -- fallback system prompt
     agents_file = "~/.config/pitel/AGENTS.md",
-    auto_open_live = true, -- open the live tool view when a tool starts
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
@@ -156,8 +157,9 @@ bash runs commands non-interactively (stdin is /dev/null) in their own
 process group: on timeout (default 120s, model-adjustable) the whole
 group is SIGKILLed, and :PitelStop takes in-flight commands down with
 the binary. Output streams into a temp file; the binary announces the
-path on stderr (pitel:event, see |pitel-protocol|) and :PitelLive tails
-it — live output never enters the chat buffer (R16). The result is
+path on stderr (pitel:event, see |pitel-protocol|) and the Lua side
+drains it into the session's tail buffer (:PitelLive) — live output
+never enters the chat buffer (R16). The result is
 truncated to the LAST 2000 lines / 50KB with the full output kept in
 the temp file; a non-zero exit is reported to the model, not treated
 as an error. There is deliberately no sandbox and no confirmation
@@ -357,10 +359,11 @@ Example: `moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
   argv    pitel send --provider NAME --model MODEL
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
           wrapped in |pitel-markers|
-  stderr  error message, exit 1. May also carry progress lines of the
-          form `pitel:event {"type":"tool_start","name":"bash","log":…}`;
-          the Lua side routes them to the winbar and |:PitelLive|, the
-          rest is error text.
+  stderr  error message, exit 1. Also carries progress lines of the
+          form `pitel:event {"type":"tool_start","name":"bash","log":…,
+          "command":…}` and `…{"type":"tool_end",…}`; the Lua side
+          routes them to the winbar and the tail buffer (|:PitelLive|),
+          the rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool
 calls it executes them (compiled-in tools, see |pitel-tools|), emits one
@@ -410,6 +413,12 @@ R7  Exactly one blank line between message blocks, enforced LOCALLY at
     binary separates streamed tool blocks with blank lines. There is no
     buffer-wide normalize pass: sends never rewrite existing lines, so
     what you see before ctrl-s is byte-identical to what gets sent.
+    Binary-emitted blocks (thinking, tool regions, error markers) carry
+    no leading newlines and self-terminate with exactly one blank line;
+    a pad() in the agent loop bridges the two stateful transitions
+    (heading → first block, streamed text → first tool header).
+    (Bug of record: blocks prepended \n\n while regions also ended in
+    \n, giving two blank lines between tool calls.)
     Why: readable diffs, stable folds, gptel-like staticness.
     (Bug of record: hand-rolled "\n" prefixes broke separation when
     trailing-blank trimming was added; a buffer-wide normalize pass made
@@ -485,12 +494,14 @@ R16 Live tool output never enters the chat buffer.
     The buffer is the parseable conversation document (R1); streaming
     command output into it forces incremental escaping, dangling-region
     repair and post-turn dedup (the pitel:stream/keepstream design this
-    rule replaced). Instead the tool's own log file is the live view:
-    bash announces its temp file via a pitel:event stderr line and
-    :PitelLive tails it. The buffer only gets one-shot, append-only
-    writes: the tool header when the call commits, the result when it
-    finishes. Why: output exists in exactly one place at any moment,
-    and the buffer format has no transient states to repair.
+    rule replaced). Instead each session has ONE persistent tail buffer
+    (pitel://<session>-tail): bash announces its temp log via a
+    pitel:event stderr line, the Lua side drains new bytes into the
+    tail (a `$ command` header per call), and :PitelLive opens it. The
+    chat buffer only gets one-shot, append-only writes: the tool header
+    when the call commits, the result when it finishes. Why: output
+    exists in exactly one place at any moment, and the buffer format
+    has no transient states to repair.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

@@ -92,6 +92,10 @@ func TestSendToolLoop(t *testing.T) {
 	if strings.Count(s, "\n<!-- pitel:tool") != 2 || strings.Count(s, "\n<!-- /pitel:tool -->\n") != 2 {
 		t.Fatalf("tool regions wrong (sparse indices dropped?):\n%s", s)
 	}
+	// R7: exactly one blank line between blocks — never two
+	if strings.Contains(s, "\n\n\n") {
+		t.Fatalf("double blank line between blocks:\n%s", s)
+	}
 	// marker line inside the result escaped with a visible backslash
 	if !strings.Contains(s, "\\<!-- /pitel:tool -->") {
 		t.Fatalf("result marker line not escaped:\n%s", s)

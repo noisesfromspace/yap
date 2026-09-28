@@ -7,7 +7,17 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
-pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1", auto_open_live = false })
+pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1" })
+
+-- The persistent tail buffer of a chat buffer (pitel://<name>-tail).
+local function tail_buf(chat)
+  local name = vim.api.nvim_buf_get_name(chat) .. "-tail"
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(b) == name then
+      return b
+    end
+  end
+end
 
 -- Replace the typing line under the LAST # @user heading (a positional
 -- set_lines would delete the heading itself).
@@ -39,6 +49,16 @@ local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")
 
+-- the tail buffer IS filling while the tool runs (capture the bufnr
+-- now: session.save renames the chat buffer on completion, so the
+-- name-based lookup would miss afterwards)
+local tb1
+local tail_filling = vim.wait(10000, function()
+  tb1 = tail_buf(buf)
+  return tb1 and table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n"):match("\nl1\n") ~= nil
+end, 20)
+assert(tail_filling, "tail buffer not filling during the run")
+
 local done = vim.wait(30000, function()
   return vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == ""
     and vim.api.nvim_buf_get_lines(buf, -3, -2, false)[1] == "# @user"
@@ -61,6 +81,12 @@ assert(not text:match("\n<!%-%- pitel:tool %-%-%>\n"), "unescaped marker line le
 assert(text:match("stream done"), "final answer missing: " .. text)
 -- winbar back to idle
 assert(not pitel.winbar():match("bash"), "winbar still shows the tool after completion")
+
+-- the tail holds the FULL output (tool_end drains before the temp log
+-- of an untruncated run is deleted), with a $ command header
+local tail_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
+assert(tail_text:match("^%$ printf"), "no command header in tail: " .. tail_text)
+assert(tail_text:match("\nl1\nl2\n") and tail_text:match("tail%-without%-newline"), "tail incomplete: " .. tail_text)
 
 -- the parsed tool message carries the result, marker line excluded
 local toolmsg
@@ -86,25 +112,21 @@ assert(msgs_rt[#msgs_rt].role == "user" and msgs_rt[#msgs_rt].content:match("fol
 assert(msgs_rt[#msgs_rt - 1].role == "tool",
   "tool result lost before follow-up; roles=" .. table.concat(roles, ","))
 
--- ─── auto_open_live + stop mid-run ────────────────────────────────────────
-pitel.config.auto_open_live = true
+-- ─── :PitelLive + stop mid-run ───────────────────────────────────────────
 local buf2 = pitel.new()
 set_prompt(buf2, "run again; I will stop you")
 pitel.send()
 
--- the live terminal opened by itself, tailing the tool's log
-local term_found = vim.wait(10000, function()
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.bo[b].buftype == "terminal" then
-      return true
-    end
-  end
-  return false
+-- the tail fills; :PitelLive opens it in a split, scrolled to the bottom
+local tb2 = vim.wait(10000, function()
+  return tail_buf(buf2) ~= nil
 end, 20)
-assert(term_found, "live terminal did not auto-open")
--- focus returned to the chat buffer
-assert(vim.api.nvim_get_current_buf() == buf2, "auto-open stole focus")
+assert(tb2, "no tail buffer for the second session")
+pitel.live()
+assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"), ":PitelLive did not open the tail")
+assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail window not at the bottom")
 
+vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
 pitel.stop()
 -- M.stop() clears the winbar immediately; the exit callback (which runs
 -- repair_stream_tail) lags behind — wait for the repair itself.
