@@ -88,6 +88,9 @@ Set only in pitel buffers.
                         (messages stay open).
   <leader>3             Unfold everything.
 
+  View 1 is the default for opened session buffers; the system prompt
+  stays folded in every view. See |pitel-folding|.
+
 ==============================================================================
 4. CONFIGURATION                                        *pitel-configuration*
 
@@ -316,31 +319,42 @@ File operations are the session operations (pi equivalents, but manual):
 8. FOLDING & NAVIGATION                                        *pitel-folding*
 
 `# @role` headings are folds (foldexpr); a closed fold shows the role and
-the first content line. Multi-line `pitel:` comment regions (thinking,
-tool headers, ui diffs) are level-2 folds inside the message fold; a
-closed one shows its kind (`▸ pitel:thinking`, `▸ tool: write`).
+the first content line. Inside a message fold, level-2 folds collapse
+display regions: a whole `pitel:tool` region (header, result and ui
+diff, both header forms) folds to one `▸ tool: <name>` line; thinking
+and error comment regions fold likewise.
 
 Three views, bound to <leader>1..3, each applied unconditionally so a
 keypress always lands on the same state:
 
-  <leader>1   agent output folded — only user prompts stay open
-  <leader>2   conversation open, tool calls and thinking folded (default)
+  <leader>1   agent output folded — only user prompts stay open (default)
+  <leader>2   conversation open, tool calls and thinking folded
   <leader>3   everything unfolded
 
-The active level shows in the winbar (`Ⓕ0`-`Ⓕ2`), see |pitel-winbar|.
-View 2 is applied once when a session buffer is opened. Sends never
-touch fold state: streaming appends at the end, and tool header folds
-close themselves chunk by chunk. Navigation keymaps jump between
+The system prompt is reference material: it stays folded in EVERY view
+until opened manually (za).
+
+The applied view shows in the winbar (`Ⓕ1`-`Ⓕ3`), see |pitel-winbar|.
+View 1 is applied once when a session buffer is opened. Between view
+keypresses fold state is STATIC — typing, streaming and manual za
+toggles change nothing and are never reset. Views are implemented as
+'foldlevel' (views 1/2: 1, view 3: 99) plus manual closes of the hidden
+message folds, so a send needs no fold commands at all: the new
+assistant block opens by itself, streamed tool regions appear folded in
+views 1/2, and the next prompt is always open. (Manual opens are never
+used: Neovim inherits a manual foldopen into child folds created
+later; manual closes stay local.) Navigation keymaps jump between
 headings, see |pitel-keymaps|.
 
 ==============================================================================
 9. WINBAR                                                      *pitel-winbar*
 
 The winbar is the session dashboard. Left: the provider/model combo and
-the fold level (`Ⓕ0` all open, `Ⓕ1` agent output folded, `Ⓕ2` tools &
-thinking folded). Right: token totals and cost for this
-buffer (accumulated over its lifetime, compact k-format), then the state
-glyph pinned to the far right edge:
+the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
+folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
+manual |za| toggles don't update it). Right: token totals and cost for
+this buffer (accumulated over its lifetime, compact k-format), then the
+state glyph pinned to the far right edge:
 
   ⠋ busy    A request is in flight (driven by the job table). While a
             tool runs, its name and elapsed time replace "busy"
@@ -437,12 +451,19 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     same way.
 
 R10 View levels: <leader>1 folds all agent output (user prompts stay
-    open), <leader>2 folds tool calls and thinking only, <leader>3
-    unfolds everything. Applied with unconditional zM/zR first, so a
-    keypress always lands on the same state. View 2 is applied ONLY when
-    a session buffer is opened — never during a send (streaming appends
-    don't disturb folds, and tool header folds close chunk by chunk as
-    they appear).
+    open), <leader>2 folds tool calls and thinking only (a whole
+    pitel:tool region — header, result, ui — is ONE level-2 fold),
+    <leader>3 unfolds everything; the system prompt stays folded in
+    every view until opened manually. Views are 'foldlevel' (1/2 → 1,
+    3 → 99) plus manual closes of hidden message folds, applied with a
+    forced 'foldlevel' change first so a keypress always lands on the
+    same state and resets manual za toggles. View 1 is applied ONLY
+    when a session buffer is opened; between keypresses fold state is
+    static — sends, streaming and typing never touch it (new folds
+    adopt 'foldlevel' as they appear). Never open folds manually
+    (Neovim inherits a manual foldopen into child folds created later);
+    only close them. The winbar Ⓕ chip shows the last APPLIED view,
+    not measured fold state (measuring made <leader>3 read Ⓕ0).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the

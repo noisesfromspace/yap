@@ -20,7 +20,8 @@ local TOOL_CLOSE = "^<!%-%- /pitel:tool"
 -- Multi-line comment opener (nothing but the word after `pitel:`).
 local COMMENT_OPEN = "^<!%-%-.*pitel:%a+%s*$"
 
--- The three view levels, bound to <leader>1..3:
+-- The three view levels, bound to <leader>1..3 (the system prompt stays
+-- folded in all of them until opened manually):
 --   1: agent output hidden — only user prompts open
 --   2: conversation visible — tool calls, thinking and other display
 --      regions folded away
@@ -149,53 +150,35 @@ function M.level()
   return applied[vim.api.nvim_get_current_buf()] or 3
 end
 
--- The view last applied to buf (nil if never), for the send logic.
-function M.view(buf)
-  return applied[buf]
-end
-
--- Close every level-2 (tool region, thinking, error) fold, leaving
--- message folds untouched. Deterministic: scans for region openers and
--- closes only when that fold isn't already closed (closing an
--- already-closed fold would close its parent).
-local function is_region_opener(s)
-  return s:match(TOOL_OPEN) ~= nil or (s:match(COMMENT_OPEN) ~= nil and not s:match("%-%->"))
-end
-
-function M.close_detail_folds(buf)
-  buf = buf or vim.api.nvim_get_current_buf()
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_call(win, function()
-        for lnum = 1, vim.api.nvim_buf_line_count(buf) do
-          if is_region_opener(vim.fn.getline(lnum)) and vim.fn.foldclosed(lnum) == -1 then
-            pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
-          end
-        end
-      end)
+-- Close the message folds a view hides — MANUALLY, never via
+-- 'foldlevel'=0 + foldopen. A manual OPEN on a fold is inherited by
+-- child folds created later (a tool region streaming into the opened
+-- assistant block would appear open), while a manual CLOSE stays
+-- local, and brand-new folds simply follow 'foldlevel': 1 keeps
+-- messages open and regions folded. The system prompt is reference
+-- material: folded in every view until opened manually (za).
+local function close_message_folds(keep_user)
+  for lnum = 1, vim.api.nvim_buf_line_count(0) do
+    local role = vim.fn.getline(lnum):match(HEAD)
+    if role and (role == "system" or (keep_user and role ~= "user")) then
+      pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
     end
   end
 end
 
--- Open/close state per view, applied with unconditional zM/zR first so a
--- keypress always lands on the same state no matter what was open.
+-- Open/close state per view: 'foldlevel' is 1 (views 1/2) or 99 (view
+-- 3), then the folds the view hides are closed manually. A real CHANGE
+-- of 'foldlevel' resets all manual za toggles to the level's state, so
+-- bump first to guarantee the change — a keypress always lands on the
+-- same state. Between keypresses NOTHING touches fold state: new folds
+-- adopt 'foldlevel' (streamed tool regions appear folded in views 1/2,
+-- open in 3), manual za persists, typing changes nothing.
 function M.set_view_level(level)
   applied[vim.api.nvim_get_current_buf()] = level
-  if level == 1 then
-    -- Only user prompts visible; all agent output folded away.
-    vim.cmd("silent! normal! zM")
-    for lnum = 1, vim.api.nvim_buf_line_count(0) do
-      if vim.fn.getline(lnum):match(HEAD) == "user" then
-        pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
-      end
-    end
-  elseif level == 2 then
-    -- Full conversation; tool calls, thinking and display regions folded.
-    vim.cmd("silent! normal! zR")
-    M.close_detail_folds()
-  elseif level == 3 then
-    vim.cmd("silent! normal! zR")
-  end
+  -- Force the next set to be a real change (resetting manual toggles).
+  vim.wo.foldlevel = level == 3 and 98 or 99
+  vim.wo.foldlevel = level == 3 and 99 or 1
+  close_message_folds(level == 1) -- view 1 keeps only user prompts open
 end
 
 -- ─── Message navigation ────────────────────────────────────────────────────

@@ -524,13 +524,10 @@ function M.send()
   vim.b[buf].pitel_model = model
 
   append_block(buf, { "# @assistant", "" })
-  -- Sends never touch EXISTING fold state or rewrite existing lines: the
-  -- buffer is always in its final format, streaming only appends at the
-  -- end, and tool-argument folds close chunk by chunk in the stdout
-  -- handler. But view 1 left 'foldlevel' at 0 (zM), which closes NEW
-  -- folds as they appear — open the new block's message fold or the
-  -- reply streams in invisibly. Touches only the new fold.
-  pcall(vim.cmd, ("silent! %dfoldopen!"):format(vim.api.nvim_buf_line_count(buf) - 1))
+  -- Sends never touch fold state or rewrite existing lines: the buffer
+  -- is always in its final format, streaming only appends at the end,
+  -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
+  -- the new assistant block opens by itself in every view.
   spinner_start()
 
   local payload = vim.json.encode({ messages = messages })
@@ -542,16 +539,9 @@ function M.send()
     text = true,
     stdout = vim.schedule_wrap(function(_, data)
       if data then
+        -- Appending never touches fold state: new folds adopt the
+        -- view's 'foldlevel' as they appear (R10).
         append_text(buf, data)
-        -- Tool-argument folds don't close themselves as they stream in
-        -- (expr folds only get state from explicit commands). Only scan
-        -- when the chunk can open such a fold — the multi-line tool
-        -- header — because close_detail_folds is an O(lines) main-loop
-        -- scan and streamed model text arrives in small chunks;
-        -- scanning per chunk makes typing sluggish in long sessions.
-        if data:find("<!%-%- pitel:tool%s*$") or data:find("\n<!%-%- pitel:tool%s*\n") then
-          require("harness.fold").close_detail_folds(buf)
-        end
       end
     end),
     stderr = vim.schedule_wrap(function(_, data)
@@ -609,15 +599,6 @@ function M.send()
       end
     end
     append_block(buf, { "# @user", "" })
-    -- The new prompt is where the user types next: keep it open even
-    -- with 'foldlevel' at 0 (view 1). No-op in views 2/3.
-    pcall(vim.cmd, ("silent! %dfoldopen!"):format(vim.api.nvim_buf_line_count(buf) - 1))
-    -- Tool regions that streamed in open don't match view 2 (the stdout
-    -- hook only closes multi-line headers as they arrive); fold them to
-    -- match the view.
-    if require("harness.fold").view(buf) == 2 then
-      require("harness.fold").close_detail_folds(buf)
-    end
     require("harness.session").save(buf)
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })

@@ -16,12 +16,11 @@ local function append(l)
 end
 append("<!-- pitel:tool")
 append("{")
-fold.close_detail_folds(buf) -- first chunk with a real (2-line) fold
+-- view 2 left 'foldlevel' at 1: the new level-2 fold closes itself
 local opener = 7
 assert(vim.fn.foldclosed(opener) == opener, "not closed after opener: " .. vim.fn.foldclosed(opener))
 for _, l in ipairs({ '  "id": "w1",', '  "name": "write",', '  "arguments": { "content": "x" }', "}", "-->" }) do
   append(l)
-  fold.close_detail_folds(buf) -- per-chunk close, as the stream hook does
 end
 assert(vim.fn.foldclosed(opener) == opener, "fold reopened while JSON streamed: " .. vim.fn.foldclosed(opener))
 append("Successfully wrote 1 bytes to /tmp/x")

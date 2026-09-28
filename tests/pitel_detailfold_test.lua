@@ -44,12 +44,15 @@ assert(vim.fn.foldlevel(single + 2) == 2, "closer after single-line header: " ..
 assert(vim.fn.foldlevel(single + 3) == 1, "blank after region level: " .. vim.fn.foldlevel(single + 3))
 
 -- default state (view 1): only user prompts open
+assert(vim.fn.foldclosed(1) == 1, "system block not folded by default")
 assert(vim.fn.foldclosed(9) == 9, "assistant block not folded by default")
 assert(vim.fn.foldclosed(5) == -1, "user block not open by default")
 assert(fold.level() == 1, "default view is 1")
 
--- view 2: messages open, thinking and both tool regions folded
+-- view 2: messages open (system prompt stays folded), thinking and
+-- both tool regions folded
 fold.set_view_level(2)
+assert(vim.fn.foldclosed(1) == 1, "view 2 opens the system prompt")
 assert(vim.fn.foldclosed(9) == -1, "view 2 does not open assistant block")
 assert(vim.fn.foldclosed(opener) == opener, "view 2 does not fold thinking")
 assert(vim.fn.foldclosed(tool) == tool, "view 2 does not fold tool region")
@@ -62,10 +65,11 @@ assert(fold.text(opener, 14) == "▸ pitel:thinking (4 lines)", "foldtext: " .. 
 assert(fold.text(tool, 32) == "▸ tool: write (15 lines)", "foldtext: " .. fold.text(tool, 32))
 assert(fold.text(single, 38) == "▸ tool: bash (3 lines)", "foldtext: " .. fold.text(single, 38))
 
--- view 3 unfolds everything, deterministically
+-- view 3 unfolds everything but the system prompt, deterministically
 fold.set_view_level(3)
 assert(vim.fn.foldclosed(opener) == -1, "view 3 opens thinking")
 assert(vim.fn.foldclosed(tool) == -1, "view 3 opens tool region")
+assert(vim.fn.foldclosed(1) == 1, "view 3 opens the system prompt")
 assert(fold.level() == 3, "view 3 reports level 3")
 
 -- view 2 from mixed state: close thinking only, open the tool fold, reapply
@@ -81,6 +85,19 @@ fold.set_view_level(1)
 assert(vim.fn.foldclosed(9) == 9, "view 1 folds assistant")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
 assert(vim.fn.foldlevel(opener) == 2, "level-2 fold under folded block still level 2")
+
+-- fold state is STATIC between view keypresses: manually open a region
+-- with za, then type a new message — nothing may move
+fold.set_view_level(2)
+vim.cmd(("silent! %dfoldopen"):format(tool))
+assert(vim.fn.foldclosed(tool) == -1, "precondition: tool region opened manually")
+vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "", "# @user", "", "next question", "continued" })
+assert(vim.fn.foldclosed(tool) == -1, "typing closed a manually opened fold")
+assert(vim.fn.foldclosed(opener) == opener, "typing opened the thinking fold")
+assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool fold")
+-- only pressing the view key AGAIN resets to the view
+fold.set_view_level(2)
+assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
 -- winbar shows the applied view next to the model name
 fold.set_view_level(2)

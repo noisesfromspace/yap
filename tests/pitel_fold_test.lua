@@ -34,14 +34,16 @@ assert(vim.fn.foldclosed(5) == 5, "precondition: user fold closed")
 fold.set_view_level(1)
 assert(vim.fn.foldclosed(5) == -1, "view 1 reopens user prompts")
 
--- view 2: everything open (no detail folds here)
+-- view 2: conversation open, but the system prompt stays folded
 fold.set_view_level(2)
-assert(vim.fn.foldclosed(1) == -1 and vim.fn.foldclosed(9) == -1, "view 2 opens messages")
+assert(vim.fn.foldclosed(1) == 1, "view 2 opens the system prompt")
+assert(vim.fn.foldclosed(9) == -1, "view 2 folds assistant")
 assert(fold.level() == 2, "view 2 reports level 2")
 
--- view 3: everything open
+-- view 3: everything open except the system prompt
 fold.set_view_level(3)
-assert(vim.fn.foldclosed(1) == -1, "view 3 opens everything")
+assert(vim.fn.foldclosed(1) == 1, "view 3 opens the system prompt")
+assert(vim.fn.foldclosed(9) == -1, "view 3 folds assistant")
 assert(fold.level() == 3, "view 3 reports level 3")
 
 -- foldtext
