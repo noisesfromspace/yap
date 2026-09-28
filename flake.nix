@@ -25,7 +25,7 @@
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
             modRoot = "agent";
-            vendorHash = null; # dependencies are vendored
+            vendorHash = "sha256-4lED6Oowh//q3jLnDFsmXZMDUkGf0+67ecXeClMGDU0=";
             env.CGO_ENABLED = "0";
             meta.mainProgram = "agent";
           };

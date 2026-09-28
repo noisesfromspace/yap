@@ -1,2 +1,3 @@
 /pitel
 vendor/
+!agent/vendor/
