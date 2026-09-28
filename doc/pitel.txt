@@ -229,6 +229,14 @@ A tool call and its result are ONE region inside an assistant block: >
                   tools return confirmations (pi/Codex pattern), read-like
                   tools return (truncated) content.
 
+  <!-- pitel:stream   Display-only live output while a tool runs (bash
+                  command output, throttled to ~100ms line-aligned
+                  chunks). Parse-excluded like pitel:ui — never sent to
+                  the model; the truncated tail result above is what the
+                  model sees. The header lands BEFORE the tool runs, so
+                  the call (and its arguments) is visible while it
+                  executes.
+
   <!-- pitel:ui   Optional display-only payload (a rendered unified diff
                   for edits and writes — creates included, as an all-`+`
                   diff). Parse-excluded like thinking: editing or

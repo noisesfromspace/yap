@@ -357,6 +357,48 @@ local function report_error(buf, err)
   vim.notify("pitel: " .. err, vim.log.levels.ERROR)
 end
 
+--- Close dangling comment regions left by an interrupted stream.
+--- :PitelStop kills the binary, which os.Exit()s without emitting the
+--- closers for a region it was mid-way through (pitely:thinking,
+--- pitel:stream, or the pitel:tool region itself). The Lua parser only
+--- closes tool regions on `<!-- /pitel:tool` — a missing one would
+--- swallow the rest of the buffer into the tool result on the next
+--- send. Idempotent; cheap enough to run on every process exit.
+local function repair_stream_tail(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local last_head, opener = 0, nil
+  for i, line in ipairs(lines) do
+    if line:match("^# @%a+%s*$") then
+      last_head = i
+    elseif line:match("^<!%-%- /pitel:") or line == "-->" then
+      opener = nil
+    elseif line:match("^<!%-%- pitel:%a+.*%-%->%s*$") then
+      opener = nil -- single-line form (pitel:tool {…} -->, pitel:usage …)
+    else
+      opener = line:match("^<!%-%- (pitel:%a+)%s*$") or opener
+    end
+  end
+  if opener then
+    local block = { "-->" }
+    if opener == "pitel:tool" then
+      -- A tool region without a result pair is invalid; close it.
+      table.insert(block, "<!-- /pitel:tool -->")
+    end
+    vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, block)
+  end
+  -- An orphan `/pitel:tool` AFTER the last heading means the tool
+  -- region opener itself never arrived (killed before the header).
+  for i = #lines, last_head + 1, -1 do
+    if lines[i]:match("^<!%-%- /pitel:tool") then
+      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
+      return
+    end
+  end
+end
+
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send()
   local buf = vim.api.nvim_get_current_buf()
@@ -409,6 +451,7 @@ function M.send()
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
     spinner_stop_if_idle()
+    repair_stream_tail(buf)
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks):gsub("%s+$", "")
       report_error(buf, err ~= "" and err or ("exit " .. result.code))

@@ -133,15 +133,28 @@ type turn struct {
 	prompt, completion int
 }
 
-// lineEscaper buffers streamed thinking to line granularity so `-->`
-// sequences can be neutralized before they reach the buffer. HTML
-// comments are character-based: ANY `-->` — even inline inside
-// backticks — closes the pitel:thinking comment for markdown
-// renderers, not just bare lines (chunks split mid-line, so per-chunk
-// replacement doesn't work).
+// lineEscaper buffers streamed text to line granularity so dangerous
+// sequences can be neutralized before they reach the buffer. Two modes:
+//
+//   - escapeComment (thinking): ANY `-->` closes the HTML comment for
+//     renderers, even inline — so every one is neutralized. Chunks split
+//     mid-line, so per-chunk replacement doesn't work.
+//   - escapeMarkerPrefixes (tool output): pitel: opener lines and
+//     <style>/<script> open tags (a raw-HTML result poisons treesitter's
+//     css/js injections to end-of-buffer).
 type lineEscaper struct {
-	w   *bufio.Writer
-	buf []byte
+	w       *bufio.Writer
+	buf     []byte
+	esc     func(string) string
+	closing bool // Flush must emit a final unterminated line
+}
+
+func newCommentEscaper(w *bufio.Writer) *lineEscaper {
+	return &lineEscaper{w: w, esc: escapeComment}
+}
+
+func newMarkerEscaper(w *bufio.Writer) *lineEscaper {
+	return &lineEscaper{w: w, esc: escapeMarkerPrefixes, closing: true}
 }
 
 func (l *lineEscaper) WriteString(s string) {
@@ -152,7 +165,7 @@ func (l *lineEscaper) WriteString(s string) {
 		if i < 0 {
 			break
 		}
-		l.w.WriteString(escapeComment(string(l.buf[:i])) + "\n")
+		l.w.WriteString(l.esc(string(l.buf[:i])) + "\n")
 		l.buf = l.buf[i+1:]
 		flushed = true
 	}
@@ -163,7 +176,13 @@ func (l *lineEscaper) WriteString(s string) {
 
 func (l *lineEscaper) Flush() {
 	if len(l.buf) > 0 {
-		l.w.WriteString(escapeComment(string(l.buf)))
+		s := l.esc(string(l.buf))
+		l.w.WriteString(s)
+		if l.closing {
+			// The region closer goes on its own line; an unterminated
+			// final line would swallow it.
+			l.w.WriteString("\n")
+		}
 		l.buf = nil
 	}
 	l.w.Flush()
@@ -204,7 +223,7 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer) (*
 	t := &turn{}
 	callArgs := map[int]*ToolCall{} // by delta index
 	inThinking := false
-	esc := &lineEscaper{w: out} // for thinking text
+	esc := newCommentEscaper(out) // for thinking text
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -322,11 +341,13 @@ func escapeMarkerPrefixes(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// emitToolBlock writes a completed pitel:tool region (header = full call,
-// result text, optional display-only ui section) to the stream.
-func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
-	result = escapeMarkerPrefixes(result)
-	ui = escapeComment(ui)
+// emitToolHeader writes the pitel:tool opener (full call as JSON)
+// immediately when the model commits to the call — the arguments are
+// visible in the buffer while the tool runs, and the gap to the result
+// honestly represents execution time. Returns a StreamEmit that renders
+// live tool output into a display-only <!-- pitel:stream --> region, and
+// its closer. Not used for unknown tools (nothing streams).
+func emitToolHeader(out *bufio.Writer, call ToolCall) (emit tools.StreamFunc, closeStream func()) {
 	var args any
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		args = call.Function.Arguments // malformed/truncated JSON: keep raw
@@ -338,11 +359,41 @@ func emitToolBlock(out *bufio.Writer, call ToolCall, result, ui string) {
 		Arguments any    `json:"arguments"`
 	}{call.ID, call.Function.Name, args})
 	if len(header) <= toolHeaderMaxSingle {
-		fmt.Fprintf(out, "\n\n<!-- pitel:tool %s -->\n%s\n", header, result)
+		fmt.Fprintf(out, "\n\n<!-- pitel:tool %s -->\n", header)
 	} else {
 		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
-		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n%s\n", pretty, result)
+		fmt.Fprintf(out, "\n\n<!-- pitel:tool\n%s\n-->\n", pretty)
 	}
+
+	esc := newMarkerEscaper(out)
+	open := false
+	emit = func(chunk string) {
+		if !open {
+			// Zero-width space like closers inside results: the marker
+			// parser must not treat a stream region as the block opener.
+			out.WriteString("<!--​ pitel:stream\n")
+			open = true
+		}
+		esc.WriteString(chunk)
+	}
+	closeStream = func() {
+		if !open {
+			return
+		}
+		esc.Flush()
+		out.WriteString("-->\n")
+		open = false
+	}
+	return emit, closeStream
+}
+
+// emitToolResult finishes an open pitel:tool region: the result text
+// (what the model received), an optional display-only ui section, and
+// the region closer.
+func emitToolResult(out *bufio.Writer, result, ui string) {
+	result = escapeMarkerPrefixes(result)
+	ui = escapeComment(ui)
+	out.WriteString(result + "\n")
 	// Results are raw markdown in the buffer. A fence left open (truncated
 	// read/bash output, or a file that genuinely contains a lone ``` line)
 	// would swallow the rest of the buffer as a code block in every
@@ -476,24 +527,31 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		// Append the assistant turn with its calls to the request-local
 		// history, execute each call, and emit one pitel:tool region per
 		// call+result pair (R12) — both to the buffer and to the history.
+		// The header lands BEFORE the tool runs so the call is visible
+		// while it executes; live output streams into a display-only
+		// pitel:stream region inside it.
 		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
 		for _, call := range t.calls {
 			tool, ok := tools.Get(call.Function.Name)
 			var result, ui string
 			if !ok {
 				result = "error: unknown tool " + call.Function.Name
+				emitToolResult(out, "\n\n"+result, "")
 			} else {
+				emit, closeStream := emitToolHeader(out, call)
 				var err error
-				result, ui, err = tool.Run(json.RawMessage(call.Function.Arguments))
+				result, ui, err = tool.RunStream(json.RawMessage(call.Function.Arguments), emit)
+				closeStream()
 				if err != nil {
 					result = "error: " + err.Error()
 					ui = ""
 				}
+				emitToolResult(out, result, ui)
 			}
-			emitToolBlock(out, call, result, ui)
 			messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
 		out.WriteString("\n")
+		out.Flush()
 	}
 
 	if totPrompt+totCompletion > 0 {

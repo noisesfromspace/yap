@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -66,6 +67,48 @@ func TestBash(t *testing.T) {
 	r, _, _ = run(t, "bash", `{"command":"read x; echo got:$x"}`)
 	if !strings.Contains(r, "got:") {
 		t.Fatalf("stdin not null: %q", r)
+	}
+}
+
+func TestBashStreaming(t *testing.T) {
+	tl, ok := Get("bash")
+	if !ok {
+		t.Fatal("bash not registered")
+	}
+	if !tl.Streams() {
+		t.Fatal("bash should report streaming")
+	}
+
+	var mu struct {
+		sync.Mutex
+		out string
+	}
+	emit := func(chunk string) {
+		mu.Lock()
+		mu.out += chunk
+		mu.Unlock()
+	}
+	r, ui, err := tl.RunStream(json.RawMessage(`{"command":"printf 'l1\\nl2\\n'; sleep 0.3; printf 'l3\\n'; printf 'tail-no-newline'"}`), emit)
+	if err != nil || ui != "" {
+		t.Fatalf("run: %v ui=%q", err, ui)
+	}
+	mu.Lock()
+	streamed := mu.out
+	mu.Unlock()
+	for _, want := range []string{"l1\n", "l2\n", "l3\n", "tail-no-newline"} {
+		if !strings.Contains(streamed, want) {
+			t.Fatalf("stream missing %q: %q", want, streamed)
+		}
+	}
+	// streamed output and the result carry the same content
+	if !strings.Contains(r, "l1") || !strings.Contains(r, "tail-no-newline") {
+		t.Fatalf("result: %q", r)
+	}
+
+	// nil emit must not deadlock or lose output
+	r, _, err = tl.RunStream(json.RawMessage(`{"command":"echo plain"}`), nil)
+	if err != nil || !strings.Contains(r, "plain") {
+		t.Fatalf("nil emit: %q %v", r, err)
 	}
 }
 

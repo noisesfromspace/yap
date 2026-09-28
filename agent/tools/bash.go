@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -24,15 +25,15 @@ type bashArgs struct {
 }
 
 func init() {
-	Register("bash",
+	RegisterStream("bash",
 		"Execute a bash command. Returns combined stdout/stderr and the exit code "+
 			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
 			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
-		runBash)
+		func(a *bashArgs, emit StreamFunc) (string, string, error) { return runBash(a, emit) })
 }
 
-func runBash(a *bashArgs) (string, string, error) {
+func runBash(a *bashArgs, emit StreamFunc) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
@@ -58,16 +59,52 @@ func runBash(a *bashArgs) (string, string, error) {
 		return "", "", err
 	}
 	outPath := out.Name()
-	cmd.Stdout = out
-	cmd.Stderr = out
 	cmd.Stdin = nil // /dev/null
+	var goCopy chan struct{}
+	var pr, pw *os.File
+	if emit != nil {
+		// Tee child output through a pipe: one copy to the temp file
+		// (runaway commands must not OOM the binary), one to the chunk
+		// emitter for live display.
+		var pipeErr error
+		pr, pw, pipeErr = os.Pipe()
+		if pipeErr != nil {
+			out.Close()
+			os.Remove(outPath)
+			return "", "", pipeErr
+		}
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		goCopy = make(chan struct{})
+		cw := &chunkWriter{emit: emit}
+		go func() {
+			defer close(goCopy)
+			io.Copy(io.MultiWriter(out, cw), pr)
+			cw.flush() // the final partial line
+		}()
+	} else {
+		cmd.Stdout = out
+		cmd.Stderr = out
+	}
 
 	if err := cmd.Start(); err != nil {
 		out.Close()
 		os.Remove(outPath)
+		if emit != nil {
+			pr.Close()
+			pw.Close()
+			<-goCopy
+		}
 		return "", "", err
 	}
-	out.Close() // the child has its own fd
+	if emit != nil {
+		// The child holds its own dup of the pipe; closing ours means
+		// io.Copy sees EOF as soon as the child's fds die with it.
+		// `out` must stay OPEN: the copy goroutine writes to it.
+		pw.Close()
+	} else {
+		out.Close() // the child has its own fd
+	}
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	track(pgid)
 	defer untrack(pgid)
@@ -82,6 +119,20 @@ func runBash(a *bashArgs) (string, string, error) {
 		timedOut = true
 		syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
+	}
+
+	if emit != nil {
+		// Drain the pipe. A command that leaves a background process
+		// holding stdout (some-daemon &) would keep the pipe open
+		// forever, so bound the wait.
+		select {
+		case <-goCopy:
+		case <-time.After(2 * time.Second):
+			pr.Close() // unblock io.Copy
+			<-goCopy
+		}
+		pr.Close()
+		out.Close()
 	}
 
 	exit := 0
@@ -112,6 +163,47 @@ func runBash(a *bashArgs) (string, string, error) {
 		text += fmt.Sprintf("\n[exit code %d]", exit)
 	}
 	return text, "", nil
+}
+
+// chunkWriter implements io.Writer for live command output: each Write
+// is buffered to line granularity and emitted through the callback at
+// most every streamInterval, so a chatty build (progress bars, per-file
+// lines) does not translate into a buffer redraw per chunk. The final
+// partial line flushes when the pipe closes.
+const streamInterval = 100 * time.Millisecond
+
+type chunkWriter struct {
+	emit StreamFunc
+	buf  []byte
+	last time.Time
+}
+
+func (w *chunkWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	if bytes.IndexByte(w.buf, '\n') < 0 {
+		return len(p), nil
+	}
+	if time.Since(w.last) >= streamInterval {
+		w.flush()
+	}
+	return len(p), nil
+}
+
+// flush emits the buffer through the last newline (or everything when
+// the pipe is closing and no newline ever comes).
+func (w *chunkWriter) flush() {
+	if len(w.buf) == 0 {
+		return
+	}
+	s := string(w.buf)
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		w.emit(s[:i+1])
+		w.buf = w.buf[:copy(w.buf, s[i+1:])]
+	} else {
+		w.emit(s)
+		w.buf = w.buf[:0]
+	}
+	w.last = time.Now()
 }
 
 // readTail reads the end of the file at path, keeping the LAST
