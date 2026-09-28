@@ -26,6 +26,13 @@ M.config = {
   agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/AGENTS.md",
 }
 
+-- Cached output of `pitel models` ("provider/model" lines) so
+-- <leader>m / :PitelChangeModel doesn't re-query every provider on each
+-- press — that's one GET /models per provider in config.json, sequential,
+-- each with a 10s timeout. Refreshed by :PitelReload (module state is
+-- dropped); model lists rarely change between sessions.
+local models_cache = nil
+
 local function system_prompt()
   local f = io.open(M.config.agents_file, "r")
   if f then
@@ -580,14 +587,11 @@ function M.clear(buf, keep)
 end
 
 --- Open the session's tail buffer (:PitelLive): one persistent log of
---- every tool call's output, not a new terminal per call.
+--- every tool call's output, not a new terminal per call. Opens even
+--- before any tool has run (an empty tail that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  local t = tails[buf]
-  if not t or not vim.api.nvim_buf_is_valid(t.bufnr) then
-    vim.notify("pitel: no tool output yet (the tail fills while bash runs)", vim.log.levels.WARN)
-    return
-  end
+  local t = ensure_tail(buf)
   local wins = vim.fn.win_findbuf(t.bufnr)
   if #wins > 0 then
     vim.api.nvim_set_current_win(wins[1])
@@ -854,6 +858,10 @@ function M.change_model(combo)
       pick(M.config.models)
       return
     end
+    if models_cache then
+      pick(models_cache)
+      return
+    end
     vim.system({ M.config.bin, "models" }, { text = true }, function(res)
       vim.schedule(function()
         local combos = {}
@@ -865,6 +873,7 @@ function M.change_model(combo)
           vim.notify("pitel: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
           return
         end
+        models_cache = combos
         pick(combos)
       end)
     end)
