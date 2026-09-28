@@ -25,7 +25,7 @@
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
             subPackages = [ "agent" ];
-            vendorHash = null; # dependencies vendored at repo root
+            vendorHash = "sha256-ZG3xBI73M4Bslx7i1bPdxgC7IkAxRPRgOB1OJMtGFdY=";
             env.CGO_ENABLED = "0";
             meta.mainProgram = "agent";
           };
