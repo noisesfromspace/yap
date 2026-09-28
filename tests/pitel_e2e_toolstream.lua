@@ -28,9 +28,12 @@ assert(done, "streaming tool turn did not complete")
 local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 local text = table.concat(lines, "\n")
 
--- tool header visible with the call, stream region present with output
-assert(text:match("<!%-%- pitel:tool %{.*\"name\":\"bash\""), "no tool header: " .. text)
-assert(text:match("<!%-%- pitel:stream\n"), "no stream region: " .. text)
+-- tool header visible with the call
+assert(text:match("<!%-%- pitel:tool\n?%s*%{?[^\"]*\"name\":%s*\"bash\""), "no tool header: " .. text)
+-- the result kept the full (short) output, so the now-duplicate live
+-- stream region was pruned on completion; the output appears once.
+assert(not text:match("<!%-%- pitel:stream"), "stream region not pruned: " .. text)
+assert(not text:match("pitel:keepstream"), "keepstream marker left behind: " .. text)
 assert(text:match("l1\n"), "stream output missing: " .. text)
 assert(text:match("l3\n"), "late stream output missing: " .. text)
 assert(text:match("tail%-without%-newline"), "unterminated tail missing: " .. text)
@@ -46,6 +49,8 @@ end
 assert(toolmsg, "no tool message parsed")
 assert(toolmsg.content:match("l1") and toolmsg.content:match("tail%-without%-newline"),
   "result body wrong: " .. vim.inspect(toolmsg.content))
+-- each output line appears exactly once in the buffer (no stream/result dup)
+assert(select(2, text:gsub("l3", "")) == 1, "output duplicated in buffer")
 assert(not toolmsg.content:match("l3.*l3"), "stream duplicated into result?")
 -- the model's marker-looking line inside output was escaped
 assert(not toolmsg.content:match("^<!%-%- pitel:tool %-%-%>"), "marker leaked into result")

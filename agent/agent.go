@@ -369,9 +369,7 @@ func emitToolHeader(out *bufio.Writer, call ToolCall) (emit tools.StreamFunc, cl
 	open := false
 	emit = func(chunk string) {
 		if !open {
-			// Zero-width space like closers inside results: the marker
-			// parser must not treat a stream region as the block opener.
-			out.WriteString("<!--​ pitel:stream\n")
+			out.WriteString("<!-- pitel:stream\n")
 			open = true
 		}
 		esc.WriteString(chunk)
@@ -545,6 +543,13 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				if err != nil {
 					result = "error: " + err.Error()
 					ui = ""
+				}
+				// A streaming tool that truncated its result cut the
+				// beginning the live stream region holds — keep the region.
+				// Otherwise the region duplicates the result byte-for-byte
+				// and the Lua side deletes it after the turn.
+				if tools.Truncated(call.Function.Name) {
+					out.WriteString("<!-- pitel:keepstream -->\n")
 				}
 				emitToolResult(out, result, ui)
 			}

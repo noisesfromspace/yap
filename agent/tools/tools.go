@@ -117,6 +117,16 @@ func Get(name string) (*Tool, bool) {
 	return t, ok
 }
 
+// Truncated reports whether the named tool's last run cut its result
+// (tail kept, beginning dropped). Only streaming tools that truncate
+// (bash) report; everything else returns false.
+func Truncated(name string) bool {
+	if name == "bash" {
+		return lastTruncated
+	}
+	return false
+}
+
 // Streams reports whether the tool emits display-only chunks when given
 // a non-nil emit (i.e. was registered with RegisterStream semantics).
 func (t *Tool) Streams() bool {

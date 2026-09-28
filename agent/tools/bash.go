@@ -24,6 +24,12 @@ type bashArgs struct {
 	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 }
 
+// lastTruncated records whether the most recent runBash call cut its
+// result (tail kept). The agent loop reads it right after RunStream —
+// same goroutine, one command at a time — to decide whether the live
+// stream region holds output the result dropped.
+var lastTruncated bool
+
 func init() {
 	RegisterStream("bash",
 		"Execute a bash command. Returns combined stdout/stderr and the exit code "+
@@ -148,6 +154,7 @@ func runBash(a *bashArgs, emit StreamFunc) (string, string, error) {
 		size = st.Size()
 	}
 	text, truncated := readTail(outPath, size)
+	lastTruncated = truncated
 	if truncated {
 		text = fmt.Sprintf("[truncated: showing tail; full output (%d bytes) at %s]\n%s", size, outPath, text)
 	} else {

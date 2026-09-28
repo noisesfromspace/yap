@@ -41,7 +41,10 @@ EOF
     sleep 0.3
   fi
   local out
-  if out=$(HOME="$TESTHOME" nvim --headless -u NONE -c "luafile tests/$name.lua" -c "qa!" 2>&1); then
+  # -u NONE skips user config, but a nix-pack-installed pitel can still
+  # shadow the repo on rtp; prepend the repo so tests exercise THIS tree.
+  if out=$(HOME="$TESTHOME" nvim --headless -u NONE \
+      --cmd "set rtp^=$ROOT" -c "luafile tests/$name.lua" -c "qa!" 2>&1); then
     echo "ok   $name"
   else
     echo "FAIL $name"
@@ -62,7 +65,7 @@ run pitel_toolparse_test 18133 mock_tool.py
 run pitel_e2e_toolstream 18141 mock_stream.py
 run pitel_e2e_streamfold 18135 mock_write.py
 run pitel_picker_test 18137 mock_models.py
-for t in pitel_fold_test pitel_think_test pitel_error_test pitel_ml_test \
+for t in pitel_fold_test pitel_detailfold_test pitel_think_test pitel_error_test pitel_ml_test \
          pitel_streamfold_test pitel_marker_test pitel_model_test pitel_map_test; do
   run "$t" 18132
 done
