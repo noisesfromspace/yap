@@ -9,8 +9,20 @@ vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1", auto_open_live = false })
 
+-- Replace the typing line under the LAST # @user heading (a positional
+-- set_lines would delete the heading itself).
+local function set_prompt(b, text)
+  local lines = vim.api.nvim_buf_get_lines(b, 0, -1, false)
+  for i = #lines, 1, -1 do
+    if lines[i] == "# @user" then
+      vim.api.nvim_buf_set_lines(b, i, -1, false, { text })
+      return
+    end
+  end
+end
+
 local buf = pitel.new()
-vim.api.nvim_buf_set_lines(buf, 4, -1, false, { "run the streaming command" })
+set_prompt(buf, "run the streaming command")
 
 -- send() goes through vim.system + schedule_wrap: poll until done.
 pitel.send()
@@ -77,7 +89,7 @@ assert(msgs_rt[#msgs_rt - 1].role == "tool",
 -- ─── auto_open_live + stop mid-run ────────────────────────────────────────
 pitel.config.auto_open_live = true
 local buf2 = pitel.new()
-vim.api.nvim_buf_set_lines(buf2, 4, -1, false, { "run again; I will stop you" })
+set_prompt(buf2, "run again; I will stop you")
 pitel.send()
 
 -- the live terminal opened by itself, tailing the tool's log
@@ -94,14 +106,14 @@ assert(term_found, "live terminal did not auto-open")
 assert(vim.api.nvim_get_current_buf() == buf2, "auto-open stole focus")
 
 pitel.stop()
--- exit callback ran (winbar idle) → repair_stream_tail already ran too
-local stopped = vim.wait(5000, function()
-  return not pitel.winbar():match("bash") and not pitel.winbar():match("busy")
-end, 50)
-assert(stopped, "stop did not settle")
+-- M.stop() clears the winbar immediately; the exit callback (which runs
+-- repair_stream_tail) lags behind — wait for the repair itself.
+local repaired = vim.wait(5000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- /pitel:tool %-%-%>") ~= nil
+end, 20)
+assert(repaired, "tool region not closed after stop")
 
 local t2 = table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n")
-assert(t2:match("<!%-%- /pitel:tool %-%-%>"), "tool region not closed after stop: " .. t2)
 local ok, msgs2 = pcall(pitel.parse_buffer, buf2)
 assert(ok, "buffer unparseable after stop")
 -- the tool-bearing assistant message still has its (empty) result paired

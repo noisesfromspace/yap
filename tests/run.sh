@@ -43,8 +43,10 @@ EOF
   local out
   # -u NONE skips user config, but a nix-pack-installed pitel can still
   # shadow the repo on rtp; prepend the repo so tests exercise THIS tree.
+  # `nvim -l` (not -c luafile + qa!): a failing assert exits non-zero —
+  # with -c, E5113 prints but `qa!` still exits 0 and failures pass.
   if out=$(HOME="$TESTHOME" nvim --headless -u NONE \
-      --cmd "set rtp^=$ROOT" -c "luafile tests/$name.lua" -c "qa!" 2>&1); then
+      --cmd "set rtp^=$ROOT" -l "tests/$name.lua" 2>&1); then
     echo "ok   $name"
   else
     echo "FAIL $name"

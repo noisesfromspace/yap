@@ -383,7 +383,9 @@ function M.live(buf)
     return
   end
   local prev = vim.api.nvim_get_current_win()
-  vim.cmd("botright 12split")
+  -- :new, not :split — termopen refuses to take over a modified buffer
+  -- (and a split of the chat buffer usually is one).
+  vim.cmd("botright 12new")
   vim.fn.termopen({ "tail", "-f", l.log })
   vim.bo.bufhidden = "wipe"
   vim.api.nvim_set_current_win(prev)
