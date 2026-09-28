@@ -536,6 +536,15 @@ R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     streaming block is safe; typing inside/below it interleaves with the
     stream. Accepted trade-off; the fix (extmark insertion point) is
     documented as future work, not done.
+    A window whose cursor sits on the last line FOLLOWS the stream (the Lua
+    side re-pins the cursor to the end after every append; Neovim never
+    scrolls a window for an API edit, so without that the view only tracked
+    the end while a chunk happened to land exactly on the cursor, i.e. while
+    the last line was empty, and then stranded it mid-reply). A window
+    scrolled away is NEVER dragged during the stream, and nothing moves from
+    a non-normal mode. (The one deliberate exception, unchanged: a completed
+    turn puts the cursor on the new `# @user` heading, so the next prompt is
+    ready to type.)
 
 R12 One buffer region = one tool pair.
     A pitel:tool region holds the call (single-line JSON header) and the

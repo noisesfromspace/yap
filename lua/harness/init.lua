@@ -326,6 +326,45 @@ local function append_text(buf, text)
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
 end
 
+--- Windows whose cursor sits on the last line of `buf`: the user is
+--- "following" the end of the conversation (pressed G, or was left there
+--- by the previous chunk). Sampled BEFORE an append, because following
+--- itself moves the cursor to the end.
+local function following_windows(buf)
+  local count = vim.api.nvim_buf_line_count(buf)
+  local wins = {}
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    local ok, cur = pcall(vim.api.nvim_win_get_cursor, w)
+    if ok and cur[1] >= count then
+      wins[#wins + 1] = w
+    end
+  end
+  return wins
+end
+
+--- Pin `wins` to the end of the buffer after an append: the cursor goes to
+--- the end of the last line, which scrolls the window the way streamed
+--- terminal output does (minimal scroll, one line at a time). Neovim never
+--- scrolls a window for an API edit, so following has to be explicit: the
+--- view used to track the end only while an appended chunk happened to land
+--- exactly on the cursor (an empty last line, i.e. a chunk ending in a
+--- newline), and then stranded the cursor mid-line — which is why a reply
+--- seemed to stop being followed partway through. A window scrolled away is
+--- left alone, and nothing is moved from a non-normal mode: dragging the
+--- cursor while the user types is worse than a stale view (R11).
+local function follow_windows(buf, wins)
+  if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
+    return
+  end
+  local count = vim.api.nvim_buf_line_count(buf)
+  local last = vim.api.nvim_buf_get_lines(buf, count - 1, count, false)[1] or ""
+  for _, w in ipairs(wins) do
+    if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
+      vim.api.nvim_win_set_cursor(w, { count, math.max(#last - 1, 0) })
+    end
+  end
+end
+
 --- Append whole lines as a new block, separated from the buffer's current
 --- end by exactly one blank line (R7), no matter how the buffer ends.
 --- All structural appends (headings, error markers) go through here.
@@ -686,7 +725,11 @@ function M.send()
   vim.b[buf].pitel_provider = provider
   vim.b[buf].pitel_model = model
 
+  -- A window already watching the end keeps watching it while the reply
+  -- streams (follow_windows); one parked elsewhere is not dragged along.
+  local follow = following_windows(buf)
   append_block(buf, { "# @assistant", "" })
+  follow_windows(buf, follow)
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
@@ -704,7 +747,9 @@ function M.send()
       if data then
         -- Appending never touches fold state: new folds adopt the
         -- view's 'foldlevel' as they appear (R10).
+        local follow = following_windows(buf)
         append_text(buf, data)
+        follow_windows(buf, follow)
       end
     end),
     stderr = vim.schedule_wrap(function(_, data)
