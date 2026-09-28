@@ -38,61 +38,58 @@ end
 
 -- ─── foldexpr / foldtext ───────────────────────────────────────────────────
 
--- The region a line belongs to, found by scanning up: "tool" or
--- "comment" when lnum is inside an unclosed region, "top" at message
--- level (a heading or tool closer came first), nil when nothing
--- structural was found. pitel comments never nest; a bare `-->` above
--- means the comment whose opener lies further up is already closed, so
--- skip past it (depth counter). Bounded: marker lines are escaped in
--- tool results, and pretty-printed header JSON never starts a line with
--- `<!--` or `-->`.
-local function enclosing(lnum)
-  local depth = 0
-  for i = lnum - 1, 1, -1 do
-    local s = vim.fn.getline(i)
-    if s == "-->" then
-      depth = depth + 1
-    elseif s:match(HEAD) or s:match(TOOL_CLOSE) then
-      return "top"
-    elseif s:match(COMMENT_OPEN) and not s:match("%-%->") then
-      if depth > 0 then
-        depth = depth - 1
-        if s:match(TOOL_OPEN) then
-          -- The closed comment was the multi-line tool header; the
-          -- region around it is still open.
-          return "tool"
-        end
-      else
-        return s:match(TOOL_OPEN) and "tool" or "comment"
-      end
-    elseif depth == 0 and s:match(TOOL_OPEN) then
-      return "tool" -- single-line header closes its comment on the line
+-- Fold levels are computed in ONE forward pass and cached per
+-- changedtick. foldexpr runs per displayed line, and the old
+-- implementation scanned UPWARD line by line for each call — O(region²)
+-- for a tall tool result (a 2000-line bash output made one fold
+-- recompute take ~450ms). A tiny state machine over the line types is
+-- O(n) total; the cache is rebuilt only when the buffer changes.
+--
+-- region after each line: nil (pre-heading), "top" (message level),
+-- "tool" (inside a pitel:tool region), "comment" (inside a multi-line
+-- pitel:thinking/error/usage comment). A bare `-->` inside a tool
+-- region closes the multi-line header or a pitel:ui subsection, not the
+-- region itself; only `<!-- /pitel:tool` ends a tool region.
+local cache = {} -- buf -> { tick, levels = { lnum -> levelstr } }
+
+local function classify(line, region)
+  if line:match(HEAD) then
+    return ">1", "top"
+  elseif line:match(TOOL_OPEN) then
+    return ">2", "tool" -- both header forms start the region fold
+  elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
+    -- A comment opener inside a tool region (pitel:ui) is content of the
+    -- region fold, not a fold of its own.
+    if region == "tool" then
+      return "2", "tool"
     end
+    return ">2", "comment"
+  elseif line:match(TOOL_CLOSE) then
+    return "2", "top" -- the closer is the region fold's last line
+  else
+    local lvl = region and (region == "top" and "1" or "2") or "="
+    if line == "-->" and region == "comment" then
+      return lvl, "top"
+    end
+    return lvl, region
   end
-  return nil
 end
 
 function M.expr(lnum)
-  local line = vim.fn.getline(lnum)
-  if line:match(HEAD) then
-    return ">1"
+  local buf = vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  local c = cache[buf]
+  if not c or c.tick ~= tick then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local levels, region = {}, nil
+    for i, line in ipairs(lines) do
+      local lvl, next = classify(line, region)
+      levels[i], region = lvl, next
+    end
+    c = { tick = tick, levels = levels }
+    cache[buf] = c
   end
-  if line:match(TOOL_OPEN) then
-    return ">2" -- both header forms start the region fold
-  end
-  if line:match(COMMENT_OPEN) and not line:match("%-%->") then
-    -- A comment opener inside a tool region (pitel:ui) is content of the
-    -- region fold, not a fold of its own.
-    return enclosing(lnum) == "tool" and "2" or ">2"
-  end
-  if line:match(TOOL_CLOSE) then
-    return "2" -- the closer is the region fold's last line
-  end
-  local e = enclosing(lnum)
-  if e == "tool" or e == "comment" then
-    return "2"
-  end
-  return e == "top" and "1" or "="
+  return c.levels[lnum] or "="
 end
 
 function M.text(start, finish)
