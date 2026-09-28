@@ -497,8 +497,10 @@ function M.new(opts)
   vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  -- Leave 'modified' set (inserting lines did that): an unsaved new chat
-  -- should prompt like any unsaved buffer instead of vanishing on :q!.
+  -- A pitel:// name keeps file-backed clients (markdown LSPs) off the
+  -- session buffer and leaves 'modified' set, so an unsent new chat
+  -- prompts like any unsaved buffer instead of vanishing on :q!.
+  vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
