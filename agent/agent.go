@@ -17,8 +17,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 	"syscall"
+	"time"
 
 	"boers.email/pitel/agent/tools"
 )
@@ -50,10 +50,10 @@ type Request struct {
 }
 
 type chatRequest struct {
-	Model    string     `json:"model"`
-	Messages []Message  `json:"messages"`
-	Stream   bool       `json:"stream"`
-	Tools    []toolDef  `json:"tools,omitempty"`
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+	Stream   bool      `json:"stream"`
+	Tools    []toolDef `json:"tools,omitempty"`
 	// Ask the provider to end the stream with a token-usage chunk.
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
@@ -450,6 +450,33 @@ func unclosedFence(lines []string) string {
 	return strings.Repeat(string(char), n)
 }
 
+// fenceResult wraps a content-bearing tool result in a fenced code
+// block (with a language info string when detectable) so the chat
+// buffer's markdown parser renders it as code, not prose — raw file
+// content and command output otherwise get markdown_inline styling
+// (links, emphasis, headings, <hr>). The fence is one backtick longer
+// than any run inside, so content fences can't close it early. Applied
+// to the SAME string that goes to the model, so the buffer and the
+// replayed history stay identical across turns.
+func fenceResult(name, argsJSON, result string) string {
+	lang, ok := tools.ResultFence(name, argsJSON)
+	if !ok {
+		return result
+	}
+	max := 0
+	for _, l := range strings.Split(result, "\n") {
+		if c, k := fenceRun(strings.TrimLeft(l, " ")); c == '`' && k > max {
+			max = k
+		}
+	}
+	n := max + 1
+	if n < 3 {
+		n = 3
+	}
+	fence := strings.Repeat("`", n)
+	return fence + lang + "\n" + strings.TrimRight(result, "\n") + "\n" + fence
+}
+
 func fenceRun(s string) (byte, int) {
 	if s == "" || (s[0] != '`' && s[0] != '~') {
 		return 0, 0
@@ -586,6 +613,8 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				if err != nil {
 					result = "error: " + err.Error()
 					ui = ""
+				} else {
+					result = fenceResult(call.Function.Name, call.Function.Arguments, result)
 				}
 				emitToolResult(out, result, ui)
 			}

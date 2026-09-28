@@ -69,7 +69,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		os.Remove(outPath)
 		return "", "", err
 	}
-	out.Close() // the child has its own fd
+	out.Close()             // the child has its own fd
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	track(pgid)
 	defer untrack(pgid)

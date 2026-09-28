@@ -103,8 +103,13 @@ func TestSendToolLoop(t *testing.T) {
 	if !strings.Contains(s, "second") || !strings.Contains(s, "done") {
 		t.Fatalf("missing output:\n%s", s)
 	}
-	// unbalanced fence in the result closed before the region ends
-	if !strings.Contains(s, "\n~~~\n<!-- /pitel:tool -->") {
+	// content-bearing results are fenced so they render as code, not
+	// markdown: the bash output's `~~~lua` must stay literal text inside
+	// the fence, with the region closer directly after the fence close
+	if !strings.Contains(s, "\n```\nsecond\n~~~lua") {
+		t.Fatalf("bash result not fenced:\n%s", s)
+	}
+	if !strings.Contains(s, "\n```\n<!-- /pitel:tool -->") {
 		t.Fatalf("fence not balanced:\n%s", s)
 	}
 	// <style> neutralized with a backslash (raw-HTML results poison
@@ -145,11 +150,11 @@ func TestUnclosedFence(t *testing.T) {
 		{[]string{"```lua", "local x = 1", "```"}, ""},
 		{[]string{"```lua", "local x = 1"}, "```"},
 		{[]string{"~~~", "tildes"}, "~~~"},
-		{[]string{"````", "x", "```"}, "````"},                 // closer must match length
-		{[]string{"```", "x", "```", "y", "```"}, "```"},      // re-open after close
+		{[]string{"````", "x", "```"}, "````"},                    // closer must match length
+		{[]string{"```", "x", "```", "y", "```"}, "```"},          // re-open after close
 		{[]string{"    ```", "indented four spaces is code"}, ""}, // >3 indent: not a fence
 		{[]string{"  ```go", "up to 3 spaces ok"}, "```"},
-		{[]string{"```", "x", "~~~", "y"}, "```"},               // tilde doesn't close backtick
+		{[]string{"```", "x", "~~~", "y"}, "```"}, // tilde doesn't close backtick
 	}
 	for _, c := range cases {
 		if got := unclosedFence(c.lines); got != c.want {
