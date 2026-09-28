@@ -53,10 +53,12 @@ truth, and that can be a text buffer. Consequences:
                         it runs, see |pitel-protocol|), one journal line
                         per non-bash tool call and per turn. Opens it in
                         a split scrolled to the bottom, or focuses the
-                        existing window. Never opens by itself. The
-                        tail is the live view; everything in it (plus
-                        full tool arguments and results) is persisted
-                        in the audit log, see |pitel-audit|.
+                        existing window. Never opens by itself, but can
+                        be opened at any time — even before a tool has
+                        run (an empty tail that fills as tools execute).
+                        The tail is the live view; everything in it
+                        (plus full tool arguments and results) is
+                        persisted in the audit log, see |pitel-audit|.
 
                                                                 *:PitelClear*
 :PitelClear [keep]      Slim the context: replace the result bodies of
@@ -77,7 +79,8 @@ truth, and that can be a text buffer. Consequences:
                         setup({ models = ... }) when configured,
                         otherwise by querying every provider in
                         config.json (GET /models) — no duplicate model
-                        configuration needed.
+                        configuration needed. The query result is cached
+                        for the session; |:PitelReload| refreshes it.
 
                                                             *:PitelSessions*
 :PitelSessions [all]    Pick a saved session to resume. Default scope is the
@@ -306,12 +309,18 @@ markdown_inline's html_tag grammar (the comment fails to parse and the
 ZWSP renders as a literal <200b>), and a soft hyphen hides the
 mutation from the user while still reaching registers and the model.
 
-Tool RESULT lines are raw markdown (not inside a comment), so a fence
-left open in result text — truncated read/bash output, or a file that
-genuinely contains a lone ``` line — would swallow the rest of the
-buffer as a code block in every CommonMark renderer (treesitter
-included). The binary appends a closing fence at the end of the result
-when its fences don't balance.
+Tool RESULTS from content-bearing tools (read, bash, ls, fetch) are
+wrapped in a fenced code block — read/fetch with a language info
+string detected from the path extension, bash/ls as a plain fence.
+The buffer is markdown, and raw file content or command output
+gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
+picks up stray styling; the fence renders it as code instead and lets
+treesitter inject the language. The fence is one backtick longer than
+any run inside the result, so a ``` line in the content can't close
+it early; the same fenced string goes to the model, so the buffer and
+the replayed history stay identical across turns. write/edit return
+short confirmations and stay bare. The unclosed-fence guard remains as
+a fallback for those unfenced results.
 
 Why the <style>/<script> escaping matters: raw HTML results (fetch
 returns pages as-is) let treesitter's combined HTML injection hand
