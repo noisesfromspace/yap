@@ -24,8 +24,8 @@
             pname = "pitel-agent";
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
-            modRoot = "agent";
-            vendorHash = null; # dependencies vendored in agent/vendor
+            subPackages = [ "agent" ];
+            vendorHash = null; # dependencies vendored at repo root
             env.CGO_ENABLED = "0";
             meta.mainProgram = "agent";
           };
