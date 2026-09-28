@@ -1,4 +1,4 @@
-module github.com/pitel-ai/pitel/harness
+module boers.email/pitel
 
 go 1.26
 

@@ -19,12 +19,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pitel-ai/pitel/harness/agent/tools"
+	"boers.email/pitel/agent/tools"
 )
 
 // Bound on tool-call iterations per send (gptel has none; runaway loops
 // burn tokens silently).
-const maxToolIterations = 8
+const maxToolIterations = 25
 
 // ─── Wire types (OpenAI-compatible) ──────────────────────────────────────────
 
