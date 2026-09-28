@@ -2,7 +2,7 @@
 --
 -- A pitel session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
--- Sessions live under stdpath("data")/pitel/sessions/<cwd-slug>/ and are
+-- Sessions live under ~/.pitel/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. The picker lists them with the
 -- first user message as a snippet, fruit.nvim-style.
 

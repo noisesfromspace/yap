@@ -50,7 +50,7 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
---- The combo pitel will send with: per-buffer vars (set by :PitelNew),
+--- The combo pitel will send with: per-buffer vars (set by :Pitel),
 --- falling back to the global config.
 local function current_combo(buf)
   return vim.b[buf].pitel_provider or M.config.provider, vim.b[buf].pitel_model or M.config.model
@@ -679,7 +679,7 @@ function M.send()
   end
 
   errors[buf] = nil
-  -- provider/model come from the buffer vars (set by :PitelNew /
+  -- provider/model come from the buffer vars (set by :Pitel /
   -- :PitelChangeModel), falling back to config; sync them so the winbar
   -- and this send agree.
   local provider, model = current_combo(buf)

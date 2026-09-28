@@ -114,7 +114,7 @@ Set only in pitel buffers.
 
 Lua setup: >lua
 
-  require("pitel").setup({
+  require("harness").setup({
     bin = "pitel",        -- path to the Go binary
     provider = "moonshot",
     model = "kimi-k3",
@@ -124,15 +124,17 @@ Lua setup: >lua
       "openai/gpt-5.6-sol",
     },
     system = "...",       -- fallback system prompt
-    agents_file = "~/.config/pitel/AGENTS.md",
+    agents_file = vim.fn.expand("~/.config/pitel/AGENTS.md"),
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
 so edits apply to the next chat. When missing or empty, `system` is used.
+The path is used verbatim (no `~` expansion); the default is
+`$XDG_CONFIG_HOME/pitel/AGENTS.md` (or `~/.config/pitel/AGENTS.md`).
 
-~/.config/pitel/AGENTS.md (system prompt), ~/.pitel (runtime data):
+Config and runtime data:
 
-  config.json           Providers and optional pricing: >json
+  ~/.config/pitel.json  Providers and optional pricing: >json
 
     {
       "providers": {
@@ -147,8 +149,9 @@ so edits apply to the next chat. When missing or empty, `system` is used.
                         `pricing` (USD per 1M tokens) enables the cost in
                         the winbar; omit it to track tokens only.
 
-  AGENTS.md             Default system prompt (see above).
-  sessions/<cwd-slug>/  Autosaved session files, see |pitel-sessions|.
+  ~/.config/pitel/AGENTS.md   Default system prompt (see above).
+  ~/.pitel/sessions/          Autosaved sessions, see |pitel-sessions|.
+  ~/.pitel/audit/             Audit logs, see |pitel-audit|.
 
 Tools                                                        *pitel-tools*
 
@@ -158,7 +161,7 @@ self-registering in init(). Adding or changing a tool = editing a file
 and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only pitel:ui section,
 see |pitel-tool-block|). The binary runs the whole agent loop in one
-process, bounded at 8 iterations per send. Built-ins: ls, read, fetch,
+process, bounded at 25 iterations per send. Built-ins: ls, read, fetch,
 bash, write, edit.
 
 Tool parameters are declared as a Go struct per tool; the schema sent
@@ -171,8 +174,8 @@ is matched against the ORIGINAL file, must occur exactly once, and
 must not overlap another edit; application is span-based so a newText
 can never match inside another edit's oldText. Both return short
 confirmations to the model (R12 result policy); when a file is
-overwritten/edited, a unified diff (via diff(1)) is attached as a
-display-only pitel:ui section (|pitel-tool-block|).
+overwritten/edited, a unified diff (sergi/go-diff, in-process) is
+attached as a display-only pitel:ui section (|pitel-tool-block|).
 
 bash runs commands non-interactively (stdin is /dev/null) in their own
 process group: on timeout (default 120s, model-adjustable) the whole
@@ -209,7 +212,7 @@ stays inert).
 Session metadata is NOT stored in the buffer — it lives in the winbar
 (|pitel-winbar|): the provider/model combo on the left, token totals, cost
 and the state glyph on the right. The combo comes from per-buffer vars set
-by :PitelNew / |:PitelChangeModel|, falling back to setup() defaults.
+by :Pitel / |:PitelChangeModel|, falling back to setup() defaults.
 Totals accumulate in memory for the lifetime of the buffer; reopening a
 session starts them from zero.
 
@@ -443,7 +446,9 @@ Example: `moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
 The binary runs the agent loop internally: when the model requests tool
 calls it executes them (compiled-in tools, see |pitel-tools|), emits one
 pitel:tool region per pair, and re-sends until the final answer or the
-iteration bound. The binary is stdlib-only Go, built CGO_ENABLED=0.
+iteration bound. The binary is pure Go (no cgo) with three small deps —
+jsonschema, santhosh-tekuri/jsonschema/v6, sergi/go-diff — built
+CGO_ENABLED=0.
 
 ==============================================================================
 11. BUSINESS RULES                                             *pitel-rules*
@@ -549,18 +554,19 @@ R12 One buffer region = one tool pair.
     full arguments are in the audit log. Old result bodies can be
     cleared explicitly with |:PitelClear|.
 
-R17 The audit log is the durable record of everything the context
-    doesn't carry. ~/.pitel/audit/<cwd-slug>/<session>.log (same parent
-    as the sessions dir), append-only, written by the Lua side from
-    pitel:event lines: full tool arguments, streamed bash output, full
-    results, and one journal line per turn (model, tokens, cost, ms).
-    The tail buffer is its live view — ephemeral; the audit file
-    survives restarts. This split is what makes slimmed headers (R12)
-    and |:PitelClear| lossless.
-
 R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
     of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
+
+R14 Session metadata lives in the winbar, not the buffer.
+    provider/model come from per-buffer vars (:Pitel,
+    :PitelChangeModel) with config as fallback; token/cost totals
+    accumulate in memory per buffer. The buffer holds only the
+    conversation (R1, strictly); reopening a session starts totals from
+    zero and uses the current default combo. (This replaced an earlier
+    design with YAML frontmatter in the buffer: editing a yaml key to
+    switch models was clever but the frontmatter fought R7 — every
+    metadata update was a non-local buffer edit.)
 
 R15 Tools are compiled-in Go files, one per file in agent/tools/.
     Each file self-registers via init(); adding a tool = adding a file
@@ -574,16 +580,6 @@ R15 Tools are compiled-in Go files, one per file in agent/tools/.
     sandboxing is ever wanted, the evidence-backed direction is
     bubblewrap (Codex's Linux choice), not command-pattern allowlists
     (documented as bypassable).
-
-R14 Session metadata lives in the winbar, not the buffer.
-    provider/model come from per-buffer vars (:PitelNew,
-    :PitelChangeModel) with config as fallback; token/cost totals
-    accumulate in memory per buffer. The buffer holds only the
-    conversation (R1, strictly); reopening a session starts totals from
-    zero and uses the current default combo. (This replaced an earlier
-    design with YAML frontmatter in the buffer: editing a yaml key to
-    switch models was clever but the frontmatter fought R7 — every
-    metadata update was a non-local buffer edit.)
 
 R16 Live tool output never enters the chat buffer.
     The buffer is the parseable conversation document (R1); streaming
@@ -599,6 +595,15 @@ R16 Live tool output never enters the chat buffer.
     user command that replaces old tool result bodies with a pointer
     to the audit log (R17). Why: output exists in exactly one place at
     any moment, and the buffer format has no transient states to repair.
+
+R17 The audit log is the durable record of everything the context
+    doesn't carry. ~/.pitel/audit/<cwd-slug>/<session>.log (same parent
+    as the sessions dir), append-only, written by the Lua side from
+    pitel:event lines: full tool arguments, streamed bash output, full
+    results, and one journal line per turn (model, tokens, cost, ms).
+    The tail buffer is its live view — ephemeral; the audit file
+    survives restarts. This split is what makes slimmed headers (R12)
+    and |:PitelClear| lossless.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

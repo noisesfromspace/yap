@@ -19,7 +19,7 @@ Add this repo as a Neovim plugin (any plugin manager, or
 `vim.opt.rtp:append("/opt/code/pitel")`), then:
 
 ```lua
-require("pitel").setup({ provider = "moonshot", model = "kimi-k3" })
+require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
 
 Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
