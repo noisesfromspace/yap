@@ -1,4 +1,4 @@
-module pitel
+module github.com/pitel-ai/pitel/harness
 
 go 1.26
 

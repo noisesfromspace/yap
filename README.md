@@ -12,7 +12,7 @@ native Neovim yanking.
 ## Build & install
 
 ```sh
-CGO_ENABLED=0 go build -o ~/go/bin/pitel .   # pure Go, no cgo
+CGO_ENABLED=0 go build -o ~/go/bin/pitel ./agent   # pure Go, no cgo
 ```
 
 Add this repo as a Neovim plugin (any plugin manager, or
@@ -22,7 +22,7 @@ Add this repo as a Neovim plugin (any plugin manager, or
 require("pitel").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
 
-Providers live in `~/.pitel/config.json` (any OpenAI-compatible endpoint):
+Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
 
 ```json
 { "providers": { "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" } } }

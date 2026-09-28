@@ -1,6 +1,6 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
+local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel" })
 
 -- buffer ends ON the user's text (normalize trimmed trailing blanks)

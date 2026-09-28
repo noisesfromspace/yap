@@ -12,11 +12,12 @@ export PITEL_ROOT="$ROOT"
 export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-pitel-test-key}"
 
 TESTHOME="$(mktemp -d)"
-mkdir -p "$TESTHOME/.pitel"
+mkdir -p "$TESTHOME/.config"
 trap 'rm -rf "$TESTHOME"; kill $(jobs -p) 2>/dev/null' EXIT
+export XDG_CONFIG_HOME="$TESTHOME/.config"
 
 cd "$ROOT" || exit 1
-CGO_ENABLED=0 go build -o pitel . || exit 1
+CGO_ENABLED=0 go build -o pitel ./agent || exit 1
 CGO_ENABLED=0 go test ./... || exit 1
 
 fail=0
@@ -24,12 +25,12 @@ run() { # name port [mock]
   local name="$1" port="$2" mock="${3:-}"
   rm -rf "$TESTHOME/.pitel/sessions"
   if [ "$mock" = "mock_models.py" ]; then
-    cat > "$TESTHOME/.pitel/config.json" <<EOF
+    cat > "$TESTHOME/.config/pitel.json" <<EOF
 {"providers": {"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "MOONSHOT_API_KEY"},
                "alpha": {"base_url": "http://127.0.0.1:$port/v1", "api_key_env": "MOONSHOT_API_KEY"}}}
 EOF
   else
-    cat > "$TESTHOME/.pitel/config.json" <<EOF
+    cat > "$TESTHOME/.config/pitel.json" <<EOF
 {"providers": {"mock": {"base_url": "http://127.0.0.1:$port/v1", "api_key_env": "MOONSHOT_API_KEY"}},
  "pricing": {"m1": {"input": 2.0, "output": 10.0}}}
 EOF

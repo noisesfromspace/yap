@@ -1,6 +1,6 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
+local pitel = require("harness")
 
 -- 1. parse excludes error regions (and thinking)
 local buf = pitel.new()

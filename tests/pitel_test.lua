@@ -1,7 +1,7 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
-local session = require("pitel.session")
+local pitel = require("harness")
+local session = require("harness.session")
 
 -- 1. new buffer with a fake conversation
 local buf = pitel.new()

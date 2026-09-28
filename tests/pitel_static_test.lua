@@ -1,6 +1,6 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
+local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1" })
 local src = vim.fn.tempname() .. ".md"
 vim.fn.writefile({
@@ -10,7 +10,7 @@ vim.fn.writefile({
   "# @user", "",
 }, src)
 local buf = pitel.open(src)
-local fold = require("pitel.fold")
+local fold = require("harness.fold")
 fold.apply_default_folds(buf)
 local function heading( role, n)
   n = n or 1

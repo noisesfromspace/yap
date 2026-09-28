@@ -1,7 +1,7 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
-local fold = require("pitel.fold")
+local pitel = require("harness")
+local fold = require("harness.fold")
 
 local buf = pitel.new({ provider = "mock", model = "m1" })
 local lines = {

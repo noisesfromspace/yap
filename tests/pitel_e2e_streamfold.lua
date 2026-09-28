@@ -1,6 +1,6 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local pitel = require("pitel")
+local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel" })
 local buf = pitel.new({ provider = "mock", model = "m1" })
 pitel.send()

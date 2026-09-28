@@ -1,7 +1,7 @@
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime! plugin/pitel.lua")
-local pitel = require("pitel")
+local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel", models = { "mock/m1", "mock/m2", "other/o1" } })
 local buf = pitel.new({ provider = "mock", model = "m1" })
 assert(pitel.winbar(buf):match("mock/m1"), "initial combo")
