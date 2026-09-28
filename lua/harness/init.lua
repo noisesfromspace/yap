@@ -79,6 +79,7 @@ local function render_winbar(buf)
   local provider, model = current_combo(buf)
   local parts = {
     winbar_hl(" " .. provider .. "/" .. model .. " ", "Model"),
+    winbar_hl(" Ⓕ" .. require("harness.fold").level() .. " ", "Idle"),
     "%=",
   }
   local u = vim.b[buf].pitel_usage
@@ -192,12 +193,13 @@ function M.parse_buffer(buf)
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
-      -- Inside a pitel:tool region: collect the result, skip pitel:ui.
+      -- Inside a pitel:tool region: collect the result, skip pitel:ui and
+      -- the pitel:stream display region (both display-only).
       if line:match("^<!%-%- /pitel:tool") then
         table.insert(tools, tool)
         tool = nil
-      elseif line:match("^<!%-%- pitel:ui") then
-        -- Single-line form closes on the same line.
+      elseif line:match("^<!%-%- pitel:ui") or line:match("^<!%-%- pitel:stream%s*$") then
+        -- Single-line form closes on the same line; multi-line never does.
         in_marker = not line:match("%-%->")
       elseif in_marker then
         if line:match("^%-%->$") then
@@ -314,6 +316,41 @@ local function append_block(buf, block)
   local lines = vim.deepcopy(block)
   table.insert(lines, 1, "")
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
+end
+
+--- Delete display-only pitel:stream regions whose tool result kept the
+--- full output. The binary marks regions to KEEP with a `pitel:keepstream`
+--- line right after the stream region's `-->` (a truncated result cut the
+--- beginning the stream holds). Any stream region NOT so marked duplicates
+--- its result byte-for-byte and is removed; keepstream lines are removed
+--- either way.
+local function prune_stream_regions(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  -- Collect line ranges to delete, from the bottom up so deletions don't
+  -- shift earlier ranges.
+  local ranges = {}
+  local i = 1
+  while i <= #lines do
+    if lines[i]:match("^<!%-%- pitel:stream%s*$") then
+      -- Find this stream region's closer.
+      local closer = i
+      while closer <= #lines and not lines[closer]:match("^%-%->%s*$") do
+        closer = closer + 1
+      end
+      local keep = lines[closer + 1] and lines[closer + 1]:match("^<!%-%- pitel:keepstream%s*%-%->%s*$")
+      if keep then
+        table.insert(ranges, 1, { closer + 1, closer + 1 }) -- drop only the marker
+      else
+        table.insert(ranges, 1, { i, closer }) -- drop the whole region
+      end
+      i = closer + 1
+    else
+      i = i + 1
+    end
+  end
+  for _, r in ipairs(ranges) do
+    vim.api.nvim_buf_set_lines(buf, r[1] - 1, r[2], false, {})
+  end
 end
 
 --- Find the pitel:usage marker the binary appended for this turn, fold its
@@ -437,10 +474,15 @@ function M.send()
       if data then
         append_text(buf, data)
         -- Tool-argument folds don't close themselves as they stream in
-        -- (expr folds only get state from explicit commands), and the
-        -- opener may arrive chunks before its fold exists — so close on
-        -- every chunk; foldclose is a no-op when there's nothing to do.
-        require("harness.fold").close_tool_folds(buf)
+        -- (expr folds only get state from explicit commands). Only scan
+        -- when the chunk can open such a fold — the multi-line tool
+        -- header — because close_tool_folds is an O(lines) main-loop
+        -- scan and streamed output (live pitel:stream, model text)
+        -- arrives in small chunks; scanning per chunk makes typing
+        -- sluggish in long sessions.
+        if data:find("<!%-%- pitel:tool%s*$") or data:find("\n<!%-%- pitel:tool%s*\n") then
+          require("harness.fold").close_tool_folds(buf)
+        end
       end
     end),
     stderr = function(_, data)
@@ -458,6 +500,7 @@ function M.send()
       return
     end
     consume_usage(buf)
+    prune_stream_regions(buf)
     -- The binary can complete "successfully" with an embedded error
     -- marker (e.g. empty completion, max tool iterations): surface it.
     do
