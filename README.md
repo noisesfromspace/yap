@@ -37,7 +37,10 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
 - `:PitelStop` — kill the in-flight request
 - `:PitelSessions [all]` — resume a saved session
 
-Provider/model, token totals and cost live in the winbar.
+Provider/model, fold level (`Ⓕ0`-`Ⓕ2`), token totals and cost live in
+the winbar. `<leader>1` folds all agent output (user prompts stay open),
+`<leader>2` folds tool calls and thinking, `<leader>3` unfolds
+everything.
 
 ## Rendering
 

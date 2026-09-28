@@ -11,7 +11,7 @@ vim.fn.writefile({
 }, src)
 local buf = pitel.open(src)
 local fold = require("harness.fold")
-fold.apply_default_folds(buf)
+fold.set_view_level(1) -- fold all agent output for this test
 local function heading( role, n)
   n = n or 1
   for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do

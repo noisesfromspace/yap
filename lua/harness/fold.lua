@@ -7,19 +7,26 @@ local M = {}
 
 local HEAD = "^# @(%a+)%s*$"
 
--- Multi-line pitel:tool headers (long calls: write/edit) open a level-2
--- fold; the closing `-->` line is part of the fold. Single-line headers
+-- Multi-line comment regions fold at level 2:
+--   <!-- pitel:tool        long call header, closes on -->
+--   <!-- pitel:thinking    model reasoning, closes on -->
+--   <!-- pitel:ui          diff display, closes on -->
+--   <!-- pitel:stream      live tool output, closes on -->
+--   <!-- pitel:error       backend error record, closes on -->
+-- Single-line headers (`<!-- pitel:tool {...} -->`, `<!-- pitel:usage … -->`)
 -- stay unfolded level-1 content.
 local TOOL_HEAD = "^<!%-%- pitel:tool$"
+local REGION = "^<!%-%-.*pitel:%a+%s*$"
 
--- The four view levels, bound to <leader>1..4 (same keys as fruit).
--- Level 1 (outline) is fruit's default fold state: only user prompts and
--- the last block open. roles = which heading roles stay open; nil = all.
+-- The three view levels, bound to <leader>1..3:
+--   1: agent output hidden — only user prompts open
+--   2: conversation visible — tool calls, thinking and other display
+--      regions folded away
+--   3: everything open
 M.views = {
-  { key = "1", label = "outline" },
-  { key = "2", label = "user",         roles = { "user" } },
-  { key = "3", label = "conversation", roles = { "user", "assistant" } },
-  { key = "4", label = "full",         roles = nil },
+  { key = "1", label = "agent output folded" },
+  { key = "2", label = "tools & thinking folded" },
+  { key = "3", label = "everything open" },
 }
 
 local function compact(s)
@@ -33,22 +40,23 @@ function M.expr(lnum)
   if line:match(HEAD) then
     return ">1"
   end
-  if line:match(TOOL_HEAD) then
+  -- A single-line marker (`<!-- pitel:tool {...} -->`) is content.
+  if line:match(REGION) and not line:match("%-%->") then
     return ">2"
   end
-  -- Inside a multi-line tool header (including its --> closer)? Scan up:
-  -- the nearest structural line decides. Pretty-printed JSON never starts
-  -- a line with `<!--` or `-->`, so the scan is bounded and unambiguous.
+  if line:match("^<!%-%- /pitel:") then
+    return "1"
+  end
+  -- Inside a multi-line region (including its --> closer)? Scan up: the
+  -- nearest structural line decides. Pretty-printed JSON never starts a
+  -- line with `<!--` or `-->`, so the scan is bounded and unambiguous.
   for i = lnum - 1, 1, -1 do
     local s = vim.fn.getline(i)
-    if s:match(TOOL_HEAD) then
+    if s:match(REGION) and not s:match("%-%->") then
       return "2"
     end
-    if s:match(HEAD) or s:match("^<!%-%-") then
-      break
-    end
-    if s:match("^%-%->") then
-      return "1" -- follows a closed header: block content, not fold
+    if s:match(HEAD) or s:match("^<!%-%-") or s:match("^%-%->") then
+      return "1"
     end
   end
   return "="
@@ -68,7 +76,12 @@ function M.text(start, finish)
         break
       end
     end
-    return string.format("▸ tool: %s  (%d lines)", name, finish - start + 1)
+    return string.format("▸ tool: %s (%d lines)", name, finish - start + 1)
+  end
+
+  local region = first:match("^<!%-%-.*(pitel:%a+)")
+  if region then
+    return string.format("▸ %s (%d lines)", region, finish - start + 1)
   end
 
   local role = first:match(HEAD) or "?"
@@ -87,23 +100,41 @@ function M.text(start, finish)
     preview = "(empty)"
   end
 
-  return string.format("▸ @%s │ %s  (%d lines)", role, preview, finish - start + 1)
+  return string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
 end
 
--- ─── Default fold state (ported from fruit.nvim) ──────────────────────────
+-- ─── View levels ───────────────────────────────────────────────────────────
 
--- Tool-argument folds stay closed in every message-structure view: the
--- pitel:ui diff is the visual record, the JSON is inspectable with za.
--- Also called during streaming: newly appended folds default to open.
-function M.close_tool_folds(buf)
+-- Active fold level, reported in the winbar: the deepest CLOSED fold in
+-- the buffer (foldlevel() alone is structural and ignores open state, so
+-- measure the level of each closed fold's start line). 0 = fully open,
+-- 1 = agent output folded, 2 = tools & thinking folded.
+function M.level()
+  local lvl = 0
+  for lnum = 1, vim.api.nvim_buf_line_count(0) do
+    local fs = vim.fn.foldclosed(lnum)
+    if fs ~= -1 then
+      lvl = math.max(lvl, vim.fn.foldlevel(fs))
+      if lvl >= 2 then
+        return 2
+      end
+    end
+  end
+  return lvl
+end
+
+-- Close every level-2 (tool header, thinking, ui, stream, error) fold,
+-- leaving message folds untouched. Deterministic: scans for region
+-- openers and closes only when that fold isn't already closed (closing
+-- an already-closed fold would close its parent).
+function M.close_detail_folds(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_call(win, function()
         for lnum = 1, vim.api.nvim_buf_line_count(buf) do
-          -- foldclose on an already-closed fold closes its PARENT, so
-          -- only close when the line is not inside any closed fold.
-          if vim.fn.getline(lnum):match(TOOL_HEAD) and vim.fn.foldclosed(lnum) == -1 then
+          local s = vim.fn.getline(lnum)
+          if s:match(REGION) and not s:match("%-%->") and vim.fn.foldclosed(lnum) == -1 then
             pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
           end
         end
@@ -112,56 +143,25 @@ function M.close_tool_folds(buf)
   end
 end
 
--- Fruit's closing logic: fold everything except user prompts (the visible
--- outline) and the last block (newest activity stays visible).
-function M.apply_default_folds(buf)
-  buf = buf or vim.api.nvim_get_current_buf()
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_call(win, function()
-        vim.cmd("silent! normal! zM")
-        local last_head = nil
-        for lnum = 1, vim.api.nvim_buf_line_count(buf) do
-          local role = vim.fn.getline(lnum):match(HEAD)
-          if role then
-            last_head = lnum
-            if role == "user" then
-              pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
-            end
-          end
-        end
-        if last_head then
-          pcall(vim.cmd, string.format("silent! %dfoldopen!", last_head))
-        end
-        M.close_tool_folds(buf)
-      end)
-    end
-  end
-end
+-- Backwards-compatible name for the streaming hook in init.lua.
+M.close_tool_folds = M.close_detail_folds
 
--- ─── View levels ───────────────────────────────────────────────────────────
-
-local function open_roles(roles)
-  vim.cmd("silent! normal! zM")
-  for lnum = 1, vim.api.nvim_buf_line_count(0) do
-    local role = vim.fn.getline(lnum):match(HEAD)
-    if role and vim.tbl_contains(roles, role) then
-      pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
-    end
-  end
-  M.close_tool_folds()
-end
-
+-- Open/close state per view, applied with unconditional zM/zR first so a
+-- keypress always lands on the same state no matter what was open.
 function M.set_view_level(level)
-  local view = M.views[level]
-  if not view then
-    return
-  end
   if level == 1 then
-    M.apply_default_folds()
-  elseif view.roles then
-    open_roles(view.roles)
-  else
+    -- Only user prompts visible; all agent output folded away.
+    vim.cmd("silent! normal! zM")
+    for lnum = 1, vim.api.nvim_buf_line_count(0) do
+      if vim.fn.getline(lnum):match(HEAD) == "user" then
+        pcall(vim.cmd, string.format("silent! %dfoldopen!", lnum))
+      end
+    end
+  elseif level == 2 then
+    -- Full conversation; tool calls, thinking and display regions folded.
+    vim.cmd("silent! normal! zR")
+    M.close_detail_folds()
+  elseif level == 3 then
     vim.cmd("silent! normal! zR")
   end
 end
@@ -210,7 +210,7 @@ function M.setup_buffer(buf)
   vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
   vim.wo.foldlevel = 99 -- expr folds start computable; default state applied below
-  M.apply_default_folds(buf)
+  M.set_view_level(2)
 
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
@@ -226,10 +226,9 @@ function M.setup_buffer(buf)
       M.set_view_level(level)
     end, desc)
   end
-  bind_view("<leader>1", 1, "View: outline")
-  bind_view("<leader>2", 2, "View: user only")
-  bind_view("<leader>3", 3, "View: conversation")
-  bind_view("<leader>4", 4, "View: full expanded")
+  bind_view("<leader>1", 1, "Fold all agent messages (user prompts stay open)")
+  bind_view("<leader>2", 2, "Fold all tool calls and thinking blocks")
+  bind_view("<leader>3", 3, "Unfold everything")
   map("<Tab>", "za", "Toggle fold")
 end
 

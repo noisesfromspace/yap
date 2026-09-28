@@ -11,35 +11,39 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user", "", "Question two.", "",
 })
 -- pitel.new ran setup_buffer on the template; re-apply for our content
-fold.apply_default_folds(buf)
+fold.setup_buffer(buf)
 
--- fruit default: user prompts + last block open, system/assistant closed
-assert(vim.fn.foldclosed(1) == 1, "system should be folded")
-assert(vim.fn.foldclosed(5) == -1, "user 1 should be open (outline)")
-assert(vim.fn.foldclosed(9) == 9, "assistant should be folded")
-assert(vim.fn.foldclosed(14) == -1, "last block should be open")
+-- default state is view 2: all messages open
+assert(vim.fn.foldclosed(1) == -1, "system should be open by default")
+assert(vim.fn.foldclosed(5) == -1, "user 1 should be open")
+assert(vim.fn.foldclosed(9) == -1, "assistant should be open by default")
+assert(fold.level() == 0, "no folds closed in view 2 default")
 
--- view 1 (outline) == fruit default
-fold.set_view_level(4) -- disturb state first
+-- view 1: only user prompts open, all agent output folded
 fold.set_view_level(1)
-assert(vim.fn.foldclosed(1) == 1 and vim.fn.foldclosed(9) == 9, "outline folds system+assistant")
-assert(vim.fn.foldclosed(5) == -1 and vim.fn.foldclosed(14) == -1, "outline keeps user+last open")
+assert(vim.fn.foldclosed(1) == 1, "view 1 folds system")
+assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
+assert(vim.fn.foldclosed(9) == 9, "view 1 folds assistant")
+assert(vim.fn.foldclosed(14) == -1, "view 1 keeps last user open")
+assert(fold.level() == 1, "view 1 reports level 1")
 
--- view 2: user only (last block is user here, so same visible set)
+-- view 1 is deterministic: partial state gets overwritten
+vim.cmd("silent! 5foldclose") -- user closes a user fold
+assert(vim.fn.foldclosed(5) == 5, "precondition: user fold closed")
+fold.set_view_level(1)
+assert(vim.fn.foldclosed(5) == -1, "view 1 reopens user prompts")
+
+-- view 2: everything open (no detail folds here)
 fold.set_view_level(2)
-assert(vim.fn.foldclosed(9) == 9, "user view folds assistant")
+assert(vim.fn.foldclosed(1) == -1 and vim.fn.foldclosed(9) == -1, "view 2 opens messages")
+assert(fold.level() == 0, "view 2 reports level 0")
 
--- view 3: conversation
+-- view 3: everything open
 fold.set_view_level(3)
-assert(vim.fn.foldclosed(9) == -1, "conversation opens assistant")
-assert(vim.fn.foldclosed(1) == 1, "conversation keeps system folded")
-
--- view 4: full
-fold.set_view_level(4)
-assert(vim.fn.foldclosed(1) == -1, "full opens everything")
+assert(vim.fn.foldclosed(1) == -1, "view 3 opens everything")
 
 -- foldtext
-assert(fold.text(9, 12) == "▸ @assistant │ Answer one.  (4 lines)", "foldtext: " .. fold.text(9, 12))
+assert(fold.text(9, 12) == "▸ @assistant │ Answer one. (4 lines)", "foldtext: " .. fold.text(9, 12))
 
 -- navigation
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
