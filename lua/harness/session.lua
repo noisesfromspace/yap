@@ -23,6 +23,13 @@ end
 --- Write the buffer to its session file, creating one (named after the
 --- current time) on first save. Renames the buffer to the file so `:w`
 --- works as expected.
+---
+--- The write goes through `:write!` (not writefile()): the buffer then
+--- OWNS the file in Neovim's eyes — mtime bookkeeping is set, so `:w`
+--- keeps working and you never get E13 "file exists". `:write!` also
+--- clears 'modified', so a clean buffer prompts nothing on exit; the
+--- `[+]` flag is the real signal for "typed but not yet saved".
+--- Writing without 'modified' is harmless.
 function M.save(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -42,8 +49,13 @@ function M.save(buf)
     vim.b[buf].pitel_path = path
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
-  vim.fn.writefile(vim.api.nvim_buf_get_lines(buf, 0, -1, false), path)
-  vim.bo[buf].modified = false
+  local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
+  vim.api.nvim_buf_call(buf, function()
+    vim.cmd("silent noautocmd keepjumps write!")
+  end)
+  if view then
+    vim.fn.winrestview(view)
+  end
 end
 
 -- First non-empty line of the first `# @user` block, compacted.

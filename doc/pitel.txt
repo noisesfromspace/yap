@@ -270,7 +270,9 @@ zero-width space after `<` (display-identical, bounded parse).
 A session is just the buffer's markdown written to a file — the buffer IS
 the serialization, there is no other format. Files live under
 ~/.pitel/sessions/<cwd-slug>/ and are autosaved after every completed reply.
-On first save the buffer is renamed to the file, so `:w` works too.
+On first save the buffer is renamed to the file, and every autosave goes
+through |:write|, so the buffer owns its file: 'modified', |:w|, and the
+exit prompt all behave like any normal file buffer.
 
 File operations are the session operations (pi equivalents, but manual):
 
@@ -373,6 +375,8 @@ R7  Exactly one blank line between message blocks, enforced LOCALLY at
 
 R8  Sessions are plain markdown files; file operations are the session
     operations. Autosave only after a COMPLETED reply (never on error).
+    Autosaves go through :write! (not writefile()): the buffer owns the
+    file, so mtime bookkeeping, :w, and E13 all behave normally.
     save() follows buffer renames so :file names and :saveas forks. Why:
     no second serialization format to keep in sync.
 

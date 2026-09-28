@@ -497,10 +497,8 @@ function M.new(opts)
   vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  -- Named after creation time (bufnr for uniqueness) so `:ls` is
-  -- meaningful before the first save renames it to the session file.
-  vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
-  vim.bo[buf].modified = false
+  -- Leave 'modified' set (inserting lines did that): an unsaved new chat
+  -- should prompt like any unsaved buffer instead of vanishing on :q!.
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
