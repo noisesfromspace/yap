@@ -46,32 +46,80 @@ end
 -- O(n) total; the cache is rebuilt only when the buffer changes.
 --
 -- region after each line: nil (pre-heading), "top" (message level),
--- "tool" (inside a pitel:tool region), "comment" (inside a multi-line
--- pitel:thinking/error/usage comment). A bare `-->` inside a tool
--- region closes the multi-line header or a pitel:ui subsection, not the
--- region itself; only `<!-- /pitel:tool` ends a tool region.
+-- "tool" (inside a pitel:tool region). cret is the region a multi-line
+-- HTML comment returns to after its `-->`: "top" for a standalone
+-- pitel:thinking/error/usage comment, "tool" for a legacy `<!-- pitel:ui`
+-- subsection inside a tool region. A bare `-->` inside a tool region but
+-- OUTSIDE a comment closes the multi-line tool header; only
+-- `<!-- /pitel:tool` ends a tool region.
+--
+-- fence is nil or { char, n } for an open fenced code block. Tool
+-- results are fenced, and their content is arbitrary (a bash `cat` of a
+-- pitel session contains `# @user` lines): inside a fence EVERY line is
+-- literal — no heading, marker or `-->` interpretation — or the fold
+-- structure splits at fake headings inside the result.
 local cache = {} -- buf -> { tick, levels = { lnum -> levelstr } }
 
-local function classify(line, region)
+-- fence_run: a fence opener/closer — <=3 spaces indent then a run of
+-- >=3 backticks or tildes. Returns (char, run, tail) or nil.
+local function fence_run(line)
+  local ws = line:match("^%s*")
+  if #ws > 3 then
+    return nil
+  end
+  local rest = line:sub(#ws + 1)
+  local c = rest:sub(1, 1)
+  if c ~= "`" and c ~= "~" then
+    return nil
+  end
+  local n = 0
+  while rest:sub(n + 1, n + 1) == c do
+    n = n + 1
+  end
+  if n < 3 then
+    return nil
+  end
+  return c, n, rest:sub(n + 1)
+end
+
+local function classify(line, region, fence, cret)
+  local lvl = region and (region == "top" and "1" or "2") or "="
+  if fence then
+    -- Inside a fence: literal until a matching closer (same char, at
+    -- least as long, then only spaces).
+    local c, n, tail = fence_run(line)
+    if c == fence.char and n >= fence.n and tail:match("^%s*$") then
+      return lvl, region, nil, cret
+    end
+    return lvl, region, fence, cret
+  end
+  if cret then
+    -- Inside a multi-line HTML comment: raw text until a bare `-->`
+    -- (a ``` inside a comment is NOT a fence).
+    if line:match("^%-%->%s*$") then
+      return "2", cret, fence, nil
+    end
+    return "2", region, fence, cret
+  end
+  local c, n = fence_run(line)
+  if c then
+    return lvl, region, { char = c, n = n }, cret
+  end
   if line:match(HEAD) then
-    return ">1", "top"
+    return ">1", "top", fence, cret
   elseif line:match(TOOL_OPEN) then
-    return ">2", "tool" -- both header forms start the region fold
+    return ">2", "tool", fence, cret -- both header forms start the region fold
   elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-    -- A comment opener inside a tool region (pitel:ui) is content of the
-    -- region fold, not a fold of its own.
+    -- A comment opener inside a tool region (legacy pitel:ui) is content
+    -- of the region fold, not a fold of its own.
     if region == "tool" then
-      return "2", "tool"
+      return "2", region, fence, region
     end
-    return ">2", "comment"
+    return ">2", region, fence, "top"
   elseif line:match(TOOL_CLOSE) then
-    return "2", "top" -- the closer is the region fold's last line
+    return "2", "top", fence, cret -- the closer is the region fold's last line
   else
-    local lvl = region and (region == "top" and "1" or "2") or "="
-    if line == "-->" and region == "comment" then
-      return lvl, "top"
-    end
-    return lvl, region
+    return lvl, region, fence, cret
   end
 end
 
@@ -81,10 +129,10 @@ function M.expr(lnum)
   local c = cache[buf]
   if not c or c.tick ~= tick then
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local levels, region = {}, nil
+    local levels, region, fence, cret = {}, nil, nil, nil
     for i, line in ipairs(lines) do
-      local lvl, next = classify(line, region)
-      levels[i], region = lvl, next
+      local lvl, nr, nf, nc = classify(line, region, fence, cret)
+      levels[i], region, fence, cret = lvl, nr, nf, nc
     end
     c = { tick = tick, levels = levels }
     cache[buf] = c

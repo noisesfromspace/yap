@@ -2,6 +2,9 @@ local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel" })
+-- mock_write writes a FIXED path; a leftover from a previous run would
+-- produce an empty diff (no ui), so clear it to force the create case.
+os.remove("/tmp/ml-test.md")
 local buf = pitel.new({ provider = "mock", model = "m1" })
 pitel.send()
 local ok = vim.wait(10000, function()
