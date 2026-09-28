@@ -39,10 +39,10 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
   terminal tailing the tool's log; opens automatically by default)
 - `:PitelSessions [all]` — resume a saved session
 
-Provider/model, fold level (`Ⓕ0`-`Ⓕ2`), token totals and cost live in
-the winbar. `<leader>1` folds all agent output (user prompts stay open),
-`<leader>2` folds tool calls and thinking, `<leader>3` unfolds
-everything.
+Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
+the winbar. `<leader>1` folds all agent output (user prompts stay open;
+default when a session opens), `<leader>2` folds tool calls and
+thinking, `<leader>3` unfolds everything.
 
 ## Rendering
 

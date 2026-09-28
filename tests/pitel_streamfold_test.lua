@@ -6,6 +6,7 @@ local buf = pitel.new({ provider = "mock", model = "m1" })
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "go", "", "# @assistant", "" })
 fold.setup_buffer(buf)
+fold.set_view_level(2) -- message folds open, detail folds closed
 
 -- simulate streaming: opener arrives first, close fires, region extends
 local function append(l)
@@ -29,11 +30,14 @@ append("+x")
 append("-->")
 append("<!-- /pitel:tool -->")
 assert(vim.fn.foldclosed(opener) == opener, "fold reopened by result lines: " .. vim.fn.foldclosed(opener))
--- result lines must NOT be inside the fold
+-- the whole region (result, ui, closer) is inside the one fold
 local ln = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 for i, l in ipairs(ln) do
   if l:match("^Successfully") then
-    assert(vim.fn.foldclosed(i) == -1, "result line hidden in fold")
+    assert(vim.fn.foldclosed(i) == opener, "result line outside the region fold")
+  end
+  if l:match("^<!%-%- /pitel:tool") then
+    assert(vim.fn.foldclosed(i) == opener, "region closer outside the fold")
   end
 end
 print("OK simulation")

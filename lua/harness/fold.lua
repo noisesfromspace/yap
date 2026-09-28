@@ -7,15 +7,18 @@ local M = {}
 
 local HEAD = "^# @(%a+)%s*$"
 
--- Multi-line comment regions fold at level 2:
---   <!-- pitel:tool        long call header, closes on -->
---   <!-- pitel:thinking    model reasoning, closes on -->
---   <!-- pitel:ui          diff display, closes on -->
---   <!-- pitel:error       backend error record, closes on -->
--- Single-line headers (`<!-- pitel:tool {...} -->`, `<!-- pitel:usage … -->`)
--- stay unfolded level-1 content.
-local TOOL_HEAD = "^<!%-%- pitel:tool$"
-local REGION = "^<!%-%-.*pitel:%a+%s*$"
+-- Level-2 folds inside a message fold:
+--   <!-- pitel:tool … <!-- /pitel:tool -->   the WHOLE region: header
+--       (single-line JSON or pretty multi-line), result text and the
+--       pitel:ui diff — one fold, `▸ tool: <name>`.
+--   <!-- pitel:thinking … -->                model reasoning
+--   <!-- pitel:error … -->                   backend error record
+-- Single-line markers (`<!-- pitel:usage … -->`) stay unfolded level-1
+-- content.
+local TOOL_OPEN = "^<!%-%- pitel:tool"
+local TOOL_CLOSE = "^<!%-%- /pitel:tool"
+-- Multi-line comment opener (nothing but the word after `pitel:`).
+local COMMENT_OPEN = "^<!%-%-.*pitel:%a+%s*$"
 
 -- The three view levels, bound to <leader>1..3:
 --   1: agent output hidden — only user prompts open
@@ -34,31 +37,61 @@ end
 
 -- ─── foldexpr / foldtext ───────────────────────────────────────────────────
 
+-- The region a line belongs to, found by scanning up: "tool" or
+-- "comment" when lnum is inside an unclosed region, "top" at message
+-- level (a heading or tool closer came first), nil when nothing
+-- structural was found. pitel comments never nest; a bare `-->` above
+-- means the comment whose opener lies further up is already closed, so
+-- skip past it (depth counter). Bounded: marker lines are escaped in
+-- tool results, and pretty-printed header JSON never starts a line with
+-- `<!--` or `-->`.
+local function enclosing(lnum)
+  local depth = 0
+  for i = lnum - 1, 1, -1 do
+    local s = vim.fn.getline(i)
+    if s == "-->" then
+      depth = depth + 1
+    elseif s:match(HEAD) or s:match(TOOL_CLOSE) then
+      return "top"
+    elseif s:match(COMMENT_OPEN) and not s:match("%-%->") then
+      if depth > 0 then
+        depth = depth - 1
+        if s:match(TOOL_OPEN) then
+          -- The closed comment was the multi-line tool header; the
+          -- region around it is still open.
+          return "tool"
+        end
+      else
+        return s:match(TOOL_OPEN) and "tool" or "comment"
+      end
+    elseif depth == 0 and s:match(TOOL_OPEN) then
+      return "tool" -- single-line header closes its comment on the line
+    end
+  end
+  return nil
+end
+
 function M.expr(lnum)
   local line = vim.fn.getline(lnum)
   if line:match(HEAD) then
     return ">1"
   end
-  -- A single-line marker (`<!-- pitel:tool {...} -->`) is content.
-  if line:match(REGION) and not line:match("%-%->") then
-    return ">2"
+  if line:match(TOOL_OPEN) then
+    return ">2" -- both header forms start the region fold
   end
-  if line:match("^<!%-%- /pitel:") then
-    return "1"
+  if line:match(COMMENT_OPEN) and not line:match("%-%->") then
+    -- A comment opener inside a tool region (pitel:ui) is content of the
+    -- region fold, not a fold of its own.
+    return enclosing(lnum) == "tool" and "2" or ">2"
   end
-  -- Inside a multi-line region (including its --> closer)? Scan up: the
-  -- nearest structural line decides. Pretty-printed JSON never starts a
-  -- line with `<!--` or `-->`, so the scan is bounded and unambiguous.
-  for i = lnum - 1, 1, -1 do
-    local s = vim.fn.getline(i)
-    if s:match(REGION) and not s:match("%-%->") then
-      return "2"
-    end
-    if s:match(HEAD) or s:match("^<!%-%-") or s:match("^%-%->") then
-      return "1"
-    end
+  if line:match(TOOL_CLOSE) then
+    return "2" -- the closer is the region fold's last line
   end
-  return "="
+  local e = enclosing(lnum)
+  if e == "tool" or e == "comment" then
+    return "2"
+  end
+  return e == "top" and "1" or "="
 end
 
 function M.text(start, finish)
@@ -66,16 +99,17 @@ function M.text(start, finish)
   finish = finish or vim.v.foldend
   local first = vim.fn.getline(start)
 
-  if first:match(TOOL_HEAD) then
-    local name = "?"
+  if first:match(TOOL_OPEN) then
+    -- The name is on the opener line (single-line header) or in the
+    -- pretty JSON below (multi-line header).
+    local name = first:match('"name":%s*"([^"]+)"')
     for lnum = start + 1, math.min(finish, start + 12) do
-      local n = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
-      if n then
-        name = n
+      if name then
         break
       end
+      name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    return string.format("▸ tool: %s (%d lines)", name, finish - start + 1)
+    return string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
   end
 
   local region = first:match("^<!%-%-.*(pitel:%a+)")
@@ -104,36 +138,37 @@ end
 
 -- ─── View levels ───────────────────────────────────────────────────────────
 
--- Active fold level, reported in the winbar: the deepest CLOSED fold in
--- the buffer (foldlevel() alone is structural and ignores open state, so
--- measure the level of each closed fold's start line). 0 = fully open,
--- 1 = agent output folded, 2 = tools & thinking folded.
+-- The Ⓕ chip in the winbar: the last view APPLIED to the buffer
+-- (1 agent output folded, 2 tools & thinking folded, 3 all open). It
+-- used to be measured from foldclosed(), but that read as confusing —
+-- after <leader>3 the chip showed Ⓕ0. Trade-off: manual za toggles no
+-- longer update the chip.
+local applied = {}
+
 function M.level()
-  local lvl = 0
-  for lnum = 1, vim.api.nvim_buf_line_count(0) do
-    local fs = vim.fn.foldclosed(lnum)
-    if fs ~= -1 then
-      lvl = math.max(lvl, vim.fn.foldlevel(fs))
-      if lvl >= 2 then
-        return 2
-      end
-    end
-  end
-  return lvl
+  return applied[vim.api.nvim_get_current_buf()] or 3
 end
 
--- Close every level-2 (tool header, thinking, ui, error) fold,
--- leaving message folds untouched. Deterministic: scans for region
--- openers and closes only when that fold isn't already closed (closing
--- an already-closed fold would close its parent).
+-- The view last applied to buf (nil if never), for the send logic.
+function M.view(buf)
+  return applied[buf]
+end
+
+-- Close every level-2 (tool region, thinking, error) fold, leaving
+-- message folds untouched. Deterministic: scans for region openers and
+-- closes only when that fold isn't already closed (closing an
+-- already-closed fold would close its parent).
+local function is_region_opener(s)
+  return s:match(TOOL_OPEN) ~= nil or (s:match(COMMENT_OPEN) ~= nil and not s:match("%-%->"))
+end
+
 function M.close_detail_folds(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_call(win, function()
         for lnum = 1, vim.api.nvim_buf_line_count(buf) do
-          local s = vim.fn.getline(lnum)
-          if s:match(REGION) and not s:match("%-%->") and vim.fn.foldclosed(lnum) == -1 then
+          if is_region_opener(vim.fn.getline(lnum)) and vim.fn.foldclosed(lnum) == -1 then
             pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
           end
         end
@@ -145,6 +180,7 @@ end
 -- Open/close state per view, applied with unconditional zM/zR first so a
 -- keypress always lands on the same state no matter what was open.
 function M.set_view_level(level)
+  applied[vim.api.nvim_get_current_buf()] = level
   if level == 1 then
     -- Only user prompts visible; all agent output folded away.
     vim.cmd("silent! normal! zM")
@@ -206,7 +242,7 @@ function M.setup_buffer(buf)
   vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
   vim.wo.foldlevel = 99 -- expr folds start computable; default state applied below
-  M.set_view_level(2)
+  M.set_view_level(1) -- default: an overview — only user prompts open
 
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })

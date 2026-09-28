@@ -13,13 +13,14 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 -- pitel.new ran setup_buffer on the template; re-apply for our content
 fold.setup_buffer(buf)
 
--- default state is view 2: all messages open
-assert(vim.fn.foldclosed(1) == -1, "system should be open by default")
+-- default state is view 1: only user prompts open, agent output folded
+assert(vim.fn.foldclosed(1) == 1, "system should be folded by default")
 assert(vim.fn.foldclosed(5) == -1, "user 1 should be open")
-assert(vim.fn.foldclosed(9) == -1, "assistant should be open by default")
-assert(fold.level() == 0, "no folds closed in view 2 default")
+assert(vim.fn.foldclosed(9) == 9, "assistant should be folded by default")
+assert(vim.fn.foldclosed(14) == -1, "user 2 should be open")
+assert(fold.level() == 1, "default view is 1")
 
--- view 1: only user prompts open, all agent output folded
+-- view 1 reapplied: same state
 fold.set_view_level(1)
 assert(vim.fn.foldclosed(1) == 1, "view 1 folds system")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
@@ -36,11 +37,12 @@ assert(vim.fn.foldclosed(5) == -1, "view 1 reopens user prompts")
 -- view 2: everything open (no detail folds here)
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(1) == -1 and vim.fn.foldclosed(9) == -1, "view 2 opens messages")
-assert(fold.level() == 0, "view 2 reports level 0")
+assert(fold.level() == 2, "view 2 reports level 2")
 
 -- view 3: everything open
 fold.set_view_level(3)
 assert(vim.fn.foldclosed(1) == -1, "view 3 opens everything")
+assert(fold.level() == 3, "view 3 reports level 3")
 
 -- foldtext
 assert(fold.text(9, 12) == "▸ @assistant │ Answer one. (4 lines)", "foldtext: " .. fold.text(9, 12))
