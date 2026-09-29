@@ -209,6 +209,11 @@ Everything between headings is message content. Everything before the first
 heading is ignored by the parser (legacy frontmatter in old session files
 stays inert).
 
+A pitel buffer never attaches a language server: the buffer is the
+conversation (R1), and a markdown LSP's semantic-token/inlay-hint stream is
+pure per-redraw cost on a large session. setup_buffer marks each buffer and
+an LspAttach guard in setup() stops any markdown client from attaching.
+
 Session metadata is NOT stored in the buffer — it lives in the winbar
 (|pitel-winbar|): the provider/model combo on the left, token totals, cost
 and the state glyph on the right. The combo comes from per-buffer vars set

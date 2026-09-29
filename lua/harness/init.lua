@@ -838,6 +838,19 @@ end
 
 -- Keymaps and buffer options shared by new and reopened session buffers.
 local function setup_buffer(buf)
+  -- Mark the buffer as a pitel conversation BEFORE the filetype triggers the
+  -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
+  -- A chat buffer is not code: markdown LSPs (semantic tokens, inlay hints)
+  -- add per-redraw cost on a large session and buy nothing (R1).
+  vim.b[buf].pitel = true
+  -- Opening a saved session (:edit) sets the filetype before setup_buffer
+  -- runs, so a markdown client may already be attached; stop it.
+  if vim.lsp and vim.lsp.get_clients then
+    for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
+      pcall(vim.lsp.stop_client, client.id)
+    end
+  end
+
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
 
@@ -953,6 +966,21 @@ end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+  -- pitel buffers carry no language server: the buffer is the conversation
+  -- (R1), and a markdown LSP streaming semantic-token/inlay-hint updates is
+  -- pure per-redraw cost. The guard stops any client that attaches to a
+  -- marked buffer; setup_buffer marks the buffer and stops clients that
+  -- attached during :edit before the mark existed.
+  local group = vim.api.nvim_create_augroup("PitelLsp", { clear = true })
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = group,
+    callback = function(args)
+      if vim.b[args.buf].pitel and args.data and args.data.client_id then
+        pcall(vim.lsp.stop_client, args.data.client_id)
+      end
+    end,
+  })
 end
 
 return M
