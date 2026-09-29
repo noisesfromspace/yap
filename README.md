@@ -81,7 +81,9 @@ editing the agent.
 - `:PitelSessions [all]` — resume a saved session
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
-the winbar. `<leader>1` folds all agent output (user prompts stay open;
+the winbar, whose trailing glyph marks busy / error / `◉ reply` (the agent
+awaits your next prompt) / idle. A turn finishing in a background chat
+fires `vim.notify` — and a `User PitelTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open;
 default when a session opens), `<leader>2` folds tool calls and
 thinking, `<leader>3` unfolds everything.
 

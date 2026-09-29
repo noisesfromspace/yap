@@ -32,6 +32,9 @@ M.config = {
   -- List available skills (name + description) in new chats' system block
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
+  -- vim.notify when a turn completes in a buffer that is not focused
+  -- (see the User PitelTurnDone autocmd installed by setup()).
+  notify_done = true,
 }
 
 -- Cached output of `pitel models` ("provider/model" lines) so
@@ -126,6 +129,16 @@ end
 -- Last backend error per buffer; shown in the winbar until the next send.
 local errors = {}
 
+-- The agent is awaiting the user's next prompt: set when a turn
+-- completes (a `# @user` heading is appended), cleared when the user
+-- sends. Drives the herdr-style "needs you" winbar state. A UI hint,
+-- not conversation state (R1) — same drift tradeoff as pitel_usage.
+local awaiting = {}
+
+-- Data of the last completed turn per buffer (the binary's `turn_end`
+-- event), handed to the User PitelTurnDone autocmd. Ephemeral.
+local last_turn = {}
+
 local function fmt_tokens(n)
   if n >= 1000 then
     return string.format("%.1fk", n / 1000)
@@ -158,6 +171,8 @@ local function render_winbar(buf)
     table.insert(parts, winbar_hl(" " .. state .. " ", "Busy"))
   elseif errors[buf] then
     table.insert(parts, winbar_hl(" ✗ error ", "Error"))
+  elseif awaiting[buf] then
+    table.insert(parts, winbar_hl(" ◉ reply ", "Needs"))
   else
     table.insert(parts, winbar_hl(" ○ idle ", "Idle"))
   end
@@ -196,7 +211,13 @@ local function spinner_start()
 end
 
 local function define_winbar_hl()
-  local links = { Model = "Keyword", Busy = "DiagnosticOk", Idle = "Comment", Error = "DiagnosticError" }
+  local links = {
+    Model = "Keyword",
+    Busy = "DiagnosticOk",
+    Idle = "Comment",
+    Error = "DiagnosticError",
+    Needs = "DiagnosticWarn",
+  }
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Pitel" .. name, { default = true, link = link })
   end
@@ -920,6 +941,7 @@ local function handle_event(buf, json_line)
     table.insert(lines, ("--- %s %s (%s bytes)"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.bytes or "?"))
     audit_write(buf, lines)
   elseif ev.type == "turn_end" then
+    last_turn[buf] = ev -- for the User PitelTurnDone event on exit
     local t = ensure_tail(buf)
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -1192,6 +1214,7 @@ function M.send()
   end
 
   errors[buf] = nil
+  awaiting[buf] = nil
   -- provider/model come from the buffer vars (set by :Pitel /
   -- :PitelChangeModel), falling back to config; sync them so the winbar
   -- and this send agree.
@@ -1287,9 +1310,18 @@ function M.send()
       end
     end
     append_block(buf, { "# @user", "" })
+    awaiting[buf] = true
     require("harness.session").save(buf)
     audit_follow(buf) -- first save named the session; rename the log to match
     tail_follow(buf) -- keep the tail sidecar file named with the session
+    -- A completed turn is a first-class event (herdr's "working → blocked
+    -- → idle" notification). Fire it once the buffer is in its final state
+    -- so handlers see the appended `# @user` and the saved session.
+    vim.api.nvim_exec_autocmds("User", {
+      pattern = "PitelTurnDone",
+      modeline = false,
+      data = { buf = buf, turn = last_turn[buf] },
+    })
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
     end
@@ -1496,6 +1528,43 @@ function M.setup(opts)
       if vim.b[args.buf].pitel and args.data and args.data.client_id then
         pcall(vim.lsp.stop_client, args.data.client_id)
       end
+    end,
+  })
+
+  -- Turn completion is a first-class event: User PitelTurnDone fires per
+  -- buffer when a send finishes. The default handler is the herdr-style
+  -- "it's waiting for you" toast, but any user autocmd can hook the
+  -- same event — noice/nf-notify rendering, chaining a next send, etc.
+  -- Announce only buffers the user isn't looking at.
+  local notify_group = vim.api.nvim_create_augroup("PitelTurn", { clear = true })
+  vim.api.nvim_create_autocmd("User", {
+    group = notify_group,
+    pattern = "PitelTurnDone",
+    callback = function(args)
+      local data = args.data or {}
+      if not M.config.notify_done then
+        return
+      end
+      -- The error path already notified (R9); don't double up.
+      if errors[data.buf] then
+        return
+      end
+      -- When the chat is current, the stream is right in front of you.
+      if vim.api.nvim_get_current_buf() == data.buf then
+        return
+      end
+      local t = data.turn or {}
+      local msg = t.model and ("pitel: %s done"):format(t.model) or "pitel: turn done"
+      if t.prompt or t.completion then
+        msg = msg .. (" · %s in · %s out"):format(fmt_tokens(t.prompt or 0), fmt_tokens(t.completion or 0))
+      end
+      if t.cost then
+        msg = msg .. (" · $%.4g"):format(t.cost)
+      end
+      if t.ms then
+        msg = msg .. (" · %.1fs"):format(t.ms / 1000)
+      end
+      vim.notify(msg, vim.log.levels.INFO, { title = "pitel" })
     end,
   })
 end

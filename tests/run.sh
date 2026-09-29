@@ -61,6 +61,7 @@ EOF
 
 run pitel_test 18132 mock_slow.py
 run pitel_static_test 18132 mock_slow.py
+run pitel_notify_test 18132 mock_slow.py
 run pitel_block_test 18132 mock_slow.py
 run pitel_compact_test 18132 mock_slow.py
 run pitel_e2e_tool_test 18133 mock_tool.py

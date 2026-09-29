@@ -161,12 +161,20 @@ Lua setup: >lua
     },
     system = "...",       -- fallback system prompt
     agents_file = vim.fn.expand("~/.config/pitel/AGENTS.md"),
+    notify_done = true,   -- vim.notify when a background turn finishes
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
 so edits apply to the next chat. When missing or empty, `system` is used.
 The path is used verbatim (no `~` expansion); the default is
 `$XDG_CONFIG_HOME/pitel/AGENTS.md` (or `~/.config/pitel/AGENTS.md`).
+
+`notify_done` (default true) fires `vim.notify` when a turn completes in a
+buffer that is not the current one; the turn's `turn_end` payload (model,
+tokens, cost, ms) is attached to the `User PitelTurnDone` autocmd so other
+plugins can hook the same event (noice/nf-notify rendering, chaining a
+next send). Disable the toast with `notify_done = false`; hook the same
+event with your own `User PitelTurnDone` autocmd.
 
 `templates_dir` and `skills_dir` (defaults `~/.config/pitel/templates/`
 and `~/.config/pitel/skills/`) hold the plain-markdown files inserted by
@@ -590,9 +598,11 @@ state glyph pinned to the far right edge:
   ⠋ busy    A request is in flight (driven by the job table). While a
             tool runs, its name and elapsed time replace "busy"
             (`⠋ bash 12s`).
-  ○ idle    Nothing running.
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
+  ◉ reply   A turn has completed and the agent awaits your next prompt
+            (the herdr-style "needs you" state).
+  ○ idle    Nothing running, nothing pending.
 
 Example: `moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ⠋ busy`
 
@@ -807,6 +817,20 @@ R18 Templates and skills are plain markdown files inserted into the buffer.
     visible list, never injected bodies. Why: the buffer stays the only
     state (R1), and templates/skills are just text, so one insert command
     covers compaction, snippets and skills.
+
+R19 Turn completion is a first-class event.
+    When a send finishes, the Lua side emits `User PitelTurnDone` with
+    `data = { buf, turn }` (turn is the binary's `turn_end` payload:
+    model, prompt, completion, cost, ms). The default handler (installed
+    by setup(), disabled with `notify_done = false`) calls vim.notify —
+    only for a buffer the user isn't looking at, and never on the error
+    path, which already notifies (R9). The winbar gains a fourth state,
+    `◉ reply`, set when the turn completes and cleared on send: an
+    imperative UI hint like `errors`/`pitel_usage`, not conversation
+    state (R1). Why: herdr's "working → blocked → idle" notification is
+    a completion *event*, and an autocmd is the Neovim-native hook for
+    it (noice/nf-notify, chaining a next send) instead of a hardcoded
+    side effect.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:
