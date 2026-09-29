@@ -12,7 +12,9 @@ local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 assert(lines[1] == "---", "new buffer must start with frontmatter: " .. tostring(lines[1]))
 local fm = frontmatter.parse(lines)
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
+assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
+local created = fm.created_at
 
 -- 2. parse_buffer ignores the frontmatter (it is not a message)
 local msgs = pitel.parse_buffer(buf)
@@ -23,6 +25,7 @@ pitel.change_model("alpha/m2")
 lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
 assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim.inspect(fm))
+assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 
 -- 4. switching to the same combo is a no-op for the history

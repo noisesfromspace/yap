@@ -97,7 +97,8 @@ local function sync_frontmatter(buf)
   if models[#models] ~= combo then
     table.insert(models, combo)
   end
-  local block = frontmatter.render(provider, model, models)
+  local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
+  local block = frontmatter.render(provider, model, models, created_at)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
