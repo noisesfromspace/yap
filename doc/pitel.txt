@@ -142,7 +142,8 @@ truth, and that can be a text buffer. Consequences:
 ==============================================================================
 3. KEYMAPS                                                    *pitel-keymaps*
 
-Set only in pitel buffers.
+Set only in pitel buffers, except <leader>r and <leader>w, which are
+global (they list sessions across buffers, so they work from any file).
 
   <C-s> (n, i)          Send the buffer.
   <leader>m             Change model (picker, see |:PitelChangeModel|).
@@ -543,7 +544,10 @@ reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 The tail sidecar (<session>-tail) is created in the audit dir
 (|pitel-audit|) at the same time and follows the session name across
-|:file| renames.
+|:file| renames. Opening a session file directly — plain |:edit| or
+`nvim <file>.md` — is recognized: the buffer is adopted as a managed
+session (unlisted, keymapped, tail attached), the same as |:PitelSessions|
+resume.
 
 File operations are the session operations (pi equivalents, but manual):
 

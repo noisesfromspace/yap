@@ -14,6 +14,11 @@ local function sessions_root()
   return vim.fn.expand("~/.pitel/sessions")
 end
 
+--- Root of all session files (~/.pitel/sessions).
+function M.sessions_root()
+  return sessions_root()
+end
+
 local function cwd_slug(cwd)
   return (cwd:gsub("[^%w%._-]", "-"))
 end

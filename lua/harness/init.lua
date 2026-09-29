@@ -894,8 +894,20 @@ local function ensure_tail(buf)
     return t
   end
   local path = tail_path(buf)
-  local tail = vim.api.nvim_create_buf(false, true) -- unlisted scratch: never in :ls or buffer pickers
-  vim.api.nvim_buf_set_name(tail, tail_buf_name(buf))
+  local name = tail_buf_name(buf)
+  -- Reuse a leftover tail buffer with this name (the chat buffer may have
+  -- been wiped and reopened); naming a fresh buffer identically would E95.
+  local tail
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(b) == name then
+      tail = b
+      break
+    end
+  end
+  if not tail then
+    tail = vim.api.nvim_create_buf(false, true) -- unlisted scratch: never in :ls or buffer pickers
+    vim.api.nvim_buf_set_name(tail, name)
+  end
   vim.bo[tail].bufhidden = "hide"
 
   -- The tail is a file from the start: load it when it already exists,
@@ -1454,13 +1466,6 @@ local function setup_buffer(buf)
   map("n", "<leader>T", function()
     M.insert(nil, { at_cursor = true })
   end, "pitel: insert template or skill at cursor")
-  map("n", "<leader>w", function()
-    M.waiting()
-  end, "pitel: agents waiting for reply")
-  map("n", "<leader>r", function()
-    M.instances()
-  end, "pitel: sessions")
-
   require("harness.fold").setup_buffer(buf)
 
   -- Self-evaluating winbar: a pure function of buffer state, refreshed
@@ -1506,9 +1511,14 @@ function M.new(opts)
 end
 
 --- Open a saved session file as a pitel buffer.
-function M.open(path)
-  vim.cmd("edit " .. vim.fn.fnameescape(path))
-  local buf = vim.api.nvim_get_current_buf()
+--- Turn a session-file buffer into a managed pitel buffer: unlisted,
+--- keymapped, tail sidecar attached, model combo resumed from
+--- frontmatter. Shared by :PitelSessions resume and by directly opening
+--- a file under ~/.pitel/sessions/.
+local function adopt(buf, path)
+  if vim.b[buf].pitel then
+    return buf
+  end
   vim.b[buf].pitel_path = path
   vim.b[buf].pitel_tail_path = compute_tail_path(buf)
   -- Resume the recorded combo; legacy files without frontmatter keep the
@@ -1526,7 +1536,14 @@ function M.open(path)
   -- seed the overview hint so it counts before its first send here.
   seed_awaiting(buf)
   setup_buffer(buf)
+  ensure_tail(buf) -- restore the live view from the sidecar (create if missing)
   return buf
+end
+
+--- Open a saved session file as a pitel buffer.
+function M.open(path)
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
 --- Change the provider/model combo for the current buffer.
@@ -1684,6 +1701,32 @@ end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+  -- <leader>r / <leader>w are global: they list sessions across every
+  -- buffer, so they must work from any file, not just inside a chat.
+  -- The other keymaps act on the current buffer and stay buffer-local in
+  -- setup_buffer.
+  vim.keymap.set("n", "<leader>w", function()
+    M.waiting()
+  end, { silent = true, desc = "pitel: agents waiting for reply" })
+  vim.keymap.set("n", "<leader>r", function()
+    M.instances()
+  end, { silent = true, desc = "pitel: sessions" })
+
+  -- Opening a file under ~/.pitel/sessions/ directly (e.g. `nvim foo.md`
+  -- at startup) adopts it as a managed pitel session — unlisted, keymaps,
+  -- tail sidecar attached — exactly like :PitelSessions resume.
+  local adopt_group = vim.api.nvim_create_augroup("PitelAdopt", { clear = true })
+  vim.api.nvim_create_autocmd("BufReadPost", {
+    group = adopt_group,
+    callback = function(args)
+      local name = vim.api.nvim_buf_get_name(args.buf)
+      local root = require("harness.session").sessions_root()
+      if name:sub(1, #root + 1) == root .. "/" then
+        adopt(args.buf, name)
+      end
+    end,
+  })
 
   -- pitel buffers carry no language server: the buffer is the conversation
   -- (R1), and a markdown LSP streaming semantic-token/inlay-hint updates is
