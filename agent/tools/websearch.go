@@ -127,9 +127,11 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 
 	var data struct {
 		Results []struct {
-			Title   string `json:"title"`
-			URL     string `json:"url"`
-			Summary string `json:"summary"`
+			Title      string   `json:"title"`
+			URL        string   `json:"url"`
+			Summary    string   `json:"summary"`
+			Highlights []string `json:"highlights"`
+			Text       string   `json:"text"`
 		} `json:"results"`
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -155,9 +157,22 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 		b.WriteString("\n(no results found)")
 	} else {
 		for i, r := range data.Results {
-			fmt.Fprintf(&b, "\n### %d. %s\n", i+1, r.Title)
+			title := r.Title
+			if title == "" {
+				title = r.URL
+			}
+			fmt.Fprintf(&b, "\n### %d. %s\n", i+1, title)
 			fmt.Fprintf(&b, "- **URL:** %s\n", r.URL)
-			fmt.Fprintf(&b, "- %s\n", r.Summary)
+			switch {
+			case len(r.Highlights) > 0:
+				b.WriteString(strings.Join(r.Highlights, "\n"))
+				b.WriteString("\n")
+			case r.Summary != "":
+				fmt.Fprintf(&b, "- %s\n", r.Summary)
+			case r.Text != "":
+				b.WriteString(r.Text)
+				b.WriteString("\n")
+			}
 		}
 	}
 	return b.String(), "", nil

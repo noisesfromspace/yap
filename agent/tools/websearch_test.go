@@ -53,3 +53,28 @@ func TestWebsearch(t *testing.T) {
 		t.Fatalf("missing key: %v", err)
 	}
 }
+
+func TestWebsearchHighlights(t *testing.T) {
+	// Default contentMode=highlights returns a highlights array; it must be
+	// rendered (not silently dropped), and empty titles fall back to the URL.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"results":[{"title":"","url":"https://a","highlights":["hl one","hl two"]}]}`)
+	}))
+	defer srv.Close()
+
+	oldURL := websearchURL
+	websearchURL = srv.URL
+	defer func() { websearchURL = oldURL }()
+	t.Setenv(websearchAPIKeyEnv, "sekret")
+
+	r, _, err := run(t, "websearch", `{"query":"hello"}`)
+	if err != nil {
+		t.Fatalf("websearch: %v", err)
+	}
+	for _, want := range []string{"### 1. https://a", "- **URL:** https://a", "hl one\nhl two"} {
+		if !strings.Contains(r, want) {
+			t.Fatalf("missing %q in %q", want, r)
+		}
+	}
+}
