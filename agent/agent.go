@@ -25,7 +25,7 @@ import (
 
 // Bound on tool-call iterations per send (gptel has none; runaway loops
 // burn tokens silently).
-const maxToolIterations = 25
+const maxToolIterations = 50
 
 // ─── Wire types (OpenAI-compatible) ──────────────────────────────────────────
 
