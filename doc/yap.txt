@@ -335,7 +335,7 @@ self-registering in init(). Adding or changing a tool = editing a file
 and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
-process, bounded at 25 iterations per send. Built-ins: ls, read, fetch,
+process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
 bash, write, edit, search, glob, websearch. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
@@ -729,7 +729,10 @@ R8  Sessions are plain markdown files; file operations are the session
     file-backed (and nameable via :file) before the first reply. Autosave
     only after a COMPLETED reply (never on error). Autosaves go through
     :write! (not writefile()): the buffer owns the file, so mtime
-    bookkeeping, :w, and E13 all behave normally. save() follows buffer
+    bookkeeping, :w, and E13 all behave normally. Every stream exit,
+    including backend errors and :YapStop, repairs any dangling streamed
+    marker, appends a fresh `# @user` block, and saves that final writable
+    state. save() follows buffer
     renames so :file names and :saveas forks. Why: no second
     serialization format to keep in sync. Session buffers (and their
     tail buffers) are unlisted — never in |:ls| or buffer pickers — so
@@ -746,7 +749,10 @@ R10 View levels: <leader>1 folds all agent output (user prompts stay
     unfolds everything; the system prompt stays folded in every view
     until opened manually. Fold levels are role-dependent — user
     messages 1, assistant messages 2, tool/thinking/error regions 3,
-    the system prompt 4 — so the three views are pure 'foldlevel'
+    the system prompt 4. One display-only exception keeps the latest
+    assistant block in a buffer that has sent a turn at level 1, so its
+    reply remains visible in view 1 while older assistant blocks stay at
+    level 2. The three views themselves are still pure 'foldlevel'
     (1, 2, 3) with no manual foldclose: manual closes plus expr folds
     made Neovim re-evaluate every fold on each edit (hundreds of ms
     per keystroke on a large session). View 1 is applied ONLY when a
@@ -830,10 +836,13 @@ R16 Live tool output never enters the chat buffer.
     (<session>-tail), created with the session so the live view is not
     lost on restart. The chat buffer only gets one-shot, append-only
     writes: the tool header
-    when the call commits, the result when it finishes. The single
-    sanctioned exception to append-only is |:YapClear| — an explicit
-    user command that replaces old tool result bodies with a pointer
-    to the audit log (R17). Why: output exists in exactly one place at
+    when the call commits, the result when it finishes. Normal streaming
+    is append-only; explicit document operations may rewrite existing
+    content: |:YapClear| replaces old tool result bodies with a pointer
+    to the audit log, |:YapCompact| can delete superseded history after
+    confirmation, frontmatter changes with the selected model, and the
+    transient yap:usage marker is consumed into in-memory totals. Why:
+    output exists in exactly one place at
     any moment, and the buffer format has no transient states to repair.
 
 R17 The audit log is the durable record of everything the context
@@ -858,9 +867,14 @@ R18 Templates and skills are plain markdown files inserted into the buffer.
     covers compaction, snippets and skills.
 
 R19 Turn completion is a first-class event.
-    When a send finishes, the Lua side emits `User YapTurnDone` with
-    `data = { buf, turn }` (turn is the binary's `turn_end` payload:
-    model, prompt, completion, cost, ms). The default handler (installed
+    When the binary exits successfully, the Lua side emits
+    `User YapTurnDone` with `data = { buf, turn }` (turn is the binary's
+    `turn_end` payload when usage was reported: model, prompt, completion,
+    cost, ms). Hard backend/spawn errors do not emit the event. A successful
+    binary exit can still contain an agent error marker (for example an
+    empty completion or the tool-iteration bound); that state is surfaced
+    as an error and the default completion notification is suppressed.
+    The default handler (installed
     by setup(), disabled with `notify_done = false`) calls vim.notify —
     only for a buffer the user isn't looking at, and never on the error
     path, which already notifies (R9). The winbar gains a fourth state,
