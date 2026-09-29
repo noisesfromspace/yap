@@ -43,6 +43,15 @@ assert(#notified == 0, "notified while the buffer is current: " .. vim.inspect(n
 local bar = pitel.winbar(buf)
 assert(bar:match("reply") and bar:match("PitelNeeds"), "winbar missing reply state: " .. bar)
 
+-- The global rollup: any other pitel buffer's winbar counts how many
+-- sessions await the user's reply (the herdr-style overview).
+local buf2 = pitel.new()
+local bar2 = pitel.winbar(buf2)
+assert(bar2:match("◉1"), "rollup chip missing on the other buffer: " .. bar2)
+assert(bar2:match("idle"), "fresh second buffer should be idle: " .. bar2)
+assert(not pitel.winbar(buf):match("◉%d"), "rollup counts the current buffer: " .. pitel.winbar(buf))
+assert(pitel.overview(buf2) == "◉1", "overview() wrong: " .. tostring(pitel.overview(buf2)))
+
 -- Switch away and fire the event for that buffer: now the default
 -- handler notifies (the background-turn case).
 vim.notify = orig_notify

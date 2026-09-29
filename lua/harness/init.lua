@@ -139,6 +139,46 @@ local awaiting = {}
 -- event), handed to the User PitelTurnDone autocmd. Ephemeral.
 local last_turn = {}
 
+-- Other pitel buffers awaiting the user's reply: the count for the
+-- global overview chip. A tiny module map, so no buffer scans on redraw
+-- (R10); stale entries are skipped via the validity check.
+local function awaiting_others(buf)
+  local n = 0
+  for b in pairs(awaiting) do
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].pitel then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+-- Seed the awaiting hint for a reopened session from its content (R1):
+-- it awaits the next reply when it has assistant history and ends on a
+-- `# @user` heading. One-time scan at open, never on redraw.
+local function seed_awaiting(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local has_asst = false
+  for _, l in ipairs(lines) do
+    if l == "# @assistant" then
+      has_asst = true
+      break
+    end
+  end
+  if not has_asst then
+    awaiting[buf] = nil
+    return
+  end
+  awaiting[buf] = nil
+  for i = #lines, 1, -1 do
+    if lines[i] == "# @user" then
+      awaiting[buf] = true
+      return
+    elseif lines[i] == "# @assistant" then
+      return
+    end
+  end
+end
+
 local function fmt_tokens(n)
   if n >= 1000 then
     return string.format("%.1fk", n / 1000)
@@ -154,8 +194,12 @@ local function render_winbar(buf)
   local parts = {
     winbar_hl(" " .. provider .. "/" .. model .. " ", "Model"),
     winbar_hl(" Ⓕ" .. require("harness.fold").level() .. " ", "Idle"),
-    "%=",
   }
+  local others = awaiting_others(buf)
+  if others > 0 then
+    parts[#parts + 1] = winbar_hl(" ◉" .. others .. " ", "Needs")
+  end
+  parts[#parts + 1] = "%="
   local u = vim.b[buf].pitel_usage
   if u and (u.prompt > 0 or u.completion > 0) then
     local usage = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
@@ -185,6 +229,15 @@ end
 function M.winbar(buf)
   buf = buf or tonumber(vim.g.actual_curbuf) or vim.api.nvim_get_current_buf()
   return render_winbar(buf)
+end
+
+--- The herdr-style rollup for a statusline/tabline: `◉N` when N OTHER
+--- pitel buffers await the user's reply, "" otherwise. The winbar shows
+--- the same chip, so this is the reusable segment for global visibility.
+function M.overview(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local n = awaiting_others(buf)
+  return n > 0 and ("◉" .. n) or ""
 end
 
 local function spinner_stop_if_idle()
@@ -1452,6 +1505,9 @@ function M.open(path)
       vim.b[buf].pitel_model = fm.model
     end
   end
+  -- A reopened session that ended on `# @user` awaits the next reply;
+  -- seed the overview hint so it counts before its first send here.
+  seed_awaiting(buf)
   setup_buffer(buf)
   return buf
 end
