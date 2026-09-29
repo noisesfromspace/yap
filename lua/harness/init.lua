@@ -216,7 +216,7 @@ local function render_winbar(buf)
   elseif errors[buf] then
     table.insert(parts, winbar_hl(" ✗ error ", "Error"))
   elseif awaiting[buf] then
-    table.insert(parts, winbar_hl(" ◉ reply ", "Needs"))
+    table.insert(parts, winbar_hl(" ◉ waiting ", "Needs"))
   else
     table.insert(parts, winbar_hl(" ○ idle ", "Idle"))
   end
@@ -1443,6 +1443,9 @@ local function setup_buffer(buf)
   map("n", "<leader>T", function()
     M.insert(nil, { at_cursor = true })
   end, "pitel: insert template or skill at cursor")
+  map("n", "<leader>w", function()
+    M.waiting()
+  end, "pitel: agents waiting for reply")
 
   require("harness.fold").setup_buffer(buf)
 
@@ -1566,6 +1569,62 @@ end
 function M.sessions(scope)
   require("harness.session").pick({ scope = scope }, function(path)
     M.open(path)
+  end)
+end
+
+--- First non-empty line of the first `# @user` block, compacted — the
+--- label for the waiting picker (same shape as the sessions picker).
+local function user_snippet(buf)
+  local in_user = false
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if line:match("^# @%a+%s*$") then
+      in_user = line:match("^# @user%s*$") ~= nil
+    elseif in_user then
+      local t = line:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if t ~= "" then
+        return #t > 40 and t:sub(1, 40) .. "…" or t
+      end
+    end
+  end
+  return ""
+end
+
+--- List open pitel buffers awaiting a reply (the herdr "needs you" set)
+--- and focus the picked one. Live sessions only; saved-but-unopened files
+--- stay |:PitelSessions|' job.
+function M.waiting()
+  local items = {}
+  for b in pairs(awaiting) do
+    if vim.api.nvim_buf_is_valid(b) and vim.b[b].pitel then
+      local name = vim.api.nvim_buf_get_name(b)
+      name = name ~= "" and vim.fn.fnamemodify(name, ":t:r") or ("buffer " .. b)
+      local provider, model = current_combo(b)
+      local snippet = user_snippet(b)
+      table.insert(items, {
+        buf = b,
+        text = string.format("%-24s  %s  ·  %s/%s", name:sub(1, 24), snippet, provider, model),
+      })
+    end
+  end
+  if #items == 0 then
+    vim.notify("pitel: nothing waiting for a reply", vim.log.levels.INFO)
+    return
+  end
+  vim.ui.select(items, {
+    prompt = "pitel waiting",
+    format_item = function(item)
+      return item.text
+    end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+    local wins = vim.fn.win_findbuf(choice.buf)
+    if wins[1] then
+      vim.api.nvim_set_current_win(wins[1])
+    else
+      vim.api.nvim_set_current_buf(choice.buf)
+    end
   end)
 end
 

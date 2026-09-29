@@ -41,7 +41,7 @@ assert(#notified == 0, "notified while the buffer is current: " .. vim.inspect(n
 
 -- The winbar now reports the herdr-style "needs you" state.
 local bar = pitel.winbar(buf)
-assert(bar:match("reply") and bar:match("PitelNeeds"), "winbar missing reply state: " .. bar)
+assert(bar:match("waiting") and bar:match("PitelNeeds"), "winbar missing waiting state: " .. bar)
 
 -- The global rollup: any other pitel buffer's winbar counts how many
 -- sessions await the user's reply (the herdr-style overview).
@@ -66,4 +66,17 @@ vim.api.nvim_exec_autocmds("User", {
 vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
 assert(notified2[1].msg:match("m1 done"), "unexpected message: " .. notified2[1].msg)
+
+-- :PitelWaiting lists the awaiting buffers and exposes the pick.
+local waiting_items
+local picked
+local orig_select = vim.ui.select
+vim.ui.select = function(items, opts, on_choice)
+  waiting_items = items
+  picked = items[1] and items[1].buf or nil
+end
+pitel.waiting()
+vim.ui.select = orig_select
+assert(waiting_items and #waiting_items == 1, "expected one waiting buffer, got " .. vim.inspect(waiting_items))
+assert(waiting_items[1].buf == buf, "waiting() surfaced the wrong buffer")
 print("OK notify")

@@ -119,6 +119,13 @@ truth, and that can be a text buffer. Consequences:
                         "all" list leads with the project as a column
                         instead of a trailing path slug.
 
+                                                            *:PitelWaiting*
+:PitelWaiting           List the open pitel buffers that have a completed
+                        turn awaiting your reply, and focus the picked one
+                        (the herdr-style "needs you" set; see |pitel-winbar|).
+                        Covers live buffers only — saved-but-unopened
+                        sessions are |:PitelSessions|' job.
+
                                                                *:PitelReload*
 :PitelReload            Reload the Lua modules (development).
 
@@ -133,6 +140,7 @@ Set only in pitel buffers.
   <leader>t             Insert a template or skill (see |:PitelInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:PitelInsertHere|).
+  <leader>w             List agents waiting for a reply (see |:PitelWaiting|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
@@ -593,7 +601,7 @@ the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
 manual |za| toggles don't update it), and — when other sessions are
 waiting for your reply — a `◉N` rollup (N other pitel buffers await
-you; jump to one with |:PitelSessions|). Right: token totals and cost
+you; jump to one with |:PitelWaiting|). Right: token totals and cost
 for this buffer (accumulated over its lifetime, compact k-format), then
 the state glyph pinned to the far right edge:
 
@@ -602,11 +610,11 @@ the state glyph pinned to the far right edge:
             (`⠋ bash 12s`).
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
-  ◉ reply   A turn has completed and the agent awaits your next prompt
+  ◉ waiting A turn has completed and the agent awaits your next prompt
             (the herdr-style "needs you" state).
   ○ idle    Nothing running, nothing pending.
 
-Example: `moonshot/kimi-k3 Ⓕ2 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ reply`
+Example: `moonshot/kimi-k3 Ⓕ2 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
 
 The `◉N` rollup counts OTHER pitel buffers with a completed turn awaiting
 your reply. Live sessions enter it when a send finishes; a reopened
@@ -833,7 +841,7 @@ R19 Turn completion is a first-class event.
     by setup(), disabled with `notify_done = false`) calls vim.notify —
     only for a buffer the user isn't looking at, and never on the error
     path, which already notifies (R9). The winbar gains a fourth state,
-    `◉ reply`, set when the turn completes and cleared on send, plus a
+    `◉ waiting`, set when the turn completes and cleared on send, plus a
     `◉N` rollup counting the OTHER awaiting buffers: both are imperative
     UI hints like `errors`/`pitel_usage`, not conversation state (R1);
     reopened sessions seed the rollup from their content on open. Why:

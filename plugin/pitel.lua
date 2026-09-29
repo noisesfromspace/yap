@@ -82,3 +82,7 @@ end, {
   end,
   desc = "Pick a saved pitel session to resume (:PitelSessions all for every project)",
 })
+
+vim.api.nvim_create_user_command("PitelWaiting", function()
+  require("harness").waiting()
+end, { desc = "List agents waiting for a reply and jump to the picked one" })

@@ -79,9 +79,11 @@ editing the agent.
   `compact.md` summarize-prompt template, send, then delete the old
   history — or just run `:PitelCompact`.
 - `:PitelSessions [all]` — resume a saved session
+- `:PitelWaiting` / `<leader>w` — list agents waiting for a reply and
+  jump to the picked one
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
-the winbar, whose trailing glyph marks busy / error / `◉ reply` (the agent
+the winbar, whose trailing glyph marks busy / error / `◉ waiting` (the agent
 awaits your next prompt) / idle, and whose `◉N` rollup shows how many
 OTHER sessions await your reply. A turn finishing in a background chat
 fires `vim.notify` — and a `User PitelTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open;
