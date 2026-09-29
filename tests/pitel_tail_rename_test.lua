@@ -39,7 +39,9 @@ end, 100)
 assert(ok2, "second send did not complete")
 vim.wait(300)
 
-local want_tail = new:gsub("%.md$", "") .. "-tail"
+local slug = vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-")
+local want_tail = vim.fn.expand("~") .. "/.pitel/audit/" .. slug .. "/"
+  .. vim.fn.fnamemodify(new, ":t:r") .. "-tail"
 assert(vim.b[buf].pitel_tail_path == want_tail, "tail path did not follow rename: " .. tostring(vim.b[buf].pitel_tail_path))
 assert(vim.fn.filereadable(old_tail) == 0, "old tail file still exists: " .. old_tail)
 assert(vim.fn.filereadable(want_tail) == 1, "renamed tail file missing: " .. want_tail)

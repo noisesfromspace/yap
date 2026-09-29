@@ -775,17 +775,28 @@ live = {}
 -- Per-chat-buffer persistent tail: every tool call appends a
 -- `$ command` header and its output (drained from the temp log) to ONE
 -- buffer, pitel://<session>-tail. :PitelLive opens it. The same bytes
--- are appended to a sidecar file next to the session file
--- (<session>-tail), created with the session so the live view survives
--- restarts; the AUDIT LOG remains the full, authoritative record.
+-- are appended to a sidecar file in the audit dir (<session>-tail),
+-- created with the session so the live view survives restarts; the
+-- AUDIT LOG remains the full, authoritative record.
 local tails = {} -- chat buf → { bufnr, offset, has_content, audit, path }
 
+-- The audit dir holds both the audit log and the tail sidecar, keyed by
+-- the session's basename, so the sessions dir stays clean.
+local function audit_dir()
+  local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
+  return ("%s/.pitel/audit/%s"):format(vim.fn.expand("~"), slug)
+end
+
+local function session_base(buf)
+  local path = vim.b[buf].pitel_path
+  if path then
+    return vim.fn.fnamemodify(path, ":t:r")
+  end
+  return vim.api.nvim_buf_get_name(buf):gsub("^pitel://", ""):gsub("[^%w%._-]", "-")
+end
+
 local function compute_tail_path(buf)
-  local path = vim.b[buf].pitel_path or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":h")
-    .. "/"
-    .. vim.fn.fnamemodify(path, ":t:r")
-    .. "-tail"
+  return audit_dir() .. "/" .. session_base(buf) .. "-tail"
 end
 
 --- The tail buffer's name; mirrors the session file's basename so
@@ -816,18 +827,14 @@ local function tail_write(buf, data)
 end
 
 -- The AUDIT LOG is the full, durable record of everything the context
--- doesn't carry: ~/.pitel/audit/<cwd-slug>/<session>.log (same parent as
--- the sessions dir). Everything shown in the tail is appended there too,
--- plus the full tool_call arguments (the buffer's pitel:tool headers keep
--- only slimmed write/edit args, R12) and one journal line per turn — so
--- nothing the context doesn't carry is ever lost, which is what makes
--- :PitelClear safe. Append-only, survives restarts.
+-- doesn't carry: ~/.pitel/audit/<cwd-slug>/<session>.log. Everything
+-- shown in the tail is appended there too, plus the full tool_call
+-- arguments (the buffer's pitel:tool headers keep only slimmed write/edit
+-- args, R12) and one journal line per turn — so nothing the context
+-- doesn't carry is ever lost, which is what makes :PitelClear safe.
+-- Append-only, survives restarts.
 local function audit_path(buf)
-  local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
-  local path = vim.b[buf].pitel_path
-  local base = path and vim.fn.fnamemodify(path, ":t:r")
-    or vim.api.nvim_buf_get_name(buf):gsub("^pitel://", ""):gsub("[^%w%._-]", "-")
-  return ("%s/.pitel/audit/%s/%s.log"):format(vim.fn.expand("~"), slug, base)
+  return audit_dir() .. "/" .. session_base(buf) .. ".log"
 end
 
 local function audit_write(buf, lines)
@@ -1648,7 +1655,11 @@ function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[b].pitel then
-      local path = vim.b[b].pitel_path or vim.api.nvim_buf_get_name(b)
+      -- Follow `:file` renames: the buffer name is the session path once
+      -- renamed, even before the next autosave commits it to pitel_path.
+      local name = vim.api.nvim_buf_get_name(b)
+      local path = (name ~= "" and not name:match("^%a+://")) and name
+        or (vim.b[b].pitel_path or name)
       items[#items + 1] = { buf = b, text = path ~= "" and path or ("buffer " .. b) }
     end
   end

@@ -61,7 +61,7 @@ editing the agent.
 - `:PitelStop` — kill the in-flight request
 - `:PitelLive` / `<leader>l` — watch tool output live: one persistent
   `pitel://<session>-tail` buffer with a `$ command` header per call,
-  written to a `<session>-tail` sidecar file next to the session from
+  written to a `<session>-tail` sidecar file in the audit dir from
   the start. The audit log at
   `~/.pitel/audit/<cwd-slug>/<session>.log` keeps the full record
   (full tool arguments and results)
