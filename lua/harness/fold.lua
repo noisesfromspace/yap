@@ -7,14 +7,20 @@ local M = {}
 
 local HEAD = "^# @(%a+)%s*$"
 
--- Level-2 folds inside a message fold:
---   <!-- pitel:tool … <!-- /pitel:tool -->   the WHOLE region: header
---       (single-line JSON or pretty multi-line), result text and the
---       pitel:ui diff — one fold, `▸ tool: <name>`.
---   <!-- pitel:thinking … -->                model reasoning
---   <!-- pitel:error … -->                   backend error record
--- Single-line markers (`<!-- pitel:usage … -->`) stay unfolded level-1
--- content.
+-- Fold levels are role-dependent so the three views are pure 'foldlevel'
+-- (no manual foldclose: manual closes plus expr folds made Neovim
+-- re-evaluate every fold on each edit — the per-keystroke lag on large
+-- sessions):
+--   # @user        level 1
+--   # @assistant   level 2
+--   tool region    level 3 (one deeper than its message)
+--   thinking/error level 3 (same)
+--   # @system      level 4 (folded in every view until opened with za)
+-- View 1 = foldlevel 1 (only user open), view 2 = 2 (messages open,
+-- tools/thinking folded), view 3 = 3 (everything but the system prompt).
+-- Tool regions and thinking/error are folds one level deeper than their
+-- enclosing message; single-line markers (`<!-- pitel:usage … -->`) stay
+-- unfolded content.
 local TOOL_OPEN = "^<!%-%- pitel:tool"
 local TOOL_CLOSE = "^<!%-%- /pitel:tool"
 -- Multi-line comment opener (nothing but the word after `pitel:`).
@@ -45,13 +51,13 @@ end
 -- recompute take ~450ms). A tiny state machine over the line types is
 -- O(n) total; the cache is rebuilt only when the buffer changes.
 --
--- region after each line: nil (pre-heading), "top" (message level),
--- "tool" (inside a pitel:tool region). cret is the region a multi-line
--- HTML comment returns to after its `-->`: "top" for a standalone
--- pitel:thinking/error/usage comment, "tool" for a legacy `<!-- pitel:ui`
--- subsection inside a tool region. A bare `-->` inside a tool region but
--- OUTSIDE a comment closes the multi-line tool header; only
--- `<!-- /pitel:tool` ends a tool region.
+-- The state machine carries the numeric fold level plus the structural
+-- region. region is nil (pre-heading), "top" (message) or "tool" (inside
+-- a pitel:tool region). cret is { region, lvl } — where a multi-line HTML
+-- comment returns after its `-->`: a thinking/error comment returns to
+-- "top", a legacy `<!-- pitel:ui` subsection returns to "tool". A bare
+-- `-->` inside a tool region but OUTSIDE a comment closes the multi-line
+-- tool header; only `<!-- /pitel:tool` ends a tool region.
 --
 -- fence is nil or { char, n } for an open fenced code block. Tool
 -- results are fenced, and their content is arbitrary (a bash `cat` of a
@@ -82,44 +88,49 @@ local function fence_run(line)
   return c, n, rest:sub(n + 1)
 end
 
-local function classify(line, region, fence, cret)
-  local lvl = region and (region == "top" and "1" or "2") or "="
+local function classify(line, region, fence, cret, lvl)
+  local cur = lvl and tostring(lvl) or "="
   if fence then
     -- Inside a fence: literal until a matching closer (same char, at
     -- least as long, then only spaces).
     local c, n, tail = fence_run(line)
     if c == fence.char and n >= fence.n and tail:match("^%s*$") then
-      return lvl, region, nil, cret
+      return cur, region, nil, cret, lvl
     end
-    return lvl, region, fence, cret
+    return cur, region, fence, cret, lvl
   end
   if cret then
     -- Inside a multi-line HTML comment: raw text until a bare `-->`
-    -- (a ``` inside a comment is NOT a fence).
+    -- (a ``` inside a comment is NOT a fence). The closer is the fold's
+    -- last line; the state after it returns to the enclosing region.
     if line:match("^%-%->%s*$") then
-      return "2", cret, fence, nil
+      return cur, cret.region, nil, nil, cret.lvl
     end
-    return "2", region, fence, cret
+    return cur, region, fence, cret, lvl
   end
   local c, n = fence_run(line)
   if c then
-    return lvl, region, { char = c, n = n }, cret
+    return cur, region, { char = c, n = n }, cret, lvl
   end
   if line:match(HEAD) then
-    return ">1", "top", fence, cret
+    local role = line:match(HEAD)
+    local nlvl = role == "user" and 1 or (role == "assistant" and 2 or 4)
+    return ">" .. nlvl, "top", nil, cret, nlvl
   elseif line:match(TOOL_OPEN) then
-    return ">2", "tool", fence, cret -- both header forms start the region fold
+    local nlvl = (lvl or 0) + 1
+    return ">" .. nlvl, "tool", nil, cret, nlvl -- both header forms start the region fold
   elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
     -- A comment opener inside a tool region (legacy pitel:ui) is content
     -- of the region fold, not a fold of its own.
     if region == "tool" then
-      return "2", region, fence, region
+      return cur, "tool", nil, { region = "tool", lvl = lvl }, lvl
     end
-    return ">2", region, fence, "top"
+    local nlvl = (lvl or 0) + 1
+    return ">" .. nlvl, "top", nil, { region = "top", lvl = lvl }, nlvl
   elseif line:match(TOOL_CLOSE) then
-    return "2", "top", fence, cret -- the closer is the region fold's last line
+    return cur, "top", nil, cret, (lvl or 1) - 1 -- closer is the region fold's last line
   else
-    return lvl, region, fence, cret
+    return cur, region, fence, cret, lvl
   end
 end
 
@@ -129,10 +140,31 @@ function M.expr(lnum)
   local c = cache[buf]
   if not c or c.tick ~= tick then
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local levels, region, fence, cret = {}, nil, nil, nil
+    local levels, region, fence, cret, lvl = {}, nil, nil, nil, nil
+    local last_asst = 0
     for i, line in ipairs(lines) do
-      local lvl, nr, nf, nc = classify(line, region, fence, cret)
-      levels[i], region, fence, cret = lvl, nr, nf, nc
+      local lv, nr, nf, nc, nl = classify(line, region, fence, cret, lvl)
+      levels[i], region, fence, cret, lvl = lv, nr, nf, nc, nl
+      if line:match("^# @assistant%s*$") then
+        last_asst = i
+      end
+    end
+    -- A reply that streamed into this buffer stays open in view 1 (level 1)
+    -- so the user sees it arrive; older replies stay folded (level 2). The
+    -- send path sets b:pitel_live, so a freshly opened session folds all
+    -- agent output until the first send. Nested tool/thinking regions stay
+    -- at level 3 and keep folding in views 1/2.
+    if vim.b[buf].pitel_live and last_asst > 0 then
+      for i = last_asst, #levels do
+        local l = levels[i]
+        if i == last_asst then
+          levels[i] = ">1"
+        elseif l == "2" then
+          levels[i] = "1"
+        elseif l == ">1" or l == ">4" then
+          break -- next message heading: the live block ends here
+        end
+      end
     end
     c = { tick = tick, levels = levels }
     cache[buf] = c
@@ -195,35 +227,22 @@ function M.level()
   return applied[vim.api.nvim_get_current_buf()] or 3
 end
 
--- Close the message folds a view hides — MANUALLY, never via
--- 'foldlevel'=0 + foldopen. A manual OPEN on a fold is inherited by
--- child folds created later (a tool region streaming into the opened
--- assistant block would appear open), while a manual CLOSE stays
--- local, and brand-new folds simply follow 'foldlevel': 1 keeps
--- messages open and regions folded. The system prompt is reference
--- material: folded in every view until opened manually (za).
-local function close_message_folds(keep_user)
-  for lnum = 1, vim.api.nvim_buf_line_count(0) do
-    local role = vim.fn.getline(lnum):match(HEAD)
-    if role and (role == "system" or (keep_user and role ~= "user")) then
-      pcall(vim.cmd, string.format("silent! %dfoldclose", lnum))
-    end
-  end
-end
-
--- Open/close state per view: 'foldlevel' is 1 (views 1/2) or 99 (view
--- 3), then the folds the view hides are closed manually. A real CHANGE
--- of 'foldlevel' resets all manual za toggles to the level's state, so
--- bump first to guarantee the change — a keypress always lands on the
--- same state. Between keypresses NOTHING touches fold state: new folds
--- adopt 'foldlevel' (streamed tool regions appear folded in views 1/2,
--- open in 3), manual za persists, typing changes nothing.
+-- The three views are pure 'foldlevel': role-dependent fold levels put
+-- user messages at 1, assistant at 2, tool/thinking at 3 and the system
+-- prompt at 4, so foldlevel 1 = view 1, 2 = view 2, 3 = view 3. No manual
+-- foldclose anywhere: manual closes combined with expr folds made Neovim
+-- re-evaluate every fold on each edit — hundreds of ms per keystroke on a
+-- large session. foldlevel alone keeps the same visuals. A real CHANGE of
+-- 'foldlevel' resets all manual za toggles to the level's state, so bump
+-- first to guarantee the change — a keypress always lands on the same
+-- state. Between keypresses NOTHING touches fold state: new folds adopt
+-- 'foldlevel' (streamed tool regions appear folded in views 1/2, open in
+-- 3), manual za persists, typing changes nothing.
 function M.set_view_level(level)
   applied[vim.api.nvim_get_current_buf()] = level
-  -- Force the next set to be a real change (resetting manual toggles).
-  vim.wo.foldlevel = level == 3 and 98 or 99
-  vim.wo.foldlevel = level == 3 and 99 or 1
-  close_message_folds(level == 1) -- view 1 keeps only user prompts open
+  local target = ({ 1, 2, 3 })[level] or 3
+  vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
+  vim.wo.foldlevel = target
 end
 
 -- ─── Message navigation ────────────────────────────────────────────────────

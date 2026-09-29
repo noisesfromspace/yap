@@ -25,7 +25,9 @@ local user1, asst1 = heading("user", 1), heading("assistant", 1)
 -- user setup: close a fold that defaults to open, type a prompt
 vim.cmd(user1 .. "foldclose")
 assert(vim.fn.foldclosed(user1) == user1, "precondition: user fold not closed")
-assert(vim.fn.foldclosed(asst1) == asst1, "precondition: assistant fold not closed")
+-- role-dependent levels nest the assistant under its user prompt, so
+-- closing the user fold reports the assistant as inside it
+assert(vim.fn.foldclosed(asst1) == user1, "assistant not nested in the closed user fold")
 local last_user = heading("user", 2)
 vim.api.nvim_buf_set_lines(buf, last_user, last_user + 1, false, { "follow up question" })
 local n_before = vim.api.nvim_buf_line_count(buf)
@@ -39,7 +41,7 @@ assert(ok, "turn did not complete cleanly")
 vim.wait(300)
 -- 1. fold state preserved across the whole send
 assert(vim.fn.foldclosed(user1) == user1, "send reopened a user-closed fold: " .. vim.fn.foldclosed(user1))
-assert(vim.fn.foldclosed(asst1) == asst1, "send reopened the assistant fold: " .. vim.fn.foldclosed(asst1))
+assert(vim.fn.foldclosed(asst1) == user1, "send reopened the nested assistant fold: " .. vim.fn.foldclosed(asst1))
 -- 2. every pre-send line is byte-identical (sends only append)
 local post = vim.api.nvim_buf_get_lines(buf, 0, n_before, false)
 for i = 1, n_before do

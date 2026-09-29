@@ -41,6 +41,8 @@ M.config = {
 -- dropped); model lists rarely change between sessions.
 local models_cache = nil
 
+local frontmatter = require("harness.frontmatter")
+
 local function system_prompt()
   local f = io.open(M.config.agents_file, "r")
   if f then
@@ -62,6 +64,46 @@ local roles = { system = "system", user = "user", assistant = "assistant" }
 --- falling back to the global config.
 local function current_combo(buf)
   return vim.b[buf].pitel_provider or M.config.provider, vim.b[buf].pitel_model or M.config.model
+end
+
+--- End line (0-based, exclusive) of the frontmatter block, or nil when
+--- the buffer has none. Only the model state lives there (see
+--- harness.frontmatter); token/cost totals stay in the winbar.
+local function frontmatter_end(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
+  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
+    return nil
+  end
+  for i = 2, #lines do
+    if lines[i]:match("^%-%-%-%s*$") then
+      return i
+    end
+  end
+  return nil
+end
+
+--- Rewrite the buffer's frontmatter to match the current combo, growing
+--- the `models` history. Called only from new()/change_model() — never
+--- during a send (R7: sends only append).
+local function sync_frontmatter(buf)
+  local provider, model = current_combo(buf)
+  local combo = provider .. "/" .. model
+  local e = frontmatter_end(buf)
+  local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
+  local models = fm and fm.models or {}
+  if #models == 0 and fm and fm.provider and fm.model then
+    table.insert(models, fm.provider .. "/" .. fm.model)
+  end
+  if models[#models] ~= combo then
+    table.insert(models, combo)
+  end
+  local block = frontmatter.render(provider, model, models)
+  if e then
+    vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+  else
+    table.insert(block, "")
+    vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
+  end
 end
 
 -- ─── Winbar (busy indicator, provider/model) ──────────────────────────────
@@ -687,9 +729,8 @@ local function audit_write(buf, lines)
   vim.fn.writefile(lines, t.audit, "a")
 end
 
---- Point the audit log at the session file's name once one exists
---- (the first save assigns pitel_path; earlier turns were logged under
---- the pitel:// buffer name).
+--- Point the audit log at the session file's name; a `:file` rename
+--- (which also renames the session) renames the log to match.
 local function audit_follow(buf)
   local t = tails[buf]
   if not t or not t.audit or not vim.b[buf].pitel_path then
@@ -969,6 +1010,10 @@ function M.send()
   -- streams (follow_windows); one parked elsewhere is not dragged along.
   local follow = following_windows(buf)
   append_block(buf, { "# @assistant", "" })
+  -- Mark that a reply has streamed here: the folder keeps the latest
+  -- assistant block open in view 1 so the reply is visible as it arrives
+  -- (R10: the new assistant block opens by itself); older replies fold.
+  vim.b[buf].pitel_live = true
   follow_windows(buf, follow)
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,
@@ -1141,10 +1186,12 @@ function M.new(opts)
   end
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  -- A pitel:// name keeps file-backed clients (markdown LSPs) off the
-  -- session buffer and leaves 'modified' set, so an unsent new chat
-  -- prompts like any unsaved buffer instead of vanishing on :q!.
-  vim.api.nvim_buf_set_name(buf, ("pitel://%s-%d"):format(os.date("%Y%m%d-%H%M%S"), buf))
+  sync_frontmatter(buf) -- prepend the session's model state (R1: it lives in the buffer)
+  -- Create the session file up front so the buffer is file-backed from
+  -- the start: `:file` names the session immediately, before the first
+  -- reply. The LSP guard in setup_buffer keeps markdown clients off it
+  -- regardless of the .md extension.
+  require("harness.session").save(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
@@ -1157,6 +1204,17 @@ function M.open(path)
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].pitel_path = path
+  -- Resume the recorded combo; legacy files without frontmatter keep the
+  -- config default. Nothing is injected on open — that would dirty the
+  -- buffer the moment it is resumed.
+  local e = frontmatter_end(buf)
+  if e then
+    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+    if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
+      vim.b[buf].pitel_provider = fm.provider
+      vim.b[buf].pitel_model = fm.model
+    end
+  end
   setup_buffer(buf)
   return buf
 end
@@ -1207,6 +1265,7 @@ function M.change_model(combo)
   end
   vim.b[buf].pitel_provider = provider
   vim.b[buf].pitel_model = model
+  sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
   vim.notify("pitel: " .. provider .. "/" .. model)
 end
 

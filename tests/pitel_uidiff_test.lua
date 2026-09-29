@@ -31,15 +31,15 @@ assert(toolmsg and toolmsg.tool_call_id == "w1", "no tool result")
 assert(toolmsg.content:match("Successfully wrote"), "result missing: " .. tostring(toolmsg.content))
 assert(not toolmsg.content:match("pitel:ui") and not toolmsg.content:match("%+a"), "ui leaked into result")
 
--- folds: the paired ui region is part of the one level-2 tool fold
+-- folds: the paired ui region is part of the one level-3 tool fold
 fold.setup_buffer(buf)
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
 local function lvl(l) return vim.fn.foldlevel(l) end
-assert(lvl(7) == 2, "opener level: " .. lvl(7))
-assert(lvl(9) == 2, "ui marker level: " .. lvl(9))
-assert(lvl(10) == 2, "fence level: " .. lvl(10))
-assert(lvl(16) == 2, "fence close level: " .. lvl(16))
-assert(lvl(17) == 2, "/pitel:ui level: " .. lvl(17))
-assert(lvl(18) == 2, "/pitel:tool level: " .. lvl(18))
-assert(lvl(20) == 1, "answer level: " .. lvl(20))
+assert(lvl(7) == 3, "opener level: " .. lvl(7))
+assert(lvl(9) == 3, "ui marker level: " .. lvl(9))
+assert(lvl(10) == 3, "fence level: " .. lvl(10))
+assert(lvl(16) == 3, "fence close level: " .. lvl(16))
+assert(lvl(17) == 3, "/pitel:ui level: " .. lvl(17))
+assert(lvl(18) == 3, "/pitel:tool level: " .. lvl(18))
+assert(lvl(20) == 2, "answer level: " .. lvl(20))
 print("OK uidiff")

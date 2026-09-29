@@ -9,9 +9,11 @@ vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1" })
 
--- The persistent tail buffer of a chat buffer (pitel://<name>-tail).
+-- The persistent tail buffer of a chat buffer (pitel://<basename>-tail).
 local function tail_buf(chat)
-  local name = vim.api.nvim_buf_get_name(chat) .. "-tail"
+  local name = vim.api.nvim_buf_get_name(chat)
+  name = name:match("^pitel://") and (name .. "-tail")
+    or ("pitel://" .. vim.fn.fnamemodify(name, ":t") .. "-tail")
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_get_name(b) == name then
       return b
@@ -49,9 +51,7 @@ local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")
 
--- the tail buffer IS filling while the tool runs (capture the bufnr
--- now: session.save renames the chat buffer on completion, so the
--- name-based lookup would miss afterwards)
+-- the tail buffer IS filling while the tool runs
 local tb1
 local tail_filling = vim.wait(10000, function()
   tb1 = tail_buf(buf)

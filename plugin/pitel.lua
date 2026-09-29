@@ -61,6 +61,7 @@ vim.api.nvim_create_user_command("PitelReload", function()
   package.loaded.harness = nil
   package.loaded["harness.session"] = nil
   package.loaded["harness.fold"] = nil
+  package.loaded["harness.frontmatter"] = nil
   require("harness").setup(old_config)
   local src = debug.getinfo(require("harness").send, "S").source:sub(2)
   vim.notify("pitel: reloaded from " .. src)

@@ -103,6 +103,10 @@ truth, and that can be a text buffer. Consequences:
                                                             *:PitelSessions*
 :PitelSessions [all]    Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project.
+                        Each line shows the first user message and the
+                        session's recorded model (its frontmatter); the
+                        "all" list leads with the project as a column
+                        instead of a trailing path slug.
 
                                                                *:PitelReload*
 :PitelReload            Reload the Lua modules (development).
@@ -139,7 +143,7 @@ Lua setup: >lua
     bin = "pitel",        -- path to the Go binary
     provider = "moonshot",
     model = "kimi-k3",
-    models = {             -- optional: valid combos, shown in the header
+    models = {             -- optional: valid combos for the model picker
       "moonshot/kimi-k3",
       "deepseek/deepseek-v4-pro",
       "openai/gpt-5.6-sol",
@@ -335,19 +339,34 @@ A pitel buffer is plain markdown. Headings delimit messages: >
   # @assistant
 
 Everything between headings is message content. Everything before the first
-heading is ignored by the parser (legacy frontmatter in old session files
-stays inert).
+heading is ignored by the parser — that is where the session's model state
+lives, as YAML frontmatter:
+
+  ---
+  provider: moonshot
+  model: kimi-k3
+  models:
+    - moonshot/kimi-k3
+    - deepseek/deepseek-v4-pro
+  ---
+
+`provider`/`model` is the combo to resume with; `models` is the ordered
+history of every combo used in the session (most-recent-last). The
+frontmatter is the ONLY durable session state: pitel writes it on :Pitel
+and |:PitelChangeModel|, reads it on open, and sends never touch it.
+Token totals and cost are NOT stored here — they are ephemeral
+per-buffer state in the winbar (|pitel-winbar|). Legacy session files
+without frontmatter simply keep the setup() default combo.
 
 A pitel buffer never attaches a language server: the buffer is the
 conversation (R1), and a markdown LSP's semantic-token/inlay-hint stream is
 pure per-redraw cost on a large session. setup_buffer marks each buffer and
 an LspAttach guard in setup() stops any markdown client from attaching.
 
-Session metadata is NOT stored in the buffer — it lives in the winbar
-(|pitel-winbar|): the provider/model combo on the left, token totals, cost
-and the state glyph on the right. The combo comes from per-buffer vars set
-by :Pitel / |:PitelChangeModel|, falling back to setup() defaults.
-Totals accumulate in memory for the lifetime of the buffer; reopening a
+The active combo comes from the frontmatter on open, then from per-buffer
+vars set by |:PitelChangeModel|, falling back to setup() defaults. The
+buffer holds the model state (R1) but NOT token/cost totals: those
+accumulate in memory for the lifetime of the buffer, and reopening a
 session starts them from zero.
 
 ==============================================================================
@@ -397,7 +416,7 @@ A tool call and its result are ONE region inside an assistant block: >
   }
   -->
 <
-                  Multi-line headers fold closed by default (a level-2
+                  Multi-line headers fold closed by default (a level-3
                   fold with `▸ tool: <name>` foldtext; za to inspect) —
                   the pitel:ui diff below is the visual record, so the
                   arguments are never shown twice. Thinking and ui
@@ -476,9 +495,10 @@ document a fragment and the parse bounded.
 A session is just the buffer's markdown written to a file — the buffer IS
 the serialization, there is no other format. Files live under
 ~/.pitel/sessions/<cwd-slug>/ and are autosaved after every completed reply.
-On first save the buffer is renamed to the file, and every autosave goes
-through |:write|, so the buffer owns its file: 'modified', |:w|, and the
-exit prompt all behave like any normal file buffer.
+The file is created when the buffer is opened, so a fresh session is
+file-backed from the start and can be named with |:file| before the first
+reply; every autosave goes through |:write|, so the buffer owns its file:
+'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 
 File operations are the session operations (pi equivalents, but manual):
 
@@ -509,7 +529,7 @@ lossless: anything removed from the context exists here verbatim.
 8. FOLDING & NAVIGATION                                        *pitel-folding*
 
 `# @role` headings are folds (foldexpr); a closed fold shows the role and
-the first content line. Inside a message fold, level-2 folds collapse
+the first content line. Inside a message fold, level-3 folds collapse
 display regions: a whole `pitel:tool` region (header, result and ui
 diff, both header forms) folds to one `▸ tool: <name>` line; thinking
 and error comment regions fold likewise.
@@ -527,14 +547,16 @@ until opened manually (za).
 The applied view shows in the winbar (`Ⓕ1`-`Ⓕ3`), see |pitel-winbar|.
 View 1 is applied once when a session buffer is opened. Between view
 keypresses fold state is STATIC — typing, streaming and manual za
-toggles change nothing and are never reset. Views are implemented as
-'foldlevel' (views 1/2: 1, view 3: 99) plus manual closes of the hidden
-message folds, so a send needs no fold commands at all: the new
-assistant block opens by itself, streamed tool regions appear folded in
-views 1/2, and the next prompt is always open. (Manual opens are never
-used: Neovim inherits a manual foldopen into child folds created
-later; manual closes stay local.) Navigation keymaps jump between
-headings, see |pitel-keymaps|.
+toggles change nothing and are never reset. Fold levels are
+role-dependent (user 1, assistant 2, tool/thinking 3, system 4), so the
+three views are pure 'foldlevel' 1/2/3 with no manual foldclose: manual
+closes combined with expr folds made Neovim re-evaluate every fold on
+each edit — hundreds of ms per keystroke on a large session. A send
+needs no fold commands at all: the new assistant block opens by itself,
+streamed tool regions appear folded in views 1/2, and the next prompt is
+always open. (Manual opens are never used: Neovim inherits a manual
+foldopen into child folds created later; manual closes stay local.)
+Navigation keymaps jump between headings, see |pitel-keymaps|.
 
 ==============================================================================
 9. WINBAR                                                      *pitel-winbar*
@@ -639,11 +661,13 @@ R7  Exactly one blank line between message blocks, enforced LOCALLY at
     every send rewrite the whole buffer and churn fold state.)
 
 R8  Sessions are plain markdown files; file operations are the session
-    operations. Autosave only after a COMPLETED reply (never on error).
-    Autosaves go through :write! (not writefile()): the buffer owns the
-    file, so mtime bookkeeping, :w, and E13 all behave normally.
-    save() follows buffer renames so :file names and :saveas forks. Why:
-    no second serialization format to keep in sync.
+    operations. The file is created at buffer creation so a fresh chat is
+    file-backed (and nameable via :file) before the first reply. Autosave
+    only after a COMPLETED reply (never on error). Autosaves go through
+    :write! (not writefile()): the buffer owns the file, so mtime
+    bookkeeping, :w, and E13 all behave normally. save() follows buffer
+    renames so :file names and :saveas forks. Why: no second
+    serialization format to keep in sync.
 
 R9  Errors surface three ways: vim.notify (transient), winbar error state
     (persistent until next send), and a parse-excluded buffer marker
@@ -651,19 +675,20 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     same way.
 
 R10 View levels: <leader>1 folds all agent output (user prompts stay
-    open), <leader>2 folds tool calls and thinking only (a whole
-    pitel:tool region — header, result, ui — is ONE level-2 fold),
-    <leader>3 unfolds everything; the system prompt stays folded in
-    every view until opened manually. Views are 'foldlevel' (1/2 → 1,
-    3 → 99) plus manual closes of hidden message folds, applied with a
-    forced 'foldlevel' change first so a keypress always lands on the
-    same state and resets manual za toggles. View 1 is applied ONLY
-    when a session buffer is opened; between keypresses fold state is
-    static — sends, streaming and typing never touch it (new folds
-    adopt 'foldlevel' as they appear). Never open folds manually
-    (Neovim inherits a manual foldopen into child folds created later);
-    only close them. The winbar Ⓕ chip shows the last APPLIED view,
-    not measured fold state (measuring made <leader>3 read Ⓕ0).
+    open), <leader>2 folds tool calls and thinking only, <leader>3
+    unfolds everything; the system prompt stays folded in every view
+    until opened manually. Fold levels are role-dependent — user
+    messages 1, assistant messages 2, tool/thinking/error regions 3,
+    the system prompt 4 — so the three views are pure 'foldlevel'
+    (1, 2, 3) with no manual foldclose: manual closes plus expr folds
+    made Neovim re-evaluate every fold on each edit (hundreds of ms
+    per keystroke on a large session). View 1 is applied ONLY when a
+    session buffer is opened; between keypresses fold state is static —
+    sends, streaming and typing never touch it (new folds adopt
+    'foldlevel' as they appear). Never open folds manually (Neovim
+    inherits a manual foldopen into child folds created later); only
+    close them. The winbar Ⓕ chip shows the last APPLIED view, not
+    measured fold state (measuring made <leader>3 read Ⓕ0).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the
@@ -701,15 +726,17 @@ R13 No MCP. The author's tools are thin HTTP wrappers that are less code
     as native Go functions than an MCP client; MCP also has no equivalent
     of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
 
-R14 Session metadata lives in the winbar, not the buffer.
-    provider/model come from per-buffer vars (:Pitel,
-    :PitelChangeModel) with config as fallback; token/cost totals
-    accumulate in memory per buffer. The buffer holds only the
-    conversation (R1, strictly); reopening a session starts totals from
-    zero and uses the current default combo. (This replaced an earlier
-    design with YAML frontmatter in the buffer: editing a yaml key to
-    switch models was clever but the frontmatter fought R7 — every
-    metadata update was a non-local buffer edit.)
+R14 The model state is durable YAML frontmatter; everything else is
+    ephemeral.
+    The frontmatter holds `provider`/`model` (the combo to resume with)
+    and `models` (the ordered history of combos used). pitel writes it
+    only on :Pitel and |:PitelChangeModel| — never during a send, so
+    R7's append-only rule holds — reads it on open, and surfaces it in
+    the |:PitelSessions| picker. Token/cost totals are deliberately NOT
+    frontmatter: they accumulate in per-buffer memory for the winbar
+    and reset on reopen. The earlier frontmatter design got this wrong
+    by folding per-reply usage into the header, which made every
+    metadata update a non-local buffer edit that fought R7.
 
 R15 Tools are compiled-in Go files, one per file in agent/tools/.
     Each file self-registers via init(); adding a tool = adding a file

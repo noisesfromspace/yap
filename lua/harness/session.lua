@@ -8,6 +8,8 @@
 
 local M = {}
 
+local frontmatter = require("harness.frontmatter")
+
 local function sessions_root()
   return vim.fn.expand("~/.pitel/sessions")
 end
@@ -21,8 +23,9 @@ local function session_dir(cwd)
 end
 
 --- Write the buffer to its session file, creating one (named after the
---- current time) on first save. Renames the buffer to the file so `:w`
---- works as expected.
+--- current time) on first save. Also called when a buffer is opened so
+--- the session is file-backed from the start. Renames the buffer to the
+--- file so `:w` works as expected.
 ---
 --- The write goes through `:write!` (not writefile()): the buffer then
 --- OWNS the file in Neovim's eyes — mtime bookkeeping is set, so `:w`
@@ -77,8 +80,29 @@ local function first_user_snippet(lines)
   return ""
 end
 
+local function fit(s, n)
+  if #s > n then
+    return s:sub(1, n - 1) .. "…"
+  end
+  return s
+end
+
+--- One picker line. Fixed-width so the global list scans as columns: the
+--- project leads (only across projects), then the first user message, then
+--- the session's recorded model. The project is a leading column, not a
+--- trailing path slug; the exact session file is in the preview.
+local function make_label(scope, dir, snippet, model)
+  local snippet_s = snippet ~= "" and snippet or "(no user message)"
+  local model_s = model and ("  ·  " .. model) or ""
+  if scope == "all" then
+    return string.format("%-20s  %s%s", fit(vim.fn.fnamemodify(dir, ":t"), 20), snippet_s, model_s)
+  end
+  return snippet_s .. model_s
+end
+
 --- List saved sessions. scope = "cwd" (default) or "all".
---- Items: { path, created, text } sorted newest first.
+--- Items: { path, mtime, text, model, models? } sorted newest first;
+--- `model`/`models` come from the session frontmatter.
 function M.list(scope)
   local dirs
   if scope == "all" then
@@ -91,16 +115,16 @@ function M.list(scope)
   for _, dir in ipairs(dirs) do
     for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
       local lines = vim.fn.readfile(path, "", 200)
-      local stem = vim.fn.fnamemodify(path, ":t:r")
-      -- Auto-generated names start with the timestamp; anything else is a
-      -- user-chosen session name, shown as-is.
-      local ts = stem:match("^(%d+%-%d+)")
       local snippet = first_user_snippet(lines)
-      local label = (ts or stem) .. "  " .. (snippet ~= "" and snippet or "(no user message)")
-      if scope == "all" then
-        label = label .. "  —  " .. vim.fn.fnamemodify(dir, ":t")
-      end
-      table.insert(items, { path = path, mtime = vim.fn.getftime(path), text = label })
+      local fm = frontmatter.parse(lines)
+      local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
+      table.insert(items, {
+        path = path,
+        mtime = vim.fn.getftime(path),
+        text = make_label(scope, dir, snippet, model),
+        model = model,
+        models = (fm and #fm.models > 1) and fm.models or nil,
+      })
     end
   end
 
@@ -113,7 +137,15 @@ end
 local function preview_item(item)
   local lines = vim.fn.readfile(item.path)
   local n = math.min(80, #lines)
-  local preview = { "# pitel session", "", item.path, "", "showing last " .. n .. "/" .. #lines .. " lines", "" }
+  local preview = { "# pitel session" .. (item.model and (" · " .. item.model) or "") }
+  if item.models then
+    table.insert(preview, "used: " .. table.concat(item.models, " · "))
+  end
+  table.insert(preview, "")
+  table.insert(preview, item.path)
+  table.insert(preview, "")
+  table.insert(preview, "showing last " .. n .. "/" .. #lines .. " lines")
+  table.insert(preview, "")
   for i = #lines - n + 1, #lines do
     table.insert(preview, lines[i])
   end

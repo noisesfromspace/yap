@@ -16,7 +16,7 @@ local function append(l)
 end
 append("<!-- pitel:tool")
 append("{")
--- view 2 left 'foldlevel' at 1: the new level-2 fold closes itself
+-- view 2 is foldlevel 2: the new level-3 tool fold closes itself
 local opener = 7
 assert(vim.fn.foldclosed(opener) == opener, "not closed after opener: " .. vim.fn.foldclosed(opener))
 for _, l in ipairs({ '  "id": "w1",', '  "name": "write",', '  "arguments": { "content": "x" }', "}", "-->" }) do
