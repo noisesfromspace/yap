@@ -55,10 +55,11 @@ truth, and that can be a text buffer. Consequences:
                         a split scrolled to the bottom, or focuses the
                         existing window. Never opens by itself, but can
                         be opened at any time — even before a tool has
-                        run (an empty tail that fills as tools execute).
-                        The tail is the live view; everything in it
-                        (plus full tool arguments and results) is
-                        persisted in the audit log, see |pitel-audit|.
+                        run. The tail is also written to a sidecar file
+                        next to the session file (<session>-tail) from
+                        the moment the session is created, so the live
+                        view survives restarts; the audit log
+                        (|pitel-audit|) remains the full record.
 
                                                                 *:PitelClear*
 :PitelClear [keep]      Slim the context: replace the result bodies of
@@ -499,6 +500,8 @@ The file is created when the buffer is opened, so a fresh session is
 file-backed from the start and can be named with |:file| before the first
 reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
+The tail sidecar (<session>-tail) is created alongside it at the same time
+and follows the session name across |:file| renames.
 
 File operations are the session operations (pi equivalents, but manual):
 
@@ -511,8 +514,10 @@ AUDIT LOG                                                        *pitel-audit*
 
 The session file holds the context; the audit log holds everything the
 context doesn't carry. ~/.pitel/audit/<cwd-slug>/<session>.log (same
-parent as the sessions dir), append-only, survives restarts (unlike
-the tail buffer, which is its ephemeral live view). Written from
+parent as the sessions dir), append-only, survives restarts. The tail
+sidecar (~/.pitel/sessions/<cwd-slug>/<session>-tail) persists the live
+view shown by |:PitelLive|; the audit log is the authoritative record
+and carries the extra details the tail does not show. Written from
 |pitel-protocol| events:
 
   === <ts> $ <command>          a bash call, followed by its full output
@@ -759,7 +764,10 @@ R16 Live tool output never enters the chat buffer.
     (pitel://<session>-tail): bash announces its temp log via a
     pitel:event stderr line, the Lua side drains new bytes into the
     tail (a `$ command` header per call), and :PitelLive opens it. The
-    chat buffer only gets one-shot, append-only writes: the tool header
+    same bytes are appended to a sidecar file next to the session file
+    (<session>-tail), created with the session so the live view is not
+    lost on restart. The chat buffer only gets one-shot, append-only
+    writes: the tool header
     when the call commits, the result when it finishes. The single
     sanctioned exception to append-only is |:PitelClear| — an explicit
     user command that replaces old tool result bodies with a pointer
@@ -771,9 +779,9 @@ R17 The audit log is the durable record of everything the context
     as the sessions dir), append-only, written by the Lua side from
     pitel:event lines: full tool arguments, streamed bash output, full
     results, and one journal line per turn (model, tokens, cost, ms).
-    The tail buffer is its live view — ephemeral; the audit file
-    survives restarts. This split is what makes slimmed headers (R12)
-    and |:PitelClear| lossless.
+    The tail sidecar file persists the live view; the audit file is the
+    authoritative record and survives restarts. This split is what
+    makes slimmed headers (R12) and |:PitelClear| lossless.
 
 R18 Templates and skills are plain markdown files inserted into the buffer.
     `templates_dir` files append as a `# @user` message (or as-is when

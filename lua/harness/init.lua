@@ -699,14 +699,52 @@ live = {}
 
 -- Per-chat-buffer persistent tail: every tool call appends a
 -- `$ command` header and its output (drained from the temp log) to ONE
--- nofile buffer, pitel://<session>-tail. :PitelLive opens it.
-local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
+-- buffer, pitel://<session>-tail. :PitelLive opens it. The same bytes
+-- are appended to a sidecar file next to the session file
+-- (<session>-tail), created with the session so the live view survives
+-- restarts; the AUDIT LOG remains the full, authoritative record.
+local tails = {} -- chat buf → { bufnr, offset, has_content, audit, path }
 
--- The tail buffer is ephemeral; the AUDIT LOG is its durable form:
--- ~/.pitel/audit/<cwd-slug>/<session>.log (same parent as the sessions
--- dir). Everything shown in the tail is appended there too, plus the
--- full tool_call arguments (the buffer's pitel:tool headers keep only
--- slimmed write/edit args, R12) and one journal line per turn — so
+local function compute_tail_path(buf)
+  local path = vim.b[buf].pitel_path or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":h")
+    .. "/"
+    .. vim.fn.fnamemodify(path, ":t:r")
+    .. "-tail"
+end
+
+--- The tail buffer's name; mirrors the session file's basename so
+--- `:file` renames keep the two together.
+local function tail_buf_name(buf)
+  local path = vim.b[buf].pitel_path or vim.api.nvim_buf_get_name(buf)
+  return "pitel://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
+end
+
+local function tail_path(buf)
+  return vim.b[buf].pitel_tail_path or compute_tail_path(buf)
+end
+
+--- Append `data` to the tail sidecar file (the same bytes just written
+--- to the tail buffer), creating it when needed. Append-mode, like the
+--- audit log: a streamed tool's output is drained in many small chunks.
+local function tail_write(buf, data)
+  local t = tails[buf]
+  if not t or not t.path or data == "" then
+    return
+  end
+  vim.fn.mkdir(vim.fn.fnamemodify(t.path, ":h"), "p")
+  local f = io.open(t.path, "a")
+  if f then
+    f:write(data)
+    f:close()
+  end
+end
+
+-- The AUDIT LOG is the full, durable record of everything the context
+-- doesn't carry: ~/.pitel/audit/<cwd-slug>/<session>.log (same parent as
+-- the sessions dir). Everything shown in the tail is appended there too,
+-- plus the full tool_call arguments (the buffer's pitel:tool headers keep
+-- only slimmed write/edit args, R12) and one journal line per turn — so
 -- nothing the context doesn't carry is ever lost, which is what makes
 -- :PitelClear safe. Append-only, survives restarts.
 local function audit_path(buf)
@@ -745,21 +783,59 @@ local function audit_follow(buf)
   end
 end
 
+--- Keep the tail sidecar file (and its buffer name) in step with a
+--- renamed session file, mirroring audit_follow. Called after save.
+local function tail_follow(buf)
+  local old = vim.b[buf].pitel_tail_path
+  if not old or not vim.b[buf].pitel_path then
+    return
+  end
+  local want = compute_tail_path(buf)
+  if want == old or vim.fn.filereadable(want) == 1 then
+    return
+  end
+  if vim.fn.filereadable(old) == 1 then
+    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
+    os.rename(old, want)
+  end
+  vim.b[buf].pitel_tail_path = want
+  local t = tails[buf]
+  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
+    vim.api.nvim_buf_set_name(t.bufnr, tail_buf_name(buf))
+    t.path = want
+  end
+end
+
 local function ensure_tail(buf)
   local t = tails[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
+  local path = tail_path(buf)
   local tail = vim.api.nvim_create_buf(true, true) -- listed scratch buffer
-  local name = vim.api.nvim_buf_get_name(buf)
-  if name:match("^pitel://") then
-    name = name .. "-tail"
-  else
-    name = "pitel://" .. vim.fn.fnamemodify(name, ":t") .. "-tail"
-  end
-  vim.api.nvim_buf_set_name(tail, name)
+  vim.api.nvim_buf_set_name(tail, tail_buf_name(buf))
   vim.bo[tail].bufhidden = "hide"
-  t = { bufnr = tail, offset = 0 }
+
+  -- The tail is a file from the start: load it when it already exists,
+  -- otherwise create it (empty) now so renames and restarts see it.
+  local lines = {}
+  if vim.fn.filereadable(path) == 1 then
+    lines = vim.fn.readfile(path)
+  else
+    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    vim.fn.writefile({}, path)
+  end
+  if #lines == 0 then
+    lines = { "" }
+  end
+  vim.api.nvim_buf_set_lines(tail, 0, -1, false, lines)
+
+  t = {
+    bufnr = tail,
+    offset = 0,
+    path = path,
+    has_content = #lines > 1 or lines[1] ~= "",
+  }
   tails[buf] = t
   return t
 end
@@ -787,8 +863,9 @@ drain_tail = function(buf)
     return
   end
   append_text(t.bufnr, data)
-  -- the audit log gets the same bytes (a line split across two drains
-  -- lands as two log lines; cosmetic)
+  -- the tail sidecar file and the audit log get the same bytes (a line
+  -- split across two drains lands as two log lines; cosmetic)
+  tail_write(buf, data)
   audit_write(buf, vim.split(data:gsub("\n$", ""), "\n", { plain = true }))
   -- keep a visible tail window scrolled to the bottom
   for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
@@ -807,7 +884,9 @@ local function handle_event(buf, json_line)
     local t = ensure_tail(buf)
     t.offset = 0
     local header = "$ " .. (ev.command or ev.name or "tool")
-    append_text(t.bufnr, (t.has_content and "\n" or "") .. header .. "\n")
+    local chunk = (t.has_content and "\n" or "") .. header .. "\n"
+    append_text(t.bufnr, chunk)
+    tail_write(buf, chunk)
     t.has_content = true
     audit_write(buf, { ("=== %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), header) })
   elseif ev.type == "tool_end" then
@@ -824,7 +903,9 @@ local function handle_event(buf, json_line)
       if ok2 and type(a) == "table" then
         target = a.path or a.url or a.command or ""
       end
-      append_text(t.bufnr, (t.has_content and "\n" or "") .. ("• %s %s\n"):format(ev.name, target))
+      local chunk = (t.has_content and "\n" or "") .. ("• %s %s\n"):format(ev.name, target)
+      append_text(t.bufnr, chunk)
+      tail_write(buf, chunk)
       t.has_content = true
     end
   elseif ev.type == "tool_result" then
@@ -842,7 +923,9 @@ local function handle_event(buf, json_line)
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
       os.date("%Y-%m-%dT%H:%M:%S"), ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000)
-    append_text(t.bufnr, (t.has_content and "\n" or "") .. line .. "\n")
+    local chunk = (t.has_content and "\n" or "") .. line .. "\n"
+    append_text(t.bufnr, chunk)
+    tail_write(buf, chunk)
     t.has_content = true
     audit_write(buf, { line })
   end
@@ -1094,6 +1177,7 @@ function M.send()
     append_block(buf, { "# @user", "" })
     require("harness.session").save(buf)
     audit_follow(buf) -- first save named the session; rename the log to match
+    tail_follow(buf) -- keep the tail sidecar file named with the session
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
     end
@@ -1192,6 +1276,11 @@ function M.new(opts)
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
   -- regardless of the .md extension.
   require("harness.session").save(buf)
+  -- The tail is a file from the start, exactly like the session itself:
+  -- create the sidecar file and its live-view buffer now, before the
+  -- first reply (and before any :file rename).
+  vim.b[buf].pitel_tail_path = compute_tail_path(buf)
+  ensure_tail(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
@@ -1204,6 +1293,7 @@ function M.open(path)
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].pitel_path = path
+  vim.b[buf].pitel_tail_path = compute_tail_path(buf)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
   -- buffer the moment it is resumed.

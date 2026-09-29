@@ -88,6 +88,13 @@ local tail_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\
 assert(tail_text:match("^%$ printf"), "no command header in tail: " .. tail_text)
 assert(tail_text:match("\nl1\nl2\n") and tail_text:match("tail%-without%-newline"), "tail incomplete: " .. tail_text)
 
+-- the tail sidecar file mirrors the tail buffer
+local tail_file = vim.b[buf].pitel_tail_path
+assert(tail_file and vim.fn.filereadable(tail_file) == 1, "tail file missing: " .. tostring(tail_file))
+local file_text = table.concat(vim.fn.readfile(tail_file), "\n")
+assert(file_text:match("^%$ printf"), "no command header in tail file: " .. file_text)
+assert(file_text:match("\nl1\nl2\n") and file_text:match("tail%-without%-newline"), "tail file incomplete: " .. file_text)
+
 -- the parsed tool message carries the result, marker line excluded
 local toolmsg
 for _, m in ipairs(pitel.parse_buffer(buf)) do
@@ -117,10 +124,13 @@ local buf2 = pitel.new()
 set_prompt(buf2, "run again; I will stop you")
 pitel.send()
 
--- the tail fills; :PitelLive opens it in a split, scrolled to the bottom
-local tb2 = vim.wait(10000, function()
-  return tail_buf(buf2) ~= nil
+-- wait until the tool header has landed, then :PitelLive opens the
+-- (already created) tail in a split, scrolled to the bottom
+local started = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- pitel:tool") ~= nil
 end, 20)
+assert(started, "tool header not present before stop")
+local tb2 = tail_buf(buf2)
 assert(tb2, "no tail buffer for the second session")
 pitel.live()
 assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"), ":PitelLive did not open the tail")

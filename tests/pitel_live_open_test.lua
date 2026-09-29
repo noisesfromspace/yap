@@ -3,6 +3,9 @@ vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
 pitel.setup({ bin = ROOT .. "/pitel" })
 local buf = pitel.new()
+-- the tail sidecar file is created with the session, before any tool runs
+local tail_path = vim.b[buf].pitel_tail_path
+assert(tail_path and vim.fn.filereadable(tail_path) == 1, "tail file not created up front: " .. tostring(tail_path))
 -- :PitelLive opens the tail even before any tool has run (empty, fills
 -- later as tools execute)
 pitel.live()
