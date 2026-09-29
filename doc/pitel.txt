@@ -72,6 +72,16 @@ truth, and that can be a text buffer. Consequences:
                         stale or re-fetchable — clearing it is the cheap
                         alternative to compacting the conversation.
 
+                                                             *:PitelCompact*
+:PitelCompact           Compaction as one command: insert the compact
+                        prompt (a `compact` template in templates_dir,
+                        or a built-in prompt), send the buffer, and —
+                        once the summary has streamed in — offer to
+                        delete the superseded history. The summary
+                        stays a visible # @assistant turn; deletion is
+                        an ordinary undoable buffer edit (see
+                        |pitel-compact|), never a hidden archive.
+
                                                                 *:PitelInsert*
 :PitelInsert [name]     Insert a template or skill into the buffer. A
                         template (see |pitel-templates|) is wrapped in
@@ -253,7 +263,9 @@ only — names and descriptions, never skill bodies (toggle it off with
 COMPACTION RECIPE                                           *pitel-compact*
 
 Compaction is the template mechanism applied to a long conversation —
-the summary stays a visible, editable turn, never an invisible rewrite:
+the summary stays a visible, editable turn, never an invisible rewrite.
+|:PitelCompact| automates the three steps below (insert, send, then
+offer to delete); the manual recipe remains available:
 
   1. `<leader>t` and pick `compact` (ships at
      `templates/compact.md`; copy it into your templates_dir), or
@@ -296,7 +308,9 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only pitel:ui section,
 see |pitel-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 25 iterations per send. Built-ins: ls, read, fetch,
-bash, write, edit.
+bash, write, edit, search, glob. search and glob shell out to ripgrep
+(rg): search returns path:line:content matches, glob lists files
+(gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming

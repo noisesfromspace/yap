@@ -1,6 +1,7 @@
 :Pitel	pitel.txt	/*:Pitel*
 :PitelChangeModel	pitel.txt	/*:PitelChangeModel*
 :PitelClear	pitel.txt	/*:PitelClear*
+:PitelCompact	pitel.txt	/*:PitelCompact*
 :PitelInsert	pitel.txt	/*:PitelInsert*
 :PitelInsertHere	pitel.txt	/*:PitelInsertHere*
 :PitelLive	pitel.txt	/*:PitelLive*

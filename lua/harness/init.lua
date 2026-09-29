@@ -999,6 +999,115 @@ function M.clear(buf, keep)
   )
 end
 
+--- The compaction prompt: a `compact` template in templates_dir overrides
+--- the built-in default (compaction is the template mechanism applied,
+--- R18). Returns trimmed body lines, never a leading # @role heading.
+local function compact_prompt_lines()
+  for _, t in ipairs(list_md(M.config.templates_dir)) do
+    if t.name == "compact" then
+      local text = read_file(t.path)
+      if text then
+        return trim_blank(vim.split(text, "\n", { plain = true }))
+      end
+    end
+  end
+  return vim.split(
+    "Summarize the conversation above into a compact markdown summary that\n"
+      .. "preserves all facts, decisions, open todos, and current file state.\n"
+      .. "I will use that summary to continue the conversation with full context.",
+    "\n",
+    { plain = true }
+  )
+end
+
+--- :PitelCompact — compaction as the visible, editable recipe, automated:
+--- insert the compact prompt, send it, then offer to delete the superseded
+--- history once the summary has streamed in. The summary stays a visible
+--- # @assistant turn; the deletion is an ordinary (undoable) buffer edit,
+--- never a hidden archive (see |pitel-compact|).
+function M.compact()
+  local buf = vim.api.nvim_get_current_buf()
+  if not vim.b[buf].pitel then
+    vim.notify("pitel: not a pitel buffer", vim.log.levels.WARN)
+    return
+  end
+  if running[buf] then
+    vim.notify("pitel: send in flight, not compacting", vim.log.levels.WARN)
+    return
+  end
+  append_as_block(buf, compact_prompt_lines())
+  vim.b[buf].pitel_compact_pending = true
+  M.send()
+end
+
+--- Offer to drop the history the summary superseded (asked once the
+--- summary has finished streaming; the summary is never touched).
+function M.compact_offer(buf)
+  vim.ui.select({ "Delete history", "Keep history" }, {
+    prompt = "pitel: compact — delete the superseded history? (the summary stays)",
+  }, function(choice)
+    if choice == "Delete history" then
+      M.compact_delete(buf)
+    end
+  end)
+end
+
+--- Delete every message between the system block and the final summary
+--- (the last # @assistant block), leaving frontmatter + system block +
+--- summary + the trailing # @user prompt. Blank-line separation is R7.
+function M.compact_delete(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local ai
+  for i = #lines, 1, -1 do
+    if lines[i]:match("^# @assistant%s*$") then
+      ai = i
+      break
+    end
+  end
+  if not ai then
+    vim.notify("pitel: no assistant summary to keep", vim.log.levels.WARN)
+    return
+  end
+  -- Keep frontmatter + the system block: the system block ends at the
+  -- first heading after # @system; with no system block, keep only the
+  -- frontmatter (everything before the first heading).
+  local se = 0
+  for i = 1, #lines do
+    if lines[i]:match("^# @system%s*$") then
+      for j = i + 1, #lines do
+        if lines[j]:match(HEAD) then
+          se = j - 1
+          break
+        end
+      end
+      if se == 0 then
+        se = #lines -- system block runs to the end (no later heading)
+      end
+      break
+    elseif lines[i]:match(HEAD) then
+      se = i - 1 -- no system block: keep frontmatter only
+      break
+    end
+  end
+  while se > 0 and lines[se]:match("^%s*$") do
+    se = se - 1
+  end
+  local kept = {}
+  for i = 1, se do
+    kept[#kept + 1] = lines[i]
+  end
+  kept[#kept + 1] = "" -- one blank line between system and summary (R7)
+  for i = ai, #lines do
+    kept[#kept + 1] = lines[i]
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, kept)
+  require("harness.session").save(buf)
+  vim.notify("pitel: compacted — summary kept, history deleted", vim.log.levels.INFO)
+end
+
 --- Open the session's tail buffer (:PitelLive): one persistent log of
 --- every tool call's output, not a new terminal per call. Opens even
 --- before any tool has run (an empty tail that fills as tools execute).
@@ -1144,6 +1253,8 @@ function M.send()
     end),
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
+    local compact = vim.b[buf].pitel_compact_pending
+    vim.b[buf].pitel_compact_pending = nil
     drain_tail(buf) -- final bytes; a killed tool never sent tool_end
     live[buf] = nil
     spinner_stop_if_idle()
@@ -1180,6 +1291,9 @@ function M.send()
     tail_follow(buf) -- keep the tail sidecar file named with the session
     if vim.api.nvim_get_current_buf() == buf then
       vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+    end
+    if compact then
+      M.compact_offer(buf)
     end
   end))
 

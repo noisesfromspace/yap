@@ -28,6 +28,30 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
 { "providers": { "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" } } }
 ```
 
+## Development (Nix)
+
+Run from the repo root:
+
+```sh
+nix develop
+```
+
+This builds the backend into `.dev/bin/pitel` and puts it on PATH,
+plus `go` and `neovim`. Three launchers start a clean dev Neovim
+(`-u NONE -i NONE`) with only this plugin loaded from the working tree:
+
+```sh
+pitel-nvim                 # clean: pitel only
+pitel-nvim-treesitter      # + markdown treesitter syntax highlighting
+pitel-nvim-touchup         # + the touchup.nvim renderer
+pitel-nvim-render-markdown # + the render-markdown.nvim renderer
+```
+
+`pitel-nvim-touchup` loads touchup from `$TOUCHUP_ROOT` (default
+`/opt/code/touchup.nvim`; override to point at another checkout).
+Re-enter the shell (or `go build -o .dev/bin/pitel ./agent`) after
+editing the agent.
+
 ## Quick start
 
 - `:Pitel` — new chat buffer
@@ -45,12 +69,15 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
   `keep` (default 2) tool result bodies with a pointer to the audit
   log. write/edit tool headers are always slimmed (`[N lines]`); the
   diff below them shows the change
+- `:PitelCompact` — summarize the conversation into a compact context:
+  insert the compact prompt, send, then offer to delete the superseded
+  history (the summary stays a visible, editable turn)
 - `:PitelInsert [name]` / `<leader>t` — insert a template (appended as
   `# @user`) or a skill (merged into `# @system`) from
   `~/.config/pitel/templates/` and `~/.config/pitel/skills/`;
   `<leader>T` inserts verbatim at the cursor. Compaction = insert a
   `compact.md` summarize-prompt template, send, then delete the old
-  history.
+  history — or just run `:PitelCompact`.
 - `:PitelSessions [all]` — resume a saved session
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in

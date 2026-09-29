@@ -196,7 +196,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "edit", "fetch", "ls", "read", "write"} {
+	for _, name := range []string{"bash", "edit", "fetch", "glob", "ls", "read", "search", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)
@@ -245,5 +245,56 @@ func TestUnifiedDiff(t *testing.T) {
 		if !strings.Contains(ui, want) {
 			t.Fatalf("diff missing %q: %q", want, ui)
 		}
+	}
+}
+
+func TestSearch(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\nfunc Foo() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "sub", "b.go"), []byte("package y\nfunc Foo() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "note.txt"), []byte("Foo here\n"), 0o644)
+
+	// matches across files as path:line:content
+	r, _, err := run(t, "search", `{"pattern":"Foo","path":"`+dir+`"}`)
+	if err != nil || !strings.Contains(r, "a.go:2:func Foo") || !strings.Contains(r, "b.go:2:func Foo") || !strings.Contains(r, "note.txt") {
+		t.Fatalf("search across files: %q %v", r, err)
+	}
+
+	// --glob filters by filename
+	r, _, err = run(t, "search", `{"pattern":"Foo","path":"`+dir+`","glob":"*.go"}`)
+	if err != nil || strings.Contains(r, "note.txt") {
+		t.Fatalf("glob filter: %q %v", r, err)
+	}
+
+	// no matches is a valid, empty result (rg exit 1), not an error
+	r, _, err = run(t, "search", `{"pattern":"zzznope","path":"`+dir+`"}`)
+	if err != nil || !strings.Contains(r, "no matches") {
+		t.Fatalf("no matches: %q %v", r, err)
+	}
+
+	// blank pattern is a tool error
+	if _, _, err := run(t, "search", `{"pattern":"   "}`); err == nil || !strings.Contains(err.Error(), "empty pattern") {
+		t.Fatalf("blank pattern: %v", err)
+	}
+}
+
+func TestGlob(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a.go"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "sub", "b.go"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "note.txt"), nil, 0o644)
+
+	// ** recursion finds nested files, excludes non-matching
+	r, _, err := run(t, "glob", `{"pattern":"**/*.go","path":"`+dir+`"}`)
+	if err != nil || !strings.Contains(r, "a.go") || !strings.Contains(r, "sub/b.go") || strings.Contains(r, "note.txt") {
+		t.Fatalf("glob: %q %v", r, err)
+	}
+
+	// no matches is a valid, empty result
+	r, _, err = run(t, "glob", `{"pattern":"*.zzz","path":"`+dir+`"}`)
+	if err != nil || !strings.Contains(r, "no matches") {
+		t.Fatalf("glob no matches: %q %v", r, err)
 	}
 }

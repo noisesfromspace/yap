@@ -14,6 +14,8 @@ func TestResultFence(t *testing.T) {
 		{"fetch", `{"url":"http://x"}`, "html", true},
 		{"bash", `{"command":"ls"}`, "", true},
 		{"ls", `{"path":"/tmp"}`, "", true},
+		{"search", `{"pattern":"x"}`, "", true},
+		{"glob", `{"pattern":"*.go"}`, "", true},
 		{"write", `{"path":"/tmp/x","content":"y"}`, "", false},
 		{"edit", `{"path":"/tmp/x","edits":[]}`, "", false},
 	}

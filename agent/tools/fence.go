@@ -25,8 +25,8 @@ func ResultFence(name, argsJSON string) (lang string, ok bool) {
 		return "html", true
 	case "bash":
 		return "", true // plain fence: command output is arbitrary text
-	case "ls":
-		return "", true // plain fence: directory listing is arbitrary text
+	case "ls", "search", "glob":
+		return "", true // plain fence: directory/listing output is arbitrary text
 	default:
 		return "", false
 	}

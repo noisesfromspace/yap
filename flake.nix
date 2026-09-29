@@ -41,6 +41,133 @@
         }
       );
 
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+
+          # markdown + markdown_inline grammars for Neovim's built-in
+          # treesitter (auto-discovered from parser/*.so on the runtimepath).
+          markdownParsers = pkgs.symlinkJoin {
+            name = "pitel-markdown-parsers";
+            paths = [
+              pkgs.vimPlugins.nvim-treesitter.grammarPlugins.markdown
+              pkgs.vimPlugins.nvim-treesitter.grammarPlugins.markdown_inline
+            ];
+          };
+
+          # Same grammars plus nvim-treesitter's highlight queries.
+          markdownTreesitter = pkgs.symlinkJoin {
+            name = "pitel-markdown-treesitter";
+            paths = [
+              pkgs.vimPlugins.nvim-treesitter
+              markdownParsers
+            ];
+          };
+
+          # render-markdown.nvim (bundles its own queries; needs the parsers).
+          renderMarkdown = pkgs.vimPlugins.render-markdown-nvim;
+
+          # Clean dev Neovim, this plugin only. Extra launchers below add
+          # treesitter highlighting or the touchup renderer on top of the
+          # same clean base.
+          pitel-nvim = pkgs.writeShellApplication {
+            name = "pitel-nvim";
+            runtimeInputs = [ pkgs.neovim ];
+            text = ''
+              root="''${PITEL_ROOT:-$(pwd)}"
+              # Ignore an ambient Neovim install (e.g. a home-manager nightly):
+              # otherwise its VIMRUNTIME shadows the Nix neovim's own runtime.
+              unset VIM VIMRUNTIME
+              exec nvim -u NONE -i NONE --cmd "set rtp^=$root" -c "runtime! plugin/pitel.lua" -c "lua require('harness').setup()" "$@"
+            '';
+          };
+
+          # Clean + markdown treesitter syntax highlighting.
+          pitel-nvim-treesitter = pkgs.writeShellApplication {
+            name = "pitel-nvim-treesitter";
+            runtimeInputs = [ pkgs.neovim ];
+            text = ''
+              root="''${PITEL_ROOT:-$(pwd)}"
+              unset VIM VIMRUNTIME
+              exec nvim -u NONE -i NONE \
+                --cmd "set rtp^=$root,${markdownTreesitter}" \
+                -c "runtime! plugin/pitel.lua" \
+                -c "lua require('harness').setup()" \
+                -c "lua vim.api.nvim_create_autocmd('FileType', { pattern = 'markdown', callback = function(e) vim.treesitter.start(e.buf, 'markdown') end })" \
+                "$@"
+            '';
+          };
+
+          # Clean + touchup renderer (needs the markdown grammars).
+          pitel-nvim-touchup = pkgs.writeShellApplication {
+            name = "pitel-nvim-touchup";
+            runtimeInputs = [ pkgs.neovim ];
+            text = ''
+              root="''${PITEL_ROOT:-$(pwd)}"
+              tu="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
+              if [ ! -d "$tu" ]; then
+                echo "pitel-nvim-touchup: TOUCHUP_ROOT not found: $tu" >&2
+              fi
+              unset VIM VIMRUNTIME
+              exec nvim -u NONE -i NONE \
+                --cmd "set rtp^=$root,$tu,${markdownParsers}" \
+                -c "runtime! plugin/pitel.lua" \
+                -c "lua require('harness').setup()" \
+                -c "lua require('touchup').setup()" \
+                "$@"
+            '';
+          };
+
+          # Clean + render-markdown.nvim (bundles its own queries; needs the
+          # markdown grammars). Sources its plugin file like pitel does.
+          pitel-nvim-render-markdown = pkgs.writeShellApplication {
+            name = "pitel-nvim-render-markdown";
+            runtimeInputs = [ pkgs.neovim ];
+            text = ''
+              root="''${PITEL_ROOT:-$(pwd)}"
+              unset VIM VIMRUNTIME
+              exec nvim -u NONE -i NONE \
+                --cmd "set rtp^=$root,${renderMarkdown},${markdownParsers}" \
+                -c "runtime! plugin/pitel.lua" \
+                -c "lua require('harness').setup()" \
+                -c "runtime! plugin/render-markdown.lua" \
+                "$@"
+            '';
+          };
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.go
+              pkgs.neovim
+              pitel-nvim
+              pitel-nvim-treesitter
+              pitel-nvim-touchup
+              pitel-nvim-render-markdown
+            ];
+
+            shellHook = ''
+              export PITEL_ROOT="$(pwd)"
+              export TOUCHUP_ROOT="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
+              if [ -d "$PITEL_ROOT/agent" ]; then
+                export PITEL_BIN="$PITEL_ROOT/.dev/bin/pitel"
+                mkdir -p "$PITEL_ROOT/.dev/bin"
+                if ( cd "$PITEL_ROOT" && ${pkgs.go}/bin/go build -o "$PITEL_BIN" ./agent ); then
+                  echo "pitel: built agent -> $PITEL_BIN"
+                else
+                  echo "pitel: agent build failed (see above); Neovim still usable, :PitelSend will not work" >&2
+                fi
+                export PATH="$PITEL_ROOT/.dev/bin:$PATH"
+              else
+                echo "pitel: run 'nix develop' from the repo root (agent/ not found)" >&2
+              fi
+              echo "pitel: pitel-nvim (clean) | pitel-nvim-treesitter | pitel-nvim-touchup | pitel-nvim-render-markdown"
+            '';
+          };
+        }
+      );
+
       homeManagerModules.default =
         {
           config,
