@@ -44,7 +44,7 @@ func models() error {
 			prov := cfg.Providers[name]
 			req, err := http.NewRequest("GET", strings.TrimSuffix(prov.BaseURL, "/")+"/models", nil)
 			if err != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("pitel: %s: %v", name, err))
+				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: %v", name, err))
 				return
 			}
 			if key := os.Getenv(prov.APIKeyEnv); key != "" {
@@ -52,7 +52,7 @@ func models() error {
 			}
 			resp, err := client.Do(req)
 			if err != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("pitel: %s: %v", name, err))
+				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: %v", name, err))
 				return
 			}
 			var list struct {
@@ -63,7 +63,7 @@ func models() error {
 			derr := json.NewDecoder(resp.Body).Decode(&list)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusOK || derr != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("pitel: %s: GET /models: %s", name, resp.Status))
+				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: GET /models: %s", name, resp.Status))
 				return
 			}
 			ids := make([]string, 0, len(list.Data))

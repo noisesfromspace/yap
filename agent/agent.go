@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"boers.email/pitel/agent/tools"
+	"boers.email/yap/agent/tools"
 )
 
 // Bound on tool-call iterations per send (gptel has none; runaway loops
@@ -87,7 +87,7 @@ type streamChunk struct {
 			Content string `json:"content"`
 			// ReasoningContent is the OpenAI-compatible thinking field
 			// (DeepSeek, Moonshot/Kimi). Streamed wrapped in a
-			// <!-- pitel:thinking --> marker, which parse_buffer excludes
+			// <!-- yap:thinking --> marker, which parse_buffer excludes
 			// from the message array on the next send.
 			ReasoningContent string          `json:"reasoning_content"`
 			ToolCalls        []deltaToolCall `json:"tool_calls"`
@@ -251,7 +251,7 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer, wr
 			if c.Delta.ReasoningContent != "" {
 				if !inThinking {
 					firstWrite()
-					out.WriteString("<!-- pitel:thinking\n")
+					out.WriteString("<!-- yap:thinking\n")
 					inThinking = true
 				}
 				esc.WriteString(c.Delta.ReasoningContent)
@@ -340,7 +340,7 @@ func escapeComment(s string) string {
 // registers and the model).
 //
 // Two cases:
-//   - lines starting with a pitel marker opener — they would end the
+//   - lines starting with a yap marker opener — they would end the
 //     tool region early during parsing;
 //   - `<style`/`<script` open tags — in a raw-HTML result (fetch returns
 //     pages as-is) treesitter's combined HTML injection hands their
@@ -352,14 +352,14 @@ func escapeMarkerPrefixes(s string) string {
 	s = rawTextTagRe.ReplaceAllString(s, "\\<$1$2")
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(l, "<!-- pitel:") || strings.HasPrefix(l, "<!-- /pitel:") {
+		if strings.HasPrefix(l, "<!-- yap:") || strings.HasPrefix(l, "<!-- /yap:") {
 			lines[i] = "\\" + l
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// emitToolHeader writes the pitel:tool opener (full call as JSON)
+// emitToolHeader writes the yap:tool opener (full call as JSON)
 // immediately when the model commits to the call — the arguments are
 // visible in the buffer while the tool runs, and the gap to the result
 // honestly represents execution time. Flushed so the header lands
@@ -368,7 +368,7 @@ func escapeMarkerPrefixes(s string) string {
 func emitToolHeader(out *bufio.Writer, call ToolCall) {
 	// write/edit carry their full content in the arguments; the header
 	// (and with it the model's own history on later turns) keeps only
-	// the shape — the pitel:ui diff shows the change and the audit log
+	// the shape — the yap:ui diff shows the change and the audit log
 	// has the full arguments (R12).
 	args, ok := tools.SlimArgs(call.Function.Name, call.Function.Arguments)
 	if !ok {
@@ -383,10 +383,10 @@ func emitToolHeader(out *bufio.Writer, call ToolCall) {
 		Arguments any    `json:"arguments"`
 	}{call.ID, call.Function.Name, args})
 	if len(header) <= toolHeaderMaxSingle {
-		fmt.Fprintf(out, "<!-- pitel:tool %s -->\n", header)
+		fmt.Fprintf(out, "<!-- yap:tool %s -->\n", header)
 	} else {
 		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
-		fmt.Fprintf(out, "<!-- pitel:tool\n%s\n-->\n", pretty)
+		fmt.Fprintf(out, "<!-- yap:tool\n%s\n-->\n", pretty)
 	}
 	out.Flush()
 }
@@ -400,7 +400,7 @@ func trailingNL(s string) int {
 	return n
 }
 
-// emitToolResult finishes an open pitel:tool region: the result text
+// emitToolResult finishes an open yap:tool region: the result text
 // (what the model received), an optional display-only ui section, and
 // the region closer.
 func emitToolResult(out *bufio.Writer, result, ui string) {
@@ -415,16 +415,16 @@ func emitToolResult(out *bufio.Writer, result, ui string) {
 		out.WriteString(fence + "\n")
 	}
 	if ui != "" {
-		// The ui diff used to live INSIDE a `<!-- pitel:ui … -->` comment,
+		// The ui diff used to live INSIDE a `<!-- yap:ui … -->` comment,
 		// where treesitter never parses a fence — a comment is one leaf
 		// html_block node, so a ```diff inside it got no highlighting.
 		// Paired one-line markers leave the fence at block level, so the
 		// markdown grammar parses it and injects the diff parser.
 		fence := backtickFence(ui)
-		fmt.Fprintf(out, "<!-- pitel:ui -->\n%sdiff\n%s\n%s\n<!-- /pitel:ui -->\n", fence, ui, fence)
+		fmt.Fprintf(out, "<!-- yap:ui -->\n%sdiff\n%s\n%s\n<!-- /yap:ui -->\n", fence, ui, fence)
 	}
 	// Regions self-terminate with exactly one blank line (R7).
-	out.WriteString("<!-- /pitel:tool -->\n\n")
+	out.WriteString("<!-- /yap:tool -->\n\n")
 	out.Flush()
 }
 
@@ -546,7 +546,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		}
 	}
 
-	// :PitelStop kills this process; take in-flight tool commands (own
+	// :YapStop kills this process; take in-flight tool commands (own
 	// process groups) down with it instead of orphaning them.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -587,28 +587,28 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 					reason = "unknown"
 				}
 				pad()
-				fmt.Fprintf(out, "<!-- pitel:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
+				fmt.Fprintf(out, "<!-- yap:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
 			}
 			break // final answer streamed; turn complete
 		}
 		if iter+1 >= maxToolIterations {
 			pad()
-			fmt.Fprintf(out, "<!-- pitel:error\nmax tool iterations (%d) reached\n-->\n\n", maxToolIterations)
+			fmt.Fprintf(out, "<!-- yap:error\nmax tool iterations (%d) reached\n-->\n\n", maxToolIterations)
 			break
 		}
 
 		// Append the assistant turn with its calls to the request-local
-		// history, execute each call, and emit one pitel:tool region per
+		// history, execute each call, and emit one yap:tool region per
 		// call+result pair (R12) — both to the buffer and to the history.
 		// The header lands BEFORE the tool runs so the call is visible
 		// while it executes; live output is followed via the tool's own
-		// log file (:PitelLive), never written into this buffer.
+		// log file (:YapLive), never written into this buffer.
 		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
 		for _, call := range t.calls {
-			// Audit trail (pitel:event on stderr): the full call before
+			// Audit trail (yap:event on stderr): the full call before
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
-			// headers and :PitelClear lossless.
+			// headers and :YapClear lossless.
 			tools.EmitEvent(map[string]any{"type": "tool_call", "name": call.Function.Name, "args": call.Function.Arguments})
 			tool, ok := tools.Get(call.Function.Name)
 			var result, ui string
@@ -645,7 +645,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		}
 		b, _ := json.Marshal(m)
 		pad()
-		fmt.Fprintf(out, "<!-- pitel:usage %s -->\n", b)
+		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
 		// Audit: one turn journal line (tail buffer + audit log).
 		m["type"] = "turn_end"
 		m["model"] = model

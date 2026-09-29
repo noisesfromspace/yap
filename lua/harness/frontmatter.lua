@@ -1,4 +1,4 @@
--- pitel session frontmatter: the durable per-session state.
+-- yap session frontmatter: the durable per-session state.
 --
 -- Scope is deliberately narrow — only durable per-session state lives here:
 --
@@ -15,7 +15,7 @@
 -- when the session was created; `models` is the ordered history of every
 -- combo actually used (most-recent-last). Token/cost totals are NOT
 -- persisted here — they are ephemeral per-buffer state in the winbar.
--- pitel owns the block, so parsing is a few pattern matches,
+-- yap owns the block, so parsing is a few pattern matches,
 -- not a YAML library; Neovim has no YAML parser and does not need one.
 --
 -- render() returns ONLY the `--- ... ---` block (no trailing blank line);

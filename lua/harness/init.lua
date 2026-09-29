@@ -1,46 +1,46 @@
--- pitel.nvim — the buffer is the conversation.
+-- yap.nvim — the buffer is the conversation.
 --
--- A pitel buffer is plain markdown. Headings of the form `# @user`,
+-- A yap buffer is plain markdown. Headings of the form `# @user`,
 -- `# @assistant` and `# @system` delimit messages; everything between
 -- headings is message content. The buffer is the ONLY state: deleting a
 -- block removes it from the conversation, editing an assistant reply
 -- changes what the model "said", inserting a fake reply steers it.
 -- gptel semantics, Neovim native.
 --
--- Sending serializes the whole buffer to the `pitel` binary, which talks
+-- Sending serializes the whole buffer to the `yap` binary, which talks
 -- to the provider and streams the reply back into the buffer.
 
 local M = {}
 
 M.config = {
-  bin = "pitel", -- path to the pitel binary
+  bin = "yap", -- path to the yap binary
   provider = "moonshot",
   model = "kimi-k3",
   -- Optional override list of "provider/model" combos for
-  -- :PitelChangeModel. When unset, the picker queries every provider
+  -- :YapChangeModel. When unset, the picker queries every provider
   -- in config.json for its model list (GET /models).
   models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
-  -- (pi-style ~/.config/pitel/AGENTS.md), otherwise this fallback.
+  -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
-  agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/AGENTS.md",
-  -- Templates are text files inserted into the context by :PitelInsert
+  agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/AGENTS.md",
+  -- Templates are text files inserted into the context by :YapInsert
   -- (a compaction prompt, a snippet, ...); skills are the same but
   -- system-prompt material, merged into the # @system block.
-  templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/templates",
-  skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/skills",
+  templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
+  skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
   -- List available skills (name + description) in new chats' system block
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
   -- vim.notify when a turn completes in a buffer that is not focused
-  -- (see the User PitelTurnDone autocmd installed by setup()).
+  -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
 }
 
--- Cached output of `pitel models` ("provider/model" lines) so
--- <leader>m / :PitelChangeModel doesn't re-query every provider on each
+-- Cached output of `yap models` ("provider/model" lines) so
+-- <leader>m / :YapChangeModel doesn't re-query every provider on each
 -- press — that's one GET /models per provider in config.json, sequential,
--- each with a 10s timeout. Refreshed by :PitelReload (module state is
+-- each with a 10s timeout. Refreshed by :YapReload (module state is
 -- dropped); model lists rarely change between sessions.
 local models_cache = nil
 
@@ -63,10 +63,10 @@ local HEAD = "^# @(%a+)%s*$"
 
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
---- The combo pitel will send with: per-buffer vars (set by :Pitel),
+--- The combo yap will send with: per-buffer vars (set by :Yap),
 --- falling back to the global config.
 local function current_combo(buf)
-  return vim.b[buf].pitel_provider or M.config.provider, vim.b[buf].pitel_model or M.config.model
+  return vim.b[buf].yap_provider or M.config.provider, vim.b[buf].yap_model or M.config.model
 end
 
 --- End line (0-based, exclusive) of the frontmatter block, or nil when
@@ -123,7 +123,7 @@ local live
 local drain_tail
 
 local function winbar_hl(text, group)
-  return "%#Pitel" .. group .. "#" .. text .. "%*"
+  return "%#Yap" .. group .. "#" .. text .. "%*"
 end
 
 -- Last backend error per buffer; shown in the winbar until the next send.
@@ -132,20 +132,20 @@ local errors = {}
 -- The agent is awaiting the user's next prompt: set when a turn
 -- completes (a `# @user` heading is appended), cleared when the user
 -- sends. Drives the herdr-style "needs you" winbar state. A UI hint,
--- not conversation state (R1) — same drift tradeoff as pitel_usage.
+-- not conversation state (R1) — same drift tradeoff as yap_usage.
 local awaiting = {}
 
 -- Data of the last completed turn per buffer (the binary's `turn_end`
--- event), handed to the User PitelTurnDone autocmd. Ephemeral.
+-- event), handed to the User YapTurnDone autocmd. Ephemeral.
 local last_turn = {}
 
--- Other pitel buffers awaiting the user's reply: the count for the
+-- Other yap buffers awaiting the user's reply: the count for the
 -- global overview chip. A tiny module map, so no buffer scans on redraw
 -- (R10); stale entries are skipped via the validity check.
 local function awaiting_others(buf)
   local n = 0
   for b in pairs(awaiting) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].pitel then
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
       n = n + 1
     end
   end
@@ -200,7 +200,7 @@ local function render_winbar(buf)
     parts[#parts + 1] = winbar_hl(" ◉" .. others .. " ", "Needs")
   end
   parts[#parts + 1] = "%="
-  local u = vim.b[buf].pitel_usage
+  local u = vim.b[buf].yap_usage
   if u and (u.prompt > 0 or u.completion > 0) then
     local usage = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
     if u.cost then
@@ -232,7 +232,7 @@ function M.winbar(buf)
 end
 
 --- The herdr-style rollup for a statusline/tabline: `◉N` when N OTHER
---- pitel buffers await the user's reply, "" otherwise. The winbar shows
+--- yap buffers await the user's reply, "" otherwise. The winbar shows
 --- the same chip, so this is the reusable segment for global visibility.
 function M.overview(buf)
   buf = buf or vim.api.nvim_get_current_buf()
@@ -272,7 +272,7 @@ local function define_winbar_hl()
     Needs = "DiagnosticWarn",
   }
   for name, link in pairs(links) do
-    vim.api.nvim_set_hl(0, "Pitel" .. name, { default = true, link = link })
+    vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
 end
 
@@ -280,11 +280,11 @@ define_winbar_hl()
 
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
---- Parse a pitel buffer into a message list.
+--- Parse a yap buffer into a message list.
 --- Lines before the first heading are ignored (legacy frontmatter in
 --- old session files stays inert).
---- `<!-- pitel:... -->` marker regions (thinking, error, ui) are excluded.
---- `<!-- pitel:tool -->` regions are TRANSFORMED (R12): the header becomes
+--- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
+--- `<!-- yap:tool -->` regions are TRANSFORMED (R12): the header becomes
 --- an assistant tool_calls entry, the body becomes the tool result message.
 --- Adjacent same-role blocks are merged (providers require alternation),
 --- except tool-bearing assistant messages, which must stay adjacent to
@@ -293,11 +293,11 @@ define_winbar_hl()
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
-  local tools = {} -- pitel:tool regions collected in the current block
+  local tools = {} -- yap:tool regions collected in the current block
   local tool = nil -- open region: { call = <wire call>, result = {lines} }
   local skipping = false -- skipping a region (bad header / wrong role)
   local in_marker = false
-  local ui_paired = false -- inside a paired `<!-- pitel:ui --> … <!-- /pitel:ui -->` diff
+  local ui_paired = false -- inside a paired `<!-- yap:ui --> … <!-- /yap:ui -->` diff
   local header_acc = nil -- collecting a multi-line tool header
 
   local function flush()
@@ -334,21 +334,21 @@ function M.parse_buffer(buf)
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
-      -- Inside a pitel:tool region: collect the result, skip the
-      -- display-only pitel:ui section (legacy multi-line comment form,
-      -- or the paired form: `<!-- pitel:ui -->` … fence …
-      -- `<!-- /pitel:ui -->`).
-      if line:match("^<!%-%- /pitel:tool") then
+      -- Inside a yap:tool region: collect the result, skip the
+      -- display-only yap:ui section (legacy multi-line comment form,
+      -- or the paired form: `<!-- yap:ui -->` … fence …
+      -- `<!-- /yap:ui -->`).
+      if line:match("^<!%-%- /yap:tool") then
         table.insert(tools, tool)
         tool = nil
         ui_paired = false
-      elseif line:match("^<!%-%- /pitel:ui") then
+      elseif line:match("^<!%-%- /yap:ui") then
         ui_paired = false
       elseif ui_paired then
         -- block-level diff content between the paired markers
-      elseif line:match("^<!%-%- pitel:ui %-%->%s*$") then
+      elseif line:match("^<!%-%- yap:ui %-%->%s*$") then
         ui_paired = true
-      elseif line:match("^<!%-%- pitel:ui") then
+      elseif line:match("^<!%-%- yap:ui") then
         -- legacy multi-line comment form: skip until a bare `-->`
         in_marker = not line:match("%-%->")
       elseif in_marker then
@@ -359,7 +359,7 @@ function M.parse_buffer(buf)
         table.insert(tool.result, line)
       end
     elseif skipping then
-      if line:match("^<!%-%- /pitel:tool") then
+      if line:match("^<!%-%- /yap:tool") then
         skipping = false
       end
     elseif header_acc then
@@ -382,7 +382,7 @@ function M.parse_buffer(buf)
           }
         else
           skipping = true
-          vim.notify("pitel: malformed pitel:tool header, region skipped", vim.log.levels.WARN)
+          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
         end
         header_acc = nil
       else
@@ -395,7 +395,7 @@ function M.parse_buffer(buf)
         in_marker = false
       end
     else
-      local header = line:match("^<!%-%- pitel:tool (.+) %-%->%s*$")
+      local header = line:match("^<!%-%- yap:tool (.+) %-%->%s*$")
       if header and role == "assistant" then
         local ok, h = pcall(vim.json.decode, header)
         if ok and type(h) == "table" and h.id and h.name then
@@ -414,14 +414,14 @@ function M.parse_buffer(buf)
           }
         else
           skipping = true
-          vim.notify("pitel: malformed pitel:tool header, region skipped", vim.log.levels.WARN)
+          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
         end
-      elseif line:match("^<!%-%- pitel:tool%s*$") and role == "assistant" then
+      elseif line:match("^<!%-%- yap:tool%s*$") and role == "assistant" then
         header_acc = {} -- multi-line header form (long calls)
-      elseif line:match("^<!%-%- pitel:tool") then
+      elseif line:match("^<!%-%- yap:tool") then
         skipping = true -- region outside an assistant block: orphan, skip
-      elseif line:match("^<!%-%- pitel:%a+") then
-        -- Single-line markers (`<!-- pitel:usage {...} -->`) close on the
+      elseif line:match("^<!%-%- yap:%a+") then
+        -- Single-line markers (`<!-- yap:usage {...} -->`) close on the
         -- same line; otherwise the next content line would be swallowed.
         in_marker = not line:match("%-%->")
       else
@@ -587,7 +587,7 @@ end
 --- text is wrapped in `# @user`. Blank-line handling is append_block's (R7).
 local function append_as_block(buf, lines)
   if #lines == 0 then
-    vim.notify("pitel: template is empty", vim.log.levels.WARN)
+    vim.notify("yap: template is empty", vim.log.levels.WARN)
     return
   end
   if not lines[1]:match(HEAD) then
@@ -603,7 +603,7 @@ end
 --- they go where a stateless provider keeps instructions.
 local function merge_into_system(buf, lines)
   if #lines == 0 then
-    vim.notify("pitel: skill is empty", vim.log.levels.WARN)
+    vim.notify("yap: skill is empty", vim.log.levels.WARN)
     return
   end
   local blines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -657,26 +657,26 @@ local function skills_intro_lines()
   return #lines > 0 and lines or nil
 end
 
---- :PitelInsert [name] / :PitelInsertHere [name].
+--- :YapInsert [name] / :YapInsertHere [name].
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
 --- otherwise a template appends as a message block and a skill merges into
 --- the system block. With no name, pick from the combined list.
 function M.insert(name, opts)
   opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].pitel then
-    vim.notify("pitel: not a pitel buffer", vim.log.levels.WARN)
+  if not vim.b[buf].yap then
+    vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
     return
   end
   if running[buf] then
-    vim.notify("pitel: send in flight, not inserting", vim.log.levels.WARN)
+    vim.notify("yap: send in flight, not inserting", vim.log.levels.WARN)
     return
   end
 
   local function apply(entry)
     local text = read_file(entry.path)
     if not text then
-      vim.notify("pitel: cannot read " .. entry.path, vim.log.levels.ERROR)
+      vim.notify("yap: cannot read " .. entry.path, vim.log.levels.ERROR)
       return
     end
     local lines
@@ -703,12 +703,12 @@ function M.insert(name, opts)
         return
       end
     end
-    vim.notify("pitel: no template/skill named: " .. name, vim.log.levels.WARN)
+    vim.notify("yap: no template/skill named: " .. name, vim.log.levels.WARN)
     return
   end
   if #entries == 0 then
     vim.notify(
-      ("pitel: no templates in %s or %s"):format(M.config.templates_dir, M.config.skills_dir),
+      ("yap: no templates in %s or %s"):format(M.config.templates_dir, M.config.skills_dir),
       vim.log.levels.WARN
     )
     return
@@ -717,7 +717,7 @@ function M.insert(name, opts)
   for _, e in ipairs(entries) do
     items[#items + 1] = e.label
   end
-  vim.ui.select(items, { prompt = "pitel insert" }, function(choice)
+  vim.ui.select(items, { prompt = "yap insert" }, function(choice)
     if not choice then
       return
     end
@@ -730,7 +730,7 @@ function M.insert(name, opts)
   end)
 end
 
---- Completion list for :PitelInsert / :PitelInsertHere.
+--- Completion list for :YapInsert / :YapInsertHere.
 function M.template_names()
   local names = {}
   for _, e in ipairs(template_entries()) do
@@ -739,23 +739,23 @@ function M.template_names()
   return names
 end
 
---- Find the pitel:usage marker the binary appended for this turn, fold its
+--- Find the yap:usage marker the binary appended for this turn, fold its
 --- numbers into the buffer's session totals (winbar), and remove the marker.
 local function consume_usage(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i = #lines, 1, -1 do
-    local json = lines[i]:match("^<!%-%- pitel:usage (.+) %-%->$")
+    local json = lines[i]:match("^<!%-%- yap:usage (.+) %-%->$")
     if json then
       vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
       local ok, data = pcall(vim.json.decode, json)
       if ok and type(data) == "table" then
-        local u = vim.b[buf].pitel_usage or { prompt = 0, completion = 0 }
+        local u = vim.b[buf].yap_usage or { prompt = 0, completion = 0 }
         u.prompt = u.prompt + (data.prompt or 0)
         u.completion = u.completion + (data.completion or 0)
         if data.cost then
           u.cost = (u.cost or 0) + data.cost
         end
-        vim.b[buf].pitel_usage = u
+        vim.b[buf].yap_usage = u
       end
       return
     end
@@ -768,13 +768,13 @@ end
 running = {}
 
 -- Live tool per buffer while it runs: { name, log, since }. Set from
--- the binary's `pitel:event` stderr lines (bash announces the temp file
+-- the binary's `yap:event` stderr lines (bash announces the temp file
 -- its output streams into), cleared on tool_end / process exit.
 live = {}
 
 -- Per-chat-buffer persistent tail: every tool call appends a
 -- `$ command` header and its output (drained from the temp log) to ONE
--- buffer, pitel://<session>-tail. :PitelLive opens it. The same bytes
+-- buffer, yap://<session>-tail. :YapLive opens it. The same bytes
 -- are appended to a sidecar file in the audit dir (<session>-tail),
 -- created with the session so the live view survives restarts; the
 -- AUDIT LOG remains the full, authoritative record.
@@ -784,15 +784,15 @@ local tails = {} -- chat buf → { bufnr, offset, has_content, audit, path }
 -- the session's basename, so the sessions dir stays clean.
 local function audit_dir()
   local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
-  return ("%s/.pitel/audit/%s"):format(vim.fn.expand("~"), slug)
+  return ("%s/.yap/audit/%s"):format(vim.fn.expand("~"), slug)
 end
 
 local function session_base(buf)
-  local path = vim.b[buf].pitel_path
+  local path = vim.b[buf].yap_path
   if path then
     return vim.fn.fnamemodify(path, ":t:r")
   end
-  return vim.api.nvim_buf_get_name(buf):gsub("^pitel://", ""):gsub("[^%w%._-]", "-")
+  return vim.api.nvim_buf_get_name(buf):gsub("^yap://", ""):gsub("[^%w%._-]", "-")
 end
 
 local function compute_tail_path(buf)
@@ -802,12 +802,12 @@ end
 --- The tail buffer's name; mirrors the session file's basename so
 --- `:file` renames keep the two together.
 local function tail_buf_name(buf)
-  local path = vim.b[buf].pitel_path or vim.api.nvim_buf_get_name(buf)
-  return "pitel://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
+  local path = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
+  return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
 end
 
 local function tail_path(buf)
-  return vim.b[buf].pitel_tail_path or compute_tail_path(buf)
+  return vim.b[buf].yap_tail_path or compute_tail_path(buf)
 end
 
 --- Append `data` to the tail sidecar file (the same bytes just written
@@ -827,11 +827,11 @@ local function tail_write(buf, data)
 end
 
 -- The AUDIT LOG is the full, durable record of everything the context
--- doesn't carry: ~/.pitel/audit/<cwd-slug>/<session>.log. Everything
+-- doesn't carry: ~/.yap/audit/<cwd-slug>/<session>.log. Everything
 -- shown in the tail is appended there too, plus the full tool_call
--- arguments (the buffer's pitel:tool headers keep only slimmed write/edit
+-- arguments (the buffer's yap:tool headers keep only slimmed write/edit
 -- args, R12) and one journal line per turn — so nothing the context
--- doesn't carry is ever lost, which is what makes :PitelClear safe.
+-- doesn't carry is ever lost, which is what makes :YapClear safe.
 -- Append-only, survives restarts.
 local function audit_path(buf)
   return audit_dir() .. "/" .. session_base(buf) .. ".log"
@@ -853,7 +853,7 @@ end
 --- (which also renames the session) renames the log to match.
 local function audit_follow(buf)
   local t = tails[buf]
-  if not t or not t.audit or not vim.b[buf].pitel_path then
+  if not t or not t.audit or not vim.b[buf].yap_path then
     return
   end
   local want = audit_path(buf)
@@ -868,8 +868,8 @@ end
 --- Keep the tail sidecar file (and its buffer name) in step with a
 --- renamed session file, mirroring audit_follow. Called after save.
 local function tail_follow(buf)
-  local old = vim.b[buf].pitel_tail_path
-  if not old or not vim.b[buf].pitel_path then
+  local old = vim.b[buf].yap_tail_path
+  if not old or not vim.b[buf].yap_path then
     return
   end
   local want = compute_tail_path(buf)
@@ -880,7 +880,7 @@ local function tail_follow(buf)
     vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
     os.rename(old, want)
   end
-  vim.b[buf].pitel_tail_path = want
+  vim.b[buf].yap_tail_path = want
   local t = tails[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     vim.api.nvim_buf_set_name(t.bufnr, tail_buf_name(buf))
@@ -967,7 +967,7 @@ drain_tail = function(buf)
   end
 end
 
---- Handle one `pitel:event {json}` line from the binary's stderr.
+--- Handle one `yap:event {json}` line from the binary's stderr.
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
   if not ok or type(ev) ~= "table" then
@@ -1003,7 +1003,7 @@ local function handle_event(buf, json_line)
       t.has_content = true
     end
   elseif ev.type == "tool_result" then
-    -- The full result text lands in the audit log — :PitelClear can
+    -- The full result text lands in the audit log — :YapClear can
     -- then remove it from the context without losing anything. bash's
     -- output was already streamed to the log from its temp file.
     local lines = {}
@@ -1013,7 +1013,7 @@ local function handle_event(buf, json_line)
     table.insert(lines, ("--- %s %s (%s bytes)"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.bytes or "?"))
     audit_write(buf, lines)
   elseif ev.type == "turn_end" then
-    last_turn[buf] = ev -- for the User PitelTurnDone event on exit
+    last_turn[buf] = ev -- for the User YapTurnDone event on exit
     local t = ensure_tail(buf)
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -1026,30 +1026,30 @@ local function handle_event(buf, json_line)
   end
 end
 
---- :PitelClear [keep] — replace the bodies of all but the last `keep`
---- (default 2) pitel:tool regions with a placeholder; the full output
+--- :YapClear [keep] — replace the bodies of all but the last `keep`
+--- (default 2) yap:tool regions with a placeholder; the full output
 --- stays in the audit log. Headers (the model's own tool_calls history)
---- and pitel:ui diffs stay. This is the one sanctioned rewrite of
+--- and yap:ui diffs stay. This is the one sanctioned rewrite of
 --- existing lines (R16): the user owns the document, and clearing old
 --- tool output is what keeps long sessions inside the context window.
 function M.clear(buf, keep)
   buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
   if running[buf] then
-    vim.notify("pitel: send in flight, not clearing", vim.log.levels.WARN)
+    vim.notify("yap: send in flight, not clearing", vim.log.levels.WARN)
     return
   end
   keep = keep or 2
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   -- collect tool regions as { first body line, last body line } (1-based,
-  -- inclusive); the body runs from after the header to the pitel:ui
+  -- inclusive); the body runs from after the header to the yap:ui
   -- opener or the region closer
   local regions = {}
   local i = 1
   while i <= #lines do
     local body_start
-    if lines[i]:match("^<!%-%- pitel:tool .+ %-%->%s*$") then
+    if lines[i]:match("^<!%-%- yap:tool .+ %-%->%s*$") then
       body_start = i + 1 -- single-line header
-    elseif lines[i]:match("^<!%-%- pitel:tool%s*$") then
+    elseif lines[i]:match("^<!%-%- yap:tool%s*$") then
       local j = i + 1 -- multi-line header: body after its closing -->
       while j <= #lines and not lines[j]:match("^%-%->%s*$") do
         j = j + 1
@@ -1059,8 +1059,8 @@ function M.clear(buf, keep)
     if body_start then
       local j = body_start
       while j <= #lines
-        and not lines[j]:match("^<!%-%- pitel:ui")
-        and not lines[j]:match("^<!%-%- /pitel:tool")
+        and not lines[j]:match("^<!%-%- yap:ui")
+        and not lines[j]:match("^<!%-%- /yap:tool")
       do
         j = j + 1
       end
@@ -1089,7 +1089,7 @@ function M.clear(buf, keep)
     require("harness.session").save(buf)
   end
   vim.notify(
-    ("pitel: cleared %d tool result%s (kept the last %d)"):format(cleared, cleared == 1 and "" or "s", keep),
+    ("yap: cleared %d tool result%s (kept the last %d)"):format(cleared, cleared == 1 and "" or "s", keep),
     vim.log.levels.INFO
   )
 end
@@ -1115,23 +1115,23 @@ local function compact_prompt_lines()
   )
 end
 
---- :PitelCompact — compaction as the visible, editable recipe, automated:
+--- :YapCompact — compaction as the visible, editable recipe, automated:
 --- insert the compact prompt, send it, then offer to delete the superseded
 --- history once the summary has streamed in. The summary stays a visible
 --- # @assistant turn; the deletion is an ordinary (undoable) buffer edit,
---- never a hidden archive (see |pitel-compact|).
+--- never a hidden archive (see |yap-compact|).
 function M.compact()
   local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].pitel then
-    vim.notify("pitel: not a pitel buffer", vim.log.levels.WARN)
+  if not vim.b[buf].yap then
+    vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
     return
   end
   if running[buf] then
-    vim.notify("pitel: send in flight, not compacting", vim.log.levels.WARN)
+    vim.notify("yap: send in flight, not compacting", vim.log.levels.WARN)
     return
   end
   append_as_block(buf, compact_prompt_lines())
-  vim.b[buf].pitel_compact_pending = true
+  vim.b[buf].yap_compact_pending = true
   M.send()
 end
 
@@ -1139,7 +1139,7 @@ end
 --- summary has finished streaming; the summary is never touched).
 function M.compact_offer(buf)
   vim.ui.select({ "Delete history", "Keep history" }, {
-    prompt = "pitel: compact — delete the superseded history? (the summary stays)",
+    prompt = "yap: compact — delete the superseded history? (the summary stays)",
   }, function(choice)
     if choice == "Delete history" then
       M.compact_delete(buf)
@@ -1163,7 +1163,7 @@ function M.compact_delete(buf)
     end
   end
   if not ai then
-    vim.notify("pitel: no assistant summary to keep", vim.log.levels.WARN)
+    vim.notify("yap: no assistant summary to keep", vim.log.levels.WARN)
     return
   end
   -- Keep frontmatter + the system block: the system block ends at the
@@ -1200,10 +1200,10 @@ function M.compact_delete(buf)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, kept)
   require("harness.session").save(buf)
-  vim.notify("pitel: compacted — summary kept, history deleted", vim.log.levels.INFO)
+  vim.notify("yap: compacted — summary kept, history deleted", vim.log.levels.INFO)
 end
 
---- Open the session's tail buffer (:PitelLive): one persistent log of
+--- Open the session's tail buffer (:YapLive): one persistent log of
 --- every tool call's output, not a new terminal per call. Opens even
 --- before any tool has run (an empty tail that fills as tools execute).
 function M.live(buf)
@@ -1225,19 +1225,19 @@ local function report_error(buf, err)
   errors[buf] = err
   -- The marker is an HTML comment: neutralize any `-->` in the error
   -- text so it can't close the comment early for markdown renderers.
-  local block = { "<!-- pitel:error" }
+  local block = { "<!-- yap:error" }
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   append_block(buf, block)
-  vim.notify("pitel: " .. err, vim.log.levels.ERROR)
+  vim.notify("yap: " .. err, vim.log.levels.ERROR)
 end
 
---- Close dangling regions left by an interrupted stream. :PitelStop
+--- Close dangling regions left by an interrupted stream. :YapStop
 --- kills the binary, which os.Exit()s without emitting the closers for
 --- whatever it was mid-way through: a thinking comment (close with
 --- `-->`), a multi-line tool header (an unterminated comment: `-->`,
 --- then the region closer), or a tool region whose header landed but
---- whose result didn't (`<!-- /pitel:tool -->`). Two flags suffice:
+--- whose result didn't (`<!-- /yap:tool -->`). Two flags suffice:
 --- model text/thinking and tool regions never interleave. Idempotent;
 --- cheap enough to run on every process exit.
 local function repair_stream_tail(buf)
@@ -1247,13 +1247,13 @@ local function repair_stream_tail(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local in_tool, comment_open = false, false
   for _, line in ipairs(lines) do
-    if line:match("^<!%-%- /pitel:tool") then
+    if line:match("^<!%-%- /yap:tool") then
       in_tool = false
-    elseif line:match("^<!%-%- pitel:tool%s*$") then
+    elseif line:match("^<!%-%- yap:tool%s*$") then
       in_tool, comment_open = true, true -- multi-line header comment
-    elseif line:match("^<!%-%- pitel:tool .+ %-%-%>%s*$") then
+    elseif line:match("^<!%-%- yap:tool .+ %-%-%>%s*$") then
       in_tool = true -- single-line header: comment closed, region open
-    elseif line:match("^<!%-%- pitel:%a+%s*$") then
+    elseif line:match("^<!%-%- yap:%a+%s*$") then
       comment_open = true
     elseif line == "-->" then
       comment_open = false
@@ -1264,7 +1264,7 @@ local function repair_stream_tail(buf)
     table.insert(block, "-->")
   end
   if in_tool then
-    table.insert(block, "<!-- /pitel:tool -->")
+    table.insert(block, "<!-- /yap:tool -->")
   end
   if #block > 0 then
     vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, block)
@@ -1275,24 +1275,24 @@ end
 function M.send()
   local buf = vim.api.nvim_get_current_buf()
   if running[buf] then
-    vim.notify("pitel: already streaming (stop with :PitelStop)", vim.log.levels.WARN)
+    vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
     return
   end
 
   local messages = M.parse_buffer(buf)
   if #messages == 0 then
-    vim.notify("pitel: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
+    vim.notify("yap: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
     return
   end
 
   errors[buf] = nil
   awaiting[buf] = nil
-  -- provider/model come from the buffer vars (set by :Pitel /
-  -- :PitelChangeModel), falling back to config; sync them so the winbar
+  -- provider/model come from the buffer vars (set by :Yap /
+  -- :YapChangeModel), falling back to config; sync them so the winbar
   -- and this send agree.
   local provider, model = current_combo(buf)
-  vim.b[buf].pitel_provider = provider
-  vim.b[buf].pitel_model = model
+  vim.b[buf].yap_provider = provider
+  vim.b[buf].yap_model = model
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
@@ -1301,7 +1301,7 @@ function M.send()
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
-  vim.b[buf].pitel_live = true
+  vim.b[buf].yap_live = true
   follow_windows(buf, follow)
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,
@@ -1329,7 +1329,7 @@ function M.send()
       if not data then
         return
       end
-      -- stderr mixes error text with `pitel:event {json}` lines (tool
+      -- stderr mixes error text with `yap:event {json}` lines (tool
       -- progress); route complete lines, keep the rest for errors.
       stderr_partial = stderr_partial .. data
       while true do
@@ -1339,7 +1339,7 @@ function M.send()
         end
         local line = stderr_partial:sub(1, i - 1)
         stderr_partial = stderr_partial:sub(i + 1)
-        local ev = line:match("^pitel:event (.+)$")
+        local ev = line:match("^yap:event (.+)$")
         if ev then
           handle_event(buf, ev)
         else
@@ -1349,8 +1349,8 @@ function M.send()
     end),
   }, vim.schedule_wrap(function(result)
     running[buf] = nil
-    local compact = vim.b[buf].pitel_compact_pending
-    vim.b[buf].pitel_compact_pending = nil
+    local compact = vim.b[buf].yap_compact_pending
+    vim.b[buf].yap_compact_pending = nil
     drain_tail(buf) -- final bytes; a killed tool never sent tool_end
     live[buf] = nil
     spinner_stop_if_idle()
@@ -1373,10 +1373,10 @@ function M.send()
         if l:match("^# @%a+") then
           break
         end
-        local err = l:match("^<!%-%- pitel:error$") and lines[i + 1]
+        local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
         if err then
           errors[buf] = err
-          vim.notify("pitel: " .. err, vim.log.levels.WARN)
+          vim.notify("yap: " .. err, vim.log.levels.WARN)
           break
         end
       end
@@ -1390,7 +1390,7 @@ function M.send()
     -- → idle" notification). Fire it once the buffer is in its final state
     -- so handlers see the appended `# @user` and the saved session.
     vim.api.nvim_exec_autocmds("User", {
-      pattern = "PitelTurnDone",
+      pattern = "YapTurnDone",
       modeline = false,
       data = { buf = buf, turn = last_turn[buf] },
     })
@@ -1426,11 +1426,11 @@ end
 
 -- Keymaps and buffer options shared by new and reopened session buffers.
 local function setup_buffer(buf)
-  -- Mark the buffer as a pitel conversation BEFORE the filetype triggers the
+  -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
   -- A chat buffer is not code: markdown LSPs (semantic tokens, inlay hints)
   -- add per-redraw cost on a large session and buy nothing (R1).
-  vim.b[buf].pitel = true
+  vim.b[buf].yap = true
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
@@ -1443,29 +1443,29 @@ local function setup_buffer(buf)
   vim.bo[buf].bufhidden = "hide"
   -- Sessions are managed, not workspace files: unlisted so they never
   -- clutter :ls or buffer pickers (MiniPick.buffers etc.); reach them
-  -- with :PitelWaiting / :PitelInstances.
+  -- with :YapWaiting / :YapInstances.
   vim.bo[buf].buflisted = false
 
   local map = function(mode, lhs, rhs, desc)
     vim.keymap.set(mode, lhs, rhs, { buffer = buf, silent = true, desc = desc })
   end
-  map("n", "<C-s>", M.send, "pitel: send")
+  map("n", "<C-s>", M.send, "yap: send")
   map("i", "<C-s>", function()
     vim.cmd.stopinsert()
     M.send()
-  end, "pitel: send")
+  end, "yap: send")
   map("n", "<leader>m", function()
     M.change_model()
-  end, "pitel: change model")
+  end, "yap: change model")
   map("n", "<leader>l", function()
     M.live()
-  end, "pitel: live tool output")
+  end, "yap: live tool output")
   map("n", "<leader>t", function()
     M.insert()
-  end, "pitel: insert template or skill")
+  end, "yap: insert template or skill")
   map("n", "<leader>T", function()
     M.insert(nil, { at_cursor = true })
-  end, "pitel: insert template or skill at cursor")
+  end, "yap: insert template or skill at cursor")
   require("harness.fold").setup_buffer(buf)
 
   -- Self-evaluating winbar: a pure function of buffer state, refreshed
@@ -1473,16 +1473,16 @@ local function setup_buffer(buf)
   vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
 end
 
---- Open a new pitel chat buffer.
+--- Open a new yap chat buffer.
 function M.new(opts)
   opts = opts or {}
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
-  vim.b[buf].pitel_provider = opts.provider or M.config.provider
-  vim.b[buf].pitel_model = opts.model or M.config.model
+  vim.b[buf].yap_provider = opts.provider or M.config.provider
+  vim.b[buf].yap_model = opts.model or M.config.model
 
   local lines = { "# @system", "" }
-  vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
+  vim.list_extend(lines, vim.split(vim.b[buf].yap_system or system_prompt(), "\n", { plain = true }))
   if M.config.skills_intro then
     local intro = skills_intro_lines()
     if intro then
@@ -1501,7 +1501,7 @@ function M.new(opts)
   -- The tail is a file from the start, exactly like the session itself:
   -- create the sidecar file and its live-view buffer now, before the
   -- first reply (and before any :file rename).
-  vim.b[buf].pitel_tail_path = compute_tail_path(buf)
+  vim.b[buf].yap_tail_path = compute_tail_path(buf)
   ensure_tail(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
@@ -1510,17 +1510,17 @@ function M.new(opts)
   return buf
 end
 
---- Open a saved session file as a pitel buffer.
---- Turn a session-file buffer into a managed pitel buffer: unlisted,
+--- Open a saved session file as a yap buffer.
+--- Turn a session-file buffer into a managed yap buffer: unlisted,
 --- keymapped, tail sidecar attached, model combo resumed from
---- frontmatter. Shared by :PitelSessions resume and by directly opening
---- a file under ~/.pitel/sessions/.
+--- frontmatter. Shared by :YapSessions resume and by directly opening
+--- a file under ~/.yap/sessions/.
 local function adopt(buf, path)
-  if vim.b[buf].pitel then
+  if vim.b[buf].yap then
     return buf
   end
-  vim.b[buf].pitel_path = path
-  vim.b[buf].pitel_tail_path = compute_tail_path(buf)
+  vim.b[buf].yap_path = path
+  vim.b[buf].yap_tail_path = compute_tail_path(buf)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
   -- buffer the moment it is resumed.
@@ -1528,8 +1528,8 @@ local function adopt(buf, path)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
     if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
-      vim.b[buf].pitel_provider = fm.provider
-      vim.b[buf].pitel_model = fm.model
+      vim.b[buf].yap_provider = fm.provider
+      vim.b[buf].yap_model = fm.model
     end
   end
   -- A reopened session that ended on `# @user` awaits the next reply;
@@ -1540,7 +1540,7 @@ local function adopt(buf, path)
   return buf
 end
 
---- Open a saved session file as a pitel buffer.
+--- Open a saved session file as a yap buffer.
 function M.open(path)
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   return adopt(vim.api.nvim_get_current_buf(), path)
@@ -1548,13 +1548,13 @@ end
 
 --- Change the provider/model combo for the current buffer.
 --- With an argument: "provider/model". Without: pick from setup()'s
---- models list, or — when that isn't configured — from `pitel models`,
+--- models list, or — when that isn't configured — from `yap models`,
 --- which queries every provider in config.json (GET /models).
 function M.change_model(combo)
   local buf = vim.api.nvim_get_current_buf()
   if not combo then
     local function pick(items)
-      vim.ui.select(items, { prompt = "pitel model" }, function(choice)
+      vim.ui.select(items, { prompt = "yap model" }, function(choice)
         if choice then
           M.change_model(choice)
         end
@@ -1576,7 +1576,7 @@ function M.change_model(combo)
         end
         if #combos == 0 then
           local err = (res.stderr or ""):gsub("%s+$", "")
-          vim.notify("pitel: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+          vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
           return
         end
         models_cache = combos
@@ -1587,13 +1587,13 @@ function M.change_model(combo)
   end
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   if not provider then
-    vim.notify("pitel: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
+    vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
     return
   end
-  vim.b[buf].pitel_provider = provider
-  vim.b[buf].pitel_model = model
+  vim.b[buf].yap_provider = provider
+  vim.b[buf].yap_model = model
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
-  vim.notify("pitel: " .. provider .. "/" .. model)
+  vim.notify("yap: " .. provider .. "/" .. model)
 end
 
 --- Pick a saved session and open it. scope: "cwd" (default) or "all".
@@ -1631,13 +1631,13 @@ local function focus_buf(buf)
   end
 end
 
---- List open pitel buffers awaiting a reply (the herdr "needs you" set)
+--- List open yap buffers awaiting a reply (the herdr "needs you" set)
 --- and focus the picked one. Live sessions only; saved-but-unopened files
---- stay |:PitelSessions|' job.
+--- stay |:YapSessions|' job.
 function M.waiting()
   local items = {}
   for b in pairs(awaiting) do
-    if vim.api.nvim_buf_is_valid(b) and vim.b[b].pitel then
+    if vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
       local name = vim.api.nvim_buf_get_name(b)
       name = name ~= "" and vim.fn.fnamemodify(name, ":t:r") or ("buffer " .. b)
       local provider, model = current_combo(b)
@@ -1649,11 +1649,11 @@ function M.waiting()
     end
   end
   if #items == 0 then
-    vim.notify("pitel: nothing waiting for a reply", vim.log.levels.INFO)
+    vim.notify("yap: nothing waiting for a reply", vim.log.levels.INFO)
     return
   end
   vim.ui.select(items, {
-    prompt = "pitel waiting",
+    prompt = "yap waiting",
     format_item = function(item)
       return item.text
     end,
@@ -1665,30 +1665,30 @@ function M.waiting()
   end)
 end
 
---- All open pitel chat buffers, listed by session file path (tails are
---- never here — reach them in-session with :PitelLive / <leader>l).
---- Unlisted sessions are reached through this and :PitelWaiting.
+--- All open yap chat buffers, listed by session file path (tails are
+--- never here — reach them in-session with :YapLive / <leader>l).
+--- Unlisted sessions are reached through this and :YapWaiting.
 function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].pitel then
+    if vim.b[b].yap then
       -- Follow `:file` renames: the buffer name is the session path once
-      -- renamed, even before the next autosave commits it to pitel_path.
+      -- renamed, even before the next autosave commits it to yap_path.
       local name = vim.api.nvim_buf_get_name(b)
       local path = (name ~= "" and not name:match("^%a+://")) and name
-        or (vim.b[b].pitel_path or name)
+        or (vim.b[b].yap_path or name)
       items[#items + 1] = { buf = b, text = path ~= "" and path or ("buffer " .. b) }
     end
   end
   if #items == 0 then
-    vim.notify("pitel: no open sessions", vim.log.levels.INFO)
+    vim.notify("yap: no open sessions", vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
     return a.text < b.text
   end)
   vim.ui.select(items, {
-    prompt = "pitel sessions",
+    prompt = "yap sessions",
     format_item = function(item)
       return item.text
     end,
@@ -1708,15 +1708,15 @@ function M.setup(opts)
   -- setup_buffer.
   vim.keymap.set("n", "<leader>w", function()
     M.waiting()
-  end, { silent = true, desc = "pitel: agents waiting for reply" })
+  end, { silent = true, desc = "yap: agents waiting for reply" })
   vim.keymap.set("n", "<leader>r", function()
     M.instances()
-  end, { silent = true, desc = "pitel: sessions" })
+  end, { silent = true, desc = "yap: sessions" })
 
-  -- Opening a file under ~/.pitel/sessions/ directly (e.g. `nvim foo.md`
-  -- at startup) adopts it as a managed pitel session — unlisted, keymaps,
-  -- tail sidecar attached — exactly like :PitelSessions resume.
-  local adopt_group = vim.api.nvim_create_augroup("PitelAdopt", { clear = true })
+  -- Opening a file under ~/.yap/sessions/ directly (e.g. `nvim foo.md`
+  -- at startup) adopts it as a managed yap session — unlisted, keymaps,
+  -- tail sidecar attached — exactly like :YapSessions resume.
+  local adopt_group = vim.api.nvim_create_augroup("YapAdopt", { clear = true })
   vim.api.nvim_create_autocmd("BufReadPost", {
     group = adopt_group,
     callback = function(args)
@@ -1728,30 +1728,30 @@ function M.setup(opts)
     end,
   })
 
-  -- pitel buffers carry no language server: the buffer is the conversation
+  -- yap buffers carry no language server: the buffer is the conversation
   -- (R1), and a markdown LSP streaming semantic-token/inlay-hint updates is
   -- pure per-redraw cost. The guard stops any client that attaches to a
   -- marked buffer; setup_buffer marks the buffer and stops clients that
   -- attached during :edit before the mark existed.
-  local group = vim.api.nvim_create_augroup("PitelLsp", { clear = true })
+  local group = vim.api.nvim_create_augroup("YapLsp", { clear = true })
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(args)
-      if vim.b[args.buf].pitel and args.data and args.data.client_id then
+      if vim.b[args.buf].yap and args.data and args.data.client_id then
         pcall(vim.lsp.stop_client, args.data.client_id)
       end
     end,
   })
 
-  -- Turn completion is a first-class event: User PitelTurnDone fires per
+  -- Turn completion is a first-class event: User YapTurnDone fires per
   -- buffer when a send finishes. The default handler is the herdr-style
   -- "it's waiting for you" toast, but any user autocmd can hook the
   -- same event — noice/nf-notify rendering, chaining a next send, etc.
   -- Announce only buffers the user isn't looking at.
-  local notify_group = vim.api.nvim_create_augroup("PitelTurn", { clear = true })
+  local notify_group = vim.api.nvim_create_augroup("YapTurn", { clear = true })
   vim.api.nvim_create_autocmd("User", {
     group = notify_group,
-    pattern = "PitelTurnDone",
+    pattern = "YapTurnDone",
     callback = function(args)
       local data = args.data or {}
       if not M.config.notify_done then
@@ -1766,7 +1766,7 @@ function M.setup(opts)
         return
       end
       local t = data.turn or {}
-      local msg = t.model and ("pitel: %s done"):format(t.model) or "pitel: turn done"
+      local msg = t.model and ("yap: %s done"):format(t.model) or "yap: turn done"
       if t.prompt or t.completion then
         msg = msg .. (" · %s in · %s out"):format(fmt_tokens(t.prompt or 0), fmt_tokens(t.completion or 0))
       end
@@ -1776,7 +1776,7 @@ function M.setup(opts)
       if t.ms then
         msg = msg .. (" · %.1fs"):format(t.ms / 1000)
       end
-      vim.notify(msg, vim.log.levels.INFO, { title = "pitel" })
+      vim.notify(msg, vim.log.levels.INFO, { title = "yap" })
     end,
   })
 end

@@ -1,5 +1,5 @@
 {
-  description = "pitel — the Neovim buffer is the conversation; a Go backend streams LLM replies into it";
+  description = "yap — the Neovim buffer is the conversation; a Go backend streams LLM replies into it";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -21,7 +21,7 @@
         {
           # Go backend: provider client + agent loop, invoked by the harness.
           agent = pkgs.buildGoModule {
-            pname = "pitel-agent";
+            pname = "yap-agent";
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
             subPackages = [ "agent" ];
@@ -32,7 +32,7 @@
 
           # Neovim plugin (the harness). Provides require("harness").
           harness = pkgs.vimUtils.buildVimPlugin {
-            pname = "pitel";
+            pname = "yap";
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
           };
@@ -49,7 +49,7 @@
           # markdown + markdown_inline grammars for Neovim's built-in
           # treesitter (auto-discovered from parser/*.so on the runtimepath).
           markdownParsers = pkgs.symlinkJoin {
-            name = "pitel-markdown-parsers";
+            name = "yap-markdown-parsers";
             paths = [
               pkgs.vimPlugins.nvim-treesitter.grammarPlugins.markdown
               pkgs.vimPlugins.nvim-treesitter.grammarPlugins.markdown_inline
@@ -58,7 +58,7 @@
 
           # Same grammars plus nvim-treesitter's highlight queries.
           markdownTreesitter = pkgs.symlinkJoin {
-            name = "pitel-markdown-treesitter";
+            name = "yap-markdown-treesitter";
             paths = [
               pkgs.vimPlugins.nvim-treesitter
               markdownParsers
@@ -71,28 +71,28 @@
           # Clean dev Neovim, this plugin only. Extra launchers below add
           # treesitter highlighting or the touchup renderer on top of the
           # same clean base.
-          pitel-nvim = pkgs.writeShellApplication {
-            name = "pitel-nvim";
+          yap-nvim = pkgs.writeShellApplication {
+            name = "yap-nvim";
             runtimeInputs = [ pkgs.neovim ];
             text = ''
-              root="''${PITEL_ROOT:-$(pwd)}"
+              root="''${YAP_ROOT:-$(pwd)}"
               # Ignore an ambient Neovim install (e.g. a home-manager nightly):
               # otherwise its VIMRUNTIME shadows the Nix neovim's own runtime.
               unset VIM VIMRUNTIME
-              exec nvim -u NONE -i NONE --cmd "set rtp^=$root" -c "runtime! plugin/pitel.lua" -c "lua require('harness').setup()" "$@"
+              exec nvim -u NONE -i NONE --cmd "set rtp^=$root" -c "runtime! plugin/yap.lua" -c "lua require('harness').setup()" "$@"
             '';
           };
 
           # Clean + markdown treesitter syntax highlighting.
-          pitel-nvim-treesitter = pkgs.writeShellApplication {
-            name = "pitel-nvim-treesitter";
+          yap-nvim-treesitter = pkgs.writeShellApplication {
+            name = "yap-nvim-treesitter";
             runtimeInputs = [ pkgs.neovim ];
             text = ''
-              root="''${PITEL_ROOT:-$(pwd)}"
+              root="''${YAP_ROOT:-$(pwd)}"
               unset VIM VIMRUNTIME
               exec nvim -u NONE -i NONE \
                 --cmd "set rtp^=$root,${markdownTreesitter}" \
-                -c "runtime! plugin/pitel.lua" \
+                -c "runtime! plugin/yap.lua" \
                 -c "lua require('harness').setup()" \
                 -c "lua vim.api.nvim_create_autocmd('FileType', { pattern = 'markdown', callback = function(e) vim.treesitter.start(e.buf, 'markdown') end })" \
                 "$@"
@@ -100,19 +100,19 @@
           };
 
           # Clean + touchup renderer (needs the markdown grammars).
-          pitel-nvim-touchup = pkgs.writeShellApplication {
-            name = "pitel-nvim-touchup";
+          yap-nvim-touchup = pkgs.writeShellApplication {
+            name = "yap-nvim-touchup";
             runtimeInputs = [ pkgs.neovim ];
             text = ''
-              root="''${PITEL_ROOT:-$(pwd)}"
+              root="''${YAP_ROOT:-$(pwd)}"
               tu="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
               if [ ! -d "$tu" ]; then
-                echo "pitel-nvim-touchup: TOUCHUP_ROOT not found: $tu" >&2
+                echo "yap-nvim-touchup: TOUCHUP_ROOT not found: $tu" >&2
               fi
               unset VIM VIMRUNTIME
               exec nvim -u NONE -i NONE \
                 --cmd "set rtp^=$root,$tu,${markdownParsers}" \
-                -c "runtime! plugin/pitel.lua" \
+                -c "runtime! plugin/yap.lua" \
                 -c "lua require('harness').setup()" \
                 -c "lua require('touchup').setup()" \
                 "$@"
@@ -120,16 +120,16 @@
           };
 
           # Clean + render-markdown.nvim (bundles its own queries; needs the
-          # markdown grammars). Sources its plugin file like pitel does.
-          pitel-nvim-render-markdown = pkgs.writeShellApplication {
-            name = "pitel-nvim-render-markdown";
+          # markdown grammars). Sources its plugin file like yap does.
+          yap-nvim-render-markdown = pkgs.writeShellApplication {
+            name = "yap-nvim-render-markdown";
             runtimeInputs = [ pkgs.neovim ];
             text = ''
-              root="''${PITEL_ROOT:-$(pwd)}"
+              root="''${YAP_ROOT:-$(pwd)}"
               unset VIM VIMRUNTIME
               exec nvim -u NONE -i NONE \
                 --cmd "set rtp^=$root,${renderMarkdown},${markdownParsers}" \
-                -c "runtime! plugin/pitel.lua" \
+                -c "runtime! plugin/yap.lua" \
                 -c "lua require('harness').setup()" \
                 -c "runtime! plugin/render-markdown.lua" \
                 "$@"
@@ -141,28 +141,28 @@
             packages = [
               pkgs.go
               pkgs.neovim
-              pitel-nvim
-              pitel-nvim-treesitter
-              pitel-nvim-touchup
-              pitel-nvim-render-markdown
+              yap-nvim
+              yap-nvim-treesitter
+              yap-nvim-touchup
+              yap-nvim-render-markdown
             ];
 
             shellHook = ''
-              export PITEL_ROOT="$(pwd)"
+              export YAP_ROOT="$(pwd)"
               export TOUCHUP_ROOT="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
-              if [ -d "$PITEL_ROOT/agent" ]; then
-                export PITEL_BIN="$PITEL_ROOT/.dev/bin/pitel"
-                mkdir -p "$PITEL_ROOT/.dev/bin"
-                if ( cd "$PITEL_ROOT" && ${pkgs.go}/bin/go build -o "$PITEL_BIN" ./agent ); then
-                  echo "pitel: built agent -> $PITEL_BIN"
+              if [ -d "$YAP_ROOT/agent" ]; then
+                export YAP_BIN="$YAP_ROOT/.dev/bin/yap"
+                mkdir -p "$YAP_ROOT/.dev/bin"
+                if ( cd "$YAP_ROOT" && ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
+                  echo "yap: built agent -> $YAP_BIN"
                 else
-                  echo "pitel: agent build failed (see above); Neovim still usable, :PitelSend will not work" >&2
+                  echo "yap: agent build failed (see above); Neovim still usable, :YapSend will not work" >&2
                 fi
-                export PATH="$PITEL_ROOT/.dev/bin:$PATH"
+                export PATH="$YAP_ROOT/.dev/bin:$PATH"
               else
-                echo "pitel: run 'nix develop' from the repo root (agent/ not found)" >&2
+                echo "yap: run 'nix develop' from the repo root (agent/ not found)" >&2
               fi
-              echo "pitel: pitel-nvim (clean) | pitel-nvim-treesitter | pitel-nvim-touchup | pitel-nvim-render-markdown"
+              echo "yap: yap-nvim (clean) | yap-nvim-treesitter | yap-nvim-touchup | yap-nvim-render-markdown"
             '';
           };
         }
@@ -176,20 +176,20 @@
           ...
         }:
         let
-          cfg = config.programs.pitel;
+          cfg = config.programs.yap;
           json = pkgs.formats.json { };
           system = pkgs.stdenv.hostPlatform.system;
           defaultAgent = self.packages.${system}.agent;
         in
         {
-          options.programs.pitel = with lib; {
-            enable = mkEnableOption "pitel — buffer-as-conversation LLM chat for Neovim";
+          options.programs.yap = with lib; {
+            enable = mkEnableOption "yap — buffer-as-conversation LLM chat for Neovim";
 
             agentPackage = mkOption {
               type = types.package;
               default = defaultAgent;
-              defaultText = literalExpression "inputs.pitel.packages.\${system}.agent";
-              description = "The pitel backend binary package.";
+              defaultText = literalExpression "inputs.yap.packages.\${system}.agent";
+              description = "The yap backend binary package.";
             };
 
             settings = mkOption {
@@ -206,7 +206,7 @@
                 };
               };
               description = ''
-                Agent configuration, written to {file}`~/.config/pitel.json`.
+                Agent configuration, written to {file}`~/.config/yap.json`.
                 Keys are `providers` (name → base_url + api_key_env) and
                 `pricing` (model → USD per 1M tokens). API keys themselves are
                 referenced by environment variable name in `api_key_env`.
@@ -218,7 +218,7 @@
               default = null;
               description = ''
                 System prompt for new buffers, written to
-                {file}`~/.config/pitel/AGENTS.md`. When null the file is left
+                {file}`~/.config/yap/AGENTS.md`. When null the file is left
                 alone and the harness falls back to `system`.
               '';
             };
@@ -242,10 +242,10 @@
           };
 
           config = lib.mkIf cfg.enable {
-            home.file.".config/pitel.json" = lib.mkIf (cfg.settings != { }) {
-              source = json.generate "pitel.json" cfg.settings;
+            home.file.".config/yap.json" = lib.mkIf (cfg.settings != { }) {
+              source = json.generate "yap.json" cfg.settings;
             };
-            home.file.".config/pitel/AGENTS.md" = lib.mkIf (cfg.agentsMd != null) {
+            home.file.".config/yap/AGENTS.md" = lib.mkIf (cfg.agentsMd != null) {
               text = cfg.agentsMd;
             };
           };

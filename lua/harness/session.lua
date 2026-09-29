@@ -1,8 +1,8 @@
--- pitel session persistence & picker.
+-- yap session persistence & picker.
 --
--- A pitel session is just the buffer's markdown written to a file — the
+-- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
--- Sessions live under ~/.pitel/sessions/<cwd-slug>/ and are
+-- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. The picker lists them with the
 -- first user message as a snippet, fruit.nvim-style.
 
@@ -11,10 +11,10 @@ local M = {}
 local frontmatter = require("harness.frontmatter")
 
 local function sessions_root()
-  return vim.fn.expand("~/.pitel/sessions")
+  return vim.fn.expand("~/.yap/sessions")
 end
 
---- Root of all session files (~/.pitel/sessions).
+--- Root of all session files (~/.yap/sessions).
 function M.sessions_root()
   return sessions_root()
 end
@@ -42,19 +42,19 @@ function M.save(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local path = vim.b[buf].pitel_path
+  local path = vim.b[buf].yap_path
   local bufname = vim.api.nvim_buf_get_name(buf)
   -- Follow buffer renames (:file, :saveas): renaming the file IS session
   -- naming, and :saveas to a new file IS forking.
   if path and bufname ~= "" and bufname ~= path and not bufname:match("^%a+://") then
     path = bufname
-    vim.b[buf].pitel_path = path
+    vim.b[buf].yap_path = path
   end
   if not path then
     local dir = session_dir(vim.fn.getcwd())
     vim.fn.mkdir(dir, "p")
     path = string.format("%s/%s-%04x.md", dir, os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
-    vim.b[buf].pitel_path = path
+    vim.b[buf].yap_path = path
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
@@ -142,7 +142,7 @@ end
 local function preview_item(item)
   local lines = vim.fn.readfile(item.path)
   local n = math.min(80, #lines)
-  local preview = { "# pitel session" .. (item.model and (" · " .. item.model) or "") }
+  local preview = { "# yap session" .. (item.model and (" · " .. item.model) or "") }
   if item.models then
     table.insert(preview, "used: " .. table.concat(item.models, " · "))
   end
@@ -165,12 +165,12 @@ function M.pick(opts, on_choice)
   opts = opts or {}
   local items = M.list(opts.scope == "all" and "all" or "cwd")
   if #items == 0 then
-    vim.notify("pitel: no saved sessions", vim.log.levels.INFO)
+    vim.notify("yap: no saved sessions", vim.log.levels.INFO)
     return
   end
   vim.ui.select(items, {
-    prompt = "Pick pitel session (" .. (opts.scope == "all" and "all projects" or "cwd project") .. ")",
-    kind = "pitel_session",
+    prompt = "Pick yap session (" .. (opts.scope == "all" and "all projects" or "cwd project") .. ")",
+    kind = "yap_session",
     format_item = function(item)
       return item.text
     end,

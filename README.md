@@ -1,10 +1,10 @@
-# pitel
+# yap
 
 *Inspired by pi and gptel*: the conversation is an editable Neovim markdown
 buffer; the Go binary is just a provider client. No TUI, no hidden state.
 
 Chat LLM APIs are stateless — every request sends the full message array, so
-whoever holds the array holds the truth. In pitel that's a text buffer:
+whoever holds the array holds the truth. In yap that's a text buffer:
 `# @system` / `# @user` / `# @assistant` headings delimit messages, deleting
 a block is branching, editing a reply is rewriting history, and yanking is
 native Neovim yanking.
@@ -12,17 +12,17 @@ native Neovim yanking.
 ## Build & install
 
 ```sh
-CGO_ENABLED=0 go build -o ~/go/bin/pitel ./agent   # pure Go, no cgo
+CGO_ENABLED=0 go build -o ~/go/bin/yap ./agent   # pure Go, no cgo
 ```
 
 Add this repo as a Neovim plugin (any plugin manager, or
-`vim.opt.rtp:append("/opt/code/pitel")`), then:
+`vim.opt.rtp:append("/opt/code/yap")`), then:
 
 ```lua
 require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
 
-Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
+Providers live in `~/.config/yap.json` (any OpenAI-compatible endpoint):
 
 ```json
 { "providers": { "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" } } }
@@ -36,52 +36,52 @@ Run from the repo root:
 nix develop
 ```
 
-This builds the backend into `.dev/bin/pitel` and puts it on PATH,
+This builds the backend into `.dev/bin/yap` and puts it on PATH,
 plus `go` and `neovim`. Three launchers start a clean dev Neovim
 (`-u NONE -i NONE`) with only this plugin loaded from the working tree:
 
 ```sh
-pitel-nvim                 # clean: pitel only
-pitel-nvim-treesitter      # + markdown treesitter syntax highlighting
-pitel-nvim-touchup         # + the touchup.nvim renderer
-pitel-nvim-render-markdown # + the render-markdown.nvim renderer
+yap-nvim                 # clean: yap only
+yap-nvim-treesitter      # + markdown treesitter syntax highlighting
+yap-nvim-touchup         # + the touchup.nvim renderer
+yap-nvim-render-markdown # + the render-markdown.nvim renderer
 ```
 
-`pitel-nvim-touchup` loads touchup from `$TOUCHUP_ROOT` (default
+`yap-nvim-touchup` loads touchup from `$TOUCHUP_ROOT` (default
 `/opt/code/touchup.nvim`; override to point at another checkout).
-Re-enter the shell (or `go build -o .dev/bin/pitel ./agent`) after
+Re-enter the shell (or `go build -o .dev/bin/yap ./agent`) after
 editing the agent.
 
 ## Quick start
 
-- `:Pitel` — new chat buffer
+- `:Yap` — new chat buffer
 - `<C-s>` — send the whole buffer
-- `<leader>m` / `:PitelChangeModel` — switch models (queries the providers
+- `<leader>m` / `:YapChangeModel` — switch models (queries the providers
   in config.json for their model lists)
-- `:PitelStop` — kill the in-flight request
-- `:PitelLive` / `<leader>l` — watch tool output live: one persistent
-  `pitel://<session>-tail` buffer with a `$ command` header per call,
+- `:YapStop` — kill the in-flight request
+- `:YapLive` / `<leader>l` — watch tool output live: one persistent
+  `yap://<session>-tail` buffer with a `$ command` header per call,
   written to a `<session>-tail` sidecar file in the audit dir from
   the start. The audit log at
-  `~/.pitel/audit/<cwd-slug>/<session>.log` keeps the full record
+  `~/.yap/audit/<cwd-slug>/<session>.log` keeps the full record
   (full tool arguments and results)
-- `:PitelClear [keep]` — slim the context: replace all but the last
+- `:YapClear [keep]` — slim the context: replace all but the last
   `keep` (default 2) tool result bodies with a pointer to the audit
   log. write/edit tool headers are always slimmed (`[N lines]`); the
   diff below them shows the change
-- `:PitelCompact` — summarize the conversation into a compact context:
+- `:YapCompact` — summarize the conversation into a compact context:
   insert the compact prompt, send, then offer to delete the superseded
   history (the summary stays a visible, editable turn)
-- `:PitelInsert [name]` / `<leader>t` — insert a template (appended as
+- `:YapInsert [name]` / `<leader>t` — insert a template (appended as
   `# @user`) or a skill (merged into `# @system`) from
-  `~/.config/pitel/templates/` and `~/.config/pitel/skills/`;
+  `~/.config/yap/templates/` and `~/.config/yap/skills/`;
   `<leader>T` inserts verbatim at the cursor. Compaction = insert a
   `compact.md` summarize-prompt template, send, then delete the old
-  history — or just run `:PitelCompact`.
-- `:PitelSessions [all]` — resume a saved session
-- `:PitelWaiting` / `<leader>w` — list agents waiting for a reply and
+  history — or just run `:YapCompact`.
+- `:YapSessions [all]` — resume a saved session
+- `:YapWaiting` / `<leader>w` — list agents waiting for a reply and
   jump to the picked one
-- `:PitelInstances` / `<leader>r` — list open sessions by file path and
+- `:YapInstances` / `<leader>r` — list open sessions by file path and
   jump to the picked one (sessions are unlisted: they never appear in
   `:ls` or buffer pickers)
 
@@ -89,24 +89,24 @@ Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
 the winbar, whose trailing glyph marks busy / error / `◉ waiting` (the agent
 awaits your next prompt) / idle, and whose `◉N` rollup shows how many
 OTHER sessions await your reply. A turn finishing in a background chat
-fires `vim.notify` — and a `User PitelTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open;
+fires `vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open;
 default when a session opens), `<leader>2` folds tool calls and
 thinking, `<leader>3` unfolds everything.
 
 ## Rendering
 
-pitel buffers are plain markdown: thinking/tool/error blocks are HTML
+yap buffers are plain markdown: thinking/tool/error blocks are HTML
 comments, results are raw markdown, and the content is kept
 CommonMark-sane (no stray `-->` inside comments, fences always
-balanced). Any markdown renderer works — pitel itself only uses folds
+balanced). Any markdown renderer works — yap itself only uses folds
 and never conceal, so it stays out of your renderer's way.
 
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
-complements pitel: a treesitter-based markdown rendering plugin that is
-pitel-aware — it colors the `pitel:thinking` / `tool` / `error` /
+complements yap: a treesitter-based markdown rendering plugin that is
+yap-aware — it colors the `yap:thinking` / `tool` / `error` /
 `usage` comment labels and paints a whole tool region (header, result,
 diff) as one block. But any renderer you already use — render-markdown,
-markview, or just treesitter highlighting — works the same on a pitel
+markview, or just treesitter highlighting — works the same on a yap
 buffer as on any other markdown file.
 
 ## Testing
@@ -121,8 +121,8 @@ Full reference — buffer format, markers, sessions, folding, configuration,
 and the design rules this project is built on — is in the vimdoc:
 
 ```vim
-:help pitel
+:help yap
 ```
 
-Contributors (human or AI): read `:help pitel-rules` before changing
+Contributors (human or AI): read `:help yap-rules` before changing
 behavior, and update it when you do.

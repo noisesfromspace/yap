@@ -9,7 +9,7 @@ import (
 
 // unifiedDiff returns unified-diff output for old vs new content of path,
 // or "" when the inputs are identical or too large. Display-only
-// (pitel:ui), never sent to the model — any imperfection degrades
+// (yap:ui), never sent to the model — any imperfection degrades
 // gracefully. Self-contained (sergi/go-diff, line mode).
 func unifiedDiff(path, oldContent, newContent string) string {
 	const maxDiffBytes = 512 * 1024

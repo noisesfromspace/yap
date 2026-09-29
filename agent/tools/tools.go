@@ -1,4 +1,4 @@
-// Package tools holds pitel's built-in tools: one file per tool, each
+// Package tools holds yap's built-in tools: one file per tool, each
 // self-registering in init(). Adding or changing a tool = editing a file
 // here and recompiling (CGO_ENABLED=0).
 //
@@ -23,21 +23,21 @@ import (
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// eventOut receives `pitel:event {json}` lines for the Lua side (a var
+// eventOut receives `yap:event {json}` lines for the Lua side (a var
 // so tests can capture it). Kept separate from stdout, which carries
 // buffer content. Events are the audit trail: tool calls (full
 // arguments), results, and turn summaries — the Lua side appends them
 // to the session's audit log.
 var eventOut io.Writer = os.Stderr
 
-// EmitEvent writes one pitel:event line (JSON) to eventOut.
+// EmitEvent writes one yap:event line (JSON) to eventOut.
 func EmitEvent(v any) {
 	b, _ := json.Marshal(v)
-	fmt.Fprintf(eventOut, "pitel:event %s\n", b)
+	fmt.Fprintf(eventOut, "yap:event %s\n", b)
 }
 
 // Tool is a single callable tool. result is sent back to the model; ui is
-// an optional display-only payload for the buffer (pitel:ui, R12).
+// an optional display-only payload for the buffer (yap:ui, R12).
 type Tool struct {
 	Name        string
 	Description string
@@ -131,7 +131,7 @@ func track(pgid int)   { runningMu.Lock(); running[pgid] = true; runningMu.Unloc
 func untrack(pgid int) { runningMu.Lock(); delete(running, pgid); runningMu.Unlock() }
 
 // KillAll SIGKILLs every tracked tool process group; used on interrupt so
-// :PitelStop takes in-flight commands down with the binary.
+// :YapStop takes in-flight commands down with the binary.
 func KillAll() {
 	runningMu.Lock()
 	defer runningMu.Unlock()

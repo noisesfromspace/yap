@@ -1,17 +1,17 @@
-// pitel — LLM backend for the pitel Neovim plugin.
+// yap — LLM backend for the yap Neovim plugin.
 //
 // The Neovim buffer is the conversation; this binary is the provider
 // client and agent loop. It reads a JSON request on stdin and streams the
-// assistant reply to stdout as plain text, interleaved with pitel:tool
+// assistant reply to stdout as plain text, interleaved with yap:tool
 // blocks when the model calls tools. Errors go to stderr with exit 1.
 //
 // Usage:
 //
-//	pitel send --provider NAME --model MODEL < request.json
+//	yap send --provider NAME --model MODEL < request.json
 //
 // request.json: {"messages":[{"role":"system|user|assistant|tool", ...}]}
 //
-// Providers and pricing live in ~/.config/pitel.json. Tools are Go files
+// Providers and pricing live in ~/.config/yap.json. Tools are Go files
 // in the agent/tools/ package (one file per tool, self-registering) — edit and
 // recompile to change them. Any OpenAI-compatible /chat/completions
 // endpoint works (OpenAI, DeepSeek, Moonshot/Kimi, OpenRouter, z.ai, ...).
@@ -25,7 +25,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: pitel send --provider NAME --model MODEL < request.json")
+		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json")
 		os.Exit(2)
 	}
 
@@ -40,12 +40,12 @@ func main() {
 			os.Exit(2)
 		}
 		if err := send(*provider, *model, os.Stdin, os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "pitel:", err)
+			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
 	case "models":
 		if err := models(); err != nil {
-			fmt.Fprintln(os.Stderr, "pitel:", err)
+			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
 	default:

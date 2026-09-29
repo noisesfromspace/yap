@@ -84,9 +84,9 @@ func TestBashToolStartEvent(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected tool_start + tool_end events, got: %q", buf.String())
 	}
-	jsonLine, ok := strings.CutPrefix(lines[0], "pitel:event ")
+	jsonLine, ok := strings.CutPrefix(lines[0], "yap:event ")
 	if !ok {
-		t.Fatalf("no pitel:event line: %q", lines[0])
+		t.Fatalf("no yap:event line: %q", lines[0])
 	}
 	var ev struct {
 		Type    string `json:"type"`
@@ -97,7 +97,7 @@ func TestBashToolStartEvent(t *testing.T) {
 	if err := json.Unmarshal([]byte(jsonLine), &ev); err != nil {
 		t.Fatalf("event not JSON: %v", err)
 	}
-	if ev.Type != "tool_start" || ev.Name != "bash" || !strings.Contains(ev.Log, "pitel-bash-") || ev.Command != "echo hi" {
+	if ev.Type != "tool_start" || ev.Name != "bash" || !strings.Contains(ev.Log, "yap-bash-") || ev.Command != "echo hi" {
 		t.Fatalf("bad event: %+v", ev)
 	}
 	if !strings.Contains(lines[1], `"tool_end"`) {
@@ -114,14 +114,14 @@ func TestBashTempFileHygiene(t *testing.T) {
 	if err != nil || !strings.Contains(r, "small") {
 		t.Fatalf("run: %q %v", r, err)
 	}
-	left, _ := filepath.Glob(tmp + "/pitel-bash-*")
+	left, _ := filepath.Glob(tmp + "/yap-bash-*")
 	if len(left) != 0 {
 		t.Fatalf("litter after small output: %v", left)
 	}
 
 	// truncated output: exactly one file kept, holding the FULL output
 	run(t, "bash", `{"command":"seq 1 5000"}`)
-	left, _ = filepath.Glob(tmp + "/pitel-bash-*")
+	left, _ = filepath.Glob(tmp + "/yap-bash-*")
 	if len(left) != 1 {
 		t.Fatalf("truncated output should keep exactly 1 file: %v", left)
 	}

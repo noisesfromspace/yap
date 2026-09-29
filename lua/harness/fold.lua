@@ -1,4 +1,4 @@
--- pitel folding — ported from fruit.nvim's view.lua, adapted to pitel's
+-- yap folding — ported from fruit.nvim's view.lua, adapted to yap's
 -- live markdown buffer: instead of re-rendering a JSONL session into a
 -- read-only view, folds sit directly on the `# @role` headings of the
 -- editable buffer. Streaming appends and edits recompute folds naturally.
@@ -19,12 +19,12 @@ local HEAD = "^# @(%a+)%s*$"
 -- View 1 = foldlevel 1 (only user open), view 2 = 2 (messages open,
 -- tools/thinking folded), view 3 = 3 (everything but the system prompt).
 -- Tool regions and thinking/error are folds one level deeper than their
--- enclosing message; single-line markers (`<!-- pitel:usage … -->`) stay
+-- enclosing message; single-line markers (`<!-- yap:usage … -->`) stay
 -- unfolded content.
-local TOOL_OPEN = "^<!%-%- pitel:tool"
-local TOOL_CLOSE = "^<!%-%- /pitel:tool"
--- Multi-line comment opener (nothing but the word after `pitel:`).
-local COMMENT_OPEN = "^<!%-%-.*pitel:%a+%s*$"
+local TOOL_OPEN = "^<!%-%- yap:tool"
+local TOOL_CLOSE = "^<!%-%- /yap:tool"
+-- Multi-line comment opener (nothing but the word after `yap:`).
+local COMMENT_OPEN = "^<!%-%-.*yap:%a+%s*$"
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
 -- folded in all of them until opened manually):
@@ -53,15 +53,15 @@ end
 --
 -- The state machine carries the numeric fold level plus the structural
 -- region. region is nil (pre-heading), "top" (message) or "tool" (inside
--- a pitel:tool region). cret is { region, lvl } — where a multi-line HTML
+-- a yap:tool region). cret is { region, lvl } — where a multi-line HTML
 -- comment returns after its `-->`: a thinking/error comment returns to
--- "top", a legacy `<!-- pitel:ui` subsection returns to "tool". A bare
+-- "top", a legacy `<!-- yap:ui` subsection returns to "tool". A bare
 -- `-->` inside a tool region but OUTSIDE a comment closes the multi-line
--- tool header; only `<!-- /pitel:tool` ends a tool region.
+-- tool header; only `<!-- /yap:tool` ends a tool region.
 --
 -- fence is nil or { char, n } for an open fenced code block. Tool
 -- results are fenced, and their content is arbitrary (a bash `cat` of a
--- pitel session contains `# @user` lines): inside a fence EVERY line is
+-- yap session contains `# @user` lines): inside a fence EVERY line is
 -- literal — no heading, marker or `-->` interpretation — or the fold
 -- structure splits at fake headings inside the result.
 local cache = {} -- buf -> { tick, levels = { lnum -> levelstr } }
@@ -120,7 +120,7 @@ local function classify(line, region, fence, cret, lvl)
     local nlvl = (lvl or 0) + 1
     return ">" .. nlvl, "tool", nil, cret, nlvl -- both header forms start the region fold
   elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-    -- A comment opener inside a tool region (legacy pitel:ui) is content
+    -- A comment opener inside a tool region (legacy yap:ui) is content
     -- of the region fold, not a fold of its own.
     if region == "tool" then
       return cur, "tool", nil, { region = "tool", lvl = lvl }, lvl
@@ -151,10 +151,10 @@ function M.expr(lnum)
     end
     -- A reply that streamed into this buffer stays open in view 1 (level 1)
     -- so the user sees it arrive; older replies stay folded (level 2). The
-    -- send path sets b:pitel_live, so a freshly opened session folds all
+    -- send path sets b:yap_live, so a freshly opened session folds all
     -- agent output until the first send. Nested tool/thinking regions stay
     -- at level 3 and keep folding in views 1/2.
-    if vim.b[buf].pitel_live and last_asst > 0 then
+    if vim.b[buf].yap_live and last_asst > 0 then
       for i = last_asst, #levels do
         local l = levels[i]
         if i == last_asst then
@@ -190,7 +190,7 @@ function M.text(start, finish)
     return string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
   end
 
-  local region = first:match("^<!%-%-.*(pitel:%a+)")
+  local region = first:match("^<!%-%-.*(yap:%a+)")
   if region then
     return string.format("▸ %s (%d lines)", region, finish - start + 1)
   end

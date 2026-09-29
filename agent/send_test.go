@@ -23,7 +23,7 @@ func writeConfig(t *testing.T, providers string) {
 		t.Fatal(err)
 	}
 	cfg := fmt.Sprintf(`{"providers": {%s}, "pricing": {"m1": {"input": 1.0, "output": 1.0}}}`, providers)
-	if err := os.WriteFile(filepath.Join(xdg, "pitel.json"), []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(xdg, "yap.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -39,7 +39,7 @@ func sse(w http.ResponseWriter, chunks ...string) {
 // TestSendToolLoop drives the full agent loop: thinking with an inline
 // `-->` split across chunks (must be escaped for renderers), tool calls
 // at SPARSE delta indices (must not be dropped), a tool result that
-// contains a pitel marker line (must be escaped), and the tool pair
+// contains a yap marker line (must be escaped), and the tool pair
 // wiring back into the second request.
 func TestSendToolLoop(t *testing.T) {
 	var secondRequest map[string]any
@@ -53,7 +53,7 @@ func TestSendToolLoop(t *testing.T) {
 				`{"choices": [{"delta": {"reasoning_content": "let me think\n--"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": ">\nabout `+"`"+`<!-- x -"}}]}`,
 				`{"choices": [{"delta": {"reasoning_content": "->`+"`"+` inline\n"}}]}`,
-				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /pitel:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second; echo '~~~lua'; echo '<!doctype html><style>body{x:y}</style>'\"}"}}]}}]}`,
+				`{"choices": [{"delta": {"tool_calls": [{"index": 2, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo '<!-- /yap:tool -->'\"}"}}, {"index": 4, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"echo second; echo '~~~lua'; echo '<!doctype html><style>body{x:y}</style>'\"}"}}]}}]}`,
 				`{"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}`,
 				`{"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}`,
 			)
@@ -66,8 +66,8 @@ func TestSendToolLoop(t *testing.T) {
 		)
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "PITEL_TEST_KEY"}`)
-	t.Setenv("PITEL_TEST_KEY", "k")
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
 	err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out)
@@ -80,16 +80,16 @@ func TestSendToolLoop(t *testing.T) {
 	if !strings.Contains(s, "let me think\n-- >\nabout `<!-- x -- >` inline\n") {
 		t.Fatalf("thinking escaping wrong:\n%s", s)
 	}
-	think := strings.SplitN(s, "<!-- pitel:thinking\n", 2)[1]
+	think := strings.SplitN(s, "<!-- yap:thinking\n", 2)[1]
 	closer := strings.Index(think, "\n-->\n")
 	if closer < 0 || strings.Contains(think[:closer], "-->") {
 		t.Fatalf("raw --> inside thinking region:\n%s", s)
 	}
 
 	// both sparse-index calls executed, two well-formed regions (count
-	// line-anchored: the escaped \<!-- /pitel:tool --> result line also
+	// line-anchored: the escaped \<!-- /yap:tool --> result line also
 	// contains the closer as a substring)
-	if strings.Count(s, "\n<!-- pitel:tool") != 2 || strings.Count(s, "\n<!-- /pitel:tool -->\n") != 2 {
+	if strings.Count(s, "\n<!-- yap:tool") != 2 || strings.Count(s, "\n<!-- /yap:tool -->\n") != 2 {
 		t.Fatalf("tool regions wrong (sparse indices dropped?):\n%s", s)
 	}
 	// R7: exactly one blank line between blocks — never two
@@ -97,7 +97,7 @@ func TestSendToolLoop(t *testing.T) {
 		t.Fatalf("double blank line between blocks:\n%s", s)
 	}
 	// marker line inside the result escaped with a visible backslash
-	if !strings.Contains(s, "\\<!-- /pitel:tool -->") {
+	if !strings.Contains(s, "\\<!-- /yap:tool -->") {
 		t.Fatalf("result marker line not escaped:\n%s", s)
 	}
 	if !strings.Contains(s, "second") || !strings.Contains(s, "done") {
@@ -109,7 +109,7 @@ func TestSendToolLoop(t *testing.T) {
 	if !strings.Contains(s, "\n```\nsecond\n~~~lua") {
 		t.Fatalf("bash result not fenced:\n%s", s)
 	}
-	if !strings.Contains(s, "\n```\n<!-- /pitel:tool -->") {
+	if !strings.Contains(s, "\n```\n<!-- /yap:tool -->") {
 		t.Fatalf("fence not balanced:\n%s", s)
 	}
 	// <style> neutralized with a backslash (raw-HTML results poison
@@ -177,9 +177,9 @@ func TestModels(t *testing.T) {
 	}))
 	defer srv.Close()
 	writeConfig(t,
-		`"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "PITEL_TEST_KEY"},
-		 "alpha": {"base_url": "`+srv.URL+`/v1", "api_key_env": "PITEL_TEST_KEY"}`)
-	t.Setenv("PITEL_TEST_KEY", "k")
+		`"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "YAP_TEST_KEY"},
+		 "alpha": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
 
 	// models() prints to stdout; capture it
 	old := os.Stdout

@@ -1,4 +1,4 @@
-module boers.email/pitel
+module boers.email/yap
 
 go 1.26
 

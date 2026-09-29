@@ -1,0 +1,874 @@
+*yap.txt*  LLM chat in an editable markdown buffer (inspired by pi/gptel)
+
+CONTENTS                                                     *yap-contents*
+
+  1. Introduction ......... |yap-introduction|
+  2. Commands ............. |yap-commands|
+  3. Keymaps .............. |yap-keymaps|
+  4. Configuration ........ |yap-configuration|
+  5. Buffer format ........ |yap-buffer|
+  6. Markers .............. |yap-markers|
+  7. Sessions ............. |yap-sessions|
+  8. Folding & navigation . |yap-folding|
+  9. Winbar ............... |yap-winbar|
+ 10. Lua <-> Go protocol .. |yap-protocol|
+ 11. Business rules ....... |yap-rules|
+
+==============================================================================
+1. INTRODUCTION                                          *yap-introduction*
+
+yap is an LLM chat plugin where the conversation lives in a plain editable
+markdown buffer. A small Go binary (`yap`) is only a provider client: it
+reads the message array on stdin and streams the reply to stdout. There is
+no TUI, and no hidden conversation state anywhere.
+
+The idea is stolen from gptel (Emacs): chat LLM APIs are stateless — every
+request sends the full message array, so whoever holds the array holds the
+truth, and that can be a text buffer. Consequences:
+
+- Deleting a block removes it from the conversation: that is branching.
+- Editing an assistant reply changes what the model "said".
+- Writing your own `# @assistant` block steers the model (prefill).
+- Yanking, undo, folds and rendering are just Neovim. `:undotree` is a
+  free branch navigator.
+
+==============================================================================
+2. COMMANDS                                                  *yap-commands*
+
+                                                                    *:Yap*
+:Yap                  Open a new chat buffer.
+
+                                                                *:YapSend*
+:YapSend              Send the whole buffer to the provider and stream the
+                        reply into the buffer.
+
+                                                                *:YapStop*
+:YapStop              Kill the in-flight request for the current buffer.
+
+                                                                *:YapLive*
+:YapLive              Open the session's tail buffer: one persistent
+                        yap://<session>-tail buffer that accumulates
+                        every tool call's output (a `$ command` header
+                        per call, drained from the tool's temp log while
+                        it runs, see |yap-protocol|), one journal line
+                        per non-bash tool call and per turn. Opens it in
+                        a split scrolled to the bottom, or focuses the
+                        existing window. Never opens by itself, but can
+                        be opened at any time — even before a tool has
+                        run. The tail is also written to a sidecar file
+                        in the audit dir (<session>-tail, |yap-audit|)
+                        from the moment the session is created, so the
+                        live view survives restarts; the audit log
+                        (|yap-audit|) remains the full record.
+
+                                                                *:YapClear*
+:YapClear [keep]      Slim the context: replace the result bodies of
+                        all but the last [keep] (default 2) yap:tool
+                        regions with a one-line placeholder. Headers
+                        (the model's tool_calls history) and yap:ui
+                        diffs stay; the full output is in the audit log
+                        (|yap-audit|). Old tool output is the biggest
+                        context consumer in long sessions and is usually
+                        stale or re-fetchable — clearing it is the cheap
+                        alternative to compacting the conversation.
+
+                                                             *:YapCompact*
+:YapCompact           Compaction as one command: insert the compact
+                        prompt (a `compact` template in templates_dir,
+                        or a built-in prompt), send the buffer, and —
+                        once the summary has streamed in — offer to
+                        delete the superseded history. The summary
+                        stays a visible # @assistant turn; deletion is
+                        an ordinary undoable buffer edit (see
+                        |yap-compact|), never a hidden archive.
+
+                                                                *:YapInsert*
+:YapInsert [name]     Insert a template or skill into the buffer. A
+                        template (see |yap-templates|) is wrapped in
+                        `# @user` and appended at the end — unless its
+                        first line is already a `# @role` heading, in
+                        which case it is appended as-is (prefill). A
+                        skill merges its body into the `# @system`
+                        block. With no argument, pick from a combined
+                        list. This is the generic text-injection
+                        mechanism: compaction is inserting a
+                        summarize-prompt template, sending, then
+                        deleting the old history.
+
+                                                             *:YapInsertHere*
+:YapInsertHere [name] Like |:YapInsert| but inserts the file's body
+                        verbatim above the cursor — heading/role logic
+                        aside, the raw primitive.
+
+                                                        *:YapChangeModel*
+:YapChangeModel {provider/model}
+                        Change the provider/model combo for the current
+                        buffer. Without an argument, pick a combo via
+                        vim.ui.select. The picker is filled from
+                        setup({ models = ... }) when configured,
+                        otherwise by querying every provider in
+                        config.json (GET /models) — no duplicate model
+                        configuration needed. The query result is cached
+                        for the session; |:YapReload| refreshes it.
+
+                                                            *:YapSessions*
+:YapSessions [all]    Pick a saved session to resume. Default scope is the
+                        current project (cwd); "all" lists every project.
+                        Each line shows the first user message and the
+                        session's recorded model (its frontmatter); the
+                        "all" list leads with the project as a column
+                        instead of a trailing path slug.
+
+                                                            *:YapWaiting*
+:YapWaiting           List the open yap buffers that have a completed
+                        turn awaiting your reply, and focus the picked one
+                        (the herdr-style "needs you" set; see |yap-winbar|).
+                        Covers live buffers only — saved-but-unopened
+                        sessions are |:YapSessions|' job.
+
+                                                          *:YapInstances*
+:YapInstances         List every open yap session by its file path and
+                        focus the picked one. Yap buffers are unlisted —
+                        they never appear in |:ls| or buffer pickers
+                        (MiniPick.buffers and friends), and a session's
+                        tail buffer is never listed at all (open it in the
+                        session with |:YapLive|). Together with
+                        |:YapWaiting|, this is how you move between
+                        sessions.
+
+                                                               *:YapReload*
+:YapReload            Reload the Lua modules (development).
+
+==============================================================================
+3. KEYMAPS                                                    *yap-keymaps*
+
+Set only in yap buffers, except <leader>r and <leader>w, which are
+global (they list sessions across buffers, so they work from any file).
+
+  <C-s> (n, i)          Send the buffer.
+  <leader>m             Change model (picker, see |:YapChangeModel|).
+  <leader>l             Watch live tool output (see |:YapLive|).
+  <leader>t             Insert a template or skill (see |:YapInsert|).
+  <leader>T             Insert a template or skill at the cursor
+                        (see |:YapInsertHere|).
+  <leader>w             List agents waiting for a reply (see |:YapWaiting|).
+  <leader>r             List all open sessions (see |:YapInstances|).
+  <Tab>                 Toggle fold.
+  ]m  [m                Next / previous message heading.
+  ]u  [u                Next / previous user message.
+  ]a  [a                Next / previous assistant message.
+  <leader>1             Fold all agent messages; user prompts stay open.
+  <leader>2             Fold all tool calls and thinking blocks
+                        (messages stay open).
+  <leader>3             Unfold everything.
+
+  View 1 is the default for opened session buffers; the system prompt
+  stays folded in every view. See |yap-folding|.
+
+==============================================================================
+4. CONFIGURATION                                        *yap-configuration*
+
+Lua setup: >lua
+
+  require("harness").setup({
+    bin = "yap",        -- path to the Go binary
+    provider = "moonshot",
+    model = "kimi-k3",
+    models = {             -- optional: valid combos for the model picker
+      "moonshot/kimi-k3",
+      "deepseek/deepseek-v4-pro",
+      "openai/gpt-5.6-sol",
+    },
+    system = "...",       -- fallback system prompt
+    agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
+    notify_done = true,   -- vim.notify when a background turn finishes
+  })
+<
+`agents_file` is the system prompt for new buffers and is read per buffer,
+so edits apply to the next chat. When missing or empty, `system` is used.
+The path is used verbatim (no `~` expansion); the default is
+`$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
+
+`notify_done` (default true) fires `vim.notify` when a turn completes in a
+buffer that is not the current one; the turn's `turn_end` payload (model,
+tokens, cost, ms) is attached to the `User YapTurnDone` autocmd so other
+plugins can hook the same event (noice/nf-notify rendering, chaining a
+next send). Disable the toast with `notify_done = false`; hook the same
+event with your own `User YapTurnDone` autocmd.
+
+`templates_dir` and `skills_dir` (defaults `~/.config/yap/templates/`
+and `~/.config/yap/skills/`) hold the plain-markdown files inserted by
+|:YapInsert|. `skills_intro` (default true) adds a `## Skills` list of
+name + description to new chats' system block — discoverability only,
+bodies are never auto-loaded. See |yap-templates|.
+
+Templates & skills                                          *yap-templates*
+
+The generic mechanism behind compaction, snippets and skills is one
+command: insert a text file into the buffer. A template or a skill is
+just a markdown file — the filename (minus `.md`) is the name shown in
+the picker, and the body is what gets inserted. There is no separate
+serializer and no frontmatter schema beyond the one optional
+`description:` key described below.
+
+Where they live: >
+
+  ~/.config/yap/templates/     generic text (|:YapInsert|)
+  ~/.config/yap/skills/        system-prompt material (|:YapInsert|)
+<
+Both are configurable (`templates_dir`, `skills_dir`). Create the
+directory, drop a file in, then `<leader>t` (or `:YapInsert <name>`)
+to insert it; `<leader>T` (`:YapInsertHere`) dumps the raw file at
+the cursor.
+
+HOW TO WRITE A TEMPLATE                                      *yap-template*
+
+A template is generic text you want injected as a message. It behaves
+by one rule: >
+
+  - If the first line is a `# @role` heading, the file is appended
+    as-is — so a template can also be a prefill (`# @assistant`).
+  - Otherwise it is wrapped in `# @user` and appended at the end.
+<
+A prompt you reach for often, as a template: >
+
+  # @user
+  Review the current diff for bugs and code quality. Report:
+
+  1. Correctness issues, most severe first.
+  2. Edge cases that are not handled.
+  3. A simpler alternative if one is obvious.
+
+  Be concise; reference file:line for each finding.
+<
+Here the leading `# @user` means the file is used verbatim. The same
+file without that first line would be wrapped in `# @user`
+automatically, so the heading is optional — write whichever reads
+better.
+
+HOW TO WRITE A SKILL                                          *yap-skill*
+
+A skill is instructions you want in the system prompt, not in the
+message history. Its body merges into the `# @system` block, so a
+skill inserted into a fresh chat becomes part of the standing
+instructions for that conversation.
+
+The optional YAML frontmatter contributes one `description:` line to
+the `## Skills` intro list shown in new chats, and is stripped before
+the body is merged: >
+
+  ---
+  description: Review frontend code for accessibility and semantics
+  ---
+
+  ## Frontend review
+
+  When reviewing frontend code, check in this order:
+  - accessibility: landmarks, labels, focus order, contrast
+  - semantics: elements over styled divs; no nested interactive
+  - type safety: no any, no @ts-ignore, no casts that hide errors
+
+  Report findings as a list, most severe first, each with file:line
+  and a one-line fix.
+<
+Everything after the second `---` is the body. The `---` lines and
+`description:` never reach the model. Omitting the frontmatter is
+fine — the skill then simply has no intro line.
+
+WHAT INSERT DOES
+
+  :YapInsert <template>   wrap-in-# @user (or as-is) and append at
+                            the end
+  :YapInsert <skill>      merge the body into the `# @system` block
+  :YapInsertHere <name>   raw file above the cursor, no role logic
+
+All three go through the normal append paths (R7 blank-line handling);
+insertion never touches existing lines and is refused while a send is
+in flight. The `## Skills` intro in a new chat is discoverability
+only — names and descriptions, never skill bodies (toggle it off with
+`skills_intro = false`).
+
+COMPACTION RECIPE                                           *yap-compact*
+
+Compaction is the template mechanism applied to a long conversation —
+the summary stays a visible, editable turn, never an invisible rewrite.
+|:YapCompact| automates the three steps below (insert, send, then
+offer to delete); the manual recipe remains available:
+
+  1. `<leader>t` and pick `compact` (ships at
+     `templates/compact.md`; copy it into your templates_dir), or
+     write your own "summarize the conversation above…" prompt.
+  2. `<C-s>` to send it.
+  3. Delete the history above the summary (deletion = branching,
+     |yap-introduction|). The summary block is the new context.
+<
+The archive-marker idea (folding old messages away) is deliberately
+NOT part of this: the buffer is the truth, so old text is either in
+context or gone — folding it away would be hidden state.
+
+Config and runtime data:
+
+  ~/.config/yap.json  Providers and optional pricing: >json
+
+    {
+      "providers": {
+        "moonshot": { "base_url": "https://api.moonshot.ai/v1",
+                      "api_key_env": "MOONSHOT_API_KEY" }
+      },
+      "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
+    }
+<
+                        Any OpenAI-compatible /chat/completions endpoint
+                        works. API keys come from the named env vars.
+                        `pricing` (USD per 1M tokens) enables the cost in
+                        the winbar; omit it to track tokens only.
+
+  ~/.config/yap/AGENTS.md   Default system prompt (see above).
+  ~/.yap/sessions/          Autosaved sessions, see |yap-sessions|.
+  ~/.yap/audit/             Audit logs, see |yap-audit|.
+
+Tools                                                        *yap-tools*
+
+Tools are NOT configured anywhere — they are Go files in agent/tools/
+package of the yap source tree, one file per tool, each
+self-registering in init(). Adding or changing a tool = editing a file
+and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
+model) and optionally a ui payload (display-only yap:ui section,
+see |yap-tool-block|). The binary runs the whole agent loop in one
+process, bounded at 25 iterations per send. Built-ins: ls, read, fetch,
+bash, write, edit, search, glob. search and glob shell out to ripgrep
+(rg): search returns path:line:content matches, glob lists files
+(gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
+
+Tool parameters are declared as a Go struct per tool; the schema sent
+to the provider is generated from it by reflection, and incoming
+arguments are validated against the compiled schema before Run.
+
+write creates or overwrites files (creating parent directories); edit
+does exact-text replacement with pi's semantics: every edits[].oldText
+is matched against the ORIGINAL file, must occur exactly once, and
+must not overlap another edit; application is span-based so a newText
+can never match inside another edit's oldText. Both return short
+confirmations to the model (R12 result policy); when a file is
+overwritten/edited, a unified diff (sergi/go-diff, in-process) is
+attached as a display-only yap:ui section (|yap-tool-block|).
+
+bash runs commands non-interactively (stdin is /dev/null) in their own
+process group: on timeout (default 120s, model-adjustable) the whole
+group is SIGKILLed, and :YapStop takes in-flight commands down with
+the binary. Output streams into a temp file; the binary announces the
+path on stderr (yap:event, see |yap-protocol|) and the Lua side
+drains it into the session's tail buffer (:YapLive) — live output
+never enters the chat buffer (R16). The result is
+truncated to the LAST 2000 lines / 50KB with the full output kept in
+the temp file; a non-zero exit is reported to the model, not treated
+as an error. There is deliberately no sandbox and no confirmation
+prompt (R15).
+
+write/edit tool headers in the buffer are SLIMMED (R12): the arguments
+show `[N lines]` / `[N edits, +A/-B lines]` instead of the content —
+the yap:ui diff below shows the change, the file on disk is the
+ground truth, and the full arguments are in the audit log. Every tool
+call and result is also emitted as a yap:event and persisted there,
+see |yap-audit|.
+
+==============================================================================
+5. BUFFER FORMAT                                                *yap-buffer*
+
+A yap buffer is plain markdown. Headings delimit messages: >
+
+  # @system
+  # @user
+  # @assistant
+
+Everything between headings is message content. Everything before the first
+heading is ignored by the parser — that is where the session's model state
+lives, as YAML frontmatter:
+
+  ---
+  provider: moonshot
+  model: kimi-k3
+  models:
+    - moonshot/kimi-k3
+    - deepseek/deepseek-v4-pro
+  ---
+
+`provider`/`model` is the combo to resume with; `models` is the ordered
+history of every combo used in the session (most-recent-last). The
+frontmatter is the ONLY durable session state: yap writes it on :Yap
+and |:YapChangeModel|, reads it on open, and sends never touch it.
+Token totals and cost are NOT stored here — they are ephemeral
+per-buffer state in the winbar (|yap-winbar|). Legacy session files
+without frontmatter simply keep the setup() default combo.
+
+A yap buffer never attaches a language server: the buffer is the
+conversation (R1), and a markdown LSP's semantic-token/inlay-hint stream is
+pure per-redraw cost on a large session. setup_buffer marks each buffer and
+an LspAttach guard in setup() stops any markdown client from attaching.
+
+The active combo comes from the frontmatter on open, then from per-buffer
+vars set by |:YapChangeModel|, falling back to setup() defaults. The
+buffer holds the model state (R1) but NOT token/cost totals: those
+accumulate in memory for the lifetime of the buffer, and reopening a
+session starts them from zero.
+
+==============================================================================
+6. MARKERS                                                    *yap-markers*
+
+HTML comment regions of the form `<!-- yap:<word>` ... `-->` are shown in
+the buffer but NEVER sent to the provider as buffer text; the parser skips
+them (one exception: yap:tool, which is TRANSFORMED — see below).
+
+  <!-- yap:thinking   Reasoning streamed via the OpenAI-compatible
+                        `reasoning_content` field (Kimi, DeepSeek). Folded
+                        away with the assistant block.
+
+  <!-- yap:error      Backend error record, left after a failed send.
+
+  <!-- yap:usage      Token usage reported at end of stream. Consumed
+                        immediately: folded into the winbar totals and
+                        the line is removed.
+
+Tool blocks                                                *yap-tool-block*
+
+A tool call and its result are ONE region inside an assistant block: >
+
+  <!-- yap:tool {"id":"call_1","name":"edit","arguments":{...}} -->
+  Successfully replaced 1 block(s) in main.go.
+  <!-- yap:ui -->
+  ```diff
+  @@ -10,3 +10,3 @@
+  -old line
+  +new line
+  ```
+  <!-- /yap:ui -->
+  <!-- /yap:tool -->
+<
+  Header          The complete call as JSON. Storage AND context:
+                  parse_buffer rebuilds the assistant tool_calls message
+                  from it. Two forms: single-line when short (≤ 120
+                  chars, typical for bash/ls/read), otherwise
+                  pretty-printed multi-line JSON between `<!-- yap:tool`
+                  and `-->`: >
+
+  <!-- yap:tool
+  {
+    "id": "write_0_a3317f99",
+    "name": "write",
+    "arguments": { "content": "...", "path": "/tmp/x.md" }
+  }
+  -->
+<
+                  Multi-line headers fold closed by default (a level-3
+                  fold with `▸ tool: <name>` foldtext; za to inspect) —
+                  the yap:ui diff below is the visual record, so the
+                  arguments are never shown twice. Thinking and ui
+                  regions fold the same way; single-line headers stay
+                  unfolded.
+
+  Result text     Exactly what the model received; in context. edit/write
+                  tools return confirmations (pi/Codex pattern), read-like
+                  tools return (truncated) content.
+
+                  The header lands BEFORE the tool runs, so the call
+                  (and its arguments) is visible while it executes;
+                  the gap to the result honestly represents execution
+                  time. Live output is followed via |:YapLive| (R16),
+                  never written into the buffer.
+
+  <!-- yap:ui   Optional display-only payload: a rendered unified diff
+                  for edits and writes (creates included, as an all-`+`
+                  diff), fenced as ```diff between paired one-line
+                  markers. Block level — unlike thinking, not an HTML
+                  comment — so treesitter parses the fence and injects
+                  the diff parser for real +/-/@ highlighting. Parse-
+                  excluded like thinking: editing or deleting it changes
+                  nothing. Pure decoration.
+
+parse_buffer transforms the region into the API message pair: an assistant
+message with `tool_calls`, followed by `tool` messages with matching
+`tool_call_id`. Deleting the region deletes the pair — orphaned tool calls
+are impossible by construction (R12). Sanitizer: a region outside an
+assistant block is skipped; a missing/empty result becomes an empty result
+(still paired); a malformed header skips the region with a notification.
+
+Marker regions close on a line that is exactly `-->`; content merely
+containing it never closes early for OUR parser. Markdown renderers are
+stricter: HTML comments are character-based, so ANY `-->` — even inline
+in backticked prose — would close the comment early. The binary
+therefore neutralizes every `-->` to `-- >` inside comment regions
+(streamed thinking via a line-buffering escaper, since chunks split
+mid-line; error text). A backslash can't do that job:
+`\-->` still CONTAINS the `-->` a character-based scanner looks for.
+
+Everywhere else the rule is one VISIBLE backslash-escape, valid
+CommonMark for ASCII punctuation, applied once at write time: a
+tool-result line starting with a yap marker opener becomes
+`\<!-- yap:…`, and <style>/<script> open tags become `\<style` /
+`\<script`. Renderers show the literal text, treesitter sees an escape
+instead of a tag, and the line-start-anchored Lua parser never matches.
+Invisible bytes were rejected: a zero-width space breaks
+markdown_inline's html_tag grammar (the comment fails to parse and the
+ZWSP renders as a literal <200b>), and a soft hyphen hides the
+mutation from the user while still reaching registers and the model.
+
+Tool RESULTS from content-bearing tools (read, bash, ls, fetch) are
+wrapped in a fenced code block — read/fetch with a language info
+string detected from the path extension, bash/ls as a plain fence.
+The buffer is markdown, and raw file content or command output
+gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
+picks up stray styling; the fence renders it as code instead and lets
+treesitter inject the language. The fence is one backtick longer than
+any run inside the result, so a ``` line in the content can't close
+it early; the same fenced string goes to the model, so the buffer and
+the replayed history stay identical across turns. write/edit return
+short confirmations and stay bare. The unclosed-fence guard remains as
+a fallback for those unfenced results.
+
+Why the <style>/<script> escaping matters: raw HTML results (fetch
+returns pages as-is) let treesitter's combined HTML injection hand
+their content to the css/javascript parsers, and those raw-text
+injection ranges bleed to the end of the buffer — everything after the
+result renders as css/js. The backslash-escaped open tag keeps the
+document a fragment and the parse bounded.
+
+==============================================================================
+7. SESSIONS                                                  *yap-sessions*
+
+A session is just the buffer's markdown written to a file — the buffer IS
+the serialization, there is no other format. Files live under
+~/.yap/sessions/<cwd-slug>/ and are autosaved after every completed reply.
+The file is created when the buffer is opened, so a fresh session is
+file-backed from the start and can be named with |:file| before the first
+reply; every autosave goes through |:write|, so the buffer owns its file:
+'modified', |:w|, and the exit prompt all behave like any normal file buffer.
+The tail sidecar (<session>-tail) is created in the audit dir
+(|yap-audit|) at the same time and follows the session name across
+|:file| renames. Opening a session file directly — plain |:edit| or
+`nvim <file>.md` — is recognized: the buffer is adopted as a managed
+session (unlisted, keymapped, tail attached), the same as |:YapSessions|
+resume.
+
+File operations are the session operations (pi equivalents, but manual):
+
+  :file new-name.md     Name a session; the picker shows the chosen name.
+  :saveas copy.md       Fork: the original file is untouched, the buffer
+                        continues as the copy.
+  delete a block + send Branch the conversation.
+
+AUDIT LOG                                                        *yap-audit*
+
+The session file holds the context; the audit log holds everything the
+context doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.log,
+append-only, survives restarts. The tail sidecar
+(~/.yap/audit/<cwd-slug>/<session>-tail) persists the live view shown
+by |:YapLive|; the audit log is the authoritative record and carries
+the extra details the tail does not show. Written from |yap-protocol|
+events:
+
+  === <ts> $ <command>          a bash call, followed by its full output
+  === <ts> <tool> <args json>   any other tool call, FULL arguments
+  --- <ts> <tool> (<n> bytes)   result record (+ full result text for
+                                non-bash tools)
+  # <ts> turn <model>: <in> in · <out> out · $<cost> · <s>s
+                                one journal line per completed send
+
+This is what makes the slimmed write/edit headers (R12) and |:YapClear|
+lossless: anything removed from the context exists here verbatim.
+
+==============================================================================
+8. FOLDING & NAVIGATION                                        *yap-folding*
+
+`# @role` headings are folds (foldexpr); a closed fold shows the role and
+the first content line. Inside a message fold, level-3 folds collapse
+display regions: a whole `yap:tool` region (header, result and ui
+diff, both header forms) folds to one `▸ tool: <name>` line; thinking
+and error comment regions fold likewise.
+
+Three views, bound to <leader>1..3, each applied unconditionally so a
+keypress always lands on the same state:
+
+  <leader>1   agent output folded — only user prompts stay open (default)
+  <leader>2   conversation open, tool calls and thinking folded
+  <leader>3   everything unfolded
+
+The system prompt is reference material: it stays folded in EVERY view
+until opened manually (za).
+
+The applied view shows in the winbar (`Ⓕ1`-`Ⓕ3`), see |yap-winbar|.
+View 1 is applied once when a session buffer is opened. Between view
+keypresses fold state is STATIC — typing, streaming and manual za
+toggles change nothing and are never reset. Fold levels are
+role-dependent (user 1, assistant 2, tool/thinking 3, system 4), so the
+three views are pure 'foldlevel' 1/2/3 with no manual foldclose: manual
+closes combined with expr folds made Neovim re-evaluate every fold on
+each edit — hundreds of ms per keystroke on a large session. A send
+needs no fold commands at all: the new assistant block opens by itself,
+streamed tool regions appear folded in views 1/2, and the next prompt is
+always open. (Manual opens are never used: Neovim inherits a manual
+foldopen into child folds created later; manual closes stay local.)
+Navigation keymaps jump between headings, see |yap-keymaps|.
+
+==============================================================================
+9. WINBAR                                                      *yap-winbar*
+
+The winbar is the session dashboard. Left: the provider/model combo and
+the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
+folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
+manual |za| toggles don't update it), and — when other sessions are
+waiting for your reply — a `◉N` rollup (N other yap buffers await
+you; jump to one with |:YapWaiting|). Right: token totals and cost
+for this buffer (accumulated over its lifetime, compact k-format), then
+the state glyph pinned to the far right edge:
+
+  ⠋ busy    A request is in flight (driven by the job table). While a
+            tool runs, its name and elapsed time replace "busy"
+            (`⠋ bash 12s`).
+  ✗ error   The last send failed (vim.notify fired too); cleared on the
+            next send.
+  ◉ waiting A turn has completed and the agent awaits your next prompt
+            (the herdr-style "needs you" state).
+  ○ idle    Nothing running, nothing pending.
+
+Example: `moonshot/kimi-k3 Ⓕ2 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
+
+The `◉N` rollup counts OTHER yap buffers with a completed turn awaiting
+your reply. Live sessions enter it when a send finishes; a reopened
+session enters it when it ends on a `# @user` heading with assistant
+history above it. For a global segment independent of yap buffers, use
+`%!v:lua.require('harness').overview()` in a statusline or tabline.
+
+==============================================================================
+10. LUA <-> GO PROTOCOL                                      *yap-protocol*
+
+  stdin   {"messages":[...]}  (roles system/user/assistant/tool; assistant
+          messages may carry tool_calls, tool messages carry tool_call_id)
+  argv    yap send --provider NAME --model MODEL
+  stdout  raw assistant text, streamed; thinking, tool blocks and usage
+          wrapped in |yap-markers|
+  stderr  error message, exit 1. Also carries `yap:event {json}`
+          progress lines; the Lua side routes them to the winbar, the
+          tail buffer (|:YapLive|) and the audit log (|yap-audit|):
+            tool_start   {"type","name":"bash","log","command"} — bash's
+                         output streams into `log`; tail it for live view
+            tool_end     bash's log is complete
+            tool_call    {"type","name","args"} — every tool before it
+                         runs, full arguments (the buffer header keeps
+                         only slimmed write/edit args, R12)
+            tool_result  {"type","name","bytes","result"} — full result
+            turn_end     {"type","model","prompt","completion","cost",?,
+                         "ms"} — one per completed send
+          The rest is error text.
+
+The binary runs the agent loop internally: when the model requests tool
+calls it executes them (compiled-in tools, see |yap-tools|), emits one
+yap:tool region per pair, and re-sends until the final answer or the
+iteration bound. The binary is pure Go (no cgo) with three small deps —
+jsonschema, santhosh-tekuri/jsonschema/v6, sergi/go-diff — built
+CGO_ENABLED=0.
+
+==============================================================================
+11. BUSINESS RULES                                             *yap-rules*
+
+The invariants below are the design contract of this plugin. Each rule
+exists for a reason; change the code and the rule together. AI assistants
+editing this repository MUST keep this section up-to-date.
+
+R1  The buffer is the only conversation state.
+    Neither the Lua side nor the Go binary may keep message state between
+    turns. Why: branching by deletion, prefill by editing, and undo-tree
+    navigation only work if the buffer is the single source of truth.
+
+R2  `<!-- yap:* -->` marker regions are never sent as buffer text.
+    The parser skips them (thinking, error, usage, yap:ui) or transforms
+    them (yap:tool becomes structured tool_call/tool messages — the raw
+    region text is still never sent). Why: thinking or display payloads
+    re-sent to the API pollute or break the conversation. (Bug of record:
+    the first error comment WAS sent back as assistant content.)
+
+R3  Lines before the first heading are ignored.
+    The session header lives there. The parser's flush must clear the
+    accumulator when no role is set. (Bug of record: pre-heading text was
+    prepended to the first message until this was fixed.)
+
+R4  The binary emits plain text and yap markers only. No ANSI, no
+    padding, no rendering. Why: markdown rendering is the user's
+    ft=markdown setup; cell-based TUIs break Neovim yanking.
+
+R5  Wire protocol is OpenAI-compatible /chat/completions SSE only.
+    Covers OpenAI, DeepSeek, Moonshot/Kimi, OpenRouter, z.ai and local
+    servers. Anthropic/Gemini-native: use OpenRouter until (if ever)
+    implemented.
+
+R6  Adjacent same-role blocks are merged on send; empty blocks dropped.
+    Why: providers require role alternation.
+
+R7  Exactly one blank line between message blocks, enforced LOCALLY at
+    every write: structural appends (headings, error markers) go through
+    append_block(), which trims trailing blanks and prepends exactly one
+    blank line itself — never append a heading with append_text(). The
+    binary separates streamed tool blocks with blank lines. There is no
+    buffer-wide normalize pass: sends never rewrite existing lines, so
+    what you see before ctrl-s is byte-identical to what gets sent.
+    Binary-emitted blocks (thinking, tool regions, error markers) carry
+    no leading newlines and self-terminate with exactly one blank line;
+    a pad() in the agent loop bridges the two stateful transitions
+    (heading → first block, streamed text → first tool header).
+    (Bug of record: blocks prepended \n\n while regions also ended in
+    \n, giving two blank lines between tool calls.)
+    Why: readable diffs, stable folds, gptel-like staticness.
+    (Bug of record: hand-rolled "\n" prefixes broke separation when
+    trailing-blank trimming was added; a buffer-wide normalize pass made
+    every send rewrite the whole buffer and churn fold state.)
+
+R8  Sessions are plain markdown files; file operations are the session
+    operations. The file is created at buffer creation so a fresh chat is
+    file-backed (and nameable via :file) before the first reply. Autosave
+    only after a COMPLETED reply (never on error). Autosaves go through
+    :write! (not writefile()): the buffer owns the file, so mtime
+    bookkeeping, :w, and E13 all behave normally. save() follows buffer
+    renames so :file names and :saveas forks. Why: no second
+    serialization format to keep in sync. Session buffers (and their
+    tail buffers) are unlisted — never in |:ls| or buffer pickers — so
+    navigation is |:YapWaiting| / |:YapInstances|, and a session's
+    tail opens with |:YapLive|.
+
+R9  Errors surface three ways: vim.notify (transient), winbar error state
+    (persistent until next send), and a parse-excluded buffer marker
+    (record). Spawn failures of the binary are caught and reported the
+    same way.
+
+R10 View levels: <leader>1 folds all agent output (user prompts stay
+    open), <leader>2 folds tool calls and thinking only, <leader>3
+    unfolds everything; the system prompt stays folded in every view
+    until opened manually. Fold levels are role-dependent — user
+    messages 1, assistant messages 2, tool/thinking/error regions 3,
+    the system prompt 4 — so the three views are pure 'foldlevel'
+    (1, 2, 3) with no manual foldclose: manual closes plus expr folds
+    made Neovim re-evaluate every fold on each edit (hundreds of ms
+    per keystroke on a large session). View 1 is applied ONLY when a
+    session buffer is opened; between keypresses fold state is static —
+    sends, streaming and typing never touch it (new folds adopt
+    'foldlevel' as they appear). Never open folds manually (Neovim
+    inherits a manual foldopen into child folds created later); only
+    close them. The winbar Ⓕ chip shows the last APPLIED view, not
+    measured fold state (measuring made <leader>3 read Ⓕ0).
+
+R11 Streaming appends at the end of the buffer, fully async (gptel-style:
+    the buffer stays editable while a reply streams in). Editing above the
+    streaming block is safe; typing inside/below it interleaves with the
+    stream. Accepted trade-off; the fix (extmark insertion point) is
+    documented as future work, not done.
+    A window whose cursor sits on the last line FOLLOWS the stream (the Lua
+    side re-pins the cursor to the end after every append; Neovim never
+    scrolls a window for an API edit, so without that the view only tracked
+    the end while a chunk happened to land exactly on the cursor, i.e. while
+    the last line was empty, and then stranded it mid-reply). A window
+    scrolled away is NEVER dragged during the stream, and nothing moves from
+    a non-normal mode. (The one deliberate exception, unchanged: a completed
+    turn puts the cursor on the new `# @user` heading, so the next prompt is
+    ready to type.)
+
+R12 One buffer region = one tool pair.
+    A yap:tool region holds the call (single-line JSON header) and the
+    result text together; parsing emits BOTH the assistant tool_calls
+    message and the tool result message from it. Deleting the region
+    deletes the pair, so orphaned tool_calls (which APIs reject) are
+    impossible by construction — gptel's solution to the pairing problem.
+    Result content policy: edit/write tools return short confirmations,
+    read-like tools return truncated content (pi: 2000 lines / 50KB);
+    pretty payloads (diffs) go in parse-excluded yap:ui subsections.
+    write/edit headers are slimmed at emission time (`[N lines]` for
+    content, `[N edits, +A/-B lines]` for edits): the header doubles as
+    the model's own tool_calls history, and kilobytes of file content
+    there buy nothing the yap:ui diff and the file on disk don't
+    already show (Anthropic's clear_tool_inputs is the same idea); the
+    full arguments are in the audit log. Old result bodies can be
+    cleared explicitly with |:YapClear|.
+
+R13 No MCP. The author's tools are thin HTTP wrappers that are less code
+    as native Go functions than an MCP client; MCP also has no equivalent
+    of pi's hook bus. If ever needed, add mark3labs/mcp-go additively.
+
+R14 The model state is durable YAML frontmatter; everything else is
+    ephemeral.
+    The frontmatter holds `provider`/`model` (the combo to resume with)
+    and `models` (the ordered history of combos used). yap writes it
+    only on :Yap and |:YapChangeModel| — never during a send, so
+    R7's append-only rule holds — reads it on open, and surfaces it in
+    the |:YapSessions| picker. Token/cost totals are deliberately NOT
+    frontmatter: they accumulate in per-buffer memory for the winbar
+    and reset on reopen. The earlier frontmatter design got this wrong
+    by folding per-reply usage into the header, which made every
+    metadata update a non-local buffer edit that fought R7.
+
+R15 Tools are compiled-in Go files, one per file in agent/tools/.
+    Each file self-registers via init(); adding a tool = adding a file
+    and recompiling. Not config files (the author wants tool code, not
+    opaque declarations), not subprocesses (recompiling is accepted and
+    the binary stays self-contained). bash, write and edit are
+    deliberately included without sandbox or confirmation — the author
+    runs pi the same way and accepts the risk. bash's safety mechanics
+    are operational, not authorizing: own process group, group kill on
+    timeout and on :YapStop, tail-truncation, closed stdin. If
+    sandboxing is ever wanted, the evidence-backed direction is
+    bubblewrap (Codex's Linux choice), not command-pattern allowlists
+    (documented as bypassable).
+
+R16 Live tool output never enters the chat buffer.
+    The buffer is the parseable conversation document (R1); streaming
+    command output into it forces incremental escaping, dangling-region
+    repair and post-turn dedup (the yap:stream/keepstream design this
+    rule replaced). Instead each session has ONE persistent tail buffer
+    (yap://<session>-tail): bash announces its temp log via a
+    yap:event stderr line, the Lua side drains new bytes into the
+    tail (a `$ command` header per call), and :YapLive opens it. The
+    same bytes are appended to a sidecar file in the audit dir
+    (<session>-tail), created with the session so the live view is not
+    lost on restart. The chat buffer only gets one-shot, append-only
+    writes: the tool header
+    when the call commits, the result when it finishes. The single
+    sanctioned exception to append-only is |:YapClear| — an explicit
+    user command that replaces old tool result bodies with a pointer
+    to the audit log (R17). Why: output exists in exactly one place at
+    any moment, and the buffer format has no transient states to repair.
+
+R17 The audit log is the durable record of everything the context
+    doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.log, append-only,
+    written by the Lua side from yap:event lines: full tool arguments,
+    streamed bash output, full results, and one journal line per turn
+    (model, tokens, cost, ms). The tail sidecar
+    (~/.yap/audit/<cwd-slug>/<session>-tail) persists the live view;
+    the audit file is the authoritative record and survives restarts.
+    This split is what makes slimmed headers (R12) and |:YapClear|
+    lossless.
+
+R18 Templates and skills are plain markdown files inserted into the buffer.
+    `templates_dir` files append as a `# @user` message (or as-is when
+    already headed); `skills_dir` files merge into the `# @system` block.
+    A skill's optional frontmatter may carry `description:` for the
+    skills intro (skills_intro) and is stripped on insert. Nothing is
+    auto-loaded and nothing is hidden: the inserted text is visible,
+    editable buffer content like any other, and the intro is a short
+    visible list, never injected bodies. Why: the buffer stays the only
+    state (R1), and templates/skills are just text, so one insert command
+    covers compaction, snippets and skills.
+
+R19 Turn completion is a first-class event.
+    When a send finishes, the Lua side emits `User YapTurnDone` with
+    `data = { buf, turn }` (turn is the binary's `turn_end` payload:
+    model, prompt, completion, cost, ms). The default handler (installed
+    by setup(), disabled with `notify_done = false`) calls vim.notify —
+    only for a buffer the user isn't looking at, and never on the error
+    path, which already notifies (R9). The winbar gains a fourth state,
+    `◉ waiting`, set when the turn completes and cleared on send, plus a
+    `◉N` rollup counting the OTHER awaiting buffers: both are imperative
+    UI hints like `errors`/`yap_usage`, not conversation state (R1);
+    reopened sessions seed the rollup from their content on open. Why:
+    herdr's "working → blocked → idle" notification is
+    a completion *event*, and an autocmd is the Neovim-native hook for
+    it (noice/nf-notify, chaining a next send) instead of a hardcoded
+    side effect.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:

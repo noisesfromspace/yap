@@ -7,12 +7,12 @@ import (
 )
 
 // SlimArgs returns a compact stand-in for a tool call's arguments for
-// the pitel:tool header in the buffer (R12). write/edit calls can carry
-// kilobytes of content that the user already sees as the pitel:ui diff
+// the yap:tool header in the buffer (R12). write/edit calls can carry
+// kilobytes of content that the user already sees as the yap:ui diff
 // below the header, so the header — which parse_buffer feeds back to
 // the model as its own tool_calls history — keeps only the shape
 // ("[N lines]"); the file on disk is the ground truth and the full
-// arguments are in the audit log (pitel:event tool_call). ok is false
+// arguments are in the audit log (yap:event tool_call). ok is false
 // for tools whose arguments are small enough to keep verbatim.
 func SlimArgs(name, argsJSON string) (args any, ok bool) {
 	lineCount := func(s string) int {

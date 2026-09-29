@@ -54,7 +54,7 @@ func runBash(a *bashArgs) (string, string, error) {
 	// same *os.File, so the child gets one fd for both — output is
 	// interleaved like a terminal. The file doubles as the live view:
 	// announce its path and let the Lua side tail it.
-	out, err := os.CreateTemp("", "pitel-bash-*.log")
+	out, err := os.CreateTemp("", "yap-bash-*.log")
 	if err != nil {
 		return "", "", err
 	}

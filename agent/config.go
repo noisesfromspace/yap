@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// ─── Config (~/.config/pitel.json) ───────────────────────────────────────────
+// ─── Config (~/.config/yap.json) ───────────────────────────────────────────
 
 type Provider struct {
 	BaseURL   string `json:"base_url"`
@@ -17,7 +17,7 @@ type Provider struct {
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
 	// Optional per-model pricing in USD per 1M tokens; used to compute the
-	// cost field in the pitel:usage marker.
+	// cost field in the yap:usage marker.
 	Pricing map[string]Pricing `json:"pricing"`
 }
 
@@ -28,10 +28,10 @@ type Pricing struct {
 
 func configPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "pitel.json")
+		return filepath.Join(xdg, "yap.json")
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "pitel.json")
+	return filepath.Join(home, ".config", "yap.json")
 }
 
 func loadConfig() (*Config, error) {
