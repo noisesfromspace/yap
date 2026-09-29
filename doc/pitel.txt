@@ -161,29 +161,105 @@ bodies are never auto-loaded. See |pitel-templates|.
 
 Templates & skills                                          *pitel-templates*
 
-The generic mechanism behind both compaction and skills is one command:
-insert a text file into the buffer. Files are plain markdown (the
-filename minus `.md` is the name); there is no separate serializer.
+The generic mechanism behind compaction, snippets and skills is one
+command: insert a text file into the buffer. A template or a skill is
+just a markdown file — the filename (minus `.md`) is the name shown in
+the picker, and the body is what gets inserted. There is no separate
+serializer and no frontmatter schema beyond the one optional
+`description:` key described below.
 
-  templates_dir   generic text: appended as a `# @user` message, or
-                  as-is when the first line is already a `# @role`
-                  heading — so a template can also be a prefill.
-  skills_dir      system-prompt material: the body merges into the
-                  `# @system` block, so inserting a skill into a fresh
-                  chat adds instructions the model will follow.
+Where they live: >
 
-A skill may start with YAML frontmatter whose `description:` key feeds
-the skills intro list and is stripped on insert: >
-  ---
-  description: Review frontend code for accessibility
-  ---
-  ... body ...
+  ~/.config/pitel/templates/     generic text (|:PitelInsert|)
+  ~/.config/pitel/skills/        system-prompt material (|:PitelInsert|)
 <
-Compaction is just a template: `compact.md` holding a "summarize the
-conversation above" prompt, inserted with |:PitelInsert|, sent, and the
-old history deleted (deletion = branching, |pitel-introduction|). The
-summary is an ordinary, editable turn — never an invisible model-run
-rewrite of the buffer.
+Both are configurable (`templates_dir`, `skills_dir`). Create the
+directory, drop a file in, then `<leader>t` (or `:PitelInsert <name>`)
+to insert it; `<leader>T` (`:PitelInsertHere`) dumps the raw file at
+the cursor.
+
+HOW TO WRITE A TEMPLATE                                      *pitel-template*
+
+A template is generic text you want injected as a message. It behaves
+by one rule: >
+
+  - If the first line is a `# @role` heading, the file is appended
+    as-is — so a template can also be a prefill (`# @assistant`).
+  - Otherwise it is wrapped in `# @user` and appended at the end.
+<
+A prompt you reach for often, as a template: >
+
+  # @user
+  Review the current diff for bugs and code quality. Report:
+
+  1. Correctness issues, most severe first.
+  2. Edge cases that are not handled.
+  3. A simpler alternative if one is obvious.
+
+  Be concise; reference file:line for each finding.
+<
+Here the leading `# @user` means the file is used verbatim. The same
+file without that first line would be wrapped in `# @user`
+automatically, so the heading is optional — write whichever reads
+better.
+
+HOW TO WRITE A SKILL                                          *pitel-skill*
+
+A skill is instructions you want in the system prompt, not in the
+message history. Its body merges into the `# @system` block, so a
+skill inserted into a fresh chat becomes part of the standing
+instructions for that conversation.
+
+The optional YAML frontmatter contributes one `description:` line to
+the `## Skills` intro list shown in new chats, and is stripped before
+the body is merged: >
+
+  ---
+  description: Review frontend code for accessibility and semantics
+  ---
+
+  ## Frontend review
+
+  When reviewing frontend code, check in this order:
+  - accessibility: landmarks, labels, focus order, contrast
+  - semantics: elements over styled divs; no nested interactive
+  - type safety: no any, no @ts-ignore, no casts that hide errors
+
+  Report findings as a list, most severe first, each with file:line
+  and a one-line fix.
+<
+Everything after the second `---` is the body. The `---` lines and
+`description:` never reach the model. Omitting the frontmatter is
+fine — the skill then simply has no intro line.
+
+WHAT INSERT DOES
+
+  :PitelInsert <template>   wrap-in-# @user (or as-is) and append at
+                            the end
+  :PitelInsert <skill>      merge the body into the `# @system` block
+  :PitelInsertHere <name>   raw file above the cursor, no role logic
+
+All three go through the normal append paths (R7 blank-line handling);
+insertion never touches existing lines and is refused while a send is
+in flight. The `## Skills` intro in a new chat is discoverability
+only — names and descriptions, never skill bodies (toggle it off with
+`skills_intro = false`).
+
+COMPACTION RECIPE                                           *pitel-compact*
+
+Compaction is the template mechanism applied to a long conversation —
+the summary stays a visible, editable turn, never an invisible rewrite:
+
+  1. `<leader>t` and pick `compact` (ships at
+     `templates/compact.md`; copy it into your templates_dir), or
+     write your own "summarize the conversation above…" prompt.
+  2. `<C-s>` to send it.
+  3. Delete the history above the summary (deletion = branching,
+     |pitel-introduction|). The summary block is the new context.
+<
+The archive-marker idea (folding old messages away) is deliberately
+NOT part of this: the buffer is the truth, so old text is either in
+context or gone — folding it away would be hidden state.
 
 Config and runtime data:
 

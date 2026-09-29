@@ -11,6 +11,7 @@
 pitel-audit	pitel.txt	/*pitel-audit*
 pitel-buffer	pitel.txt	/*pitel-buffer*
 pitel-commands	pitel.txt	/*pitel-commands*
+pitel-compact	pitel.txt	/*pitel-compact*
 pitel-configuration	pitel.txt	/*pitel-configuration*
 pitel-contents	pitel.txt	/*pitel-contents*
 pitel-folding	pitel.txt	/*pitel-folding*
@@ -20,6 +21,8 @@ pitel-markers	pitel.txt	/*pitel-markers*
 pitel-protocol	pitel.txt	/*pitel-protocol*
 pitel-rules	pitel.txt	/*pitel-rules*
 pitel-sessions	pitel.txt	/*pitel-sessions*
+pitel-skill	pitel.txt	/*pitel-skill*
+pitel-template	pitel.txt	/*pitel-template*
 pitel-templates	pitel.txt	/*pitel-templates*
 pitel-tool-block	pitel.txt	/*pitel-tool-block*
 pitel-tools	pitel.txt	/*pitel-tools*
