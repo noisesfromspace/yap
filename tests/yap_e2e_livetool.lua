@@ -145,7 +145,10 @@ local repaired = vim.wait(5000, function()
 end, 20)
 assert(repaired, "tool region not closed after stop")
 
-local t2 = table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n")
+local stopped_lines = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
+assert(stopped_lines[#stopped_lines - 1] == "# @user" and stopped_lines[#stopped_lines] == "",
+  "stopped stream did not end in a closed user block")
+local t2 = table.concat(stopped_lines, "\n")
 local ok, msgs2 = pcall(yap.parse_buffer, buf2)
 assert(ok, "buffer unparseable after stop")
 -- the tool-bearing assistant message still has its (empty) result paired

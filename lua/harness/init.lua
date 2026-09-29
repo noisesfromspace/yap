@@ -1271,6 +1271,15 @@ local function repair_stream_tail(buf)
   end
 end
 
+--- Every stream exit, including errors and :YapStop, hands the buffer back
+--- to the user in the same writable shape as a successful turn.
+local function close_stream(buf)
+  repair_stream_tail(buf)
+  append_block(buf, { "# @user", "" })
+  awaiting[buf] = true
+  require("harness.session").save(buf)
+end
+
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send()
   local buf = vim.api.nvim_get_current_buf()
@@ -1361,6 +1370,7 @@ function M.send()
     if result.code ~= 0 then
       local err = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
       report_error(buf, err ~= "" and err or ("exit " .. result.code))
+      close_stream(buf)
       return
     end
     consume_usage(buf)
