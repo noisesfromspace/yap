@@ -336,9 +336,12 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 25 iterations per send. Built-ins: ls, read, fetch,
-bash, write, edit, search, glob. search and glob shell out to ripgrep
-(rg): search returns path:line:content matches, glob lists files
+bash, write, edit, search, glob, websearch. search and glob shell out to
+ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
+websearch queries the Exa search API (api.exa.ai) and returns up to N
+results as markdown; its API key is read from the env var named by
+`websearch.api_key_env` in ~/.config/yap.json (default `EXA_API_KEY`).
 
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming

@@ -200,6 +200,7 @@
                   base_url = "https://api.moonshot.ai/v1";
                   api_key_env = "MOONSHOT_API_KEY";
                 };
+                websearch.api_key_env = "EXA_API_KEY";
                 pricing.kimi-k3 = {
                   input = 3.0;
                   output = 15.0;
@@ -207,7 +208,8 @@
               };
               description = ''
                 Agent configuration, written to {file}`~/.config/yap.json`.
-                Keys are `providers` (name → base_url + api_key_env) and
+                Keys are `providers` (name → base_url + api_key_env),
+                `websearch` (api_key_env for the Exa search tool) and
                 `pricing` (model → USD per 1M tokens). API keys themselves are
                 referenced by environment variable name in `api_key_env`.
               '';

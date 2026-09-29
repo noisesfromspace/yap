@@ -14,8 +14,16 @@ type Provider struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
+// Websearch configures the Exa websearch tool. Only the API key env var
+// name is needed; the key VALUE lives in the agenix secret env file
+// sourced by the wrapper before exec'ing the agent.
+type Websearch struct {
+	APIKeyEnv string `json:"api_key_env"`
+}
+
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
+	Websearch Websearch           `json:"websearch"`
 	// Optional per-model pricing in USD per 1M tokens; used to compute the
 	// cost field in the yap:usage marker.
 	Pricing map[string]Pricing `json:"pricing"`

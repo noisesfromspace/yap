@@ -505,6 +505,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	if err != nil {
 		return err
 	}
+	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	prov, ok := cfg.Providers[providerName]
 	if !ok {
 		names := make([]string, 0, len(cfg.Providers))
