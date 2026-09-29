@@ -887,7 +887,7 @@ local function ensure_tail(buf)
     return t
   end
   local path = tail_path(buf)
-  local tail = vim.api.nvim_create_buf(true, true) -- listed scratch buffer
+  local tail = vim.api.nvim_create_buf(false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.api.nvim_buf_set_name(tail, tail_buf_name(buf))
   vim.bo[tail].bufhidden = "hide"
 
@@ -1422,6 +1422,10 @@ local function setup_buffer(buf)
 
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
+  -- Sessions are managed, not workspace files: unlisted so they never
+  -- clutter :ls or buffer pickers (MiniPick.buffers etc.); reach them
+  -- with :PitelWaiting / :PitelInstances.
+  vim.bo[buf].buflisted = false
 
   local map = function(mode, lhs, rhs, desc)
     vim.keymap.set(mode, lhs, rhs, { buffer = buf, silent = true, desc = desc })
@@ -1446,6 +1450,9 @@ local function setup_buffer(buf)
   map("n", "<leader>w", function()
     M.waiting()
   end, "pitel: agents waiting for reply")
+  map("n", "<leader>r", function()
+    M.instances()
+  end, "pitel: sessions")
 
   require("harness.fold").setup_buffer(buf)
 
@@ -1589,6 +1596,17 @@ local function user_snippet(buf)
   return ""
 end
 
+--- Focus an already-loaded buffer: jump to an existing window, otherwise
+--- show it in the current one (unlisted sessions have no other way back).
+local function focus_buf(buf)
+  local wins = vim.fn.win_findbuf(buf)
+  if wins[1] then
+    vim.api.nvim_set_current_win(wins[1])
+  else
+    vim.api.nvim_set_current_buf(buf)
+  end
+end
+
 --- List open pitel buffers awaiting a reply (the herdr "needs you" set)
 --- and focus the picked one. Live sessions only; saved-but-unopened files
 --- stay |:PitelSessions|' job.
@@ -1619,11 +1637,36 @@ function M.waiting()
     if not choice then
       return
     end
-    local wins = vim.fn.win_findbuf(choice.buf)
-    if wins[1] then
-      vim.api.nvim_set_current_win(wins[1])
-    else
-      vim.api.nvim_set_current_buf(choice.buf)
+    focus_buf(choice.buf)
+  end)
+end
+
+--- All open pitel chat buffers, listed by session file path (tails are
+--- never here — reach them in-session with :PitelLive / <leader>l).
+--- Unlisted sessions are reached through this and :PitelWaiting.
+function M.instances()
+  local items = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[b].pitel then
+      local path = vim.b[b].pitel_path or vim.api.nvim_buf_get_name(b)
+      items[#items + 1] = { buf = b, text = path ~= "" and path or ("buffer " .. b) }
+    end
+  end
+  if #items == 0 then
+    vim.notify("pitel: no open sessions", vim.log.levels.INFO)
+    return
+  end
+  table.sort(items, function(a, b)
+    return a.text < b.text
+  end)
+  vim.ui.select(items, {
+    prompt = "pitel sessions",
+    format_item = function(item)
+      return item.text
+    end,
+  }, function(choice)
+    if choice then
+      focus_buf(choice.buf)
     end
   end)
 end

@@ -126,6 +126,16 @@ truth, and that can be a text buffer. Consequences:
                         Covers live buffers only — saved-but-unopened
                         sessions are |:PitelSessions|' job.
 
+                                                          *:PitelInstances*
+:PitelInstances         List every open pitel session by its file path and
+                        focus the picked one. Pitel buffers are unlisted —
+                        they never appear in |:ls| or buffer pickers
+                        (MiniPick.buffers and friends), and a session's
+                        tail buffer is never listed at all (open it in the
+                        session with |:PitelLive|). Together with
+                        |:PitelWaiting|, this is how you move between
+                        sessions.
+
                                                                *:PitelReload*
 :PitelReload            Reload the Lua modules (development).
 
@@ -141,6 +151,7 @@ Set only in pitel buffers.
   <leader>T             Insert a template or skill at the cursor
                         (see |:PitelInsertHere|).
   <leader>w             List agents waiting for a reply (see |:PitelWaiting|).
+  <leader>r             List all open sessions (see |:PitelInstances|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
@@ -712,7 +723,10 @@ R8  Sessions are plain markdown files; file operations are the session
     :write! (not writefile()): the buffer owns the file, so mtime
     bookkeeping, :w, and E13 all behave normally. save() follows buffer
     renames so :file names and :saveas forks. Why: no second
-    serialization format to keep in sync.
+    serialization format to keep in sync. Session buffers (and their
+    tail buffers) are unlisted — never in |:ls| or buffer pickers — so
+    navigation is |:PitelWaiting| / |:PitelInstances|, and a session's
+    tail opens with |:PitelLive|.
 
 R9  Errors surface three ways: vim.notify (transient), winbar error state
     (persistent until next send), and a parse-excluded buffer marker

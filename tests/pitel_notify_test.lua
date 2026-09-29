@@ -1,7 +1,7 @@
 -- Turn-done notification: User PitelTurnDone fires once per completed
 -- send with the turn payload; the default handler toasts only for a
 -- buffer the user isn't looking at, and the winbar flips to the
--- "reply" (needs you) state instead of idle.
+-- "waiting" (needs you) state instead of idle.
 local ROOT = vim.env.PITEL_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local pitel = require("harness")
@@ -23,7 +23,7 @@ vim.notify = function(msg, level, opts) notified[#notified + 1] = { msg = msg, l
 
 pitel.setup({ bin = ROOT .. "/pitel", provider = "mock", model = "m1" })
 
--- A fresh chat has nothing to reply to yet: idle, not "reply".
+-- A fresh chat has nothing to reply to yet: idle, not "waiting".
 local buf = pitel.new()
 assert(pitel.winbar(buf):match("idle"), "fresh chat should be idle: " .. pitel.winbar(buf))
 
@@ -52,6 +52,18 @@ assert(bar2:match("idle"), "fresh second buffer should be idle: " .. bar2)
 assert(not pitel.winbar(buf):match("◉%d"), "rollup counts the current buffer: " .. pitel.winbar(buf))
 assert(pitel.overview(buf2) == "◉1", "overview() wrong: " .. tostring(pitel.overview(buf2)))
 
+-- Pitel buffers are unlisted: they never appear in :ls or buffer pickers
+-- (MiniPick.buffers etc.); the pickers are the way back.
+assert(not vim.bo[buf].buflisted, "chat buffer should be unlisted")
+assert(not vim.bo[buf2].buflisted, "second chat buffer should be unlisted")
+local tails_unlisted = true
+for _, b in ipairs(vim.api.nvim_list_bufs()) do
+  if vim.api.nvim_buf_get_name(b):match("%-tail$") then
+    tails_unlisted = tails_unlisted and not vim.bo[b].buflisted
+  end
+end
+assert(tails_unlisted, "tail buffers should be unlisted")
+
 -- Switch away and fire the event for that buffer: now the default
 -- handler notifies (the background-turn case).
 vim.notify = orig_notify
@@ -79,4 +91,16 @@ pitel.waiting()
 vim.ui.select = orig_select
 assert(waiting_items and #waiting_items == 1, "expected one waiting buffer, got " .. vim.inspect(waiting_items))
 assert(waiting_items[1].buf == buf, "waiting() surfaced the wrong buffer")
+
+-- :PitelInstances lists every open session by file path (never the tails).
+local inst_items
+vim.ui.select = function(items, opts, on_choice)
+  inst_items = items
+end
+pitel.instances()
+vim.ui.select = orig_select
+assert(inst_items and #inst_items == 2, "expected two open sessions, got " .. vim.inspect(inst_items))
+for _, it in ipairs(inst_items) do
+  assert(it.text:match("%.md$"), "session label should be a file path: " .. it.text)
+end
 print("OK notify")

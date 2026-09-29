@@ -86,3 +86,7 @@ end, {
 vim.api.nvim_create_user_command("PitelWaiting", function()
   require("harness").waiting()
 end, { desc = "List agents waiting for a reply and jump to the picked one" })
+
+vim.api.nvim_create_user_command("PitelInstances", function()
+  require("harness").instances()
+end, { desc = "List open pitel sessions by file path and jump to the picked one" })

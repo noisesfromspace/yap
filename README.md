@@ -81,6 +81,9 @@ editing the agent.
 - `:PitelSessions [all]` — resume a saved session
 - `:PitelWaiting` / `<leader>w` — list agents waiting for a reply and
   jump to the picked one
+- `:PitelInstances` / `<leader>r` — list open sessions by file path and
+  jump to the picked one (sessions are unlisted: they never appear in
+  `:ls` or buffer pickers)
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
 the winbar, whose trailing glyph marks busy / error / `◉ waiting` (the agent
