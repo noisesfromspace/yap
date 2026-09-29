@@ -71,7 +71,8 @@ run pitel_follow_test 18152 mock_follow.py
 run pitel_picker_test 18137 mock_models.py
 for t in pitel_fold_test pitel_detailfold_test pitel_think_test pitel_error_test pitel_ml_test \
          pitel_streamfold_test pitel_marker_test pitel_model_test pitel_map_test pitel_clear_test \
-         pitel_live_open_test pitel_uidiff_test pitel_fencefold_test pitel_lsp_test; do
+         pitel_live_open_test pitel_uidiff_test pitel_fencefold_test pitel_lsp_test \
+         pitel_template_test; do
   run "$t" 18132
 done
 

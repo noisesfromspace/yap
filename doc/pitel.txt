@@ -71,6 +71,24 @@ truth, and that can be a text buffer. Consequences:
                         stale or re-fetchable — clearing it is the cheap
                         alternative to compacting the conversation.
 
+                                                                *:PitelInsert*
+:PitelInsert [name]     Insert a template or skill into the buffer. A
+                        template (see |pitel-templates|) is wrapped in
+                        `# @user` and appended at the end — unless its
+                        first line is already a `# @role` heading, in
+                        which case it is appended as-is (prefill). A
+                        skill merges its body into the `# @system`
+                        block. With no argument, pick from a combined
+                        list. This is the generic text-injection
+                        mechanism: compaction is inserting a
+                        summarize-prompt template, sending, then
+                        deleting the old history.
+
+                                                             *:PitelInsertHere*
+:PitelInsertHere [name] Like |:PitelInsert| but inserts the file's body
+                        verbatim above the cursor — heading/role logic
+                        aside, the raw primitive.
+
                                                         *:PitelChangeModel*
 :PitelChangeModel {provider/model}
                         Change the provider/model combo for the current
@@ -97,6 +115,9 @@ Set only in pitel buffers.
   <C-s> (n, i)          Send the buffer.
   <leader>m             Change model (picker, see |:PitelChangeModel|).
   <leader>l             Watch live tool output (see |:PitelLive|).
+  <leader>t             Insert a template or skill (see |:PitelInsert|).
+  <leader>T             Insert a template or skill at the cursor
+                        (see |:PitelInsertHere|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
@@ -131,6 +152,38 @@ Lua setup: >lua
 so edits apply to the next chat. When missing or empty, `system` is used.
 The path is used verbatim (no `~` expansion); the default is
 `$XDG_CONFIG_HOME/pitel/AGENTS.md` (or `~/.config/pitel/AGENTS.md`).
+
+`templates_dir` and `skills_dir` (defaults `~/.config/pitel/templates/`
+and `~/.config/pitel/skills/`) hold the plain-markdown files inserted by
+|:PitelInsert|. `skills_intro` (default true) adds a `## Skills` list of
+name + description to new chats' system block — discoverability only,
+bodies are never auto-loaded. See |pitel-templates|.
+
+Templates & skills                                          *pitel-templates*
+
+The generic mechanism behind both compaction and skills is one command:
+insert a text file into the buffer. Files are plain markdown (the
+filename minus `.md` is the name); there is no separate serializer.
+
+  templates_dir   generic text: appended as a `# @user` message, or
+                  as-is when the first line is already a `# @role`
+                  heading — so a template can also be a prefill.
+  skills_dir      system-prompt material: the body merges into the
+                  `# @system` block, so inserting a skill into a fresh
+                  chat adds instructions the model will follow.
+
+A skill may start with YAML frontmatter whose `description:` key feeds
+the skills intro list and is stripped on insert: >
+  ---
+  description: Review frontend code for accessibility
+  ---
+  ... body ...
+<
+Compaction is just a template: `compact.md` holding a "summarize the
+conversation above" prompt, inserted with |:PitelInsert|, sent, and the
+old history deleted (deletion = branching, |pitel-introduction|). The
+summary is an ordinary, editable turn — never an invisible model-run
+rewrite of the buffer.
 
 Config and runtime data:
 
@@ -618,6 +671,17 @@ R17 The audit log is the durable record of everything the context
     The tail buffer is its live view — ephemeral; the audit file
     survives restarts. This split is what makes slimmed headers (R12)
     and |:PitelClear| lossless.
+
+R18 Templates and skills are plain markdown files inserted into the buffer.
+    `templates_dir` files append as a `# @user` message (or as-is when
+    already headed); `skills_dir` files merge into the `# @system` block.
+    A skill's optional frontmatter may carry `description:` for the
+    skills intro (skills_intro) and is stripped on insert. Nothing is
+    auto-loaded and nothing is hidden: the inserted text is visible,
+    editable buffer content like any other, and the intro is a short
+    visible list, never injected bodies. Why: the buffer stays the only
+    state (R1), and templates/skills are just text, so one insert command
+    covers compaction, snippets and skills.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

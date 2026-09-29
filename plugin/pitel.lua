@@ -26,6 +26,26 @@ end, {
   desc = "Clear old tool results from the context (full output stays in the audit log); arg: how many to keep (default 2)",
 })
 
+vim.api.nvim_create_user_command("PitelInsert", function(cmd)
+  require("harness").insert(cmd.fargs[1], {})
+end, {
+  nargs = "?",
+  complete = function()
+    return require("harness").template_names()
+  end,
+  desc = "Insert a template (as a # @user block) or skill (into the system prompt); arg: name, or pick from the list",
+})
+
+vim.api.nvim_create_user_command("PitelInsertHere", function(cmd)
+  require("harness").insert(cmd.fargs[1], { at_cursor = true })
+end, {
+  nargs = "?",
+  complete = function()
+    return require("harness").template_names()
+  end,
+  desc = "Insert a template or skill verbatim above the cursor",
+})
+
 vim.api.nvim_create_user_command("PitelChangeModel", function(cmd)
   require("harness").change_model(cmd.fargs[1])
 end, {

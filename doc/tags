@@ -1,6 +1,8 @@
 :Pitel	pitel.txt	/*:Pitel*
 :PitelChangeModel	pitel.txt	/*:PitelChangeModel*
 :PitelClear	pitel.txt	/*:PitelClear*
+:PitelInsert	pitel.txt	/*:PitelInsert*
+:PitelInsertHere	pitel.txt	/*:PitelInsertHere*
 :PitelLive	pitel.txt	/*:PitelLive*
 :PitelReload	pitel.txt	/*:PitelReload*
 :PitelSend	pitel.txt	/*:PitelSend*
@@ -18,6 +20,7 @@ pitel-markers	pitel.txt	/*pitel-markers*
 pitel-protocol	pitel.txt	/*pitel-protocol*
 pitel-rules	pitel.txt	/*pitel-rules*
 pitel-sessions	pitel.txt	/*pitel-sessions*
+pitel-templates	pitel.txt	/*pitel-templates*
 pitel-tool-block	pitel.txt	/*pitel-tool-block*
 pitel-tools	pitel.txt	/*pitel-tools*
 pitel-winbar	pitel.txt	/*pitel-winbar*

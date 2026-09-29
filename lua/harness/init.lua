@@ -24,6 +24,14 @@ M.config = {
   -- (pi-style ~/.config/pitel/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
   agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/AGENTS.md",
+  -- Templates are text files inserted into the context by :PitelInsert
+  -- (a compaction prompt, a snippet, ...); skills are the same but
+  -- system-prompt material, merged into the # @system block.
+  templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/templates",
+  skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/pitel/skills",
+  -- List available skills (name + description) in new chats' system block
+  -- so they are discoverable; bodies are only ever inserted manually.
+  skills_intro = true,
 }
 
 -- Cached output of `pitel models` ("provider/model" lines) so
@@ -380,6 +388,238 @@ local function append_block(buf, block)
   local lines = vim.deepcopy(block)
   table.insert(lines, 1, "")
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
+end
+
+-- ─── Templates & skills ────────────────────────────────────────────────────
+
+--- `*.md` files in `dir`, sorted by name; empty when the dir is missing.
+local function list_md(dir)
+  local out = {}
+  for _, path in ipairs(vim.fn.glob(vim.fn.expand(dir) .. "/*.md", false, true)) do
+    out[#out + 1] = { path = path, name = vim.fn.fnamemodify(path, ":t:r") }
+  end
+  table.sort(out, function(a, b)
+    return a.name < b.name
+  end)
+  return out
+end
+
+local function read_file(path)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local text = f:read("*a")
+  f:close()
+  return text
+end
+
+--- Split optional YAML frontmatter (`---` ... `---`) off a skill file and
+--- return its `description:` key (feeds the intro list) plus the body lines.
+local function skill_parts(text)
+  local description
+  local lines = vim.split(text, "\n", { plain = true })
+  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
+    local close
+    for i = 2, #lines do
+      if lines[i]:match("^%-%-%-%s*$") then
+        close = i
+        break
+      end
+      local d = lines[i]:match("^description:%s*(.*)%s*$")
+      if d then
+        description = d
+      end
+    end
+    if close then
+      local rest = {}
+      for i = close + 1, #lines do
+        rest[#rest + 1] = lines[i]
+      end
+      lines = rest
+    end
+  end
+  return description, lines
+end
+
+local function trim_blank(lines)
+  while #lines > 0 and lines[1]:match("^%s*$") do
+    table.remove(lines, 1)
+  end
+  while #lines > 0 and lines[#lines]:match("^%s*$") do
+    table.remove(lines)
+  end
+  return lines
+end
+
+--- All insertable entries: templates first, then skills (picker label
+--- prefixed `skill: ` so the two kinds stay distinguishable).
+local function template_entries()
+  local entries = {}
+  for _, t in ipairs(list_md(M.config.templates_dir)) do
+    entries[#entries + 1] = { label = t.name, name = t.name, path = t.path, kind = "template" }
+  end
+  for _, s in ipairs(list_md(M.config.skills_dir)) do
+    entries[#entries + 1] = { label = "skill: " .. s.name, name = s.name, path = s.path, kind = "skill" }
+  end
+  return entries
+end
+
+--- Append a template as a message block: a leading `# @role` heading is
+--- used as-is (so a template can be a prefill or raw block); otherwise the
+--- text is wrapped in `# @user`. Blank-line handling is append_block's (R7).
+local function append_as_block(buf, lines)
+  if #lines == 0 then
+    vim.notify("pitel: template is empty", vim.log.levels.WARN)
+    return
+  end
+  if not lines[1]:match(HEAD) then
+    local wrapped = { "# @user", "" }
+    vim.list_extend(wrapped, lines)
+    lines = wrapped
+  end
+  append_block(buf, lines)
+end
+
+--- Merge a skill's body into the buffer's `# @system` block (or create the
+--- block at the top when there is none). Skills are system-prompt material:
+--- they go where a stateless provider keeps instructions.
+local function merge_into_system(buf, lines)
+  if #lines == 0 then
+    vim.notify("pitel: skill is empty", vim.log.levels.WARN)
+    return
+  end
+  local blines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local sys
+  for i, l in ipairs(blines) do
+    if l:match("^# @system%s*$") then
+      sys = i
+      break
+    end
+  end
+  if not sys then
+    local top = { "# @system", "" }
+    vim.list_extend(top, lines)
+    top[#top + 1] = ""
+    vim.api.nvim_buf_set_lines(buf, 0, 0, false, top)
+    return
+  end
+  local last = #blines
+  for i = sys + 1, #blines do
+    if blines[i]:match(HEAD) then
+      last = i - 1
+      break
+    end
+  end
+  while last >= sys and blines[last]:match("^%s*$") do
+    last = last - 1
+  end
+  local ins = { "" }
+  vim.list_extend(ins, lines)
+  vim.api.nvim_buf_set_lines(buf, last, last, false, ins)
+end
+
+--- Insert `lines` as new lines above the cursor's line (the raw primitive).
+local function insert_at_cursor(buf, lines)
+  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  vim.api.nvim_buf_set_lines(buf, row, row, false, vim.deepcopy(lines))
+end
+
+--- Skills intro for new chats: a short `## Skills` list (name + frontmatter
+--- description) in the system block — discoverability, not auto-load.
+--- Returns nil when there are no skills.
+local function skills_intro_lines()
+  local lines = {}
+  for _, s in ipairs(list_md(M.config.skills_dir)) do
+    local text = read_file(s.path)
+    if text then
+      local description = skill_parts(text)
+      lines[#lines + 1] = "- " .. s.name .. (description and (": " .. description) or "")
+    end
+  end
+  return #lines > 0 and lines or nil
+end
+
+--- :PitelInsert [name] / :PitelInsertHere [name].
+--- `opts.at_cursor` (default false) inserts verbatim above the cursor;
+--- otherwise a template appends as a message block and a skill merges into
+--- the system block. With no name, pick from the combined list.
+function M.insert(name, opts)
+  opts = opts or {}
+  local buf = vim.api.nvim_get_current_buf()
+  if not vim.b[buf].pitel then
+    vim.notify("pitel: not a pitel buffer", vim.log.levels.WARN)
+    return
+  end
+  if running[buf] then
+    vim.notify("pitel: send in flight, not inserting", vim.log.levels.WARN)
+    return
+  end
+
+  local function apply(entry)
+    local text = read_file(entry.path)
+    if not text then
+      vim.notify("pitel: cannot read " .. entry.path, vim.log.levels.ERROR)
+      return
+    end
+    local lines
+    if entry.kind == "skill" then
+      _, lines = skill_parts(text)
+    else
+      lines = vim.split(text, "\n", { plain = true })
+    end
+    lines = trim_blank(lines)
+    if opts.at_cursor then
+      insert_at_cursor(buf, lines)
+    elseif entry.kind == "skill" then
+      merge_into_system(buf, lines)
+    else
+      append_as_block(buf, lines)
+    end
+  end
+
+  local entries = template_entries()
+  if name then
+    for _, e in ipairs(entries) do
+      if e.name == name then
+        apply(e)
+        return
+      end
+    end
+    vim.notify("pitel: no template/skill named: " .. name, vim.log.levels.WARN)
+    return
+  end
+  if #entries == 0 then
+    vim.notify(
+      ("pitel: no templates in %s or %s"):format(M.config.templates_dir, M.config.skills_dir),
+      vim.log.levels.WARN
+    )
+    return
+  end
+  local items = {}
+  for _, e in ipairs(entries) do
+    items[#items + 1] = e.label
+  end
+  vim.ui.select(items, { prompt = "pitel insert" }, function(choice)
+    if not choice then
+      return
+    end
+    for _, e in ipairs(entries) do
+      if e.label == choice then
+        apply(e)
+        return
+      end
+    end
+  end)
+end
+
+--- Completion list for :PitelInsert / :PitelInsertHere.
+function M.template_names()
+  local names = {}
+  for _, e in ipairs(template_entries()) do
+    names[#names + 1] = e.name
+  end
+  return names
 end
 
 --- Find the pitel:usage marker the binary appended for this turn, fold its
@@ -868,6 +1108,12 @@ local function setup_buffer(buf)
   map("n", "<leader>l", function()
     M.live()
   end, "pitel: live tool output")
+  map("n", "<leader>t", function()
+    M.insert()
+  end, "pitel: insert template or skill")
+  map("n", "<leader>T", function()
+    M.insert(nil, { at_cursor = true })
+  end, "pitel: insert template or skill at cursor")
 
   require("harness.fold").setup_buffer(buf)
 
@@ -886,6 +1132,13 @@ function M.new(opts)
 
   local lines = { "# @system", "" }
   vim.list_extend(lines, vim.split(vim.b[buf].pitel_system or system_prompt(), "\n", { plain = true }))
+  if M.config.skills_intro then
+    local intro = skills_intro_lines()
+    if intro then
+      vim.list_extend(lines, { "", "## Skills" })
+      vim.list_extend(lines, intro)
+    end
+  end
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   -- A pitel:// name keeps file-backed clients (markdown LSPs) off the

@@ -43,6 +43,12 @@ Providers live in `~/.config/pitel.json` (any OpenAI-compatible endpoint):
   `keep` (default 2) tool result bodies with a pointer to the audit
   log. write/edit tool headers are always slimmed (`[N lines]`); the
   diff below them shows the change
+- `:PitelInsert [name]` / `<leader>t` — insert a template (appended as
+  `# @user`) or a skill (merged into `# @system`) from
+  `~/.config/pitel/templates/` and `~/.config/pitel/skills/`;
+  `<leader>T` inserts verbatim at the cursor. Compaction = insert a
+  `compact.md` summarize-prompt template, send, then delete the old
+  history.
 - `:PitelSessions [all]` — resume a saved session
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
