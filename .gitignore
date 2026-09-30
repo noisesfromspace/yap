@@ -1,3 +1,4 @@
 /yap
 /vendor/
 /.dev/
+tests/logs/
