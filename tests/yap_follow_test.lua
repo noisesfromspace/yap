@@ -73,7 +73,20 @@ do
   print(("follow: cursor stayed on the real tail and landed on input after %d samples"):format(n))
 end
 
--- ── 2. cursor parked mid-buffer: neither cursor nor view moves ───────────
+-- ── 2. moving off the tail cancels follow for the rest of the turn ──────
+do
+  local buf = yap.new({ provider = "mock", model = "m1" })
+  conversation(buf, 200)
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+  yap.send()
+  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > 205 end, 20), "stream did not start")
+  vim.cmd("normal! k")
+  local row0 = vim.api.nvim_win_get_cursor(0)[1]
+  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > row0 + 3 end, 20), "stream did not advance")
+  assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
+end
+
+-- ── 3. cursor parked mid-buffer: neither cursor nor view moves ───────────
 do
   local buf = yap.new({ provider = "mock", model = "m1" })
   conversation(buf, 200)

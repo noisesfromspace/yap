@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,13 @@ import (
 	"time"
 
 	"boers.email/yap/agent/tools"
+
+	anycfg "github.com/mozilla-ai/any-llm-go/config"
+	anyprov "github.com/mozilla-ai/any-llm-go/providers"
+	"github.com/mozilla-ai/any-llm-go/providers/anthropic"
+	"github.com/mozilla-ai/any-llm-go/providers/deepseek"
+	"github.com/mozilla-ai/any-llm-go/providers/gemini"
+	"github.com/mozilla-ai/any-llm-go/providers/openai"
 )
 
 // Bound on tool-call iterations per send (gptel has none; runaway loops
@@ -125,6 +133,30 @@ func toolDefs() []toolDef {
 	return defs
 }
 
+// sdkToolDefs converts compiled-in tools to any-llm-go provider Tool definitions.
+func sdkToolDefs() []anyprov.Tool {
+	all := tools.All()
+	if len(all) == 0 {
+		return nil
+	}
+	defs := make([]anyprov.Tool, 0, len(all))
+	for _, t := range all {
+		var params map[string]any
+		if len(t.Schema) > 0 {
+			_ = json.Unmarshal([]byte(t.Schema), &params)
+		}
+		defs = append(defs, anyprov.Tool{
+			Type: "function",
+			Function: anyprov.Function{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  params,
+			},
+		})
+	}
+	return defs
+}
+
 // ─── Agent loop ──────────────────────────────────────────────────────────────
 
 type turn struct {
@@ -177,131 +209,107 @@ func (l *lineEscaper) Flush() {
 	l.w.Flush()
 }
 
-// streamCompletion performs one streaming chat completion, writing text and
-// thinking markers to out as they arrive, and returns what the model said.
-// wrote reports whether earlier output already sits in the buffer (tool
-// regions of previous iterations): the first write of a turn gets one
-// leading blank only when nothing has been written yet.
-func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer, wrote bool) (*turn, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
+// streamCompletion via any-llm-go. Writes thinking markers and accumulates
+// assistant text; defers prose emission for tool-bearing rounds to the caller.
+func streamCompletion(ctx context.Context, prov anyprov.Provider, model string, messages []anyprov.Message, out *bufio.Writer, wrote bool) (*turn, error) {
+	params := anyprov.CompletionParams{
+		Model:         model,
+		Messages:      messages,
+		Stream:        true,
+		Tools:         sdkToolDefs(),
+		StreamOptions: &anyprov.StreamOptions{IncludeUsage: true},
 	}
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("Accept", "text/event-stream")
+	chunks, errs := prov.CompletionStream(ctx, params)
 
-	client := &http.Client{Timeout: 0} // no total timeout; streams can be long
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("POST %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		var ae apiError
-		if json.Unmarshal(errBody, &ae) == nil && ae.Error.Message != "" {
-			return nil, fmt.Errorf("%s: %s", resp.Status, ae.Error.Message)
-		}
-		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(errBody)))
-	}
-
-	// SSE stream: lines of "data: {json}", terminated by "data: [DONE]".
 	t := &turn{}
-	callArgs := map[int]*ToolCall{} // by delta index
+	callArgs := map[int]*ToolCall{}
 	inThinking := false
-	esc := newCommentEscaper(out) // for thinking text
-	// The first block of the whole turn gets one leading blank (the
-	// cursor sits on the empty line after the # @assistant heading);
-	// everything after that self-terminates with a blank line.
+	sawThinking := false
+	esc := newCommentEscaper(out)
 	firstWrite := func() {
 		if !wrote {
 			out.WriteString("\n")
 			wrote = true
 		}
 	}
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-		var chunk streamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // keep-alive pings and other non-chunk events
-		}
-		if chunk.Usage != nil {
-			t.prompt += chunk.Usage.PromptTokens
-			t.completion += chunk.Usage.CompletionTokens
-		}
-		for _, c := range chunk.Choices {
-			if c.FinishReason != nil {
-				t.finishReason = *c.FinishReason
+
+	for chunks != nil || errs != nil {
+		select {
+		case ch, ok := <-chunks:
+			if !ok {
+				chunks = nil
+				continue
 			}
-			if c.Delta.ReasoningContent != "" {
-				if !inThinking {
+			if ch.Usage != nil {
+				t.prompt += ch.Usage.PromptTokens
+				t.completion += ch.Usage.CompletionTokens
+			}
+			for _, c := range ch.Choices {
+				if c.FinishReason != "" {
+					t.finishReason = c.FinishReason
+				}
+				if c.Delta.Reasoning != nil && c.Delta.Reasoning.Content != "" {
+					if !inThinking {
+						firstWrite()
+						out.WriteString("<!-- yap:thinking\n")
+						inThinking = true
+						sawThinking = true
+					}
+					esc.WriteString(c.Delta.Reasoning.Content)
+				}
+				if s := c.Delta.Content; s != "" {
+					if inThinking {
+						esc.Flush()
+						out.WriteString("\n-->")
+						out.WriteString("\n\n")
+						inThinking = false
+					}
 					firstWrite()
-					out.WriteString("<!-- yap:thinking\n")
-					inThinking = true
+					out.WriteString(s)
+					out.Flush()
+					t.text += s
+					t.outWrote = true
 				}
-				esc.WriteString(c.Delta.ReasoningContent)
+				for idx, dc := range c.Delta.ToolCalls {
+					tc, ok := callArgs[idx]
+					if !ok {
+						tc = &ToolCall{ID: dc.ID, Type: dc.Type}
+						tc.Function.Name = dc.Function.Name
+						callArgs[idx] = tc
+					}
+					if dc.ID != "" {
+						tc.ID = dc.ID
+					}
+					if dc.Function.Name != "" {
+						tc.Function.Name = dc.Function.Name
+					}
+					tc.Function.Arguments += dc.Function.Arguments
+				}
 			}
-			if c.Delta.Content != "" {
-				if inThinking {
-					esc.Flush()
-					out.WriteString("\n-->\n\n")
-					inThinking = false
-				}
-				firstWrite()
-				out.WriteString(c.Delta.Content)
-				t.text += c.Delta.Content
-				out.Flush()
+		case err, ok := <-errs:
+			if ok && err != nil {
+				return nil, err
 			}
-			for _, dc := range c.Delta.ToolCalls {
-				tc, ok := callArgs[dc.Index]
-				if !ok {
-					tc = &ToolCall{ID: dc.ID, Type: dc.Type}
-					tc.Function.Name = dc.Function.Name
-					callArgs[dc.Index] = tc
-				}
-				if dc.ID != "" {
-					tc.ID = dc.ID
-				}
-				if dc.Function.Name != "" {
-					tc.Function.Name = dc.Function.Name
-				}
-				tc.Function.Arguments += dc.Function.Arguments
-			}
+			errs = nil
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading stream: %w", err)
-	}
+
 	if inThinking {
-		// Stream ended mid-thinking (or the model emitted nothing else):
-		// close the marker so the block stays parseable.
 		esc.Flush()
-		out.WriteString("\n-->\n\n")
+		out.WriteString("-->")
+		out.WriteString("\n\n")
+		// Thinking-only round still wrote a block that self-terminates
+		// with a blank line; report spacing to the caller.
+		t.outWrote = true
+		t.outTrail = 2
+	} else if sawThinking && t.text == "" {
+		// We opened and closed thinking earlier (before any assistant text),
+		// ensure spacing is reported.
+		t.outWrote = true
+		t.outTrail = 2
 	}
-	t.outWrote = wrote
-	switch {
-	case t.text != "":
-		t.outTrail = trailingNL(t.text)
-	case wrote:
-		t.outTrail = 2 // thinking-only turn: closed with a blank line
-	}
-	// Providers should use contiguous 0-based indices, but don't assume:
-	// collect and sort the keys so sparse indices can't silently drop calls.
+
+	// Collect tool calls in index order
 	idxs := make([]int, 0, len(callArgs))
 	for i := range callArgs {
 		idxs = append(idxs, i)
@@ -311,6 +319,11 @@ func streamCompletion(req chatRequest, url, apiKey string, out *bufio.Writer, wr
 		tc := callArgs[i]
 		tc.Type = "function"
 		t.calls = append(t.calls, *tc)
+	}
+
+	// Report output spacing to caller (no direct prose write here)
+	if t.text != "" {
+		t.outTrail = trailingNL(t.text)
 	}
 	return t, nil
 }
@@ -499,6 +512,130 @@ func fenceRun(s string) (byte, int) {
 	return s[0], i
 }
 
+// providerFactory creates an any-llm-go provider for the given configured provider.
+var providerFactory = func(name string, prov Provider) (anyprov.Provider, error) {
+	opts := []anycfg.Option{}
+	if k := os.Getenv(prov.APIKeyEnv); k != "" {
+		opts = append(opts, anycfg.WithAPIKey(k))
+	}
+	if prov.BaseURL != "" {
+		opts = append(opts, anycfg.WithBaseURL(strings.TrimRight(prov.BaseURL, "/")))
+	}
+	switch name {
+	case "openai":
+		return openai.New(opts...)
+	case "anthropic":
+		return anthropic.New(opts...)
+	case "gemini", "google":
+		return gemini.New(opts...)
+	case "deepseek":
+		return deepseek.New(opts...)
+	default:
+		if name == "mock" {
+			apiKey := os.Getenv(prov.APIKeyEnv)
+			return &compatProvider{baseURL: strings.TrimRight(prov.BaseURL, "/"), apiKey: apiKey}, nil
+		}
+		return nil, fmt.Errorf("unsupported provider %q", name)
+	}
+}
+
+// compatProvider implements any-llm-go's Provider interface by talking
+// to an OpenAI-compatible /chat/completions SSE endpoint. Used for tests
+// and local mock provider; not intended for real providers.
+type compatProvider struct {
+	baseURL    string
+	apiKey     string
+	httpClient *http.Client
+}
+
+func (p *compatProvider) Name() string { return "compat" }
+
+func (p *compatProvider) Completion(ctx context.Context, params anyprov.CompletionParams) (*anyprov.ChatCompletion, error) {
+	return nil, fmt.Errorf("Completion not implemented for compat provider")
+}
+
+func (p *compatProvider) CompletionStream(ctx context.Context, params anyprov.CompletionParams) (<-chan anyprov.ChatCompletionChunk, <-chan error) {
+	chunks := make(chan anyprov.ChatCompletionChunk, 16)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(chunks)
+		defer close(errs)
+		body := struct {
+			Model    string           `json:"model"`
+			Messages []anyprov.Message `json:"messages"`
+			Stream   bool             `json:"stream"`
+			Tools    []anyprov.Tool   `json:"tools,omitempty"`
+			StreamOptions *struct{ IncludeUsage bool `json:"include_usage"` } `json:"stream_options,omitempty"`
+		}{
+			Model:    params.Model,
+			Messages: params.Messages,
+			Stream:   true,
+			Tools:    params.Tools,
+			StreamOptions: &struct{ IncludeUsage bool `json:"include_usage"` }{IncludeUsage: true},
+		}
+		b, _ := json.Marshal(body)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(b))
+		if err != nil {
+			errs <- err
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		client := p.httpClient
+		if client == nil { client = &http.Client{Timeout: 0} }
+		resp, err := client.Do(req)
+		if err != nil { errs <- err; return }
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") { continue }
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" { break }
+			var sc streamChunk
+			if err := json.Unmarshal([]byte(data), &sc); err != nil { continue }
+			var out anyprov.ChatCompletionChunk
+			out.Choices = make([]anyprov.ChunkChoice, 0, len(sc.Choices))
+			if sc.Usage != nil {
+				out.Usage = &anyprov.Usage{PromptTokens: sc.Usage.PromptTokens, CompletionTokens: sc.Usage.CompletionTokens, TotalTokens: sc.Usage.PromptTokens + sc.Usage.CompletionTokens}
+			}
+			for _, c := range sc.Choices {
+				var delta anyprov.ChunkDelta
+				delta.Content = c.Delta.Content
+				if rc := c.Delta.ReasoningContent; rc != "" {
+					delta.Reasoning = &anyprov.Reasoning{Content: rc}
+				}
+				if len(c.Delta.ToolCalls) > 0 {
+					// Map indexed tool calls to a dense list (index order)
+					tmp := make(map[int]anyprov.ToolCall)
+					idxs := make([]int, 0, len(c.Delta.ToolCalls))
+					for _, dc := range c.Delta.ToolCalls {
+						idxs = append(idxs, dc.Index)
+						tmp[dc.Index] = anyprov.ToolCall{ID: dc.ID, Type: dc.Type, Function: anyprov.FunctionCall{Name: dc.Function.Name, Arguments: dc.Function.Arguments}}
+					}
+					sort.Ints(idxs)
+					for _, i := range idxs { delta.ToolCalls = append(delta.ToolCalls, tmp[i]) }
+				}
+				cc := anyprov.ChunkChoice{Delta: delta, FinishReason: deref(c.FinishReason)}
+				out.Choices = append(out.Choices, cc)
+			}
+			select {
+			case chunks <- out:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := scanner.Err(); err != nil { errs <- err }
+	}()
+	return chunks, errs
+}
+
+func deref(p *string) string { if p == nil { return "" }; return *p }
+
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	start := time.Now()
 	cfg, err := loadConfig()
@@ -514,9 +651,13 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		}
 		return fmt.Errorf("unknown provider %q (configured: %s)", providerName, strings.Join(names, ", "))
 	}
-	apiKey := os.Getenv(prov.APIKeyEnv)
-	if apiKey == "" {
+	if os.Getenv(prov.APIKeyEnv) == "" {
 		return fmt.Errorf("provider %q: env var %s is not set", providerName, prov.APIKeyEnv)
+	}
+
+	p, err := providerFactory(providerName, prov)
+	if err != nil {
+		return err
 	}
 
 	var req Request
@@ -527,10 +668,32 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		return errors.New("request contains no messages")
 	}
 
-	url := strings.TrimRight(prov.BaseURL, "/") + "/chat/completions"
 	out := bufio.NewWriter(outw)
-	messages := req.Messages
+	toProvMsgs := func(msgs []Message) []anyprov.Message {
+		outm := make([]anyprov.Message, 0, len(msgs))
+		for _, m := range msgs {
+			outm = append(outm, anyprov.Message{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID})
+		}
+		return outm
+	}
+	messages := toProvMsgs(req.Messages)
 	var totPrompt, totCompletion int
+
+	toProvCalls := func(calls []ToolCall) []anyprov.ToolCall {
+		if len(calls) == 0 { return nil }
+		out := make([]anyprov.ToolCall, 0, len(calls))
+		for _, c := range calls {
+			out = append(out, anyprov.ToolCall{
+				ID:   c.ID,
+				Type: c.Type,
+				Function: anyprov.FunctionCall{
+					Name:      c.Function.Name,
+					Arguments: c.Function.Arguments,
+				},
+			})
+		}
+		return out
+	}
 
 	// Block spacing (R7): blocks never start with newlines and
 	// self-terminate with exactly one blank line; pad() bridges the
@@ -559,16 +722,9 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		os.Exit(1)
 	}()
 
+	ctx := context.Background()
 	for iter := 0; ; iter++ {
-		t, err := streamCompletion(chatRequest{
-			Model:    model,
-			Messages: messages,
-			Stream:   true,
-			Tools:    toolDefs(),
-			StreamOptions: &struct {
-				IncludeUsage bool `json:"include_usage"`
-			}{IncludeUsage: true},
-		}, url, apiKey, out, wrote)
+		t, err := streamCompletion(ctx, p, model, messages, out, wrote)
 		if err != nil {
 			return err
 		}
@@ -604,7 +760,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		// The header lands BEFORE the tool runs so the call is visible
 		// while it executes; live output is followed via the tool's own
 		// log file (:YapLive), never written into this buffer.
-		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
+		messages = append(messages, anyprov.Message{Role: "assistant", Content: t.text, ToolCalls: toProvCalls(t.calls)})
 		for _, call := range t.calls {
 			// Flush the session-visible call before publishing its audit event.
 			// stdout/stderr are separate pipes, so this is the only causal
@@ -634,7 +790,23 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			}
 			tools.EmitEvent(map[string]any{"type": "tool_result", "name": call.Function.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
-			messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
+			messages = append(messages, anyprov.Message{Role: "tool", ToolCallID: call.ID, Content: result})
+		}
+		// Prose from a tool-bearing provider round is display-only here: it
+		// is already in the assistant history above, but showing it after the
+		// completed calls keeps calls visible before execution and before any
+		// text that refers to their results.
+		if t.text != "" {
+			out.WriteString(t.text)
+			trail = trailingNL(t.text)
+			if trail == 0 {
+				out.WriteString("\n\n")
+				trail = 2
+			} else if trail == 1 {
+				out.WriteString("\n")
+				trail = 2
+			}
+			wrote = true
 		}
 		out.Flush()
 	}

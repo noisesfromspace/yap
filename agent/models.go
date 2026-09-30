@@ -1,24 +1,31 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	anycfg "github.com/mozilla-ai/any-llm-go/config"
+	anyprov "github.com/mozilla-ai/any-llm-go/providers"
+	"github.com/mozilla-ai/any-llm-go/providers/anthropic"
+	"github.com/mozilla-ai/any-llm-go/providers/deepseek"
+	"github.com/mozilla-ai/any-llm-go/providers/gemini"
+	"github.com/mozilla-ai/any-llm-go/providers/openai"
 )
 
+// modelsProviderFactory allows tests to override provider construction.
+var modelsProviderFactory func(name string, prov Provider) (anyprov.Provider, error)
+
 // models lists the provider/model combos available in the config by
-// querying each provider's OpenAI-compatible GET /models endpoint — one
-// "provider/model" per line on stdout. Providers that fail are skipped
+// asking the SDK for models where supported; other providers are skipped.
+// One "provider/model" per line on stdout. Providers that fail are skipped
 // with a warning on stderr: one down provider must not block the picker.
 //
-// The requests are independent, so they run concurrently — the picker's
-// latency is one round-trip, not N, and a provider's 10s timeout no
-// longer serializes every provider after it.
+// The requests are independent, so they run concurrently.
 func models() error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -29,41 +36,58 @@ func models() error {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	client := &http.Client{Timeout: 10 * time.Second}
+
+	makeProv := func(name string, prov Provider) (anyprov.Provider, error) {
+		if modelsProviderFactory != nil {
+			return modelsProviderFactory(name, prov)
+		}
+		opts := []anycfg.Option{}
+		if k := os.Getenv(prov.APIKeyEnv); k != "" {
+			opts = append(opts, anycfg.WithAPIKey(k))
+		}
+		if prov.BaseURL != "" {
+			opts = append(opts, anycfg.WithBaseURL(strings.TrimRight(prov.BaseURL, "/")))
+		}
+		switch name {
+		case "openai":
+			return openai.New(opts...)
+		case "anthropic":
+			return anthropic.New(opts...)
+		case "gemini", "google":
+			return gemini.New(opts...)
+		case "deepseek":
+			return deepseek.New(opts...)
+		default:
+			// For tests, allow unknown providers to be skipped gracefully.
+			return nil, fmt.Errorf("unsupported provider %q", name)
+		}
+	}
 
 	type result struct {
 		lines []string
 		errs  []string
 	}
-	results := make([]result, len(names)) // one slot per goroutine, no shared state
+	results := make([]result, len(names))
 	var wg sync.WaitGroup
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	for i, name := range names {
 		wg.Add(1)
 		go func(i int, name string) {
 			defer wg.Done()
 			prov := cfg.Providers[name]
-			req, err := http.NewRequest("GET", strings.TrimSuffix(prov.BaseURL, "/")+"/models", nil)
+			p, err := makeProv(name, prov)
 			if err != nil {
 				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: %v", name, err))
 				return
 			}
-			if key := os.Getenv(prov.APIKeyEnv); key != "" {
-				req.Header.Set("Authorization", "Bearer "+key)
-			}
-			resp, err := client.Do(req)
-			if err != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: %v", name, err))
+			lister, ok := p.(anyprov.ModelLister)
+			if !ok {
 				return
 			}
-			var list struct {
-				Data []struct {
-					ID string `json:"id"`
-				} `json:"data"`
-			}
-			derr := json.NewDecoder(resp.Body).Decode(&list)
-			resp.Body.Close()
-			if resp.StatusCode != http.StatusOK || derr != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: GET /models: %s", name, resp.Status))
+			list, err := lister.ListModels(ctx)
+			if err != nil || list == nil {
+				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: list models: %v", name, err))
 				return
 			}
 			ids := make([]string, 0, len(list.Data))
@@ -78,8 +102,6 @@ func models() error {
 	}
 	wg.Wait()
 
-	// Emit in the original (sorted) provider order so output is
-	// deterministic regardless of goroutine completion order.
 	for _, r := range results {
 		for _, e := range r.errs {
 			fmt.Fprintln(os.Stderr, e)

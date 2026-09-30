@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"boers.email/yap/agent/tools"
+	anyprov "github.com/mozilla-ai/any-llm-go/providers"
 )
 
 // writeConfig points the binary at a temp HOME with the given providers.
@@ -208,8 +210,9 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
 	event := strings.Index(s, `yap:event {"args":"{}","name":"missing_test_tool","type":"tool_call"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
-	if header < 0 || event < 0 || result < 0 || !(header < event && event < result) {
-		t.Fatalf("tool ordering must be header -> event -> result:\n%s", s)
+	after := strings.Index(s, "after")
+	if header < 0 || event < 0 || result < 0 || after < 0 || !(header < event && event < result && result < after) {
+		t.Fatalf("tool round ordering must be header -> event -> result -> resumed answer (prose may stream and be repositioned by the harness):\n%s", s)
 	}
 }
 
@@ -239,22 +242,40 @@ func TestUnclosedFence(t *testing.T) {
 	}
 }
 
-// TestModels: /models queries every provider, sorts output, and skips a
-// down provider with a stderr warning instead of failing.
+// Fake provider used by TestModels to simulate a working ListModels.
+type fakeLister struct{}
+
+func (fakeLister) Name() string { return "fake" }
+func (fakeLister) Completion(ctx context.Context, p anyprov.CompletionParams) (*anyprov.ChatCompletion, error) {
+	return nil, fmt.Errorf("no completion in test")
+}
+func (fakeLister) CompletionStream(ctx context.Context, p anyprov.CompletionParams) (<-chan anyprov.ChatCompletionChunk, <-chan error) {
+	ch := make(chan anyprov.ChatCompletionChunk)
+	err := make(chan error, 1)
+	close(ch)
+	close(err)
+	return ch, err
+}
+func (fakeLister) ListModels(ctx context.Context) (*anyprov.ModelsResponse, error) {
+	return &anyprov.ModelsResponse{Data: []anyprov.Model{{ID: "m2"}, {ID: "m1"}}}, nil
+}
+
+// TestModels: models() queries providers via SDK where supported, sorts output,
+// and skips a down/unsupported provider with a stderr warning instead of failing.
 func TestModels(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Errorf("unexpected path %s", r.URL.Path)
+	// Override provider builder to simulate a lister for alpha and an error for zeta.
+	oldFactory := modelsProviderFactory
+	modelsProviderFactory = func(name string, prov Provider) (anyprov.Provider, error) {
+		if name == "alpha" {
+			return fakeLister{}, nil
 		}
-		if r.Header.Get("Authorization") != "Bearer k" {
-			t.Errorf("missing auth header")
-		}
-		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "m2"}, {"id": "m1"}}})
-	}))
-	defer srv.Close()
+		return nil, fmt.Errorf("unsupported provider %q", name)
+	}
+	defer func() { modelsProviderFactory = oldFactory }()
+
 	writeConfig(t,
 		`"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "YAP_TEST_KEY"},
-		 "alpha": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+		 "alpha": {"base_url": "http://example.com/v1", "api_key_env": "YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	// models() prints to stdout; capture it

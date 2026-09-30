@@ -25,7 +25,7 @@
             version = self.shortRev or self.dirtyShortRev or "dev";
             src = self;
             subPackages = [ "agent" ];
-            vendorHash = "sha256-gU3DuqdY5gcI/yq0Wac7E+vAk985IfSee9yltohgYi0=";
+            vendorHash = "sha256-7KmrDlSsMuyMZbFljMoED6OaI/Ac7GiiIhf8p+ynqkk=";
             env.CGO_ENABLED = "0";
             meta.mainProgram = "agent";
           };

@@ -520,6 +520,72 @@ drain_tail = function(buf)
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
+-- Reorder state for the current assistant round: stash pre-tool prose and
+-- reinsert it after the last tool region when all tools finish.
+local function get_reorder(buf)
+  vim.b[buf].yap_reorder = vim.b[buf].yap_reorder or { assistant = nil, stash = {}, pending = false, open = 0 }
+  return vim.b[buf].yap_reorder
+end
+
+local function find_last_assistant_heading(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    if lines[i]:match('^# @assistant%s*$') then
+      return i -- 1-based
+    end
+  end
+end
+
+local function cut_pretool_prose(buf)
+  -- Relocate already-streamed same-round prose to after the last tool
+  -- result: keep smooth streaming and preserve header/result-before-prose.
+  local r = get_reorder(buf)
+  if not r.assistant then return end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local from = r.assistant + 1
+  if from > #lines then return end
+  local header_at
+  for i = from, #lines do
+    if lines[i]:match('^<!%-%- yap:tool') then
+      header_at = i
+      break
+    end
+  end
+  if not header_at or header_at <= from then return end
+  local prose = vim.list_slice(lines, from, header_at - 1)
+  if #prose == 0 then return end
+  -- Delete the prose from the buffer and stash it.
+  vim.api.nvim_buf_set_lines(buf, from - 1, header_at - 1, false, {})
+  local r2 = get_reorder(buf)
+  r2.stash = prose
+  r2.pending = true
+end
+
+local function reinsert_stash_after_last_tool(buf)
+  local r = get_reorder(buf)
+  if not r.pending or #r.stash == 0 then return end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local last_close
+  for i = #lines, 1, -1 do
+    if lines[i]:match('^<!%-%- /yap:tool') then
+      last_close = i
+      break
+    end
+  end
+  if not last_close then return end
+  -- Ensure exactly one blank between the tool region and the prose we insert.
+  local insert_at = last_close + 1
+  local extra = {}
+  if lines[insert_at] ~= '' then
+    table.insert(extra, '')
+  end
+  for _, l in ipairs(r.stash) do table.insert(extra, l) end
+  if extra[#extra] ~= '' then table.insert(extra, '') end
+  vim.api.nvim_buf_set_lines(buf, insert_at, insert_at, false, extra)
+  r.stash = {}
+  r.pending = false
+end
+
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
   if not ok or type(ev) ~= "table" then
@@ -558,6 +624,11 @@ local function handle_event(buf, json_line)
         vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
       end
     end
+    -- Reordering: capture and remove any already-streamed prose before the
+    -- just-written tool header in the current assistant block.
+    local r = get_reorder(buf)
+    r.open = (r.open or 0) + 1
+    cut_pretool_prose(buf)
     if ev.name ~= "bash" then
       local t = ensure_tail(buf)
       audit_write(buf, { ("=== %s %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.args or "") })
@@ -581,7 +652,17 @@ local function handle_event(buf, json_line)
     end
     table.insert(lines, ("--- %s %s (%s bytes)"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.bytes or "?"))
     audit_write(buf, lines)
+    local r = get_reorder(buf)
+    r.open = math.max(0, (r.open or 0) - 1)
+    if r.open == 0 then
+      reinsert_stash_after_last_tool(buf)
+      -- Reset reorder state at the end of a tool round.
+      vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
+    end
   elseif ev.type == "turn_end" then
+    -- Reset reordering state at turn boundary; a new assistant round will set
+    -- its own anchor.
+    vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     local t = ensure_tail(buf)
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
@@ -918,12 +999,34 @@ function M.send()
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
   local follow = document.following_windows(buf)
+  local follow_group = vim.api.nvim_create_augroup("YapFollow" .. buf, { clear = true })
+  local moving_follow = false
+  local follow_active = true
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = follow_group,
+    buffer = buf,
+    callback = function()
+      -- Any user movement opts out of following for this turn immediately.
+      follow_active = false
+      follow = {}
+    end,
+  })
+  local function follow_tail()
+    if not follow_active or #follow == 0 then
+      return
+    end
+    moving_follow = true
+    document.follow_windows(buf, follow)
+    moving_follow = false
+  end
   document.append_block(buf, { "# @assistant", "" })
+  -- Track this assistant block for possible same-round prose relocation.
+  get_reorder(buf).assistant = find_last_assistant_heading(buf)
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
   vim.b[buf].yap_live = true
-  document.follow_windows(buf, follow)
+  follow_tail()
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
@@ -939,11 +1042,17 @@ function M.send()
     text = true,
     stdout = vim.schedule_wrap(function(_, data)
       if data then
-        -- Appending never touches fold state: new folds adopt the
-        -- view's 'foldlevel' as they appear (R10). Follow intent was
-        -- captured at send time and stays sticky across tool boundaries.
+        -- Stream assistant prose immediately. If this round later opens one or
+        -- more tool regions, handle_event() will cut any already-streamed
+        -- pre-tool prose from this assistant block and reinsert it after the
+        -- final tool region to preserve header/result-before-prose ordering.
         document.append_text(buf, data)
-        document.follow_windows(buf, follow)
+        follow_tail()
+        -- If the user moved (pressed k), keep their cursor anchored where they left it.
+        if not follow_active and vim.api.nvim_win_is_valid(0) and vim.api.nvim_win_get_buf(0) == buf then
+          local cur = vim.api.nvim_win_get_cursor(0)
+          vim.api.nvim_win_set_cursor(0, cur)
+        end
       end
     end),
     stderr = vim.schedule_wrap(function(_, data)
@@ -969,6 +1078,7 @@ function M.send()
       end
     end),
   }, vim.schedule_wrap(function(result)
+    vim.api.nvim_del_augroup_by_id(follow_group)
     running[buf] = nil
     local compact = vim.b[buf].yap_compact_pending
     vim.b[buf].yap_compact_pending = nil
@@ -1004,7 +1114,7 @@ function M.send()
       end
     end
     document.append_block(buf, { "# @user", "" })
-    document.follow_windows(buf, follow)
+    follow_tail()
     awaiting[buf] = true
     require("harness.session").save(buf)
     maybe_refresh_description(buf)
@@ -1105,7 +1215,7 @@ function M.new(opts)
 
   local lines = { "# @system", "" }
   vim.list_extend(lines, vim.split(vim.b[buf].yap_system or system_prompt(), "\n", { plain = true }))
-  if M.config.skills_intro then
+  if opts.skills_intro or M.config.skills_intro then
     local intro = require("harness.template").skills_intro_lines()
     if intro then
       vim.list_extend(lines, { "", "## Skills" })

@@ -42,7 +42,28 @@ do
   local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
   assert(text:match("^%-%-%-"), "frontmatter lost: " .. text)
   assert(text:match("# @system"), "system block lost: " .. text)
-  assert(text:match("You are a helpful coding assistant"), "system content lost: " .. text)
+  -- System content may come from a user AGENTS.md or the default; require it to be non-empty,
+  -- not a specific string.
+  do
+    local lines = vim.split(text, "\n", { plain = true })
+    local sys, next_head
+    for i, l in ipairs(lines) do
+      if l:match("^# @system%s*$") then sys = i break end
+    end
+    if sys then
+      for j = sys + 1, #lines do
+        if lines[j]:match("^# @%a+%s*$") then next_head = j - 1 break end
+      end
+      next_head = next_head or #lines
+      local nonempty = false
+      for k = sys + 1, next_head do
+        if lines[k] and not lines[k]:match("^%s*$") then nonempty = true break end
+      end
+      assert(nonempty, "system content lost: " .. text)
+    else
+      assert(false, "system block lost: " .. text)
+    end
+  end
   assert(text:match("The summary%."), "summary lost: " .. text)
   assert(text:match("# @user"), "trailing user prompt lost: " .. text)
   assert(not text:match("original question"), "old history not deleted: " .. text)

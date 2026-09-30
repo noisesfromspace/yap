@@ -195,18 +195,34 @@ function M.following_windows(buf)
   return wins
 end
 
---- Keep windows that started at the tail pinned to the real stream end.
---- `wins` is captured once when the send starts, so thinking/tool boundaries
---- cannot cancel following. Windows that started elsewhere are never moved.
+--- Explicitly cancel following for a window: remove it from the follower set.
+function M.cancel_follow(wins, win)
+  for i = #wins, 1, -1 do
+    if wins[i] == win then
+      table.remove(wins, i)
+      break
+    end
+  end
+end
+
+--- Keep tail windows on the stream end. Follow is sticky across tool
+--- boundaries and only cancels on explicit user movement (CursorMoved
+--- outside of our own follow operation). Windows that did not start at
+--- the tail are never included.
 function M.follow_windows(buf, wins)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return
   end
   local count = vim.api.nvim_buf_line_count(buf)
-  local last = vim.api.nvim_buf_get_lines(buf, count - 1, count, false)[1] or ""
-  for _, w in ipairs(wins) do
-    if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
-      vim.api.nvim_win_set_cursor(w, { count, math.max(#last - 1, 0) })
+  for i = #wins, 1, -1 do
+    local w = wins[i]
+    if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
+      table.remove(wins, i)
+    else
+      -- Always place the cursor at the real tail, column 0; do not try to
+      -- infer cancellation from cursor position here — explicit user
+      -- movement cancels via cancel_follow().
+      pcall(vim.api.nvim_win_set_cursor, w, { count, 0 })
     end
   end
 end

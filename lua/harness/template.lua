@@ -121,19 +121,24 @@ local function merge_into_system(buf, lines)
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, top)
     return
   end
-  local last = #blines
+  local next_head = #blines + 1
   for i = sys + 1, #blines do
     if blines[i]:match(HEAD) then
-      last = i - 1
+      next_head = i
       break
     end
   end
-  while last >= sys and blines[last]:match("^%s*$") do
-    last = last - 1
+  local body_end = next_head - 1
+  while body_end > sys and blines[body_end]:match("^%s*$") do
+    body_end = body_end - 1
   end
-  local ins = { "" }
+  local ins = {}
+  if body_end > sys then
+    ins[#ins + 1] = ""
+  end
   vim.list_extend(ins, lines)
-  vim.api.nvim_buf_set_lines(buf, last, last, false, ins)
+  ins[#ins + 1] = ""
+  vim.api.nvim_buf_set_lines(buf, next_head - 1, next_head - 1, false, ins)
 end
 
 --- Insert `lines` as new lines above the cursor's line (the raw primitive).
