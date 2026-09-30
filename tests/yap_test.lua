@@ -19,10 +19,10 @@ assert(path, "no yap_path set")
 assert(vim.fn.filereadable(path) == 1, "session file not written: " .. path)
 print("saved: " .. path)
 
--- 3. list finds it with the user snippet
+-- 3. list finds it with the filename first; descriptions are generated after turns
 local items = session.list("cwd")
 assert(#items == 1, "expected 1 session, got " .. #items)
-assert(items[1].text:match("airspeed velocity"), "snippet missing: " .. items[1].text)
+assert(items[1].text:match("^" .. vim.pesc(vim.fn.fnamemodify(path, ":t"))), "filename missing: " .. items[1].text)
 print("listed: " .. items[1].text)
 
 -- 4. reopen and parse back

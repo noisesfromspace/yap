@@ -35,6 +35,10 @@ M.config = {
   -- vim.notify when a turn completes in a buffer that is not focused
   -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
+  -- Cheap model used to keep the session picker's description current.
+  -- Refresh after the first completed turn, then every N completed turns.
+  description_model = "openai/gpt-5-mini",
+  description_refresh_turns = 5,
 }
 
 -- Cached output of `yap models` ("provider/model" lines) so
@@ -101,7 +105,7 @@ local function sync_frontmatter(buf)
     table.insert(models, combo)
   end
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  local block = frontmatter.render(provider, model, models, created_at)
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -1300,6 +1304,37 @@ local function repair_stream_tail(buf)
   end
 end
 
+local function refresh_description(buf)
+  local combo = M.config.description_model
+  if not combo or combo == "" then return end
+  local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  if not provider then return end
+  local messages = M.parse_buffer(buf)
+  local payload = vim.json.encode({ messages = {
+    { role = "system", content = "Summarize this chat session in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper." },
+    { role = "user", content = vim.json.encode(messages) },
+  } })
+  vim.system({ M.config.bin, "send", "--provider", provider, "--model", model }, { stdin = payload, text = true }, vim.schedule_wrap(function(result)
+    if result.code ~= 0 or not vim.api.nvim_buf_is_valid(buf) then return end
+    local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if description == "" then return end
+    local e = frontmatter_end(buf)
+    if not e then return end
+    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+    if not fm then return end
+    local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description)
+    vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+    require("harness.session").save(buf)
+  end))
+end
+
+local function maybe_refresh_description(buf)
+  local turns = (vim.b[buf].yap_description_turns or 0) + 1
+  vim.b[buf].yap_description_turns = turns
+  local every = math.max(1, tonumber(M.config.description_refresh_turns) or 5)
+  if turns == 1 or turns % every == 0 then refresh_description(buf) end
+end
+
 --- Every stream exit, including errors and :YapStop, hands the buffer back
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
@@ -1429,6 +1464,7 @@ function M.send()
     append_block(buf, { "# @user", "" })
     awaiting[buf] = true
     require("harness.session").save(buf)
+    maybe_refresh_description(buf)
     audit_follow(buf) -- first save named the session; rename the log to match
     tail_follow(buf) -- keep the tail sidecar file named with the session
     -- A completed turn is a first-class event (herdr's "working → blocked

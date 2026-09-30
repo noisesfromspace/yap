@@ -241,6 +241,16 @@
               default = "You are a helpful coding assistant. Answer concisely.";
               description = "Fallback system prompt when no AGENTS.md is present.";
             };
+            descriptionModel = mkOption {
+              type = types.str;
+              default = "openai/gpt-5-mini";
+              description = "Provider/model combo used to summarize sessions for the session picker.";
+            };
+            descriptionRefreshTurns = mkOption {
+              type = types.ints.positive;
+              default = 5;
+              description = "Refresh the session description after the first turn and then every N completed turns.";
+            };
           };
 
           config = lib.mkIf cfg.enable {

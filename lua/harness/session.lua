@@ -96,13 +96,13 @@ end
 --- project leads (only across projects), then the first user message, then
 --- the session's recorded model. The project is a leading column, not a
 --- trailing path slug; the exact session file is in the preview.
-local function make_label(scope, dir, snippet, model)
-  local snippet_s = snippet ~= "" and snippet or "(no user message)"
-  local model_s = model and ("  ·  " .. model) or ""
+local function make_label(scope, dir, filename, description)
+  local detail = description and description ~= "" and description or "(no description yet)"
+  local label = filename .. "  " .. detail
   if scope == "all" then
-    return string.format("%-20s  %s%s", fit(vim.fn.fnamemodify(dir, ":t"), 20), snippet_s, model_s)
+    return string.format("%-20s  %s", fit(vim.fn.fnamemodify(dir, ":t"), 20), label)
   end
-  return snippet_s .. model_s
+  return label
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all".
@@ -120,13 +120,12 @@ function M.list(scope)
   for _, dir in ipairs(dirs) do
     for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
       local lines = vim.fn.readfile(path, "", 200)
-      local snippet = first_user_snippet(lines)
       local fm = frontmatter.parse(lines)
       local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
       table.insert(items, {
         path = path,
         mtime = vim.fn.getftime(path),
-        text = make_label(scope, dir, snippet, model),
+        text = make_label(scope, dir, vim.fn.fnamemodify(path, ":t"), fm and fm.description),
         model = model,
         models = (fm and #fm.models > 1) and fm.models or nil,
       })

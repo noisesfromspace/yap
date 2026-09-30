@@ -6,6 +6,7 @@
 --   provider: moonshot
 --   model: kimi-k3
 --   created_at: 2025-09-29T19:22:33Z
+--   description: Fix session picker labels and summaries
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
@@ -51,6 +52,8 @@ function M.parse(lines)
         fm.model = v
       elseif k == "created_at" then
         fm.created_at = v
+      elseif k == "description" then
+        fm.description = v
       elseif k == "models" then
         in_models = true
       end
@@ -61,10 +64,13 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at)
+function M.render(provider, model, models, created_at, description)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
   if created_at then
     lines[#lines + 1] = "created_at: " .. created_at
+  end
+  if description and description ~= "" then
+    lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
   end
   if models and #models > 0 then
     lines[#lines + 1] = "models:"

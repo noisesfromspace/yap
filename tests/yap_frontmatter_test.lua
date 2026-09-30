@@ -16,6 +16,11 @@ assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.insp
 assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
 local created = fm.created_at
 
+-- descriptions survive ordinary frontmatter rewrites
+local e = 1
+while lines[e] ~= "---" or e == 1 do e = e + 1 end
+vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("zeta", "m1", fm.models, created, "Implement session descriptions"))
+
 -- 2. parse_buffer ignores the frontmatter (it is not a message)
 local msgs = yap.parse_buffer(buf)
 assert(#msgs == 1 and msgs[1].role == "system", "frontmatter leaked into messages")
@@ -26,6 +31,7 @@ lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
 assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim.inspect(fm))
 assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
+assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 
 -- 4. switching to the same combo is a no-op for the history
@@ -49,7 +55,8 @@ assert(
 -- 6. the picker surfaces the model and the history
 local items = session.list("cwd")
 assert(#items == 1, "expected 1 session, got " .. #items)
-assert(items[1].text:match("alpha/m2"), "model missing from label: " .. items[1].text)
+assert(items[1].text:match(vim.pesc(vim.fn.fnamemodify(path, ":t")) .. "  Implement session descriptions"), "filename/description missing from label: " .. items[1].text)
+assert(not items[1].text:match("alpha/m2"), "model should not fill picker label: " .. items[1].text)
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
 -- 7. a legacy file without frontmatter keeps the config default and is
