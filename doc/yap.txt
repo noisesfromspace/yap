@@ -40,7 +40,12 @@ truth, and that can be a text buffer. Consequences:
 
                                                                 *:YapSend*
 :YapSend              Send the whole buffer to the provider and stream the
-                        reply into the buffer.
+                        reply into the buffer. Each send also injects
+                        Neovim's current working directory into the request,
+                        evaluated at send time. Thus `:cd` takes effect on
+                        the next send and references such as "here" mean the
+                        current Neovim directory. This request-only system
+                        context is not written into the chat buffer.
 
                                                                 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
@@ -336,7 +341,7 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
-bash, write, edit, search, glob, websearch. search and glob shell out to
+bash, write, edit, search, glob, websearch, quickfix. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 websearch queries the Exa search API (api.exa.ai) and returns up to N
@@ -346,6 +351,13 @@ results as markdown; its API key is read from the env var named by
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming
 arguments are validated against the compiled schema before Run.
+
+quickfix replaces the current Neovim quickfix list with a batch of source
+locations. Each invocation creates a new list on the quickfix stack, so the
+previous list remains reachable with |:colder| / |:cnewer| (subject to
+|'chistory'|). The Neovim side applies the structured live tool_call event;
+there is no parsing of assistant text. Historical tool blocks do not execute,
+so reopening a saved session never replays the quickfix side effect.
 
 write creates or overwrites files (creating parent directories); edit
 does exact-text replacement with pi's semantics: every edits[].oldText

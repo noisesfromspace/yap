@@ -1318,6 +1318,12 @@ function M.send()
   end
 
   local messages = M.parse_buffer(buf)
+  -- The harness cwd is request-scoped rather than session-scoped: :cd takes
+  -- effect on the very next turn without rewriting the visible chat buffer.
+  table.insert(messages, 1, {
+    role = "system",
+    content = "Current Neovim working directory: " .. vim.fn.getcwd(),
+  })
   if #messages == 0 then
     vim.notify("yap: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
     return

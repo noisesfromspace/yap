@@ -55,7 +55,10 @@ editing the agent.
 ## Quick start
 
 - `:Yap` — new chat buffer
-- `<C-s>` — send the whole buffer
+- `<C-s>` — send the whole buffer. Every send also injects Neovim's current
+  working directory into the request, so `:cd` takes effect on the next send
+  and references such as “here” refer to the current Neovim directory. This
+  request-only context is not written into the chat buffer.
 - `<leader>m` / `:YapChangeModel` — switch models (queries the providers
   in config.json for their model lists)
 - `:YapStop` — kill the in-flight request
@@ -84,6 +87,11 @@ editing the agent.
 - `:YapInstances` / `<leader>r` — list open sessions by file path and
   jump to the picked one (sessions are unlisted: they never appear in
   `:ls` or buffer pickers)
+- The agent's `quickfix` tool can replace the current quickfix list with
+  multiple source locations, e.g. review findings. Each call creates a new
+  quickfix history entry, so previous lists remain available with `:colder`
+  / `:cnewer`. The side effect happens only for a live tool call; reopening a
+  saved session does not replay it.
 
 Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
 the winbar, whose trailing glyph marks busy / error / `◉ waiting` (the agent
