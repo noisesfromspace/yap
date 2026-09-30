@@ -79,9 +79,10 @@ type turn struct {
 // inline — so every one is neutralized. Chunks split mid-line, so
 // per-chunk replacement doesn't work.
 type lineEscaper struct {
-	w   *bufio.Writer
-	buf []byte
-	esc func(string) string
+	w      *bufio.Writer
+	buf    []byte
+	esc    func(string) string
+	lastNL bool // last byte written to w was '\n'
 }
 
 func newCommentEscaper(w *bufio.Writer) *lineEscaper {
@@ -101,6 +102,7 @@ func (l *lineEscaper) WriteString(s string) {
 		flushed = true
 	}
 	if flushed {
+		l.lastNL = true
 		l.w.Flush()
 	}
 }
@@ -109,6 +111,7 @@ func (l *lineEscaper) Flush() {
 	if len(l.buf) > 0 {
 		l.w.WriteString(l.esc(string(l.buf)))
 		l.buf = nil
+		l.lastNL = false
 	}
 	l.w.Flush()
 }
@@ -133,6 +136,19 @@ func streamStep(ctx context.Context, model providers.LanguageModel, messages []p
 			wrote = true
 		}
 	}
+	// closeThinking ends the open thinking comment with `-->` on its own
+	// line. The escaper flushes streamed text without a trailing newline,
+	// so the closer must add one — unless the final reasoning chunk already
+	// ended with one, in which case an extra blank line would leak into the
+	// comment.
+	closeThinking := func() {
+		esc.Flush()
+		if !esc.lastNL {
+			out.WriteString("\n")
+		}
+		out.WriteString("-->\n\n")
+		inThinking = false
+	}
 
 	for ev := range stream.Events {
 		switch ev.Type {
@@ -146,10 +162,7 @@ func streamStep(ctx context.Context, model providers.LanguageModel, messages []p
 			esc.WriteString(ev.Text)
 		case providers.EventText:
 			if inThinking {
-				esc.Flush()
-				out.WriteString("\n-->")
-				out.WriteString("\n\n")
-				inThinking = false
+				closeThinking()
 			}
 			firstWrite()
 			out.WriteString(ev.Text)
@@ -160,9 +173,7 @@ func streamStep(ctx context.Context, model providers.LanguageModel, messages []p
 	}
 
 	if inThinking {
-		esc.Flush()
-		out.WriteString("-->")
-		out.WriteString("\n\n")
+		closeThinking()
 		// Thinking-only round still wrote a block that self-terminates
 		// with a blank line; report spacing to the caller.
 		t.outWrote = true

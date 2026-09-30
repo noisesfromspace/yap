@@ -193,6 +193,38 @@ func TestDeepSeekReasoningIsEnabledAndReplayed(t *testing.T) {
 	}
 }
 
+// TestThinkingCloserOnOwnLine: a thinking-only round whose final reasoning
+// chunk ends WITHOUT a trailing newline must still close with `-->` on its
+// own line. An inline `-->` (e.g. `...text-->`) would not be recognized as
+// the comment closer by the fold/parse/repair logic in the harness.
+func TestThinkingCloserOnOwnLine(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			sse(w,
+				`{"choices":[{"delta":{"reasoning_content":"no trailing newline"}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"missing_test_tool","arguments":"{}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "<!-- yap:thinking\nno trailing newline\n-->\n") {
+		t.Fatalf("thinking closer not on its own line:\n%s", s)
+	}
+}
+
 func TestAssistantDeltasAreEmittedOnce(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sse(w,
