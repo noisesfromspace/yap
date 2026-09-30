@@ -12,54 +12,72 @@ export YAP_ROOT="$ROOT"
 export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-yap-test-key}"
 
 TESTHOME="$(mktemp -d)"
-mkdir -p "$TESTHOME/.config"
 trap 'rm -rf "$TESTHOME"; kill $(jobs -p) 2>/dev/null' EXIT
-export XDG_CONFIG_HOME="$TESTHOME/.config"
 
 cd "$ROOT" || exit 1
 CGO_ENABLED=0 go build -o yap ./agent || exit 1
 CGO_ENABLED=0 go test ./... || exit 1
 export PATH="$ROOT:$PATH"
 
-fail=0
+# Parallel test runner: start all Lua headless tests in background and fail fast
+mkdir -p "$ROOT/tests/logs"
+
+pids=()
+names=()
+mockpids=()
+exitfiles=()
+processed=()
+declare -A mockmap
+
 run() { # name port [mock]
   local name="$1" port="$2" mock="${3:-}"
-  rm -rf "$TESTHOME/.yap"
+  local TEST_DIR="$TESTHOME/$name"
+  rm -rf "$TEST_DIR"
+  mkdir -p "$TEST_DIR/.config"
+
   if [ "$mock" = "mock_models.py" ]; then
-    cat > "$TESTHOME/.config/yap.json" <<EOF
+    cat > "$TEST_DIR/.config/yap.json" <<EOF
 {"providers": {"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "MOONSHOT_API_KEY"},
                "alpha": {"base_url": "http://127.0.0.1:$port/v1", "api_key_env": "MOONSHOT_API_KEY"}}}
 EOF
   else
-    cat > "$TESTHOME/.config/yap.json" <<EOF
+    cat > "$TEST_DIR/.config/yap.json" <<EOF
 {"providers": {"mock": {"base_url": "http://127.0.0.1:$port/v1", "api_key_env": "MOONSHOT_API_KEY"}},
  "pricing": {"m1": {"input": 2.0, "output": 10.0}}}
 EOF
   fi
+
   local mockpid=""
   if [ -n "$mock" ]; then
-    python3 "tests/$mock" & mockpid=$!
-    sleep 0.3
+    key="$mock:$port"
+    if [ -z "${mockmap[$key]:-}" ]; then
+      python3 "tests/$mock" & mockpid=$!
+      mockmap[$key]="$mockpid"
+      sleep 0.3
+    else
+      mockpid="${mockmap[$key]}"
+    fi
   fi
-  local out
-  # -u NONE skips user config, but a nix-pack-installed yap can still
-  # shadow the repo on rtp; prepend the repo so tests exercise THIS tree.
-  # `nvim -l` (not -c luafile + qa!): a failing assert exits non-zero —
-  # with -c, E5113 prints but `qa!` still exits 0 and failures pass.
-  if out=$(HOME="$TESTHOME" nvim --headless -u NONE \
-      --cmd "set rtp^=$ROOT" -l "tests/$name.lua" 2>&1); then
-    echo "ok   $name"
-  else
-    echo "FAIL $name"
-    echo "$out" | tail -5
-    fail=1
-  fi
-  if [ -n "$mockpid" ]; then
-    kill $mockpid 2>/dev/null
-    wait $mockpid 2>/dev/null
-  fi
+
+  local log="$ROOT/tests/logs/$name.log"
+  local exitfile="$ROOT/tests/logs/$name.exit"
+  rm -f "$log" "$exitfile"
+
+  # Run nvim in a background subshell and write its exit code to exitfile.
+  (
+    HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" -l "tests/$name.lua" >"$log" 2>&1
+    echo $? > "$exitfile"
+  ) &
+  local pid=$!
+
+  pids+=("$pid")
+  names+=("$name")
+  mockpids+=("$mockpid")
+  exitfiles+=("$exitfile")
+  processed+=(0)
 }
 
+# Start all tests in background
 run yap_test 18132 mock_slow.py
 run yap_static_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
@@ -80,8 +98,43 @@ for t in yap_fold_test yap_detailfold_test yap_think_test yap_error_test yap_ml_
   run "$t" 18132
 done
 
-if [ "$fail" -eq 0 ]; then
-  echo "all tests passed"
-else
-  exit 1
-fi
+# Wait for jobs, fail fast on first non-zero exit
+remaining=${#pids[@]}
+while [ "$remaining" -gt 0 ]; do
+  # wait -n blocks until any child process exits
+  wait -n 2>/dev/null || true
+
+  # check exitfiles to see which jobs finished
+  for i in "${!exitfiles[@]}"; do
+    if [ "${processed[$i]}" -eq 1 ]; then
+      continue
+    fi
+    if [ -f "${exitfiles[$i]}" ]; then
+      code=$(cat "${exitfiles[$i]}")
+      name="${names[$i]}"
+      log="$ROOT/tests/logs/$name.log"
+      if [ "$code" -eq 0 ]; then
+        echo "ok   $name"
+        processed[$i]=1
+        remaining=$((remaining-1))
+      else
+        echo "FAIL $name"
+        tail -n 5 "$log"
+        # kill remaining tests and mocks
+        for j in "${!pids[@]}"; do
+          if [ "${processed[$j]}" -eq 0 ]; then
+            kill "${pids[$j]}" 2>/dev/null || true
+          fi
+        done
+        for mp in "${mockpids[@]}"; do
+          if [ -n "$mp" ]; then
+            kill "$mp" 2>/dev/null || true
+          fi
+        done
+        exit 1
+      fi
+    fi
+  done
+done
+
+echo "all tests passed"
