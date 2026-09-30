@@ -1,6 +1,6 @@
 package main
 
-// The agent loop: one chat completion per iteration; tool calls are
+// The agent loop: one generation step per iteration; tool calls are
 // executed (compiled-in tools from the tools package) and re-sent until
 // the final answer or the iteration bound. The whole turn is one process.
 
@@ -12,146 +12,47 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
 
+	"boers.email/yap/agent/providers"
+	"boers.email/yap/agent/providers/goai"
 	"boers.email/yap/agent/tools"
-
-	anycfg "github.com/mozilla-ai/any-llm-go/config"
-	anyprov "github.com/mozilla-ai/any-llm-go/providers"
-	"github.com/mozilla-ai/any-llm-go/providers/anthropic"
-	"github.com/mozilla-ai/any-llm-go/providers/deepseek"
-	"github.com/mozilla-ai/any-llm-go/providers/gemini"
-	"github.com/mozilla-ai/any-llm-go/providers/openai"
 )
 
 // Bound on tool-call iterations per send (gptel has none; runaway loops
 // burn tokens silently).
 const maxToolIterations = 50
 
-// ─── Wire types (OpenAI-compatible) ──────────────────────────────────────────
-
-type ToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"` // JSON-encoded string per spec
-	} `json:"function"`
-}
+// ─── Wire types (stdin) ────────────────────────────────────────────────────
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role       string          `json:"role"`
+	Content    string          `json:"content"`
+	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
 }
 
 type Request struct {
 	Messages []Message `json:"messages"`
 }
 
-type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
-	Tools    []toolDef `json:"tools,omitempty"`
-	// Ask the provider to end the stream with a token-usage chunk.
-	StreamOptions *struct {
-		IncludeUsage bool `json:"include_usage"`
-	} `json:"stream_options,omitempty"`
-}
-
-type toolDef struct {
-	Type     string `json:"type"`
-	Function struct {
-		Name        string          `json:"name"`
-		Description string          `json:"description"`
-		Parameters  json.RawMessage `json:"parameters"`
-	} `json:"function"`
-}
-
-// Delta tool_calls arrive index-keyed: first chunk has id/type/name,
-// subsequent chunks stream function.arguments fragments.
-type deltaToolCall struct {
-	Index    int    `json:"index"`
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
-}
-
-type streamChunk struct {
-	Choices []struct {
-		Delta struct {
-			Content string `json:"content"`
-			// ReasoningContent is the OpenAI-compatible thinking field
-			// (DeepSeek, Moonshot/Kimi). Streamed wrapped in a
-			// <!-- yap:thinking --> marker, which parse_buffer excludes
-			// from the message array on the next send.
-			ReasoningContent string          `json:"reasoning_content"`
-			ToolCalls        []deltaToolCall `json:"tool_calls"`
-		} `json:"delta"`
-		FinishReason *string `json:"finish_reason"`
-	} `json:"choices"`
-	// Final chunk when stream_options.include_usage is set (choices empty).
-	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-	} `json:"usage"`
-}
-
-type apiError struct {
-	Error struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
-}
-
-func toolDefs() []toolDef {
+// providerToolDefs converts compiled-in tools to adapter Tool definitions.
+func providerToolDefs() []providers.Tool {
 	all := tools.All()
 	if len(all) == 0 {
 		return nil
 	}
-	defs := make([]toolDef, 0, len(all))
+	defs := make([]providers.Tool, 0, len(all))
 	for _, t := range all {
-		var d toolDef
-		d.Type = "function"
-		d.Function.Name = t.Name
-		d.Function.Description = t.Description
-		d.Function.Parameters = json.RawMessage(t.Schema)
-		defs = append(defs, d)
-	}
-	return defs
-}
-
-// sdkToolDefs converts compiled-in tools to any-llm-go provider Tool definitions.
-func sdkToolDefs() []anyprov.Tool {
-	all := tools.All()
-	if len(all) == 0 {
-		return nil
-	}
-	defs := make([]anyprov.Tool, 0, len(all))
-	for _, t := range all {
-		var params map[string]any
-		if len(t.Schema) > 0 {
-			_ = json.Unmarshal([]byte(t.Schema), &params)
-		}
-		defs = append(defs, anyprov.Tool{
-			Type: "function",
-			Function: anyprov.Function{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  params,
-			},
+		defs = append(defs, providers.Tool{
+			Name:        t.Name,
+			Description: t.Description,
+			InputSchema: json.RawMessage(t.Schema),
 		})
 	}
 	return defs
@@ -161,12 +62,15 @@ func sdkToolDefs() []anyprov.Tool {
 
 type turn struct {
 	text               string
-	calls              []ToolCall
+	calls              []providers.ToolCall
 	finishReason       string
 	prompt, completion int
 	// Buffer-write state at return, for block spacing in the agent loop.
 	outWrote bool // anything was written (false: cursor still on the empty line)
 	outTrail int  // trailing newlines of everything written
+	// The exact assistant message(s) GoAI produced for this step (ordered
+	// parts + provider metadata); appended verbatim to history.
+	responseMessages []providers.Message
 }
 
 // lineEscaper buffers streamed text to line granularity so dangerous
@@ -209,20 +113,17 @@ func (l *lineEscaper) Flush() {
 	l.w.Flush()
 }
 
-// streamCompletion via any-llm-go. Writes thinking markers and accumulates
-// assistant text; defers prose emission for tool-bearing rounds to the caller.
-func streamCompletion(ctx context.Context, prov anyprov.Provider, model string, messages []anyprov.Message, out *bufio.Writer, wrote bool) (*turn, error) {
-	params := anyprov.CompletionParams{
-		Model:         model,
-		Messages:      messages,
-		Stream:        true,
-		Tools:         sdkToolDefs(),
-		StreamOptions: &anyprov.StreamOptions{IncludeUsage: true},
+// streamStep runs one generation step via the adapter. Writes thinking
+// markers and streams assistant prose live; defers prose for tool-bearing
+// rounds to the caller (which re-writes it after the tool regions — the
+// harness relocates the live-streamed copy).
+func streamStep(ctx context.Context, model providers.LanguageModel, messages []providers.Message, out *bufio.Writer, wrote bool) (*turn, error) {
+	stream, err := model.DoStream(ctx, providers.Params{Messages: messages, Tools: providerToolDefs()})
+	if err != nil {
+		return nil, err
 	}
-	chunks, errs := prov.CompletionStream(ctx, params)
 
 	t := &turn{}
-	callArgs := map[int]*ToolCall{}
 	inThinking := false
 	sawThinking := false
 	esc := newCommentEscaper(out)
@@ -233,64 +134,28 @@ func streamCompletion(ctx context.Context, prov anyprov.Provider, model string, 
 		}
 	}
 
-	for chunks != nil || errs != nil {
-		select {
-		case ch, ok := <-chunks:
-			if !ok {
-				chunks = nil
-				continue
+	for ev := range stream.Events {
+		switch ev.Type {
+		case providers.EventReasoning:
+			if !inThinking {
+				firstWrite()
+				out.WriteString("<!-- yap:thinking\n")
+				inThinking = true
+				sawThinking = true
 			}
-			if ch.Usage != nil {
-				t.prompt += ch.Usage.PromptTokens
-				t.completion += ch.Usage.CompletionTokens
+			esc.WriteString(ev.Text)
+		case providers.EventText:
+			if inThinking {
+				esc.Flush()
+				out.WriteString("\n-->")
+				out.WriteString("\n\n")
+				inThinking = false
 			}
-			for _, c := range ch.Choices {
-				if c.FinishReason != "" {
-					t.finishReason = c.FinishReason
-				}
-				if c.Delta.Reasoning != nil && c.Delta.Reasoning.Content != "" {
-					if !inThinking {
-						firstWrite()
-						out.WriteString("<!-- yap:thinking\n")
-						inThinking = true
-						sawThinking = true
-					}
-					esc.WriteString(c.Delta.Reasoning.Content)
-				}
-				if s := c.Delta.Content; s != "" {
-					if inThinking {
-						esc.Flush()
-						out.WriteString("\n-->")
-						out.WriteString("\n\n")
-						inThinking = false
-					}
-					firstWrite()
-					out.WriteString(s)
-					out.Flush()
-					t.text += s
-					t.outWrote = true
-				}
-				for idx, dc := range c.Delta.ToolCalls {
-					tc, ok := callArgs[idx]
-					if !ok {
-						tc = &ToolCall{ID: dc.ID, Type: dc.Type}
-						tc.Function.Name = dc.Function.Name
-						callArgs[idx] = tc
-					}
-					if dc.ID != "" {
-						tc.ID = dc.ID
-					}
-					if dc.Function.Name != "" {
-						tc.Function.Name = dc.Function.Name
-					}
-					tc.Function.Arguments += dc.Function.Arguments
-				}
-			}
-		case err, ok := <-errs:
-			if ok && err != nil {
-				return nil, err
-			}
-			errs = nil
+			firstWrite()
+			out.WriteString(ev.Text)
+			out.Flush()
+			t.text += ev.Text
+			t.outWrote = true
 		}
 	}
 
@@ -309,19 +174,20 @@ func streamCompletion(ctx context.Context, prov anyprov.Provider, model string, 
 		t.outTrail = 2
 	}
 
-	// Collect tool calls in index order
-	idxs := make([]int, 0, len(callArgs))
-	for i := range callArgs {
-		idxs = append(idxs, i)
-	}
-	sort.Ints(idxs)
-	for _, i := range idxs {
-		tc := callArgs[i]
-		tc.Type = "function"
-		t.calls = append(t.calls, *tc)
+	res := stream.Result()
+	if res.Err != nil {
+		return nil, res.Err
 	}
 
-	// Report output spacing to caller (no direct prose write here)
+	if len(res.ToolCalls) > 0 && len(res.ResponseMessages) == 0 {
+		return nil, errors.New("provider returned tool calls without a replayable assistant message")
+	}
+	t.finishReason = res.FinishReason
+	t.calls = res.ToolCalls
+	t.prompt = res.Usage.PromptTokens
+	t.completion = res.Usage.CompletionTokens
+	t.responseMessages = res.ResponseMessages
+
 	if t.text != "" {
 		t.outTrail = trailingNL(t.text)
 	}
@@ -378,15 +244,15 @@ func escapeMarkerPrefixes(s string) string {
 // honestly represents execution time. Flushed so the header lands
 // before a long-running tool's result. Blocks carry no leading
 // newlines; the caller pads (one blank line between blocks, R7).
-func emitToolHeader(out *bufio.Writer, call ToolCall) {
+func emitToolHeader(out *bufio.Writer, call providers.ToolCall) {
 	// write/edit carry their full content in the arguments; the header
-	// (and with it the model's own history on later turns) keeps only
-	// the shape — the yap:ui diff shows the change and the audit log
-	// has the full arguments (R12).
-	args, ok := tools.SlimArgs(call.Function.Name, call.Function.Arguments)
+	// keeps only the shape — the yap:ui diff shows the change and the
+	// audit log has the full arguments (R12).
+	argsJSON := string(call.Input)
+	args, ok := tools.SlimArgs(call.Name, argsJSON)
 	if !ok {
-		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-			args = call.Function.Arguments // malformed/truncated JSON: keep raw
+		if err := json.Unmarshal(call.Input, &args); err != nil {
+			args = argsJSON // malformed/truncated JSON: keep raw
 		}
 	}
 	// Struct, not map: stable key order (id, name, arguments).
@@ -394,7 +260,7 @@ func emitToolHeader(out *bufio.Writer, call ToolCall) {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
 		Arguments any    `json:"arguments"`
-	}{call.ID, call.Function.Name, args})
+	}{call.ID, call.Name, args})
 	if len(header) <= toolHeaderMaxSingle {
 		fmt.Fprintf(out, "<!-- yap:tool %s -->\n", header)
 	} else {
@@ -512,129 +378,14 @@ func fenceRun(s string) (byte, int) {
 	return s[0], i
 }
 
-// providerFactory creates an any-llm-go provider for the given configured provider.
-var providerFactory = func(name string, prov Provider) (anyprov.Provider, error) {
-	opts := []anycfg.Option{}
-	if k := os.Getenv(prov.APIKeyEnv); k != "" {
-		opts = append(opts, anycfg.WithAPIKey(k))
-	}
-	if prov.BaseURL != "" {
-		opts = append(opts, anycfg.WithBaseURL(strings.TrimRight(prov.BaseURL, "/")))
-	}
-	switch name {
-	case "openai":
-		return openai.New(opts...)
-	case "anthropic":
-		return anthropic.New(opts...)
-	case "gemini", "google":
-		return gemini.New(opts...)
-	case "deepseek":
-		return deepseek.New(opts...)
-	default:
-		if name == "mock" {
-			apiKey := os.Getenv(prov.APIKeyEnv)
-			return &compatProvider{baseURL: strings.TrimRight(prov.BaseURL, "/"), apiKey: apiKey}, nil
-		}
-		return nil, fmt.Errorf("unsupported provider %q", name)
-	}
+// providerFactory builds a Yap provider for the given configured provider.
+var providerFactory = func(name string, prov Provider) (providers.Provider, error) {
+	return goai.NewProvider(providers.ProviderConfig{
+		Name:    name,
+		BaseURL: prov.BaseURL,
+		APIKey:  os.Getenv(prov.APIKeyEnv),
+	})
 }
-
-// compatProvider implements any-llm-go's Provider interface by talking
-// to an OpenAI-compatible /chat/completions SSE endpoint. Used for tests
-// and local mock provider; not intended for real providers.
-type compatProvider struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
-}
-
-func (p *compatProvider) Name() string { return "compat" }
-
-func (p *compatProvider) Completion(ctx context.Context, params anyprov.CompletionParams) (*anyprov.ChatCompletion, error) {
-	return nil, fmt.Errorf("Completion not implemented for compat provider")
-}
-
-func (p *compatProvider) CompletionStream(ctx context.Context, params anyprov.CompletionParams) (<-chan anyprov.ChatCompletionChunk, <-chan error) {
-	chunks := make(chan anyprov.ChatCompletionChunk, 16)
-	errs := make(chan error, 1)
-	go func() {
-		defer close(chunks)
-		defer close(errs)
-		body := struct {
-			Model    string           `json:"model"`
-			Messages []anyprov.Message `json:"messages"`
-			Stream   bool             `json:"stream"`
-			Tools    []anyprov.Tool   `json:"tools,omitempty"`
-			StreamOptions *struct{ IncludeUsage bool `json:"include_usage"` } `json:"stream_options,omitempty"`
-		}{
-			Model:    params.Model,
-			Messages: params.Messages,
-			Stream:   true,
-			Tools:    params.Tools,
-			StreamOptions: &struct{ IncludeUsage bool `json:"include_usage"` }{IncludeUsage: true},
-		}
-		b, _ := json.Marshal(body)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(b))
-		if err != nil {
-			errs <- err
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "text/event-stream")
-		if p.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+p.apiKey)
-		}
-		client := p.httpClient
-		if client == nil { client = &http.Client{Timeout: 0} }
-		resp, err := client.Do(req)
-		if err != nil { errs <- err; return }
-		defer resp.Body.Close()
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") { continue }
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" { break }
-			var sc streamChunk
-			if err := json.Unmarshal([]byte(data), &sc); err != nil { continue }
-			var out anyprov.ChatCompletionChunk
-			out.Choices = make([]anyprov.ChunkChoice, 0, len(sc.Choices))
-			if sc.Usage != nil {
-				out.Usage = &anyprov.Usage{PromptTokens: sc.Usage.PromptTokens, CompletionTokens: sc.Usage.CompletionTokens, TotalTokens: sc.Usage.PromptTokens + sc.Usage.CompletionTokens}
-			}
-			for _, c := range sc.Choices {
-				var delta anyprov.ChunkDelta
-				delta.Content = c.Delta.Content
-				if rc := c.Delta.ReasoningContent; rc != "" {
-					delta.Reasoning = &anyprov.Reasoning{Content: rc}
-				}
-				if len(c.Delta.ToolCalls) > 0 {
-					// Map indexed tool calls to a dense list (index order)
-					tmp := make(map[int]anyprov.ToolCall)
-					idxs := make([]int, 0, len(c.Delta.ToolCalls))
-					for _, dc := range c.Delta.ToolCalls {
-						idxs = append(idxs, dc.Index)
-						tmp[dc.Index] = anyprov.ToolCall{ID: dc.ID, Type: dc.Type, Function: anyprov.FunctionCall{Name: dc.Function.Name, Arguments: dc.Function.Arguments}}
-					}
-					sort.Ints(idxs)
-					for _, i := range idxs { delta.ToolCalls = append(delta.ToolCalls, tmp[i]) }
-				}
-				cc := anyprov.ChunkChoice{Delta: delta, FinishReason: deref(c.FinishReason)}
-				out.Choices = append(out.Choices, cc)
-			}
-			select {
-			case chunks <- out:
-			case <-ctx.Done():
-				return
-			}
-		}
-		if err := scanner.Err(); err != nil { errs <- err }
-	}()
-	return chunks, errs
-}
-
-func deref(p *string) string { if p == nil { return "" }; return *p }
 
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	start := time.Now()
@@ -669,34 +420,29 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	}
 
 	out := bufio.NewWriter(outw)
-	toProvCalls := func(calls []ToolCall) []anyprov.ToolCall {
-		if len(calls) == 0 { return nil }
-		out := make([]anyprov.ToolCall, 0, len(calls))
-		for _, c := range calls {
-			out = append(out, anyprov.ToolCall{
-				ID:   c.ID,
-				Type: c.Type,
-				Function: anyprov.FunctionCall{
-					Name:      c.Function.Name,
-					Arguments: c.Function.Arguments,
-				},
-			})
+	messages := make([]providers.Message, 0, len(req.Messages))
+	for _, m := range req.Messages {
+		if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
+			return errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")
 		}
-		return out
-	}
-	toProvMsgs := func(msgs []Message) []anyprov.Message {
-		outm := make([]anyprov.Message, 0, len(msgs))
-		for _, m := range msgs {
-			outm = append(outm, anyprov.Message{
-				Role:       m.Role,
-				Content:    m.Content,
-				ToolCalls:  toProvCalls(m.ToolCalls),
-				ToolCallID: m.ToolCallID,
-			})
+		var role providers.Role
+		switch m.Role {
+		case "system":
+			role = providers.RoleSystem
+		case "user":
+			role = providers.RoleUser
+		case "assistant":
+			role = providers.RoleAssistant
+		default:
+			return fmt.Errorf("unsupported message role %q", m.Role)
 		}
-		return outm
+		var content []providers.Part
+		if m.Content != "" {
+			content = append(content, providers.Part{Type: providers.PartText, Text: m.Content})
+		}
+		messages = append(messages, providers.Message{Role: role, Content: content})
 	}
-	messages := toProvMsgs(req.Messages)
+	modelImpl := p.Model(model)
 	var totPrompt, totCompletion int
 
 	// Block spacing (R7): blocks never start with newlines and
@@ -728,7 +474,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {
-		t, err := streamCompletion(ctx, p, model, messages, out, wrote)
+		t, err := streamStep(ctx, modelImpl, messages, out, wrote)
 		if err != nil {
 			return err
 		}
@@ -758,13 +504,11 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			break
 		}
 
-		// Append the assistant turn with its calls to the request-local
-		// history, execute each call, and emit one yap:tool region per
-		// call+result pair (R12) — both to the buffer and to the history.
-		// The header lands BEFORE the tool runs so the call is visible
-		// while it executes; live output is followed via the tool's own
-		// log file (:YapLive), never written into this buffer.
-		messages = append(messages, anyprov.Message{Role: "assistant", Content: t.text, ToolCalls: toProvCalls(t.calls)})
+		// Append the exact assistant message(s) GoAI produced — ordered
+		// parts and provider metadata (reasoning items/encrypted content,
+		// signatures, thought signatures, reasoning_content) intact — then
+		// execute each call and append native tool-result messages.
+		messages = append(messages, t.responseMessages...)
 		for _, call := range t.calls {
 			// Flush the session-visible call before publishing its audit event.
 			// stdout/stderr are separate pipes, so this is the only causal
@@ -775,26 +519,34 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
-			tools.EmitEvent(map[string]any{"type": "tool_call", "name": call.Function.Name, "args": call.Function.Arguments})
-			tool, ok := tools.Get(call.Function.Name)
+			tools.EmitEvent(map[string]any{"type": "tool_call", "name": call.Name, "args": string(call.Input)})
+			tool, ok := tools.Get(call.Name)
 			var result, ui string
 			if !ok {
-				result = "error: unknown tool " + call.Function.Name
+				result = "error: unknown tool " + call.Name
 				emitToolResult(out, result, "")
 			} else {
 				var err error
-				result, ui, err = tool.Run(json.RawMessage(call.Function.Arguments))
+				result, ui, err = tool.Run(call.Input)
 				if err != nil {
 					result = "error: " + err.Error()
 					ui = ""
 				} else {
-					result = fenceResult(call.Function.Name, call.Function.Arguments, result)
+					result = fenceResult(call.Name, string(call.Input), result)
 				}
 				emitToolResult(out, result, ui)
 			}
-			tools.EmitEvent(map[string]any{"type": "tool_result", "name": call.Function.Name, "bytes": len(result), "result": result})
+			tools.EmitEvent(map[string]any{"type": "tool_result", "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
-			messages = append(messages, anyprov.Message{Role: "tool", ToolCallID: call.ID, Content: result})
+			messages = append(messages, providers.Message{
+				Role: providers.RoleTool,
+				Content: []providers.Part{{
+					Type:       providers.PartToolResult,
+					ToolCallID: call.ID,
+					ToolName:   call.Name,
+					ToolOutput: result,
+				}},
+			})
 		}
 		// Prose from a tool-bearing provider round is display-only here: it
 		// is already in the assistant history above, but showing it after the

@@ -36,21 +36,19 @@ local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not text:match("file1"), "old bash body not cleared")
 assert(not text:match("Successfully wrote"), "old write body not cleared")
 assert(select(2, text:gsub("%[output cleared", "")) == 2, "expected 2 placeholders: " .. text)
--- headers (the model's tool_calls history) and ui diffs survive
+-- headers (flattened call transcript) and ui diffs survive
 assert(text:match('"command":"ls"'), "header was cleared")
 assert(text:match("%+big"), "ui diff was cleared")
 assert(text:match("\n/tmp\n"), "last region should be kept: " .. text)
--- the context still parses: three tool results, two now the placeholder
-local results = {}
+-- the context still parses: three tool regions flattened into one assistant
+-- transcript; the two cleared bodies are the placeholder, the last is /tmp
+local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "tool" then
-    table.insert(results, m.content)
-  end
+  if m.role == "assistant" then asst = m end
 end
-assert(#results == 3, "expected 3 tool results, got " .. #results)
-assert(results[1]:match("^%[output cleared"), "result 1: " .. results[1])
-assert(results[2]:match("^%[output cleared"), "result 2: " .. results[2])
-assert(results[3] == "/tmp", "result 3: " .. results[3])
+assert(asst, "no assistant message after clear")
+assert(select(2, asst.content:gsub("%[output cleared", "")) == 2, "expected 2 placeholders: " .. asst.content)
+assert(asst.content:match("\n/tmp\n") or asst.content:match("^/tmp\n"), "last region result kept: " .. asst.content)
 -- idempotent
 yap.clear(buf, 1)
 assert(

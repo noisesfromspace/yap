@@ -99,16 +99,16 @@ local file_text = table.concat(vim.fn.readfile(tail_file), "\n")
 assert(file_text:match("^%$ printf"), "no command header in tail file: " .. file_text)
 assert(file_text:match("\nl1\nl2\n") and file_text:match("tail%-without%-newline"), "tail file incomplete: " .. file_text)
 
--- the parsed tool message carries the result, marker line excluded
-local toolmsg
+-- the parsed assistant message carries the flattened result, marker line excluded
+local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "tool" then
-    toolmsg = m
+  if m.role == "assistant" then
+    asst = m
   end
 end
-assert(toolmsg, "no tool message parsed")
-assert(toolmsg.content:match("l1") and toolmsg.content:match("tail%-without%-newline"),
-  "result body wrong: " .. vim.inspect(toolmsg.content))
+assert(asst, "no assistant message parsed")
+assert(asst.content:match("l1") and asst.content:match("tail%-without%-newline"),
+  "result body wrong: " .. vim.inspect(asst.content))
 
 -- Regression: a user follow-up after a tool turn must survive the
 -- round-trip (a dangling tool region would swallow it on the next send).
@@ -120,8 +120,8 @@ for _, m in ipairs(msgs_rt) do
 end
 assert(msgs_rt[#msgs_rt].role == "user" and msgs_rt[#msgs_rt].content:match("follow%-up"),
   "follow-up not parsed after tool turn; roles=" .. table.concat(roles, ","))
-assert(msgs_rt[#msgs_rt - 1].role == "tool",
-  "tool result lost before follow-up; roles=" .. table.concat(roles, ","))
+assert(msgs_rt[#msgs_rt - 1].role == "assistant",
+  "flattened assistant lost before follow-up; roles=" .. table.concat(roles, ","))
 
 -- ─── :YapLive + stop mid-run ───────────────────────────────────────────
 local buf2 = yap.new()
@@ -155,7 +155,7 @@ assert(stopped_lines[#stopped_lines - 1] == "# @user" and stopped_lines[#stopped
 local t2 = table.concat(stopped_lines, "\n")
 local ok, msgs2 = pcall(yap.parse_buffer, buf2)
 assert(ok, "buffer unparseable after stop")
--- the tool-bearing assistant message still has its (empty) result paired
+-- the tool-bearing assistant message still has its (empty) result flattened
 local last = msgs2[#msgs2]
-assert(last.role == "tool", "dangling tool state after stop: " .. vim.inspect(last.role))
+assert(last.role == "assistant", "dangling tool state after stop: " .. vim.inspect(last.role))
 print("OK livetool")

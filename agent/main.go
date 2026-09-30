@@ -9,12 +9,13 @@
 //
 //	yap send --provider NAME --model MODEL < request.json
 //
-// request.json: {"messages":[{"role":"system|user|assistant|tool", ...}]}
+// request.json: {"messages":[{"role":"system|user|assistant","content":"..."}]}
 //
 // Providers and pricing live in ~/.config/yap.json. Tools are Go files
 // in the agent/tools/ package (one file per tool, self-registering) — edit and
-// recompile to change them. Any OpenAI-compatible /chat/completions
-// endpoint works (OpenAI, DeepSeek, Moonshot/Kimi, OpenRouter, z.ai, ...).
+// recompile to change them. Native providers (OpenAI Responses, Anthropic,
+// Google/Gemini, DeepSeek) and any OpenAI-compatible /chat/completions
+// endpoint (Moonshot/Kimi, OpenRouter, z.ai, ...) work via the GoAI adapter.
 package main
 
 import (

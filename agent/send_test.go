@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"testing"
 
 	"boers.email/yap/agent/tools"
-	anyprov "github.com/mozilla-ai/any-llm-go/providers"
 )
 
 // writeConfig points the binary at a temp HOME with the given providers.
@@ -45,7 +43,7 @@ func sse(w http.ResponseWriter, chunks ...string) {
 // `-->` split across chunks (must be escaped for renderers), tool calls
 // at SPARSE delta indices (must not be dropped), a tool result that
 // contains a yap marker line (must be escaped), and the tool pair
-// wiring back into the second request.
+// wiring back into the second request as NATIVE tool_calls/tool roles.
 func TestSendToolLoop(t *testing.T) {
 	var secondRequest map[string]any
 	calls := 0
@@ -124,6 +122,7 @@ func TestSendToolLoop(t *testing.T) {
 	}
 
 	// second request: assistant tool_calls + tool results, correctly paired
+	// (native tool roles/calls, not flattened transcript text).
 	if secondRequest == nil {
 		t.Fatal("no second request (agent loop did not continue)")
 	}
@@ -146,42 +145,51 @@ func TestSendToolLoop(t *testing.T) {
 	}
 }
 
-func TestPersistedToolCallsRemainPaired(t *testing.T) {
-	var request map[string]any
+func TestDeepSeekReasoningIsEnabledAndReplayed(t *testing.T) {
+	var requests []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatalf("decode request: %v", err)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, body)
+		if len(requests) == 1 {
+			sse(w,
+				`{"choices":[{"delta":{"reasoning_content":"inspect first"}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"missing_test_tool","arguments":"{}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
 		}
 		sse(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	writeConfig(t, `"deepseek": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
-	input := `{"messages":[
-		{"role":"user","content":"look it up"},
-		{"role":"assistant","content":"","tool_calls":[{"id":"persisted-1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"pwd\"}"}}]},
-		{"role":"tool","tool_call_id":"persisted-1","content":"/opt/code/yap"},
-		{"role":"user","content":"continue"}
-	]}`
 	var out bytes.Buffer
-	if err := send("mock", "m1", strings.NewReader(input), &out); err != nil {
+	if err := send("deepseek", "deepseek-v4-pro", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}
-
-	messages := request["messages"].([]any)
-	assistant := messages[1].(map[string]any)
-	calls, ok := assistant["tool_calls"].([]any)
-	if !ok || len(calls) != 1 {
-		t.Fatalf("persisted assistant tool_calls dropped: %v", assistant)
+	if len(requests) != 2 {
+		t.Fatalf("requests: %d", len(requests))
 	}
-	call := calls[0].(map[string]any)
-	if call["id"] != "persisted-1" {
-		t.Fatalf("wrong persisted tool call: %v", call)
+	for i, req := range requests {
+		thinking, _ := req["thinking"].(map[string]any)
+		if thinking["type"] != "enabled" {
+			t.Fatalf("request %d did not enable thinking: %#v", i+1, req["thinking"])
+		}
 	}
-	result := messages[2].(map[string]any)
-	if result["role"] != "tool" || result["tool_call_id"] != "persisted-1" {
-		t.Fatalf("persisted tool result no longer paired: %v", result)
+	messages := requests[1]["messages"].([]any)
+	var assistant map[string]any
+	for _, raw := range messages {
+		m := raw.(map[string]any)
+		if m["role"] == "assistant" && m["tool_calls"] != nil {
+			assistant = m
+		}
+	}
+	if assistant == nil || assistant["reasoning_content"] != "inspect first" {
+		t.Fatalf("reasoning_content not replayed: %#v", assistant)
 	}
 }
 
@@ -281,43 +289,64 @@ func TestUnclosedFence(t *testing.T) {
 	}
 }
 
-// Fake provider used by TestModels to simulate a working ListModels.
-type fakeLister struct{}
-
-func (fakeLister) Name() string { return "fake" }
-func (fakeLister) Completion(ctx context.Context, p anyprov.CompletionParams) (*anyprov.ChatCompletion, error) {
-	return nil, fmt.Errorf("no completion in test")
-}
-func (fakeLister) CompletionStream(ctx context.Context, p anyprov.CompletionParams) (<-chan anyprov.ChatCompletionChunk, <-chan error) {
-	ch := make(chan anyprov.ChatCompletionChunk)
-	err := make(chan error, 1)
-	close(ch)
-	close(err)
-	return ch, err
-}
-func (fakeLister) ListModels(ctx context.Context) (*anyprov.ModelsResponse, error) {
-	return &anyprov.ModelsResponse{Data: []anyprov.Model{{ID: "m2"}, {ID: "m1"}}}, nil
-}
-
-// TestModels: models() queries providers via SDK where supported, sorts output,
-// and skips a down/unsupported provider with a stderr warning instead of failing.
-func TestModels(t *testing.T) {
-	// Override provider builder to simulate a lister for alpha and an error for zeta.
-	oldFactory := modelsProviderFactory
-	modelsProviderFactory = func(name string, prov Provider) (anyprov.Provider, error) {
-		if name == "alpha" {
-			return fakeLister{}, nil
-		}
-		return nil, fmt.Errorf("unsupported provider %q", name)
+func TestListModelsNativeShapes(t *testing.T) {
+	tests := []struct {
+		name, path, response string
+		want                 string
+		checkAuth            func(*http.Request) bool
+	}{
+		{
+			name: "anthropic", path: "/v1/models", response: `{"data":[{"id":"claude-test"}]}`, want: "claude-test",
+			checkAuth: func(r *http.Request) bool {
+				return r.Header.Get("x-api-key") == "k" && r.Header.Get("anthropic-version") != ""
+			},
+		},
+		{
+			name: "google", path: "/v1beta/models", response: `{"models":[{"name":"models/gemini-test"}]}`, want: "gemini-test",
+			checkAuth: func(r *http.Request) bool { return r.Header.Get("x-goog-api-key") == "k" },
+		},
 	}
-	defer func() { modelsProviderFactory = oldFactory }()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.path || !tt.checkAuth(r) {
+					t.Fatalf("request path=%q headers=%v", r.URL.Path, r.Header)
+				}
+				fmt.Fprint(w, tt.response)
+			}))
+			defer srv.Close()
+			ids, err := listModels(t.Context(), tt.name, srv.URL, "k")
+			if err != nil || len(ids) != 1 || ids[0] != tt.want {
+				t.Fatalf("ids=%v err=%v", ids, err)
+			}
+		})
+	}
+}
+
+// TestModels: models() queries each configured provider, sorts output, and
+// skips a failing provider with a stderr warning.
+func TestModels(t *testing.T) {
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer k" {
+			t.Errorf("auth header: %s", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"m2"},{"id":"m1"}]}`)
+	}))
+	defer good.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusInternalServerError)
+	}))
+	defer bad.Close()
 
 	writeConfig(t,
-		`"zeta": {"base_url": "http://127.0.0.1:19999/v1", "api_key_env": "YAP_TEST_KEY"},
-		 "alpha": {"base_url": "http://example.com/v1", "api_key_env": "YAP_TEST_KEY"}`)
+		`"zeta": {"base_url": "`+bad.URL+`/v1", "api_key_env": "YAP_TEST_KEY"},
+		 "alpha": {"base_url": "`+good.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
-	// models() prints to stdout; capture it
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w

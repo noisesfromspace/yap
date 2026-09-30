@@ -22,14 +22,14 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "File written.", "",
   "# @user", "",
 })
--- parse: the paired ui diff is excluded from the tool result
-local toolmsg
+-- parse: the paired ui diff is excluded from the flattened tool region
+local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "tool" then toolmsg = m end
+  if m.role == "assistant" then asst = m end
 end
-assert(toolmsg and toolmsg.tool_call_id == "w1", "no tool result")
-assert(toolmsg.content:match("Successfully wrote"), "result missing: " .. tostring(toolmsg.content))
-assert(not toolmsg.content:match("yap:ui") and not toolmsg.content:match("%+a"), "ui leaked into result")
+assert(asst, "no assistant message")
+assert(asst.content:match("Successfully wrote"), "result missing: " .. tostring(asst.content))
+assert(not asst.content:match("yap:ui") and not asst.content:match("%+a"), "ui leaked into result")
 
 -- folds: the paired ui region is part of the one level-3 tool fold
 fold.setup_buffer(buf)

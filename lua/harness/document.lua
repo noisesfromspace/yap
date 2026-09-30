@@ -12,52 +12,58 @@ local roles = { system = "system", user = "user", assistant = "assistant" }
 --- Lines before the first heading are ignored (legacy frontmatter in
 --- old session files stays inert).
 --- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
---- `<!-- yap:tool -->` regions are TRANSFORMED (R12): the header becomes
---- an assistant tool_calls entry, the body becomes the tool result message.
---- Adjacent same-role blocks are merged (providers require alternation),
---- except tool-bearing assistant messages, which must stay adjacent to
---- their results.
+--- `<!-- yap:tool -->` regions are FLATTENED: a valid region inside an
+--- assistant block becomes ordinary assistant transcript text — the tool
+--- name, its JSON arguments, and the result — so the visible markdown IS
+--- the conversation and persisted history never reconstructs native
+--- tool-call/tool-result messages. Deleting/editing the region changes the
+--- transcript directly.
+--- Adjacent same-role blocks are merged (providers require alternation).
 --- Empty blocks are dropped.
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
-  local tools = {} -- yap:tool regions collected in the current block
-  local tool = nil -- open region: { call = <wire call>, result = {lines} }
+  local tool = nil -- open region: { name = <string>, args = <value>, result = {lines} }
   local skipping = false -- skipping a region (bad header / wrong role)
   local in_marker = false
   local ui_paired = false -- inside a paired `<!-- yap:ui --> … <!-- /yap:ui -->` diff
   local header_acc = nil -- collecting a multi-line tool header
+
+  -- Flatten the open tool region into the assistant accumulator.
+  local function flush_tool()
+    if not tool then
+      return
+    end
+    local args = tool.args
+    if type(args) ~= "string" then
+      args = vim.json.encode(type(args) == "table" and args or {})
+    end
+    table.insert(acc, "Tool call: " .. tool.name)
+    table.insert(acc, "Arguments: " .. args)
+    table.insert(acc, "Tool result:")
+    for _, l in ipairs(tool.result) do
+      table.insert(acc, l)
+    end
+    tool = nil
+  end
 
   local function flush()
     if not role then
       acc = {} -- pre-heading lines (legacy frontmatter) are not a message
       return
     end
+    flush_tool() -- safety net for a dangling region
     local text = table.concat(acc, "\n")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if #tools > 0 then
-      -- Tool-bearing assistant message + its results; never merged.
-      local calls = {}
-      for _, t in ipairs(tools) do
-        table.insert(calls, t.call)
-      end
-      table.insert(messages, { role = "assistant", content = text, tool_calls = calls })
-      for _, t in ipairs(tools) do
-        local result = table.concat(t.result, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-        table.insert(messages, { role = "tool", tool_call_id = t.id, content = result })
-      end
-    elseif text ~= "" then
+    if text ~= "" then
       local last = messages[#messages]
-      -- Don't merge onto a tool-bearing assistant message: its results
-      -- must directly follow it.
-      if last and last.role == role and not last.tool_calls then
+      if last and last.role == role then
         last.content = last.content .. "\n\n" .. text
       else
         table.insert(messages, { role = role, content = text })
       end
     end
     acc = {}
-    tools = {}
   end
 
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
@@ -67,8 +73,7 @@ function M.parse_buffer(buf)
       -- or the paired form: `<!-- yap:ui -->` … fence …
       -- `<!-- /yap:ui -->`).
       if line:match("^<!%-%- /yap:tool") then
-        table.insert(tools, tool)
-        tool = nil
+        flush_tool()
         ui_paired = false
       elseif line:match("^<!%-%- /yap:ui") then
         ui_paired = false
@@ -95,19 +100,7 @@ function M.parse_buffer(buf)
       if line:match("^%-%->%s*$") then
         local ok, h = pcall(vim.json.decode, table.concat(header_acc, "\n"))
         if ok and type(h) == "table" and h.id and h.name then
-          local args = h.arguments
-          tool = {
-            id = h.id,
-            call = {
-              id = h.id,
-              type = "function",
-              ["function"] = {
-                name = h.name,
-                arguments = type(args) == "string" and args or vim.json.encode(args),
-              },
-            },
-            result = {},
-          }
+          tool = { name = h.name, args = h.arguments, result = {} }
         else
           skipping = true
           vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
@@ -127,19 +120,7 @@ function M.parse_buffer(buf)
       if header and role == "assistant" then
         local ok, h = pcall(vim.json.decode, header)
         if ok and type(h) == "table" and h.id and h.name then
-          local args = h.arguments
-          tool = {
-            id = h.id,
-            call = {
-              id = h.id,
-              type = "function",
-              ["function"] = {
-                name = h.name,
-                arguments = type(args) == "string" and args or vim.json.encode(args),
-              },
-            },
-            result = {},
-          }
+          tool = { name = h.name, args = h.arguments, result = {} }
         else
           skipping = true
           vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)

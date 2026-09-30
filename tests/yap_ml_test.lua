@@ -30,21 +30,20 @@ local lines = {
 }
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
--- parse: multi-line header becomes the same wire pair
+-- parse: multi-line header flattens to tool name + JSON args + result
 local msgs = yap.parse_buffer(buf)
-local asst, toolmsg
+local asst
 for _, m in ipairs(msgs) do
-  if m.role == "assistant" and m.tool_calls then asst = m end
-  if m.role == "tool" then toolmsg = m end
+  if m.role == "assistant" then asst = m end
 end
-assert(asst, "no tool_calls assistant message")
-assert(asst.tool_calls[1].id == "w1" and asst.tool_calls[1]["function"].name == "write", "call wrong")
-local args = vim.json.decode(asst.tool_calls[1]["function"].arguments)
-assert(args.path == "/tmp/x.md" and args.content == "a\nb", "arguments mangled: " .. vim.inspect(args))
-assert(toolmsg and toolmsg.tool_call_id == "w1", "no tool result")
-assert(toolmsg.content:match("Successfully wrote"), "result wrong: " .. toolmsg.content)
-assert(not toolmsg.content:match("yap:ui") and not toolmsg.content:match("%+a"), "ui leaked into result")
-assert(not toolmsg.content:match('"id"'), "header json leaked into result")
+assert(asst and not asst.tool_calls, "no plain assistant message")
+assert(asst.content:find("write", 1, true), "tool name missing: " .. asst.content)
+assert(asst.content:find('"path":"/tmp/x.md"', 1, true), "arguments mangled: " .. asst.content)
+assert(asst.content:find('"content":"a\\nb"', 1, true), "multi-line argument mangled: " .. asst.content)
+assert(asst.content:match("Successfully wrote"), "result wrong: " .. asst.content)
+assert(not asst.content:match("yap:ui") and not asst.content:match("%+a"), "ui leaked into result")
+assert(not asst.content:match('"id"'), "header json leaked into result")
+assert(asst.content:match("File written"), "answer after region lost: " .. asst.content)
 
 -- folds: the whole tool region (header, result, ui, closer) is one
 -- level-3 fold

@@ -70,7 +70,8 @@ truth, and that can be a text buffer. Consequences:
 :YapClear [keep]      Slim the context: replace the result bodies of
                         all but the last [keep] (default 2) yap:tool
                         regions with a one-line placeholder. Headers
-                        (the model's tool_calls history) and yap:ui
+                        (the tool name + JSON arguments the model sees in
+                        its history) and yap:ui
                         diffs stay; the full output is in the audit log
                         (|yap-audit|). Old tool output is the biggest
                         context consumer in long sessions and is usually
@@ -432,11 +433,12 @@ session starts them from zero.
 
 HTML comment regions of the form `<!-- yap:<word>` ... `-->` are shown in
 the buffer but NEVER sent to the provider as buffer text; the parser skips
-them (one exception: yap:tool, which is TRANSFORMED — see below).
+them (one exception: yap:tool, which is FLATTENED into assistant transcript
+text — see below).
 
-  <!-- yap:thinking   Reasoning streamed via the OpenAI-compatible
-                        `reasoning_content` field (Kimi, DeepSeek). Folded
-                        away with the assistant block.
+  <!-- yap:thinking   Provider-exposed reasoning or reasoning summaries
+                        streamed by GoAI. Folded away with the assistant
+                        block and never included in persisted history.
 
   <!-- yap:error      Backend error record, left after a failed send.
 
@@ -459,9 +461,9 @@ A tool call and its result are ONE region inside an assistant block: >
   <!-- /yap:ui -->
   <!-- /yap:tool -->
 <
-  Header          The complete call as JSON. Storage AND context:
-                  parse_buffer rebuilds the assistant tool_calls message
-                  from it. Two forms: single-line when short (≤ 120
+  Header          The complete call as JSON. parse_buffer flattens it into
+                  assistant transcript text (tool name + JSON arguments).
+                  Two forms: single-line when short (≤ 120
                   chars, typical for bash/ls/read), otherwise
                   pretty-printed multi-line JSON between `<!-- yap:tool`
                   and `-->`: >
@@ -500,12 +502,12 @@ A tool call and its result are ONE region inside an assistant block: >
                   excluded like thinking: editing or deleting it changes
                   nothing. Pure decoration.
 
-parse_buffer transforms the region into the API message pair: an assistant
-message with `tool_calls`, followed by `tool` messages with matching
-`tool_call_id`. Deleting the region deletes the pair — orphaned tool calls
-are impossible by construction (R12). Sanitizer: a region outside an
-assistant block is skipped; a missing/empty result becomes an empty result
-(still paired); a malformed header skips the region with a notification.
+parse_buffer flattens the region into ordinary assistant transcript text:
+the tool name, its JSON arguments, and the result, all as visible text —
+never native tool-call/tool-result messages. Editing or deleting the
+visible markdown changes the transcript directly. Sanitizer: a region
+outside an assistant block is skipped; a missing/empty result yields an
+empty labelled result; a malformed header skips the region with a notification.
 
 Marker regions close on a line that is exactly `-->`; content merely
 containing it never closes early for OUR parser. Markdown renderers are
@@ -656,8 +658,8 @@ history above it. For a global segment independent of yap buffers, use
 ==============================================================================
 10. LUA <-> GO PROTOCOL                                      *yap-protocol*
 
-  stdin   {"messages":[...]}  (roles system/user/assistant/tool; assistant
-          messages may carry tool_calls, tool messages carry tool_call_id)
+  stdin   {"messages":[...]}  (roles system/user/assistant; persisted tool
+          regions arrive flattened as assistant transcript text)
   argv    yap send --provider NAME --model MODEL
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
           wrapped in |yap-markers|
@@ -678,9 +680,12 @@ history above it. For a global segment independent of yap buffers, use
 The binary runs the agent loop internally: when the model requests tool
 calls it executes them (compiled-in tools, see |yap-tools|), emits one
 yap:tool region per pair, and re-sends until the final answer or the
-iteration bound. The binary is pure Go (no cgo) with three small deps —
-jsonschema, santhosh-tekuri/jsonschema/v6, sergi/go-diff — built
-CGO_ENABLED=0.
+iteration bound. In-memory only (never persisted), each iteration appends
+the exact assistant message parts GoAI produced — reasoning items/encrypted
+content, signatures, thought signatures, reasoning_content — plus native
+tool-result messages, so tool continuation is lossless within one process.
+The binary is pure Go (no cgo), built CGO_ENABLED=0, using the GoAI SDK
+behind Yap's own agent/providers surface.
 
 ==============================================================================
 11. BUSINESS RULES                                             *yap-rules*
@@ -695,9 +700,10 @@ R1  The buffer is the only conversation state.
     navigation only work if the buffer is the single source of truth.
 
 R2  `<!-- yap:* -->` marker regions are never sent as buffer text.
-    The parser skips them (thinking, error, usage, yap:ui) or transforms
-    them (yap:tool becomes structured tool_call/tool messages — the raw
-    region text is still never sent). Why: thinking or display payloads
+    The parser skips them (thinking, error, usage, yap:ui) or flattens
+    them (yap:tool becomes plain assistant transcript text naming the
+    tool, its JSON arguments and result — the raw region text is still
+    never sent). Why: thinking or display payloads
     re-sent to the API pollute or break the conversation. (Bug of record:
     the first error comment WAS sent back as assistant content.)
 
@@ -710,10 +716,12 @@ R4  The binary emits plain text and yap markers only. No ANSI, no
     padding, no rendering. Why: markdown rendering is the user's
     ft=markdown setup; cell-based TUIs break Neovim yanking.
 
-R5  Wire protocol is OpenAI-compatible /chat/completions SSE only.
-    Covers OpenAI, DeepSeek, Moonshot/Kimi, OpenRouter, z.ai and local
-    servers. Anthropic/Gemini-native: use OpenRouter until (if ever)
-    implemented.
+R5  The binary talks to providers through the GoAI SDK behind Yap's own
+    agent/providers adapter: native OpenAI (Responses API), Anthropic,
+    Google/Gemini and DeepSeek, plus any OpenAI-compatible
+    /chat/completions endpoint (Moonshot/Kimi, OpenRouter, z.ai, local
+    servers) via the compat provider. The stdout wire protocol is
+    unchanged: plain text and yap markers.
 
 R6  Adjacent same-role blocks are merged on send; empty blocks dropped.
     Why: providers require role alternation.
@@ -790,18 +798,20 @@ R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     turn puts the cursor on the new `# @user` heading, so the next prompt is
     ready to type.)
 
-R12 One buffer region = one tool pair.
+R12 One buffer region = one tool call+result pair.
     A yap:tool region holds the call (single-line JSON header) and the
-    result text together; parsing emits BOTH the assistant tool_calls
-    message and the tool result message from it. Deleting the region
-    deletes the pair, so orphaned tool_calls (which APIs reject) are
-    impossible by construction — gptel's solution to the pairing problem.
-    Result content policy: edit/write tools return short confirmations,
+    result text together; parsing flattens the region into plain assistant
+    transcript text (tool name, JSON arguments, result). Deleting or
+    editing the region edits that transcript directly, so persisted history
+    never carries native tool_calls/tool messages — those exist only in
+    memory during a single send. Result content policy: edit/write tools
+    return short confirmations,
     read-like tools return truncated content (pi: 2000 lines / 50KB);
     pretty payloads (diffs) go in parse-excluded yap:ui subsections.
     write/edit headers are slimmed at emission time (`[N lines]` for
-    content, `[N edits, +A/-B lines]` for edits): the header doubles as
-    the model's own tool_calls history, and kilobytes of file content
+    content, `[N edits, +A/-B lines]` for edits): the header is the tool
+    name and JSON arguments the model sees flattened into its history, and
+    kilobytes of file content
     there buy nothing the yap:ui diff and the file on disk don't
     already show (Anthropic's clear_tool_inputs is the same idea); the
     full arguments are in the audit log. Old result bodies can be

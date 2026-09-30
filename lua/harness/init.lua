@@ -678,7 +678,7 @@ end
 
 --- :YapClear [keep] — replace the bodies of all but the last `keep`
 --- (default 2) yap:tool regions with a placeholder; the full output
---- stays in the audit log. Headers (the model's own tool_calls history)
+--- stays in the audit log. Headers (flattened into the model's transcript)
 --- and yap:ui diffs stay. This is the one sanctioned rewrite of
 --- existing lines (R16): the user owns the document, and clearing old
 --- tool output is what keeps long sessions inside the context window.

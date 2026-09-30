@@ -22,7 +22,8 @@ Add this repo as a Neovim plugin (any plugin manager, or
 require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
 
-Providers live in `~/.config/yap.json` (any OpenAI-compatible endpoint):
+Providers live in `~/.config/yap.json` (native OpenAI/Anthropic/Google/DeepSeek,
+or any OpenAI-compatible endpoint):
 
 ```json
 { "providers": { "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" } } }

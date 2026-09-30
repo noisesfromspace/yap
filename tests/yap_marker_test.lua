@@ -23,12 +23,12 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "answer", "",
   "# @user", "",
 })
-local toolmsg
+local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "tool" then toolmsg = m end
+  if m.role == "assistant" then asst = m end
 end
-assert(toolmsg, "no tool message")
-assert(toolmsg.content:match("result"), "result missing")
-assert(not toolmsg.content:match("%+after"), "ui leaked into result after early close")
-assert(not toolmsg.content:match("%-%- >"), "ui content leaked")
+assert(asst, "no assistant message")
+assert(asst.content:match("result"), "result missing")
+assert(not asst.content:match("%+after"), "ui leaked into result after early close")
+assert(not asst.content:match("%-%- >"), "ui content leaked")
 print("OK markers")

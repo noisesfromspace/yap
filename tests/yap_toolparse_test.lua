@@ -14,18 +14,17 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user", "",
 })
 local msgs = yap.parse_buffer(buf)
-assert(#msgs == 3, "expected 3 messages, got " .. #msgs .. ": " .. vim.inspect(msgs))
-local a, t = msgs[2], msgs[3]
-assert(a.role == "assistant" and a.tool_calls, "msg 2 not tool-bearing assistant")
+assert(#msgs == 2, "expected 2 messages, got " .. #msgs .. ": " .. vim.inspect(msgs))
+local a = msgs[2]
+assert(a.role == "assistant" and not a.tool_calls, "msg 2 not a plain assistant message")
 assert(a.content:match("Let me check") and a.content:match("18 degrees and sunny"), "assistant text wrong: " .. a.content)
+-- the tool region is flattened into ordinary transcript text: tool name,
+-- JSON arguments, and result — no native tool_calls/tool roles.
+assert(a.content:find("get_weather", 1, true), "tool name missing: " .. a.content)
+assert(a.content:find('"city":"Amsterdam"', 1, true), "tool arguments missing: " .. a.content)
+assert(a.content:find("Weather in Amsterdam: 18 degrees, sunny", 1, true), "tool result missing: " .. a.content)
 assert(not a.content:match("yap:tool") and not a.content:match("yap:ui"), "markers leaked into content")
-local c = a.tool_calls[1]
-assert(c.id == "call_1" and c.type == "function", "wire call shape wrong")
-assert(c["function"].name == "get_weather", "name wrong")
-assert(vim.json.decode(c["function"].arguments).city == "Amsterdam", "arguments not a JSON string: " .. c["function"].arguments)
-assert(t.role == "tool" and t.tool_call_id == "call_1", "tool message wrong")
-assert(t.content == "Weather in Amsterdam: 18 degrees, sunny", "result wrong: " .. t.content)
-assert(not t.content:match("Amsterdam: 18C"), "yap:ui leaked into result")
+assert(not a.content:match("Amsterdam: 18C"), "yap:ui leaked into result")
 
 -- sanitizer: deleting the region removes the pair
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -45,12 +44,16 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 local m3 = yap.parse_buffer(buf)
 assert(#m3 == 2, "user-block tool region not skipped: " .. vim.inspect(m3))
 
--- sanitizer: missing result -> empty result, still paired
+-- sanitizer: missing result -> empty labelled result in the transcript
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @assistant", "",
   '<!-- yap:tool {"id":"c9","name":"noop","arguments":{}} -->',
   "<!-- /yap:tool -->", "",
 })
 local m4 = yap.parse_buffer(buf)
-assert(#m4 == 2 and m4[2].role == "tool" and m4[2].content == "", "empty result not paired: " .. vim.inspect(m4))
+assert(
+  #m4 == 1 and m4[1].role == "assistant"
+    and m4[1].content == "Tool call: noop\nArguments: {}\nTool result:",
+  "empty result not flattened: " .. vim.inspect(m4)
+)
 print("OK")
