@@ -1687,12 +1687,12 @@ function M.waiting()
   end)
 end
 
---- Running yap chat buffers, listed by session file path (tails are never
---- here — reach them in-session with :YapLive / <leader>l).
+--- Running and idle yap chat buffers, listed by session file path (tails are
+--- never here — reach them in-session with :YapLive / <leader>l).
 function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap and running[b] then
+    if vim.b[b].yap then
       -- Follow `:file` renames: the buffer name is the session path once
       -- renamed, even before the next autosave commits it to yap_path.
       local name = vim.api.nvim_buf_get_name(b)
@@ -1702,7 +1702,7 @@ function M.instances()
     end
   end
   if #items == 0 then
-    vim.notify("yap: no running sessions", vim.log.levels.INFO)
+    vim.notify("yap: no running or idle sessions", vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
@@ -1732,7 +1732,7 @@ function M.setup(opts)
   end, { silent = true, desc = "yap: sessions needing attention" })
   vim.keymap.set("n", "<leader>r", function()
     M.instances()
-  end, { silent = true, desc = "yap: running sessions" })
+  end, { silent = true, desc = "yap: running and idle sessions" })
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. `nvim foo.md`
   -- at startup) adopts it as a managed yap session — unlisted, keymaps,

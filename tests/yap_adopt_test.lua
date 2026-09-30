@@ -15,7 +15,7 @@ for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
     globals[m.desc] = true
   end
 end
-assert(globals["yap: running sessions"], "no global <leader>r (yap: running sessions) map")
+assert(globals["yap: running and idle sessions"], "no global <leader>r (yap: running and idle sessions) map")
 assert(globals["yap: sessions needing attention"], "no global <leader>w (yap: sessions needing attention) map")
 
 -- a saved session, reopened by plain :edit (the `nvim file.md` path), is
