@@ -989,6 +989,23 @@ local function handle_event(buf, json_line)
   elseif ev.type == "tool_call" then
     -- Full arguments, emitted for every tool before it runs. bash's
     -- tool_start above already logged its command (that IS its args).
+    -- quickfix is a frontend side effect: only a live tool_call event
+    -- creates a list, so persisted tool blocks never replay on reopen.
+    if ev.name == "quickfix" then
+      local ok_qf, a = pcall(vim.json.decode, ev.args or "")
+      if ok_qf and type(a) == "table" and type(a.entries) == "table" then
+        local items = {}
+        for _, entry in ipairs(a.entries) do
+          table.insert(items, {
+            filename = entry.file, lnum = entry.line, col = entry.column or 0,
+            text = entry.text,
+          })
+        end
+        -- ' ' creates a new stack entry: it replaces the visible list while
+        -- preserving the previous one for :colder/:cnewer.
+        vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
+      end
+    end
     if ev.name ~= "bash" then
       local t = ensure_tail(buf)
       audit_write(buf, { ("=== %s %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.args or "") })
