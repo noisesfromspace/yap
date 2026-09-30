@@ -79,11 +79,11 @@ do
   conversation(buf, 200)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
   yap.send()
-  assert(vim.wait(20000, function() return last_line(buf):find("The ", 1, true) ~= nil end, 20), "stream did not start")
+  assert(vim.wait(20000, function() return vim.api.nvim_buf_line_count(buf) > 208 end, 20), "stream did not start")
   vim.cmd("normal! k")
   local row0 = vim.api.nvim_win_get_cursor(0)[1]
-  local text0 = last_line(buf)
-  assert(vim.wait(3000, function() return last_line(buf) ~= text0 end, 20), "stream did not advance")
+  local count0 = vim.api.nvim_buf_line_count(buf)
+  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > count0 end, 20), "stream did not advance")
   assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
 end
 
@@ -113,6 +113,32 @@ do
   assert(cur[1] == row0 and view.topline == top0,
     "completion moved a window that did not start at the tail")
   print(("no-follow: cursor and view untouched through completion over %d samples"):format(n))
+end
+
+-- ── 4. G to the bottom mid-stream adopts the window as a follower ─────────
+do
+  local buf = yap.new({ provider = "mock", model = "m1" })
+  conversation(buf, 200)
+  vim.api.nvim_win_set_cursor(0, { 5, 0 })
+  vim.cmd("normal! zt")
+
+  yap.send()
+  assert(vim.wait(20000, function() return vim.api.nvim_buf_line_count(buf) > 208 end, 20), "stream did not start")
+  vim.cmd("normal! G") -- join the tail after the send; must be adopted
+  local n = watch(buf, function(i)
+    local count = vim.api.nvim_buf_line_count(buf)
+    local cur = vim.api.nvim_win_get_cursor(0)
+    assert(cur[1] == count and cur[2] == 0,
+      ("sample %d: cursor=%d,%d but stream end is %d"):format(i, cur[1], cur[2], count))
+  end)
+  assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
+  assert(vim.wait(2000, function()
+    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+    return lines[1] == "# @user" and lines[2] == ""
+  end, 20), "turn did not finish")
+  assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf),
+    "G-joiner did not stay pinned through the thinking block")
+  print(("follow: G-joiner stayed pinned through the thinking block over %d samples"):format(n))
 end
 
 print("all follow tests passed")

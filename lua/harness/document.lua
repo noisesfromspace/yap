@@ -176,10 +176,13 @@ function M.following_windows(buf)
   return wins
 end
 
---- Before changing the buffer, remove windows whose cursor no longer matches
---- the exact tail position Yap last requested. That difference is explicit
---- user movement; checking synchronously avoids CursorMoved event races.
-function M.cancel_moved_followers(buf, wins, expected)
+--- Reconcile the follower set before a buffer change. Drop a follower whose
+--- cursor no longer matches the exact tail position Yap last requested — that
+--- difference is explicit user movement, checked synchronously to avoid
+--- CursorMoved event races. Adopt any window that has since joined the tail
+--- (the user pressed G after the send), so following means "cursor on the
+--- tail line", not only the send-time snapshot.
+function M.sync_followers(buf, wins, expected)
   for i = #wins, 1, -1 do
     local w = wins[i]
     if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
@@ -194,11 +197,24 @@ function M.cancel_moved_followers(buf, wins, expected)
       end
     end
   end
+  local count = vim.api.nvim_buf_line_count(buf)
+  local member = {}
+  for _, w in ipairs(wins) do
+    member[w] = true
+  end
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    if not member[w] then
+      local ok, cur = pcall(vim.api.nvim_win_get_cursor, w)
+      if ok and cur[1] >= count then
+        wins[#wins + 1] = w
+      end
+    end
+  end
 end
 
 --- Keep follower windows on the real stream end at column zero. Windows that
---- did not start at the tail, or were removed by cancel_moved_followers, are
---- never moved.
+--- did not start at the tail, or were removed by sync_followers, are never
+--- moved.
 function M.follow_windows(buf, wins, expected)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return

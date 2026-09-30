@@ -1000,8 +1000,8 @@ function M.send()
   -- streams (follow_windows); one parked elsewhere is not dragged along.
   local follow = document.following_windows(buf)
   local expected_follow = {}
-  local function cancel_moved_followers()
-    document.cancel_moved_followers(buf, follow, expected_follow)
+  local function sync_followers()
+    document.sync_followers(buf, follow, expected_follow)
   end
   local function follow_tail()
     document.follow_windows(buf, follow, expected_follow)
@@ -1033,7 +1033,7 @@ function M.send()
         -- more tool regions, handle_event() will cut any already-streamed
         -- pre-tool prose from this assistant block and reinsert it after the
         -- final tool region to preserve header/result-before-prose ordering.
-        cancel_moved_followers()
+        sync_followers()
         document.append_text(buf, data)
         follow_tail()
       end
@@ -1054,7 +1054,7 @@ function M.send()
         stderr_partial = stderr_partial:sub(i + 1)
         local ev = line:match("^yap:event (.+)$")
         if ev then
-          cancel_moved_followers()
+          sync_followers()
           handle_event(buf, ev)
           follow_tail()
         else
@@ -1063,7 +1063,7 @@ function M.send()
       end
     end),
   }, vim.schedule_wrap(function(result)
-    cancel_moved_followers()
+    sync_followers()
     running[buf] = nil
     local compact = vim.b[buf].yap_compact_pending
     vim.b[buf].yap_compact_pending = nil
