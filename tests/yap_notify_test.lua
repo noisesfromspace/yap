@@ -91,17 +91,29 @@ yap.waiting()
 vim.ui.select = orig_select
 assert(waiting_items and #waiting_items == 1, "expected one waiting buffer, got " .. vim.inspect(waiting_items))
 assert(waiting_items[1].buf == buf, "waiting() surfaced the wrong buffer")
+assert(waiting_items[1].text:match("^/opt/code/yap  .*%.md$"), "waiting should show cwd + filename fallback: " .. waiting_items[1].text)
 
--- :YapInstances lists running and idle sessions by file path (never tails).
+-- :YapInstances shows cwd + description when present, otherwise cwd + filename.
 -- Both sessions are idle here and must still appear in the picker.
 local inst_items
+local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+table.insert(first_lines, 1, "---")
+table.insert(first_lines, 2, "provider: mock")
+table.insert(first_lines, 3, "model: m1")
+table.insert(first_lines, 4, "description: Finished mock turn")
+table.insert(first_lines, 5, "---")
+table.insert(first_lines, 6, "")
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, first_lines)
 vim.ui.select = function(items, opts, on_choice)
   inst_items = items
 end
 yap.instances()
 vim.ui.select = orig_select
 assert(inst_items and #inst_items == 2, "expected two idle sessions, got " .. vim.inspect(inst_items))
-for _, it in ipairs(inst_items) do
-  assert(it.text:match("%.md$"), "session label should be a file path: " .. it.text)
-end
+local labels = {}
+for _, it in ipairs(inst_items) do labels[it.text] = true end
+assert(labels["/opt/code/yap  Finished mock turn"], "cwd/description missing from instances: " .. vim.inspect(inst_items))
+local has_filename = false
+for label in pairs(labels) do has_filename = has_filename or label:match("^/opt/code/yap  .*%.md$") ~= nil end
+assert(has_filename, "cwd/filename fallback missing from instances: " .. vim.inspect(inst_items))
 print("OK notify")

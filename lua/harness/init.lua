@@ -1561,6 +1561,7 @@ function M.new(opts)
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].yap_provider = opts.provider or M.config.provider
   vim.b[buf].yap_model = opts.model or M.config.model
+  vim.b[buf].yap_project_cwd = vim.fs.normalize(vim.fn.getcwd())
 
   local lines = { "# @system", "" }
   vim.list_extend(lines, vim.split(vim.b[buf].yap_system or system_prompt(), "\n", { plain = true }))
@@ -1601,6 +1602,7 @@ local function adopt(buf, path)
     return buf
   end
   vim.b[buf].yap_path = path
+  vim.b[buf].yap_project_cwd = require("harness.session").project_cwd(path)
   vim.b[buf].yap_tail_path = compute_tail_path(buf)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
@@ -1684,23 +1686,6 @@ function M.sessions(scope)
   end)
 end
 
---- First non-empty line of the first `# @user` block, compacted — the
---- label for the waiting picker (same shape as the sessions picker).
-local function user_snippet(buf)
-  local in_user = false
-  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match("^# @%a+%s*$") then
-      in_user = line:match("^# @user%s*$") ~= nil
-    elseif in_user then
-      local t = line:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-      if t ~= "" then
-        return #t > 40 and t:sub(1, 40) .. "…" or t
-      end
-    end
-  end
-  return ""
-end
-
 --- Focus an already-loaded buffer: jump to an existing window, otherwise
 --- show it in the current one (unlisted sessions have no other way back).
 local function focus_buf(buf)
@@ -1715,18 +1700,19 @@ end
 --- List open yap buffers that need user intervention (awaiting a reply or
 --- stopped on an error) and focus the picked one. Live sessions only;
 --- saved-but-unopened files stay |:YapSessions|' job.
+local function live_session_label(buf)
+  local name = vim.api.nvim_buf_get_name(buf)
+  local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
+  local e = frontmatter_end(buf)
+  local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
+  return require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
+end
+
 function M.waiting()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if (awaiting[b] or errors[b]) and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
-      local name = vim.api.nvim_buf_get_name(b)
-      name = name ~= "" and vim.fn.fnamemodify(name, ":t:r") or ("buffer " .. b)
-      local provider, model = current_combo(b)
-      local snippet = user_snippet(b)
-      table.insert(items, {
-        buf = b,
-        text = string.format("%-24s  %s  ·  %s/%s", name:sub(1, 24), snippet, provider, model),
-      })
+      table.insert(items, { buf = b, text = live_session_label(b) })
     end
   end
   if #items == 0 then
@@ -1746,8 +1732,8 @@ function M.waiting()
   end)
 end
 
---- Running and idle yap chat buffers, listed by session file path (tails are
---- never here — reach them in-session with :YapLive / <leader>l).
+--- Running and idle yap chat buffers, listed by description with the session
+--- filename as fallback (tails are never here — use :YapLive / <leader>l).
 function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -1757,7 +1743,7 @@ function M.instances()
       local name = vim.api.nvim_buf_get_name(b)
       local path = (name ~= "" and not name:match("^%a+://")) and name
         or (vim.b[b].yap_path or name)
-      items[#items + 1] = { buf = b, text = path ~= "" and path or ("buffer " .. b) }
+      items[#items + 1] = { buf = b, text = live_session_label(b) }
     end
   end
   if #items == 0 then

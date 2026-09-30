@@ -3,8 +3,8 @@
 -- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
 -- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
--- autosaved after every completed reply. The picker lists them with the
--- first user message as a snippet, fruit.nvim-style.
+-- autosaved after every completed reply. Pickers identify sessions by their
+-- generated description, falling back to the filename.
 
 local M = {}
 
@@ -17,6 +17,12 @@ end
 --- Root of all session files (~/.yap/sessions).
 function M.sessions_root()
   return sessions_root()
+end
+
+--- Best-effort originating cwd for an existing persisted session.
+function M.project_cwd(path)
+  local dir = vim.fn.fnamemodify(path, ":h:t")
+  return dir:sub(1, 1) == "-" and ("/" .. dir:sub(2):gsub("-", "/")) or dir:gsub("-", "/")
 end
 
 local function cwd_slug(cwd)
@@ -85,24 +91,18 @@ local function first_user_snippet(lines)
   return ""
 end
 
-local function fit(s, n)
-  if #s > n then
-    return s:sub(1, n - 1) .. "…"
-  end
-  return s
+--- The persisted directory name is a lossy cwd slug; this is deliberately a
+--- best-effort display conversion for saved cross-project sessions.
+local function slug_cwd(dir)
+  return M.project_cwd(dir .. "/session.md")
 end
 
---- One picker line. Fixed-width so the global list scans as columns: the
---- project leads (only across projects), then the first user message, then
---- the session's recorded model. The project is a leading column, not a
---- trailing path slug; the exact session file is in the preview.
-local function make_label(scope, dir, filename, description)
-  local detail = description and description ~= "" and description or "(no description yet)"
-  local label = filename .. "  " .. detail
-  if scope == "all" then
-    return string.format("%-20s  %s", fit(vim.fn.fnamemodify(dir, ":t"), 20), label)
-  end
-  return label
+--- Shared picker identity: generated description, filename fallback. Project
+--- overviews prefix the cwd so sessions from different worktrees are obvious.
+function M.label(path, description, project_cwd)
+  local filename = path and path ~= "" and vim.fn.fnamemodify(path, ":t") or nil
+  local identity = description and description ~= "" and description or filename or "session"
+  return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all".
@@ -125,7 +125,7 @@ function M.list(scope)
       table.insert(items, {
         path = path,
         mtime = vim.fn.getftime(path),
-        text = make_label(scope, dir, vim.fn.fnamemodify(path, ":t"), fm and fm.description),
+        text = M.label(path, fm and fm.description, scope == "all" and slug_cwd(dir) or nil),
         model = model,
         models = (fm and #fm.models > 1) and fm.models or nil,
       })

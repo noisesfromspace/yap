@@ -52,11 +52,12 @@ assert(
   "open did not restore combo: " .. tostring(vim.b[buf2].yap_provider) .. "/" .. tostring(vim.b[buf2].yap_model)
 )
 
--- 6. the picker surfaces the model and the history
+-- 6. the picker shows only the description; model history remains metadata
 local items = session.list("cwd")
 assert(#items == 1, "expected 1 session, got " .. #items)
-assert(items[1].text:match(vim.pesc(vim.fn.fnamemodify(path, ":t")) .. "  Implement session descriptions"), "filename/description missing from label: " .. items[1].text)
-assert(not items[1].text:match("alpha/m2"), "model should not fill picker label: " .. items[1].text)
+assert(items[1].text == "Implement session descriptions", "description should be the whole cwd label: " .. items[1].text)
+local all_items = session.list("all")
+assert(all_items[1].text == "/opt/code/yap  Implement session descriptions", "all-project label should show decoded cwd: " .. all_items[1].text)
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
 -- 7. a legacy file without frontmatter keeps the config default and is
