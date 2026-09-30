@@ -82,7 +82,6 @@ run yap_test 18132 mock_slow.py
 run yap_static_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
-run yap_compact_test 18132 mock_slow.py
 run yap_e2e_tool_test 18133 mock_tool.py
 run yap_toolparse_test 18133 mock_tool.py
 run yap_e2e_livetool 18141 mock_stream.py
@@ -98,43 +97,58 @@ for t in yap_fold_test yap_detailfold_test yap_think_test yap_error_test yap_ml_
   run "$t" 18132
 done
 
-# Wait for jobs, fail fast on first non-zero exit
-remaining=${#pids[@]}
-while [ "$remaining" -gt 0 ]; do
-  # wait -n blocks until any child process exits
-  wait -n 2>/dev/null || true
-
-  # check exitfiles to see which jobs finished
+# Wait for backgrounded tests, fail fast on first non-zero exit.
+wait_all() {
+  local remaining=0
   for i in "${!exitfiles[@]}"; do
-    if [ "${processed[$i]}" -eq 1 ]; then
-      continue
-    fi
-    if [ -f "${exitfiles[$i]}" ]; then
-      code=$(cat "${exitfiles[$i]}")
-      name="${names[$i]}"
-      log="$ROOT/tests/logs/$name.log"
-      if [ "$code" -eq 0 ]; then
-        echo "ok   $name"
-        processed[$i]=1
-        remaining=$((remaining-1))
-      else
-        echo "FAIL $name"
-        tail -n 5 "$log"
-        # kill remaining tests and mocks
-        for j in "${!pids[@]}"; do
-          if [ "${processed[$j]}" -eq 0 ]; then
-            kill "${pids[$j]}" 2>/dev/null || true
-          fi
-        done
-        for mp in "${mockpids[@]}"; do
-          if [ -n "$mp" ]; then
-            kill "$mp" 2>/dev/null || true
-          fi
-        done
-        exit 1
-      fi
+    if [ "${processed[$i]}" -eq 0 ]; then
+      remaining=$((remaining+1))
     fi
   done
-done
+  while [ "$remaining" -gt 0 ]; do
+    # wait -n blocks until any child process exits
+    wait -n 2>/dev/null || true
+
+    # check exitfiles to see which jobs finished
+    for i in "${!exitfiles[@]}"; do
+      if [ "${processed[$i]}" -eq 1 ]; then
+        continue
+      fi
+      if [ -f "${exitfiles[$i]}" ]; then
+        code=$(cat "${exitfiles[$i]}")
+        name="${names[$i]}"
+        log="$ROOT/tests/logs/$name.log"
+        if [ "$code" -eq 0 ]; then
+          echo "ok   $name"
+          processed[$i]=1
+          remaining=$((remaining-1))
+        else
+          echo "FAIL $name"
+          tail -n 5 "$log"
+          # kill remaining tests and mocks
+          for j in "${!pids[@]}"; do
+            if [ "${processed[$j]}" -eq 0 ]; then
+              kill "${pids[$j]}" 2>/dev/null || true
+            fi
+          done
+          for mp in "${mockpids[@]}"; do
+            if [ -n "$mp" ]; then
+              kill "$mp" 2>/dev/null || true
+            fi
+          done
+          exit 1
+        fi
+      fi
+    done
+  done
+}
+
+wait_all
+
+# yap_compact_test is timing-sensitive (a multi-turn stream with an 8s
+# budget) and starves on the shared single-threaded mock when run in
+# parallel, so run it alone after the batch.
+run yap_compact_test 18132 mock_slow.py
+wait_all
 
 echo "all tests passed"
