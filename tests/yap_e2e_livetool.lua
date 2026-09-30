@@ -79,6 +79,10 @@ assert(text:match("\ntail%-without%-newline\n"), "unterminated tail missing: " .
 assert(text:match("\n\\<!%-%- yap:tool %-%-%>"), "marker line not backslash-escaped: " .. text)
 assert(not text:match("\n<!%-%- yap:tool %-%-%>\n"), "unescaped marker line leaked: " .. text)
 assert(text:match("stream done"), "final answer missing: " .. text)
+local tool_start, tool_end, resumed = text:find("<!-- yap:tool", 1, true),
+  text:find("<!-- /yap:tool -->", 1, true), text:find("stream done", 1, true)
+assert(tool_start and tool_end and resumed and tool_start < tool_end and tool_end < resumed,
+  "buffer order must be tool call -> result -> resumed assistant text: " .. text)
 -- winbar back to idle
 assert(not yap.winbar():match("bash"), "winbar still shows the tool after completion")
 

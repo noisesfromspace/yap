@@ -144,6 +144,33 @@ func TestSendToolLoop(t *testing.T) {
 	}
 }
 
+func TestAssistantDeltasAreEmittedOnce(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sse(w,
+			`{"choices":[{"delta":{"content":"delta-001|"}}]}`,
+			`{"choices":[{"delta":{"content":"delta-002|"}}]}`,
+			`{"choices":[{"delta":{"content":"delta-003"},"finish_reason":"stop"}]}`,
+		)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	got := out.String()
+	for _, delta := range []string{"delta-001|", "delta-002|", "delta-003"} {
+		if strings.Count(got, delta) != 1 {
+			t.Fatalf("%q emitted %d times; stdout=%q", delta, strings.Count(got, delta), got)
+		}
+	}
+	if !strings.Contains(got, "delta-001|delta-002|delta-003") {
+		t.Fatalf("assistant delta order changed: %q", got)
+	}
+}
+
 func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
