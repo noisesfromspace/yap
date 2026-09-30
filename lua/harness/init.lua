@@ -1208,14 +1208,26 @@ end
 --- before any tool has run (an empty tail that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
+  for chat, t in pairs(tails) do
+    if t.bufnr == buf then
+      local wins = vim.fn.win_findbuf(buf)
+      if #wins > 0 then
+        vim.api.nvim_win_close(wins[1], false)
+      end
+      return
+    end
+  end
   local t = ensure_tail(buf)
   local wins = vim.fn.win_findbuf(t.bufnr)
   if #wins > 0 then
-    vim.api.nvim_set_current_win(wins[1])
-  else
-    vim.cmd("botright 12split")
-    vim.api.nvim_win_set_buf(0, t.bufnr)
+    vim.api.nvim_win_close(wins[1], false)
+    return
   end
+  vim.cmd("botright 12split")
+  vim.api.nvim_win_set_buf(0, t.bufnr)
+  vim.keymap.set("n", "<leader>l", function()
+    M.live(t.bufnr)
+  end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 
