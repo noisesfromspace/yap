@@ -1,6 +1,6 @@
--- Streaming follow: while a reply streams in, a window whose cursor starts
--- on the last line keeps that end in view without making the cursor ride each
--- stdout chunk; a window scrolled elsewhere is never dragged.
+-- Streaming follow: a window whose cursor starts on the last line stays
+-- pinned to the real stream end for the whole turn; a window scrolled
+-- elsewhere is never moved.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -54,11 +54,12 @@ do
   local base = vim.fn.winsaveview().topline
 
   yap.send()
-  local anchor = vim.api.nvim_win_get_cursor(0)
   local n = watch(buf, function(i)
+    local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
-    assert(cur[1] == anchor[1] and cur[2] == anchor[2],
-      ("sample %d: streaming moved cursor from %d,%d to %d,%d"):format(i, anchor[1], anchor[2], cur[1], cur[2]))
+    local last = last_line(buf)
+    assert(cur[1] == count and cur[2] >= math.max(#last - 1, 0),
+      ("sample %d: cursor=%d,%d but stream end is %d:%q"):format(i, cur[1], cur[2], count, last))
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
   assert(vim.fn.winsaveview().topline > base, "the window never scrolled to follow the end")
@@ -68,8 +69,8 @@ do
   end, 20), "turn did not finish")
   local done = vim.api.nvim_win_get_cursor(0)
   assert(done[1] == vim.api.nvim_buf_line_count(buf) and done[2] == 0,
-    "sticky follower did not land on the input line below # @user")
-  print(("follow: viewport stayed sticky and cursor landed on input after %d samples"):format(n))
+    "tail follower did not land on the input line below # @user")
+  print(("follow: cursor stayed on the real tail and landed on input after %d samples"):format(n))
 end
 
 -- ── 2. cursor parked mid-buffer: neither cursor nor view moves ───────────
@@ -90,7 +91,14 @@ do
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
   assert(#drift == 0, "the view moved for a window scrolled away:\n  " .. table.concat(drift, "\n  "))
-  print(("no-follow: cursor and view untouched over %d samples"):format(n))
+  assert(vim.wait(2000, function()
+    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+    return lines[1] == "# @user" and lines[2] == ""
+  end, 20), "turn did not finish")
+  local cur, view = vim.api.nvim_win_get_cursor(0), vim.fn.winsaveview()
+  assert(cur[1] == row0 and view.topline == top0,
+    "completion moved a window that did not start at the tail")
+  print(("no-follow: cursor and view untouched through completion over %d samples"):format(n))
 end
 
 print("all follow tests passed")

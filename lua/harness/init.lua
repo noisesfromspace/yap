@@ -1004,7 +1004,7 @@ function M.send()
       end
     end
     document.append_block(buf, { "# @user", "" })
-    document.finish_follow(buf, follow)
+    document.follow_windows(buf, follow)
     awaiting[buf] = true
     require("harness.session").save(buf)
     maybe_refresh_description(buf)
