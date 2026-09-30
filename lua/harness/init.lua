@@ -64,8 +64,7 @@ local function system_prompt()
 end
 
 local HEAD = "^# @(%a+)%s*$"
-
-local roles = { system = "system", user = "user", assistant = "assistant" }
+local document = require("harness.document")
 
 --- The combo yap will send with: per-buffer vars (set by :Yap),
 --- falling back to the global config.
@@ -131,7 +130,8 @@ local function winbar_hl(text, group)
 end
 
 -- Last backend error per buffer; shown in the winbar until the next send.
-local errors = {}
+local stream = require("harness.stream")
+local errors = stream.errors
 
 -- The agent is awaiting the user's next prompt: set when a turn
 -- completes (a `# @user` heading is appended), cleared when the user
@@ -141,7 +141,7 @@ local awaiting = {}
 
 -- Data of the last completed turn per buffer (the binary's `turn_end`
 -- event), handed to the User YapTurnDone autocmd. Ephemeral.
-local last_turn = {}
+local last_turn = stream.last_turn
 
 -- Other yap buffers awaiting the user's reply: the count for the
 -- global overview chip. A tiny module map, so no buffer scans on redraw
@@ -282,466 +282,9 @@ end
 
 define_winbar_hl()
 
--- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
+-- Conversation document parsing/appending lives in harness.document.
 
---- Parse a yap buffer into a message list.
---- Lines before the first heading are ignored (legacy frontmatter in
---- old session files stays inert).
---- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
---- `<!-- yap:tool -->` regions are TRANSFORMED (R12): the header becomes
---- an assistant tool_calls entry, the body becomes the tool result message.
---- Adjacent same-role blocks are merged (providers require alternation),
---- except tool-bearing assistant messages, which must stay adjacent to
---- their results.
---- Empty blocks are dropped.
-function M.parse_buffer(buf)
-  local messages = {}
-  local role, acc = nil, {}
-  local tools = {} -- yap:tool regions collected in the current block
-  local tool = nil -- open region: { call = <wire call>, result = {lines} }
-  local skipping = false -- skipping a region (bad header / wrong role)
-  local in_marker = false
-  local ui_paired = false -- inside a paired `<!-- yap:ui --> … <!-- /yap:ui -->` diff
-  local header_acc = nil -- collecting a multi-line tool header
-
-  local function flush()
-    if not role then
-      acc = {} -- pre-heading lines (legacy frontmatter) are not a message
-      return
-    end
-    local text = table.concat(acc, "\n")
-    text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if #tools > 0 then
-      -- Tool-bearing assistant message + its results; never merged.
-      local calls = {}
-      for _, t in ipairs(tools) do
-        table.insert(calls, t.call)
-      end
-      table.insert(messages, { role = "assistant", content = text, tool_calls = calls })
-      for _, t in ipairs(tools) do
-        local result = table.concat(t.result, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-        table.insert(messages, { role = "tool", tool_call_id = t.id, content = result })
-      end
-    elseif text ~= "" then
-      local last = messages[#messages]
-      -- Don't merge onto a tool-bearing assistant message: its results
-      -- must directly follow it.
-      if last and last.role == role and not last.tool_calls then
-        last.content = last.content .. "\n\n" .. text
-      else
-        table.insert(messages, { role = role, content = text })
-      end
-    end
-    acc = {}
-    tools = {}
-  end
-
-  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if tool then
-      -- Inside a yap:tool region: collect the result, skip the
-      -- display-only yap:ui section (legacy multi-line comment form,
-      -- or the paired form: `<!-- yap:ui -->` … fence …
-      -- `<!-- /yap:ui -->`).
-      if line:match("^<!%-%- /yap:tool") then
-        table.insert(tools, tool)
-        tool = nil
-        ui_paired = false
-      elseif line:match("^<!%-%- /yap:ui") then
-        ui_paired = false
-      elseif ui_paired then
-        -- block-level diff content between the paired markers
-      elseif line:match("^<!%-%- yap:ui %-%->%s*$") then
-        ui_paired = true
-      elseif line:match("^<!%-%- yap:ui") then
-        -- legacy multi-line comment form: skip until a bare `-->`
-        in_marker = not line:match("%-%->")
-      elseif in_marker then
-        if line:match("^%-%->$") then
-          in_marker = false
-        end
-      else
-        table.insert(tool.result, line)
-      end
-    elseif skipping then
-      if line:match("^<!%-%- /yap:tool") then
-        skipping = false
-      end
-    elseif header_acc then
-      -- Multi-line tool header: JSON lines until the closing `-->`.
-      if line:match("^%-%->%s*$") then
-        local ok, h = pcall(vim.json.decode, table.concat(header_acc, "\n"))
-        if ok and type(h) == "table" and h.id and h.name then
-          local args = h.arguments
-          tool = {
-            id = h.id,
-            call = {
-              id = h.id,
-              type = "function",
-              ["function"] = {
-                name = h.name,
-                arguments = type(args) == "string" and args or vim.json.encode(args),
-              },
-            },
-            result = {},
-          }
-        else
-          skipping = true
-          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
-        end
-        header_acc = nil
-      else
-        table.insert(header_acc, line)
-      end
-    elseif in_marker then
-      -- Markers close on a line that is exactly `-->`; content lines
-      -- merely containing `-->` (diffs, prose) must not close early.
-      if line:match("^%-%->$") then
-        in_marker = false
-      end
-    else
-      local header = line:match("^<!%-%- yap:tool (.+) %-%->%s*$")
-      if header and role == "assistant" then
-        local ok, h = pcall(vim.json.decode, header)
-        if ok and type(h) == "table" and h.id and h.name then
-          local args = h.arguments
-          tool = {
-            id = h.id,
-            call = {
-              id = h.id,
-              type = "function",
-              ["function"] = {
-                name = h.name,
-                arguments = type(args) == "string" and args or vim.json.encode(args),
-              },
-            },
-            result = {},
-          }
-        else
-          skipping = true
-          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
-        end
-      elseif line:match("^<!%-%- yap:tool%s*$") and role == "assistant" then
-        header_acc = {} -- multi-line header form (long calls)
-      elseif line:match("^<!%-%- yap:tool") then
-        skipping = true -- region outside an assistant block: orphan, skip
-      elseif line:match("^<!%-%- yap:%a+") then
-        -- Single-line markers (`<!-- yap:usage {...} -->`) close on the
-        -- same line; otherwise the next content line would be swallowed.
-        in_marker = not line:match("%-%->")
-      else
-        local r = line:match(HEAD)
-        if r and roles[r] then
-          flush()
-          role = roles[r]
-        else
-          table.insert(acc, line)
-        end
-      end
-    end
-  end
-  flush()
-
-  return messages
-end
-
--- ─── Streaming append ──────────────────────────────────────────────────────
-
-local function append_text(buf, text)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  local row = vim.api.nvim_buf_line_count(buf) - 1
-  local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
-  vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
-end
-
---- Windows whose cursor sits on the last line of `buf`: the user is
---- "following" the end of the conversation (pressed G, or was left there
---- by the previous chunk). Sampled BEFORE an append, because following
---- itself moves the cursor to the end.
-local function following_windows(buf)
-  local count = vim.api.nvim_buf_line_count(buf)
-  local wins = {}
-  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-    local ok, cur = pcall(vim.api.nvim_win_get_cursor, w)
-    if ok and cur[1] >= count then
-      wins[#wins + 1] = w
-    end
-  end
-  return wins
-end
-
---- Pin `wins` to the end of the buffer after an append: the cursor goes to
---- the end of the last line, which scrolls the window the way streamed
---- terminal output does (minimal scroll, one line at a time). Neovim never
---- scrolls a window for an API edit, so following has to be explicit: the
---- view used to track the end only while an appended chunk happened to land
---- exactly on the cursor (an empty last line, i.e. a chunk ending in a
---- newline), and then stranded the cursor mid-line — which is why a reply
---- seemed to stop being followed partway through. A window scrolled away is
---- left alone, and nothing is moved from a non-normal mode: dragging the
---- cursor while the user types is worse than a stale view (R11).
-local function follow_windows(buf, wins)
-  if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
-    return
-  end
-  local count = vim.api.nvim_buf_line_count(buf)
-  local last = vim.api.nvim_buf_get_lines(buf, count - 1, count, false)[1] or ""
-  for _, w in ipairs(wins) do
-    if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
-      vim.api.nvim_win_set_cursor(w, { count, math.max(#last - 1, 0) })
-    end
-  end
-end
-
---- Append whole lines as a new block, separated from the buffer's current
---- end by exactly one blank line (R7), no matter how the buffer ends.
---- All structural appends (headings, error markers) go through here.
-local function append_block(buf, block)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  local n = vim.api.nvim_buf_line_count(buf)
-  local keep = n
-  while keep > 1 and vim.api.nvim_buf_get_lines(buf, keep - 1, keep, false)[1] == "" do
-    keep = keep - 1
-  end
-  local lines = vim.deepcopy(block)
-  table.insert(lines, 1, "")
-  vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
-end
-
--- ─── Templates & skills ────────────────────────────────────────────────────
-
---- `*.md` files in `dir`, sorted by name; empty when the dir is missing.
-local function list_md(dir)
-  local out = {}
-  for _, path in ipairs(vim.fn.glob(vim.fn.expand(dir) .. "/*.md", false, true)) do
-    out[#out + 1] = { path = path, name = vim.fn.fnamemodify(path, ":t:r") }
-  end
-  table.sort(out, function(a, b)
-    return a.name < b.name
-  end)
-  return out
-end
-
-local function read_file(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  local text = f:read("*a")
-  f:close()
-  return text
-end
-
---- Split optional YAML frontmatter (`---` ... `---`) off a skill file and
---- return its `description:` key (feeds the intro list) plus the body lines.
-local function skill_parts(text)
-  local description
-  local lines = vim.split(text, "\n", { plain = true })
-  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
-    local close
-    for i = 2, #lines do
-      if lines[i]:match("^%-%-%-%s*$") then
-        close = i
-        break
-      end
-      local d = lines[i]:match("^description:%s*(.*)%s*$")
-      if d then
-        description = d
-      end
-    end
-    if close then
-      local rest = {}
-      for i = close + 1, #lines do
-        rest[#rest + 1] = lines[i]
-      end
-      lines = rest
-    end
-  end
-  return description, lines
-end
-
-local function trim_blank(lines)
-  while #lines > 0 and lines[1]:match("^%s*$") do
-    table.remove(lines, 1)
-  end
-  while #lines > 0 and lines[#lines]:match("^%s*$") do
-    table.remove(lines)
-  end
-  return lines
-end
-
---- All insertable entries: templates first, then skills (picker label
---- prefixed `skill: ` so the two kinds stay distinguishable).
-local function template_entries()
-  local entries = {}
-  for _, t in ipairs(list_md(M.config.templates_dir)) do
-    entries[#entries + 1] = { label = t.name, name = t.name, path = t.path, kind = "template" }
-  end
-  for _, s in ipairs(list_md(M.config.skills_dir)) do
-    entries[#entries + 1] = { label = "skill: " .. s.name, name = s.name, path = s.path, kind = "skill" }
-  end
-  return entries
-end
-
---- Append a template as a message block: a leading `# @role` heading is
---- used as-is (so a template can be a prefill or raw block); otherwise the
---- text is wrapped in `# @user`. Blank-line handling is append_block's (R7).
-local function append_as_block(buf, lines)
-  if #lines == 0 then
-    vim.notify("yap: template is empty", vim.log.levels.WARN)
-    return
-  end
-  if not lines[1]:match(HEAD) then
-    local wrapped = { "# @user", "" }
-    vim.list_extend(wrapped, lines)
-    lines = wrapped
-  end
-  append_block(buf, lines)
-end
-
---- Merge a skill's body into the buffer's `# @system` block (or create the
---- block at the top when there is none). Skills are system-prompt material:
---- they go where a stateless provider keeps instructions.
-local function merge_into_system(buf, lines)
-  if #lines == 0 then
-    vim.notify("yap: skill is empty", vim.log.levels.WARN)
-    return
-  end
-  local blines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local sys
-  for i, l in ipairs(blines) do
-    if l:match("^# @system%s*$") then
-      sys = i
-      break
-    end
-  end
-  if not sys then
-    local top = { "# @system", "" }
-    vim.list_extend(top, lines)
-    top[#top + 1] = ""
-    vim.api.nvim_buf_set_lines(buf, 0, 0, false, top)
-    return
-  end
-  local last = #blines
-  for i = sys + 1, #blines do
-    if blines[i]:match(HEAD) then
-      last = i - 1
-      break
-    end
-  end
-  while last >= sys and blines[last]:match("^%s*$") do
-    last = last - 1
-  end
-  local ins = { "" }
-  vim.list_extend(ins, lines)
-  vim.api.nvim_buf_set_lines(buf, last, last, false, ins)
-end
-
---- Insert `lines` as new lines above the cursor's line (the raw primitive).
-local function insert_at_cursor(buf, lines)
-  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
-  vim.api.nvim_buf_set_lines(buf, row, row, false, vim.deepcopy(lines))
-end
-
---- Skills intro for new chats: a short `## Skills` list (name + frontmatter
---- description) in the system block — discoverability, not auto-load.
---- Returns nil when there are no skills.
-local function skills_intro_lines()
-  local lines = {}
-  for _, s in ipairs(list_md(M.config.skills_dir)) do
-    local text = read_file(s.path)
-    if text then
-      local description = skill_parts(text)
-      lines[#lines + 1] = "- " .. s.name .. (description and (": " .. description) or "")
-    end
-  end
-  return #lines > 0 and lines or nil
-end
-
---- :YapInsert [name] / :YapInsertHere [name].
---- `opts.at_cursor` (default false) inserts verbatim above the cursor;
---- otherwise a template appends as a message block and a skill merges into
---- the system block. With no name, pick from the combined list.
-function M.insert(name, opts)
-  opts = opts or {}
-  local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].yap then
-    vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
-    return
-  end
-  if running[buf] then
-    vim.notify("yap: send in flight, not inserting", vim.log.levels.WARN)
-    return
-  end
-
-  local function apply(entry)
-    local text = read_file(entry.path)
-    if not text then
-      vim.notify("yap: cannot read " .. entry.path, vim.log.levels.ERROR)
-      return
-    end
-    local lines
-    if entry.kind == "skill" then
-      _, lines = skill_parts(text)
-    else
-      lines = vim.split(text, "\n", { plain = true })
-    end
-    lines = trim_blank(lines)
-    if opts.at_cursor then
-      insert_at_cursor(buf, lines)
-    elseif entry.kind == "skill" then
-      merge_into_system(buf, lines)
-    else
-      append_as_block(buf, lines)
-    end
-  end
-
-  local entries = template_entries()
-  if name then
-    for _, e in ipairs(entries) do
-      if e.name == name then
-        apply(e)
-        return
-      end
-    end
-    vim.notify("yap: no template/skill named: " .. name, vim.log.levels.WARN)
-    return
-  end
-  if #entries == 0 then
-    vim.notify(
-      ("yap: no templates in %s or %s"):format(M.config.templates_dir, M.config.skills_dir),
-      vim.log.levels.WARN
-    )
-    return
-  end
-  local items = {}
-  for _, e in ipairs(entries) do
-    items[#items + 1] = e.label
-  end
-  vim.ui.select(items, { prompt = "yap insert" }, function(choice)
-    if not choice then
-      return
-    end
-    for _, e in ipairs(entries) do
-      if e.label == choice then
-        apply(e)
-        return
-      end
-    end
-  end)
-end
-
---- Completion list for :YapInsert / :YapInsertHere.
-function M.template_names()
-  local names = {}
-  for _, e in ipairs(template_entries()) do
-    names[#names + 1] = e.name
-  end
-  return names
-end
+-- Templates and skills live in harness.template.
 
 --- Find the yap:usage marker the binary appended for this turn, fold its
 --- numbers into the buffer's session totals (winbar), and remove the marker.
@@ -766,15 +309,20 @@ local function consume_usage(buf)
   end
 end
 
+function M.parse_buffer(buf) return document.parse_buffer(buf) end
+function M.insert(name, opts) return require("harness.template").insert(name, opts) end
+function M.template_names() return require("harness.template").template_names() end
+function M.is_running(buf) return stream.is_running(buf) end
+
 -- ─── Send ──────────────────────────────────────────────────────────────────
 
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
-running = {}
+running = stream.running
 
 -- Live tool per buffer while it runs: { name, log, since }. Set from
 -- the binary's `yap:event` stderr lines (bash announces the temp file
 -- its output streams into), cleared on tool_end / process exit.
-live = {}
+live = stream.live
 
 -- Per-chat-buffer persistent tail: every tool call appends a
 -- `$ command` header and its output (drained from the temp log) to ONE
@@ -960,7 +508,7 @@ drain_tail = function(buf)
   if not data then
     return
   end
-  append_text(t.bufnr, data)
+  document.append_text(t.bufnr, data)
   -- the tail sidecar file and the audit log get the same bytes (a line
   -- split across two drains lands as two log lines; cosmetic)
   tail_write(buf, data)
@@ -983,7 +531,7 @@ local function handle_event(buf, json_line)
     t.offset = 0
     local header = "$ " .. (ev.command or ev.name or "tool")
     local chunk = (t.has_content and "\n" or "") .. header .. "\n"
-    append_text(t.bufnr, chunk)
+    document.append_text(t.bufnr, chunk)
     tail_write(buf, chunk)
     t.has_content = true
     audit_write(buf, { ("=== %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), header) })
@@ -1019,7 +567,7 @@ local function handle_event(buf, json_line)
         target = a.path or a.url or a.command or ""
       end
       local chunk = (t.has_content and "\n" or "") .. ("• %s %s\n"):format(ev.name, target)
-      append_text(t.bufnr, chunk)
+      document.append_text(t.bufnr, chunk)
       tail_write(buf, chunk)
       t.has_content = true
     end
@@ -1040,7 +588,7 @@ local function handle_event(buf, json_line)
     local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
       os.date("%Y-%m-%dT%H:%M:%S"), ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000)
     local chunk = (t.has_content and "\n" or "") .. line .. "\n"
-    append_text(t.bufnr, chunk)
+    document.append_text(t.bufnr, chunk)
     tail_write(buf, chunk)
     t.has_content = true
     audit_write(buf, { line })
@@ -1119,14 +667,8 @@ end
 --- the built-in default (compaction is the template mechanism applied,
 --- R18). Returns trimmed body lines, never a leading # @role heading.
 local function compact_prompt_lines()
-  for _, t in ipairs(list_md(M.config.templates_dir)) do
-    if t.name == "compact" then
-      local text = read_file(t.path)
-      if text then
-        return trim_blank(vim.split(text, "\n", { plain = true }))
-      end
-    end
-  end
+  local lines = require("harness.template").named_lines("compact")
+  if lines then return lines end
   return vim.split(
     "Summarize the conversation above into a compact markdown summary that\n"
       .. "preserves all facts, decisions, open todos, and current file state.\n"
@@ -1151,7 +693,7 @@ function M.compact()
     vim.notify("yap: send in flight, not compacting", vim.log.levels.WARN)
     return
   end
-  append_as_block(buf, compact_prompt_lines())
+  require("harness.template").append_as_block(buf, compact_prompt_lines())
   vim.b[buf].yap_compact_pending = true
   M.send()
 end
@@ -1261,7 +803,7 @@ local function report_error(buf, err)
   local block = { "<!-- yap:error" }
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
-  append_block(buf, block)
+  document.append_block(buf, block)
   vim.notify("yap: " .. err, vim.log.levels.ERROR)
 end
 
@@ -1309,7 +851,7 @@ local function refresh_description(buf)
   if not combo or combo == "" then return end
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   if not provider then return end
-  local messages = M.parse_buffer(buf)
+  local messages = document.parse_buffer(buf)
   local payload = vim.json.encode({ messages = {
     { role = "system", content = "Summarize this chat session in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper." },
     { role = "user", content = vim.json.encode(messages) },
@@ -1339,7 +881,7 @@ end
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
   repair_stream_tail(buf)
-  append_block(buf, { "# @user", "" })
+  document.append_block(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
 end
@@ -1352,7 +894,7 @@ function M.send()
     return
   end
 
-  local messages = M.parse_buffer(buf)
+  local messages = document.parse_buffer(buf)
   -- The harness cwd is request-scoped rather than session-scoped: :cd takes
   -- effect on the very next turn without rewriting the visible chat buffer.
   table.insert(messages, 1, {
@@ -1375,13 +917,13 @@ function M.send()
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
-  local follow = following_windows(buf)
-  append_block(buf, { "# @assistant", "" })
+  local follow = document.following_windows(buf)
+  document.append_block(buf, { "# @assistant", "" })
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
   vim.b[buf].yap_live = true
-  follow_windows(buf, follow)
+  document.follow_windows(buf, follow)
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
@@ -1399,9 +941,9 @@ function M.send()
       if data then
         -- Appending never touches fold state: new folds adopt the
         -- view's 'foldlevel' as they appear (R10).
-        local follow = following_windows(buf)
-        append_text(buf, data)
-        follow_windows(buf, follow)
+        local follow = document.following_windows(buf)
+        document.append_text(buf, data)
+        document.follow_windows(buf, follow)
       end
     end),
     stderr = vim.schedule_wrap(function(_, data)
@@ -1461,7 +1003,7 @@ function M.send()
         end
       end
     end
-    append_block(buf, { "# @user", "" })
+    document.append_block(buf, { "# @user", "" })
     awaiting[buf] = true
     require("harness.session").save(buf)
     maybe_refresh_description(buf)
@@ -1563,7 +1105,7 @@ function M.new(opts)
   local lines = { "# @system", "" }
   vim.list_extend(lines, vim.split(vim.b[buf].yap_system or system_prompt(), "\n", { plain = true }))
   if M.config.skills_intro then
-    local intro = skills_intro_lines()
+    local intro = require("harness.template").skills_intro_lines()
     if intro then
       vim.list_extend(lines, { "", "## Skills" })
       vim.list_extend(lines, intro)
