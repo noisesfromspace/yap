@@ -1779,16 +1779,30 @@ function M.setup(opts)
     M.instances()
   end, { silent = true, desc = "yap: running and idle sessions" })
 
-  -- Opening a file under ~/.yap/sessions/ directly (e.g. `nvim foo.md`
-  -- at startup) adopts it as a managed yap session — unlisted, keymaps,
-  -- tail sidecar attached — exactly like :YapSessions resume.
+  -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file
+  -- explorer) adopts it as a managed yap session. Hide a newly-created
+  -- session buffer as soon as its name exists, before buffer pickers can
+  -- observe it; BufReadPost still owns full adoption once content exists.
   local adopt_group = vim.api.nvim_create_augroup("YapAdopt", { clear = true })
+  local function is_session_path(buf)
+    local name = vim.api.nvim_buf_get_name(buf)
+    local root = require("harness.session").sessions_root()
+    return name, name:sub(1, #root + 1) == root .. "/"
+  end
+  vim.api.nvim_create_autocmd("BufNew", {
+    group = adopt_group,
+    callback = function(args)
+      local _, session_path = is_session_path(args.buf)
+      if session_path then
+        vim.bo[args.buf].buflisted = false
+      end
+    end,
+  })
   vim.api.nvim_create_autocmd("BufReadPost", {
     group = adopt_group,
     callback = function(args)
-      local name = vim.api.nvim_buf_get_name(args.buf)
-      local root = require("harness.session").sessions_root()
-      if name:sub(1, #root + 1) == root .. "/" then
+      local name, session_path = is_session_path(args.buf)
+      if session_path then
         adopt(args.buf, name)
       end
     end,

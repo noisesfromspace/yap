@@ -26,9 +26,21 @@ session.save(buf)
 local path = vim.b[buf].yap_path
 assert(path and vim.fn.filereadable(path) == 1, "session not saved")
 vim.cmd("bwipeout!")
+local early_unlisted
+local watch = vim.api.nvim_create_autocmd("BufNew", {
+  callback = function(args)
+    if vim.api.nvim_buf_get_name(args.buf) == path then
+      early_unlisted = not vim.bo[args.buf].buflisted
+    end
+  end,
+})
+-- Plain :edit is also the path file explorers use after choosing a file:
+-- it must be hidden from ordinary buffer lists early, then fully adopted.
 vim.cmd("edit " .. vim.fn.fnameescape(path))
+vim.api.nvim_del_autocmd(watch)
 local b = vim.api.nvim_get_current_buf()
-assert(vim.b[b].yap == true, "direct-open session not marked as yap")
+assert(early_unlisted, "session should be unlisted as soon as its named buffer is created")
+assert(vim.b[b].yap == true, "direct/file-explorer open session not marked as yap")
 assert(not vim.bo[b].buflisted, "adopted session should be unlisted")
 assert(vim.b[b].yap_path == path, "yap_path not set on adopt: " .. tostring(vim.b[b].yap_path))
 local mapped = false
