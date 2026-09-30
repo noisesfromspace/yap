@@ -669,16 +669,6 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	}
 
 	out := bufio.NewWriter(outw)
-	toProvMsgs := func(msgs []Message) []anyprov.Message {
-		outm := make([]anyprov.Message, 0, len(msgs))
-		for _, m := range msgs {
-			outm = append(outm, anyprov.Message{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID})
-		}
-		return outm
-	}
-	messages := toProvMsgs(req.Messages)
-	var totPrompt, totCompletion int
-
 	toProvCalls := func(calls []ToolCall) []anyprov.ToolCall {
 		if len(calls) == 0 { return nil }
 		out := make([]anyprov.ToolCall, 0, len(calls))
@@ -694,6 +684,20 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		}
 		return out
 	}
+	toProvMsgs := func(msgs []Message) []anyprov.Message {
+		outm := make([]anyprov.Message, 0, len(msgs))
+		for _, m := range msgs {
+			outm = append(outm, anyprov.Message{
+				Role:       m.Role,
+				Content:    m.Content,
+				ToolCalls:  toProvCalls(m.ToolCalls),
+				ToolCallID: m.ToolCallID,
+			})
+		}
+		return outm
+	}
+	messages := toProvMsgs(req.Messages)
+	var totPrompt, totCompletion int
 
 	// Block spacing (R7): blocks never start with newlines and
 	// self-terminate with exactly one blank line; pad() bridges the

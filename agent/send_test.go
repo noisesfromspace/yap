@@ -146,6 +146,45 @@ func TestSendToolLoop(t *testing.T) {
 	}
 }
 
+func TestPersistedToolCallsRemainPaired(t *testing.T) {
+	var request map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		sse(w, `{"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	input := `{"messages":[
+		{"role":"user","content":"look it up"},
+		{"role":"assistant","content":"","tool_calls":[{"id":"persisted-1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"pwd\"}"}}]},
+		{"role":"tool","tool_call_id":"persisted-1","content":"/opt/code/yap"},
+		{"role":"user","content":"continue"}
+	]}`
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(input), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	messages := request["messages"].([]any)
+	assistant := messages[1].(map[string]any)
+	calls, ok := assistant["tool_calls"].([]any)
+	if !ok || len(calls) != 1 {
+		t.Fatalf("persisted assistant tool_calls dropped: %v", assistant)
+	}
+	call := calls[0].(map[string]any)
+	if call["id"] != "persisted-1" {
+		t.Fatalf("wrong persisted tool call: %v", call)
+	}
+	result := messages[2].(map[string]any)
+	if result["role"] != "tool" || result["tool_call_id"] != "persisted-1" {
+		t.Fatalf("persisted tool result no longer paired: %v", result)
+	}
+}
+
 func TestAssistantDeltasAreEmittedOnce(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sse(w,
