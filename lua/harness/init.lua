@@ -1475,9 +1475,6 @@ function M.send()
       modeline = false,
       data = { buf = buf, turn = last_turn[buf] },
     })
-    if vim.api.nvim_get_current_buf() == buf then
-      vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
-    end
     if compact then
       M.compact_offer(buf)
     end

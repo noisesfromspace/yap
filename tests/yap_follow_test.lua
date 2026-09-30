@@ -72,7 +72,13 @@ do
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
   assert(#bad == 0, "the view did not follow the stream:\n  " .. table.concat(bad, "\n  "))
   assert(vim.fn.winsaveview().topline > base, "the window never scrolled to follow the end")
-  print(("follow: cursor rode the end over %d samples (topline %d -> %d)"):format(n, base, vim.fn.winsaveview().topline))
+  assert(vim.wait(2000, function()
+    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+    return lines[1] == "# @user" and lines[2] == ""
+  end, 20), "turn did not finish")
+  assert(vim.api.nvim_win_get_cursor(0)[1] < vim.api.nvim_buf_line_count(buf),
+    "completed turn moved the cursor to the trailing user prompt")
+  print(("follow: cursor rode the stream without jumping to the next prompt over %d samples"):format(n))
 end
 
 -- ── 2. cursor parked mid-buffer: neither cursor nor view moves ───────────
