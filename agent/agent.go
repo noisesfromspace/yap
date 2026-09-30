@@ -606,6 +606,11 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		// log file (:YapLive), never written into this buffer.
 		messages = append(messages, Message{Role: "assistant", Content: t.text, ToolCalls: t.calls})
 		for _, call := range t.calls {
+			// Flush the session-visible call before publishing its audit event.
+			// stdout/stderr are separate pipes, so this is the only causal
+			// boundary Yap can establish before the tool starts.
+			pad()
+			emitToolHeader(out, call)
 			// Audit trail (yap:event on stderr): the full call before
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
@@ -615,11 +620,8 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			var result, ui string
 			if !ok {
 				result = "error: unknown tool " + call.Function.Name
-				pad()
 				emitToolResult(out, result, "")
 			} else {
-				pad()
-				emitToolHeader(out, call)
 				var err error
 				result, ui, err = tool.Run(json.RawMessage(call.Function.Arguments))
 				if err != nil {
@@ -647,6 +649,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		b, _ := json.Marshal(m)
 		pad()
 		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
+		out.Flush() // session state must precede the corresponding audit event
 		// Audit: one turn journal line (tail buffer + audit log).
 		m["type"] = "turn_end"
 		m["model"] = model

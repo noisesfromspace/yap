@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"boers.email/yap/agent/tools"
 )
 
 // writeConfig points the binary at a temp HOME with the given providers.
@@ -140,6 +143,52 @@ func TestSendToolLoop(t *testing.T) {
 		t.Fatalf("tool_call_id order: %v", tools)
 	}
 }
+
+func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			sse(w,
+				`{"choices":[{"delta":{"content":"before"}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"missing_test_tool","arguments":"{}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"after"}}]}`)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	// Record writes to session stdout and audit-event output in one journal.
+	// emitToolHeader must flush before EmitEvent writes tool_call.
+	var mu sync.Mutex
+	var journal strings.Builder
+	writer := writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		journal.Write(p)
+		return len(p), nil
+	})
+	oldEventOut := tools.SetEventWriter(writer)
+	defer tools.SetEventWriter(oldEventOut)
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), writer); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := journal.String()
+	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
+	event := strings.Index(s, `yap:event {"args":"{}","name":"missing_test_tool","type":"tool_call"}`)
+	result := strings.Index(s, "error: unknown tool missing_test_tool")
+	if header < 0 || event < 0 || result < 0 || !(header < event && event < result) {
+		t.Fatalf("tool ordering must be header -> event -> result:\n%s", s)
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func TestUnclosedFence(t *testing.T) {
 	cases := []struct {

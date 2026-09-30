@@ -36,6 +36,14 @@ func EmitEvent(v any) {
 	fmt.Fprintf(eventOut, "yap:event %s\n", b)
 }
 
+// SetEventWriter swaps the event sink and returns the previous one. It is
+// primarily useful to make the stdout/event ordering contract testable.
+func SetEventWriter(w io.Writer) io.Writer {
+	old := eventOut
+	eventOut = w
+	return old
+}
+
 // Tool is a single callable tool. result is sent back to the model; ui is
 // an optional display-only payload for the buffer (yap:ui, R12).
 type Tool struct {
