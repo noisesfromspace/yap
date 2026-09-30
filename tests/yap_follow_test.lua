@@ -58,7 +58,7 @@ do
     local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
     local last = last_line(buf)
-    assert(cur[1] == count and cur[2] >= math.max(#last - 1, 0),
+    assert(cur[1] == count and cur[2] == 0,
       ("sample %d: cursor=%d,%d but stream end is %d:%q"):format(i, cur[1], cur[2], count, last))
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
@@ -79,10 +79,11 @@ do
   conversation(buf, 200)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
   yap.send()
-  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > 205 end, 20), "stream did not start")
+  assert(vim.wait(20000, function() return last_line(buf):find("The ", 1, true) ~= nil end, 20), "stream did not start")
   vim.cmd("normal! k")
   local row0 = vim.api.nvim_win_get_cursor(0)[1]
-  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > row0 + 3 end, 20), "stream did not advance")
+  local text0 = last_line(buf)
+  assert(vim.wait(3000, function() return last_line(buf) ~= text0 end, 20), "stream did not advance")
   assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
 end
 

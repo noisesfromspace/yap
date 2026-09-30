@@ -176,21 +176,30 @@ function M.following_windows(buf)
   return wins
 end
 
---- Explicitly cancel following for a window: remove it from the follower set.
-function M.cancel_follow(wins, win)
+--- Before changing the buffer, remove windows whose cursor no longer matches
+--- the exact tail position Yap last requested. That difference is explicit
+--- user movement; checking synchronously avoids CursorMoved event races.
+function M.cancel_moved_followers(buf, wins, expected)
   for i = #wins, 1, -1 do
-    if wins[i] == win then
+    local w = wins[i]
+    if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
+      expected[w] = nil
       table.remove(wins, i)
-      break
+    else
+      local want = expected[w]
+      local ok, cur = pcall(vim.api.nvim_win_get_cursor, w)
+      if not ok or (want and (cur[1] ~= want[1] or cur[2] ~= want[2])) then
+        expected[w] = nil
+        table.remove(wins, i)
+      end
     end
   end
 end
 
---- Keep tail windows on the stream end. Follow is sticky across tool
---- boundaries and only cancels on explicit user movement (CursorMoved
---- outside of our own follow operation). Windows that did not start at
---- the tail are never included.
-function M.follow_windows(buf, wins)
+--- Keep follower windows on the real stream end at column zero. Windows that
+--- did not start at the tail, or were removed by cancel_moved_followers, are
+--- never moved.
+function M.follow_windows(buf, wins, expected)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return
   end
@@ -198,12 +207,15 @@ function M.follow_windows(buf, wins)
   for i = #wins, 1, -1 do
     local w = wins[i]
     if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
+      expected[w] = nil
       table.remove(wins, i)
     else
-      -- Always place the cursor at the real tail, column 0; do not try to
-      -- infer cancellation from cursor position here — explicit user
-      -- movement cancels via cancel_follow().
-      pcall(vim.api.nvim_win_set_cursor, w, { count, 0 })
+      expected[w] = { count, 0 }
+      local ok = pcall(vim.api.nvim_win_set_cursor, w, expected[w])
+      if not ok then
+        expected[w] = nil
+        table.remove(wins, i)
+      end
     end
   end
 end

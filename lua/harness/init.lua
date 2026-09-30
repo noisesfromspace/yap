@@ -999,25 +999,12 @@ function M.send()
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
   local follow = document.following_windows(buf)
-  local follow_group = vim.api.nvim_create_augroup("YapFollow" .. buf, { clear = true })
-  local moving_follow = false
-  local follow_active = true
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    group = follow_group,
-    buffer = buf,
-    callback = function()
-      -- Any user movement opts out of following for this turn immediately.
-      follow_active = false
-      follow = {}
-    end,
-  })
+  local expected_follow = {}
+  local function cancel_moved_followers()
+    document.cancel_moved_followers(buf, follow, expected_follow)
+  end
   local function follow_tail()
-    if not follow_active or #follow == 0 then
-      return
-    end
-    moving_follow = true
-    document.follow_windows(buf, follow)
-    moving_follow = false
+    document.follow_windows(buf, follow, expected_follow)
   end
   document.append_block(buf, { "# @assistant", "" })
   -- Track this assistant block for possible same-round prose relocation.
@@ -1046,13 +1033,9 @@ function M.send()
         -- more tool regions, handle_event() will cut any already-streamed
         -- pre-tool prose from this assistant block and reinsert it after the
         -- final tool region to preserve header/result-before-prose ordering.
+        cancel_moved_followers()
         document.append_text(buf, data)
         follow_tail()
-        -- If the user moved (pressed k), keep their cursor anchored where they left it.
-        if not follow_active and vim.api.nvim_win_is_valid(0) and vim.api.nvim_win_get_buf(0) == buf then
-          local cur = vim.api.nvim_win_get_cursor(0)
-          vim.api.nvim_win_set_cursor(0, cur)
-        end
       end
     end),
     stderr = vim.schedule_wrap(function(_, data)
@@ -1071,14 +1054,16 @@ function M.send()
         stderr_partial = stderr_partial:sub(i + 1)
         local ev = line:match("^yap:event (.+)$")
         if ev then
+          cancel_moved_followers()
           handle_event(buf, ev)
+          follow_tail()
         else
           table.insert(stderr_chunks, line)
         end
       end
     end),
   }, vim.schedule_wrap(function(result)
-    vim.api.nvim_del_augroup_by_id(follow_group)
+    cancel_moved_followers()
     running[buf] = nil
     local compact = vim.b[buf].yap_compact_pending
     vim.b[buf].yap_compact_pending = nil
@@ -1093,6 +1078,7 @@ function M.send()
       local err = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
       report_error(buf, err ~= "" and err or ("exit " .. result.code))
       close_stream(buf)
+      follow_tail()
       return
     end
     consume_usage(buf)
