@@ -1,10 +1,6 @@
--- Streaming follow: while a reply streams in, a window whose cursor sits on
--- the last line keeps that end in view (like :terminal output); a window
--- scrolled elsewhere is never dragged. Neovim does not scroll a window for an
--- API edit, so the Lua side pins the cursor after every append
--- (follow_windows, harness/init.lua) -- before that the view tracked the end
--- only while an appended chunk happened to land exactly on the cursor (an
--- empty last line, i.e. a chunk ending in a newline) and then stranded it.
+-- Streaming follow: while a reply streams in, a window whose cursor starts
+-- on the last line keeps that end in view without making the cursor ride each
+-- stdout chunk; a window scrolled elsewhere is never dragged.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -58,27 +54,22 @@ do
   local base = vim.fn.winsaveview().topline
 
   yap.send()
-  local bad = {}
+  local anchor = vim.api.nvim_win_get_cursor(0)
   local n = watch(buf, function(i)
-    local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
-    local last = last_line(buf)
-    -- the cursor must ride the end of the streamed text; the chunk that ends
-    -- mid-line is the one that used to strand it
-    if #last > 0 and (cur[1] ~= count or cur[2] < #last - 1) then
-      bad[#bad + 1] = ("sample %d: cursor=%d,%d but the last line is %d:%q"):format(i, cur[1], cur[2], count, last)
-    end
+    assert(cur[1] == anchor[1] and cur[2] == anchor[2],
+      ("sample %d: streaming moved cursor from %d,%d to %d,%d"):format(i, anchor[1], anchor[2], cur[1], cur[2]))
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
-  assert(#bad == 0, "the view did not follow the stream:\n  " .. table.concat(bad, "\n  "))
   assert(vim.fn.winsaveview().topline > base, "the window never scrolled to follow the end")
   assert(vim.wait(2000, function()
     local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
     return lines[1] == "# @user" and lines[2] == ""
   end, 20), "turn did not finish")
-  assert(vim.api.nvim_win_get_cursor(0)[1] < vim.api.nvim_buf_line_count(buf),
+  local done = vim.api.nvim_win_get_cursor(0)
+  assert(done[1] == anchor[1] and done[2] == anchor[2],
     "completed turn moved the cursor to the trailing user prompt")
-  print(("follow: cursor rode the stream without jumping to the next prompt over %d samples"):format(n))
+  print(("follow: viewport followed while cursor stayed anchored over %d samples"):format(n))
 end
 
 -- ── 2. cursor parked mid-buffer: neither cursor nor view moves ───────────

@@ -195,25 +195,22 @@ function M.following_windows(buf)
   return wins
 end
 
---- Pin `wins` to the end of the buffer after an append: the cursor goes to
---- the end of the last line, which scrolls the window the way streamed
---- terminal output does (minimal scroll, one line at a time). Neovim never
---- scrolls a window for an API edit, so following has to be explicit: the
---- view used to track the end only while an appended chunk happened to land
---- exactly on the cursor (an empty last line, i.e. a chunk ending in a
---- newline), and then stranded the cursor mid-line — which is why a reply
---- seemed to stop being followed partway through. A window scrolled away is
---- left alone, and nothing is moved from a non-normal mode: dragging the
---- cursor while the user types is worse than a stale view (R11).
+--- Keep the end of the stream visible without making the real cursor ride
+--- every stdout chunk. Moving the cursor per chunk makes provider/tool flush
+--- boundaries visibly jerky; winrestview can scroll the viewport while the
+--- cursor stays anchored in the text. A window scrolled away is left alone,
+--- and nothing is moved from a non-normal mode (R11).
 function M.follow_windows(buf, wins)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return
   end
   local count = vim.api.nvim_buf_line_count(buf)
-  local last = vim.api.nvim_buf_get_lines(buf, count - 1, count, false)[1] or ""
   for _, w in ipairs(wins) do
     if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
-      vim.api.nvim_win_set_cursor(w, { count, math.max(#last - 1, 0) })
+      local view = vim.api.nvim_win_call(w, vim.fn.winsaveview)
+      local height = vim.api.nvim_win_get_height(w)
+      view.topline = math.max(1, count - height + 1)
+      vim.api.nvim_win_call(w, function() vim.fn.winrestview(view) end)
     end
   end
 end
