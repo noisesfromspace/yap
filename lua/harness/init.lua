@@ -1653,13 +1653,13 @@ local function focus_buf(buf)
   end
 end
 
---- List open yap buffers awaiting a reply (the herdr "needs you" set)
---- and focus the picked one. Live sessions only; saved-but-unopened files
---- stay |:YapSessions|' job.
+--- List open yap buffers that need user intervention (awaiting a reply or
+--- stopped on an error) and focus the picked one. Live sessions only;
+--- saved-but-unopened files stay |:YapSessions|' job.
 function M.waiting()
   local items = {}
-  for b in pairs(awaiting) do
-    if vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if (awaiting[b] or errors[b]) and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
       local name = vim.api.nvim_buf_get_name(b)
       name = name ~= "" and vim.fn.fnamemodify(name, ":t:r") or ("buffer " .. b)
       local provider, model = current_combo(b)
@@ -1687,13 +1687,12 @@ function M.waiting()
   end)
 end
 
---- All open yap chat buffers, listed by session file path (tails are
---- never here — reach them in-session with :YapLive / <leader>l).
---- Unlisted sessions are reached through this and :YapWaiting.
+--- Running yap chat buffers, listed by session file path (tails are never
+--- here — reach them in-session with :YapLive / <leader>l).
 function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap then
+    if vim.b[b].yap and running[b] then
       -- Follow `:file` renames: the buffer name is the session path once
       -- renamed, even before the next autosave commits it to yap_path.
       local name = vim.api.nvim_buf_get_name(b)
@@ -1703,7 +1702,7 @@ function M.instances()
     end
   end
   if #items == 0 then
-    vim.notify("yap: no open sessions", vim.log.levels.INFO)
+    vim.notify("yap: no running sessions", vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
@@ -1730,10 +1729,10 @@ function M.setup(opts)
   -- setup_buffer.
   vim.keymap.set("n", "<leader>w", function()
     M.waiting()
-  end, { silent = true, desc = "yap: agents waiting for reply" })
+  end, { silent = true, desc = "yap: sessions needing attention" })
   vim.keymap.set("n", "<leader>r", function()
     M.instances()
-  end, { silent = true, desc = "yap: sessions" })
+  end, { silent = true, desc = "yap: running sessions" })
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. `nvim foo.md`
   -- at startup) adopts it as a managed yap session — unlisted, keymaps,

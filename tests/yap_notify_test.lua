@@ -92,15 +92,13 @@ vim.ui.select = orig_select
 assert(waiting_items and #waiting_items == 1, "expected one waiting buffer, got " .. vim.inspect(waiting_items))
 assert(waiting_items[1].buf == buf, "waiting() surfaced the wrong buffer")
 
--- :YapInstances lists every open session by file path (never the tails).
+-- :YapInstances lists only running sessions. Both sessions are idle here,
+-- so it must not open the picker.
 local inst_items
 vim.ui.select = function(items, opts, on_choice)
   inst_items = items
 end
 yap.instances()
 vim.ui.select = orig_select
-assert(inst_items and #inst_items == 2, "expected two open sessions, got " .. vim.inspect(inst_items))
-for _, it in ipairs(inst_items) do
-  assert(it.text:match("%.md$"), "session label should be a file path: " .. it.text)
-end
+assert(inst_items == nil, "idle sessions should not appear as running: " .. vim.inspect(inst_items))
 print("OK notify")

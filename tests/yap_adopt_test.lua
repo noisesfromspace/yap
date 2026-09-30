@@ -15,8 +15,8 @@ for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
     globals[m.desc] = true
   end
 end
-assert(globals["yap: sessions"], "no global <leader>r (yap: sessions) map")
-assert(globals["yap: agents waiting for reply"], "no global <leader>w (yap: agents waiting for reply) map")
+assert(globals["yap: running sessions"], "no global <leader>r (yap: running sessions) map")
+assert(globals["yap: sessions needing attention"], "no global <leader>w (yap: sessions needing attention) map")
 
 -- a saved session, reopened by plain :edit (the `nvim file.md` path), is
 -- adopted: marked yap, unlisted, buffer-local keymaps in place
