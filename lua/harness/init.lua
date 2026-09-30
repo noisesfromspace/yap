@@ -940,8 +940,8 @@ function M.send()
     stdout = vim.schedule_wrap(function(_, data)
       if data then
         -- Appending never touches fold state: new folds adopt the
-        -- view's 'foldlevel' as they appear (R10).
-        local follow = document.following_windows(buf)
+        -- view's 'foldlevel' as they appear (R10). Follow intent was
+        -- captured at send time and stays sticky across tool boundaries.
         document.append_text(buf, data)
         document.follow_windows(buf, follow)
       end
@@ -1004,6 +1004,7 @@ function M.send()
       end
     end
     document.append_block(buf, { "# @user", "" })
+    document.finish_follow(buf, follow)
     awaiting[buf] = true
     require("harness.session").save(buf)
     maybe_refresh_description(buf)

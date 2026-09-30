@@ -196,10 +196,9 @@ function M.following_windows(buf)
 end
 
 --- Keep the end of the stream visible without making the real cursor ride
---- every stdout chunk. Moving the cursor per chunk makes provider/tool flush
---- boundaries visibly jerky; winrestview can scroll the viewport while the
---- cursor stays anchored in the text. A window scrolled away is left alone,
---- and nothing is moved from a non-normal mode (R11).
+--- every stdout chunk. `wins` is the follow intent captured when the send
+--- starts, so tool/result boundaries cannot accidentally cancel following.
+--- A window that did not start at the tail is never dragged (R11).
 function M.follow_windows(buf, wins)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return
@@ -211,6 +210,16 @@ function M.follow_windows(buf, wins)
       local height = vim.api.nvim_win_get_height(w)
       view.topline = math.max(1, count - height + 1)
       vim.api.nvim_win_call(w, function() vim.fn.winrestview(view) end)
+    end
+  end
+end
+
+--- A sticky tail follower becomes the next input cursor when the turn ends.
+function M.finish_follow(buf, wins)
+  local count = vim.api.nvim_buf_line_count(buf)
+  for _, w in ipairs(wins) do
+    if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
+      vim.api.nvim_win_set_cursor(w, { count, 0 })
     end
   end
 end

@@ -67,9 +67,9 @@ do
     return lines[1] == "# @user" and lines[2] == ""
   end, 20), "turn did not finish")
   local done = vim.api.nvim_win_get_cursor(0)
-  assert(done[1] == anchor[1] and done[2] == anchor[2],
-    "completed turn moved the cursor to the trailing user prompt")
-  print(("follow: viewport followed while cursor stayed anchored over %d samples"):format(n))
+  assert(done[1] == vim.api.nvim_buf_line_count(buf) and done[2] == 0,
+    "sticky follower did not land on the input line below # @user")
+  print(("follow: viewport stayed sticky and cursor landed on input after %d samples"):format(n))
 end
 
 -- ── 2. cursor parked mid-buffer: neither cursor nor view moves ───────────
