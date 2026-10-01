@@ -340,8 +340,12 @@ Config and runtime data:
 <
                         Any OpenAI-compatible /chat/completions endpoint
                         works. API keys come from the named env vars.
-                        `pricing` (USD per 1M tokens) enables the cost in
-                        the winbar; omit it to track tokens only.
+                        `pricing` (USD per 1M tokens) overrides the
+                        committed catalog for a model; most models are
+                        priced automatically from the embedded catalog
+                        (agent/pricing), so `pricing` is only needed for
+                        models the catalog misses or for a provider whose
+                        price differs from the catalog.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
   ~/.yap/sessions/          Autosaved sessions, see |yap-sessions|.
@@ -643,13 +647,14 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: the provider/model combo and
-the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
-folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
+The winbar is the session dashboard. Left: the session description (truncated
+to 40 display columns), provider/model combo, and the applied fold view (`Ⓕ1`
+agent output folded, `Ⓕ2` tools & thinking folded, `Ⓕ3` all open — the last
+view applied with <leader>1..3;
 manual |za| toggles don't update it), and — when other sessions are
 waiting for your reply — a `◉N` rollup (N other yap buffers await
 you; jump to one with |:YapWaiting|). Right: token totals and cost
-for this buffer (accumulated over its lifetime, compact k-format), then
+for this buffer (accumulated over its lifetime, compact k/m format), then
 the state glyph pinned to the far right edge:
 
   ⠋ busy    A request is in flight (driven by the job table). While a
@@ -688,7 +693,7 @@ history above it. For a global segment independent of yap buffers, use
                          only slimmed write/edit args, R12)
             tool_result  {"type","name","bytes","result"} — full result
             turn_end     {"type","model","prompt","completion","cost",?,
-                         "ms"} — one per completed send
+                         "context_window",?,"ms"} — one per completed send
           The rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool

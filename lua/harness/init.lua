@@ -184,10 +184,40 @@ local function seed_awaiting(buf)
 end
 
 local function fmt_tokens(n)
-  if n >= 1000 then
-    return string.format("%.1fk", n / 1000)
+  local value, suffix
+  if n >= 1000000 then
+    value, suffix = n / 1000000, "m"
+  elseif n >= 1000 then
+    value, suffix = n / 1000, "k"
+  else
+    return tostring(n)
   end
-  return tostring(n)
+  if value == math.floor(value) then
+    return string.format("%d%s", value, suffix)
+  end
+  return string.format("%.1f%s", value, suffix)
+end
+
+--- The session description for the winbar. A bounded read of the short
+--- frontmatter block, so hand edits show up on the next redraw (the buffer
+--- stays the source of truth); truncate so a long phrase cannot crowd out
+--- the right-hand usage/state chips.
+local function winbar_description(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
+  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then return nil end
+  local fm = frontmatter.parse(lines)
+  local d = fm and fm.description
+  if not d or d == "" then return nil end
+  if vim.fn.strdisplaywidth(d) > 40 then
+    local chars = math.min(vim.fn.strchars(d), 39)
+    d = vim.fn.strcharpart(d, 0, chars)
+    while vim.fn.strdisplaywidth(d .. "…") > 40 do
+      chars = chars - 1
+      d = vim.fn.strcharpart(d, 0, chars)
+    end
+    d = d .. "…"
+  end
+  return d
 end
 
 -- Layout: identity on the left (which model am I talking to), activity
@@ -195,10 +225,14 @@ end
 -- far right edge so it never moves as numbers grow.
 local function render_winbar(buf)
   local provider, model = current_combo(buf)
-  local parts = {
-    winbar_hl(" " .. provider .. "/" .. model .. " ", "Model"),
-    winbar_hl(" Ⓕ" .. require("harness.fold").level() .. " ", "Idle"),
-  }
+  local parts = {}
+  local desc = winbar_description(buf)
+  if desc then
+    parts[#parts + 1] = winbar_hl(" " .. desc, "Description")
+    parts[#parts + 1] = winbar_hl(" · ", "Idle")
+  end
+  parts[#parts + 1] = winbar_hl(provider .. "/" .. model, "Model")
+  parts[#parts + 1] = winbar_hl(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle")
   local others = awaiting_others(buf)
   if others > 0 then
     parts[#parts + 1] = winbar_hl(" ◉" .. others .. " ", "Needs")
@@ -270,6 +304,7 @@ end
 local function define_winbar_hl()
   local links = {
     Model = "Keyword",
+    Description = "Title",
     Busy = "DiagnosticOk",
     Idle = "Comment",
     Error = "DiagnosticError",

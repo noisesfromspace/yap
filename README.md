@@ -94,8 +94,10 @@ editing the agent.
   / `:cnewer`. The side effect happens only for a live tool call; reopening a
   saved session does not replay it.
 
-Provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals and cost live in
-the winbar, whose trailing glyph marks busy / error / `◉ waiting` (the agent
+The session description, provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals
+and cost live in the winbar. Long descriptions are truncated, and token totals
+use compact `k`/`m` notation. Its trailing glyph marks busy / error /
+`◉ waiting` (the agent
 awaits your next prompt) / idle, and whose `◉N` rollup shows how many
 OTHER sessions await your reply. A turn finishing in a background chat
 fires `vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open;

@@ -33,6 +33,16 @@ assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim
 assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
+local bar = yap.winbar(buf)
+local description_at = assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
+local model_at = assert(bar:find("alpha/m2", 1, true), "model missing from winbar: " .. bar)
+assert(description_at < model_at, "description should precede model: " .. bar)
+local long_description = "Improve the session toolbar without crowding out important status information"
+vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, long_description))
+bar = yap.winbar(buf)
+assert(bar:find("Improve the session toolbar without cro…", 1, true), "description not truncated: " .. bar)
+assert(not bar:find(long_description, 1, true), "full description leaked into winbar: " .. bar)
+vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, "Implement session descriptions"))
 
 -- 4. switching to the same combo is a no-op for the history
 yap.change_model("alpha/m2")

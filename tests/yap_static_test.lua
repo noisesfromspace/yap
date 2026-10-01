@@ -63,4 +63,7 @@ local wb = yap.winbar(buf)
 assert(wb:match("mock/m1"), "winbar combo: " .. wb)
 assert(wb:match("1.5k in · 42 out"), "winbar tokens: " .. wb)
 assert(wb:match("%$0.00342"), "winbar cost: " .. wb)
+vim.b[buf].yap_usage = { prompt = 1200000, completion = 1000 }
+wb = yap.winbar(buf)
+assert(wb:match("1.2m in · 1k out"), "compact winbar tokens: " .. wb)
 print("OK static")
