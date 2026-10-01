@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"boers.email/yap/agent/pricing"
 	"boers.email/yap/agent/providers"
 	"boers.email/yap/agent/providers/goai"
 	"boers.email/yap/agent/tools"
@@ -580,10 +581,28 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 
 	if totPrompt+totCompletion > 0 {
 		// Reported as a parse-excluded marker; the Lua side folds it into
-		// the session frontmatter and removes the line.
+		// the session totals and removes the line.
 		m := map[string]any{"prompt": totPrompt, "completion": totCompletion}
+		// Cost: explicit config pricing wins; the committed catalog
+		// (agent/pricing) is the fallback. A miss on both tracks tokens
+		// only. The catalog also supplies the context window for the
+		// toolbar's context-fill display.
+		input, output := 0.0, 0.0
+		havePricing := false
 		if p, ok := cfg.Pricing[model]; ok {
-			m["cost"] = float64(totPrompt)/1e6*p.Input + float64(totCompletion)/1e6*p.Output
+			input, output = p.Input, p.Output
+			havePricing = true
+		}
+		if info, ok := pricing.Lookup(providerName, model); ok {
+			if !havePricing {
+				input, output = info.Input, info.Output
+			}
+			if info.ContextWindow > 0 {
+				m["context_window"] = info.ContextWindow
+			}
+		}
+		if havePricing || input > 0 || output > 0 {
+			m["cost"] = float64(totPrompt)/1e6*input + float64(totCompletion)/1e6*output
 		}
 		b, _ := json.Marshal(m)
 		pad()

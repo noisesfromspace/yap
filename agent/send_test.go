@@ -15,8 +15,8 @@ import (
 	"boers.email/yap/agent/tools"
 )
 
-// writeConfig points the binary at a temp HOME with the given providers.
-func writeConfig(t *testing.T, providers string) {
+// writeConfigJSON writes a full yap.json into a temp config home.
+func writeConfigJSON(t *testing.T, cfg string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -25,10 +25,16 @@ func writeConfig(t *testing.T, providers string) {
 	if err := os.MkdirAll(xdg, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := fmt.Sprintf(`{"providers": {%s}, "pricing": {"m1": {"input": 1.0, "output": 1.0}}}`, providers)
 	if err := os.WriteFile(filepath.Join(xdg, "yap.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// writeConfig points the binary at a temp HOME with the given providers and
+// an explicit config override for the mock model (m1).
+func writeConfig(t *testing.T, providers string) {
+	t.Helper()
+	writeConfigJSON(t, fmt.Sprintf(`{"providers": {%s}, "pricing": {"m1": {"input": 1.0, "output": 1.0}}}`, providers))
 }
 
 func sse(w http.ResponseWriter, chunks ...string) {
@@ -249,6 +255,35 @@ func TestAssistantDeltasAreEmittedOnce(t *testing.T) {
 	}
 	if !strings.Contains(got, "delta-001|delta-002|delta-003") {
 		t.Fatalf("assistant delta order changed: %q", got)
+	}
+}
+
+// TestUsageCostFromCatalog: with no `pricing` block in config, the committed
+// catalog supplies both the cost and the context window for a known model.
+// The model id is tried verbatim first, so an OpenAI-compatible provider name
+// (mock) still resolves "gpt-4o".
+func TestUsageCostFromCatalog(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sse(w,
+			`{"choices":[{"delta":{"content":"ok"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":1000}}`,
+		)
+	}))
+	defer srv.Close()
+	writeConfigJSON(t, `{"providers": {"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}}}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	if err := send("mock", "gpt-4o", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	// gpt-4o is $2.5 in / $10 out per 1M tokens, so 1000/1000 costs $0.0125.
+	if !strings.Contains(s, `"cost":0.0125`) {
+		t.Fatalf("catalog cost missing or wrong:\n%s", s)
+	}
+	if !strings.Contains(s, `"context_window":128000`) {
+		t.Fatalf("catalog context window missing:\n%s", s)
 	}
 }
 
