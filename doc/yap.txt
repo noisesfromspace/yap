@@ -221,8 +221,8 @@ picker is generated in two stages. `description_model` (default
 latest user message as soon as you send, so the picker has a name before
 the reply arrives. `description_answer_model` (default `openai/gpt-5-mini`) is
 a slightly larger model that re-summarizes the whole session once the
-agent has answered, balancing the overall goal with emphasis on the most
-recent topics; it runs after the first completed turn and then every
+agent has answered, centered on the overall goal with the most recent
+topics as context; it runs after the first completed turn and then every
 `description_refresh_turns` (default 5). Set either to "" to disable that
 stage; the description survives in the buffer frontmatter either way.
 
@@ -370,7 +370,7 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
-bash, curl, write, edit, search, glob, websearch, quickfix. search and glob shell out to
+bash, curl, git, write, edit, search, glob, websearch, quickfix. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 websearch queries the Exa search API (api.exa.ai) and returns up to N
@@ -380,7 +380,9 @@ curl shells out to the system curl binary: method, headers, user-agent,
 body, redirects, timeout and extra curl flags are all settable, and it
 sends a browser User-Agent by default to get past agent blocks (it is
 fetch's versatile sibling for follow-up fetches; like fetch it returns
-raw HTML and does not run JavaScript).
+raw HTML and does not run JavaScript). git runs read-only subcommands
+(status, diff, log, show, blame) in the project root with pager, color
+and credential prompts disabled; output is head-truncated like search.
 
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming

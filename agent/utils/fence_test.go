@@ -13,6 +13,7 @@ func TestResultFence(t *testing.T) {
 		{"read", `{"path":"/tmp/x.unknown"}`, "", true}, // unrecognized ext: plain fence
 		{"fetch", `{"url":"http://x"}`, "html", true},
 		{"bash", `{"command":"ls"}`, "", true},
+		{"git", `{"command":"diff"}`, "", true},
 		{"ls", `{"path":"/tmp"}`, "", true},
 		{"search", `{"pattern":"x"}`, "", true},
 		{"glob", `{"pattern":"*.go"}`, "", true},

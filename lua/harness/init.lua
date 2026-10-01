@@ -40,8 +40,9 @@ M.config = {
   -- description before the agent answers.
   description_model = "openai/gpt-5-nano",
   -- Slightly larger model that re-summarizes the whole session once the
-  -- agent has answered, balancing the overall goal with the most recent
-  -- topics. Refreshed after the first completed turn, then every N turns.
+  -- agent has answered, centered on the overall goal with the most
+  -- recent topics as context. Refreshed after the first completed turn,
+  -- then every N turns.
   description_answer_model = "openai/gpt-5-mini",
   description_refresh_turns = 5,
 }
@@ -1009,9 +1010,9 @@ local description_seq = {}
 --- Generate or refresh the session description shown in the winbar and
 --- session picker. `kind` selects the model and what it summarizes:
 ---   "user"   — tiny model, the latest user message only (runs on send)
----   "answer" — slightly larger model, the whole session with the overall
----              goal plus emphasis on the most recent topics (runs after
----              the agent's reply)
+---   "answer" — slightly larger model, the whole session centered on
+---              the overall goal with recent topics as context (runs
+---              after the agent's reply)
 local function refresh_description(buf, kind, messages)
   local combo, system, content
   if kind == "user" then
@@ -1026,7 +1027,7 @@ local function refresh_description(buf, kind, messages)
     if not content or content == "" then return end
   else
     combo = M.config.description_answer_model
-    system = "Summarize this chat session in one short phrase (maximum 12 words), balancing the overall goal with emphasis on the most recent topics. Return only the phrase, no punctuation wrapper."
+    system = "Summarize this chat session in one short phrase (maximum 12 words) centered on the overall goal, with the most recent topics as context. Return only the phrase, no punctuation wrapper."
     content = vim.json.encode(document.parse_buffer(buf))
   end
   if not combo or combo == "" then return end

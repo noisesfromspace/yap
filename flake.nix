@@ -250,7 +250,7 @@
             descriptionAnswerModel = mkOption {
               type = types.str;
               default = "openai/gpt-5-mini";
-              description = "Slightly larger provider/model combo that re-summarizes the whole session after the agent answers, balancing the overall goal with recent topics.";
+              description = "Slightly larger provider/model combo that re-summarizes the whole session after the agent answers, centered on the overall goal with recent topics as context.";
             };
             descriptionRefreshTurns = mkOption {
               type = types.ints.positive;

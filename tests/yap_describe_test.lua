@@ -35,7 +35,7 @@ end
 -- the mock; wait until both prompts have been logged.
 ok = vim.wait(10000, function()
   local text = read_log()
-  return text:match("user's request") and text:match("balancing the overall goal")
+  return text:match("user's request") and text:match("centered on the overall goal")
 end, 100)
 assert(ok, "description requests missing from log: " .. read_log())
 
@@ -44,7 +44,7 @@ for l in read_log():gmatch("[^\n]+") do
   if l:match("user's request") then
     tiny = l
   end
-  if l:match("balancing the overall goal") then
+  if l:match("centered on the overall goal") then
     full = l
   end
 end
