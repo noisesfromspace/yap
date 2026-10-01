@@ -1437,9 +1437,8 @@ local function focus_buf(buf)
   end
 end
 
---- List open yap buffers that need user intervention (awaiting a reply or
---- stopped on an error) and focus the picked one. Live sessions only;
---- saved-but-unopened files stay |:YapSessions|' job.
+--- Session label for the picker: description when present, filename as
+--- fallback, prefixed with the project cwd.
 local function live_session_label(buf)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
