@@ -92,12 +92,19 @@ local tail_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\
 assert(tail_text:match("^%$ printf"), "no command header in tail: " .. tail_text)
 assert(tail_text:match("\nl1\nl2\n") and tail_text:match("tail%-without%-newline"), "tail incomplete: " .. tail_text)
 
--- the tail sidecar file mirrors the tail buffer
-local tail_file = vim.b[buf].yap_tail_path
-assert(tail_file and vim.fn.filereadable(tail_file) == 1, "tail file missing: " .. tostring(tail_file))
-local file_text = table.concat(vim.fn.readfile(tail_file), "\n")
-assert(file_text:match("^%$ printf"), "no command header in tail file: " .. file_text)
-assert(file_text:match("\nl1\nl2\n") and file_text:match("tail%-without%-newline"), "tail file incomplete: " .. file_text)
+-- the audit log records the streamed output as JSON output events
+local audit_file = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
+assert(audit_file and vim.fn.filereadable(audit_file) == 1, "audit log missing")
+local streamed_parts = {}
+for _, line in ipairs(vim.fn.readfile(audit_file)) do
+  local ok, ev = pcall(vim.json.decode, line)
+  if ok and ev.type == "output" then
+    streamed_parts[#streamed_parts + 1] = ev.data
+  end
+end
+local streamed = table.concat(streamed_parts, "")
+assert(streamed:match("\nl1\nl2\n") and streamed:match("tail%-without%-newline"),
+  "streamed output missing from audit: " .. streamed)
 
 -- the parsed assistant message carries the flattened result, marker line excluded
 local asst

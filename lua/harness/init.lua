@@ -359,15 +359,14 @@ running = stream.running
 -- its output streams into), cleared on tool_end / process exit.
 live = stream.live
 
--- Per-chat-buffer persistent tail: every tool call appends a
--- `$ command` header and its output (drained from the temp log) to ONE
--- buffer, yap://<session>-tail. :YapLive opens it. The same bytes
--- are appended to a sidecar file in the audit dir (<session>-tail),
--- created with the session so the live view survives restarts; the
--- AUDIT LOG remains the full, authoritative record.
-local tails = {} -- chat buf → { bufnr, offset, has_content, audit, path }
+-- Per-chat-buffer persistent tail: every audit event is rendered into
+-- ONE unlisted buffer, yap://<session>-tail, opened by :YapLive. The
+-- tail is not a second log — it is the live, human-readable rendering
+-- of the JSON Lines audit log (see audit_path), rebuilt from it on
+-- reopen. Only the audit log is persisted.
+local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
 
--- The audit dir holds both the audit log and the tail sidecar, keyed by
+-- The audit dir holds one JSON Lines audit log per session, keyed by
 -- the session's basename, so the sessions dir stays clean.
 local function audit_dir()
   local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
@@ -382,10 +381,6 @@ local function session_base(buf)
   return vim.api.nvim_buf_get_name(buf):gsub("^yap://", ""):gsub("[^%w%._-]", "-")
 end
 
-local function compute_tail_path(buf)
-  return audit_dir() .. "/" .. session_base(buf) .. "-tail"
-end
-
 --- The tail buffer's name; mirrors the session file's basename so
 --- `:file` renames keep the two together.
 local function tail_buf_name(buf)
@@ -393,38 +388,17 @@ local function tail_buf_name(buf)
   return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
 end
 
-local function tail_path(buf)
-  return vim.b[buf].yap_tail_path or compute_tail_path(buf)
-end
-
---- Append `data` to the tail sidecar file (the same bytes just written
---- to the tail buffer), creating it when needed. Append-mode, like the
---- audit log: a streamed tool's output is drained in many small chunks.
-local function tail_write(buf, data)
-  local t = tails[buf]
-  if not t or not t.path or data == "" then
-    return
-  end
-  vim.fn.mkdir(vim.fn.fnamemodify(t.path, ":h"), "p")
-  local f = io.open(t.path, "a")
-  if f then
-    f:write(data)
-    f:close()
-  end
-end
-
 -- The AUDIT LOG is the full, durable record of everything the context
--- doesn't carry: ~/.yap/audit/<cwd-slug>/<session>.log. Everything
--- shown in the tail is appended there too, plus the full tool_call
--- arguments (the buffer's yap:tool headers keep only slimmed write/edit
--- args, R12) and one journal line per turn — so nothing the context
+-- doesn't carry: ~/.yap/audit/<cwd-slug>/<session>.jsonl, one JSON
+-- object per line (append-only, survives restarts). The tail buffer
+-- renders these same events for the live view, so nothing the context
 -- doesn't carry is ever lost, which is what makes :YapClear safe.
--- Append-only, survives restarts.
 local function audit_path(buf)
-  return audit_dir() .. "/" .. session_base(buf) .. ".log"
+  return audit_dir() .. "/" .. session_base(buf) .. ".jsonl"
 end
 
-local function audit_write(buf, lines)
+--- Append one event as a JSON object to the session's audit log.
+local function audit_append(buf, ev)
   local t = tails[buf]
   if not t then
     return
@@ -433,7 +407,7 @@ local function audit_write(buf, lines)
     t.audit = audit_path(buf)
     vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p")
   end
-  vim.fn.writefile(lines, t.audit, "a")
+  vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
 end
 
 --- Point the audit log at the session file's name; a `:file` rename
@@ -452,27 +426,64 @@ local function audit_follow(buf)
   end
 end
 
---- Keep the tail sidecar file (and its buffer name) in step with a
---- renamed session file, mirroring audit_follow. Called after save.
-local function tail_follow(buf)
-  local old = vim.b[buf].yap_tail_path
-  if not old or not vim.b[buf].yap_path then
-    return
+--- Render one audit event as tail-buffer text. Returns (text, kind)
+--- where kind is "block" (blank-line separated) or "stream" (appended
+--- verbatim — streamed bash output chunks), or nil to render nothing.
+local function render_event(ev)
+  local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
+  if ev.type == "tool_start" then
+    return "$ " .. (ev.command or ev.name or "tool"), "block"
+  elseif ev.type == "output" then
+    return ev.data or "", "stream"
+  elseif ev.type == "tool_call" then
+    -- bash renders its own `$ command` header from tool_start; its full
+    -- arguments are still in the audit log as this event.
+    if ev.name == "bash" then
+      return nil
+    end
+    local target = ""
+    local ok, a = pcall(vim.json.decode, ev.args or "")
+    if ok and type(a) == "table" then
+      target = a.path or a.url or a.command or ""
+    end
+    return ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), "block"
+  elseif ev.type == "tool_result" then
+    -- bash output already streamed via output events; don't duplicate it.
+    if ev.name == "bash" then
+      return nil
+    end
+    local lines = {}
+    if ev.result and ev.result ~= "" then
+      vim.list_extend(lines, vim.split(ev.result:gsub("\n$", ""), "\n", { plain = true }))
+    end
+    table.insert(lines, ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"))
+    return table.concat(lines, "\n"), "block"
+  elseif ev.type == "turn_end" then
+    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
+    return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
+      ts, ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000), "block"
   end
-  local want = compute_tail_path(buf)
-  if want == old or vim.fn.filereadable(want) == 1 then
-    return
+end
+
+--- Rebuild the tail text from a list of audit events (stream chunks
+--- append verbatim; block events join with one blank line).
+local function render_events(events)
+  local parts, has = {}, false
+  for _, ev in ipairs(events) do
+    local text, kind = render_event(ev)
+    if text then
+      if kind == "stream" then
+        parts[#parts + 1] = text
+      else
+        if has then
+          parts[#parts + 1] = "\n"
+        end
+        parts[#parts + 1] = text .. "\n"
+      end
+      has = true
+    end
   end
-  if vim.fn.filereadable(old) == 1 then
-    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
-    os.rename(old, want)
-  end
-  vim.b[buf].yap_tail_path = want
-  local t = tails[buf]
-  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
-    vim.api.nvim_buf_set_name(t.bufnr, tail_buf_name(buf))
-    t.path = want
-  end
+  return table.concat(parts)
 end
 
 local function ensure_tail(buf)
@@ -480,7 +491,6 @@ local function ensure_tail(buf)
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
-  local path = tail_path(buf)
   local name = tail_buf_name(buf)
   -- Reuse a leftover tail buffer with this name (the chat buffer may have
   -- been wiped and reopened); naming a fresh buffer identically would E95.
@@ -497,28 +507,45 @@ local function ensure_tail(buf)
   end
   vim.bo[tail].bufhidden = "hide"
 
-  -- The tail is a file from the start: load it when it already exists,
-  -- otherwise create it (empty) now so renames and restarts see it.
-  local lines = {}
-  if vim.fn.filereadable(path) == 1 then
-    lines = vim.fn.readfile(path)
-  else
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-    vim.fn.writefile({}, path)
-  end
-  if #lines == 0 then
-    lines = { "" }
-  end
-  vim.api.nvim_buf_set_lines(tail, 0, -1, false, lines)
-
-  t = {
-    bufnr = tail,
-    offset = 0,
-    path = path,
-    has_content = #lines > 1 or lines[1] ~= "",
-  }
+  t = { bufnr = tail, offset = 0, has_content = false }
   tails[buf] = t
+
+  -- Replay the audit log so the live view survives restarts.
+  local events = {}
+  local path = audit_path(buf)
+  if vim.fn.filereadable(path) == 1 then
+    for _, line in ipairs(vim.fn.readfile(path)) do
+      if line ~= "" then
+        local ok, ev = pcall(vim.json.decode, line)
+        if ok and type(ev) == "table" then
+          events[#events + 1] = ev
+        end
+      end
+    end
+  end
+  local lines = vim.split(render_events(events), "\n", { plain = true })
+  vim.api.nvim_buf_set_lines(tail, 0, -1, false, lines)
+  t.has_content = #lines > 1 or lines[1] ~= ""
   return t
+end
+
+--- Append an event to the audit log and render it into the tail buffer.
+local function append_event(buf, ev)
+  local t = ensure_tail(buf)
+  audit_append(buf, ev)
+  local text, kind = render_event(ev)
+  if not text then
+    return
+  end
+  if kind == "stream" then
+    document.append_text(t.bufnr, text)
+  else
+    document.append_text(t.bufnr, (t.has_content and "\n" or "") .. text .. "\n")
+  end
+  t.has_content = true
+  for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
+    vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
+  end
 end
 
 --- Append newly written bytes of the running tool's log to the tail
@@ -543,15 +570,7 @@ drain_tail = function(buf)
   if not data then
     return
   end
-  document.append_text(t.bufnr, data)
-  -- the tail sidecar file and the audit log get the same bytes (a line
-  -- split across two drains lands as two log lines; cosmetic)
-  tail_write(buf, data)
-  audit_write(buf, vim.split(data:gsub("\n$", ""), "\n", { plain = true }))
-  -- keep a visible tail window scrolled to the bottom
-  for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
-    vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
-  end
+  append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
@@ -626,22 +645,16 @@ local function handle_event(buf, json_line)
   if not ok or type(ev) ~= "table" then
     return
   end
+  ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
     live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time() }
     local t = ensure_tail(buf)
     t.offset = 0
-    local header = "$ " .. (ev.command or ev.name or "tool")
-    local chunk = (t.has_content and "\n" or "") .. header .. "\n"
-    document.append_text(t.bufnr, chunk)
-    tail_write(buf, chunk)
-    t.has_content = true
-    audit_write(buf, { ("=== %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), header) })
+    append_event(buf, ev)
   elseif ev.type == "tool_end" then
     drain_tail(buf) -- the log is complete; a small one is about to be deleted
     live[buf] = nil
   elseif ev.type == "tool_call" then
-    -- Full arguments, emitted for every tool before it runs. bash's
-    -- tool_start above already logged its command (that IS its args).
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
     if ev.name == "quickfix" then
@@ -664,29 +677,9 @@ local function handle_event(buf, json_line)
     local r = get_reorder(buf)
     r.open = (r.open or 0) + 1
     cut_pretool_prose(buf)
-    if ev.name ~= "bash" then
-      local t = ensure_tail(buf)
-      audit_write(buf, { ("=== %s %s %s"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.args or "") })
-      local target = ""
-      local ok2, a = pcall(vim.json.decode, ev.args or "")
-      if ok2 and type(a) == "table" then
-        target = a.path or a.url or a.command or ""
-      end
-      local chunk = (t.has_content and "\n" or "") .. ("• %s %s\n"):format(ev.name, target)
-      document.append_text(t.bufnr, chunk)
-      tail_write(buf, chunk)
-      t.has_content = true
-    end
+    append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
-    -- The full result text lands in the audit log — :YapClear can
-    -- then remove it from the context without losing anything. bash's
-    -- output was already streamed to the log from its temp file.
-    local lines = {}
-    if ev.name ~= "bash" and ev.result then
-      vim.list_extend(lines, vim.split(ev.result, "\n", { plain = true }))
-    end
-    table.insert(lines, ("--- %s %s (%s bytes)"):format(os.date("%Y-%m-%dT%H:%M:%S"), ev.name, ev.bytes or "?"))
-    audit_write(buf, lines)
+    append_event(buf, ev) -- full result; bash output already streamed above
     local r = get_reorder(buf)
     r.open = math.max(0, (r.open or 0) - 1)
     if r.open == 0 then
@@ -699,15 +692,7 @@ local function handle_event(buf, json_line)
     -- its own anchor.
     vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
-    local t = ensure_tail(buf)
-    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
-    local line = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
-      os.date("%Y-%m-%dT%H:%M:%S"), ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000)
-    local chunk = (t.has_content and "\n" or "") .. line .. "\n"
-    document.append_text(t.bufnr, chunk)
-    tail_write(buf, chunk)
-    t.has_content = true
-    audit_write(buf, { line })
+    append_event(buf, ev)
   end
 end
 
@@ -1140,7 +1125,6 @@ function M.send()
     require("harness.session").save(buf)
     maybe_refresh_description(buf)
     audit_follow(buf) -- first save named the session; rename the log to match
-    tail_follow(buf) -- keep the tail sidecar file named with the session
     -- A completed turn is a first-class event (herdr's "working → blocked
     -- → idle" notification). Fire it once the buffer is in its final state
     -- so handlers see the appended `# @user` and the saved session.
@@ -1255,10 +1239,9 @@ function M.new(opts)
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
   -- regardless of the .md extension.
   require("harness.session").save(buf)
-  -- The tail is a file from the start, exactly like the session itself:
-  -- create the sidecar file and its live-view buffer now, before the
-  -- first reply (and before any :file rename).
-  vim.b[buf].yap_tail_path = compute_tail_path(buf)
+  -- The tail is a rendering of the audit log: create its live-view buffer
+  -- now (empty — the audit log is written on the first event), before any
+  -- :file rename or tool run.
   ensure_tail(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
@@ -1278,7 +1261,6 @@ local function adopt(buf, path)
   end
   vim.b[buf].yap_path = path
   vim.b[buf].yap_project_cwd = require("harness.session").project_cwd(path)
-  vim.b[buf].yap_tail_path = compute_tail_path(buf)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
   -- buffer the moment it is resumed.
@@ -1294,7 +1276,7 @@ local function adopt(buf, path)
   -- seed the overview hint so it counts before its first send here.
   seed_awaiting(buf)
   setup_buffer(buf)
-  ensure_tail(buf) -- restore the live view from the sidecar (create if missing)
+  ensure_tail(buf) -- restore the live view from the audit log (create if missing)
   return buf
 end
 

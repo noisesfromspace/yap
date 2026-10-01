@@ -52,19 +52,18 @@ truth, and that can be a text buffer. Consequences:
 
                                                                 *:YapLive*
 :YapLive              Open the session's tail buffer: one persistent
-                        yap://<session>-tail buffer that accumulates
-                        every tool call's output (a `$ command` header
-                        per call, drained from the tool's temp log while
-                        it runs, see |yap-protocol|), one journal line
-                        per non-bash tool call and per turn. Opens it in
-                        a split scrolled to the bottom, or focuses the
-                        existing window. Never opens by itself, but can
-                        be opened at any time — even before a tool has
-                        run. The tail is also written to a sidecar file
-                        in the audit dir (<session>-tail, |yap-audit|)
-                        from the moment the session is created, so the
-                        live view survives restarts; the audit log
-                        (|yap-audit|) remains the full record.
+                        yap://<session>-tail buffer that renders the
+                        session's audit log (|yap-audit|) as it streams
+                        — a `$ command` header per bash call with its
+                        drained output, one journal line per non-bash
+                        tool call and result, and one journal line per
+                        turn. Opens it in a split scrolled to the
+                        bottom, or focuses the existing window. Never
+                        opens by itself, but can be opened at any time
+                        — even before a tool has run. The buffer is a
+                        rendering, not a second log: it is rebuilt from
+                        the audit log on reopen, so the live view
+                        survives restarts.
 
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
@@ -577,8 +576,8 @@ The file is created when the buffer is opened, so a fresh session is
 file-backed from the start and can be named with |:file| before the first
 reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
-The tail sidecar (<session>-tail) is created in the audit dir
-(|yap-audit|) at the same time and follows the session name across
+The audit log (<session>.jsonl) is written in the audit dir
+(|yap-audit|) as the session runs and follows the session name across
 |:file| renames. Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
@@ -594,22 +593,23 @@ File operations are the session operations (pi equivalents, but manual):
 AUDIT LOG                                                        *yap-audit*
 
 The session file holds the context; the audit log holds everything the
-context doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.log,
-append-only, survives restarts. The tail sidecar
-(~/.yap/audit/<cwd-slug>/<session>-tail) persists the live view shown
-by |:YapLive|; the audit log is the authoritative record and carries
-the extra details the tail does not show. Written from |yap-protocol|
-events:
+context doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.jsonl,
+append-only, survives restarts. It is JSON Lines: one JSON object per
+line, timestamped by the Lua side as each |yap-protocol| event arrives:
 
-  === <ts> $ <command>          a bash call, followed by its full output
-  === <ts> <tool> <args json>   any other tool call, FULL arguments
-  --- <ts> <tool> (<n> bytes)   result record (+ full result text for
-                                non-bash tools)
-  # <ts> turn <model>: <in> in · <out> out · $<cost> · <s>s
-                                one journal line per completed send
+  tool_call    {"type","name","args","ts"} — every tool before it runs,
+               FULL arguments (bash included, so timeout/cwd survive)
+  tool_start   {"type","name","log","command","ts"} — bash's temp log
+  output       {"type","name","data","ts"} — streamed bash output chunks
+               (synthesized by the Lua side as it drains the temp log)
+  tool_result  {"type","name","bytes","result","ts"} — full result
+  turn_end     {"type","model","prompt","completion","cost",?,
+               "context_window",?,"ms","ts"} — one per completed send
 
-This is what makes the slimmed write/edit headers (R12) and |:YapClear|
-lossless: anything removed from the context exists here verbatim.
+The tail buffer (|:YapLive|) is the human-readable rendering of these
+events and is rebuilt from the file on reopen. This is what makes the
+slimmed write/edit headers (R12) and |:YapClear| lossless: anything
+removed from the context exists here verbatim, machine-readable.
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
@@ -683,8 +683,9 @@ history above it. For a global segment independent of yap buffers, use
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
           wrapped in |yap-markers|
   stderr  error message, exit 1. Also carries `yap:event {json}`
-          progress lines; the Lua side routes them to the winbar, the
-          tail buffer (|:YapLive|) and the audit log (|yap-audit|):
+          progress lines; the Lua side timestamps each one and appends
+          it to the audit log (|yap-audit|), and renders it into the
+          tail buffer (|:YapLive|):
             tool_start   {"type","name":"bash","log","command"} — bash's
                          output streams into `log`; tail it for live view
             tool_end     bash's log is complete
@@ -694,6 +695,9 @@ history above it. For a global segment independent of yap buffers, use
             tool_result  {"type","name","bytes","result"} — full result
             turn_end     {"type","model","prompt","completion","cost",?,
                          "context_window",?,"ms"} — one per completed send
+          The Lua side also synthesizes `output` events (streamed bash
+          output chunks) as it drains the temp log, so the audit log
+          carries live output, not just the final result.
           The rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool
@@ -873,9 +877,9 @@ R16 Live tool output never enters the chat buffer.
     (yap://<session>-tail): bash announces its temp log via a
     yap:event stderr line, the Lua side drains new bytes into the
     tail (a `$ command` header per call), and :YapLive opens it. The
-    same bytes are appended to a sidecar file in the audit dir
-    (<session>-tail), created with the session so the live view is not
-    lost on restart. The chat buffer only gets one-shot, append-only
+    drained bytes are recorded in the audit log as `output` events, and
+    the tail buffer is rebuilt from that log on reopen — there is no
+    separate tail file. The chat buffer only gets one-shot, append-only
     writes: the tool header
     when the call commits, the result when it finishes. Normal streaming
     is append-only; explicit document operations may rewrite existing
@@ -887,13 +891,15 @@ R16 Live tool output never enters the chat buffer.
     any moment, and the buffer format has no transient states to repair.
 
 R17 The audit log is the durable record of everything the context
-    doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.log, append-only,
-    written by the Lua side from yap:event lines: full tool arguments,
-    streamed bash output, full results, and one journal line per turn
-    (model, tokens, cost, ms). The tail sidecar
-    (~/.yap/audit/<cwd-slug>/<session>-tail) persists the live view;
-    the audit file is the authoritative record and survives restarts.
-    This split is what makes slimmed headers (R12) and |:YapClear|
+    doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.jsonl, JSON Lines
+    (one timestamped JSON object per line), append-only, written by the
+    Lua side from yap:event lines plus synthesized `output` events for
+    streamed bash output: full tool arguments, streamed bash output,
+    full results, and one journal line per turn
+    (model, tokens, cost, ms). The tail buffer (|:YapLive|) renders
+    these events and is rebuilt from the file on reopen; the audit file
+    is the authoritative record and survives restarts.
+    This is what makes slimmed headers (R12) and |:YapClear|
     lossless.
 
 R18 Templates and skills are plain markdown files inserted into the buffer.

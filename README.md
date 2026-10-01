@@ -64,11 +64,11 @@ editing the agent.
   in config.json for their model lists)
 - `:YapStop` / `<leader>c` — kill the in-flight request
 - `:YapLive` / `<leader>l` — watch tool output live: one persistent
-  `yap://<session>-tail` buffer with a `$ command` header per call,
-  written to a `<session>-tail` sidecar file in the audit dir from
-  the start. The audit log at
-  `~/.yap/audit/<cwd-slug>/<session>.log` keeps the full record
-  (full tool arguments and results)
+  `yap://<session>-tail` buffer that renders the session's audit log as
+  it streams. The audit log at
+  `~/.yap/audit/<cwd-slug>/<session>.jsonl` is JSON Lines — one
+  structured event per line — and keeps the full record (full tool
+  arguments and results)
 - `:YapClear [keep]` — slim the context: replace all but the last
   `keep` (default 2) tool result bodies with a pointer to the audit
   log. write/edit tool headers are always slimmed (`[N lines]`); the

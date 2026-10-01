@@ -25,10 +25,6 @@ import (
 	"boers.email/yap/agent/tools"
 )
 
-// Bound on tool-call iterations per send (gptel has none; runaway loops
-// burn tokens silently).
-const maxToolIterations = 50
-
 // ─── Wire types (stdin) ────────────────────────────────────────────────────
 
 type Message struct {
@@ -509,11 +505,6 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				fmt.Fprintf(out, "<!-- yap:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
 			}
 			break // final answer streamed; turn complete
-		}
-		if iter+1 >= maxToolIterations {
-			pad()
-			fmt.Fprintf(out, "<!-- yap:error\nmax tool iterations (%d) reached\n-->\n\n", maxToolIterations)
-			break
 		}
 
 		// Append the exact assistant message(s) GoAI produced — ordered
