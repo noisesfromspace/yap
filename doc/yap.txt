@@ -163,6 +163,9 @@ global (they list sessions across buffers, so they work from any file).
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
   ]a  [a                Next / previous assistant message.
+  ]t  [t                Next / previous tool call.
+  ]c  [c                Next / previous thinking block.
+  ]e  [e                Next / previous error block.
   <leader>1             Fold all agent messages; user prompts stay open.
   <leader>2             Fold all tool calls and thinking blocks
                         (messages stay open).

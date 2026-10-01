@@ -282,6 +282,37 @@ function M.prev_assistant_message()
   jump(VIM_ASSISTANT, true)
 end
 
+-- Block-region navigation: the three display blocks worth hopping between
+-- when reviewing a long reply. Vim-regex twins of the Lua patterns above
+-- (Lua patterns don't apply to vim.fn.search).
+local VIM_TOOL = [[^<!-- yap:tool]]
+local VIM_THINK = [[^<!-- yap:thinking]]
+local VIM_ERROR = [[^<!-- yap:error]]
+
+function M.next_tool()
+  jump(VIM_TOOL, false)
+end
+
+function M.prev_tool()
+  jump(VIM_TOOL, true)
+end
+
+function M.next_think()
+  jump(VIM_THINK, false)
+end
+
+function M.prev_think()
+  jump(VIM_THINK, true)
+end
+
+function M.next_error()
+  jump(VIM_ERROR, false)
+end
+
+function M.prev_error()
+  jump(VIM_ERROR, true)
+end
+
 -- ─── Buffer setup ──────────────────────────────────────────────────────────
 
 function M.setup_buffer(buf)
@@ -300,6 +331,12 @@ function M.setup_buffer(buf)
   map("[u", M.prev_user_message, "Previous user message")
   map("]a", M.next_assistant_message, "Next assistant message")
   map("[a", M.prev_assistant_message, "Previous assistant message")
+  map("]t", M.next_tool, "Next tool call")
+  map("[t", M.prev_tool, "Previous tool call")
+  map("]c", M.next_think, "Next thinking block")
+  map("[c", M.prev_think, "Previous thinking block")
+  map("]e", M.next_error, "Next error block")
+  map("[e", M.prev_error, "Previous error block")
   local bind_view = function(key, level, desc)
     map(key, function()
       M.set_view_level(level)
