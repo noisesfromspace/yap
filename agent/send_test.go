@@ -322,7 +322,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	}
 	s := journal.String()
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
-	event := strings.Index(s, `yap:event {"args":"{}","name":"missing_test_tool","type":"tool_call"}`)
+	event := strings.Index(s, `yap:event {"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
 	after := strings.Index(s, "after")
 	if header < 0 || event < 0 || result < 0 || after < 0 || !(header < event && event < result && result < after) {

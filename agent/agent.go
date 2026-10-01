@@ -522,7 +522,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
-			tools.EmitEvent(map[string]any{"type": "tool_call", "name": call.Name, "args": string(call.Input)})
+			tools.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": string(call.Input)})
 			tool, ok := tools.Get(call.Name)
 			var result, ui string
 			if !ok {
@@ -539,7 +539,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				}
 				emitToolResult(out, result, ui)
 			}
-			tools.EmitEvent(map[string]any{"type": "tool_result", "name": call.Name, "bytes": len(result), "result": result})
+			tools.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, providers.Message{
 				Role: providers.RoleTool,

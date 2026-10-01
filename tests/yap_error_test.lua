@@ -33,17 +33,20 @@ assert(text:match("<!%-%- yap:error"), "no error marker in buffer")
 local err_lines = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
 assert(err_lines[#err_lines - 1] == "# @user" and err_lines[#err_lines] == "",
   "failed stream did not end in a closed user block")
--- Errors require user intervention, so :YapWaiting includes them.
-local waiting_items
+-- Errors surface in the unified session picker with an error status.
+local pick_items
 local orig_select = vim.ui.select
-vim.ui.select = function(items) waiting_items = items end
-yap.waiting()
+vim.ui.select = function(items) pick_items = items end
+yap.instances()
 vim.ui.select = orig_select
-local found_error = false
-for _, item in ipairs(waiting_items or {}) do
-  found_error = found_error or item.buf == buf2
+local found_error
+for _, item in ipairs(pick_items or {}) do
+  if item.buf == buf2 then
+    found_error = item
+  end
 end
-assert(found_error, "error session missing from sessions needing attention")
+assert(found_error, "error session missing from session picker")
+assert(found_error.status == "✗ error", "error status missing: " .. vim.inspect(found_error))
 -- next parse excludes the error
 local msgs2 = yap.parse_buffer(buf2)
 for _, m in ipairs(msgs2) do

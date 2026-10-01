@@ -1,5 +1,5 @@
--- <leader>r / <leader>w are global (they list sessions across buffers, so
--- they must work from any file), and opening a session file directly
+-- <leader>r is global (it lists sessions across buffers, so it must work
+-- from any file), and opening a session file directly
 -- (nvim ~/.yap/sessions/.../x.md) adopts it as a managed yap buffer:
 -- unlisted, keymapped, tail attached.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -15,8 +15,8 @@ for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
     globals[m.desc] = true
   end
 end
-assert(globals["yap: running and idle sessions"], "no global <leader>r (yap: running and idle sessions) map")
-assert(globals["yap: sessions needing attention"], "no global <leader>w (yap: sessions needing attention) map")
+assert(globals["yap: sessions"], "no global <leader>r (yap: sessions) map")
+assert(not globals["yap: sessions needing attention"], "stale global <leader>w map")
 
 -- a saved session, reopened by plain :edit (the `nvim file.md` path), is
 -- adopted: marked yap, unlisted, buffer-local keymaps in place

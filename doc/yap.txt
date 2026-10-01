@@ -68,7 +68,9 @@ truth, and that can be a text buffer. Consequences:
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
                         all but the last [keep] (default 2) yap:tool
-                        regions with a one-line placeholder. Headers
+                        regions with a one-line placeholder naming the
+                        exact audit-log lines (path:line-range) where
+                        the removed output lives. Headers
                         (the tool name + JSON arguments the model sees in
                         its history) and yap:ui
                         diffs stay; the full output is in the audit log
@@ -124,22 +126,17 @@ truth, and that can be a text buffer. Consequences:
                         "all" list leads with the project as a column
                         instead of a trailing path slug.
 
-                                                            *:YapWaiting*
-:YapWaiting           List the open yap buffers that have a completed
-                        turn awaiting your reply, and focus the picked one
-                        (the herdr-style "needs you" set; see |yap-winbar|).
-                        Covers live buffers only — saved-but-unopened
-                        sessions are |:YapSessions|' job.
-
-                                                          *:YapInstances*
+                                                            *:YapInstances*
 :YapInstances         List every open yap session by its file path and
-                        focus the picked one. Yap buffers are unlisted —
-                        they never appear in |:ls| or buffer pickers
-                        (MiniPick.buffers and friends), and a session's
-                        tail buffer is never listed at all (open it in the
-                        session with |:YapLive|). Together with
-                        |:YapWaiting|, this is how you move between
-                        sessions.
+                        focus the picked one. Each line is annotated with
+                        its state — `● running`, `✗ error`, `◉ waiting`
+                        (a completed turn awaits your reply) or `○ idle` —
+                        and needing-attention sessions sort first. Yap
+                        buffers are unlisted — they never appear in |:ls|
+                        or buffer pickers (MiniPick.buffers and friends),
+                        and a session's tail buffer is never listed at all
+                        (open it in the session with |:YapLive|). This is
+                        how you move between sessions.
 
                                                                *:YapReload*
 :YapReload            Reload the Lua modules (development).
@@ -147,8 +144,8 @@ truth, and that can be a text buffer. Consequences:
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r and <leader>w, which are
-global (they list sessions across buffers, so they work from any file).
+Set only in yap buffers, except <leader>r, which is global (it lists
+sessions across buffers, so it works from any file).
 
   <C-s> (n, i)          Send the buffer.
   <leader>c             Kill the in-flight request (see |:YapStop|).
@@ -157,8 +154,8 @@ global (they list sessions across buffers, so they work from any file).
   <leader>t             Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
-  <leader>w             List agents waiting for a reply (see |:YapWaiting|).
-  <leader>r             List all open sessions (see |:YapInstances|).
+  <leader>r             List every open session with its status (see
+                        |:YapInstances|).
   <Tab>                 Toggle fold.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
@@ -201,6 +198,9 @@ Lua setup: >lua
     system = "...",       -- fallback system prompt
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     notify_done = true,   -- vim.notify when a background turn finishes
+    description_model = "openai/gpt-5-nano", -- tiny: labels from the user message on send
+    description_answer_model = "openai/gpt-5-mini", -- slightly bigger: re-summarizes after the answer
+    description_refresh_turns = 5,          -- answer-model refresh cadence
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
@@ -214,6 +214,17 @@ tokens, cost, ms) is attached to the `User YapTurnDone` autocmd so other
 plugins can hook the same event (noice/nf-notify rendering, chaining a
 next send). Disable the toast with `notify_done = false`; hook the same
 event with your own `User YapTurnDone` autocmd.
+
+The session description shown in the winbar (|yap-winbar|) and session
+picker is generated in two stages. `description_model` (default
+`openai/gpt-5-nano`) is a tiny model that labels the session from the
+latest user message as soon as you send, so the picker has a name before
+the reply arrives. `description_answer_model` (default `openai/gpt-5-mini`) is
+a slightly larger model that re-summarizes the whole session once the
+agent has answered, balancing the overall goal with emphasis on the most
+recent topics; it runs after the first completed turn and then every
+`description_refresh_turns` (default 5). Set either to "" to disable that
+stage; the description survives in the buffer frontmatter either way.
 
 `templates_dir` and `skills_dir` (defaults `~/.config/yap/templates/`
 and `~/.config/yap/skills/`) hold the plain-markdown files inserted by
@@ -597,19 +608,24 @@ context doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.jsonl,
 append-only, survives restarts. It is JSON Lines: one JSON object per
 line, timestamped by the Lua side as each |yap-protocol| event arrives:
 
-  tool_call    {"type","name","args","ts"} — every tool before it runs,
-               FULL arguments (bash included, so timeout/cwd survive)
+  tool_call    {"type","id","name","args","ts"} — every tool before it
+               runs, FULL arguments (bash included, so timeout/cwd
+               survive); id matches the buffer's tool header and the
+               tool_result below
   tool_start   {"type","name","log","command","ts"} — bash's temp log
   output       {"type","name","data","ts"} — streamed bash output chunks
                (synthesized by the Lua side as it drains the temp log)
-  tool_result  {"type","name","bytes","result","ts"} — full result
+  tool_result  {"type","id","name","bytes","result","ts"} — full result
   turn_end     {"type","model","prompt","completion","cost",?,
                "context_window",?,"ms","ts"} — one per completed send
 
 The tail buffer (|:YapLive|) is the human-readable rendering of these
-events and is rebuilt from the file on reopen. This is what makes the
-slimmed write/edit headers (R12) and |:YapClear| lossless: anything
-removed from the context exists here verbatim, machine-readable.
+events and is rebuilt from the file on reopen. |:YapClear| placeholders
+correlate a region's tool-call id with its tool_call..tool_result
+line range, so a cleared body points back to exactly what it replaced.
+This is what makes the slimmed write/edit headers (R12) and
+|:YapClear| lossless: anything removed from the context exists here
+verbatim, machine-readable.
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
@@ -653,7 +669,7 @@ agent output folded, `Ⓕ2` tools & thinking folded, `Ⓕ3` all open — the las
 view applied with <leader>1..3;
 manual |za| toggles don't update it), and — when other sessions are
 waiting for your reply — a `◉N` rollup (N other yap buffers await
-you; jump to one with |:YapWaiting|). Right: token totals and cost
+you; jump to one with |:YapInstances|). Right: token totals and cost
 for this buffer (accumulated over its lifetime, compact k/m format), then
 the state glyph pinned to the far right edge:
 
@@ -688,7 +704,9 @@ history above it. For a global segment independent of yap buffers, use
           tail buffer (|:YapLive|):
             tool_start   {"type","name":"bash","log","command"} — bash's
                          output streams into `log`; tail it for live view
-            tool_end     bash's log is complete
+            tool_end     {"type","name":"bash","log","truncated"} —
+                         bash's log is complete; the Lua side drains the
+                         final bytes and removes the untruncated temp log
             tool_call    {"type","name","args"} — every tool before it
                          runs, full arguments (the buffer header keeps
                          only slimmed write/edit args, R12)
@@ -779,7 +797,7 @@ R8  Sessions are plain markdown files; file operations are the session
     renames so :file names and :saveas forks. Why: no second
     serialization format to keep in sync. Session buffers (and their
     tail buffers) are unlisted — never in |:ls| or buffer pickers — so
-    navigation is |:YapWaiting| / |:YapInstances|, and a session's
+    navigation is |:YapInstances|, and a session's
     tail opens with |:YapLive|.
 
 R9  Errors surface three ways: vim.notify (transient), winbar error state
@@ -884,7 +902,8 @@ R16 Live tool output never enters the chat buffer.
     when the call commits, the result when it finishes. Normal streaming
     is append-only; explicit document operations may rewrite existing
     content: |:YapClear| replaces old tool result bodies with a pointer
-    to the audit log, |:YapCompact| can delete superseded history after
+    to the audit log (path plus the exact line range holding that
+    call's record), |:YapCompact| can delete superseded history after
     confirmation, frontmatter changes with the selected model, and the
     transient yap:usage marker is consumed into in-memory totals. Why:
     output exists in exactly one place at

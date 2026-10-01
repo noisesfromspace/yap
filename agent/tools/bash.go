@@ -85,9 +85,15 @@ func runBash(a *bashArgs) (string, string, error) {
 		syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
-	// The log is complete; let the Lua side drain it before a small
-	// (untruncated) log is removed below.
-	EmitEvent(map[string]string{"type": "tool_end", "name": "bash"})
+	// The log is complete. Read it now so the Lua side can drain the final
+	// bytes before an untruncated log is removed — by the Lua side, after
+	// tool_end (Go no longer deletes it: deleting here raced the drain).
+	var size int64
+	if st, statErr := os.Stat(outPath); statErr == nil {
+		size = st.Size()
+	}
+	text, truncated := readTail(outPath, size)
+	EmitEvent(map[string]any{"type": "tool_end", "name": "bash", "log": outPath, "truncated": truncated})
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -97,16 +103,11 @@ func runBash(a *bashArgs) (string, string, error) {
 		return "", "", fmt.Errorf("run: %w", err)
 	}
 
-	var size int64
-	if st, statErr := os.Stat(outPath); statErr == nil {
-		size = st.Size()
-	}
-	text, truncated := readTail(outPath, size)
 	if truncated {
 		text = fmt.Sprintf("[truncated: showing tail; full output (%d bytes) at %s]\n%s", size, outPath, text)
-	} else {
-		os.Remove(outPath) // no reason to keep it: the result has everything
 	}
+	// An untruncated log is removed by the Lua side after it drains the
+	// final bytes (the tool_end event above carries log + truncated).
 	if strings.TrimSpace(text) == "" {
 		text = "(no output)"
 	}

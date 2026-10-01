@@ -79,23 +79,25 @@ vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
 assert(notified2[1].msg:match("m1 done"), "unexpected message: " .. notified2[1].msg)
 
--- :YapWaiting lists the awaiting buffers and exposes the pick.
-local waiting_items
-local picked
+-- :YapInstances / <leader>r list every open session with its status;
+-- the awaiting one sorts first, the fresh one is idle.
+local items, fmt
 local orig_select = vim.ui.select
-vim.ui.select = function(items, opts, on_choice)
-  waiting_items = items
-  picked = items[1] and items[1].buf or nil
+vim.ui.select = function(list, opts, on_choice)
+  items = list
+  fmt = opts and opts.format_item
 end
-yap.waiting()
+yap.instances()
 vim.ui.select = orig_select
-assert(waiting_items and #waiting_items == 1, "expected one waiting buffer, got " .. vim.inspect(waiting_items))
-assert(waiting_items[1].buf == buf, "waiting() surfaced the wrong buffer")
-assert(waiting_items[1].text:match("^/opt/code/yap  .*%.md$"), "waiting should show cwd + filename fallback: " .. waiting_items[1].text)
+assert(items and #items == 2, "expected both sessions, got " .. vim.inspect(items))
+assert(items[1].buf == buf, "awaiting session should sort first")
+assert(items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(items[1]))
+assert(items[1].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[1].text)
+assert(fmt(items[1]):match("◉ waiting$"), "status not rendered: " .. fmt(items[1]))
+assert(items[2].buf == buf2, "idle session should sort last")
+assert(items[2].status == "○ idle", "idle status missing: " .. vim.inspect(items[2]))
 
--- :YapInstances shows cwd + description when present, otherwise cwd + filename.
--- Both sessions are idle here and must still appear in the picker.
-local inst_items
+-- A description replaces the filename fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 table.insert(first_lines, 1, "---")
 table.insert(first_lines, 2, "provider: mock")
@@ -104,16 +106,14 @@ table.insert(first_lines, 4, "description: Finished mock turn")
 table.insert(first_lines, 5, "---")
 table.insert(first_lines, 6, "")
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, first_lines)
-vim.ui.select = function(items, opts, on_choice)
-  inst_items = items
-end
+vim.ui.select = function(list, opts) items = list end
 yap.instances()
 vim.ui.select = orig_select
-assert(inst_items and #inst_items == 2, "expected two idle sessions, got " .. vim.inspect(inst_items))
+assert(items and #items == 2, "expected two sessions, got " .. vim.inspect(items))
 local labels = {}
-for _, it in ipairs(inst_items) do labels[it.text] = true end
-assert(labels["/opt/code/yap  Finished mock turn"], "cwd/description missing from instances: " .. vim.inspect(inst_items))
+for _, it in ipairs(items) do labels[it.text] = true end
+assert(labels["/opt/code/yap  Finished mock turn"], "cwd/description missing from picker: " .. vim.inspect(items))
 local has_filename = false
 for label in pairs(labels) do has_filename = has_filename or label:match("^/opt/code/yap  .*%.md$") ~= nil end
-assert(has_filename, "cwd/filename fallback missing from instances: " .. vim.inspect(inst_items))
+assert(has_filename, "cwd/filename fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

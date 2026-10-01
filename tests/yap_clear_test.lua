@@ -40,6 +40,9 @@ assert(select(2, text:gsub("%[output cleared", "")) == 2, "expected 2 placeholde
 assert(text:match('"command":"ls"'), "header was cleared")
 assert(text:match("%+big"), "ui diff was cleared")
 assert(text:match("\n/tmp\n"), "last region should be kept: " .. text)
+-- placeholders carry an exact audit-log path (file.jsonl:line[-line]); the
+-- audit log is absent here, so they fall back to the path with a '?' line
+assert(text:match("%.jsonl:%?%]"), "placeholder missing audit path: " .. text)
 -- the context still parses: three tool regions flattened into one assistant
 -- transcript; the two cleared bodies are the placeholder, the last is /tmp
 local asst

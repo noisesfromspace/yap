@@ -17,7 +17,7 @@ end, { desc = "Stop the in-flight yap request" })
 
 vim.api.nvim_create_user_command("YapLive", function()
   require("harness").live()
-end, { desc = "Open a terminal tailing the running tool's log" })
+end, { desc = "Open the session's live tool-output view" })
 
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
@@ -83,10 +83,6 @@ end, {
   desc = "Pick a saved yap session to resume (:YapSessions all for every project)",
 })
 
-vim.api.nvim_create_user_command("YapWaiting", function()
-  require("harness").waiting()
-end, { desc = "List agents waiting for a reply and jump to the picked one" })
-
 vim.api.nvim_create_user_command("YapInstances", function()
   require("harness").instances()
-end, { desc = "List open yap sessions by file path and jump to the picked one" })
+end, { desc = "List open yap sessions with status and jump to the picked one" })

@@ -109,17 +109,27 @@ func TestBashTempFileHygiene(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 
-	// small output: temp file removed, nothing left behind
+	// Small output: Go leaves the untruncated log for the Lua side, which
+	// drains the final bytes and then deletes it (tool_end carries log +
+	// truncated for that). The result still carries the full text.
+	var buf bytes.Buffer
+	old := eventOut
+	eventOut = &buf
 	r, _, err := run(t, "bash", `{"command":"echo small"}`)
+	eventOut = old
 	if err != nil || !strings.Contains(r, "small") {
 		t.Fatalf("run: %q %v", r, err)
 	}
 	left, _ := filepath.Glob(tmp + "/yap-bash-*")
-	if len(left) != 0 {
-		t.Fatalf("litter after small output: %v", left)
+	if len(left) != 1 {
+		t.Fatalf("expected the untruncated log to be kept for the drain, got: %v", left)
+	}
+	if !strings.Contains(buf.String(), `"truncated":false`) {
+		t.Fatalf("tool_end should mark the log untruncated: %q", buf.String())
 	}
 
-	// truncated output: exactly one file kept, holding the FULL output
+	// Truncated output: exactly one file kept, holding the FULL output.
+	os.Remove(left[0])
 	run(t, "bash", `{"command":"seq 1 5000"}`)
 	left, _ = filepath.Glob(tmp + "/yap-bash-*")
 	if len(left) != 1 {

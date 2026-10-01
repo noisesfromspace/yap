@@ -244,8 +244,13 @@
             };
             descriptionModel = mkOption {
               type = types.str;
+              default = "openai/gpt-5-nano";
+              description = "Tiny provider/model combo used to label a session from the latest user message for the session picker and winbar.";
+            };
+            descriptionAnswerModel = mkOption {
+              type = types.str;
               default = "openai/gpt-5-mini";
-              description = "Provider/model combo used to summarize sessions for the session picker.";
+              description = "Slightly larger provider/model combo that re-summarizes the whole session after the agent answers, balancing the overall goal with recent topics.";
             };
             descriptionRefreshTurns = mkOption {
               type = types.ints.positive;

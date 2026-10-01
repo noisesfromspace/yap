@@ -35,9 +35,14 @@ M.config = {
   -- vim.notify when a turn completes in a buffer that is not focused
   -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
-  -- Cheap model used to keep the session picker's description current.
-  -- Refresh after the first completed turn, then every N completed turns.
-  description_model = "openai/gpt-5-mini",
+  -- Tiny model that labels a session from the latest user message as
+  -- soon as it is sent, so the winbar and session picker have a
+  -- description before the agent answers.
+  description_model = "openai/gpt-5-nano",
+  -- Slightly larger model that re-summarizes the whole session once the
+  -- agent has answered, balancing the overall goal with the most recent
+  -- topics. Refreshed after the first completed turn, then every N turns.
+  description_answer_model = "openai/gpt-5-mini",
   description_refresh_turns = 5,
 }
 
@@ -652,8 +657,13 @@ local function handle_event(buf, json_line)
     t.offset = 0
     append_event(buf, ev)
   elseif ev.type == "tool_end" then
-    drain_tail(buf) -- the log is complete; a small one is about to be deleted
+    drain_tail(buf) -- the log is complete; capture the final bytes
     live[buf] = nil
+    -- Go keeps the log for us; once drained, an untruncated one is gone
+    -- (a truncated log stays: its result references it).
+    if ev.log and not ev.truncated then
+      pcall(os.remove, ev.log)
+    end
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
@@ -710,20 +720,54 @@ function M.clear(buf, keep)
   end
   keep = keep or 2
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  -- collect tool regions as { first body line, last body line } (1-based,
+  -- Map tool-call ids to their JSONL line range (tool_call → tool_result)
+  -- so each placeholder can point at the exact lines it replaced.
+  local by_id = {}
+  local apath = audit_path(buf)
+  if vim.fn.filereadable(apath) == 1 then
+    for n, line in ipairs(vim.fn.readfile(apath)) do
+      if line ~= "" then
+        local ok, ev = pcall(vim.json.decode, line)
+        if ok and type(ev) == "table" and ev.id then
+          local entry = by_id[ev.id]
+          if not entry then
+            entry = {}
+            by_id[ev.id] = entry
+          end
+          entry.first = entry.first or n
+          entry.last = n
+        end
+      end
+    end
+  end
+  local function ref_for(id)
+    local entry = id and by_id[id] or nil
+    if entry and entry.last then
+      if entry.first and entry.first ~= entry.last then
+        return ("%s:%d-%d"):format(vim.fn.fnamemodify(apath, ":~"), entry.first, entry.last)
+      end
+      return ("%s:%d"):format(vim.fn.fnamemodify(apath, ":~"), entry.last)
+    end
+    return vim.fn.fnamemodify(apath, ":~") .. ":?"
+  end
+  -- collect tool regions as { first body line, last body line, header } (1-based,
   -- inclusive); the body runs from after the header to the yap:ui
   -- opener or the region closer
   local regions = {}
   local i = 1
   while i <= #lines do
-    local body_start
+    local body_start, header
     if lines[i]:match("^<!%-%- yap:tool .+ %-%->%s*$") then
+      header = lines[i]:match("^<!%-%- yap:tool (.+) %-%->%s*$")
       body_start = i + 1 -- single-line header
     elseif lines[i]:match("^<!%-%- yap:tool%s*$") then
+      local acc = {}
       local j = i + 1 -- multi-line header: body after its closing -->
       while j <= #lines and not lines[j]:match("^%-%->%s*$") do
+        acc[#acc + 1] = lines[j]
         j = j + 1
       end
+      header = table.concat(acc, "\n")
       body_start = j + 1
     end
     if body_start then
@@ -734,18 +778,22 @@ function M.clear(buf, keep)
       do
         j = j + 1
       end
-      table.insert(regions, { body_start, j - 1 })
+      table.insert(regions, { body_start, j - 1, header = header })
       i = j
     else
       i = i + 1
     end
   end
-  local placeholder = ("[output cleared — full output in the audit log: %s]")
-    :format(vim.fn.fnamemodify(audit_path(buf), ":t"))
   local cleared = 0
   for r = 1, #regions - keep do
     local s, e = regions[r][1], regions[r][2]
     if e >= s and not lines[s]:match("^%[output cleared") then
+      local id
+      local ok_h, h = pcall(vim.json.decode, regions[r].header or "")
+      if ok_h and type(h) == "table" then
+        id = h.id
+      end
+      local placeholder = ("[output cleared — full output in the audit log: %s]"):format(ref_for(id))
       vim.api.nvim_buf_set_lines(buf, s - 1, e, false, { placeholder })
       cleared = cleared + 1
       local delta = (e - s + 1) - 1 -- replaced that many lines with one
@@ -867,9 +915,9 @@ function M.compact_delete(buf)
   vim.notify("yap: compacted — summary kept, history deleted", vim.log.levels.INFO)
 end
 
---- Open the session's tail buffer (:YapLive): one persistent log of
---- every tool call's output, not a new terminal per call. Opens even
---- before any tool has run (an empty tail that fills as tools execute).
+--- Open the session's tail buffer (:YapLive): one persistent rendering
+--- of the audit log, not a new terminal per call. Opens even before any
+--- tool has run (an empty tail that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for chat, t in pairs(tails) do
@@ -947,18 +995,45 @@ local function repair_stream_tail(buf)
   end
 end
 
-local function refresh_description(buf)
-  local combo = M.config.description_model
+-- Latest description request per buffer, so a slow earlier summary cannot
+-- clobber a newer one (send and turn-completion refreshes can overlap).
+local description_seq = {}
+
+--- Generate or refresh the session description shown in the winbar and
+--- session picker. `kind` selects the model and what it summarizes:
+---   "user"   — tiny model, the latest user message only (runs on send)
+---   "answer" — slightly larger model, the whole session with the overall
+---              goal plus emphasis on the most recent topics (runs after
+---              the agent's reply)
+local function refresh_description(buf, kind, messages)
+  local combo, system, content
+  if kind == "user" then
+    combo = M.config.description_model
+    system = "Summarize the user's request in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper."
+    for i = #messages, 1, -1 do
+      if messages[i].role == "user" then
+        content = messages[i].content
+        break
+      end
+    end
+    if not content or content == "" then return end
+  else
+    combo = M.config.description_answer_model
+    system = "Summarize this chat session in one short phrase (maximum 12 words), balancing the overall goal with emphasis on the most recent topics. Return only the phrase, no punctuation wrapper."
+    content = vim.json.encode(document.parse_buffer(buf))
+  end
   if not combo or combo == "" then return end
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   if not provider then return end
-  local messages = document.parse_buffer(buf)
+  local seq = (description_seq[buf] or 0) + 1
+  description_seq[buf] = seq
   local payload = vim.json.encode({ messages = {
-    { role = "system", content = "Summarize this chat session in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper." },
-    { role = "user", content = vim.json.encode(messages) },
+    { role = "system", content = system },
+    { role = "user", content = content },
   } })
   vim.system({ M.config.bin, "send", "--provider", provider, "--model", model }, { stdin = payload, text = true }, vim.schedule_wrap(function(result)
-    if result.code ~= 0 or not vim.api.nvim_buf_is_valid(buf) then return end
+    if not vim.api.nvim_buf_is_valid(buf) or description_seq[buf] ~= seq then return end
+    if result.code ~= 0 then return end
     local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     if description == "" then return end
     local e = frontmatter_end(buf)
@@ -975,7 +1050,7 @@ local function maybe_refresh_description(buf)
   local turns = (vim.b[buf].yap_description_turns or 0) + 1
   vim.b[buf].yap_description_turns = turns
   local every = math.max(1, tonumber(M.config.description_refresh_turns) or 5)
-  if turns == 1 or turns % every == 0 then refresh_description(buf) end
+  if turns == 1 or turns % every == 0 then refresh_description(buf, "answer") end
 end
 
 --- Every stream exit, including errors and :YapStop, hands the buffer back
@@ -1006,6 +1081,10 @@ function M.send()
     vim.notify("yap: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
     return
   end
+
+  -- Label the session from the latest user message immediately (tiny
+  -- model); the richer whole-session summary arrives after the answer.
+  refresh_description(buf, "user", messages)
 
   errors[buf] = nil
   awaiting[buf] = nil
@@ -1087,8 +1166,12 @@ function M.send()
     running[buf] = nil
     local compact = vim.b[buf].yap_compact_pending
     vim.b[buf].yap_compact_pending = nil
+    local l = live[buf]
     drain_tail(buf) -- final bytes; a killed tool never sent tool_end
-    live[buf] = nil
+    if l then
+      live[buf] = nil
+      pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
+    end
     spinner_stop_if_idle()
     repair_stream_tail(buf)
     if stderr_partial ~= "" then
@@ -1179,7 +1262,7 @@ local function setup_buffer(buf)
   vim.bo[buf].bufhidden = "hide"
   -- Sessions are managed, not workspace files: unlisted so they never
   -- clutter :ls or buffer pickers (MiniPick.buffers etc.); reach them
-  -- with :YapWaiting / :YapInstances.
+  -- with :YapInstances.
   vim.bo[buf].buflisted = false
 
   local map = function(mode, lhs, rhs, desc)
@@ -1252,7 +1335,7 @@ end
 
 --- Open a saved session file as a yap buffer.
 --- Turn a session-file buffer into a managed yap buffer: unlisted,
---- keymapped, tail sidecar attached, model combo resumed from
+--- keymapped, tail (audit rendering) attached, model combo resumed from
 --- frontmatter. Shared by :YapSessions resume and by directly opening
 --- a file under ~/.yap/sessions/.
 local function adopt(buf, path)
@@ -1365,55 +1448,66 @@ local function live_session_label(buf)
   return require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
 end
 
-function M.waiting()
-  local items = {}
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if (awaiting[b] or errors[b]) and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
-      table.insert(items, { buf = b, text = live_session_label(b) })
-    end
+--- Status word + glyph for the session picker, mirroring the winbar state
+--- chips so both views agree. The picker is static, so a filled circle
+--- stands in for the winbar's animated spinner.
+local function session_status(buf)
+  if running and running[buf] then
+    return "● running"
+  elseif errors[buf] then
+    return "✗ error"
+  elseif awaiting[buf] then
+    return "◉ waiting"
   end
-  if #items == 0 then
-    vim.notify("yap: nothing waiting for a reply", vim.log.levels.INFO)
-    return
-  end
-  vim.ui.select(items, {
-    prompt = "yap waiting",
-    format_item = function(item)
-      return item.text
-    end,
-  }, function(choice)
-    if not choice then
-      return
-    end
-    focus_buf(choice.buf)
-  end)
+  return "○ idle"
 end
 
---- Running and idle yap chat buffers, listed by description with the session
---- filename as fallback (tails are never here — use :YapLive / <leader>l).
+--- Sort needing-attention sessions first (error > waiting > busy > idle) so
+--- the unified picker keeps the old "what needs me" role.
+local function session_rank(buf)
+  if errors[buf] then
+    return 1
+  elseif awaiting[buf] then
+    return 2
+  elseif running and running[buf] then
+    return 3
+  end
+  return 4
+end
+
+--- Every open yap chat buffer, annotated with its live state and sorted so
+--- sessions needing attention lead. Replaces the old <leader>w / <leader>r
+--- split (tails are never here — use :YapLive / <leader>l).
 function M.instances()
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[b].yap then
-      -- Follow `:file` renames: the buffer name is the session path once
-      -- renamed, even before the next autosave commits it to yap_path.
-      local name = vim.api.nvim_buf_get_name(b)
-      local path = (name ~= "" and not name:match("^%a+://")) and name
-        or (vim.b[b].yap_path or name)
-      items[#items + 1] = { buf = b, text = live_session_label(b) }
+      items[#items + 1] = {
+        buf = b,
+        text = live_session_label(b),
+        status = session_status(b),
+      }
     end
   end
   if #items == 0 then
-    vim.notify("yap: no running or idle sessions", vim.log.levels.INFO)
+    vim.notify("yap: no open sessions", vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
+    local ra, rb = session_rank(a.buf), session_rank(b.buf)
+    if ra ~= rb then
+      return ra < rb
+    end
     return a.text < b.text
   end)
+  local width = 0
+  for _, item in ipairs(items) do
+    width = math.max(width, vim.fn.strdisplaywidth(item.text))
+  end
   vim.ui.select(items, {
     prompt = "yap sessions",
     format_item = function(item)
-      return item.text
+      return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
     end,
   }, function(choice)
     if choice then
@@ -1425,16 +1519,12 @@ end
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
-  -- <leader>r / <leader>w are global: they list sessions across every
-  -- buffer, so they must work from any file, not just inside a chat.
-  -- The other keymaps act on the current buffer and stay buffer-local in
-  -- setup_buffer.
-  vim.keymap.set("n", "<leader>w", function()
-    M.waiting()
-  end, { silent = true, desc = "yap: sessions needing attention" })
+  -- <leader>r is global: it lists sessions across every buffer, so it
+  -- must work from any file, not just inside a chat. The other keymaps
+  -- act on the current buffer and stay buffer-local in setup_buffer.
   vim.keymap.set("n", "<leader>r", function()
     M.instances()
-  end, { silent = true, desc = "yap: running and idle sessions" })
+  end, { silent = true, desc = "yap: sessions" })
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file
   -- explorer) adopts it as a managed yap session. Hide a newly-created

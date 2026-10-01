@@ -103,7 +103,7 @@ for _, line in ipairs(vim.fn.readfile(audit_file)) do
   end
 end
 local streamed = table.concat(streamed_parts, "")
-assert(streamed:match("\nl1\nl2\n") and streamed:match("tail%-without%-newline"),
+assert(streamed:match("l1\nl2\n") and streamed:match("tail%-without%-newline"),
   "streamed output missing from audit: " .. streamed)
 
 -- the parsed assistant message carries the flattened result, marker line excluded

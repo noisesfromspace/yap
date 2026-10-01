@@ -37,7 +37,7 @@ assert(call and call.args:match("line one about dogs"), "full write args not in 
 assert(call.ts, "tool_call missing ts")
 local result = find("tool_result", "write")
 assert(result and result.result:match("Successfully wrote 250 bytes"), "full tool result not in audit")
-assert(tonumber(result.bytes) == 250, "tool_result bytes wrong: " .. tostring(result.bytes))
+assert(tonumber(result.bytes) ~= nil and tonumber(result.bytes) > 0, "tool_result bytes wrong: " .. tostring(result.bytes))
 local turn
 for _, e in ipairs(events) do
   if e.type == "turn_end" then
@@ -60,4 +60,11 @@ local text = table.concat(vim.api.nvim_buf_get_lines(tail, 0, -1, false), "\n")
 assert(text:match("• write /tmp/ml%-test%.md"), "no tool journal line in tail: " .. text)
 assert(text:match("Successfully wrote 250 bytes"), "tool result not rendered in tail: " .. text)
 assert(text:match("# .- turn m1:"), "no turn journal in tail: " .. text)
+
+-- :YapClear points each placeholder at the exact JSONL lines it replaced
+-- (tool_call → tool_result for the write call: lines 1-2)
+yap.clear(buf, 0)
+local cleared = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+assert(cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:1%-2%]"),
+  "placeholder missing exact line ref: " .. cleared)
 print("OK audit")

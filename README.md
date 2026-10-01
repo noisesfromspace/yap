@@ -70,9 +70,9 @@ editing the agent.
   structured event per line — and keeps the full record (full tool
   arguments and results)
 - `:YapClear [keep]` — slim the context: replace all but the last
-  `keep` (default 2) tool result bodies with a pointer to the audit
-  log. write/edit tool headers are always slimmed (`[N lines]`); the
-  diff below them shows the change
+  `keep` (default 2) tool result bodies with a pointer to the exact
+  audit-log lines they were cleared from. write/edit tool headers are
+  always slimmed (`[N lines]`); the diff below them shows the change
 - `:YapCompact` — summarize the conversation into a compact context:
   insert the compact prompt, send, then offer to delete the superseded
   history (the summary stays a visible, editable turn)
@@ -83,9 +83,8 @@ editing the agent.
   `compact.md` summarize-prompt template, send, then delete the old
   history — or just run `:YapCompact`.
 - `:YapSessions [all]` — resume a saved session
-- `:YapWaiting` / `<leader>w` — list agents waiting for a reply and
-  jump to the picked one
-- `:YapInstances` / `<leader>r` — list open sessions by file path and
+- `:YapInstances` / `<leader>r` — list every open session by file path
+  with its status (`◉ waiting`, `✗ error`, `● running`, `○ idle`) and
   jump to the picked one (sessions are unlisted: they never appear in
   `:ls` or buffer pickers)
 - The agent's `quickfix` tool can replace the current quickfix list with
