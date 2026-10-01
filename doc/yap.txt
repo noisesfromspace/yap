@@ -168,6 +168,16 @@ global (they list sessions across buffers, so they work from any file).
                         (messages stay open).
   <leader>3             Unfold everything.
 
+  Text objects (operator-pending and visual mode):
+    im / am             inner / a message — the body without its `# @role`
+                        heading, or the whole block including heading and
+                        separator. `cim` replaces a message body while
+                        keeping the role heading; `dam` drops a message.
+    it / at             inner / a thinking, tool or error block — the
+                        content without its markers, or the whole region
+                        including markers. `dit` clears a block, `dat`
+                        removes it entirely.
+
   View 1 is the default for opened session buffers; the system prompt
   stays folded in every view. See |yap-folding|.
 

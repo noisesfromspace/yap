@@ -1184,6 +1184,7 @@ local function setup_buffer(buf)
     M.insert(nil, { at_cursor = true })
   end, "yap: insert template or skill at cursor")
   require("harness.fold").setup_buffer(buf)
+  require("harness.textobj").setup_buffer(buf)
 
   -- Self-evaluating winbar: a pure function of buffer state, refreshed
   -- by Neovim on every redraw.
