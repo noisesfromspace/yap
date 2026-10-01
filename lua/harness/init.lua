@@ -231,6 +231,13 @@ end
 local function render_winbar(buf)
   local provider, model = current_combo(buf)
   local parts = {}
+  -- A request in flight is the one state worth flagging at the start of
+  -- the bar too: the far-right chip is easy to miss when you glance at
+  -- the left edge. ▶ is deliberately not a circle, so it can't be
+  -- confused with ○ idle / ◉ waiting.
+  if running and running[buf] then
+    parts[#parts + 1] = winbar_hl(" ▶ ", "Busy")
+  end
   local desc = winbar_description(buf)
   if desc then
     parts[#parts + 1] = winbar_hl(" " .. desc, "Description")
@@ -1452,7 +1459,7 @@ end
 --- stands in for the winbar's animated spinner.
 local function session_status(buf)
   if running and running[buf] then
-    return "● running"
+    return "▶ running"
   elseif errors[buf] then
     return "✗ error"
   elseif awaiting[buf] then

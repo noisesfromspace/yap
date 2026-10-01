@@ -129,7 +129,7 @@ truth, and that can be a text buffer. Consequences:
                                                             *:YapInstances*
 :YapInstances         List every open yap session by its file path and
                         focus the picked one. Each line is annotated with
-                        its state — `● running`, `✗ error`, `◉ waiting`
+                        its state — `▶ running`, `✗ error`, `◉ waiting`
                         (a completed turn awaits your reply) or `○ idle` —
                         and needing-attention sessions sort first. Yap
                         buffers are unlisted — they never appear in |:ls|
@@ -675,7 +675,8 @@ the state glyph pinned to the far right edge:
 
   ⠋ busy    A request is in flight (driven by the job table). While a
             tool runs, its name and elapsed time replace "busy"
-            (`⠋ bash 12s`).
+            (`⠋ bash 12s`). A `▶` marker also leads the bar on the
+            left, so an in-flight request is visible at a glance.
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
   ◉ waiting A turn has completed and the agent awaits your next prompt

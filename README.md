@@ -84,7 +84,7 @@ editing the agent.
   history — or just run `:YapCompact`.
 - `:YapSessions [all]` — resume a saved session
 - `:YapInstances` / `<leader>r` — list every open session by file path
-  with its status (`◉ waiting`, `✗ error`, `● running`, `○ idle`) and
+  with its status (`◉ waiting`, `✗ error`, `▶ running`, `○ idle`) and
   jump to the picked one (sessions are unlisted: they never appear in
   `:ls` or buffer pickers)
 - The agent's `quickfix` tool can replace the current quickfix list with
