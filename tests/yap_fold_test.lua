@@ -13,12 +13,12 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 -- yap.new ran setup_buffer on the template; re-apply for our content
 fold.setup_buffer(buf)
 
--- default state is view 1: only user prompts open, agent output folded
+-- default state is view 2: conversation open, system prompt folded
 assert(vim.fn.foldclosed(1) == 1, "system should be folded by default")
 assert(vim.fn.foldclosed(5) == -1, "user 1 should be open")
-assert(vim.fn.foldclosed(9) == 9, "assistant should be folded by default")
+assert(vim.fn.foldclosed(9) == -1, "assistant should be open by default")
 assert(vim.fn.foldclosed(14) == -1, "user 2 should be open")
-assert(fold.level() == 1, "default view is 1")
+assert(fold.level() == 2, "default view is 2")
 
 -- view 1 reapplied: same state
 fold.set_view_level(1)

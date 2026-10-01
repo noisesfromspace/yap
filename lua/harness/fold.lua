@@ -320,10 +320,15 @@ function M.setup_buffer(buf)
   vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
   vim.wo.foldlevel = 99 -- expr folds start computable; default state applied below
-  M.set_view_level(1) -- default: an overview — only user prompts open
+  M.set_view_level(2) -- default: conversation open, tools & thinking folded
 
   local map = function(lhs, rhs, desc)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
+  end
+  -- Also as motions: visual (`v]t` selects to the next tool) and
+  -- operator-pending (`d]c` deletes to the next thinking block).
+  local map_motion = function(lhs, rhs, desc)
+    vim.keymap.set({ "x", "o" }, lhs, rhs, { buffer = buf, silent = true, desc = desc })
   end
   map("]m", M.next_message, "Next message")
   map("[m", M.prev_message, "Previous message")
@@ -337,6 +342,12 @@ function M.setup_buffer(buf)
   map("[c", M.prev_think, "Previous thinking block")
   map("]e", M.next_error, "Next error block")
   map("[e", M.prev_error, "Previous error block")
+  map_motion("]t", M.next_tool, "Select to next tool call")
+  map_motion("[t", M.prev_tool, "Select to previous tool call")
+  map_motion("]c", M.next_think, "Select to next thinking block")
+  map_motion("[c", M.prev_think, "Select to previous thinking block")
+  map_motion("]e", M.next_error, "Select to next error block")
+  map_motion("[e", M.prev_error, "Select to previous error block")
   local bind_view = function(key, level, desc)
     map(key, function()
       M.set_view_level(level)

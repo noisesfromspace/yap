@@ -43,11 +43,13 @@ assert(vim.fn.foldlevel(single + 1) == 3, "result after single-line header: " ..
 assert(vim.fn.foldlevel(single + 2) == 3, "closer after single-line header: " .. vim.fn.foldlevel(single + 2))
 assert(vim.fn.foldlevel(single + 3) == 2, "blank after region level: " .. vim.fn.foldlevel(single + 3))
 
--- default state (view 1): only user prompts open
+-- default state (view 2): conversation open, display regions folded
 assert(vim.fn.foldclosed(1) == 1, "system block not folded by default")
-assert(vim.fn.foldclosed(9) == 9, "assistant block not folded by default")
+assert(vim.fn.foldclosed(9) == -1, "assistant block not open by default")
 assert(vim.fn.foldclosed(5) == -1, "user block not open by default")
-assert(fold.level() == 1, "default view is 1")
+assert(vim.fn.foldclosed(opener) == opener, "thinking not folded by default")
+assert(vim.fn.foldclosed(tool) == tool, "tool region not folded by default")
+assert(fold.level() == 2, "default view is 2")
 
 -- view 2: messages open (system prompt stays folded), thinking and
 -- both tool regions folded
