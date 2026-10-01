@@ -206,7 +206,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "edit", "fetch", "glob", "ls", "quickfix", "read", "search", "websearch", "write"} {
+	for _, name := range []string{"bash", "curl", "edit", "fetch", "glob", "ls", "quickfix", "read", "search", "websearch", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)

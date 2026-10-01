@@ -23,7 +23,7 @@ func ResultFence(name, argsJSON string) (lang string, ok bool) {
 		return langForPath(a.Path), true
 	case "fetch":
 		return "html", true
-	case "bash":
+	case "bash", "curl":
 		return "", true // plain fence: command output is arbitrary text
 	case "ls", "search", "glob":
 		return "", true // plain fence: directory/listing output is arbitrary text
