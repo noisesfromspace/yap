@@ -152,6 +152,7 @@ Set only in yap buffers, except <leader>r and <leader>w, which are
 global (they list sessions across buffers, so they work from any file).
 
   <C-s> (n, i)          Send the buffer.
+  <leader>c             Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>t             Insert a template or skill (see |:YapInsert|).

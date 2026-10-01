@@ -3,12 +3,16 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ models = { "mock/m1" } })
 local buf = yap.new()
-local found = false
-for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
-  if m.lhs == " m" or m.lhs:match("m$") and m.desc == "yap: change model" then
-    found = m.desc == "yap: change model" and (m.lhs == "\\m" or m.lhs:find("m"))
+
+local function has_map(desc)
+  for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+    if m.desc == desc then
+      return true
+    end
   end
-  if m.desc == "yap: change model" then found = true end
+  return false
 end
-assert(found, "no <leader>m mapping in yap buffer")
+
+assert(has_map("yap: change model"), "no <leader>m mapping in yap buffer")
+assert(has_map("yap: stop in-flight request"), "no <leader>c mapping in yap buffer")
 print("OK map")

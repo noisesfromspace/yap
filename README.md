@@ -62,7 +62,7 @@ editing the agent.
   request-only context is not written into the chat buffer.
 - `<leader>m` / `:YapChangeModel` — switch models (queries the providers
   in config.json for their model lists)
-- `:YapStop` — kill the in-flight request
+- `:YapStop` / `<leader>c` — kill the in-flight request
 - `:YapLive` / `<leader>l` — watch tool output live: one persistent
   `yap://<session>-tail` buffer with a `$ command` header per call,
   written to a `<session>-tail` sidecar file in the audit dir from
