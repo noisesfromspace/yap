@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 // pi-derived defaults (doc: R15).
@@ -59,7 +61,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		return "", "", err
 	}
 	outPath := out.Name()
-	EmitEvent(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
+	utils.EmitEvent(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
 	cmd.Stdin = nil // /dev/null
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -71,8 +73,8 @@ func runBash(a *bashArgs) (string, string, error) {
 	}
 	out.Close()             // the child has its own fd
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
-	track(pgid)
-	defer untrack(pgid)
+	utils.Track(pgid)
+	defer utils.Untrack(pgid)
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -93,7 +95,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		size = st.Size()
 	}
 	text, truncated := readTail(outPath, size)
-	EmitEvent(map[string]any{"type": "tool_end", "name": "bash", "log": outPath, "truncated": truncated})
+	utils.EmitEvent(map[string]any{"type": "tool_end", "name": "bash", "log": outPath, "truncated": truncated})
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {

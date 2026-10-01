@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 func run(t *testing.T, tool, args string) (string, string, error) {
@@ -73,9 +75,8 @@ func TestBash(t *testing.T) {
 // The tool_start event announces the temp log the live view tails.
 func TestBashToolStartEvent(t *testing.T) {
 	var buf bytes.Buffer
-	old := eventOut
-	eventOut = &buf
-	defer func() { eventOut = old }()
+	old := utils.SetEventWriter(&buf)
+	defer utils.SetEventWriter(old)
 
 	if _, _, err := run(t, "bash", `{"command":"echo hi"}`); err != nil {
 		t.Fatalf("run: %v", err)
@@ -113,10 +114,9 @@ func TestBashTempFileHygiene(t *testing.T) {
 	// drains the final bytes and then deletes it (tool_end carries log +
 	// truncated for that). The result still carries the full text.
 	var buf bytes.Buffer
-	old := eventOut
-	eventOut = &buf
+	old := utils.SetEventWriter(&buf)
 	r, _, err := run(t, "bash", `{"command":"echo small"}`)
-	eventOut = old
+	utils.SetEventWriter(old)
 	if err != nil || !strings.Contains(r, "small") {
 		t.Fatalf("run: %q %v", r, err)
 	}

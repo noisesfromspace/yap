@@ -22,7 +22,7 @@ const (
 )
 
 // websearchURL is the Exa endpoint. A var so tests can point it at a
-// local server (same pattern as eventOut).
+// local server (same pattern as utils.eventOut).
 var websearchURL = "https://api.exa.ai/search"
 
 // websearchAPIKeyEnv names the env var holding the Exa API key.

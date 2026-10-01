@@ -7,42 +7,20 @@
 // model arguments are validated against the compiled schema
 // (santhosh-tekuri/jsonschema) before Run is called — hand-written
 // schemas and raw unmarshal errors are both gone.
+//
+// Non-tool helpers (events, process-group tracking, result fencing and
+// arg slimming for the buffer) live in agent/utils.
 package tools
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"sort"
-	"sync"
-	"syscall"
 
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
 )
-
-// eventOut receives `yap:event {json}` lines for the Lua side (a var
-// so tests can capture it). Kept separate from stdout, which carries
-// buffer content. Events are the audit trail: tool calls (full
-// arguments), results, and turn summaries — the Lua side appends them
-// to the session's audit log.
-var eventOut io.Writer = os.Stderr
-
-// EmitEvent writes one yap:event line (JSON) to eventOut.
-func EmitEvent(v any) {
-	b, _ := json.Marshal(v)
-	fmt.Fprintf(eventOut, "yap:event %s\n", b)
-}
-
-// SetEventWriter swaps the event sink and returns the previous one. It is
-// primarily useful to make the stdout/event ordering contract testable.
-func SetEventWriter(w io.Writer) io.Writer {
-	old := eventOut
-	eventOut = w
-	return old
-}
 
 // Tool is a single callable tool. result is sent back to the model; ui is
 // an optional display-only payload for the buffer (yap:ui, R12).
@@ -126,24 +104,4 @@ func All() []*Tool {
 		out = append(out, registry[n])
 	}
 	return out
-}
-
-// ─── Running process groups ──────────────────────────────────────────────────
-
-var (
-	runningMu sync.Mutex
-	running   = map[int]bool{}
-)
-
-func track(pgid int)   { runningMu.Lock(); running[pgid] = true; runningMu.Unlock() }
-func untrack(pgid int) { runningMu.Lock(); delete(running, pgid); runningMu.Unlock() }
-
-// KillAll SIGKILLs every tracked tool process group; used on interrupt so
-// :YapStop takes in-flight commands down with the binary.
-func KillAll() {
-	runningMu.Lock()
-	defer runningMu.Unlock()
-	for pgid := range running {
-		syscall.Kill(-pgid, syscall.SIGKILL)
-	}
 }

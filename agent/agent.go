@@ -23,6 +23,7 @@ import (
 	"boers.email/yap/agent/providers"
 	"boers.email/yap/agent/providers/goai"
 	"boers.email/yap/agent/tools"
+	"boers.email/yap/agent/utils"
 )
 
 // ─── Wire types (stdin) ────────────────────────────────────────────────────
@@ -257,7 +258,7 @@ func emitToolHeader(out *bufio.Writer, call providers.ToolCall) {
 	// keeps only the shape — the yap:ui diff shows the change and the
 	// audit log has the full arguments (R12).
 	argsJSON := string(call.Input)
-	args, ok := tools.SlimArgs(call.Name, argsJSON)
+	args, ok := utils.SlimArgs(call.Name, argsJSON)
 	if !ok {
 		if err := json.Unmarshal(call.Input, &args); err != nil {
 			args = argsJSON // malformed/truncated JSON: keep raw
@@ -367,7 +368,7 @@ func backtickFence(s string) string {
 // to the SAME string that goes to the model, so the buffer and the
 // replayed history stay identical across turns.
 func fenceResult(name, argsJSON, result string) string {
-	lang, ok := tools.ResultFence(name, argsJSON)
+	lang, ok := utils.ResultFence(name, argsJSON)
 	if !ok {
 		return result
 	}
@@ -475,7 +476,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	defer signal.Stop(sig)
 	go func() {
 		<-sig
-		tools.KillAll()
+		utils.KillAll()
 		fmt.Fprintln(os.Stderr, "interrupted")
 		os.Exit(1)
 	}()
@@ -522,7 +523,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
-			tools.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": string(call.Input)})
+			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": string(call.Input)})
 			tool, ok := tools.Get(call.Name)
 			var result, ui string
 			if !ok {
@@ -539,7 +540,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 				}
 				emitToolResult(out, result, ui)
 			}
-			tools.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
+			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, providers.Message{
 				Role: providers.RoleTool,
@@ -603,7 +604,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		m["type"] = "turn_end"
 		m["model"] = model
 		m["ms"] = time.Since(start).Milliseconds()
-		tools.EmitEvent(m)
+		utils.EmitEvent(m)
 	}
 	out.Flush()
 	return nil

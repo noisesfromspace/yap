@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"boers.email/yap/agent/tools"
+	"boers.email/yap/agent/utils"
 )
 
 // writeConfigJSON writes a full yap.json into a temp config home.
@@ -315,8 +315,8 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 		journal.Write(p)
 		return len(p), nil
 	})
-	oldEventOut := tools.SetEventWriter(writer)
-	defer tools.SetEventWriter(oldEventOut)
+	oldEventOut := utils.SetEventWriter(writer)
+	defer utils.SetEventWriter(oldEventOut)
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), writer); err != nil {
 		t.Fatalf("send: %v", err)
 	}
