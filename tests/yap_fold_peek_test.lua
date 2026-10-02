@@ -37,33 +37,26 @@ assert(vim.fn.foldclosed(think1) == think1, "thinking folded by default")
 assert(vim.fn.foldclosed(tool1) == tool1, "tool1 folded by default")
 assert(vim.fn.foldclosed(tool2) == tool2, "tool2 folded by default")
 
--- exclusive peek: opening one chip leaves the rest folded
-fold.peek(tool1)
-assert(vim.fn.foldclosed(tool1) == -1, "peek opened tool1")
-assert(vim.fn.foldclosed(tool2) == tool2, "peek kept tool2 folded")
-assert(vim.fn.foldclosed(think1) == think1, "peek kept thinking folded")
-
--- peeking the next one closes the previous (exclusive)
-fold.peek(tool2)
-assert(vim.fn.foldclosed(tool2) == -1, "peek opened tool2")
-assert(vim.fn.foldclosed(tool1) == tool1, "peek closed tool1")
+-- opening pins a fold and is NOT exclusive: other folds stay as they are
+fold.open(tool1)
+assert(vim.fn.foldclosed(tool1) == -1, "open did not open tool1")
+assert(vim.fn.foldclosed(tool2) == tool2, "open changed tool2")
+assert(vim.fn.foldclosed(think1) == think1, "open changed thinking")
+fold.open(tool2)
+assert(vim.fn.foldclosed(tool1) == -1, "opening tool2 closed tool1")
+assert(vim.fn.foldclosed(tool2) == -1, "open did not open tool2")
 
 -- <Tab> toggle: open -> close, close -> open
 fold.toggle(tool2)
-assert(vim.fn.foldclosed(tool2) == tool2, "toggle closed the open tool2")
+assert(vim.fn.foldclosed(tool2) == tool2, "toggle did not close the open tool2")
+assert(vim.fn.foldclosed(tool1) == -1, "toggle moved tool1")
 fold.toggle(tool1)
-assert(vim.fn.foldclosed(tool1) == -1, "toggle opened the closed tool1")
-assert(vim.fn.foldclosed(tool2) == tool2, "toggle kept tool2 closed")
+assert(vim.fn.foldclosed(tool1) == tool1, "toggle did not close the open tool1")
 
--- snap-back is keyed to fold OPENERS: prose and yap:ui content do not
--- collapse a peek
-fold.after_append(buf, { "some prose line" })
-assert(vim.fn.foldclosed(tool1) == -1, "prose append collapsed the peek")
-fold.after_append(buf, { "<!-- yap:ui" })
-assert(vim.fn.foldclosed(tool1) == -1, "yap:ui append collapsed the peek")
-
--- a new tool opener snaps back to the view: the peek folds and no manual
--- open leaks into the new fold
+-- a pin survives a structural append: re-apply clears the manual open and
+-- re-opens the pin, while the NEW fold stays at the view's foldlevel
+fold.open(tool1)
+assert(vim.fn.foldclosed(tool1) == -1, "precondition: tool1 open")
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, {
   '<!-- yap:tool {"id":"b3","name":"bash","arguments":{}} -->',
   "result three",
@@ -71,23 +64,25 @@ vim.api.nvim_buf_set_lines(buf, -1, -1, false, {
 })
 local tool3 = 23
 fold.after_append(buf, { '<!-- yap:tool {"id":"b3","name":"bash","arguments":{}} -->' })
-assert(vim.fn.foldclosed(tool1) == tool1, "opener append did not refold the peek")
+assert(vim.fn.foldclosed(tool1) == -1, "append collapsed the pinned tool1")
 assert(vim.fn.foldclosed(tool3) == tool3, "new tool fold leaked open: " .. vim.fn.foldclosed(tool3))
 
--- heading openers snap too
-fold.peek(tool2)
-assert(vim.fn.foldclosed(tool2) == -1, "precondition: peeked tool2")
+-- a heading append re-applies too: the pin survives, nothing leaks open
 fold.after_append(buf, { "# @user" })
-assert(vim.fn.foldclosed(tool2) == tool2, "heading append did not snap back")
+assert(vim.fn.foldclosed(tool1) == -1, "heading append collapsed the pinned tool1")
 
--- navigation auto-peek (what ]t maps to): jump then peek the destination
+-- a view keypress is an explicit reset: it clears every pin
+fold.set_view_level(2)
+assert(vim.fn.foldclosed(tool1) == tool1, "view keypress did not clear the pin")
+
+-- navigation auto-open (what ]t maps to): jump then pin the destination
 fold.set_view_level(2)
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 assert(fold.next_tool() == think1, "next_tool -> thinking block")
-fold.peek(vim.api.nvim_win_get_cursor(0)[1])
-assert(vim.fn.foldclosed(think1) == -1, "nav peek did not open the thinking block")
+fold.open(vim.api.nvim_win_get_cursor(0)[1])
+assert(vim.fn.foldclosed(think1) == -1, "nav open did not open the thinking block")
 
--- snap never changes the applied view
-assert(fold.level() == 2, "snap changed the applied view level")
+-- re-apply never changes the applied view
+assert(fold.level() == 2, "re-apply changed the applied view level")
 
 print("OK fold_peek")

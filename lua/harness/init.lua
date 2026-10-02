@@ -1515,12 +1515,14 @@ function M.send(buf)
   local function follow_tail()
     document.follow_windows(buf, follow, expected_follow)
   end
-  document.append_block(buf, { "# @assistant", "" })
-  fold.after_append(buf, { "# @assistant", "" })
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
+  -- Set before the append so the after_append fold re-apply already sees
+  -- this block as live (level 1) rather than folding it once in view 1.
   vim.b[buf].yap_live = true
+  document.append_block(buf, { "# @assistant", "" })
+  fold.after_append(buf, { "# @assistant", "" })
   follow_tail()
   -- Sends never touch fold state or rewrite existing lines: the buffer
   -- is always in its final format, streaming only appends at the end,

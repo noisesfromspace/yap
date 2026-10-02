@@ -167,8 +167,8 @@ below.
                         (see |:YapInsertHere|).
   <leader>r             List every open session with its status (see
                         |:YapInstances|).
-  <Tab>                 Toggle one fold: open it as an exclusive peek,
-                        or close it again.
+  <Tab>                 Toggle one fold: open it persistently, or
+                        close it again.
   ]m  [m                Next / previous message heading.
   ]u  [u                Next / previous user message.
   ]a  [a                Next / previous assistant message.
@@ -784,19 +784,24 @@ streamed tool regions appear folded in views 1/2, and the next prompt is
 always open.
 
 Above the view, <Tab> and the block-navigation keys DRILL: <Tab> opens
-the fold under the cursor as an exclusive peek (snapping back to the
-view first, so only that one fold opens) or closes it again; ]t/[t, ]c/[c
-and ]e/[e jump to the next block AND open it, closing whatever was peeked
-before. ]m/]u/]a move at message granularity without opening anything.
+the fold under the cursor persistently (pins it) or closes it again;
+]t/[t, ]c/[c and ]e/[e jump to the next block AND open it. Opening is
+non-exclusive — opening one fold leaves previously opened folds alone.
+]m/]u/]a move at message granularity without opening anything.
 
-A peek is ephemeral: when the conversation structure advances — a new
+An open fold STAYS open: it is a pin, tracked by its fold-start line,
+not a transient peek. When the conversation structure advances — a new
 `# @role` heading, tool, thinking or error opener streams into the
-buffer — yap snaps back to the applied view. That is what keeps a manual
-foldopen from leaking into folds created later (Neovim inherits a manual
-foldopen into child folds, so "open one level-2 fold" used to make
-everything underneath start opening). Manual tweaks — open or close —
-never survive the next structural append; the view is the only
-persistent fold state. Typing (user edits) still changes nothing.
+buffer — yap clears Neovim's manual fold state and re-opens only the
+pins. That is what keeps a manual foldopen from leaking into folds
+created later (Neovim inherits a manual foldopen into child folds, so
+"open one level-2 fold" used to make everything underneath start
+opening): the new fold adopts the view's foldlevel, and the pins come
+back exactly. Typing (user edits) still changes nothing.
+
+A view keypress (<leader>1..3) is an explicit reset: it clears every
+pin. Pins are keyed by line number, so they survive sends and streaming
+(sends only append); an edit that shifts a pin's line drops it.
 
 Navigation keymaps jump between headings, see |yap-keymaps|.
 
@@ -1004,14 +1009,15 @@ R10 View levels: <leader>1 folds all agent output (user prompts stay
     made Neovim re-evaluate every fold on each edit (hundreds of ms
     per keystroke on a large session). View 2 is applied ONLY when a
     session buffer is opened. <Tab> and the block-navigation keys
-    drill with an exclusive manual open (a peek): snap back to the
-    view, then foldopen the target. Peeking is safe because the send
-    path snaps the buffer back to its view whenever a structural
-    opener (heading, tool, thinking, error) is appended, so a manual
-    foldopen can't leak into folds created later — manual tweaks
-    never survive the next structural append. Typing (user edits)
-    still changes nothing. The winbar Ⓕ chip shows the last APPLIED
-    view, not measured fold state (measuring made <leader>3 read Ⓕ0).
+    drill by pinning a fold open (non-exclusive): the pin is keyed by
+    its fold-start line and survives sends/streaming. On a structural
+    append (heading, tool, thinking, error) the send path clears
+    Neovim's manual fold state (zX) and re-opens only the pins, so a
+    manual foldopen can't leak into folds created later — the new
+    fold adopts the view's foldlevel and the pins come back exactly.
+    A view keypress clears all pins. Typing (user edits) still
+    changes nothing. The winbar Ⓕ chip shows the last APPLIED view,
+    not measured fold state (measuring made <leader>3 read Ⓕ0).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the

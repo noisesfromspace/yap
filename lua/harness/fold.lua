@@ -136,8 +136,13 @@ local function classify(line, region, fence, cret, lvl)
   end
 end
 
-function M.expr(lnum)
-  local buf = vim.api.nvim_get_current_buf()
+-- The fold-level string for every line, computed in one forward pass and
+-- cached per changedtick: ">N" on a fold opener, "N" inside one, "=" where
+-- there is no fold. M.expr is the per-line foldexpr entry point; M.levels
+-- is the whole array so callers (fold_start, reapply) can see the `>`
+-- markers without re-scanning.
+function M.levels(buf)
+  buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
   local tick = vim.api.nvim_buf_get_changedtick(buf)
   local c = cache[buf]
   if not c or c.tick ~= tick then
@@ -171,7 +176,11 @@ function M.expr(lnum)
     c = { tick = tick, levels = levels }
     cache[buf] = c
   end
-  return c.levels[lnum] or "="
+  return c.levels
+end
+
+function M.expr(lnum)
+  return M.levels()[lnum] or "="
 end
 
 function M.text(start, finish)
@@ -225,6 +234,16 @@ end
 -- longer update the chip.
 local applied = {}
 
+-- Pinned folds: folds the user opened and wants to KEEP open. Neovim's
+-- manual foldopen is inherited by new folds at the same level (opening one
+-- tool makes every tool that streams in afterward arrive open), so the
+-- send path clears manual state and re-opens only these pins. Keyed by
+-- the fold's start line; sends only append, so a pin's line number stays
+-- stable for the lifetime of a session (a user edit above a pin can shift
+-- it — the re-apply validates the line is still a fold opener and drops it
+-- otherwise).
+local pinned = {}
+
 function M.level()
   return applied[vim.api.nvim_get_current_buf()] or 3
 end
@@ -237,62 +256,110 @@ end
 -- large session. foldlevel alone keeps the same visuals. A real CHANGE of
 -- 'foldlevel' resets all manual za toggles to the level's state, so bump
 -- first to guarantee the change — a keypress always lands on the same
--- state. Between keypresses typing changes nothing; the send path snaps
--- back to the view on structural appends (see M.snap / M.after_append).
+-- state. A view keypress also clears every pin (it is an explicit reset).
 function M.set_view_level(level)
-  applied[vim.api.nvim_get_current_buf()] = level
+  local buf = vim.api.nvim_get_current_buf()
+  applied[buf] = level
+  pinned[buf] = {}
   local target = ({ 1, 2, 3 })[level] or 3
   vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
   vim.wo.foldlevel = target
 end
 
---- Snap the buffer back to its applied view, discarding every manual
---- foldopen/foldclose. A peek (an exclusive manual open) is ephemeral:
---- when the conversation structure advances — a new heading, tool or
---- thinking/error opener is appended — the buffer returns to its view so
---- a manual open can't leak into folds created later (Neovim inherits a
---- manual foldopen into child folds; manual closes stay local but are
---- equally transient here). The 99 bump is the same trick set_view_level
---- uses: a real change of 'foldlevel' is what clears the manual flags.
-function M.snap(buf)
-  buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
+--- The fold-start line of the fold containing `lnum` (open or closed).
+--- Levels aren't depth-monotonic (user 1, assistant 2, tool 3, system 4,
+--- and a `# @user` DROPS back to 1), so a simple upward scan for the
+--- nearest `>` marker is wrong after a child fold closes. Instead walk up
+--- tracking the minimum level seen: the innermost fold that still encloses
+--- `lnum` is the nearest opener whose level is <= that minimum.
+local function fold_start(buf, lnum)
+  local levels = M.levels(buf)
+  local min_level = math.huge
+  for i = lnum, 1, -1 do
+    local lv = levels[i] or "="
+    if lv == "=" then
+      break -- pre-heading: nothing encloses it
+    end
+    local opener = lv:match("^>(%d+)$")
+    if opener and tonumber(opener) <= min_level then
+      return i
+    end
+    local n = tonumber(lv:gsub("^>", ""))
+    if n and n < min_level then
+      min_level = n
+    end
   end
-  local level = applied[buf] or 3
-  local target = ({ 1, 2, 3 })[level] or 3
-  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-    vim.api.nvim_set_option_value("foldlevel", 99, { win = w })
-    vim.api.nvim_set_option_value("foldlevel", target, { win = w })
-  end
+  return -1
 end
 
---- Open exactly one fold — the one containing `lnum` — and nothing else:
---- snap back to the view first, then foldopen the target. In view 2 this
---- opens a single tool/thinking chip while its siblings stay folded; in
---- view 1 it opens the enclosing assistant message (zo on a hidden line
---- opens its outermost closed fold).
-function M.peek(lnum)
-  M.snap()
-  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+--- Re-apply the applied view to one window: clear every manual open/close
+--- (zX re-applies 'foldlevel' without changing its value), then re-open the
+--- pinned folds. Pins are re-opened in line order so a parent opens before
+--- its nested children. This is how a manual open survives an append
+--- without leaking into the new folds the append created: zX wipes the
+--- inherited open, then only the genuine pins come back. `:Nfoldopen` opens
+--- the fold on line N without moving the cursor, so re-applying during a
+--- stream never yanks the user's cursor away from where they were reading.
+local function reapply_window(w, buf)
+  vim.api.nvim_win_call(w, function()
+    vim.cmd("normal! zX")
+    local pins = {}
+    for lnum in pairs(pinned[buf] or {}) do
+      pins[#pins + 1] = lnum
+    end
+    table.sort(pins)
+    for _, lnum in ipairs(pins) do
+      local lv = M.levels(buf)[lnum]
+      if lv and lv:sub(1, 1) == ">" and vim.fn.foldclosed(lnum) ~= -1 then
+        vim.cmd(("silent! %dfoldopen"):format(lnum))
+      end
+    end
+  end)
+end
+
+--- Open a fold persistently (pin it). Used by <Tab> on a closed fold and
+--- by the block-navigation keys. Non-exclusive: opening one fold leaves
+--- previously opened folds alone.
+function M.open(lnum)
+  local buf = vim.api.nvim_get_current_buf()
+  local start = vim.fn.foldclosed(lnum)
+  if start == -1 then
+    start = fold_start(buf, lnum)
+  end
+  if start == -1 then
+    return
+  end
+  pinned[buf] = pinned[buf] or {}
+  pinned[buf][start] = true
+  vim.api.nvim_win_set_cursor(0, { start, 0 })
   vim.cmd("normal! zo")
 end
 
---- <Tab>: toggle the fold under `lnum`. A closed fold is opened as an
---- exclusive peek; an open fold is closed back to the view.
+--- <Tab>: toggle the fold under `lnum`. Opening pins it; closing un-pins
+--- it. Pins persist across sends and streaming.
 function M.toggle(lnum)
-  if vim.fn.foldclosed(lnum) ~= -1 then
-    M.peek(lnum)
-  else
-    vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  local buf = vim.api.nvim_get_current_buf()
+  local start = vim.fn.foldclosed(lnum)
+  if start == -1 then
+    start = fold_start(buf, lnum)
+  end
+  if start == -1 then
+    return
+  end
+  if vim.fn.foldclosed(lnum) == -1 then
+    local pin = pinned[buf] or {}
+    pin[start] = nil
+    vim.api.nvim_win_set_cursor(0, { start, 0 })
     vim.cmd("normal! zc")
+  else
+    M.open(lnum)
   end
 end
 
 --- A line that starts a new fold when it lands in the buffer (the
---- snap-back trigger). `yap:ui` is deliberately excluded: it is content
---- inside a tool region, not a fold of its own, so a peek at a streaming
---- tool survives its own ui diff.
+--- re-apply trigger). `yap:ui` is deliberately excluded: it is content
+--- inside a tool region, not a fold of its own, so a streamed ui diff
+--- doesn't re-fold the region it belongs to.
 local function is_fold_opener(line)
   return line:match(HEAD) ~= nil
     or line:match(TOOL_OPEN) ~= nil
@@ -301,15 +368,19 @@ local function is_fold_opener(line)
 end
 
 --- Called by the send/stream path after appending `lines` to a session
---- buffer (never by user edits). If any line opens a new fold, snap back
---- so a manual peek can't leak into it.
+--- buffer (never by user edits). If any line opens a new fold, re-apply
+--- the view in every window showing the buffer: this clears the manual
+--- foldopen a pin would otherwise leak into the new fold, then restores
+--- the pins.
 function M.after_append(buf, lines)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
   for _, l in ipairs(lines or {}) do
     if is_fold_opener(l) then
-      M.snap(buf)
+      for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+        reapply_window(w, buf)
+      end
       return
     end
   end
@@ -417,13 +488,13 @@ function M.setup_buffer(buf, keys)
   map(keys.next_assistant, M.next_assistant_message, "Next assistant message")
   map(keys.prev_assistant, M.prev_assistant_message, "Previous assistant message")
   -- Block navigation (tools, thinking, errors) opens the fold it lands
-  -- on — the neogit "OpenOrScroll" feel — closing any previously peeked
-  -- fold (M.peek snaps first). The bare functions stay pure jumps so they
-  -- still work as x/o motions (v]t, d]c).
+  -- on — the neogit "OpenOrScroll" feel — pinning it so it stays open.
+  -- The bare functions stay pure jumps so they still work as x/o motions
+  -- (v]t, d]c).
   local block_jump = function(fn)
     return function()
       if fn() ~= 0 then
-        M.peek(vim.api.nvim_win_get_cursor(0)[1])
+        M.open(vim.api.nvim_win_get_cursor(0)[1])
       end
     end
   end
