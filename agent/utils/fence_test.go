@@ -11,7 +11,7 @@ func TestResultFence(t *testing.T) {
 		{"read", `{"path":"/tmp/x.py"}`, "python", true},
 		{"read", `{"path":"/tmp/x.yaml"}`, "yaml", true},
 		{"read", `{"path":"/tmp/x.unknown"}`, "", true}, // unrecognized ext: plain fence
-		{"fetch", `{"url":"http://x"}`, "html", true},
+		{"fetch", `{"url":"http://x"}`, "markdown", true},
 		{"bash", `{"command":"ls"}`, "", true},
 		{"git", `{"command":"diff"}`, "", true},
 		{"ls", `{"path":"/tmp"}`, "", true},

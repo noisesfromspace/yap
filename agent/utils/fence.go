@@ -7,7 +7,7 @@ import (
 )
 
 // resultFence returns the fenced-code info string for a tool whose
-// result is raw content (read/bash/fetch), or ok=false for tools whose
+// result is raw content (read/bash) or extracted content (fetch), or ok=false for tools whose
 // result is a short confirmation (write/edit) or an error message —
 // those stay bare. Content-bearing results live in the chat buffer,
 // which is markdown: raw file content or command output gets parsed by
@@ -22,7 +22,7 @@ func ResultFence(name, argsJSON string) (lang string, ok bool) {
 		json.Unmarshal([]byte(argsJSON), &a)
 		return langForPath(a.Path), true
 	case "fetch":
-		return "html", true
+		return "markdown", true
 	case "bash", "curl", "git":
 		return "", true // plain fence: command output is arbitrary text
 	case "ls", "search", "glob":

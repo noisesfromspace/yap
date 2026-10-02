@@ -379,8 +379,9 @@ results as markdown; its API key is read from the env var named by
 curl shells out to the system curl binary: method, headers, user-agent,
 body, redirects, timeout and extra curl flags are all settable, and it
 sends a browser User-Agent by default to get past agent blocks (it is
-fetch's versatile sibling for follow-up fetches; like fetch it returns
-raw HTML and does not run JavaScript). git runs read-only subcommands
+fetch's versatile sibling for follow-up fetches; fetch extracts the
+main content as Markdown, while curl returns the raw response body and
+does not run JavaScript). git runs read-only subcommands
 (status, diff, log, show, blame) in the project root with pager, color
 and credential prompts disabled; output is head-truncated like search.
 
@@ -565,8 +566,9 @@ ZWSP renders as a literal <200b>), and a soft hyphen hides the
 mutation from the user while still reaching registers and the model.
 
 Tool RESULTS from content-bearing tools (read, bash, ls, fetch) are
-wrapped in a fenced code block — read/fetch with a language info
-string detected from the path extension, bash/ls as a plain fence.
+wrapped in a fenced code block — read with a language info string
+detected from the path extension, fetch as ```markdown, bash/ls as a
+plain fence.
 The buffer is markdown, and raw file content or command output
 gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
 picks up stray styling; the fence renders it as code instead and lets
@@ -577,8 +579,9 @@ the replayed history stay identical across turns. write/edit return
 short confirmations and stay bare. The unclosed-fence guard remains as
 a fallback for those unfenced results.
 
-Why the <style>/<script> escaping matters: raw HTML results (fetch
-returns pages as-is) let treesitter's combined HTML injection hand
+Why the <style>/<script> escaping matters: fetch returns Markdown that
+may embed raw HTML, and those open tags let treesitter's combined HTML
+injection hand
 their content to the css/javascript parsers, and those raw-text
 injection ranges bleed to the end of the buffer — everything after the
 result renders as css/js. The backslash-escaped open tag keeps the

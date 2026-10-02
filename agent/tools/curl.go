@@ -39,7 +39,7 @@ func init() {
 	Register("curl",
 		"Fetch a URL with curl. Returns the response body plus a status line. "+
 			"Versatile: set method, headers, user-agent, request body, redirects, timeout, or pass extra curl flags. "+
-			"Sends a browser User-Agent by default to get past agent blocks. Returns raw HTML "+
+			"Sends a browser User-Agent by default to get past agent blocks. Returns the raw response body "+
 			"(curl does not execute JavaScript) — for JS-heavy pages prefer websearch with contentMode=text.",
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
 }

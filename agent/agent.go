@@ -230,8 +230,9 @@ func escapeComment(s string) string {
 // Two cases:
 //   - lines starting with a yap marker opener — they would end the
 //     tool region early during parsing;
-//   - `<style`/`<script` open tags — in a raw-HTML result (fetch returns
-//     pages as-is) treesitter's combined HTML injection hands their
+//   - `<style`/`<script` open tags — in an extracted-Markdown result
+//     (fetch converts pages to Markdown, which may embed raw HTML)
+//     treesitter's combined HTML injection hands their
 //     content to the css/javascript parsers, whose raw-text injection
 //     ranges then bleed to the end of the buffer.
 var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
