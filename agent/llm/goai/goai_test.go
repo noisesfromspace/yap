@@ -7,7 +7,7 @@ import (
 
 	"github.com/zendev-sh/goai/provider"
 
-	"boers.email/yap/agent/providers"
+	"boers.email/yap/agent/llm"
 )
 
 // fakeModel is a fake GoAI LanguageModel. It records every GenerateParams it
@@ -95,20 +95,20 @@ func TestProviderOptionsAreModelGated(t *testing.T) {
 func TestDoStreamPreservesOrderedPartsAcrossToolResult(t *testing.T) {
 	fake := &fakeModel{}
 	m := &modelImpl{model: fake, name: "compat"}
-	tools := []providers.Tool{{Name: "t", InputSchema: []byte(`{"type":"object"}`)}}
+	tools := []llm.Tool{{Name: "t", InputSchema: []byte(`{"type":"object"}`)}}
 
 	// First generation: a user message only.
-	msgs := []providers.Message{{Role: providers.RoleUser, Content: []providers.Part{{Type: providers.PartText, Text: "go"}}}}
-	s1, err := m.DoStream(context.Background(), providers.Params{Messages: msgs, Tools: tools})
+	msgs := []llm.Message{{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: "go"}}}}
+	s1, err := m.DoStream(context.Background(), llm.Params{Messages: msgs, Tools: tools})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var reasoningText, textText string
 	for ev := range s1.Events {
 		switch ev.Type {
-		case providers.EventReasoning:
+		case llm.EventReasoning:
 			reasoningText += ev.Text
-		case providers.EventText:
+		case llm.EventText:
 			textText += ev.Text
 		}
 	}
@@ -123,7 +123,7 @@ func TestDoStreamPreservesOrderedPartsAcrossToolResult(t *testing.T) {
 		t.Fatalf("expected 1 assistant response message, got %d", len(r1.ResponseMessages))
 	}
 	parts := r1.ResponseMessages[0].Content
-	if len(parts) != 3 || parts[0].Type != providers.PartReasoning || parts[1].Type != providers.PartText || parts[2].Type != providers.PartToolCall {
+	if len(parts) != 3 || parts[0].Type != llm.PartReasoning || parts[1].Type != llm.PartText || parts[2].Type != llm.PartToolCall {
 		t.Fatalf("ordered parts wrong: %+v", parts)
 	}
 	if parts[0].ProviderOptions["signature"] != "sig-1" {
@@ -135,12 +135,12 @@ func TestDoStreamPreservesOrderedPartsAcrossToolResult(t *testing.T) {
 
 	// Second generation: append the exact assistant message + a native
 	// tool-result message, as the agent loop does.
-	history := append(append([]providers.Message{}, msgs...), r1.ResponseMessages...)
-	history = append(history, providers.Message{
-		Role:    providers.RoleTool,
-		Content: []providers.Part{{Type: providers.PartToolResult, ToolCallID: "c1", ToolName: "t", ToolOutput: "result"}},
+	history := append(append([]llm.Message{}, msgs...), r1.ResponseMessages...)
+	history = append(history, llm.Message{
+		Role:    llm.RoleTool,
+		Content: []llm.Part{{Type: llm.PartToolResult, ToolCallID: "c1", ToolName: "t", ToolOutput: "result"}},
 	})
-	s2, err := m.DoStream(context.Background(), providers.Params{Messages: history, Tools: tools})
+	s2, err := m.DoStream(context.Background(), llm.Params{Messages: history, Tools: tools})
 	if err != nil {
 		t.Fatal(err)
 	}

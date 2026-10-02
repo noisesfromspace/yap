@@ -1,8 +1,8 @@
-// Package providers defines Yap's own minimal model surface. The agent loop
-// and harness speak these types; only the adapter in agent/providers/goai
+// Package llm defines Yap's own minimal model surface. The agent loop
+// and harness speak these types; only the adapter in agent/llm/goai
 // imports the GoAI SDK. Keeping this boundary means a provider SDK swap never
 // touches the agent loop, tools, or the stdout wire protocol.
-package providers
+package llm
 
 import (
 	"context"

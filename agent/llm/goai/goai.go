@@ -16,13 +16,13 @@ import (
 	"github.com/zendev-sh/goai/provider/google"
 	"github.com/zendev-sh/goai/provider/openai"
 
-	"boers.email/yap/agent/providers"
+	"boers.email/yap/agent/llm"
 )
 
-// NewProvider builds a providers.Provider for the named provider. Native provider
+// NewProvider builds an llm.Provider for the named provider. Native provider
 // packages are used for openai/anthropic/google/gemini/deepseek; any other
 // name with a base_url falls back to the OpenAI-compatible provider.
-func NewProvider(cfg providers.ProviderConfig) (providers.Provider, error) {
+func NewProvider(cfg llm.ProviderConfig) (llm.Provider, error) {
 	if cfg.Name == "" {
 		return nil, fmt.Errorf("provider name is empty")
 	}
@@ -47,7 +47,7 @@ type providerImpl struct {
 	apiKey  string
 }
 
-func (p *providerImpl) Model(modelID string) providers.LanguageModel {
+func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 	var m provider.LanguageModel
 	switch p.name {
 	case "openai":
@@ -166,11 +166,11 @@ func supportsAnthropicExtendedThinking(id string) bool {
 // DoStream runs ONE generation step (no auto tool loop): the agent executes
 // tools and calls DoStream again, so the exact ordered assistant parts and
 // provider metadata in Result.ResponseMessages survive into the next request.
-func (m *modelImpl) DoStream(ctx context.Context, params providers.Params) (*providers.Stream, error) {
+func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Stream, error) {
 	var system []string
 	rest := make([]provider.Message, 0, len(params.Messages))
 	for _, msg := range params.Messages {
-		if msg.Role == providers.RoleSystem {
+		if msg.Role == llm.RoleSystem {
 			if s := partsText(msg.Content); s != "" {
 				system = append(system, s)
 			}
@@ -202,24 +202,24 @@ func (m *modelImpl) DoStream(ctx context.Context, params providers.Params) (*pro
 	}
 
 	raw := ts.Stream()
-	events := make(chan providers.Event, 64)
-	stream := providers.NewStream(events)
+	events := make(chan llm.Event, 64)
+	stream := llm.NewStream(events)
 	go func() {
 		defer close(events)
 		for ch := range raw {
 			switch ch.Type {
 			case provider.ChunkReasoning:
 				if ch.Text != "" {
-					events <- providers.Event{Type: providers.EventReasoning, Text: ch.Text}
+					events <- llm.Event{Type: llm.EventReasoning, Text: ch.Text}
 				}
 			case provider.ChunkText:
 				if ch.Text != "" {
-					events <- providers.Event{Type: providers.EventText, Text: ch.Text}
+					events <- llm.Event{Type: llm.EventText, Text: ch.Text}
 				}
 			}
 		}
 		res := ts.Result()
-		var r providers.Result
+		var r llm.Result
 		if err := ts.Err(); err != nil {
 			r.Err = err
 		}
@@ -227,24 +227,24 @@ func (m *modelImpl) DoStream(ctx context.Context, params providers.Params) (*pro
 		r.Reasoning = res.Reasoning
 		r.ToolCalls = toLLMToolCalls(res.ToolCalls)
 		r.FinishReason = string(res.FinishReason)
-		r.Usage = providers.Usage{PromptTokens: res.TotalUsage.InputTokens, CompletionTokens: res.TotalUsage.OutputTokens}
+		r.Usage = llm.Usage{PromptTokens: res.TotalUsage.InputTokens, CompletionTokens: res.TotalUsage.OutputTokens}
 		r.ResponseMessages = toLLMMessages(res.ResponseMessages)
 		stream.SetResult(r)
 	}()
 	return stream, nil
 }
 
-func partsText(parts []providers.Part) string {
+func partsText(parts []llm.Part) string {
 	var texts []string
 	for _, p := range parts {
-		if p.Type == providers.PartText && p.Text != "" {
+		if p.Type == llm.PartText && p.Text != "" {
 			texts = append(texts, p.Text)
 		}
 	}
 	return strings.Join(texts, "\n")
 }
 
-func toSDKMessage(msg providers.Message) provider.Message {
+func toSDKMessage(msg llm.Message) provider.Message {
 	content := make([]provider.Part, 0, len(msg.Content))
 	for _, p := range msg.Content {
 		content = append(content, provider.Part{
@@ -264,7 +264,7 @@ func toSDKMessage(msg providers.Message) provider.Message {
 	}
 }
 
-func toSDKTools(tools []providers.Tool) []sdk.Tool {
+func toSDKTools(tools []llm.Tool) []sdk.Tool {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -279,13 +279,13 @@ func toSDKTools(tools []providers.Tool) []sdk.Tool {
 	return out
 }
 
-func toLLMToolCalls(calls []provider.ToolCall) []providers.ToolCall {
+func toLLMToolCalls(calls []provider.ToolCall) []llm.ToolCall {
 	if len(calls) == 0 {
 		return nil
 	}
-	out := make([]providers.ToolCall, 0, len(calls))
+	out := make([]llm.ToolCall, 0, len(calls))
 	for _, c := range calls {
-		out = append(out, providers.ToolCall{
+		out = append(out, llm.ToolCall{
 			ID:       c.ID,
 			Name:     c.Name,
 			Input:    c.Input,
@@ -295,16 +295,16 @@ func toLLMToolCalls(calls []provider.ToolCall) []providers.ToolCall {
 	return out
 }
 
-func toLLMMessages(msgs []provider.Message) []providers.Message {
+func toLLMMessages(msgs []provider.Message) []llm.Message {
 	if len(msgs) == 0 {
 		return nil
 	}
-	out := make([]providers.Message, 0, len(msgs))
+	out := make([]llm.Message, 0, len(msgs))
 	for _, m := range msgs {
-		content := make([]providers.Part, 0, len(m.Content))
+		content := make([]llm.Part, 0, len(m.Content))
 		for _, p := range m.Content {
-			content = append(content, providers.Part{
-				Type:            providers.PartType(p.Type),
+			content = append(content, llm.Part{
+				Type:            llm.PartType(p.Type),
 				Text:            p.Text,
 				ToolCallID:      p.ToolCallID,
 				ToolName:        p.ToolName,
@@ -313,8 +313,8 @@ func toLLMMessages(msgs []provider.Message) []providers.Message {
 				ProviderOptions: p.ProviderOptions,
 			})
 		}
-		out = append(out, providers.Message{
-			Role:            providers.Role(m.Role),
+		out = append(out, llm.Message{
+			Role:            llm.Role(m.Role),
 			Content:         content,
 			ProviderOptions: m.ProviderOptions,
 		})

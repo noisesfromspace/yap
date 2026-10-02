@@ -868,7 +868,7 @@ the exact assistant message parts GoAI produced — reasoning items/encrypted
 content, signatures, thought signatures, reasoning_content — plus native
 tool-result messages, so tool continuation is lossless within one process.
 The binary is pure Go (no cgo), built CGO_ENABLED=0, using the GoAI SDK
-behind Yap's own agent/providers surface.
+behind Yap's own agent/llm surface.
 
 ==============================================================================
 11. BUSINESS RULES                                             *yap-rules*
@@ -900,7 +900,7 @@ R4  The binary emits plain text and yap markers only. No ANSI, no
     ft=markdown setup; cell-based TUIs break Neovim yanking.
 
 R5  The binary talks to providers through the GoAI SDK behind Yap's own
-    agent/providers adapter: native OpenAI (Responses API), Anthropic,
+    agent/llm adapter: native OpenAI (Responses API), Anthropic,
     Google/Gemini and DeepSeek, plus any OpenAI-compatible
     /chat/completions endpoint (Moonshot/Kimi, OpenRouter, z.ai, local
     servers) via the compat provider. The stdout wire protocol is

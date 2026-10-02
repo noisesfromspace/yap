@@ -20,8 +20,8 @@ import (
 	"boers.email/yap/agent/decision"
 	"boers.email/yap/agent/decision/jev"
 	"boers.email/yap/agent/pricing"
-	"boers.email/yap/agent/providers"
-	"boers.email/yap/agent/providers/goai"
+	"boers.email/yap/agent/llm"
+	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 )
@@ -40,14 +40,14 @@ type Request struct {
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
-func providerToolDefs() []providers.Tool {
+func providerToolDefs() []llm.Tool {
 	all := tools.All()
 	if len(all) == 0 {
 		return nil
 	}
-	defs := make([]providers.Tool, 0, len(all))
+	defs := make([]llm.Tool, 0, len(all))
 	for _, t := range all {
-		defs = append(defs, providers.Tool{
+		defs = append(defs, llm.Tool{
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: json.RawMessage(t.Schema),
@@ -60,7 +60,7 @@ func providerToolDefs() []providers.Tool {
 
 type turn struct {
 	text               string
-	calls              []providers.ToolCall
+	calls              []llm.ToolCall
 	finishReason       string
 	prompt, completion int
 	// Buffer-write state at return, for block spacing in the agent loop.
@@ -68,7 +68,7 @@ type turn struct {
 	outTrail int  // trailing newlines of everything written
 	// The exact assistant message(s) GoAI produced for this step (ordered
 	// parts + provider metadata); appended verbatim to history.
-	responseMessages []providers.Message
+	responseMessages []llm.Message
 }
 
 // lineEscaper buffers streamed text to line granularity so dangerous
@@ -118,8 +118,8 @@ func (l *lineEscaper) Flush() {
 // markers and streams assistant prose live; defers prose for tool-bearing
 // rounds to the caller (which re-writes it after the tool regions — the
 // harness relocates the live-streamed copy).
-func streamStep(ctx context.Context, model providers.LanguageModel, messages []providers.Message, out *bufio.Writer, wrote bool) (*turn, error) {
-	stream, err := model.DoStream(ctx, providers.Params{Messages: messages, Tools: providerToolDefs()})
+func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool) (*turn, error) {
+	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs()})
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func streamStep(ctx context.Context, model providers.LanguageModel, messages []p
 
 	for ev := range stream.Events {
 		switch ev.Type {
-		case providers.EventReasoning:
+		case llm.EventReasoning:
 			if !inThinking {
 				firstWrite()
 				out.WriteString("<!-- yap:thinking\n")
@@ -158,7 +158,7 @@ func streamStep(ctx context.Context, model providers.LanguageModel, messages []p
 				sawThinking = true
 			}
 			esc.WriteString(ev.Text)
-		case providers.EventText:
+		case llm.EventText:
 			if inThinking {
 				closeThinking()
 			}
@@ -279,7 +279,7 @@ func escapeMarkerPrefixes(s string) string {
 // honestly represents execution time. Flushed so the header lands
 // before a long-running tool's result. Blocks carry no leading
 // newlines; the caller pads (one blank line between blocks, R7).
-func emitToolHeader(out *bufio.Writer, call providers.ToolCall) {
+func emitToolHeader(out *bufio.Writer, call llm.ToolCall) {
 	// write/edit carry their full content in the arguments; the header
 	// keeps only the shape — the yap:ui diff shows the change and the
 	// audit log has the full arguments (R12).
@@ -414,8 +414,8 @@ func fenceRun(s string) (byte, int) {
 }
 
 // providerFactory builds a Yap provider for the given configured provider.
-var providerFactory = func(name string, prov Provider) (providers.Provider, error) {
-	return goai.NewProvider(providers.ProviderConfig{
+var providerFactory = func(name string, prov Provider) (llm.Provider, error) {
+	return goai.NewProvider(llm.ProviderConfig{
 		Name:    name,
 		BaseURL: prov.BaseURL,
 		APIKey:  os.Getenv(prov.APIKeyEnv),
@@ -475,27 +475,27 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 	}
 
 	out := bufio.NewWriter(outw)
-	messages := make([]providers.Message, 0, len(req.Messages))
+	messages := make([]llm.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
 			return errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")
 		}
-		var role providers.Role
+		var role llm.Role
 		switch m.Role {
 		case "system":
-			role = providers.RoleSystem
+			role = llm.RoleSystem
 		case "user":
-			role = providers.RoleUser
+			role = llm.RoleUser
 		case "assistant":
-			role = providers.RoleAssistant
+			role = llm.RoleAssistant
 		default:
 			return fmt.Errorf("unsupported message role %q", m.Role)
 		}
-		var content []providers.Part
+		var content []llm.Part
 		if m.Content != "" {
-			content = append(content, providers.Part{Type: providers.PartText, Text: m.Content})
+			content = append(content, llm.Part{Type: llm.PartText, Text: m.Content})
 		}
-		messages = append(messages, providers.Message{Role: role, Content: content})
+		messages = append(messages, llm.Message{Role: role, Content: content})
 	}
 	modelImpl := p.Model(model)
 	var totPrompt, totCompletion int
@@ -576,10 +576,10 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			}
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
-			messages = append(messages, providers.Message{
-				Role: providers.RoleTool,
-				Content: []providers.Part{{
-					Type:       providers.PartToolResult,
+			messages = append(messages, llm.Message{
+				Role: llm.RoleTool,
+				Content: []llm.Part{{
+					Type:       llm.PartToolResult,
 					ToolCallID: call.ID,
 					ToolName:   call.Name,
 					ToolOutput: result,

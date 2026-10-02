@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"boers.email/yap/agent/providers"
+	"boers.email/yap/agent/llm"
 )
 
 func TestMarshalCommentJSON(t *testing.T) {
@@ -59,7 +59,7 @@ func TestMarshalCommentJSONStyleTag(t *testing.T) {
 func TestEmitToolHeaderNoHTMLEscaping(t *testing.T) {
 	var buf bytes.Buffer
 	out := bufio.NewWriter(&buf)
-	emitToolHeader(out, providers.ToolCall{
+	emitToolHeader(out, llm.ToolCall{
 		ID:    "c1",
 		Name:  "bash",
 		Input: json.RawMessage(`{"command":"grep x | awk 'NR>=57 && NR<=152' ; echo '-->'"}`),
