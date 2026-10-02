@@ -58,6 +58,9 @@ assert(full:match("described%."), "answer request missing assistant answer: " ..
 
 -- The description made it into the frontmatter and winbar.
 local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
-assert(table.concat(lines, "\n"):match("description: described%."), "description not written to frontmatter: " .. table.concat(lines, "\n"))
+assert(
+  table.concat(lines, "\n"):match("description: described%."),
+  "description not written to frontmatter: " .. table.concat(lines, "\n")
+)
 
 print("OK describe")

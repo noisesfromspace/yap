@@ -25,14 +25,18 @@ end
 --- it is sampled). Returns the number of samples taken.
 local function watch(buf, sample)
   local n, timer = 0, vim.uv.new_timer()
-  timer:start(0, 50, vim.schedule_wrap(function()
-    if vim.b[buf].yap_usage then
-      timer:stop()
-      return
-    end
-    n = n + 1
-    sample(n)
-  end))
+  timer:start(
+    0,
+    50,
+    vim.schedule_wrap(function()
+      if vim.b[buf].yap_usage then
+        timer:stop()
+        return
+      end
+      n = n + 1
+      sample(n)
+    end)
+  )
   vim.wait(20000, function()
     return vim.b[buf].yap_usage ~= nil
   end, 50)
@@ -58,18 +62,25 @@ do
     local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
     local last = last_line(buf)
-    assert(cur[1] == count and cur[2] == 0,
-      ("sample %d: cursor=%d,%d but stream end is %d:%q"):format(i, cur[1], cur[2], count, last))
+    assert(
+      cur[1] == count and cur[2] == 0,
+      ("sample %d: cursor=%d,%d but stream end is %d:%q"):format(i, cur[1], cur[2], count, last)
+    )
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
   assert(vim.fn.winsaveview().topline > base, "the window never scrolled to follow the end")
-  assert(vim.wait(2000, function()
-    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
-    return lines[1] == "# @user" and lines[2] == ""
-  end, 20), "turn did not finish")
+  assert(
+    vim.wait(2000, function()
+      local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+      return lines[1] == "# @user" and lines[2] == ""
+    end, 20),
+    "turn did not finish"
+  )
   local done = vim.api.nvim_win_get_cursor(0)
-  assert(done[1] == vim.api.nvim_buf_line_count(buf) and done[2] == 0,
-    "tail follower did not land on the input line below # @user")
+  assert(
+    done[1] == vim.api.nvim_buf_line_count(buf) and done[2] == 0,
+    "tail follower did not land on the input line below # @user"
+  )
   print(("follow: cursor stayed on the real tail and landed on input after %d samples"):format(n))
 end
 
@@ -79,11 +90,21 @@ do
   conversation(buf, 200)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
   yap.send()
-  assert(vim.wait(20000, function() return vim.api.nvim_buf_line_count(buf) > 208 end, 20), "stream did not start")
+  assert(
+    vim.wait(20000, function()
+      return vim.api.nvim_buf_line_count(buf) > 208
+    end, 20),
+    "stream did not start"
+  )
   vim.cmd("normal! k")
   local row0 = vim.api.nvim_win_get_cursor(0)[1]
   local count0 = vim.api.nvim_buf_line_count(buf)
-  assert(vim.wait(3000, function() return vim.api.nvim_buf_line_count(buf) > count0 end, 20), "stream did not advance")
+  assert(
+    vim.wait(3000, function()
+      return vim.api.nvim_buf_line_count(buf) > count0
+    end, 20),
+    "stream did not advance"
+  )
   assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
 end
 
@@ -100,18 +121,26 @@ do
   local n = watch(buf, function(i)
     local cur, view = vim.api.nvim_win_get_cursor(0), vim.fn.winsaveview()
     if cur[1] ~= row0 or view.topline ~= top0 then
-      drift[#drift + 1] = ("sample %d: cursor=%d (want %d), topline=%d (want %d)"):format(i, cur[1], row0, view.topline, top0)
+      drift[#drift + 1] = ("sample %d: cursor=%d (want %d), topline=%d (want %d)"):format(
+        i,
+        cur[1],
+        row0,
+        view.topline,
+        top0
+      )
     end
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
   assert(#drift == 0, "the view moved for a window scrolled away:\n  " .. table.concat(drift, "\n  "))
-  assert(vim.wait(2000, function()
-    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
-    return lines[1] == "# @user" and lines[2] == ""
-  end, 20), "turn did not finish")
+  assert(
+    vim.wait(2000, function()
+      local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+      return lines[1] == "# @user" and lines[2] == ""
+    end, 20),
+    "turn did not finish"
+  )
   local cur, view = vim.api.nvim_win_get_cursor(0), vim.fn.winsaveview()
-  assert(cur[1] == row0 and view.topline == top0,
-    "completion moved a window that did not start at the tail")
+  assert(cur[1] == row0 and view.topline == top0, "completion moved a window that did not start at the tail")
   print(("no-follow: cursor and view untouched through completion over %d samples"):format(n))
 end
 
@@ -123,21 +152,33 @@ do
   vim.cmd("normal! zt")
 
   yap.send()
-  assert(vim.wait(20000, function() return vim.api.nvim_buf_line_count(buf) > 208 end, 20), "stream did not start")
+  assert(
+    vim.wait(20000, function()
+      return vim.api.nvim_buf_line_count(buf) > 208
+    end, 20),
+    "stream did not start"
+  )
   vim.cmd("normal! G") -- join the tail after the send; must be adopted
   local n = watch(buf, function(i)
     local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
-    assert(cur[1] == count and cur[2] == 0,
-      ("sample %d: cursor=%d,%d but stream end is %d"):format(i, cur[1], cur[2], count))
+    assert(
+      cur[1] == count and cur[2] == 0,
+      ("sample %d: cursor=%d,%d but stream end is %d"):format(i, cur[1], cur[2], count)
+    )
   end)
   assert(n >= 5, "sampler barely ran (" .. n .. " samples)")
-  assert(vim.wait(2000, function()
-    local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
-    return lines[1] == "# @user" and lines[2] == ""
-  end, 20), "turn did not finish")
-  assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf),
-    "G-joiner did not stay pinned through the thinking block")
+  assert(
+    vim.wait(2000, function()
+      local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+      return lines[1] == "# @user" and lines[2] == ""
+    end, 20),
+    "turn did not finish"
+  )
+  assert(
+    vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf),
+    "G-joiner did not stay pinned through the thinking block"
+  )
   print(("follow: G-joiner stayed pinned through the thinking block over %d samples"):format(n))
 end
 

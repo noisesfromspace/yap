@@ -9,10 +9,20 @@ local session = require("harness.session")
 -- 1. new buffer with a fake conversation
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @system", "", "You are helpful.", "",
-  "# @user", "", "What is the airspeed velocity of an unladen swallow?", "",
-  "# @assistant", "", "African or European?", "",
-  "# @user", "",
+  "# @system",
+  "",
+  "You are helpful.",
+  "",
+  "# @user",
+  "",
+  "What is the airspeed velocity of an unladen swallow?",
+  "",
+  "# @assistant",
+  "",
+  "African or European?",
+  "",
+  "# @user",
+  "",
 })
 
 -- 2. save -> file created

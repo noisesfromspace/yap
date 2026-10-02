@@ -41,8 +41,7 @@ assert(ok2, "second send did not complete")
 vim.wait(300)
 
 local slug = vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-")
-local want = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/"
-  .. vim.fn.fnamemodify(new, ":t:r") .. ".jsonl"
+local want = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/" .. vim.fn.fnamemodify(new, ":t:r") .. ".jsonl"
 assert(vim.fn.filereadable(old_audit) == 0, "old audit log still exists: " .. old_audit)
 assert(vim.fn.filereadable(want) == 1, "renamed audit log missing: " .. want)
 

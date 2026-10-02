@@ -17,12 +17,25 @@ end
 -- 1. `dat` removes a whole thinking block (markers included).
 do
   local buf = fresh({
-    "# @system", "", "You are helpful.", "",
-    "# @user", "", "Question one.", "",
-    "# @assistant", "",
-    "<!-- yap:thinking", "some reasoning", "more reasoning", "-->",
-    "", "The answer.", "",
-    "# @user", "",
+    "# @system",
+    "",
+    "You are helpful.",
+    "",
+    "# @user",
+    "",
+    "Question one.",
+    "",
+    "# @assistant",
+    "",
+    "<!-- yap:thinking",
+    "some reasoning",
+    "more reasoning",
+    "-->",
+    "",
+    "The answer.",
+    "",
+    "# @user",
+    "",
   })
   at(buf, 12, 4) -- inside the thinking content
   vim.cmd.normal("dat")
@@ -36,10 +49,19 @@ end
 -- 2. `dit` clears thinking content but keeps the markers.
 do
   local buf = fresh({
-    "# @user", "", "Question one.", "",
-    "# @assistant", "",
-    "<!-- yap:thinking", "some reasoning", "more reasoning", "-->",
-    "", "The answer.", "",
+    "# @user",
+    "",
+    "Question one.",
+    "",
+    "# @assistant",
+    "",
+    "<!-- yap:thinking",
+    "some reasoning",
+    "more reasoning",
+    "-->",
+    "",
+    "The answer.",
+    "",
   })
   at(buf, 7, 4)
   vim.cmd.normal("dit")
@@ -52,10 +74,20 @@ end
 -- 3. `cim` replaces a message body, keeping the `# @user` heading.
 do
   local buf = fresh({
-    "# @system", "", "You are helpful.", "",
-    "# @user", "", "Question one.", "",
-    "# @assistant", "", "The answer.", "",
-    "# @user", "",
+    "# @system",
+    "",
+    "You are helpful.",
+    "",
+    "# @user",
+    "",
+    "Question one.",
+    "",
+    "# @assistant",
+    "",
+    "The answer.",
+    "",
+    "# @user",
+    "",
   })
   at(buf, 7, 3) -- on "Question one."
   vim.api.nvim_feedkeys("cim", "x", false)
@@ -69,9 +101,18 @@ end
 -- 4. `dam` removes a whole message (heading + content + separator).
 do
   local buf = fresh({
-    "# @system", "", "You are helpful.", "",
-    "# @user", "", "Question one.", "",
-    "# @assistant", "", "The answer.", "",
+    "# @system",
+    "",
+    "You are helpful.",
+    "",
+    "# @user",
+    "",
+    "Question one.",
+    "",
+    "# @assistant",
+    "",
+    "The answer.",
+    "",
   })
   at(buf, 3, 2) -- inside the system message body
   vim.cmd.normal("dam")

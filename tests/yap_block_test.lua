@@ -9,10 +9,12 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "Test" })
 yap.send()
 -- IMMEDIATELY after send (stream still running): blank before # @assistant
 local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-for i, l in ipairs(lines) do print(i, vim.inspect(l)) end
+for i, l in ipairs(lines) do
+  print(i, vim.inspect(l))
+end
 for i = 2, #lines do
   if lines[i]:match("^# @%a+") then
-    assert(lines[i-1] == "" and lines[i-2] ~= "", "no blank before heading at line " .. i)
+    assert(lines[i - 1] == "" and lines[i - 2] ~= "", "no blank before heading at line " .. i)
   end
 end
 -- wait for completion and check the whole buffer obeys R7
@@ -25,7 +27,7 @@ lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 assert(lines[#lines] == "", "no typing line at end")
 for i = 2, #lines do
   if lines[i]:match("^# @%a+") then
-    assert(lines[i-1] == "" and lines[i-2] ~= "", "blank violation at line " .. i)
+    assert(lines[i - 1] == "" and lines[i - 2] ~= "", "blank violation at line " .. i)
   end
 end
 print("OK")

@@ -7,10 +7,7 @@ local chat_win = vim.api.nvim_get_current_win()
 -- :YapLive opens the tail even before any tool has run (empty, fills
 -- later as tools execute)
 yap.live()
-assert(
-  vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"),
-  "live did not open the tail buffer"
-)
+assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"), "live did not open the tail buffer")
 assert(vim.api.nvim_buf_line_count(0) == 1, "fresh tail should have a single empty line")
 local tail = vim.api.nvim_get_current_buf()
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "tail has no buffer-local live toggle")

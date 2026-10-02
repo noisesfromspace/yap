@@ -4,20 +4,32 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local src = vim.fn.tempname() .. ".md"
 vim.fn.writefile({
-  "# @system", "", "You are helpful.", "",
-  "# @user", "", "Question one.", "",
-  "# @assistant", "", "Answer one.", "",
-  "# @user", "",
+  "# @system",
+  "",
+  "You are helpful.",
+  "",
+  "# @user",
+  "",
+  "Question one.",
+  "",
+  "# @assistant",
+  "",
+  "Answer one.",
+  "",
+  "# @user",
+  "",
 }, src)
 local buf = yap.open(src)
 local fold = require("harness.fold")
 fold.set_view_level(1) -- fold all agent output for this test
-local function heading( role, n)
+local function heading(role, n)
   n = n or 1
   for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if l == "# @" .. role then
       n = n - 1
-      if n == 0 then return i end
+      if n == 0 then
+        return i
+      end
     end
   end
 end

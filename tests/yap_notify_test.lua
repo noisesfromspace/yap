@@ -19,7 +19,9 @@ vim.api.nvim_create_autocmd("User", {
 
 local orig_notify = vim.notify
 local notified = {}
-vim.notify = function(msg, level, opts) notified[#notified + 1] = { msg = msg, level = level, opts = opts } end
+vim.notify = function(msg, level, opts)
+  notified[#notified + 1] = { msg = msg, level = level, opts = opts }
+end
 
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
@@ -30,7 +32,9 @@ assert(yap.winbar(buf):match("idle"), "fresh chat should be idle: " .. yap.winba
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hi" })
 yap.send()
 
-local ok = vim.wait(10000, function() return fired end, 50)
+local ok = vim.wait(10000, function()
+  return fired
+end, 50)
 assert(ok, "YapTurnDone did not fire")
 assert(event_buf == buf, "event buf mismatch: " .. tostring(event_buf))
 assert(type(turn) == "table" and turn.model == "m1", "turn payload missing: " .. vim.inspect(turn))
@@ -69,7 +73,9 @@ assert(tails_unlisted, "tail buffers should be unlisted")
 vim.notify = orig_notify
 vim.cmd("enew")
 local notified2 = {}
-vim.notify = function(msg, level, opts) notified2[#notified2 + 1] = { msg = msg, level = level } end
+vim.notify = function(msg, level, opts)
+  notified2[#notified2 + 1] = { msg = msg, level = level }
+end
 vim.api.nvim_exec_autocmds("User", {
   pattern = "YapTurnDone",
   modeline = false,
@@ -106,14 +112,20 @@ table.insert(first_lines, 4, "description: Finished mock turn")
 table.insert(first_lines, 5, "---")
 table.insert(first_lines, 6, "")
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, first_lines)
-vim.ui.select = function(list, opts) items = list end
+vim.ui.select = function(list, opts)
+  items = list
+end
 yap.instances()
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected two sessions, got " .. vim.inspect(items))
 local labels = {}
-for _, it in ipairs(items) do labels[it.text] = true end
+for _, it in ipairs(items) do
+  labels[it.text] = true
+end
 assert(labels["/opt/code/yap  Finished mock turn"], "cwd/description missing from picker: " .. vim.inspect(items))
 local has_filename = false
-for label in pairs(labels) do has_filename = has_filename or label:match("^/opt/code/yap  .*%.md$") ~= nil end
+for label in pairs(labels) do
+  has_filename = has_filename or label:match("^/opt/code/yap  .*%.md$") ~= nil
+end
 assert(has_filename, "cwd/filename fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

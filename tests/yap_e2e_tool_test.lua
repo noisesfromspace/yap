@@ -17,7 +17,9 @@ local done = vim.wait(8000, function()
   local u = vim.b[buf].yap_usage
   return t:match("directory listing is shown above") ~= nil and u and u.prompt == 250
 end, 100)
-for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do print(i, vim.inspect(l)) end
+for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  print(i, vim.inspect(l))
+end
 assert(done, "tool turn did not complete")
 local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(text:match("<!%-%- yap:tool %{"), "no tool block in buffer")

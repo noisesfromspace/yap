@@ -3,13 +3,20 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @user", "", "What is the answer?", "",
-  "# @assistant", "",
+  "# @user",
+  "",
+  "What is the answer?",
+  "",
+  "# @assistant",
+  "",
   "<!-- yap:thinking",
   "Let me think about this.",
-  "-->", "",
-  "The answer is 42.", "",
-  "# @user", "",
+  "-->",
+  "",
+  "The answer is 42.",
+  "",
+  "# @user",
+  "",
 })
 local msgs = yap.parse_buffer(buf)
 assert(#msgs == 2, "expected 2 messages, got " .. #msgs)

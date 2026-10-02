@@ -32,11 +32,24 @@ do
     end
   end
   vim.api.nvim_buf_set_lines(buf, ui - 1, -1, false, {
-    "# @user", "", "original question", "",
-    "# @assistant", "", "original answer", "",
-    "# @user", "", "Summarize everything.", "",
-    "# @assistant", "", "The summary.", "",
-    "# @user", "",
+    "# @user",
+    "",
+    "original question",
+    "",
+    "# @assistant",
+    "",
+    "original answer",
+    "",
+    "# @user",
+    "",
+    "Summarize everything.",
+    "",
+    "# @assistant",
+    "",
+    "The summary.",
+    "",
+    "# @user",
+    "",
   })
   yap.compact_delete(buf)
   local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
@@ -48,16 +61,25 @@ do
     local lines = vim.split(text, "\n", { plain = true })
     local sys, next_head
     for i, l in ipairs(lines) do
-      if l:match("^# @system%s*$") then sys = i break end
+      if l:match("^# @system%s*$") then
+        sys = i
+        break
+      end
     end
     if sys then
       for j = sys + 1, #lines do
-        if lines[j]:match("^# @%a+%s*$") then next_head = j - 1 break end
+        if lines[j]:match("^# @%a+%s*$") then
+          next_head = j - 1
+          break
+        end
       end
       next_head = next_head or #lines
       local nonempty = false
       for k = sys + 1, next_head do
-        if lines[k] and not lines[k]:match("^%s*$") then nonempty = true break end
+        if lines[k] and not lines[k]:match("^%s*$") then
+          nonempty = true
+          break
+        end
       end
       assert(nonempty, "system content lost: " .. text)
     else
@@ -87,8 +109,14 @@ do
     end
   end
   vim.api.nvim_buf_set_lines(buf, ui - 1, -1, false, {
-    "# @user", "", "original question", "",
-    "# @assistant", "", "original answer", "",
+    "# @user",
+    "",
+    "original question",
+    "",
+    "# @assistant",
+    "",
+    "original answer",
+    "",
   })
 
   local offered

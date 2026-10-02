@@ -210,10 +210,14 @@ end
 --- the right-hand usage/state chips.
 local function winbar_description(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
-  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then return nil end
+  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
+    return nil
+  end
   local fm = frontmatter.parse(lines)
   local d = fm and fm.description
-  if not d or d == "" then return nil end
+  if not d or d == "" then
+    return nil
+  end
   if vim.fn.strdisplaywidth(d) > 40 then
     local chars = math.min(vim.fn.strchars(d), 39)
     d = vim.fn.strcharpart(d, 0, chars)
@@ -304,14 +308,18 @@ local function spinner_start()
     return
   end
   spinner_timer = vim.uv.new_timer()
-  spinner_timer:start(0, 100, vim.schedule_wrap(function()
-    spinner_tick = spinner_tick + 1
-    for b in pairs(running) do
-      drain_tail(b) -- pull new tool output into the tail buffers
-    end
-    vim.cmd.redrawstatus() -- re-evaluates the winbar expression
-    spinner_stop_if_idle()
-  end))
+  spinner_timer:start(
+    0,
+    100,
+    vim.schedule_wrap(function()
+      spinner_tick = spinner_tick + 1
+      for b in pairs(running) do
+        drain_tail(b) -- pull new tool output into the tail buffers
+      end
+      vim.cmd.redrawstatus() -- re-evaluates the winbar expression
+      spinner_stop_if_idle()
+    end)
+  )
 end
 
 local function define_winbar_hl()
@@ -357,10 +365,18 @@ local function consume_usage(buf)
   end
 end
 
-function M.parse_buffer(buf) return document.parse_buffer(buf) end
-function M.insert(name, opts) return require("harness.template").insert(name, opts) end
-function M.template_names() return require("harness.template").template_names() end
-function M.is_running(buf) return stream.is_running(buf) end
+function M.parse_buffer(buf)
+  return document.parse_buffer(buf)
+end
+function M.insert(name, opts)
+  return require("harness.template").insert(name, opts)
+end
+function M.template_names()
+  return require("harness.template").template_names()
+end
+function M.is_running(buf)
+  return stream.is_running(buf)
+end
 
 -- ─── Send ──────────────────────────────────────────────────────────────────
 
@@ -474,7 +490,14 @@ local function render_event(ev)
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
-      ts, ev.model or "?", ev.prompt or 0, ev.completion or 0, cost, (ev.ms or 0) / 1000), "block"
+      ts,
+      ev.model or "?",
+      ev.prompt or 0,
+      ev.completion or 0,
+      cost,
+      (ev.ms or 0) / 1000
+    ),
+      "block"
   end
 end
 
@@ -597,7 +620,7 @@ end
 local function find_last_assistant_heading(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i = #lines, 1, -1 do
-    if lines[i]:match('^# @assistant%s*$') then
+    if lines[i]:match("^# @assistant%s*$") then
       return i -- 1-based
     end
   end
@@ -607,20 +630,28 @@ local function cut_pretool_prose(buf)
   -- Relocate already-streamed same-round prose to after the last tool
   -- result: keep smooth streaming and preserve header/result-before-prose.
   local r = get_reorder(buf)
-  if not r.assistant then return end
+  if not r.assistant then
+    return
+  end
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local from = r.assistant + 1
-  if from > #lines then return end
+  if from > #lines then
+    return
+  end
   local header_at
   for i = from, #lines do
-    if lines[i]:match('^<!%-%- yap:tool') then
+    if lines[i]:match("^<!%-%- yap:tool") then
       header_at = i
       break
     end
   end
-  if not header_at or header_at <= from then return end
+  if not header_at or header_at <= from then
+    return
+  end
   local prose = vim.list_slice(lines, from, header_at - 1)
-  if #prose == 0 then return end
+  if #prose == 0 then
+    return
+  end
   -- Delete the prose from the buffer and stash it.
   vim.api.nvim_buf_set_lines(buf, from - 1, header_at - 1, false, {})
   local r2 = get_reorder(buf)
@@ -630,24 +661,32 @@ end
 
 local function reinsert_stash_after_last_tool(buf)
   local r = get_reorder(buf)
-  if not r.pending or #r.stash == 0 then return end
+  if not r.pending or #r.stash == 0 then
+    return
+  end
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local last_close
   for i = #lines, 1, -1 do
-    if lines[i]:match('^<!%-%- /yap:tool') then
+    if lines[i]:match("^<!%-%- /yap:tool") then
       last_close = i
       break
     end
   end
-  if not last_close then return end
+  if not last_close then
+    return
+  end
   -- Ensure exactly one blank between the tool region and the prose we insert.
   local insert_at = last_close + 1
   local extra = {}
-  if lines[insert_at] ~= '' then
-    table.insert(extra, '')
+  if lines[insert_at] ~= "" then
+    table.insert(extra, "")
   end
-  for _, l in ipairs(r.stash) do table.insert(extra, l) end
-  if extra[#extra] ~= '' then table.insert(extra, '') end
+  for _, l in ipairs(r.stash) do
+    table.insert(extra, l)
+  end
+  if extra[#extra] ~= "" then
+    table.insert(extra, "")
+  end
   vim.api.nvim_buf_set_lines(buf, insert_at, insert_at, false, extra)
   r.stash = {}
   r.pending = false
@@ -681,7 +720,9 @@ local function handle_event(buf, json_line)
         local items = {}
         for _, entry in ipairs(a.entries) do
           table.insert(items, {
-            filename = entry.file, lnum = entry.line, col = entry.column or 0,
+            filename = entry.file,
+            lnum = entry.line,
+            col = entry.column or 0,
             text = entry.text,
           })
         end
@@ -780,10 +821,7 @@ function M.clear(buf, keep)
     end
     if body_start then
       local j = body_start
-      while j <= #lines
-        and not lines[j]:match("^<!%-%- yap:ui")
-        and not lines[j]:match("^<!%-%- /yap:tool")
-      do
+      while j <= #lines and not lines[j]:match("^<!%-%- yap:ui") and not lines[j]:match("^<!%-%- /yap:tool") do
         j = j + 1
       end
       table.insert(regions, { body_start, j - 1, header = header })
@@ -825,7 +863,9 @@ end
 --- R18). Returns trimmed body lines, never a leading # @role heading.
 local function compact_prompt_lines()
   local lines = require("harness.template").named_lines("compact")
-  if lines then return lines end
+  if lines then
+    return lines
+  end
   return vim.split(
     "Summarize the conversation above into a compact markdown summary that\n"
       .. "preserves all facts, decisions, open todos, and current file state.\n"
@@ -1017,48 +1057,78 @@ local function refresh_description(buf, kind, messages)
   local combo, system, content
   if kind == "user" then
     combo = M.config.description_model
-    system = "Summarize the user's request in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper."
+    system =
+      "Summarize the user's request in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper."
     for i = #messages, 1, -1 do
       if messages[i].role == "user" then
         content = messages[i].content
         break
       end
     end
-    if not content or content == "" then return end
+    if not content or content == "" then
+      return
+    end
   else
     combo = M.config.description_answer_model
-    system = "Summarize this chat session in one short phrase (maximum 12 words) centered on the overall goal, with the most recent topics as context. Return only the phrase, no punctuation wrapper."
+    system =
+      "Summarize this chat session in one short phrase (maximum 12 words) centered on the overall goal, when relevant, recent topics as context. Don't mention things like 'user requested commit' or 'not working', but the direction of prompts at the end, this is more relevant for big sessions. Return only the phrase, no punctuation wrapper."
     content = vim.json.encode(document.parse_buffer(buf))
   end
-  if not combo or combo == "" then return end
+  if not combo or combo == "" then
+    return
+  end
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
-  if not provider then return end
+  if not provider then
+    return
+  end
   local seq = (description_seq[buf] or 0) + 1
   description_seq[buf] = seq
-  local payload = vim.json.encode({ messages = {
-    { role = "system", content = system },
-    { role = "user", content = content },
-  } })
-  vim.system({ M.config.bin, "send", "--provider", provider, "--model", model }, { stdin = payload, text = true }, vim.schedule_wrap(function(result)
-    if not vim.api.nvim_buf_is_valid(buf) or description_seq[buf] ~= seq then return end
-    if result.code ~= 0 then return end
-    local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if description == "" then return end
-    local e = frontmatter_end(buf)
-    if not e then return end
-    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
-    if not fm then return end
-    local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description)
-    vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
-    require("harness.session").save(buf)
-  end))
+  local payload = vim.json.encode({
+    messages = {
+      { role = "system", content = system },
+      { role = "user", content = content },
+    },
+  })
+  vim.system(
+    { M.config.bin, "send", "--provider", provider, "--model", model },
+    { stdin = payload, text = true },
+    vim.schedule_wrap(function(result)
+      if not vim.api.nvim_buf_is_valid(buf) or description_seq[buf] ~= seq then
+        return
+      end
+      if result.code ~= 0 then
+        return
+      end
+      local description = (result.stdout or "")
+        :gsub("<!%-%-.-%-%->", "")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+      if description == "" then
+        return
+      end
+      local e = frontmatter_end(buf)
+      if not e then
+        return
+      end
+      local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+      if not fm then
+        return
+      end
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description)
+      vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+      require("harness.session").save(buf)
+    end)
+  )
 end
 
 local function maybe_refresh_description(buf)
   local turns = (vim.b[buf].yap_description_turns or 0) + 1
   vim.b[buf].yap_description_turns = turns
   local every = math.max(1, tonumber(M.config.description_refresh_turns) or 5)
-  if turns == 1 or turns % every == 0 then refresh_description(buf, "answer") end
+  if turns == 1 or turns % every == 0 then
+    refresh_description(buf, "answer")
+  end
 end
 
 --- Every stream exit, including errors and :YapStop, hands the buffer back
@@ -1131,103 +1201,108 @@ function M.send()
   local stderr_chunks = {}
   local stderr_partial = "" -- event lines can split across chunks
 
-  local ok, handle = pcall(vim.system, { M.config.bin, "send", "--provider", provider, "--model", model }, {
-    stdin = payload,
-    text = true,
-    stdout = vim.schedule_wrap(function(_, data)
-      if data then
-        -- Stream assistant prose immediately. If this round later opens one or
-        -- more tool regions, handle_event() will cut any already-streamed
-        -- pre-tool prose from this assistant block and reinsert it after the
-        -- final tool region to preserve header/result-before-prose ordering.
-        sync_followers()
-        document.append_text(buf, data)
-        follow_tail()
+  local ok, handle = pcall(
+    vim.system,
+    { M.config.bin, "send", "--provider", provider, "--model", model },
+    {
+      stdin = payload,
+      text = true,
+      stdout = vim.schedule_wrap(function(_, data)
+        if data then
+          -- Stream assistant prose immediately. If this round later opens one or
+          -- more tool regions, handle_event() will cut any already-streamed
+          -- pre-tool prose from this assistant block and reinsert it after the
+          -- final tool region to preserve header/result-before-prose ordering.
+          sync_followers()
+          document.append_text(buf, data)
+          follow_tail()
+        end
+      end),
+      stderr = vim.schedule_wrap(function(_, data)
+        if not data then
+          return
+        end
+        -- stderr mixes error text with `yap:event {json}` lines (tool
+        -- progress); route complete lines, keep the rest for errors.
+        stderr_partial = stderr_partial .. data
+        while true do
+          local i = stderr_partial:find("\n", 1, true)
+          if not i then
+            break
+          end
+          local line = stderr_partial:sub(1, i - 1)
+          stderr_partial = stderr_partial:sub(i + 1)
+          local ev = line:match("^yap:event (.+)$")
+          if ev then
+            sync_followers()
+            handle_event(buf, ev)
+            follow_tail()
+          else
+            table.insert(stderr_chunks, line)
+          end
+        end
+      end),
+    },
+    vim.schedule_wrap(function(result)
+      sync_followers()
+      running[buf] = nil
+      local compact = vim.b[buf].yap_compact_pending
+      vim.b[buf].yap_compact_pending = nil
+      local l = live[buf]
+      drain_tail(buf) -- final bytes; a killed tool never sent tool_end
+      if l then
+        live[buf] = nil
+        pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
-    end),
-    stderr = vim.schedule_wrap(function(_, data)
-      if not data then
+      spinner_stop_if_idle()
+      repair_stream_tail(buf)
+      if stderr_partial ~= "" then
+        table.insert(stderr_chunks, stderr_partial)
+      end
+      if result.code ~= 0 then
+        local err = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
+        report_error(buf, err ~= "" and err or ("exit " .. result.code))
+        close_stream(buf)
+        follow_tail()
         return
       end
-      -- stderr mixes error text with `yap:event {json}` lines (tool
-      -- progress); route complete lines, keep the rest for errors.
-      stderr_partial = stderr_partial .. data
-      while true do
-        local i = stderr_partial:find("\n", 1, true)
-        if not i then
-          break
-        end
-        local line = stderr_partial:sub(1, i - 1)
-        stderr_partial = stderr_partial:sub(i + 1)
-        local ev = line:match("^yap:event (.+)$")
-        if ev then
-          sync_followers()
-          handle_event(buf, ev)
-          follow_tail()
-        else
-          table.insert(stderr_chunks, line)
+      consume_usage(buf)
+      -- The binary can complete "successfully" with an embedded error
+      -- marker (e.g. empty completion, max tool iterations): surface it.
+      do
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        for i = #lines, 1, -1 do
+          local l = lines[i]
+          if l:match("^# @%a+") then
+            break
+          end
+          local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
+          if err then
+            errors[buf] = err
+            vim.notify("yap: " .. err, vim.log.levels.WARN)
+            break
+          end
         end
       end
-    end),
-  }, vim.schedule_wrap(function(result)
-    sync_followers()
-    running[buf] = nil
-    local compact = vim.b[buf].yap_compact_pending
-    vim.b[buf].yap_compact_pending = nil
-    local l = live[buf]
-    drain_tail(buf) -- final bytes; a killed tool never sent tool_end
-    if l then
-      live[buf] = nil
-      pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
-    end
-    spinner_stop_if_idle()
-    repair_stream_tail(buf)
-    if stderr_partial ~= "" then
-      table.insert(stderr_chunks, stderr_partial)
-    end
-    if result.code ~= 0 then
-      local err = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
-      report_error(buf, err ~= "" and err or ("exit " .. result.code))
-      close_stream(buf)
+      document.append_block(buf, { "# @user", "" })
       follow_tail()
-      return
-    end
-    consume_usage(buf)
-    -- The binary can complete "successfully" with an embedded error
-    -- marker (e.g. empty completion, max tool iterations): surface it.
-    do
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      for i = #lines, 1, -1 do
-        local l = lines[i]
-        if l:match("^# @%a+") then
-          break
-        end
-        local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
-        if err then
-          errors[buf] = err
-          vim.notify("yap: " .. err, vim.log.levels.WARN)
-          break
-        end
+      awaiting[buf] = true
+      require("harness.session").save(buf)
+      maybe_refresh_description(buf)
+      audit_follow(buf) -- first save named the session; rename the log to match
+      -- A completed turn is a first-class event (herdr's "working → blocked
+      -- → idle" notification). Fire it once the buffer is in its final state
+      -- so handlers see the appended `# @user` and the saved session.
+      vim.api.nvim_exec_autocmds("User", {
+        pattern = "YapTurnDone",
+        modeline = false,
+        data = { buf = buf, turn = last_turn[buf] },
+      })
+      if compact then
+        M.compact_offer(buf)
       end
-    end
-    document.append_block(buf, { "# @user", "" })
-    follow_tail()
-    awaiting[buf] = true
-    require("harness.session").save(buf)
-    maybe_refresh_description(buf)
-    audit_follow(buf) -- first save named the session; rename the log to match
-    -- A completed turn is a first-class event (herdr's "working → blocked
-    -- → idle" notification). Fire it once the buffer is in its final state
-    -- so handlers see the appended `# @user` and the saved session.
-    vim.api.nvim_exec_autocmds("User", {
-      pattern = "YapTurnDone",
-      modeline = false,
-      data = { buf = buf, turn = last_turn[buf] },
-    })
-    if compact then
-      M.compact_offer(buf)
-    end
-  end))
+    end)
+  )
 
   if not ok then
     spinner_stop_if_idle()

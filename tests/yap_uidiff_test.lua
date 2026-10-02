@@ -4,8 +4,12 @@ local yap = require("harness")
 local fold = require("harness.fold")
 local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @user", "", "write it", "",
-  "# @assistant", "",
+  "# @user",
+  "",
+  "write it",
+  "",
+  "# @assistant",
+  "",
   '<!-- yap:tool {"id":"w1","name":"write","arguments":{"path":"/tmp/x.md","content":"[2 lines]"}} -->',
   "Successfully wrote 2 bytes to /tmp/x.md",
   "<!-- yap:ui -->",
@@ -19,13 +23,17 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "<!-- /yap:ui -->",
   "<!-- /yap:tool -->",
   "",
-  "File written.", "",
-  "# @user", "",
+  "File written.",
+  "",
+  "# @user",
+  "",
 })
 -- parse: the paired ui diff is excluded from the flattened tool region
 local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "assistant" then asst = m end
+  if m.role == "assistant" then
+    asst = m
+  end
 end
 assert(asst, "no assistant message")
 assert(asst.content:match("Successfully wrote"), "result missing: " .. tostring(asst.content))
@@ -34,7 +42,9 @@ assert(not asst.content:match("yap:ui") and not asst.content:match("%+a"), "ui l
 -- folds: the paired ui region is part of the one level-3 tool fold
 fold.setup_buffer(buf)
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
-local function lvl(l) return vim.fn.foldlevel(l) end
+local function lvl(l)
+  return vim.fn.foldlevel(l)
+end
 assert(lvl(7) == 3, "opener level: " .. lvl(7))
 assert(lvl(9) == 3, "ui marker level: " .. lvl(9))
 assert(lvl(10) == 3, "fence level: " .. lvl(10))

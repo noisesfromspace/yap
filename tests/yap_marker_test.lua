@@ -3,14 +3,15 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @assistant", "",
+  "# @assistant",
+  "",
   "<!-- yap:thinking",
   "reasoning line",
   "-- >", -- escaped bare arrow: stays inside the marker
   "more reasoning",
   "-->",
   "",
-  "<!-- yap:tool {\"id\":\"c1\",\"name\":\"bash\",\"arguments\":{\"command\":\"x\"}} -->",
+  '<!-- yap:tool {"id":"c1","name":"bash","arguments":{"command":"x"}} -->',
   "result",
   "<!-- yap:ui",
   " context",
@@ -20,12 +21,16 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "-->",
   "<!-- /yap:tool -->",
   "",
-  "answer", "",
-  "# @user", "",
+  "answer",
+  "",
+  "# @user",
+  "",
 })
 local asst
 for _, m in ipairs(yap.parse_buffer(buf)) do
-  if m.role == "assistant" then asst = m end
+  if m.role == "assistant" then
+    asst = m
+  end
 end
 assert(asst, "no assistant message")
 assert(asst.content:match("result"), "result missing")

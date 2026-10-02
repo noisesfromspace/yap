@@ -9,7 +9,9 @@ vim.ui.select = function(items, _, cb)
   cb(items[2])
 end
 yap.change_model()
-local ok = vim.wait(5000, function() return captured ~= nil end, 100)
+local ok = vim.wait(5000, function()
+  return captured ~= nil
+end, 100)
 assert(ok, "picker never opened")
 assert(vim.deep_equal(captured, { "alpha/m1", "alpha/m2" }), vim.inspect(captured))
 assert(vim.b[buf].yap_model == "m2", "selection not applied")

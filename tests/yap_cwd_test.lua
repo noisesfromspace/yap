@@ -10,14 +10,19 @@ vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "where am I?" })
 local function send_from(dir)
   vim.cmd.cd(vim.fn.fnameescape(dir))
   yap.send()
-  assert(vim.wait(2000, function()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local user_blocks = 0
-    for _, line in ipairs(lines) do
-      if line == "# @user" then user_blocks = user_blocks + 1 end
-    end
-    return user_blocks >= 2 and vim.tbl_contains(lines, dir)
-  end, 20), "response did not contain dynamic cwd: " .. dir)
+  assert(
+    vim.wait(2000, function()
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      local user_blocks = 0
+      for _, line in ipairs(lines) do
+        if line == "# @user" then
+          user_blocks = user_blocks + 1
+        end
+      end
+      return user_blocks >= 2 and vim.tbl_contains(lines, dir)
+    end, 20),
+    "response did not contain dynamic cwd: " .. dir
+  )
 end
 
 send_from(ROOT)

@@ -4,8 +4,12 @@ local M = {}
 local document = require("harness.document")
 local HEAD = "^# @(%a+)%s*$"
 
-local function config() return require("harness").config end
-local function running(buf) return require("harness").is_running(buf) end
+local function config()
+  return require("harness").config
+end
+local function running(buf)
+  return require("harness").is_running(buf)
+end
 
 -- ─── Templates & skills ────────────────────────────────────────────────────
 
@@ -244,12 +248,13 @@ function M.template_names()
   return names
 end
 
-
 function M.named_lines(name)
   for _, entry in ipairs(list_md(config().templates_dir)) do
     if entry.name == name then
       local text = read_file(entry.path)
-      if text then return trim_blank(vim.split(text, "\n", { plain = true })) end
+      if text then
+        return trim_blank(vim.split(text, "\n", { plain = true }))
+      end
     end
   end
 end

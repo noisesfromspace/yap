@@ -5,8 +5,12 @@ local fold = require("harness.fold")
 
 local buf = yap.new({ provider = "mock", model = "m1" })
 local lines = {
-  "# @user", "", "write the file", "",
-  "# @assistant", "",
+  "# @user",
+  "",
+  "write the file",
+  "",
+  "# @assistant",
+  "",
   "<!-- yap:tool",
   "{",
   '  "id": "w1",',
@@ -25,8 +29,10 @@ local lines = {
   "-->",
   "<!-- /yap:tool -->",
   "",
-  "File written.", "",
-  "# @user", "",
+  "File written.",
+  "",
+  "# @user",
+  "",
 }
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -34,7 +40,9 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 local msgs = yap.parse_buffer(buf)
 local asst
 for _, m in ipairs(msgs) do
-  if m.role == "assistant" then asst = m end
+  if m.role == "assistant" then
+    asst = m
+  end
 end
 assert(asst and not asst.tool_calls, "no plain assistant message")
 assert(asst.content:find("write", 1, true), "tool name missing: " .. asst.content)
@@ -50,7 +58,9 @@ assert(asst.content:match("File written"), "answer after region lost: " .. asst.
 fold.setup_buffer(buf)
 local win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_buf(win, buf)
-local function lvl(l) return vim.fn.foldlevel(l) end
+local function lvl(l)
+  return vim.fn.foldlevel(l)
+end
 assert(lvl(7) == 3, "opener level: " .. lvl(7))
 assert(lvl(10) == 3, "json interior level: " .. lvl(10))
 assert(lvl(16) == 3, "--> closer level: " .. lvl(16))

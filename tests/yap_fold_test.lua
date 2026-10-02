@@ -5,10 +5,23 @@ local fold = require("harness.fold")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @system", "", "You are helpful.", "",
-  "# @user", "", "Question one here.", "",
-  "# @assistant", "", "Answer one.", "More answer.", "",
-  "# @user", "", "Question two.", "",
+  "# @system",
+  "",
+  "You are helpful.",
+  "",
+  "# @user",
+  "",
+  "Question one here.",
+  "",
+  "# @assistant",
+  "",
+  "Answer one.",
+  "More answer.",
+  "",
+  "# @user",
+  "",
+  "Question two.",
+  "",
 })
 -- yap.new ran setup_buffer on the template; re-apply for our content
 fold.setup_buffer(buf)

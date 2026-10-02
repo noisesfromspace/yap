@@ -12,8 +12,7 @@ yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 -- The persistent tail buffer of a chat buffer (yap://<basename>-tail).
 local function tail_buf(chat)
   local name = vim.api.nvim_buf_get_name(chat)
-  name = name:match("^yap://") and (name .. "-tail")
-    or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-tail")
+  name = name:match("^yap://") and (name .. "-tail") or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-tail")
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_get_name(b) == name then
       return b
@@ -79,10 +78,12 @@ assert(text:match("\ntail%-without%-newline\n"), "unterminated tail missing: " .
 assert(text:match("\n\\<!%-%- yap:tool %-%-%>"), "marker line not backslash-escaped: " .. text)
 assert(not text:match("\n<!%-%- yap:tool %-%-%>\n"), "unescaped marker line leaked: " .. text)
 assert(text:match("stream done"), "final answer missing: " .. text)
-local tool_start, tool_end, resumed = text:find("<!-- yap:tool", 1, true),
-  text:find("<!-- /yap:tool -->", 1, true), text:find("stream done", 1, true)
-assert(tool_start and tool_end and resumed and tool_start < tool_end and tool_end < resumed,
-  "buffer order must be tool call -> result -> resumed assistant text: " .. text)
+local tool_start, tool_end, resumed =
+  text:find("<!-- yap:tool", 1, true), text:find("<!-- /yap:tool -->", 1, true), text:find("stream done", 1, true)
+assert(
+  tool_start and tool_end and resumed and tool_start < tool_end and tool_end < resumed,
+  "buffer order must be tool call -> result -> resumed assistant text: " .. text
+)
 -- winbar back to idle
 assert(not yap.winbar():match("bash"), "winbar still shows the tool after completion")
 
@@ -103,8 +104,10 @@ for _, line in ipairs(vim.fn.readfile(audit_file)) do
   end
 end
 local streamed = table.concat(streamed_parts, "")
-assert(streamed:match("l1\nl2\n") and streamed:match("tail%-without%-newline"),
-  "streamed output missing from audit: " .. streamed)
+assert(
+  streamed:match("l1\nl2\n") and streamed:match("tail%-without%-newline"),
+  "streamed output missing from audit: " .. streamed
+)
 
 -- the parsed assistant message carries the flattened result, marker line excluded
 local asst
@@ -114,8 +117,10 @@ for _, m in ipairs(yap.parse_buffer(buf)) do
   end
 end
 assert(asst, "no assistant message parsed")
-assert(asst.content:match("l1") and asst.content:match("tail%-without%-newline"),
-  "result body wrong: " .. vim.inspect(asst.content))
+assert(
+  asst.content:match("l1") and asst.content:match("tail%-without%-newline"),
+  "result body wrong: " .. vim.inspect(asst.content)
+)
 
 -- Regression: a user follow-up after a tool turn must survive the
 -- round-trip (a dangling tool region would swallow it on the next send).
@@ -125,10 +130,14 @@ local roles = {}
 for _, m in ipairs(msgs_rt) do
   roles[#roles + 1] = m.role
 end
-assert(msgs_rt[#msgs_rt].role == "user" and msgs_rt[#msgs_rt].content:match("follow%-up"),
-  "follow-up not parsed after tool turn; roles=" .. table.concat(roles, ","))
-assert(msgs_rt[#msgs_rt - 1].role == "assistant",
-  "flattened assistant lost before follow-up; roles=" .. table.concat(roles, ","))
+assert(
+  msgs_rt[#msgs_rt].role == "user" and msgs_rt[#msgs_rt].content:match("follow%-up"),
+  "follow-up not parsed after tool turn; roles=" .. table.concat(roles, ",")
+)
+assert(
+  msgs_rt[#msgs_rt - 1].role == "assistant",
+  "flattened assistant lost before follow-up; roles=" .. table.concat(roles, ",")
+)
 
 -- ─── :YapLive + stop mid-run ───────────────────────────────────────────
 local buf2 = yap.new()
@@ -157,8 +166,10 @@ end, 20)
 assert(repaired, "tool region not closed after stop")
 
 local stopped_lines = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
-assert(stopped_lines[#stopped_lines - 1] == "# @user" and stopped_lines[#stopped_lines] == "",
-  "stopped stream did not end in a closed user block")
+assert(
+  stopped_lines[#stopped_lines - 1] == "# @user" and stopped_lines[#stopped_lines] == "",
+  "stopped stream did not end in a closed user block"
+)
 local t2 = table.concat(stopped_lines, "\n")
 local ok, msgs2 = pcall(yap.parse_buffer, buf2)
 assert(ok, "buffer unparseable after stop")

@@ -78,7 +78,7 @@ function M.parse_buffer(buf)
       elseif line:match("^<!%-%- /yap:ui") then
         ui_paired = false
       elseif ui_paired then
-        -- block-level diff content between the paired markers
+      -- block-level diff content between the paired markers
       elseif line:match("^<!%-%- yap:ui %-%->%s*$") then
         ui_paired = true
       elseif line:match("^<!%-%- yap:ui") then
@@ -252,6 +252,5 @@ function M.append_block(buf, block)
   table.insert(lines, 1, "")
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
-
 
 return M

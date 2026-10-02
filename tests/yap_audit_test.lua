@@ -37,15 +37,20 @@ assert(call and call.args:match("line one about dogs"), "full write args not in 
 assert(call.ts, "tool_call missing ts")
 local result = find("tool_result", "write")
 assert(result and result.result:match("Successfully wrote 250 bytes"), "full tool result not in audit")
-assert(tonumber(result.bytes) ~= nil and tonumber(result.bytes) > 0, "tool_result bytes wrong: " .. tostring(result.bytes))
+assert(
+  tonumber(result.bytes) ~= nil and tonumber(result.bytes) > 0,
+  "tool_result bytes wrong: " .. tostring(result.bytes)
+)
 local turn
 for _, e in ipairs(events) do
   if e.type == "turn_end" then
     turn = e
   end
 end
-assert(turn and turn.model == "m1" and turn.prompt > 0 and turn.completion > 0 and turn.cost,
-  "no turn journal: " .. vim.inspect(turn))
+assert(
+  turn and turn.model == "m1" and turn.prompt > 0 and turn.completion > 0 and turn.cost,
+  "no turn journal: " .. vim.inspect(turn)
+)
 
 -- the tail viewer renders the same events: a one-line entry per tool
 -- call, the full result, and the turn journal
@@ -65,6 +70,8 @@ assert(text:match("# .- turn m1:"), "no turn journal in tail: " .. text)
 -- (tool_call → tool_result for the write call: lines 1-2)
 yap.clear(buf, 0)
 local cleared = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-assert(cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:1%-2%]"),
-  "placeholder missing exact line ref: " .. cleared)
+assert(
+  cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:1%-2%]"),
+  "placeholder missing exact line ref: " .. cleared
+)
 print("OK audit")

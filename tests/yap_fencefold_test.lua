@@ -4,26 +4,34 @@ local yap = require("harness")
 local fold = require("harness.fold")
 local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @user", "", "cat the session", "",
-  "# @assistant", "",
+  "# @user",
+  "",
+  "cat the session",
+  "",
+  "# @assistant",
+  "",
   '<!-- yap:tool {"id":"b1","name":"bash","arguments":{"command":"cat x"}} -->',
   "```",
   "===== repro.md =====",
-  "# @system",      -- inside the fence: literal content, NOT a heading
+  "# @system", -- inside the fence: literal content, NOT a heading
   "sys text",
   "# @user",
   "more",
-  "```python",      -- nested fence inside: literal (info string -> not a closer)
+  "```python", -- nested fence inside: literal (info string -> not a closer)
   "print('x')",
   "```",
   "<!-- /yap:tool -->",
   "",
-  "File written.", "",
-  "# @user", "",
+  "File written.",
+  "",
+  "# @user",
+  "",
 })
 fold.setup_buffer(buf)
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
-local function lvl(l) return vim.fn.foldlevel(l) end
+local function lvl(l)
+  return vim.fn.foldlevel(l)
+end
 assert(lvl(7) == 3, "opener: " .. lvl(7))
 assert(lvl(8) == 3, "fence open: " .. lvl(8))
 assert(lvl(10) == 3, "# @system inside fence: " .. lvl(10))
