@@ -267,17 +267,12 @@
             descriptionModel = mkOption {
               type = types.str;
               default = "openai/gpt-5-nano";
-              description = "Tiny provider/model combo used to label a session from the latest user message for the session picker and winbar.";
+              description = "Smallest provider/model combo used to label a session on send and from recent tool calls/thinking while the assistant works.";
             };
             descriptionAnswerModel = mkOption {
               type = types.str;
               default = "openai/gpt-5-mini";
-              description = "Slightly larger provider/model combo that re-summarizes the whole session after the agent answers, centered on the overall goal with recent topics as context.";
-            };
-            descriptionRefreshTurns = mkOption {
-              type = types.ints.positive;
-              default = 5;
-              description = "Refresh the session description after the first turn and then every N completed turns.";
+              description = "Bigger provider/model combo that writes the final whole-session title once each turn completes.";
             };
           };
 

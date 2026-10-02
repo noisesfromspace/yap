@@ -200,9 +200,8 @@ Lua setup: >lua
     system = "...",       -- fallback system prompt
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     notify_done = true,   -- vim.notify when a background turn finishes
-    description_model = "openai/gpt-5-nano", -- tiny: labels from the user message on send
-    description_answer_model = "openai/gpt-5-mini", -- slightly bigger: re-summarizes after the answer
-    description_refresh_turns = 5,          -- answer-model refresh cadence
+    description_model = "openai/gpt-5-nano", -- smallest: on-send + in-turn labels
+    description_answer_model = "openai/gpt-5-mini", -- bigger: final whole-session title
   })
 <
 `agents_file` is the system prompt for new buffers and is read per buffer,
@@ -218,15 +217,17 @@ next send). Disable the toast with `notify_done = false`; hook the same
 event with your own `User YapTurnDone` autocmd.
 
 The session description shown in the winbar (|yap-winbar|) and session
-picker is generated in two stages. `description_model` (default
-`openai/gpt-5-nano`) is a tiny model that labels the session from the
-latest user message as soon as you send, so the picker has a name before
-the reply arrives. `description_answer_model` (default `openai/gpt-5-mini`) is
-a slightly larger model that re-summarizes the whole session once the
-agent has answered, centered on the overall goal with the most recent
-topics as context; it runs after the first completed turn and then every
-`description_refresh_turns` (default 5). Set either to "" to disable that
-stage; the description survives in the buffer frontmatter either way.
+picker is generated in three stages, all sharing one `description:` key in
+the buffer frontmatter. `description_model` (default `openai/gpt-5-nano`) is
+the smallest model and does the cheap, frequent refreshes: it labels the
+session from the latest user message as soon as you send, then re-labels it
+from the last couple of tool calls and thinking regions while the assistant
+works, so the title tracks the work in progress. `description_answer_model`
+(default `openai/gpt-5-mini`) is a bigger model that writes the final title
+once the turn completes (the buffer is back on the `# @user` block): a
+whole-session summary centered on the overall goal and recent direction, so
+the session reads as a findable reminder later. Set either to "" to disable
+that stage; the description survives in the buffer frontmatter either way.
 
 `templates_dir` and `skills_dir` (defaults `~/.config/yap/templates/`
 and `~/.config/yap/skills/`) hold the plain-markdown files inserted by

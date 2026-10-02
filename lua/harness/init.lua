@@ -35,16 +35,14 @@ M.config = {
   -- vim.notify when a turn completes in a buffer that is not focused
   -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
-  -- Tiny model that labels a session from the latest user message as
-  -- soon as it is sent, so the winbar and session picker have a
-  -- description before the agent answers.
+  -- Smallest model used for the cheap, frequent title refreshes: labels
+  -- the session from the latest user message on send, then re-labels it
+  -- from the latest tool calls and thinking while the assistant works.
   description_model = "openai/gpt-5-nano",
-  -- Slightly larger model that re-summarizes the whole session once the
-  -- agent has answered, centered on the overall goal with the most
-  -- recent topics as context. Refreshed after the first completed turn,
-  -- then every N turns.
+  -- Bigger model that writes the final title once the turn completes
+  -- (back on the # @user block): a whole-session summary that tells the
+  -- story so the session is easy to find in the picker later.
   description_answer_model = "openai/gpt-5-mini",
-  description_refresh_turns = 5,
 }
 
 -- Cached output of `yap models` ("provider/model" lines) so
@@ -130,6 +128,10 @@ local spinner_timer = nil
 local running
 local live
 local drain_tail
+-- Defined with the description stages below; tool events call into them
+-- while a turn streams.
+local refresh_description
+local schedule_progress_refresh
 
 local function winbar_hl(text, group)
   return "%#Yap" .. group .. "#" .. text .. "%*"
@@ -732,6 +734,7 @@ local function handle_event(buf, json_line)
       pcall(os.remove, ev.log)
     end
   elseif ev.type == "tool_call" then
+    schedule_progress_refresh(buf)
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
     if ev.name == "quickfix" then
@@ -758,6 +761,7 @@ local function handle_event(buf, json_line)
     cut_pretool_prose(buf)
     append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
+    schedule_progress_refresh(buf)
     append_event(buf, ev) -- full result; bash output already streamed above
     local r = get_reorder(buf)
     r.open = math.max(0, (r.open or 0) - 1)
@@ -1064,16 +1068,96 @@ local function repair_stream_tail(buf)
 end
 
 -- Latest description request per buffer, so a slow earlier summary cannot
--- clobber a newer one (send and turn-completion refreshes can overlap).
+-- clobber a newer one (send, in-turn and turn-completion refreshes can
+-- overlap).
 local description_seq = {}
+
+--- Compact the latest assistant activity (the last couple of tool calls
+--- and thinking regions) into text the smallest model can turn into a
+--- working title. Tool results are skipped: they are the model's output,
+--- often large, and the call itself already names the work.
+local function progress_content(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local start
+  for i = #lines, 1, -1 do
+    if lines[i]:match("^# @assistant%s*$") then
+      start = i + 1
+      break
+    end
+  end
+  if not start then
+    return nil
+  end
+  local items = {}
+  local state, acc = nil, {}
+  for i = start, #lines do
+    local line = lines[i]
+    if state == "tool" then
+      if line:match("^%-%->%s*$") then
+        local ok, h = pcall(vim.json.decode, table.concat(acc, "\n"))
+        if ok and type(h) == "table" and h.name then
+          items[#items + 1] = { name = h.name, args = h.arguments }
+        end
+        state, acc = nil, {}
+      else
+        acc[#acc + 1] = line
+      end
+    elseif state == "thinking" then
+      if line:match("^%-%->%s*$") then
+        items[#items + 1] = { think = table.concat(acc, " ") }
+        state, acc = nil, {}
+      else
+        acc[#acc + 1] = line
+      end
+    elseif line:match("^<!%-%- yap:tool%s*$") then
+      state, acc = "tool", {}
+    elseif line:match("^<!%-%- yap:tool (.+) %-%->%s*$") then
+      local ok, h = pcall(vim.json.decode, line:match("^<!%-%- yap:tool (.+) %-%->%s*$"))
+      if ok and type(h) == "table" and h.name then
+        items[#items + 1] = { name = h.name, args = h.arguments }
+      end
+    elseif line:match("^<!%-%- yap:thinking%s*$") then
+      state, acc = "thinking", {}
+    end
+  end
+  if #items == 0 then
+    return nil
+  end
+  local out = {}
+  for j = math.max(1, #items - 2), #items do
+    local it = items[j]
+    if it.think then
+      local text = it.think:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if #text > 200 then
+        text = text:sub(1, 200) .. "…"
+      end
+      out[#out + 1] = "Thinking: " .. text
+    else
+      local args = ""
+      if type(it.args) == "string" then
+        args = it.args
+      elseif type(it.args) == "table" then
+        args = vim.json.encode(it.args)
+      end
+      args = args:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if #args > 120 then
+        args = args:sub(1, 120) .. "…"
+      end
+      out[#out + 1] = "Tool call: " .. it.name .. (args ~= "" and (" " .. args) or "")
+    end
+  end
+  return table.concat(out, "\n")
+end
 
 --- Generate or refresh the session description shown in the winbar and
 --- session picker. `kind` selects the model and what it summarizes:
----   "user"   — tiny model, the latest user message only (runs on send)
----   "answer" — slightly larger model, the whole session centered on
----              the overall goal with recent topics as context (runs
----              after the agent's reply)
-local function refresh_description(buf, kind, messages)
+---   "user"     — smallest model, the latest user message only (runs on
+---                send)
+---   "progress" — smallest model, the last couple of tool calls/thinking
+---                (runs while the assistant works)
+---   "answer"   — bigger model, the whole session as a final title (runs
+---                once the turn is back on the user block)
+refresh_description = function(buf, kind, messages)
   local combo, system, content
   if kind == "user" then
     combo = M.config.description_model
@@ -1085,6 +1169,14 @@ local function refresh_description(buf, kind, messages)
         break
       end
     end
+    if not content or content == "" then
+      return
+    end
+  elseif kind == "progress" then
+    combo = M.config.description_model
+    system =
+      "Summarize what the assistant is currently working on in one short phrase (maximum 12 words). Return only the phrase, no punctuation wrapper."
+    content = progress_content(buf)
     if not content or content == "" then
       return
     end
@@ -1142,13 +1234,38 @@ local function refresh_description(buf, kind, messages)
   )
 end
 
-local function maybe_refresh_description(buf)
-  local turns = (vim.b[buf].yap_description_turns or 0) + 1
-  vim.b[buf].yap_description_turns = turns
-  local every = math.max(1, tonumber(M.config.description_refresh_turns) or 5)
-  if turns == 1 or turns % every == 0 then
-    refresh_description(buf, "answer")
+--- Debounced in-turn title refresh: the smallest model re-labels the
+--- session from recent tool calls and thinking. Throttled to one request
+--- per 1.5s of activity (a small initial delay lets the just-committed
+--- tool header land in the buffer first); a burst of tool events yields
+--- periodic updates, not one process per event.
+local progress_timers = {} -- buf → pending refresh timer (uv handles can't live in vim.b)
+local progress_last = {} -- buf → last refresh time in uv.now() ms
+
+schedule_progress_refresh = function(buf)
+  if not M.config.description_model or M.config.description_model == "" then
+    return
   end
+  if progress_timers[buf] then
+    return
+  end
+  local now = vim.uv.now()
+  local last = progress_last[buf]
+  local wait = 50
+  if last then
+    wait = math.max(50, 1500 - (now - last))
+  end
+  progress_timers[buf] = vim.defer_fn(function()
+    progress_timers[buf] = nil
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    if not running[buf] then
+      return
+    end
+    progress_last[buf] = vim.uv.now()
+    refresh_description(buf, "progress")
+  end, wait)
 end
 
 --- Every stream exit, including errors and :YapStop, hands the buffer back
@@ -1180,8 +1297,8 @@ function M.send()
     return
   end
 
-  -- Label the session from the latest user message immediately (tiny
-  -- model); the richer whole-session summary arrives after the answer.
+  -- Label the session from the latest user message immediately (smallest
+  -- model); in-turn and final whole-session titles follow as the turn runs.
   refresh_description(buf, "user", messages)
 
   errors[buf] = nil
@@ -1274,7 +1391,7 @@ function M.send()
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)
-      maybe_refresh_description(buf)
+      refresh_description(buf, "answer")
       audit_follow(buf) -- first save named the session; rename the log to match
       -- A completed turn is a first-class event (herdr's "working → blocked
       -- → idle" notification). Fire it once the buffer is in its final state

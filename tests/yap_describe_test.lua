@@ -5,7 +5,6 @@ yap.setup({
   bin = ROOT .. "/yap",
   description_model = "mock/m1",
   description_answer_model = "mock/m1",
-  description_refresh_turns = 1,
 })
 
 local log_path = "/tmp/yap-describe.log"
