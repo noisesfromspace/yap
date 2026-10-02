@@ -37,7 +37,10 @@ assert(vim.fn.foldclosed(think1) == think1, "thinking folded by default")
 assert(vim.fn.foldclosed(tool1) == tool1, "tool1 folded by default")
 assert(vim.fn.foldclosed(tool2) == tool2, "tool2 folded by default")
 
--- opening pins a fold and is NOT exclusive: other folds stay as they are
+-- opening a fold and is NOT exclusive: other folds stay as they are
+fold.open(10) -- cursor is in the already-open assistant message
+assert(vim.fn.foldclosed(9) == -1, "opening inside an open message closed it")
+fold.set_view_level(2) -- clear that pin before checking the tool chips
 fold.open(tool1)
 assert(vim.fn.foldclosed(tool1) == -1, "open did not open tool1")
 assert(vim.fn.foldclosed(tool2) == tool2, "open changed tool2")

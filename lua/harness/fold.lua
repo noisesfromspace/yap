@@ -284,7 +284,7 @@ local function fold_start(buf, lnum)
     if opener and tonumber(opener) <= min_level then
       return i
     end
-    local n = tonumber(lv:gsub("^>", ""))
+    local n = tonumber((lv:gsub("^>", "")))
     if n and n < min_level then
       min_level = n
     end
@@ -331,8 +331,10 @@ function M.open(lnum)
   end
   pinned[buf] = pinned[buf] or {}
   pinned[buf][start] = true
-  vim.api.nvim_win_set_cursor(0, { start, 0 })
-  vim.cmd("normal! zo")
+  if vim.fn.foldclosed(start) ~= -1 then
+    vim.api.nvim_win_set_cursor(0, { start, 0 })
+    vim.cmd("normal! zo")
+  end
 end
 
 --- <Tab>: toggle the fold under `lnum`. Opening pins it; closing un-pins
