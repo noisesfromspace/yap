@@ -408,24 +408,21 @@ does not run JavaScript). git runs read-only subcommands
 (status, diff, log, show, blame) in the project root with pager, color
 and credential prompts disabled; output is head-truncated like search.
 
-ssh runs non-interactive commands with an in-process x/crypto/ssh client.
-It uses ~/.ssh/id_ed25519 and/or identities loaded in the local
-ssh-agent, including FIDO/security keys (load one with `ssh-add
-~/.ssh/id_ed25519_sk` if needed). Agent signing stays local; the agent
-is never forwarded. The server's hostname must be explicitly listed in
-NixOS's /etc/ssh/ssh_known_hosts with a matching host key. Entries only in
-~/.ssh/known_hosts, or for its resolved IP rather than the requested name,
-do not authorize a connection; unknown and mismatched hosts are refused.
-Calls to the same
-user/host/port reuse the authenticated connection; close=true disconnects.
-A keepalive is sent every 30s, and a connection whose peer stops answering
-is dropped so the next command re-dials instead of reusing a dead link.
-The backend — and with it the cached connection — is shared across session
-buffers and lives until Neovim exits, so closing or switching buffers does
-not force a reconnect.
-A command runs in a new session with a 120s default timeout, returning its
-output and exit status. :YapStop terminates the backend and its SSH sessions.
-No control socket, SSH agent forwarding, or X11 forwarding is used.
+ssh runs non-interactive commands via the system OpenSSH client. A foreground
+ControlMaster per user/host/port is owned by the Yap backend and its socket
+lives in a private mode-0700 temporary directory. The socket grants local
+processes that can access it the authority to run commands over the connection.
+The backend closes masters and removes sockets on close=true, normal exit,
+:YapStop, and SIGTERM; a hard crash can leave a stale private socket directory.
+No ControlPersist or agent/X11 forwarding is enabled. Each command runs in a
+new SSH session with a 120s default timeout; a nonzero exit is reported.
+OpenSSH uses its default identities and local ssh-agent (including FIDO keys).
+The tool disables ~/.ssh/config so aliases and proxy commands cannot bypass
+its trust boundary, and requires the requested host in NixOS's
+/etc/ssh/ssh_known_hosts. User known_hosts entries cannot authorize a host.
+BatchMode disables interactive password/PIN prompts; agent-mediated FIDO touch
+can still prompt through the local agent. The master is shared across session
+buffers while Neovim's backend is alive.
 
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming
@@ -715,14 +712,17 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: the session description (truncated
-to 40 display columns), provider/model combo, and the applied fold view (`Ⓕ1`
-agent output folded, `Ⓕ2` tools & thinking folded, `Ⓕ3` all open — the last
-view applied with <leader>1..3;
-manual |za| toggles don't update it), and — when other sessions are
-running or waiting for your reply — rollup chips: `▶N` (N other yap
-buffers streaming a reply) and `◉N` (N other yap buffers await you;
-jump to one with |:YapInstances|). Right: token totals and cost
+The winbar is the session dashboard. Left: a `▶` busy beacon while the
+buffer itself is streaming (the far-right glyph mirrors it, but the left edge
+is the at-a-glance cue), then a raised rollup island for ALL OTHER yap
+sessions — `▶N` (N other buffers streaming a reply) and `◉N` (N other
+buffers await you; jump to one with |:YapInstances|). The island appears only
+when at least one other session is running or waiting; it never counts the
+current buffer, whose own state lives on the right. After the island: the
+session description (truncated to 40 display columns), provider/model combo,
+and the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
+folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
+manual |za| toggles don't update it). Right: token totals and cost
 for this buffer (accumulated over its lifetime, compact k/m format), then
 the state glyph pinned to the far right edge:
 
@@ -736,7 +736,7 @@ the state glyph pinned to the far right edge:
             (the herdr-style "needs you" state).
   ○ idle    Nothing running, nothing pending.
 
-Example: `moonshot/kimi-k3 Ⓕ2 ▶1 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
+Example: `▶1 ◉2 moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
 
 The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
 `◉N` rollup counts OTHER yap buffers with a completed turn awaiting

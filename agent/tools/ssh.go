@@ -1,20 +1,22 @@
 package tools
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/knownhosts"
+	"boers.email/yap/agent/utils"
 )
 
 type sshArgs struct {
@@ -27,34 +29,43 @@ type sshArgs struct {
 }
 
 var systemKnownHosts = "/etc/ssh/ssh_known_hosts"
+var sshBinary = "ssh"
 
-// keepaliveInterval is how often a cached connection is probed, and how long
-// TCP waits idle before probing the raw socket. A peer that died without a
-// FIN (suspend/resume, roam, NAT idle timeout) is detected within one interval
-// and evicted, so the next command re-dials instead of hanging mid-command.
-const keepaliveInterval = 30 * time.Second
+// The directory is private to this backend process. A control socket grants
+// the same authority as an authenticated connection to local processes that
+// can access it; never place it in a shared directory or use ControlPersist.
+var sshMasters = struct {
+	sync.Mutex
+	dir     string
+	clients map[string]*sshMaster
+}{clients: make(map[string]*sshMaster)}
 
-// sshConn pairs a client with its raw connection so session setup can be
-// bounded by a deadline.
-type sshConn struct {
-	client *ssh.Client
-	conn   net.Conn
+type sshMaster struct {
+	cmd    *exec.Cmd
+	done   chan error
+	socket string
+	stderr bytes.Buffer
 }
 
-var sshClients = struct {
-	sync.Mutex
-	clients map[string]*sshConn
-}{clients: make(map[string]*sshConn)}
-
 func init() {
-	Register("ssh", "Run commands over a reused in-process SSH connection. Only hosts named in the NixOS /etc/ssh/ssh_known_hosts are allowed; unknown or mismatched hosts are refused. Authenticates with ~/.ssh/id_ed25519 or keys loaded in the local ssh-agent (including FIDO keys). close=true disconnects. Non-interactive; no agent or X11 forwarding.", func(a *sshArgs) (string, string, error) {
+	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Only hosts in /etc/ssh/ssh_known_hosts are trusted. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
 		result, err := runSSH(a)
 		return result, "", err
 	})
 }
 
+// Do not load ~/.ssh/config: aliases, ProxyCommand, HostKeyAlias, and
+// user-specified host key files could bypass the system host allowlist.
+func sshOptions() []string {
+	return []string{"-F", "/dev/null", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=" + systemKnownHosts, "-o", "UserKnownHostsFile=/dev/null", "-o", "CheckHostIP=no", "-o", "UpdateHostKeys=no", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes"}
+}
+
+func sshTarget(a *sshArgs, name string, port int) []string {
+	return []string{"-l", name, "-p", strconv.Itoa(port), "--", a.Host}
+}
+
 func runSSH(a *sshArgs) (string, error) {
-	if a.Host == "" || strings.ContainsAny(a.Host, "/\\@:\n\r") {
+	if a.Host == "" || strings.HasPrefix(a.Host, "-") || strings.ContainsAny(a.Host, "/\\@:\n\r ") {
 		return "", fmt.Errorf("invalid SSH host")
 	}
 	port := a.Port
@@ -72,24 +83,21 @@ func runSSH(a *sshArgs) (string, error) {
 		}
 		name = u.Username
 	}
-	if strings.ContainsAny(name, "@\n\r") {
+	if name == "" || strings.HasPrefix(name, "-") || strings.ContainsAny(name, "@\n\r ") {
 		return "", fmt.Errorf("invalid SSH user")
 	}
 	key := name + "@" + net.JoinHostPort(a.Host, strconv.Itoa(port))
-	sshClients.Lock()
-	c := sshClients.clients[key]
+	sshMasters.Lock()
+	defer sshMasters.Unlock()
 	if a.Close {
-		if c != nil {
-			delete(sshClients.clients, key)
+		if m := sshMasters.clients[key]; m != nil {
+			stopMaster(m)
+			delete(sshMasters.clients, key)
 		}
-		sshClients.Unlock()
-		if c != nil {
-			c.client.Close()
-		}
+		removeSSHDirIfEmpty()
 		return "connection closed", nil
 	}
 	if strings.TrimSpace(a.Command) == "" {
-		sshClients.Unlock()
 		return "", fmt.Errorf("empty command")
 	}
 	timeout := 120 * time.Second
@@ -98,46 +106,44 @@ func runSSH(a *sshArgs) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if c == nil {
+	// -F /dev/null makes OpenSSH check only the requested name. A known IP
+	// or an entry in the user's known_hosts cannot authorize a different name.
+	host := a.Host
+	if port != 22 {
+		host = fmt.Sprintf("[%s]:%d", host, port)
+	}
+	check := exec.CommandContext(ctx, "ssh-keygen", "-F", host, "-f", systemKnownHosts)
+	if err := check.Run(); err != nil {
+		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, err)
+	}
+	m := sshMasters.clients[key]
+	if m != nil && !masterAlive(ctx, m, a, name, port) {
+		stopMaster(m)
+		delete(sshMasters.clients, key)
+		m = nil
+	}
+	if m == nil {
 		var err error
-		c, err = dialSSH(ctx, a.Host, port, name)
+		m, err = startMaster(ctx, a, name, port, key)
 		if err != nil {
-			sshClients.Unlock()
 			return "", err
 		}
-		sshClients.clients[key] = c
-		go keepalive(c, key)
+		sshMasters.clients[key] = m
 	}
-	sshClients.Unlock()
-
-	session, err := c.newSession(ctx)
-	if err != nil {
-		// The cached connection is stale: evict it and redial once.
-		evict(key, c)
-		c, err = dialSSH(ctx, a.Host, port, name)
-		if err != nil {
-			return "", err
-		}
-		sshClients.Lock()
-		sshClients.clients[key] = c
-		sshClients.Unlock()
-		go keepalive(c, key)
-		session, err = c.newSession(ctx)
-		if err != nil {
-			evict(key, c)
-			return "", err
-		}
-	}
-	defer session.Close()
+	// Each command is a separate SSH session over the foreground master.
+	// A missing master can cause ssh to dial afresh; evict it on any failure.
+	args := append(sshOptions(), "-S", m.socket, "-o", "ControlMaster=auto", "-o", "ControlPersist=no")
+	args = append(args, sshTarget(a, name, port)...)
+	args = append(args, a.Command)
+	cmd := exec.CommandContext(ctx, sshBinary, args...)
 	var output headBuffer
-	session.Stdout, session.Stderr = &output, &output
-	done := make(chan error, 1)
-	go func() { done <- session.Run(a.Command) }()
-	select {
-	case err = <-done:
-	case <-ctx.Done():
-		evict(key, c)
-		return "", fmt.Errorf("SSH command timed out after %s", timeout)
+	cmd.Stdout, cmd.Stderr = &output, &output
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		stopMaster(m)
+		delete(sshMasters.clients, key)
+		removeSSHDirIfEmpty()
+		return "", fmt.Errorf("SSH command timed out after %s: %w", timeout, ctx.Err())
 	}
 	text := output.String()
 	if output.Truncated() {
@@ -147,109 +153,102 @@ func runSSH(a *sshArgs) (string, error) {
 		text = "(no output)"
 	}
 	if err != nil {
-		if e, ok := err.(*ssh.ExitError); ok {
-			return fmt.Sprintf("%s\n[exit code %d]", text, e.ExitStatus()), nil
+		if ee, ok := err.(*exec.ExitError); ok {
+			// OpenSSH uses 255 for connection errors (remote 255 is ambiguous).
+			if ee.ExitCode() != 255 {
+				return fmt.Sprintf("%s\n[exit code %d]", text, ee.ExitCode()), nil
+			}
 		}
-		evict(key, c)
-		return "", err
+		stopMaster(m)
+		delete(sshMasters.clients, key)
+		removeSSHDirIfEmpty()
+		return "", fmt.Errorf("SSH: %s: %w", text, err)
 	}
 	return text, nil
 }
 
-// evict removes c from the cache if it is still the cached connection, then
-// closes it. The close happens outside the lock so it never blocks a dial.
-func evict(key string, c *sshConn) {
-	sshClients.Lock()
-	if sshClients.clients[key] == c {
-		delete(sshClients.clients, key)
+func masterAlive(ctx context.Context, m *sshMaster, a *sshArgs, name string, port int) bool {
+	select {
+	case <-m.done:
+		return false
+	default:
 	}
-	sshClients.Unlock()
-	c.client.Close()
+	probeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	args := append(sshOptions(), "-S", m.socket, "-O", "check")
+	args = append(args, sshTarget(a, name, port)...)
+	return exec.CommandContext(probeCtx, sshBinary, args...).Run() == nil
 }
 
-// newSession opens a session, bounding the channel-open handshake by ctx's
-// deadline so a half-open peer fails fast instead of blocking forever.
-func (c *sshConn) newSession(ctx context.Context) (*ssh.Session, error) {
-	if deadline, ok := ctx.Deadline(); ok {
-		c.conn.SetDeadline(deadline)
-		defer c.conn.SetDeadline(time.Time{})
-	}
-	return c.client.NewSession()
-}
-
-// keepalive probes a cached connection so it is evicted as soon as the peer
-// stops answering. One goroutine per connection; it exits after the first
-// failed probe, at which point the client has been closed and re-dialed on
-// the next command (prompting a fresh FIDO touch only then).
-func keepalive(c *sshConn, key string) {
-	t := time.NewTicker(keepaliveInterval)
-	defer t.Stop()
-	for range t.C {
-		if _, _, err := c.client.SendRequest("keepalive@openssh.com", true, nil); err == nil {
-			continue
-		}
-		evict(key, c)
-		return
-	}
-}
-
-func dialSSH(ctx context.Context, host string, port int, name string) (*sshConn, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	var signers []ssh.Signer
-	key, keyErr := os.ReadFile(filepath.Join(home, ".ssh", "id_ed25519"))
-	if keyErr == nil {
-		signer, err := ssh.ParsePrivateKey(key)
+func startMaster(ctx context.Context, a *sshArgs, name string, port int, key string) (*sshMaster, error) {
+	if sshMasters.dir == "" {
+		dir, err := os.MkdirTemp("", "yap-ssh-")
 		if err != nil {
 			return nil, err
 		}
-		signers = append(signers, signer)
+		sshMasters.dir = dir // MkdirTemp uses mode 0700
 	}
-	// Agent signers perform signing locally, including FIDO touch/PIN via
-	// ssh-agent. Never request agent forwarding on the remote session.
-	var agentConn net.Conn
-	if socket := os.Getenv("SSH_AUTH_SOCK"); socket != "" {
-		agentConn, err = (&net.Dialer{}).DialContext(ctx, "unix", socket)
-		if err == nil {
-			defer agentConn.Close()
-			if deadline, ok := ctx.Deadline(); ok {
-				agentConn.SetDeadline(deadline)
-			}
-			keys, listErr := agent.NewClient(agentConn).Signers()
-			if listErr == nil {
-				signers = append(signers, keys...)
-			} else if len(signers) == 0 {
-				return nil, fmt.Errorf("list SSH agent keys: %w", listErr)
-			}
-		} else if len(signers) == 0 {
-			return nil, fmt.Errorf("connect to SSH agent: %w", err)
+	hash := sha256.Sum256([]byte(key))
+	m := &sshMaster{socket: filepath.Join(sshMasters.dir, fmt.Sprintf("%x", hash[:12])), done: make(chan error, 1)}
+	args := append(sshOptions(), "-S", m.socket, "-M", "-N", "-o", "ControlPersist=no")
+	args = append(args, sshTarget(a, name, port)...)
+	m.cmd = exec.Command(sshBinary, args...)
+	m.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	m.cmd.Stdin = nil
+	m.cmd.Stderr = &m.stderr
+	if err := m.cmd.Start(); err != nil {
+		removeSSHDirIfEmpty()
+		return nil, err
+	}
+	utils.Track(m.cmd.Process.Pid)
+	go func() { err := m.cmd.Wait(); utils.Untrack(m.cmd.Process.Pid); m.done <- err; close(m.done) }()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if masterAlive(ctx, m, a, name, port) {
+			return m, nil
+		}
+		select {
+		case err := <-m.done:
+			removeSSHDirIfEmpty()
+			return nil, fmt.Errorf("SSH master exited: %w: %s", err, m.stderr.String())
+		case <-ctx.Done():
+			stopMaster(m)
+			removeSSHDirIfEmpty()
+			return nil, fmt.Errorf("SSH master timed out: %w", ctx.Err())
+		case <-ticker.C:
 		}
 	}
-	if len(signers) == 0 {
-		return nil, fmt.Errorf("no SSH identity: use ~/.ssh/id_ed25519 or load a key into ssh-agent (ssh-add)")
+}
+
+func stopMaster(m *sshMaster) {
+	// Graceful mux shutdown when possible; always reap the foreground child.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	exec.CommandContext(ctx, sshBinary, "-S", m.socket, "-O", "exit", "--", "localhost").Run()
+	select {
+	case <-m.done:
+	case <-time.After(time.Second):
+		syscall.Kill(-m.cmd.Process.Pid, syscall.SIGKILL)
+		<-m.done
 	}
-	verify, err := knownhosts.New(systemKnownHosts)
-	if err != nil {
-		return nil, err
+	os.Remove(m.socket)
+}
+
+func removeSSHDirIfEmpty() {
+	if sshMasters.dir != "" && len(sshMasters.clients) == 0 {
+		os.Remove(sshMasters.dir)
+		sshMasters.dir = ""
 	}
-	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	conn, err := (&net.Dialer{KeepAlive: keepaliveInterval}).DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return nil, err
+}
+
+// CloseSSH is called on normal backend exit and on :YapStop/SIGTERM.
+func CloseSSH() {
+	sshMasters.Lock()
+	defer sshMasters.Unlock()
+	for key, m := range sshMasters.clients {
+		stopMaster(m)
+		delete(sshMasters.clients, key)
 	}
-	// Bound authentication/host-key exchange as well as the TCP dial.
-	if deadline, ok := ctx.Deadline(); ok {
-		conn.SetDeadline(deadline)
-	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, addr, &ssh.ClientConfig{
-		User: name, Auth: []ssh.AuthMethod{ssh.PublicKeys(signers...)}, HostKeyCallback: verify,
-	})
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	conn.SetDeadline(time.Time{})
-	return &sshConn{client: ssh.NewClient(c, chans, reqs), conn: conn}, nil
+	removeSSHDirIfEmpty()
 }

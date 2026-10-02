@@ -53,6 +53,10 @@ local buf2 = yap.new()
 local bar2 = yap.winbar(buf2)
 assert(bar2:match("◉1"), "rollup chip missing on the other buffer: " .. bar2)
 assert(bar2:match("idle"), "fresh second buffer should be idle: " .. bar2)
+-- The rollup island sits before the session's model info.
+local island_at = assert(bar2:find("◉1", 1, true), "island missing: " .. bar2)
+local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2)
+assert(island_at < model_at, "island should precede model: " .. bar2)
 assert(not yap.winbar(buf):match("◉%d"), "rollup counts the current buffer: " .. yap.winbar(buf))
 assert(yap.overview(buf2) == "◉1", "overview() wrong: " .. tostring(yap.overview(buf2)))
 

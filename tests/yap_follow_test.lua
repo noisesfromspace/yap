@@ -106,6 +106,16 @@ do
     "stream did not advance"
   )
   assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
+  -- Let this turn finish before the next section starts; a second
+  -- :YapSend while the shared backend is still streaming would be
+  -- (correctly) refused with "already streaming".
+  assert(
+    vim.wait(20000, function()
+      local lines = vim.api.nvim_buf_get_lines(buf, -3, -1, false)
+      return lines[1] == "# @user" and lines[2] == ""
+    end, 20),
+    "turn did not finish"
+  )
 end
 
 -- ── 3. cursor parked mid-buffer: neither cursor nor view moves ───────────

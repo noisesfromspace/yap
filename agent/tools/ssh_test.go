@@ -1,390 +1,100 @@
 package tools
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/binary"
-	"encoding/pem"
-	"fmt"
-	"net"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
-
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 )
 
-func TestSSHVerifyReuseClose(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".ssh")
-	if err := os.Mkdir(dir, 0700); err != nil {
+// The fake executable models OpenSSH's foreground master and mux commands;
+// these tests check ownership, reuse, options, and shutdown without hardware.
+func TestSSHControlMasterLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ssh")
+	log := filepath.Join(dir, "calls")
+	source := `#!/bin/sh
+printf '%s\n' "$*" >> "$SSH_TEST_LOG"
+case " $* " in
+ *" -O check "*) test -e "$SSH_TEST_SOCKET" ;;
+ *" -O exit "*) rm -f "$SSH_TEST_SOCKET"; exit 0 ;;
+ *" -M -N "*) touch "$SSH_TEST_SOCKET"; trap 'rm -f "$SSH_TEST_SOCKET"; exit 0' TERM INT; while test -e "$SSH_TEST_SOCKET"; do sleep 0.1; done ;;
+ *) echo remote-output ;;
+esac
+`
+	if err := os.WriteFile(script, []byte(source), 0700); err != nil {
 		t.Fatal(err)
 	}
-	private, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+	known := filepath.Join(dir, "known")
+	if err := os.WriteFile(known, []byte("example.test ssh-ed25519 AAAA\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(private)}), 0600); err != nil {
+	prev, prevBinary := systemKnownHosts, sshBinary
+	systemKnownHosts, sshBinary = known, script
+	t.Cleanup(func() { CloseSSH(); systemKnownHosts, sshBinary = prev, prevBinary })
+	t.Setenv("SSH_TEST_LOG", log)
+	// The fake uses the same socket name that startMaster computes.
+	a := &sshArgs{Host: "example.test", User: "tester", Command: "first", Timeout: 3}
+	// ssh-keygen -F requires a valid entry; use a dedicated fake for lookup.
+	keygen := filepath.Join(dir, "ssh-keygen")
+	if err := os.WriteFile(keygen, []byte("#!/bin/sh\ntest \"$2\" = example.test\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	// For the fake master, precompute the socket from its arguments instead
+	// using a helper script that extracts the -S option.
+	source = strings.ReplaceAll(source, `"$SSH_TEST_SOCKET"`, `"$(printf '%s\n' "$*" | sed -n 's/.* -S \([^ ]*\).*/\1/p')"`)
+	if err := os.WriteFile(script, []byte(source), 0700); err != nil {
 		t.Fatal(err)
 	}
-	signer, err := ssh.NewSignerFromKey(hostKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	var connections atomic.Int32
-	config := &ssh.ServerConfig{NoClientAuth: true}
-	config.AddHostKey(signer)
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				server, chans, reqs, err := ssh.NewServerConn(conn, config)
-				if err != nil {
-					conn.Close()
-					return
-				}
-				connections.Add(1)
-				go ssh.DiscardRequests(reqs)
-				for ch := range chans {
-					if ch.ChannelType() != "session" {
-						ch.Reject(ssh.UnknownChannelType, "not session")
-						continue
-					}
-					channel, requests, err := ch.Accept()
-					if err != nil {
-						continue
-					}
-					go func() {
-						defer channel.Close()
-						for req := range requests {
-							if req.Type != "exec" {
-								req.Reply(false, nil)
-								continue
-							}
-							cmd := string(req.Payload[4:])
-							req.Reply(true, nil)
-							fmt.Fprint(channel, cmd)
-							code := make([]byte, 4)
-							if cmd == "fail" {
-								binary.BigEndian.PutUint32(code, 7)
-							}
-							channel.SendRequest("exit-status", false, code)
-							return
-						}
-					}()
-				}
-				server.Close()
-			}()
-		}
-	}()
-	host, portString, _ := net.SplitHostPort(listener.Addr().String())
-	var port int
-	fmt.Sscan(portString, &port)
-	args := &sshArgs{Host: host, Port: port, User: "test", Command: "first", Timeout: 3}
-	known := filepath.Join(home, "system_known_hosts")
-	previous := systemKnownHosts
-	systemKnownHosts = known
-	t.Cleanup(func() { systemKnownHosts = previous })
-	// A user known_hosts entry cannot authorize a host absent from the system list.
-	userEntry := fmt.Sprintf("[localhost]:%d %s %s\n", port, signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
-	if err := os.WriteFile(filepath.Join(dir, "known_hosts"), []byte(userEntry), 0600); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(known, []byte(""), 0600)
-	if _, err := runSSH(args); err == nil || !strings.Contains(err.Error(), "knownhosts") && !strings.Contains(err.Error(), "known host") {
-		t.Fatalf("untrusted host accepted: %v", err)
-	}
-	line := fmt.Sprintf("[%s]:%d %s %s\n", host, port, signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
-	if err := os.WriteFile(known, []byte(line), 0600); err != nil {
-		t.Fatal(err)
-	}
-	args.Host = "localhost" // Only the connected IP is known to the system.
-	if _, err := runSSH(args); err == nil || !strings.Contains(err.Error(), "unknown") {
-		t.Fatalf("unlisted hostname accepted via IP: %v", err)
-	}
-	// The hostname itself must be explicitly listed by NixOS.
-	knownHost := fmt.Sprintf("[localhost]:%d %s %s\n", port, signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
-	if err := os.WriteFile(known, []byte(line+knownHost), 0600); err != nil {
-		t.Fatal(err)
-	}
-	// A conflicting hostname record must not fall back to the correct IP.
-	other, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrong, err := ssh.NewSignerFromKey(other)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mismatch := fmt.Sprintf("[localhost]:%d %s %s\n", port, wrong.PublicKey().Type(), base64.StdEncoding.EncodeToString(wrong.PublicKey().Marshal()))
-	if err := os.WriteFile(known, []byte(line+mismatch), 0600); err != nil {
-		t.Fatal(err)
-	}
-	args.Close = true
-	if _, err := runSSH(args); err != nil {
-		t.Fatal(err)
-	}
-	args.Close = false
-	if _, err := runSSH(args); err == nil || !strings.Contains(err.Error(), "mismatch") {
-		t.Fatalf("hostname mismatch bypassed with IP fallback: %v", err)
-	}
-	if err := os.WriteFile(known, []byte(line+knownHost), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for _, cmd := range []string{"first", "second", "fail"} {
-		args.Command = cmd
-		text, err := runSSH(args)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(text, cmd) {
-			t.Fatalf("missing output: %q", text)
-		}
-		if cmd == "fail" && !strings.Contains(text, "[exit code 7]") {
-			t.Fatalf("missing exit code: %q", text)
+	for _, cmd := range []string{"first", "second"} {
+		a.Command = cmd
+		out, err := runSSH(a)
+		if err != nil || out != "remote-output\n" {
+			t.Fatalf("%s: %q %v", cmd, out, err)
 		}
 	}
-	if got := connections.Load(); got != 1 {
-		t.Fatalf("expected one authenticated connection, got %d", got)
-	}
-	args.Close = true
-	if _, err := runSSH(args); err != nil {
-		t.Fatal(err)
-	}
-	args.Close = false
-	args.Command = "again"
-	if _, err := runSSH(args); err != nil {
-		t.Fatal(err)
-	}
-	if got := connections.Load(); got != 2 {
-		t.Fatalf("close did not reconnect: %d", got)
-	}
-}
-
-func TestSSHAgentIdentity(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if err := os.Mkdir(filepath.Join(home, ".ssh"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	_, private, err := ed25519.GenerateKey(rand.Reader)
+	data, err := os.ReadFile(log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signer, err := ssh.NewSignerFromKey(private)
-	if err != nil {
+	if strings.Count(string(data), " -M -N ") != 1 {
+		t.Fatalf("expected one master: %s", data)
+	}
+	if !strings.Contains(string(data), "GlobalKnownHostsFile="+known) || !strings.Contains(string(data), "-F /dev/null") {
+		t.Fatalf("missing trust options: %s", data)
+	}
+	socketDir := sshMasters.dir
+	st, err := os.Stat(socketDir)
+	if err != nil || st.Mode().Perm() != 0700 {
+		t.Fatalf("socket dir mode: %v %v", st, err)
+	}
+	a.Close = true
+	if _, err := runSSH(a); err != nil {
 		t.Fatal(err)
 	}
-	keys := agent.NewKeyring()
-	if err := keys.Add(agent.AddedKey{PrivateKey: private}); err != nil {
+	if _, err := os.Stat(socketDir); !os.IsNotExist(err) {
+		t.Fatalf("socket dir remains: %v", err)
+	}
+	a.Close = false
+	if _, err := runSSH(a); err != nil {
 		t.Fatal(err)
 	}
-	socket := filepath.Join(home, "agent.sock")
-	agentListener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
+	CloseSSH()
+	if sshMasters.dir != "" || len(sshMasters.clients) != 0 {
+		t.Fatal("backend exit left master")
 	}
-	defer agentListener.Close()
-	t.Setenv("SSH_AUTH_SOCK", socket)
-	go func() {
-		for {
-			c, err := agentListener.Accept()
-			if err != nil {
-				return
-			}
-			go func() { defer c.Close(); agent.ServeAgent(keys, c) }()
-		}
-	}()
-	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
+	data, _ = os.ReadFile(log)
+	if strings.Count(string(data), " -M -N ") != 2 {
+		t.Fatalf("expected redial after close: %s", data)
 	}
-	hostSigner, err := ssh.NewSignerFromKey(hostKey)
-	if err != nil {
-		t.Fatal(err)
+	tool, ok := Get("ssh")
+	if !ok {
+		t.Fatal("tool not registered")
 	}
-	config := &ssh.ServerConfig{PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-		if string(key.Marshal()) != string(signer.PublicKey().Marshal()) {
-			return nil, fmt.Errorf("wrong identity")
-		}
-		return nil, nil
-	}}
-	config.AddHostKey(hostSigner)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	go func() {
-		for {
-			c, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				server, chans, reqs, err := ssh.NewServerConn(c, config)
-				if err != nil {
-					c.Close()
-					return
-				}
-				go ssh.DiscardRequests(reqs)
-				for ch := range chans {
-					channel, requests, err := ch.Accept()
-					if err != nil {
-						continue
-					}
-					go func() {
-						defer channel.Close()
-						for req := range requests {
-							if req.Type == "exec" {
-								req.Reply(true, nil)
-								fmt.Fprint(channel, "agent authenticated")
-								channel.SendRequest("exit-status", false, make([]byte, 4))
-								return
-							}
-							req.Reply(false, nil)
-						}
-					}()
-				}
-				server.Close()
-			}()
-		}
-	}()
-	host, portString, _ := net.SplitHostPort(listener.Addr().String())
-	var port int
-	fmt.Sscan(portString, &port)
-	known := fmt.Sprintf("[%s]:%d %s %s\n", host, port, hostSigner.PublicKey().Type(), base64.StdEncoding.EncodeToString(hostSigner.PublicKey().Marshal()))
-	knownPath := filepath.Join(home, "system_known_hosts")
-	previous := systemKnownHosts
-	systemKnownHosts = knownPath
-	t.Cleanup(func() { systemKnownHosts = previous })
-	if err := os.WriteFile(knownPath, []byte(known), 0600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := runSSH(&sshArgs{Host: host, Port: port, User: "test", Command: "whoami", Timeout: 3})
-	if err != nil || !strings.Contains(result, "agent authenticated") {
-		t.Fatalf("agent auth: %q, %v", result, err)
-	}
-}
-
-func TestSSHStaleRedial(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".ssh")
-	if err := os.Mkdir(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	private, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(private)}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := ssh.NewSignerFromKey(hostKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := &ssh.ServerConfig{NoClientAuth: true}
-	config.AddHostKey(signer)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	var connections atomic.Int32
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				server, chans, reqs, err := ssh.NewServerConn(conn, config)
-				if err != nil {
-					conn.Close()
-					return
-				}
-				connections.Add(1)
-				go ssh.DiscardRequests(reqs)
-				for ch := range chans {
-					channel, requests, err := ch.Accept()
-					if err != nil {
-						continue
-					}
-					go func() {
-						defer channel.Close()
-						for req := range requests {
-							if req.Type != "exec" {
-								req.Reply(false, nil)
-								continue
-							}
-							req.Reply(true, nil)
-							fmt.Fprint(channel, string(req.Payload[4:]))
-							channel.SendRequest("exit-status", false, make([]byte, 4))
-							return
-						}
-					}()
-				}
-				server.Close()
-			}()
-		}
-	}()
-	host, portString, _ := net.SplitHostPort(listener.Addr().String())
-	var port int
-	fmt.Sscan(portString, &port)
-	known := fmt.Sprintf("[%s]:%d %s %s\n", host, port, signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
-	knownPath := filepath.Join(home, "system_known_hosts")
-	previous := systemKnownHosts
-	systemKnownHosts = knownPath
-	t.Cleanup(func() { systemKnownHosts = previous })
-	if err := os.WriteFile(knownPath, []byte(known), 0600); err != nil {
-		t.Fatal(err)
-	}
-	args := &sshArgs{Host: host, Port: port, User: "test", Command: "first", Timeout: 3}
-	if _, err := runSSH(args); err != nil {
-		t.Fatal(err)
-	}
-	// Drop the cached connection out from under the client, as a dead peer
-	// would. The next command must notice on session setup and re-dial.
-	sshClients.Lock()
-	var cached *sshConn
-	for _, c := range sshClients.clients {
-		cached = c
-	}
-	sshClients.Unlock()
-	if cached == nil {
-		t.Fatal("no cached connection")
-	}
-	cached.conn.Close()
-	args.Command = "second"
-	if _, err := runSSH(args); err != nil {
-		t.Fatal(err)
-	}
-	if got := connections.Load(); got != 2 {
-		t.Fatalf("expected a re-dial after the stale connection, got %d connections", got)
+	raw, _ := json.Marshal(map[string]any{"host": "-unsafe", "command": "hi"})
+	if _, _, err := tool.Run(raw); err == nil {
+		t.Fatal("option-like host accepted")
 	}
 }

@@ -135,6 +135,13 @@ local function winbar_hl(text, group)
   return "%#Yap" .. group .. "#" .. text .. "%*"
 end
 
+-- Island segments share one raised background (`YapIsland`); each chip
+-- keeps its own foreground via `YapIsland<Group>`. `%*` resets to the
+-- WinBar default, so every island piece re-applies its own highlight.
+local function island_hl(text, group)
+  return "%#YapIsland" .. (group or "") .. "#" .. text .. "%*"
+end
+
 -- Last backend error per buffer; shown in the winbar until the next send.
 local stream = require("harness.stream")
 local errors = stream.errors
@@ -243,9 +250,10 @@ local function winbar_description(buf)
   return d
 end
 
--- Layout: identity on the left (which model am I talking to), activity
--- on the right — usage totals first, then the state glyph pinned to the
--- far right edge so it never moves as numbers grow.
+-- Layout: a busy beacon and a global-session island on the left, then the
+-- current session's title/model/fold view; activity on the right — usage
+-- totals first, then the state glyph pinned to the far right edge so it
+-- never moves as numbers grow.
 local function render_winbar(buf)
   local provider, model = current_combo(buf)
   local parts = {}
@@ -256,6 +264,24 @@ local function render_winbar(buf)
   if running and running[buf] then
     parts[#parts + 1] = winbar_hl(" ▶ ", "Busy")
   end
+  -- The island rolls up ALL OTHER yap sessions (never the current buffer,
+  -- whose own state is on the right). It reads before the session identity
+  -- that follows, as one raised pill.
+  local running_others_n = running_others(buf)
+  local others = awaiting_others(buf)
+  if running_others_n > 0 or others > 0 then
+    parts[#parts + 1] = island_hl(" ")
+    if running_others_n > 0 then
+      parts[#parts + 1] = island_hl("▶" .. running_others_n, "Busy")
+    end
+    if running_others_n > 0 and others > 0 then
+      parts[#parts + 1] = island_hl(" │ ")
+    end
+    if others > 0 then
+      parts[#parts + 1] = island_hl("◉" .. others, "Needs")
+    end
+    parts[#parts + 1] = island_hl(" ")
+  end
   local desc = winbar_description(buf)
   if desc then
     parts[#parts + 1] = winbar_hl(" " .. desc, "Description")
@@ -263,14 +289,6 @@ local function render_winbar(buf)
   end
   parts[#parts + 1] = winbar_hl(provider .. "/" .. model, "Model")
   parts[#parts + 1] = winbar_hl(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle")
-  local running_others_n = running_others(buf)
-  if running_others_n > 0 then
-    parts[#parts + 1] = winbar_hl(" ▶" .. running_others_n .. " ", "Busy")
-  end
-  local others = awaiting_others(buf)
-  if others > 0 then
-    parts[#parts + 1] = winbar_hl(" ◉" .. others .. " ", "Needs")
-  end
   parts[#parts + 1] = "%="
   local u = vim.b[buf].yap_usage
   if u and (u.prompt > 0 or u.completion > 0) then
@@ -351,9 +369,28 @@ local function define_winbar_hl()
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
+
+  -- The island is a raised pill: a theme-aware background (NormalFloat,
+  -- falling back to Visual) with the chip foregrounds pulled from the
+  -- linked groups above so user `:hi YapBusy` overrides still win.
+  local function attr(group, key)
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = group, link = false })
+    if ok and hl and hl[key] then
+      return hl[key]
+    end
+  end
+  local bg = attr("NormalFloat", "bg") or attr("Visual", "bg")
+  local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
+  vim.api.nvim_set_hl(0, "YapIsland", { default = true, fg = fg, bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandBusy", { default = true, fg = attr("YapBusy", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandNeeds", { default = true, fg = attr("YapNeeds", "fg"), bg = bg })
 end
 
 define_winbar_hl()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup("YapWinbarHl", { clear = true }),
+  callback = define_winbar_hl,
+})
 
 -- Conversation document parsing/appending lives in harness.document.
 
@@ -1132,11 +1169,6 @@ Return only the title.]]
       { role = "system", content = system },
       { role = "user", content = content },
     },
-    -- A title is a handful of words; cap output so a verbose model can't
-    -- pad it into a sentence (see Request.MaxTokens in agent/agent.go).
-    -- Sized for the 2-6 word budget plus a little reasoning headroom, since
-    -- the description models (gpt-5-nano/mini) are reasoning models.
-    max_tokens = 20,
   })
   vim.system(
     { M.config.bin, "send", "--provider", provider, "--model", model },
@@ -1155,6 +1187,13 @@ Return only the title.]]
         :gsub("%s+$", "")
       if description == "" then
         return
+      end
+      -- The prompts ask for a 2-6 word phrase, but a verbose model can
+      -- still return a paragraph; hard-cap it so the frontmatter and
+      -- picker stay readable. (No max_tokens cap: reasoning models spend
+      -- the whole budget on reasoning and return an empty completion.)
+      if #description > 60 then
+        description = description:sub(1, 59):gsub("%s+%S*$", "") .. "…"
       end
       local e = frontmatter_end(buf)
       if not e then
@@ -1311,7 +1350,9 @@ function M.send()
   end
 
   if not server then
-    local ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
+    local started
+    local ok
+    ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
       stdin = true,
       text = true,
       stdout = vim.schedule_wrap(function(_, data)

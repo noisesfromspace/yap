@@ -19,6 +19,7 @@
 package main
 
 import (
+	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 	"bufio"
 	"bytes"
@@ -32,6 +33,7 @@ import (
 )
 
 func main() {
+	defer tools.CloseSSH()
 	// :YapStop terminates the persistent backend. Kill tracked local
 	// tool process groups as well; one handler serves every turn.
 	sig := make(chan os.Signal, 1)
@@ -39,6 +41,7 @@ func main() {
 	go func() {
 		<-sig
 		utils.KillAll()
+		tools.CloseSSH()
 		fmt.Fprintln(os.Stderr, "interrupted")
 		os.Exit(1)
 	}()
@@ -58,11 +61,13 @@ func main() {
 			os.Exit(2)
 		}
 		if err := send(*provider, *model, os.Stdin, os.Stdout); err != nil {
+			tools.CloseSSH()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
 	case "serve":
 		if err := serve(os.Stdin, os.Stdout); err != nil {
+			tools.CloseSSH()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

@@ -19,7 +19,7 @@ It hooks into Neovim by:
   (<leader>1/2/3)
 - Context slimming and compaction (:YapClear, :YapCompact)
 - Templates and skills injected into the conversation (:YapInsert)
-- Pickers that use `vim.ui.select`, works onfzf-lua, telescope, mini.pick,
+- Pickers that use `vim.ui.select`, works on fzf-lua, telescope, mini.pick,
   snacks, or any other picker plugin
 - A winbar with session description, model, token totals and cost
 - Plain-markdown sessions you can resume, fork, and render with any plugin
@@ -120,15 +120,17 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   / `:cnewer`. The side effect happens only for a live tool call; reopening a
   saved session does not replay it.
 
-The session description, provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals
-and cost live in the winbar. Long descriptions are truncated, and token totals
-use compact `k`/`m` notation. Its trailing glyph marks busy / error / `◉
-waiting` (the agent awaits your next prompt) / idle. Its `▶N` rollup shows how
-many OTHER sessions are streaming a reply, and `◉N` shows how many OTHER
-sessions await your reply. A turn finishing in a background chat fires
-`vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds
-all agent output (user prompts stay open), `<leader>2` folds tool calls and
-thinking (default when a session opens), `<leader>3` unfolds everything.
+The winbar leads with a `▶` busy beacon while the current session is
+streaming, then a raised island rolling up ALL OTHER sessions: `▶N` streaming
+and `◉N` awaiting your reply (the current buffer is never counted there).
+After that: the session description, provider/model, and fold view (`Ⓕ1`-`Ⓕ3`).
+Long descriptions are truncated, and token totals use compact `k`/`m` notation
+on the right, followed by the trailing state glyph — busy / error / `◉
+waiting` (the agent awaits your next prompt) / idle. A turn finishing in a
+background chat fires `vim.notify` — and a `User YapTurnDone` autocmd you can
+hook. `<leader>1` folds all agent output (user prompts stay open), `<leader>2`
+folds tool calls and thinking (default when a session opens), `<leader>3`
+unfolds everything.
 
 # Rendering
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
