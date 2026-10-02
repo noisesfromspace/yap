@@ -114,10 +114,10 @@ func (l *lineEscaper) Flush() {
 	l.w.Flush()
 }
 
-// streamStep runs one generation step via the adapter. Writes thinking
-// markers and streams assistant prose live; defers prose for tool-bearing
-// rounds to the caller (which re-writes it after the tool regions — the
-// harness relocates the live-streamed copy).
+// streamStep runs one generation step via the adapter. It writes thinking
+// markers and streams assistant prose live. Prose from a tool-bearing round
+// stays where it streamed (before the tool blocks), matching the model's
+// part order: preamble text precedes the calls it introduces.
 func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool) (*turn, error) {
 	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs()})
 	if err != nil {
@@ -568,7 +568,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
-			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": string(call.Input)})
+			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": tools.Scrub(string(call.Input))})
 			tool, ok := tools.Get(call.Name)
 			var result, ui string
 			if !ok {
@@ -598,22 +598,9 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 				}},
 			})
 		}
-		// Prose from a tool-bearing provider round is display-only here: it
-		// is already in the assistant history above, but showing it after the
-		// completed calls keeps calls visible before execution and before any
-		// text that refers to their results.
-		if t.text != "" {
-			out.WriteString(t.text)
-			trail = trailingNL(t.text)
-			if trail == 0 {
-				out.WriteString("\n\n")
-				trail = 2
-			} else if trail == 1 {
-				out.WriteString("\n")
-				trail = 2
-			}
-			wrote = true
-		}
+		// Prose for this round already streamed live before the tool blocks;
+		// the tool regions self-terminate with a blank line (R7), so nothing
+		// more to emit here.
 		out.Flush()
 	}
 

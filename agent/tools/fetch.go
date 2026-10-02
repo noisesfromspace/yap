@@ -37,7 +37,7 @@ func init() {
 				return "", "", fmt.Errorf("only http(s) URLs supported")
 			}
 
-			client := &http.Client{Timeout: 30 * time.Second}
+			client := &http.Client{Timeout: 30 * time.Second, Transport: checkedTransport()}
 			resp, err := client.Get(a.URL)
 			if err != nil {
 				return "", "", err

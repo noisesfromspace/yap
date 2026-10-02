@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"sort"
 	"strings"
@@ -48,6 +49,14 @@ func init() {
 func runCurl(a *curlArgs) (string, string, error) {
 	if !strings.HasPrefix(a.URL, "http://") && !strings.HasPrefix(a.URL, "https://") {
 		return "", "", fmt.Errorf("only http(s) URLs supported")
+	}
+
+	u, perr := url.Parse(a.URL)
+	if perr != nil {
+		return "", "", fmt.Errorf("invalid URL: %w", perr)
+	}
+	if err := checkURLHost(u); err != nil {
+		return "", "", err
 	}
 
 	// -sS: silent, but show errors. --compressed: send Accept-Encoding and
