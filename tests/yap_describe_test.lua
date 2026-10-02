@@ -56,9 +56,13 @@ assert(not tiny:match("described%."), "tiny request leaked the assistant answer:
 assert(full and full:match("Fix the session picker label"), "answer request missing user message: " .. tostring(full))
 assert(full:match("described%."), "answer request missing assistant answer: " .. full)
 
--- The description made it into the frontmatter and winbar.
-local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
-assert(
+-- The requests are logged before their replies complete. Wait for the
+-- asynchronous description callback to update the frontmatter.
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
+end, 50)
+local lines = vim.api.nvim_buf_get_lines(buf, 0, 8, false)
+assert(ok and
   table.concat(lines, "\n"):match("description: described%."),
   "description not written to frontmatter: " .. table.concat(lines, "\n")
 )

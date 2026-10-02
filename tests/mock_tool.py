@@ -7,7 +7,7 @@ class H(BaseHTTPRequestHandler):
         msgs = body["messages"]
         assert body.get("tools"), "no tools in request"
         names = [t["function"]["name"] for t in body["tools"]]
-        assert names == ["bash", "edit", "fetch", "glob", "ls", "quickfix", "read", "search", "websearch", "write"], names
+        assert names == ["bash", "curl", "edit", "fetch", "git", "glob", "ls", "quickfix", "read", "search", "ssh", "websearch", "write"], names
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")

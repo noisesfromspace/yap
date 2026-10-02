@@ -2,7 +2,7 @@ package main
 
 // The agent loop: one generation step per iteration; tool calls are
 // executed (compiled-in tools from the tools package) and re-sent until
-// the final answer or the iteration bound. The whole turn is one process.
+// the final answer or the iteration bound. Turns may share a long-lived process.
 
 import (
 	"bufio"
@@ -13,10 +13,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"boers.email/yap/agent/pricing"
@@ -423,6 +421,14 @@ var providerFactory = func(name string, prov Provider) (providers.Provider, erro
 }
 
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
+	var req Request
+	if err := json.NewDecoder(in).Decode(&req); err != nil {
+		return fmt.Errorf("read request from stdin: %w", err)
+	}
+	return runTurn(providerName, model, req, outw)
+}
+
+func runTurn(providerName, model string, req Request, outw io.Writer) error {
 	start := time.Now()
 	cfg, err := loadConfig()
 	if err != nil {
@@ -446,10 +452,6 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		return err
 	}
 
-	var req Request
-	if err := json.NewDecoder(in).Decode(&req); err != nil {
-		return fmt.Errorf("read request from stdin: %w", err)
-	}
 	if len(req.Messages) == 0 {
 		return errors.New("request contains no messages")
 	}
@@ -494,18 +496,6 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 			out.WriteString("\n")
 		}
 	}
-
-	// :YapStop kills this process; take in-flight tool commands (own
-	// process groups) down with it instead of orphaning them.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sig)
-	go func() {
-		<-sig
-		utils.KillAll()
-		fmt.Fprintln(os.Stderr, "interrupted")
-		os.Exit(1)
-	}()
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {

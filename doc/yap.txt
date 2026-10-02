@@ -392,7 +392,7 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
-bash, curl, git, write, edit, search, glob, websearch, quickfix. search and glob shell out to
+bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 websearch queries the Exa search API (api.exa.ai) and returns up to N
@@ -406,6 +406,14 @@ main content as Markdown, while curl returns the raw response body and
 does not run JavaScript). git runs read-only subcommands
 (status, diff, log, show, blame) in the project root with pager, color
 and credential prompts disabled; output is head-truncated like search.
+
+ssh runs non-interactive commands with an in-process x/crypto/ssh client.
+It uses ~/.ssh/id_ed25519 and verifies the server against
+~/.ssh/known_hosts (unknown hosts are refused). Calls to the same
+user/host/port reuse the authenticated connection; close=true disconnects.
+A command runs in a new session with a 120s default timeout, returning its
+output and exit status. :YapStop terminates the backend and its SSH sessions.
+No control socket, SSH agent forwarding, or X11 forwarding is used.
 
 Tool parameters are declared as a Go struct per tool; the schema sent
 to the provider is generated from it by reflection, and incoming
@@ -728,11 +736,17 @@ history above it. For a global segment independent of yap buffers, use
 ==============================================================================
 10. LUA <-> GO PROTOCOL                                      *yap-protocol*
 
-  stdin   {"messages":[...]}  (roles system/user/assistant; persisted tool
+  stdin   one JSON line per turn: {"provider":"...","model":"...",
+          "messages":[...]} (roles system/user/assistant; persisted tool
           regions arrive flattened as assistant transcript text)
-  argv    yap send --provider NAME --model MODEL
+  argv    yap serve (one persistent process per chat buffer)
   stdout  raw assistant text, streamed; thinking, tool blocks and usage
-          wrapped in |yap-markers|
+          wrapped in |yap-markers|. Each turn ends with an RS-prefixed
+          yap:turn_end {"ok":true|false,"error":?} line (not buffer text).
+          A turn is complete once the corresponding stderr turn_complete
+          barrier is received, so audit events cannot lag behind completion.
+          `yap send --provider NAME --model MODEL` remains available for
+          one-off calls (e.g. generating a session description).
   stderr  error message, exit 1. Also carries `yap:event {json}`
           progress lines; the Lua side timestamps each one and appends
           it to the audit log (|yap-audit|), and renders it into the
