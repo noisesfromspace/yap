@@ -20,8 +20,17 @@ end
 -- While the first session streams, a second buffer's winbar rolls up how
 -- many OTHER sessions are running (the current buffer's own `▶` has no digit).
 local buf2 = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "Second" })
 assert(yap.winbar(buf2):match("▶1"), "running rollup missing on the other buffer: " .. yap.winbar(buf2))
 assert(not yap.winbar(buf):match("▶%d"), "running rollup counts the current buffer: " .. yap.winbar(buf))
+-- A new session must still be able to send while the first streams: each
+-- buffer owns its backend, so turns from different sessions run at once.
+yap.send()
+local done2 = vim.wait(10000, function()
+  local l = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
+  return l[#l] == "" and l[#l - 1] == "# @user"
+end, 100)
+assert(done2, "second session did not stream to completion")
 -- wait for completion and check the whole buffer obeys R7
 local done = vim.wait(8000, function()
   local l = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

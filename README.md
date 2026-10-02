@@ -43,6 +43,9 @@ Add this repo as a Neovim plugin (any plugin manager, or `vim.opt.rtp:append("/o
 require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
 
+Every keymap in the Quick start list below is a `keymaps` config key; set
+one to `""` to disable it, e.g. `keymaps = { stop = "<M-Esc>" }`.
+
 Providers live in `~/.config/yap.json` (native OpenAI/Anthropic/Google/DeepSeek,
 or any OpenAI-compatible endpoint):
 

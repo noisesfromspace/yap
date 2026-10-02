@@ -161,30 +161,35 @@ end
 
 -- ─── Buffer setup ──────────────────────────────────────────────────────────
 
-function M.setup_buffer(buf)
+function M.setup_buffer(buf, keys)
+  keys = keys or require("harness").config.keymaps
   local map = function(mode, lhs, rhs, desc)
+    if lhs == "" then
+      return
+    end
     vim.keymap.set(mode, lhs, rhs, { buffer = buf, expr = true, silent = true, desc = desc })
   end
   -- Visual-mode <expr> mappings bracket the range and select it.
-  map("x", "im", inner_message, "yap: inner message")
-  map("x", "am", around_message, "yap: a message")
-  map("x", "it", inner_block, "yap: inner block")
-  map("x", "at", around_block, "yap: a block")
+  map("x", keys.inner_message, inner_message, "yap: inner message")
+  map("x", keys.around_message, around_message, "yap: a message")
+  map("x", keys.inner_block, inner_block, "yap: inner block")
+  map("x", keys.around_block, around_block, "yap: a block")
 
   -- Operator-pending mappings re-enter visual mode (charwise for inner,
-  -- linewise for outer); the pending operator then applies to the selection.
-  vim.keymap.set("o", "im", function()
-    vim.cmd.normal("vim")
-  end, { buffer = buf, silent = true, desc = "yap: inner message" })
-  vim.keymap.set("o", "am", function()
-    vim.cmd.normal("Vam")
-  end, { buffer = buf, silent = true, desc = "yap: a message" })
-  vim.keymap.set("o", "it", function()
-    vim.cmd.normal("vit")
-  end, { buffer = buf, silent = true, desc = "yap: inner block" })
-  vim.keymap.set("o", "at", function()
-    vim.cmd.normal("Vat")
-  end, { buffer = buf, silent = true, desc = "yap: a block" })
+  -- linewise for outer); the pending operator then applies to the
+  -- selection. Re-entry goes through the configured visual lhs.
+  local op = function(lhs, visual_lhs, linewise, desc)
+    if lhs == "" then
+      return
+    end
+    vim.keymap.set("o", lhs, function()
+      vim.cmd.normal((linewise and "V" or "v") .. visual_lhs)
+    end, { buffer = buf, silent = true, desc = desc })
+  end
+  op(keys.inner_message, keys.inner_message, false, "yap: inner message")
+  op(keys.around_message, keys.around_message, true, "yap: a message")
+  op(keys.inner_block, keys.inner_block, false, "yap: inner block")
+  op(keys.around_block, keys.around_block, true, "yap: a block")
 end
 
 return M

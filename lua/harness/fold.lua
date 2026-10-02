@@ -318,7 +318,8 @@ end
 
 -- ─── Buffer setup ──────────────────────────────────────────────────────────
 
-function M.setup_buffer(buf)
+function M.setup_buffer(buf, keys)
+  keys = keys or require("harness").config.keymaps
   vim.wo.foldmethod = "expr"
   vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
@@ -326,40 +327,46 @@ function M.setup_buffer(buf)
   M.set_view_level(2) -- default: conversation open, tools & thinking folded
 
   local map = function(lhs, rhs, desc)
+    if lhs == "" then
+      return
+    end
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
   end
   -- Also as motions: visual (`v]t` selects to the next tool) and
   -- operator-pending (`d]c` deletes to the next thinking block).
   local map_motion = function(lhs, rhs, desc)
+    if lhs == "" then
+      return
+    end
     vim.keymap.set({ "x", "o" }, lhs, rhs, { buffer = buf, silent = true, desc = desc })
   end
-  map("]m", M.next_message, "Next message")
-  map("[m", M.prev_message, "Previous message")
-  map("]u", M.next_user_message, "Next user message")
-  map("[u", M.prev_user_message, "Previous user message")
-  map("]a", M.next_assistant_message, "Next assistant message")
-  map("[a", M.prev_assistant_message, "Previous assistant message")
-  map("]t", M.next_tool, "Next tool call or thinking block")
-  map("[t", M.prev_tool, "Previous tool call or thinking block")
-  map("]c", M.next_think, "Next thinking block")
-  map("[c", M.prev_think, "Previous thinking block")
-  map("]e", M.next_error, "Next error block")
-  map("[e", M.prev_error, "Previous error block")
-  map_motion("]t", M.next_tool, "Select to next tool call or thinking block")
-  map_motion("[t", M.prev_tool, "Select to previous tool call or thinking block")
-  map_motion("]c", M.next_think, "Select to next thinking block")
-  map_motion("[c", M.prev_think, "Select to previous thinking block")
-  map_motion("]e", M.next_error, "Select to next error block")
-  map_motion("[e", M.prev_error, "Select to previous error block")
+  map(keys.next_message, M.next_message, "Next message")
+  map(keys.prev_message, M.prev_message, "Previous message")
+  map(keys.next_user, M.next_user_message, "Next user message")
+  map(keys.prev_user, M.prev_user_message, "Previous user message")
+  map(keys.next_assistant, M.next_assistant_message, "Next assistant message")
+  map(keys.prev_assistant, M.prev_assistant_message, "Previous assistant message")
+  map(keys.next_tool, M.next_tool, "Next tool call or thinking block")
+  map(keys.prev_tool, M.prev_tool, "Previous tool call or thinking block")
+  map(keys.next_think, M.next_think, "Next thinking block")
+  map(keys.prev_think, M.prev_think, "Previous thinking block")
+  map(keys.next_error, M.next_error, "Next error block")
+  map(keys.prev_error, M.prev_error, "Previous error block")
+  map_motion(keys.next_tool, M.next_tool, "Select to next tool call or thinking block")
+  map_motion(keys.prev_tool, M.prev_tool, "Select to previous tool call or thinking block")
+  map_motion(keys.next_think, M.next_think, "Select to next thinking block")
+  map_motion(keys.prev_think, M.prev_think, "Select to previous thinking block")
+  map_motion(keys.next_error, M.next_error, "Select to next error block")
+  map_motion(keys.prev_error, M.prev_error, "Select to previous error block")
   local bind_view = function(key, level, desc)
     map(key, function()
       M.set_view_level(level)
     end, desc)
   end
-  bind_view("<leader>1", 1, "Fold all agent messages (user prompts stay open)")
-  bind_view("<leader>2", 2, "Fold all tool calls and thinking blocks")
-  bind_view("<leader>3", 3, "Unfold everything")
-  map("<Tab>", "za", "Toggle fold")
+  bind_view(keys.view_1, 1, "Fold all agent messages (user prompts stay open)")
+  bind_view(keys.view_2, 2, "Fold all tool calls and thinking blocks")
+  bind_view(keys.view_3, 3, "Unfold everything")
+  map(keys.toggle_fold, "za", "Toggle fold")
 end
 
 return M
