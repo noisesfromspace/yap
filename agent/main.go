@@ -100,11 +100,31 @@ func (o turnOutput) Write(p []byte) (int, error) {
 }
 
 func serve(in io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 4096), 16*1024*1024)
-	for scanner.Scan() {
+	tools.SubagentReplies = make(chan tools.SubagentReply, 1)
+	defer func() { tools.SubagentReplies = nil }()
+	requests := make(chan []byte)
+	readErr := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(in)
+		scanner.Buffer(make([]byte, 4096), 16*1024*1024)
+		for scanner.Scan() {
+			line := append([]byte(nil), scanner.Bytes()...)
+			var reply struct {
+				Type string `json:"type"`
+				tools.SubagentReply
+			}
+			if json.Unmarshal(line, &reply) == nil && reply.Type == "subagent_result" {
+				tools.SubagentReplies <- reply.SubagentReply
+			} else {
+				requests <- line
+			}
+		}
+		readErr <- scanner.Err()
+		close(requests)
+	}()
+	for line := range requests {
 		var req serveRequest
-		err := json.Unmarshal(scanner.Bytes(), &req)
+		err := json.Unmarshal(line, &req)
 		if err == nil {
 			if req.Provider == "" || req.Model == "" {
 				err = fmt.Errorf("provider and model are required")
@@ -128,5 +148,5 @@ func serve(in io.Reader, out io.Writer) error {
 		// completes only after receiving both this barrier and the sentinel.
 		utils.EmitEvent(map[string]string{"type": "turn_complete"})
 	}
-	return scanner.Err()
+	return <-readErr
 }

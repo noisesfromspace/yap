@@ -168,7 +168,7 @@ local function sync_frontmatter(buf)
     table.insert(models, combo)
   end
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description)
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -190,6 +190,9 @@ local live
 local drain_tail
 -- Defined with the description stages below; send() calls it.
 local refresh_description
+local start_subagent
+local subagent_done = {}
+local subagent_children = {}
 
 local function winbar_hl(text, group)
   return "%#Yap" .. group .. "#" .. text .. "%*"
@@ -850,6 +853,8 @@ local function handle_event(buf, json_line)
     if ev.log and not ev.truncated then
       pcall(os.remove, ev.log)
     end
+  elseif ev.type == "subagent_request" then
+    start_subagent(buf, ev)
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
@@ -1422,7 +1427,7 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description)
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools)
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
@@ -1436,6 +1441,11 @@ local function close_stream(buf)
   document.append_block(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
+  if subagent_done[buf] then
+    local done = subagent_done[buf]
+    subagent_done[buf] = nil
+    done(false)
+  end
 end
 
 --- Serialize the current buffer and stream the assistant reply into it.
@@ -1556,6 +1566,11 @@ function M.send(buf)
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)
+      if subagent_done[buf] then
+        local done = subagent_done[buf]
+        subagent_done[buf] = nil
+        done(not errors[buf])
+      end
       refresh_description(buf, "answer")
       audit_follow(buf) -- first save named the session; rename the log to match
       -- A completed turn is a first-class event (herdr's "working → blocked
@@ -1647,7 +1662,7 @@ function M.send(buf)
   end
 
   running[buf] = process
-  local payload = vim.json.encode({ provider = provider, model = model, messages = messages }) .. "\n"
+  local payload = vim.json.encode({ provider = provider, model = model, messages = messages, tools = vim.b[buf].yap_tools }) .. "\n"
   local ok, err = pcall(function() process:write(payload) end)
   if not ok then
     process:kill(15)
@@ -1655,8 +1670,11 @@ function M.send(buf)
 end
 
 --- Kill the in-flight request for the current buffer.
-function M.stop()
-  local buf = vim.api.nvim_get_current_buf()
+function M.stop(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local child = subagent_children[buf]
+  subagent_children[buf] = nil
+  if child then M.stop(child) end
   local handle = running[buf]
   if handle then
     handle:kill(15) -- the exit callback closes the interrupted turn
@@ -1736,8 +1754,17 @@ end
 --- Open a new yap chat buffer.
 function M.new(opts)
   opts = opts or {}
+  local win = vim.api.nvim_get_current_win()
+  local previous = vim.api.nvim_win_get_buf(win)
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
+  if opts.system then vim.b[buf].yap_system = opts.system end
+  if opts.role then vim.b[buf].yap_role = opts.role end
+  if opts.tools then vim.b[buf].yap_tools = opts.tools end
+  if opts.path then
+    vim.b[buf].yap_path = opts.path
+    vim.api.nvim_buf_set_name(buf, opts.path)
+  end
   vim.b[buf].yap_provider = opts.provider or M.config.provider
   vim.b[buf].yap_model = opts.model or M.config.model
   vim.b[buf].yap_project_cwd = vim.fs.normalize(vim.fn.getcwd())
@@ -1766,8 +1793,83 @@ function M.new(opts)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
+  if opts.hidden then vim.api.nvim_win_set_buf(win, previous) end
 
   return buf
+end
+
+-- A child has an ordinary session file and its own backend. The parent tool
+-- waits in Go; a reply line to its serve process releases that tool call.
+start_subagent = function(parent, ev)
+  local function reply(text)
+    local process = servers[parent]
+    if process then
+      process:write(vim.json.encode({ type = "subagent_result", id = ev.id, result = text }) .. "\n")
+    end
+  end
+  if type(ev.role) ~= "string" or not ev.role:match("^[%w_-]+$") or type(ev.task) ~= "string" then
+    reply("error: invalid subagent request")
+    return
+  end
+  local role_file = vim.fn.expand("~/.pi/agent/roles/") .. ev.role .. ".md"
+  local ok_lines, lines = pcall(vim.fn.readfile, role_file)
+  if not ok_lines or #lines == 0 or lines[1] ~= "---" then
+    reply("error: missing role " .. ev.role .. " (" .. role_file .. ")")
+    return
+  end
+  local header, closing = {}, nil
+  for i = 2, #lines do
+    if lines[i] == "---" then closing = i; break end
+    local key, value = lines[i]:match("^(%w+):%s*(.-)%s*$")
+    if key then header[key] = value end
+  end
+  if not closing then reply("error: invalid role " .. role_file); return end
+  local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
+  local provider, model = current_combo(parent)
+  if header.model and header.model ~= "" then
+    local p, m = header.model:match("^([^/]+)/(.+)$")
+    provider, model = p or provider, m or header.model
+  end
+  local allowed = { "ls", "read", "search", "glob", "fetch", "bash", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
+  if header.tools and header.tools ~= "" then
+    allowed = {}
+    local aliases = { grep = "search", find = "glob", webfetch = "fetch" }
+    for name in header.tools:gmatch("[^,%s]+") do
+      allowed[#allowed + 1] = aliases[name] or name
+    end
+  end
+  local parent_path = vim.b[parent].yap_path
+  local stem = parent_path:gsub("%.md$", "")
+  local child_path
+  repeat
+    local random = vim.uv.random(3)
+    child_path = stem .. "-" .. string.format("%02x%02x%02x", random:byte(1, 3)) .. ".md"
+  until vim.fn.filereadable(child_path) == 0
+  local ok, child = pcall(M.new, { path = child_path, system = body, role = ev.role, provider = provider, model = model, tools = allowed, hidden = true })
+  if not ok then reply("error: cannot create subagent: " .. tostring(child)); return end
+  document.append_text(child, ev.task)
+  require("harness.session").save(child)
+  subagent_children[parent] = child
+  subagent_done[child] = function(success)
+    subagent_children[parent] = nil
+    local result = "error: subagent failed or stopped"
+    if success then
+      -- Only final prose, not the child's tool history, belongs in the parent.
+      local text, in_comment = {}, false
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
+        if line == "# @assistant" then text, in_comment = {}, false
+        elseif line:match("^<!%-%- /yap:tool") then text = {}
+        elseif line:match("^<!%-%- yap:") then in_comment = not line:match("%-%->$")
+        elseif in_comment then
+          if line == "-->" then in_comment = false end
+        elseif line ~= "# @user" then text[#text + 1] = line end
+      end
+      result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+      if result == "" then result = "error: subagent returned no final answer" end
+    end
+    reply("Session: " .. child_path .. "\n" .. result)
+  end
+  M.send(child)
 end
 
 --- Open a saved session file as a yap buffer.
@@ -1791,6 +1893,8 @@ local function adopt(buf, path)
       vim.b[buf].yap_provider = fm.provider
       vim.b[buf].yap_model = fm.model
     end
+    if fm and fm.tools then vim.b[buf].yap_tools = fm.tools end
+    if fm and fm.role then vim.b[buf].yap_role = fm.role end
   end
   -- A reopened session that ended on `# @user` awaits the next reply;
   -- seed the overview hint so it counts before its first send here.

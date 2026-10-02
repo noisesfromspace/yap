@@ -37,16 +37,26 @@ type Message struct {
 
 type Request struct {
 	Messages []Message `json:"messages"`
+	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child role: allowlist
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
-func providerToolDefs() []llm.Tool {
+func providerToolDefs(allowed *[]string) []llm.Tool {
+	permitted := map[string]bool{}
+	if allowed != nil {
+		for _, name := range *allowed {
+			permitted[name] = true
+		}
+	}
 	all := tools.All()
 	if len(all) == 0 {
 		return nil
 	}
 	defs := make([]llm.Tool, 0, len(all))
 	for _, t := range all {
+		if allowed != nil && !permitted[t.Name] {
+			continue
+		}
 		defs = append(defs, llm.Tool{
 			Name:        t.Name,
 			Description: t.Description,
@@ -118,8 +128,8 @@ func (l *lineEscaper) Flush() {
 // markers and streams assistant prose live. Prose from a tool-bearing round
 // stays where it streamed (before the tool blocks), matching the model's
 // part order: preamble text precedes the calls it introduces.
-func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool) (*turn, error) {
-	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs()})
+func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string) (*turn, error) {
+	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed)})
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +551,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {
-		t, err := streamStep(ctx, modelImpl, messages, out, wrote)
+		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 		if err != nil {
 			return err
 		}
@@ -589,6 +599,18 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			// headers and :YapClear lossless.
 			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": tools.Scrub(string(call.Input))})
 			tool, ok := tools.Get(call.Name)
+			if req.Tools != nil {
+				permitted := false
+				for _, name := range *req.Tools {
+					if name == call.Name {
+						permitted = true
+						break
+					}
+				}
+				if !permitted {
+					ok = false
+				}
+			}
 			var result, ui string
 			if !ok {
 				result = "error: unknown tool " + call.Name

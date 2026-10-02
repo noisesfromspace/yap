@@ -55,6 +55,10 @@ function M.parse(lines)
         fm.created_at = v
       elseif k == "description" then
         fm.description = v
+      elseif k == "role" then
+        fm.role = v
+      elseif k == "tools" then
+        fm.tools = vim.split(v, ",", { plain = true })
       elseif k == "models" then
         in_models = true
       end
@@ -65,8 +69,10 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description)
+function M.render(provider, model, models, created_at, description, role, tools)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
+  if role then lines[#lines + 1] = "role: " .. role end
+  if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
   if created_at then
     lines[#lines + 1] = "created_at: " .. created_at
   end

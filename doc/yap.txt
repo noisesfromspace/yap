@@ -427,7 +427,20 @@ model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
 bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
-jev. search and glob shell out to
+jev. The `subagent` tool delegates to a role defined in
+`~/.pi/agent/roles/<name>.md` (YAML frontmatter: `name`, `model`, optional
+comma-separated `tools`; the body is its system prompt). It creates a normal
+Yap session named `<parent-stem>-<six-hex>.md` in the same project directory.
+The parent tool call waits for the child's turn to finish, then receives its
+final answer and session path; open the child via |:YapSessions|. Role models
+without a provider prefix use the parent's provider. Pi tool names `grep`,
+`find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. A role without
+`tools` has the regular built-in tools except recursive `subagent` calls;
+role tool lists are enforced by the child backend. Stopping the parent stops
+its running child, but retains its Markdown file. Children are linked by the
+filename prefix: renaming a parent does not rename its existing children.
+There is no background spawn or child-to-child messaging.
+search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 websearch queries the Exa search API (api.exa.ai) and returns up to N
