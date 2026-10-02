@@ -276,6 +276,17 @@ file without that first line would be wrapped in `# @user`
 automatically, so the heading is optional — write whichever reads
 better.
 
+A template containing LSP snippet syntax is expanded as a native
+Neovim snippet: `$1`/`${1:placeholder}` become tabstops the cursor
+lands on after insertion, and `<Tab>`/`<S-Tab>` jump between them.
+For example, a template body of: >
+
+  Investigate: ${1:<topic or path>}
+<
+inserts with the cursor on `${1:<topic or path>}` (selected, so typing
+replaces it) and `<Tab>` afterwards continues past the end of the
+inserted block.
+
 HOW TO WRITE A SKILL                                          *yap-skill*
 
 A skill is instructions you want in the system prompt, not in the

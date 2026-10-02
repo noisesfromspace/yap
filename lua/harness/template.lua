@@ -86,6 +86,12 @@ local function template_entries()
   return entries
 end
 
+--- A template is treated as a native snippet when it uses LSP snippet
+--- syntax (`$N` tabstops or `${...}` placeholders).
+local function is_snippet(text)
+  return text:find("%$[%d{]") ~= nil
+end
+
 --- Append a template as a message block: a leading `# @role` heading is
 --- used as-is (so a template can be a prefill or raw block); otherwise the
 --- text is wrapped in `# @user`. Blank-line handling is append_block's (R7).
@@ -100,6 +106,29 @@ function M.append_as_block(buf, lines)
     lines = wrapped
   end
   document.append_block(buf, lines)
+end
+
+--- Append `body` (a message block, no surrounding blank lines) to the end
+--- of the buffer as a native snippet: one blank line of separation, cursor
+--- left on the first tabstop. `<Tab>`/`<S-Tab>` jump between placeholders
+--- and typing over a placeholder replaces it (Neovim's snippet machinery).
+function M.append_snippet_block(buf, body)
+  local n = vim.api.nvim_buf_line_count(buf)
+  local keep = n
+  while keep > 1 and vim.api.nvim_buf_get_lines(buf, keep - 1, keep, false)[1] == "" do
+    keep = keep - 1
+  end
+  vim.api.nvim_buf_set_lines(buf, keep, n, false, { "" })
+  vim.api.nvim_win_set_cursor(0, { keep + 1, 0 })
+  vim.snippet.expand("\n" .. body)
+end
+
+--- Insert `body` as a snippet above the cursor's line (the raw primitive
+--- behind :YapInsertHere).
+function M.insert_snippet_at_cursor(buf, body)
+  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
+  vim.snippet.expand(body .. "\n")
 end
 
 --- Merge a skill's body into the buffer's `# @system` block (or create the
@@ -195,7 +224,18 @@ function M.insert(name, opts)
       lines = vim.split(text, "\n", { plain = true })
     end
     lines = trim_blank(lines)
-    if opts.at_cursor then
+    if entry.kind ~= "skill" and is_snippet(table.concat(lines, "\n")) then
+      -- Native snippet: expand placeholders/tabstops instead of plain text.
+      local body = table.concat(lines, "\n")
+      if opts.at_cursor then
+        M.insert_snippet_at_cursor(buf, body)
+      else
+        if not lines[1]:match(HEAD) then
+          body = "# @user\n\n" .. body
+        end
+        M.append_snippet_block(buf, body)
+      end
+    elseif opts.at_cursor then
       insert_at_cursor(buf, lines)
     elseif entry.kind == "skill" then
       merge_into_system(buf, lines)
