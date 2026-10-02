@@ -83,6 +83,7 @@ EOF
 run yap_test 18132 mock_slow.py
 run yap_static_test 18132 mock_slow.py
 run yap_session_usage_test 18132 mock_slow.py
+run yap_scratch_send_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
 run yap_e2e_tool_test 18133 mock_tool.py
@@ -94,6 +95,7 @@ run yap_tail_rename_test 18135 mock_write.py
 run yap_follow_test 18152 mock_follow.py
 run yap_picker_test 18137 mock_models.py
 run yap_describe_test 18139 mock_describe.py
+run yap_cwd_test 18132
 for t in yap_fold_test yap_detailfold_test yap_think_test yap_error_test yap_ml_test \
          yap_streamfold_test yap_marker_test yap_model_test yap_map_test yap_keymap_test yap_clear_test \
          yap_live_open_test yap_uidiff_test yap_fencefold_test yap_lsp_test \

@@ -224,7 +224,9 @@
                 the harness as `agents_file`. The file is user-managed;
                 point it at a file outside the Nix store (for example
                 {file}`~/.yap/AGENTS.md`). When null the harness falls back
-                to its default and then to `system`.
+                to its default and then to `system`. The harness always
+                prepends its own `# About Yap` boilerplate to every turn,
+                independent of this file.
               '';
             };
 

@@ -33,4 +33,5 @@ vim.cmd.cd(vim.fn.fnameescape(original))
 
 local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(text:find("Current Neovim working directory:", 1, true) == nil, "injected cwd leaked into chat buffer")
-print("OK dynamic cwd")
+assert(text:find("# About Yap", 1, true) == nil, "injected About Yap leaked into chat buffer")
+print("OK dynamic cwd + About Yap injection")

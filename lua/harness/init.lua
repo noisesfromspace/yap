@@ -90,6 +90,29 @@ local models_cache = nil
 
 local frontmatter = require("harness.frontmatter")
 
+-- The harness's own boilerplate, always injected as the first system
+-- message on every send. It is independent of agents_file (the user's
+-- rules) and lives here so session files never store it.
+local yap_about = [[# About Yap
+
+You are running inside Yap, an agent harness for Neovim inspired by pi and gptel. The conversation is an editable Markdown buffer and is the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages. Editing or deleting messages edits the context sent on the next turn.
+
+When asked about Yap itself, inspect the Yap source or documentation rather than guessing. The project is normally at `/opt/code/yap`; `README.md` is the overview and `doc/yap.txt` is the full reference. Because the buffer is intentionally transparent and editable, prefer explaining what is actually present in the buffer, configuration, source, or audit trail over implying hidden state.
+
+## Buffer semantics
+
+- The parser treats a line exactly matching `# @system`, `# @user`, or
+  `# @assistant` as a message boundary, and a line starting with `<!-- yap:`
+  as a marker. Never emit either in your replies — indent or fence such
+  content instead.
+- The user may edit or delete earlier messages, including your replies.
+  The visible transcript is the real history; if it looks inconsistent,
+  re-read the relevant block rather than assuming it is intact.
+- Between turns, tool calls and their results become plain text in the
+  transcript and are not re-executed or re-sent as native tool messages.
+  Only the visible buffer content is replayed on the next send.
+]]
+
 local function system_prompt()
   local f = io.open(M.config.agents_file, "r")
   if f then
@@ -1243,21 +1266,43 @@ local function queue_follow(buf, scratch)
   vim.api.nvim_buf_set_name(scratch, want)
 end
 
---- The text to send from the scratch buffer: the active visual selection,
---- or the whole buffer in normal mode.
-local function scratch_text(scratch)
+--- Take the text to send from the scratch buffer and remove it from the
+--- queue: the active visual selection, or the whole buffer in normal mode.
+--- The queue is a jotter, so <send> drains it — sent lines leave the buffer.
+local function scratch_take(scratch)
   local mode = vim.api.nvim_get_mode().mode
-  if mode == "v" or mode == "V" or mode == "\22" then
-    local ok, sel = pcall(vim.fn.getregion, vim.fn.getpos("v"), vim.fn.getpos("."), { type = mode })
-    if ok and #sel > 0 then
-      return sel
+  if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+    local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
+    vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {})
+    return lines
+  end
+  local anchor, cursor = vim.fn.getpos("v"), vim.fn.getpos(".")
+  local text = vim.fn.getregion(anchor, cursor, { type = mode })
+  if mode == "V" then
+    -- Line-wise: drop the whole selected lines (no leftover empties).
+    local from, to = math.min(anchor[2], cursor[2]), math.max(anchor[2], cursor[2])
+    vim.api.nvim_buf_set_lines(scratch, from - 1, to, false, {})
+  else
+    -- Char/block-wise: remove exactly the selected byte ranges. getregionpos
+    -- returns one [start, end] segment per line with inclusive end columns,
+    -- so the exclusive API end column is the 1-based column unchanged.
+    local ok, segs = pcall(vim.fn.getregionpos, anchor, cursor, { type = mode })
+    if ok and type(segs) == "table" then
+      for i = #segs, 1, -1 do
+        local s, e = segs[i][1], segs[i][2]
+        vim.api.nvim_buf_set_text(scratch, s[2] - 1, s[3] - 1, e[2] - 1, e[3], {})
+      end
     end
   end
-  return vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
+  -- The selection is consumed; drop back to normal mode so a stale visual
+  -- selection can't eat the next keystroke.
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, true, true), "x", false)
+  return text
 end
 
 --- Send the scratch queue — all of it, or the visual selection — into the
---- owning chat buffer as a `# @user` message, then submit it.
+--- owning chat buffer as a `# @user` message, then submit it. The sent text
+--- is removed from the queue by scratch_take.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -1269,7 +1314,7 @@ function M.scratch_send(scratch)
     vim.notify("yap: send in flight, not queueing", vim.log.levels.WARN)
     return
   end
-  local text = scratch_text(scratch)
+  local text = scratch_take(scratch)
   local blank = true
   for _, l in ipairs(text) do
     if l:match("%S") then
@@ -1530,9 +1575,11 @@ function M.send(buf)
   end
 
   local messages = document.parse_buffer(buf)
-  -- The harness cwd is request-scoped rather than session-scoped: :cd takes
-  -- effect on the very next turn without rewriting the visible chat buffer.
-  table.insert(messages, 1, {
+  -- The harness always prepends its own boilerplate, then the
+  -- request-scoped cwd: neither is stored in the buffer, so the visible
+  -- session stays clean and :cd takes effect on the very next turn.
+  table.insert(messages, 1, { role = "system", content = yap_about })
+  table.insert(messages, 2, {
     role = "system",
     content = "Current Neovim working directory: " .. vim.fn.getcwd(),
   })

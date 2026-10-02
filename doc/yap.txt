@@ -159,6 +159,9 @@ below.
   <leader>s             Toggle the session's scratch queue buffer: a
                         fixed-height, file-backed jotter above the chat.
                         `:w` saves it; an unsaved queue prompts on exit.
+                        Inside the queue, <C-s> sends the whole buffer —
+                        or the visual selection — to the chat and removes
+                        it from the queue.
   <leader>t             Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -215,6 +218,11 @@ Lua setup: >lua
 so edits apply to the next chat. When missing or empty, `system` is used.
 The path is used verbatim (no `~` expansion); the default is
 `$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
+
+The harness always prepends its own `# About Yap` boilerplate (buffer
+semantics, marker rules) as the first system message of every turn. That
+boilerplate is independent of `agents_file` and is never written into the
+session file, so the `# @system` block stays clean.
 
 `notify_done` (default true) fires `vim.notify` when a turn completes in a
 buffer that is not the current one; the turn's `turn_end` payload (model,
@@ -684,7 +692,9 @@ The audit log (<session>.jsonl) is written in the audit dir
 ~/.yap/sessions/<cwd-slug>/<session>.queue, a plain file-backed buffer
 for queuing agent tasks. Unlike the autosaved session, the queue is
 saved manually — `:w` in the jotter writes it, and an unsaved queue
-triggers the normal modified-buffer prompt on exit. Opening a session
+triggers the normal modified-buffer prompt on exit. Pressing <C-s> in
+the queue sends its contents (or the active visual selection) to the
+chat as a `# @user` message and removes them from the queue. Opening a session
 file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
