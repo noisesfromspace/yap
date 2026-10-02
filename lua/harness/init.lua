@@ -1183,7 +1183,7 @@ refresh_description = function(buf, kind, messages)
   else
     combo = M.config.description_answer_model
     system =
-      "Summarize this chat session in one short phrase (maximum 12 words) centered on the overall goal, when relevant, recent topics as context. Don't mention things like 'user requested commit' or 'not working', but the direction of prompts at the end, this is more relevant for big sessions. Return only the phrase, no punctuation wrapper."
+      "Summarize this chat session in one short phrase (maximum 12 words), centered on the overall goal. Return only the phrase, no punctuation wrapper."
     content = vim.json.encode(document.parse_buffer(buf))
   end
   if not combo or combo == "" then
@@ -1218,6 +1218,12 @@ refresh_description = function(buf, kind, messages)
         :gsub("%s+$", "")
       if description == "" then
         return
+      end
+      -- The prompts ask for a 12-word phrase, but a verbose model can
+      -- still return a paragraph; hard-cap it so the frontmatter and
+      -- picker stay readable.
+      if #description > 60 then
+        description = description:sub(1, 59):gsub("%s+%S*$", "") .. "…"
       end
       local e = frontmatter_end(buf)
       if not e then

@@ -409,8 +409,14 @@ does not run JavaScript). git runs read-only subcommands
 and credential prompts disabled; output is head-truncated like search.
 
 ssh runs non-interactive commands with an in-process x/crypto/ssh client.
-It uses ~/.ssh/id_ed25519 and verifies the server against
-~/.ssh/known_hosts (unknown hosts are refused). Calls to the same
+It uses ~/.ssh/id_ed25519 and/or identities loaded in the local
+ssh-agent, including FIDO/security keys (load one with `ssh-add
+~/.ssh/id_ed25519_sk` if needed). Agent signing stays local; the agent
+is never forwarded. The server's hostname must be explicitly listed in
+NixOS's /etc/ssh/ssh_known_hosts with a matching host key. Entries only in
+~/.ssh/known_hosts, or for its resolved IP rather than the requested name,
+do not authorize a connection; unknown and mismatched hosts are refused.
+Calls to the same
 user/host/port reuse the authenticated connection; close=true disconnects.
 A command runs in a new session with a 120s default timeout, returning its
 output and exit status. :YapStop terminates the backend and its SSH sessions.

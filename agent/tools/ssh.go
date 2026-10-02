@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type sshArgs struct {
-	Host    string `json:"host" jsonschema:"description=SSH host (must be in known_hosts)"`
+	Host    string `json:"host" jsonschema:"description=SSH host (must be named in /etc/ssh/ssh_known_hosts)"`
 	Command string `json:"command,omitempty" jsonschema:"description=remote command to run"`
 	User    string `json:"user,omitempty" jsonschema:"description=remote user (default local username)"`
 	Port    int    `json:"port,omitempty" jsonschema:"description=SSH port (default 22)"`
@@ -25,13 +26,15 @@ type sshArgs struct {
 	Close   bool   `json:"close,omitempty" jsonschema:"description=close the cached connection instead of running a command"`
 }
 
+var systemKnownHosts = "/etc/ssh/ssh_known_hosts"
+
 var sshClients = struct {
 	sync.Mutex
 	clients map[string]*ssh.Client
 }{clients: make(map[string]*ssh.Client)}
 
 func init() {
-	Register("ssh", "Run commands over a reused in-process SSH connection. Uses ~/.ssh/id_ed25519 and verifies ~/.ssh/known_hosts; unknown hosts are refused. close=true disconnects. Non-interactive; no agent or X11 forwarding.", func(a *sshArgs) (string, string, error) {
+	Register("ssh", "Run commands over a reused in-process SSH connection. Only hosts named in the NixOS /etc/ssh/ssh_known_hosts are allowed; unknown or mismatched hosts are refused. Authenticates with ~/.ssh/id_ed25519 or keys loaded in the local ssh-agent (including FIDO keys). close=true disconnects. Non-interactive; no agent or X11 forwarding.", func(a *sshArgs) (string, string, error) {
 		result, err := runSSH(a)
 		return result, "", err
 	})
@@ -138,15 +141,39 @@ func dialSSH(ctx context.Context, host string, port int, name string) (*ssh.Clie
 	if err != nil {
 		return nil, err
 	}
-	key, err := os.ReadFile(filepath.Join(home, ".ssh", "id_ed25519"))
-	if err != nil {
-		return nil, err
+	var signers []ssh.Signer
+	key, keyErr := os.ReadFile(filepath.Join(home, ".ssh", "id_ed25519"))
+	if keyErr == nil {
+		signer, err := ssh.ParsePrivateKey(key)
+		if err != nil {
+			return nil, err
+		}
+		signers = append(signers, signer)
 	}
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, err
+	// Agent signers perform signing locally, including FIDO touch/PIN via
+	// ssh-agent. Never request agent forwarding on the remote session.
+	var agentConn net.Conn
+	if socket := os.Getenv("SSH_AUTH_SOCK"); socket != "" {
+		agentConn, err = (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		if err == nil {
+			defer agentConn.Close()
+			if deadline, ok := ctx.Deadline(); ok {
+				agentConn.SetDeadline(deadline)
+			}
+			keys, listErr := agent.NewClient(agentConn).Signers()
+			if listErr == nil {
+				signers = append(signers, keys...)
+			} else if len(signers) == 0 {
+				return nil, fmt.Errorf("list SSH agent keys: %w", listErr)
+			}
+		} else if len(signers) == 0 {
+			return nil, fmt.Errorf("connect to SSH agent: %w", err)
+		}
 	}
-	verify, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("no SSH identity: use ~/.ssh/id_ed25519 or load a key into ssh-agent (ssh-add)")
+	}
+	verify, err := knownhosts.New(systemKnownHosts)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +187,7 @@ func dialSSH(ctx context.Context, host string, port int, name string) (*ssh.Clie
 		conn.SetDeadline(deadline)
 	}
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, &ssh.ClientConfig{
-		User: name, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: verify,
+		User: name, Auth: []ssh.AuthMethod{ssh.PublicKeys(signers...)}, HostKeyCallback: verify,
 	})
 	if err != nil {
 		conn.Close()
