@@ -13,7 +13,7 @@ type writeArgs struct {
 
 func init() {
 	Register("write",
-		"Write content to a file. Creates the file if it doesn't exist, "+
+		"Write content to a file. Runs immediately with no confirmation. Creates the file if it doesn't exist, "+
 			"overwrites if it does. Automatically creates parent directories. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {

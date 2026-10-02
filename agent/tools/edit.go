@@ -23,7 +23,7 @@ type editArgs struct {
 func init() {
 	Register("edit",
 		"Make precise file edits with exact text replacement, including multiple "+
-			"disjoint edits in one call. Each edits[].oldText is matched against the original "+
+			"disjoint edits in one call. Runs immediately with no confirmation. Each edits[].oldText is matched against the original "+
 			"file, must occur exactly once (include more context if ambiguous), and must not "+
 			"overlap another edit. To create files use write.",
 		func(a *editArgs) (string, string, error) {
