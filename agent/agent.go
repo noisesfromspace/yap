@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -171,6 +172,32 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 		t.outTrail = trailingNL(t.text)
 	}
 	return t, nil
+}
+
+// A model occasionally writes a tool call as ordinary prose instead of a
+// native tool call. Two shapes are common: the flattened transcript form
+// (`Tool call: <name>` / `Arguments: …`, which document.lua synthesizes for
+// history) and the Anthropic-style `<invoke>`/`<parameter>` XML convention.
+// Nothing in the harness emits either as live output, so a match means an
+// intended call never ran. Detection is advisory: a false positive only
+// surfaces a warning — it never blocks or rewrites the answer.
+var (
+	flattenedToolCallRe = regexp.MustCompile(`(?m)^Tool call:\s*(\S+)\s*$`)
+	xmlToolCallRe       = regexp.MustCompile(`(?i)</?(invoke|parameter)\b`)
+)
+
+// detectTextToolCall reports whether the assistant text looks like an
+// unexecuted tool call and, when it does, a short label for the message.
+// The flattened tool name is sanitized so it cannot close the error marker
+// comment early.
+func detectTextToolCall(text string) (string, bool) {
+	if m := flattenedToolCallRe.FindStringSubmatch(text); m != nil {
+		return "text tool call (" + strings.ReplaceAll(m[1], "-->", "-- >") + ")", true
+	}
+	if xmlToolCallRe.MatchString(text) {
+		return "XML <invoke> tool call", true
+	}
+	return "", false
 }
 
 // maxToolIterations bounds the agent loop: one generation step per
@@ -342,7 +369,15 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 		}
 
 		if len(t.calls) == 0 {
-			if strings.TrimSpace(t.text) == "" {
+			if label, ok := detectTextToolCall(t.text); ok {
+				// The model wrote a tool call as prose (flattened transcript
+				// form, or <invoke> XML) instead of a native tool call, so
+				// nothing ran. Surface it and stop — the intended call must
+				// not be silently dropped from the transcript.
+				pad()
+				fmt.Fprintf(out, "<!-- yap:error\nmodel emitted a %s as plain text; the tool was not executed\n-->\n\n", label)
+				utils.EmitEvent(map[string]any{"type": "tool_text_warning", "detail": label})
+			} else if strings.TrimSpace(t.text) == "" {
 				// An empty completion is always an anomaly (provider hiccup,
 				// token budget eaten by reasoning, model expected tools that
 				// are not compiled in). Never fail silently.

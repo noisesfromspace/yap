@@ -476,3 +476,73 @@ func TestRetryTransientStepError(t *testing.T) {
 		t.Fatalf("missing answer: %s", out.String())
 	}
 }
+
+// textToolCallModel returns one step of prose that looks like a tool call
+// but carries no native ToolCalls.
+type textToolCallModel struct{ calls int }
+
+func (m *textToolCallModel) DoStream(_ context.Context, _ llm.Params) (*llm.Stream, error) {
+	m.calls++
+	const text = "Tool call: bash\nArguments: {\"command\":\"echo hi\"}"
+	events := make(chan llm.Event, 1)
+	events <- llm.Event{Type: llm.EventText, Text: text}
+	close(events)
+	stream := llm.NewStream(events)
+	stream.SetResult(llm.Result{Text: text, Usage: llm.Usage{PromptTokens: 1, CompletionTokens: 1}})
+	return stream, nil
+}
+
+type textToolCallProvider struct{ model *textToolCallModel }
+
+func (p textToolCallProvider) Model(string) llm.LanguageModel { return p.model }
+
+// TestTextToolCallSurfaced: prose that mimics a tool call (no native call)
+// must be surfaced as an error marker + audit event, and must not loop.
+func TestTextToolCallSurfaced(t *testing.T) {
+	writeConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	model := &textToolCallModel{}
+	oldFactory := providerFactory
+	providerFactory = func(string, Provider) (llm.Provider, error) { return textToolCallProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	var journal strings.Builder
+	oldEventOut := utils.SetEventWriter(writerFunc(func(p []byte) (int, error) {
+		journal.Write(p)
+		return len(p), nil
+	}))
+	defer utils.SetEventWriter(oldEventOut)
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if model.calls != 1 {
+		t.Fatalf("model called %d times, want 1 (no tool loop)", model.calls)
+	}
+	s := out.String()
+	if !strings.Contains(s, "<!-- yap:error") || !strings.Contains(s, "not executed") {
+		t.Fatalf("missing surface marker:\n%s", s)
+	}
+	if !strings.Contains(journal.String(), `"type":"tool_text_warning"`) {
+		t.Fatalf("missing tool_text_warning event: %s", journal.String())
+	}
+}
+
+func TestDetectTextToolCall(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"Tool call: bash\nArguments: {\"command\":\"x\"}", true},
+		{"<invoke name=\"bash\"><parameter name=\"command\">x</parameter></invoke>", true},
+		{"plain prose with no call", false},
+		{"Tool call: nothing to see here", false},
+	}
+	for _, c := range cases {
+		if _, got := detectTextToolCall(c.text); got != c.want {
+			t.Errorf("detectTextToolCall(%q) = %v, want %v", c.text, got, c.want)
+		}
+	}
+}

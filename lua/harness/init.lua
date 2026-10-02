@@ -752,6 +752,8 @@ local function render_event(ev)
     return table.concat(lines, "\n"), "block"
   elseif ev.type == "retry" then
     return ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), "block"
+  elseif ev.type == "tool_text_warning" then
+    return ("%s unexecuted tool call: %s"):format(ts, ev.detail or "model emitted a tool call as text"), "block"
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -927,6 +929,8 @@ local function handle_event(buf, json_line)
     append_event(buf, ev) -- full result; bash output already streamed above
   elseif ev.type == "retry" then
     append_event(buf, ev) -- a transient generation error was retried
+  elseif ev.type == "tool_text_warning" then
+    append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
   elseif ev.type == "turn_end" then
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     -- Fold this turn into the session's all-time totals (seeded from the
