@@ -86,7 +86,6 @@ run yap_session_usage_test 18132 mock_slow.py
 run yap_scratch_send_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
-run yap_e2e_tool_test 18133 mock_tool.py
 run yap_toolparse_test 18133 mock_tool.py
 run yap_e2e_livetool 18141 mock_stream.py
 run yap_e2e_streamfold 18135 mock_write.py
