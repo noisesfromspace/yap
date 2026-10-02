@@ -10,7 +10,13 @@ func TestResultFence(t *testing.T) {
 	}{
 		{"read", `{"path":"/tmp/x.py"}`, "python", true},
 		{"read", `{"path":"/tmp/x.yaml"}`, "yaml", true},
+		{"read", `{"path":"/tmp/x.kt"}`, "kotlin", true},
+		{"read", `{"path":"/tmp/x.cs"}`, "c_sharp", true},
+		{"read", `{"path":"/tmp/x.tf"}`, "hcl", true},
+		{"read", `{"path":"/tmp/x.vue"}`, "vue", true},
 		{"read", `{"path":"/tmp/x.unknown"}`, "", true}, // unrecognized ext: plain fence
+		{"read", `{"path":"/tmp/Dockerfile"}`, "dockerfile", true},
+		{"read", `{"path":"/tmp/Makefile"}`, "make", true},
 		{"fetch", `{"url":"http://x"}`, "markdown", true},
 		{"bash", `{"command":"ls"}`, "", true},
 		{"git", `{"command":"diff"}`, "", true},

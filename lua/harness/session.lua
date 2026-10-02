@@ -11,28 +11,15 @@
 local M = {}
 
 local frontmatter = require("harness.frontmatter")
+local paths = require("harness.path")
 
-local function sessions_root()
-  return vim.fn.expand("~/.yap/sessions")
-end
-
---- Root of all session files (~/.yap/sessions).
 function M.sessions_root()
-  return sessions_root()
+  return paths.sessions_root()
 end
 
 --- Best-effort originating cwd for an existing persisted session.
 function M.project_cwd(path)
-  local dir = vim.fn.fnamemodify(path, ":h:t")
-  return dir:sub(1, 1) == "-" and ("/" .. dir:sub(2):gsub("-", "/")) or dir:gsub("-", "/")
-end
-
-local function cwd_slug(cwd)
-  return (cwd:gsub("[^%w%._-]", "-"))
-end
-
-local function session_dir(cwd)
-  return sessions_root() .. "/" .. cwd_slug(vim.fs.normalize(cwd))
+  return paths.project_cwd(path)
 end
 
 --- Write the buffer to its session file, creating one (named after the
@@ -59,9 +46,9 @@ function M.save(buf)
     vim.b[buf].yap_path = path
   end
   if not path then
-    local dir = session_dir(vim.fn.getcwd())
+    local dir = paths.session_dir(vim.fn.getcwd())
     vim.fn.mkdir(dir, "p")
-    path = string.format("%s/%s-%04x.md", dir, os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
+    path = paths.new_session_path(dir)
     vim.b[buf].yap_path = path
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
@@ -149,13 +136,7 @@ end
 --- The persisted directory name is a lossy cwd slug; this is deliberately a
 --- best-effort display conversion for saved cross-project sessions.
 local function slug_cwd(dir)
-  return M.project_cwd(dir .. "/session.md")
-end
-
---- True when a session still carries the auto-generated filename from
---- save() (never named with :file). These are unnamed scratch sessions.
-local function default_id(path)
-  return vim.fn.fnamemodify(path, ":t"):match("^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$") ~= nil
+  return paths.slug_cwd(dir)
 end
 
 --- Shared picker identity: generated description, filename fallback. Project
@@ -167,13 +148,14 @@ function M.label(path, description, project_cwd)
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all".
---- Items: { path, mtime, text } sorted newest first.
+--- Items: { path, mtime, text, model, models? } sorted newest first;
+--- `model`/`models` come from the session frontmatter.
 function M.list(scope)
   local dirs
   if scope == "all" then
-    dirs = vim.fn.glob(sessions_root() .. "/*", false, true)
+    dirs = vim.fn.glob(paths.sessions_root() .. "/*", false, true)
   else
-    dirs = { session_dir(vim.fn.getcwd()) }
+    dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
 
   local items = {}
@@ -185,12 +167,15 @@ function M.list(scope)
       -- Hide unnamed sessions: no generated description and still on the
       -- auto-generated filename. They stay visible as open sessions via
       -- :YapInstances, which falls back to the filename.
-      local unnamed = description == "" and default_id(path)
+      local unnamed = description == "" and paths.is_default_name(path)
       if not unnamed then
+        local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
         table.insert(items, {
           path = path,
           mtime = vim.fn.getftime(path),
           text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
+          model = model,
+          models = (fm and #fm.models > 1) and fm.models or nil,
         })
       end
     end

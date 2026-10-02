@@ -67,9 +67,11 @@ end
 local cache = {} -- buf -> { tick, levels = { lnum -> levelstr } }
 
 -- fence_run: a fence opener/closer — <=3 spaces indent then a run of
--- >=3 backticks or tildes. Returns (char, run, tail) or nil.
+-- >=3 backticks or tildes. Returns (char, run, tail) or nil. Indent is
+-- spaces only (CommonMark: a tab advances to the next tab stop, so a
+-- tab-indented fence is indented beyond 3 and is not a fence).
 local function fence_run(line)
-  local ws = line:match("^%s*")
+  local ws = line:match("^ *")
   if #ws > 3 then
     return nil
   end
@@ -368,5 +370,9 @@ function M.setup_buffer(buf, keys)
   bind_view(keys.view_3, 3, "Unfold everything")
   map(keys.toggle_fold, "za", "Toggle fold")
 end
+
+-- Exposed for the shared Go/Lua fence conformance test (see
+-- tests/fence_cases.json). Not part of the plugin's public API.
+M.fence_run = fence_run
 
 return M

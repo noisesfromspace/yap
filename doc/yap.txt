@@ -1019,7 +1019,8 @@ R14 The model state is durable YAML frontmatter; everything else is
     The frontmatter holds `provider`/`model` (the combo to resume with)
     and `models` (the ordered history of combos used). yap writes it
     only on :Yap and |:YapChangeModel| — never during a send, so
-    R7's append-only rule holds — reads it on open. Token/cost totals
+    R7's append-only rule holds — reads it on open, and surfaces it in
+    the |:YapSessions| picker. Token/cost totals
     are deliberately NOT
     frontmatter: they accumulate in per-buffer memory for the winbar
     and reset on reopen. The earlier frontmatter design got this wrong

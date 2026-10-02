@@ -347,24 +347,54 @@ func emitToolResult(out *bufio.Writer, result, ui string) {
 	out.Flush()
 }
 
+// fenceRun reports the leading fence run of a line already trimmed of
+// indent: (char, run-length, remainder-after-the-run). char is 0 when the
+// line does not open a fence.
+func fenceRun(s string) (byte, int, string) {
+	if s == "" || (s[0] != '`' && s[0] != '~') {
+		return 0, 0, ""
+	}
+	i := 0
+	for i < len(s) && s[i] == s[0] {
+		i++
+	}
+	return s[0], i, s[i:]
+}
+
+// fenceLine classifies a RAW line as a fence opener: up to 3 leading
+// spaces, then a run of >=3 backticks or tildes. Returns (char, run,
+// tail, ok). This is the CommonMark "is this line a fence" primitive;
+// Lua's fold.fence_run must agree with it — they are locked together by
+// the shared table in tests/fence_cases.json (see fence_conformance_test.go
+// and yap_fence_conformance_test.lua).
+func fenceLine(line string) (byte, int, string, bool) {
+	t := strings.TrimLeft(line, " ")
+	if len(line)-len(t) > 3 {
+		return 0, 0, "", false
+	}
+	c, k, tail := fenceRun(t)
+	if k < 3 {
+		return 0, 0, "", false
+	}
+	return c, k, tail, true
+}
+
 // unclosedFence returns the fence run left open at the end of lines
 // (e.g. "```"), or "" when all fences balance. Follows CommonMark: an
 // opener is up to 3 spaces + a run of >=3 backticks or tildes; a closer
-// is a run of the same char at least as long.
+// is a run of the same char at least as long, followed only by
+// whitespace (an info string after a closer keeps the fence open).
 func unclosedFence(lines []string) string {
 	var char byte
 	var n int
 	for _, l := range lines {
-		t := strings.TrimLeft(l, " ")
-		if len(l)-len(t) > 3 {
+		c, k, tail, ok := fenceLine(l)
+		if !ok {
 			continue
 		}
-		c, k := fenceRun(t)
 		if n == 0 {
-			if k >= 3 {
-				char, n = c, k
-			}
-		} else if c == char && k >= n {
+			char, n = c, k
+		} else if c == char && k >= n && strings.TrimSpace(tail) == "" {
 			char, n = 0, 0
 		}
 	}
@@ -379,7 +409,7 @@ func unclosedFence(lines []string) string {
 func backtickFence(s string) string {
 	max := 0
 	for _, l := range strings.Split(s, "\n") {
-		if c, k := fenceRun(strings.TrimLeft(l, " ")); c == '`' && k > max {
+		if c, k, _, ok := fenceLine(l); ok && c == '`' && k > max {
 			max = k
 		}
 	}
@@ -405,17 +435,6 @@ func fenceResult(name, argsJSON, result string) string {
 	}
 	fence := backtickFence(result)
 	return fence + lang + "\n" + strings.TrimRight(result, "\n") + "\n" + fence
-}
-
-func fenceRun(s string) (byte, int) {
-	if s == "" || (s[0] != '`' && s[0] != '~') {
-		return 0, 0
-	}
-	i := 0
-	for i < len(s) && s[i] == s[0] {
-		i++
-	}
-	return s[0], i
 }
 
 // providerFactory builds a Yap provider for the given configured provider.

@@ -347,7 +347,9 @@ func TestUnclosedFence(t *testing.T) {
 		{[]string{"```", "x", "```", "y", "```"}, "```"},          // re-open after close
 		{[]string{"    ```", "indented four spaces is code"}, ""}, // >3 indent: not a fence
 		{[]string{"  ```go", "up to 3 spaces ok"}, "```"},
-		{[]string{"```", "x", "~~~", "y"}, "```"}, // tilde doesn't close backtick
+		{[]string{"```", "x", "~~~", "y"}, "```"},  // tilde doesn't close backtick
+		{[]string{"```", "```python", "x"}, "```"}, // info string after a closer keeps the fence open
+		{[]string{"\t```", "x"}, ""},               // tab indent: not a fence (advances past 3 columns)
 	}
 	for _, c := range cases {
 		if got := unclosedFence(c.lines); got != c.want {

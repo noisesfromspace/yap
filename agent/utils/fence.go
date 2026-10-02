@@ -32,45 +32,75 @@ func ResultFence(name, argsJSON string) (lang string, ok bool) {
 	}
 }
 
+// langByExt maps a file extension (lowercase, no dot) to the Neovim
+// treesitter language name used as the fence info string. These must be
+// treesitter parser names, not file extensions — a wrong name means the
+// fence gets no injected highlighting (silently), so only well-established
+// nvim-treesitter parser names belong here.
+var langByExt = map[string]string{
+	"py":  "python",
+	"go":  "go",
+	"lua": "lua",
+	"md":  "markdown", "markdown": "markdown", "mdx": "markdown",
+	"yaml": "yaml", "yml": "yaml",
+	"json": "json", "jsonc": "jsonc", "json5": "json5",
+	"nix": "nix",
+	"sh":  "bash", "bash": "bash", "zsh": "bash",
+	"js": "javascript", "jsx": "javascript", "mjs": "javascript", "cjs": "javascript",
+	"ts": "typescript", "tsx": "tsx", "mts": "typescript", "cts": "typescript",
+	"html": "html", "htm": "html",
+	"css": "css", "scss": "scss",
+	"rs":   "rust",
+	"toml": "toml",
+	"xml":  "xml",
+	"sql":  "sql",
+	"c":    "c",
+	"cpp":  "cpp", "cc": "cpp", "cxx": "cpp", "h": "cpp", "hpp": "cpp", "hh": "cpp", "hxx": "cpp",
+	"cs":   "c_sharp",
+	"java": "java",
+	"kt":   "kotlin", "kts": "kotlin",
+	"scala": "scala", "sc": "scala",
+	"rb":    "ruby",
+	"php":   "php",
+	"swift": "swift",
+	"zig":   "zig",
+	"dart":  "dart",
+	"hs":    "haskell",
+	"ex":    "elixir", "exs": "elixir",
+	"erl": "erlang", "hrl": "erlang",
+	"clj": "clojure", "cljs": "clojure", "cljc": "clojure", "edn": "clojure",
+	"scm": "scheme", "ss": "scheme",
+	"lisp": "commonlisp", "lsp": "commonlisp", "cl": "commonlisp",
+	"r":  "r",
+	"jl": "julia",
+	"fs": "fsharp", "fsx": "fsharp", "fsi": "fsharp",
+	"ml": "ocaml", "mli": "ocaml",
+	"fish": "fish",
+	"pl":   "perl", "pm": "perl",
+	"ps1": "powershell", "psm1": "powershell", "psd1": "powershell",
+	"cmake":   "cmake",
+	"graphql": "graphql", "gql": "graphql",
+	"proto": "proto",
+	"tf":    "hcl", "hcl": "hcl", "tfvars": "hcl",
+	"vue":    "vue",
+	"svelte": "svelte",
+	"astro":  "astro",
+	"sol":    "solidity",
+	"vim":    "vim",
+	"diff":   "diff", "patch": "diff",
+	"csv": "csv",
+}
+
+// langForPath returns the fence info string (treesitter language name)
+// for a file path, or "" when the path has no recognized extension. A
+// special-case handles extension-less names (Dockerfile, Makefile).
 func langForPath(p string) string {
-	switch strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".") {
-	case "py":
-		return "python"
-	case "go":
-		return "go"
-	case "lua":
-		return "lua"
-	case "md", "markdown":
-		return "markdown"
-	case "yaml", "yml":
-		return "yaml"
-	case "json":
-		return "json"
-	case "nix":
-		return "nix"
-	case "sh", "bash":
-		return "bash"
-	case "js":
-		return "javascript"
-	case "ts":
-		return "typescript"
-	case "html", "htm":
-		return "html"
-	case "css":
-		return "css"
-	case "rs":
-		return "rust"
-	case "toml":
-		return "toml"
-	case "xml":
-		return "xml"
-	case "sql":
-		return "sql"
-	case "c":
-		return "c"
-	case "cpp", "cc", "cxx", "h", "hpp":
-		return "cpp"
-	default:
-		return "" // plain fence when the extension is unrecognized
+	base := strings.ToLower(filepath.Base(p))
+	if base == "dockerfile" {
+		return "dockerfile"
 	}
+	if base == "makefile" {
+		return "make"
+	}
+	return langByExt[strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".")]
 }

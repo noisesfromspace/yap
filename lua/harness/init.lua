@@ -89,6 +89,7 @@ M.config = {
 local models_cache = nil
 
 local frontmatter = require("harness.frontmatter")
+local paths = require("harness.path")
 
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
@@ -614,34 +615,9 @@ local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
 
 -- The audit dir holds one JSON Lines audit log per session, keyed by
 -- the session's basename, so the sessions dir stays clean.
-local function audit_dir()
-  local slug = (vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-"))
-  return ("%s/.yap/audit/%s"):format(vim.fn.expand("~"), slug)
-end
-
-local function session_base(buf)
-  local path = vim.b[buf].yap_path
-  if path then
-    return vim.fn.fnamemodify(path, ":t:r")
-  end
-  return vim.api.nvim_buf_get_name(buf):gsub("^yap://", ""):gsub("[^%w%._-]", "-")
-end
 
 --- The tail buffer's name; mirrors the session file's basename so
 --- `:file` renames keep the two together.
-local function tail_buf_name(buf)
-  local path = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
-  return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
-end
-
--- The AUDIT LOG is the full, durable record of everything the context
--- doesn't carry: ~/.yap/audit/<cwd-slug>/<session>.jsonl, one JSON
--- object per line (append-only, survives restarts). The tail buffer
--- renders these same events for the live view, so nothing the context
--- doesn't carry is ever lost, which is what makes :YapClear safe.
-local function audit_path(buf)
-  return audit_dir() .. "/" .. session_base(buf) .. ".jsonl"
-end
 
 --- Append one event as a JSON object to the session's audit log.
 local function audit_append(buf, ev)
@@ -650,7 +626,7 @@ local function audit_append(buf, ev)
     return
   end
   if not t.audit then
-    t.audit = audit_path(buf)
+    t.audit = paths.audit_path(buf)
     vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p")
   end
   vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
@@ -663,7 +639,7 @@ local function audit_follow(buf)
   if not t or not t.audit or not vim.b[buf].yap_path then
     return
   end
-  local want = audit_path(buf)
+  local want = paths.audit_path(buf)
   if want ~= t.audit and vim.fn.filereadable(want) == 0 then
     vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
     if os.rename(t.audit, want) then
@@ -679,7 +655,7 @@ end
 --- is the source of truth).
 local function seed_session_usage(buf)
   local su = { prompt = 0, completion = 0 }
-  local path = audit_path(buf)
+  local path = paths.audit_path(buf)
   if vim.fn.filereadable(path) == 1 then
     for _, line in ipairs(vim.fn.readfile(path)) do
       if line ~= "" then
@@ -764,25 +740,28 @@ local function render_events(events)
   return table.concat(parts)
 end
 
+--- Find a buffer by name, or create one (unlisted) with that name.
+--- Reuse comes first: naming a fresh buffer identically to a leftover
+--- would E95 (the chat buffer may have been wiped and reopened). Returns
+--- the buffer and whether it was freshly created.
+local function find_or_create_buffer(name, listed, scratch)
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_get_name(b) == name then
+      return b, false
+    end
+  end
+  local b = vim.api.nvim_create_buf(listed, scratch)
+  vim.api.nvim_buf_set_name(b, name)
+  return b, true
+end
+
 local function ensure_tail(buf)
   local t = tails[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
-  local name = tail_buf_name(buf)
-  -- Reuse a leftover tail buffer with this name (the chat buffer may have
-  -- been wiped and reopened); naming a fresh buffer identically would E95.
-  local tail
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_get_name(b) == name then
-      tail = b
-      break
-    end
-  end
-  if not tail then
-    tail = vim.api.nvim_create_buf(false, true) -- unlisted scratch: never in :ls or buffer pickers
-    vim.api.nvim_buf_set_name(tail, name)
-  end
+  local name = paths.tail_buf_name(buf)
+  local tail = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.bo[tail].bufhidden = "hide"
 
   t = { bufnr = tail, offset = 0, has_content = false }
@@ -790,7 +769,7 @@ local function ensure_tail(buf)
 
   -- Replay the audit log so the live view survives restarts.
   local events = {}
-  local path = audit_path(buf)
+  local path = paths.audit_path(buf)
   if vim.fn.filereadable(path) == 1 then
     for _, line in ipairs(vim.fn.readfile(path)) do
       if line ~= "" then
@@ -852,88 +831,6 @@ drain_tail = function(buf)
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
--- Reorder state for the current assistant round: stash pre-tool prose and
--- reinsert it after the last tool region when all tools finish.
-local function get_reorder(buf)
-  vim.b[buf].yap_reorder = vim.b[buf].yap_reorder or { assistant = nil, stash = {}, pending = false, open = 0 }
-  return vim.b[buf].yap_reorder
-end
-
-local function find_last_assistant_heading(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i = #lines, 1, -1 do
-    if lines[i]:match("^# @assistant%s*$") then
-      return i -- 1-based
-    end
-  end
-end
-
-local function cut_pretool_prose(buf)
-  -- Relocate already-streamed same-round prose to after the last tool
-  -- result: keep smooth streaming and preserve header/result-before-prose.
-  local r = get_reorder(buf)
-  if not r.assistant then
-    return
-  end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local from = r.assistant + 1
-  if from > #lines then
-    return
-  end
-  local header_at
-  for i = from, #lines do
-    if lines[i]:match("^<!%-%- yap:tool") then
-      header_at = i
-      break
-    end
-  end
-  if not header_at or header_at <= from then
-    return
-  end
-  local prose = vim.list_slice(lines, from, header_at - 1)
-  if #prose == 0 then
-    return
-  end
-  -- Delete the prose from the buffer and stash it.
-  vim.api.nvim_buf_set_lines(buf, from - 1, header_at - 1, false, {})
-  local r2 = get_reorder(buf)
-  r2.stash = prose
-  r2.pending = true
-end
-
-local function reinsert_stash_after_last_tool(buf)
-  local r = get_reorder(buf)
-  if not r.pending or #r.stash == 0 then
-    return
-  end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local last_close
-  for i = #lines, 1, -1 do
-    if lines[i]:match("^<!%-%- /yap:tool") then
-      last_close = i
-      break
-    end
-  end
-  if not last_close then
-    return
-  end
-  -- Ensure exactly one blank between the tool region and the prose we insert.
-  local insert_at = last_close + 1
-  local extra = {}
-  if lines[insert_at] ~= "" then
-    table.insert(extra, "")
-  end
-  for _, l in ipairs(r.stash) do
-    table.insert(extra, l)
-  end
-  if extra[#extra] ~= "" then
-    table.insert(extra, "")
-  end
-  vim.api.nvim_buf_set_lines(buf, insert_at, insert_at, false, extra)
-  r.stash = {}
-  r.pending = false
-end
-
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
   if not ok or type(ev) ~= "table" then
@@ -973,25 +870,10 @@ local function handle_event(buf, json_line)
         vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
       end
     end
-    -- Reordering: capture and remove any already-streamed prose before the
-    -- just-written tool header in the current assistant block.
-    local r = get_reorder(buf)
-    r.open = (r.open or 0) + 1
-    cut_pretool_prose(buf)
     append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
     append_event(buf, ev) -- full result; bash output already streamed above
-    local r = get_reorder(buf)
-    r.open = math.max(0, (r.open or 0) - 1)
-    if r.open == 0 then
-      reinsert_stash_after_last_tool(buf)
-      -- Reset reorder state at the end of a tool round.
-      vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
-    end
   elseif ev.type == "turn_end" then
-    -- Reset reordering state at turn boundary; a new assistant round will set
-    -- its own anchor.
-    vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     -- Fold this turn into the session's all-time totals (seeded from the
     -- audit log on open; this keeps the in-memory copy in step with it).
@@ -1023,7 +905,7 @@ function M.clear(buf, keep)
   -- Map tool-call ids to their JSONL line range (tool_call → tool_result)
   -- so each placeholder can point at the exact lines it replaced.
   local by_id = {}
-  local apath = audit_path(buf)
+  local apath = paths.audit_path(buf)
   if vim.fn.filereadable(apath) == 1 then
     for n, line in ipairs(vim.fn.readfile(apath)) do
       if line ~= "" then
@@ -1248,8 +1130,7 @@ end
 --- with a `.queue` extension, so it lives in the sessions dir but
 --- session.list()'s `*.md` glob never mistakes it for a session.
 local function queue_path(buf)
-  local path = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":r") .. ".queue"
+  return paths.queue_path(buf)
 end
 
 --- Drag the queue file and buffer along after a `:file` rename of the
@@ -1346,22 +1227,13 @@ function M.scratch_toggle(buf)
 
   local scratch = vim.b[buf].yap_scratch
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    -- Reuse a leftover queue buffer from a wiped-and-reopened session
-    -- (naming a fresh one identically would E95), otherwise create a
-    -- file-backed buffer and load the saved queue if there is one.
+    -- Reuse a leftover queue buffer from a wiped-and-reopened session,
+    -- otherwise create a file-backed buffer and load the saved queue.
     local want = queue_path(buf)
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_get_name(b) == want then
-        scratch = b
-        break
-      end
-    end
-    if not scratch then
-      scratch = vim.api.nvim_create_buf(false, false) -- unlisted, file-backed
-      vim.api.nvim_buf_set_name(scratch, want)
-      if vim.fn.filereadable(want) == 1 then
-        vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
-      end
+    local created
+    scratch, created = find_or_create_buffer(want, false, false) -- unlisted, file-backed
+    if created and vim.fn.filereadable(want) == 1 then
+      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
     end
     vim.bo[scratch].bufhidden = "hide"
     vim.bo[scratch].buflisted = false
@@ -1612,8 +1484,6 @@ function M.send(buf)
     document.follow_windows(buf, follow, expected_follow)
   end
   document.append_block(buf, { "# @assistant", "" })
-  -- Track this assistant block for possible same-round prose relocation.
-  get_reorder(buf).assistant = find_last_assistant_heading(buf)
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
@@ -1910,7 +1780,7 @@ local function adopt(buf, path)
     return buf
   end
   vim.b[buf].yap_path = path
-  vim.b[buf].yap_project_cwd = require("harness.session").project_cwd(path)
+  vim.b[buf].yap_project_cwd = paths.project_cwd(path)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
   -- buffer the moment it is resumed.
@@ -2123,7 +1993,7 @@ function M.setup(opts)
   })
   local function is_session_path(buf)
     local name = vim.api.nvim_buf_get_name(buf)
-    local root = require("harness.session").sessions_root()
+    local root = paths.sessions_root()
     return name, name:sub(1, #root + 1) == root .. "/"
   end
   vim.api.nvim_create_autocmd("BufAdd", {

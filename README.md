@@ -1,7 +1,7 @@
 # yap
 
-*Inspired by pi and gptel*: the conversation is an editable Neovim markdown
-buffer; the Go binary is just a provider client. No TUI, no hidden state.
+*Inspired by pi and gptel*: the conversation is a real Neovim buffer you
+edit, so deleting text is branching and editing a reply is rewriting history.
 
 Chat LLM APIs are stateless — every request sends the full message array, so
 whoever holds the array holds the truth. In yap that's a text buffer: `#
@@ -10,21 +10,21 @@ block is branching, editing a reply is rewriting history
 
 It hooks into Neovim by:
 
-- Rich text-object support for messages and thinking/tool blocks, with actions
-  like `dit` to clear a block and `dam` to drop a message
+- Text objects for messages and thinking/tool blocks — `dit` clears a
+  block, `dam` drops a message
 - `]`/`[` navigation between messages (`]m`/`[m`), user prompts (`]u`/`[u`),
   assistant replies (`]a`/`[a`), tool/thinking blocks (`]t`/`[t`) etc
-- A winbar overview of sessions, showing streaming status (`▶N`)
+- A winbar showing the session description, model, token totals, cost, and
+  streaming status (`▶N`)
 - Folding views to collapse agent output or tool calls with keyboard shortcuts
   (<leader>1/2/3)
 - Context slimming and compaction (:YapClear, :YapCompact)
 - Templates and skills injected into the conversation (:YapInsert)
-- Pickers that use `vim.ui.select`, works on fzf-lua, telescope, mini.pick,
-  snacks, or any other picker plugin
-- A winbar with session description, model, token totals and cost
+- Pickers via `vim.ui.select` — works with fzf-lua, telescope, mini.pick,
+  snacks, or any picker plugin you use
 - Plain-markdown sessions you can resume, fork, and render with any plugin
-- Asynchronous streaming over `vim.system` and a `User YapTurnDone` autocmd
-  for hooking turn completion
+- Asynchronous streaming over `vim.system`, with a `User YapTurnDone` autocmd
+  when a turn finishes
 
 This isn't the most stable approach. Removing things or incoming text could put
 the session in unexpected states. Making edits while the buffer is running will
@@ -93,12 +93,11 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 - `<leader>m` / `:YapChangeModel` — switch models (queries the providers
   in config.json for their model lists)
 - `:YapStop` / `<leader>c` — kill the in-flight request
-- `:YapLive` / `<leader>l` — watch tool output live: one persistent
+- `:YapLive` / `<leader>l` — watch tool output live in a persistent
   `yap://<session>-tail` buffer that renders the session's audit log as
-  it streams. The audit log at
-  `~/.yap/audit/<cwd-slug>/<session>.jsonl` is JSON Lines — one
-  structured event per line — and keeps the full record (full tool
-  arguments and results)
+  it streams. The audit log (`~/.yap/audit/<cwd-slug>/<session>.jsonl`)
+  is JSON Lines, one event per line, and keeps full tool arguments and
+  results
 - `<leader>s` — toggle a scratch queue buffer: a fixed-height,
   file-backed jotter above the session (a quick queue of tasks for the
   agent; `:w` saves it next to the session as `<session>.queue` and an
@@ -107,29 +106,26 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   `keep` (default 2) tool result bodies with a pointer to the exact
   audit-log lines they were cleared from. write/edit tool headers are
   always slimmed (`[N lines]`); the diff below them shows the change
-- `:YapCompact` — summarize the conversation into a compact context:
-  insert the compact prompt, send, then offer to delete the superseded
-  history (the summary stays a visible, editable turn)
+- `:YapCompact` — summarize the conversation: insert the compact prompt,
+  send, then offer to delete the old history (the summary stays as an
+  editable turn)
 - `:YapInsert [name]` / `<leader>t` — insert a template (appended as
   `# @user`) or a skill (merged into `# @system`) from
   `~/.config/yap/templates/` and `~/.config/yap/skills/`;
-  `<leader>T` inserts verbatim at the cursor. Compaction = insert a
-  `compact.md` summarize-prompt template, send, then delete the old
-  history — or just run `:YapCompact`.
+  `<leader>T` inserts verbatim at the cursor.
 - `:YapSessions [all]` — resume a saved session
 - `:YapInstances` / `<leader>r` — list every open session by file path
   with its status (`◉ waiting`, `✗ error`, `▶ running`, `○ idle`) and
   jump to the picked one (sessions are unlisted: they never appear in
   `:ls` or buffer pickers)
-- The agent's `quickfix` tool can replace the current quickfix list with
-  multiple source locations, e.g. review findings. Each call creates a new
-  quickfix history entry, so previous lists remain available with `:colder`
-  / `:cnewer`. The side effect happens only for a live tool call; reopening a
-  saved session does not replay it.
+- The agent's `quickfix` tool can fill the quickfix list with source
+  locations, e.g. review findings. Each call pushes a new list, so previous
+  ones stay reachable with `:colder` / `:cnewer`. Reopening a saved session
+  doesn't re-run it.
 
 The winbar leads with a `▶` busy beacon while the current session is
-streaming, then a raised island rolling up ALL OTHER sessions: `▶N` streaming
-and `◉N` awaiting your reply (the current buffer is never counted there).
+streaming, then a rollup of your other sessions: `▶N` streaming and `◉N`
+awaiting your reply (the current buffer is never counted there).
 After that: the session description, provider/model, and fold view (`Ⓕ1`-`Ⓕ3`).
 Long descriptions are truncated, and token totals use compact `k`/`m` notation
 on the right, followed by the trailing state glyph — busy / error / `◉
@@ -143,16 +139,16 @@ unfolds everything.
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
 complements yap: a treesitter-based markdown rendering plugin that is yap-aware
 — it colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and
-paints a whole tool region (header, result, diff) as one block. But any
-renderer you already use — render-markdown, markview, or just treesitter
-highlighting — works the same on a yap buffer as on any other markdown file.
+paints a whole tool region (header, result, diff) as one block. Any
+renderer you already use — render-markdown, markview, or plain treesitter
+highlighting — works fine on a yap buffer.
 
 ## Documentation
 
 Full reference — buffer format, markers, sessions, folding, configuration, and
 the design rules this project is built on — is in the vimdoc:
 
-`vim :help yap `
+`vim :help yap`
 
-Contributors (human or AI): read `:help yap-rules` before changing behavior,
+Contributors: read `:help yap-rules` before changing behavior,
 and update it when you do.
