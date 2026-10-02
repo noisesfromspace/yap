@@ -28,7 +28,6 @@ type Tool struct {
 	Name        string
 	Description string
 	Schema      json.RawMessage // generated from the tool's Args struct
-	compiled    *schema.Schema
 	run         func(args json.RawMessage) (result, ui string, err error)
 }
 
@@ -81,7 +80,6 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		Name:        name,
 		Description: description,
 		Schema:      schemaJSON,
-		compiled:    compiled,
 		run:         validated,
 	}
 }

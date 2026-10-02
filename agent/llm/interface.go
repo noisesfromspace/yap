@@ -48,10 +48,9 @@ type Message struct {
 }
 
 type ToolCall struct {
-	ID       string
-	Name     string
-	Input    json.RawMessage
-	Metadata map[string]any
+	ID    string
+	Name  string
+	Input json.RawMessage
 }
 
 type Tool struct {
@@ -83,7 +82,6 @@ type Event struct {
 // Result is one generation step's outcome.
 type Result struct {
 	Text         string
-	Reasoning    string
 	ToolCalls    []ToolCall
 	FinishReason string
 	Usage        Usage

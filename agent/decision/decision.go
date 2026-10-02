@@ -39,14 +39,6 @@ type Answer struct {
 	Legend        map[string]string  // score only: level index -> label
 }
 
-// Usage is the token and cost accounting for a pass, when the backend
-// reports it.
-type Usage struct {
-	InputTokens  int
-	OutputTokens int
-	Cost         float64
-}
-
 type Request struct {
 	// State is the content to evaluate: a plain string, or a JSON object
 	// or array of related context.
@@ -57,7 +49,6 @@ type Request struct {
 type Response struct {
 	Answers map[string]Answer
 	Model   string
-	Usage   Usage
 }
 
 // Model is the Yap-owned decision-model surface: one parallel pass over

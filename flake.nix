@@ -269,7 +269,7 @@
             descriptionModel = mkOption {
               type = types.str;
               default = "openai/gpt-5-nano";
-              description = "Smallest provider/model combo used to label a session on send and from recent tool calls/thinking while the assistant works.";
+              description = "Smallest provider/model combo used to label a session from the latest user message on send.";
             };
             descriptionAnswerModel = mkOption {
               type = types.str;

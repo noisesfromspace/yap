@@ -30,6 +30,10 @@ func init() {
 			if len(a.Edits) == 0 {
 				return "", "", fmt.Errorf("no edits given")
 			}
+			note, err := guardWritePath(a.Path)
+			if err != nil {
+				return "", "", err
+			}
 			data, err := os.ReadFile(a.Path)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -82,6 +86,10 @@ func init() {
 				return "", "", err
 			}
 			ui := unifiedDiff(a.Path, orig, content)
-			return fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(a.Edits), a.Path), ui, nil
+			result := fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(a.Edits), a.Path)
+			if note != "" {
+				result = note + "\n" + result
+			}
+			return result, ui, nil
 		})
 }

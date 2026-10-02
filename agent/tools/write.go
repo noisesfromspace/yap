@@ -17,6 +17,10 @@ func init() {
 			"overwrites if it does. Automatically creates parent directories. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {
+			note, err := guardWritePath(a.Path)
+			if err != nil {
+				return "", "", err
+			}
 			old, readErr := os.ReadFile(a.Path)
 			if readErr != nil && !os.IsNotExist(readErr) {
 				return "", "", readErr
@@ -32,6 +36,10 @@ func init() {
 			// Always diff, creates included (old = ""): the yap:ui diff
 			// is the visual record since long argument headers are folded.
 			ui := unifiedDiff(a.Path, string(old), a.Content)
-			return fmt.Sprintf("Successfully wrote %d bytes to %s", len(a.Content), a.Path), ui, nil
+			result := fmt.Sprintf("Successfully wrote %d bytes to %s", len(a.Content), a.Path)
+			if note != "" {
+				result = note + "\n" + result
+			}
+			return result, ui, nil
 		})
 }

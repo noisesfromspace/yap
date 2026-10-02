@@ -224,7 +224,6 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 			r.Err = err
 		}
 		r.Text = res.Text
-		r.Reasoning = res.Reasoning
 		r.ToolCalls = toLLMToolCalls(res.ToolCalls)
 		r.FinishReason = string(res.FinishReason)
 		r.Usage = llm.Usage{PromptTokens: res.TotalUsage.InputTokens, CompletionTokens: res.TotalUsage.OutputTokens}
@@ -286,10 +285,9 @@ func toLLMToolCalls(calls []provider.ToolCall) []llm.ToolCall {
 	out := make([]llm.ToolCall, 0, len(calls))
 	for _, c := range calls {
 		out = append(out, llm.ToolCall{
-			ID:       c.ID,
-			Name:     c.Name,
-			Input:    c.Input,
-			Metadata: c.Metadata,
+			ID:    c.ID,
+			Name:  c.Name,
+			Input: c.Input,
 		})
 	}
 	return out

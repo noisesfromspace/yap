@@ -22,6 +22,9 @@ func init() {
 	Register("read",
 		"Read a text file. Returns at most 2000 lines / 50KB; for large files use offset and limit.",
 		func(a *readArgs) (string, string, error) {
+			if err := guardReadPath(a.Path); err != nil {
+				return "", "", err
+			}
 			data, err := os.ReadFile(a.Path)
 			if err != nil {
 				return "", "", err

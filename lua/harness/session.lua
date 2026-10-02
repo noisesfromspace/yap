@@ -167,8 +167,7 @@ function M.label(path, description, project_cwd)
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all".
---- Items: { path, mtime, text, model, models? } sorted newest first;
---- `model`/`models` come from the session frontmatter.
+--- Items: { path, mtime, text } sorted newest first.
 function M.list(scope)
   local dirs
   if scope == "all" then
@@ -188,13 +187,10 @@ function M.list(scope)
       -- :YapInstances, which falls back to the filename.
       local unnamed = description == "" and default_id(path)
       if not unnamed then
-        local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
         table.insert(items, {
           path = path,
           mtime = vim.fn.getftime(path),
           text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
-          model = model,
-          models = (fm and #fm.models > 1) and fm.models or nil,
         })
       end
     end

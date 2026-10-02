@@ -19,9 +19,9 @@ import (
 
 	"boers.email/yap/agent/decision"
 	"boers.email/yap/agent/decision/jev"
-	"boers.email/yap/agent/pricing"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
+	"boers.email/yap/agent/pricing"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 )
@@ -202,6 +202,11 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	}
 	return t, nil
 }
+
+// maxToolIterations bounds the agent loop: one generation step per
+// iteration, capped so a model stuck emitting tool calls cannot loop
+// forever.
+const maxToolIterations = 300
 
 // toolHeaderMaxSingle is the longest header kept on one line; longer
 // calls (write/edit content) are emitted as pretty-printed multi-line
@@ -542,6 +547,12 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			break // final answer streamed; turn complete
 		}
 
+		if iter >= maxToolIterations {
+			pad()
+			fmt.Fprintf(out, "<!-- yap:error\nreached %d tool iterations without a final answer\n-->\n\n", maxToolIterations)
+			break
+		}
+
 		// Append the exact assistant message(s) GoAI produced — ordered
 		// parts and provider metadata (reasoning items/encrypted content,
 		// signatures, thought signatures, reasoning_content) intact — then
@@ -572,6 +583,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 				} else {
 					result = fenceResult(call.Name, string(call.Input), result)
 				}
+				result = tools.Scrub(result)
 				emitToolResult(out, result, ui)
 			}
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})

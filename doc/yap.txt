@@ -425,7 +425,7 @@ self-registering in init(). Adding or changing a tool = editing a file
 and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
-process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
+process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
 bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
 jev. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
@@ -654,10 +654,10 @@ markdown_inline's html_tag grammar (the comment fails to parse and the
 ZWSP renders as a literal <200b>), and a soft hyphen hides the
 mutation from the user while still reaching registers and the model.
 
-Tool RESULTS from content-bearing tools (read, bash, ls, fetch) are
-wrapped in a fenced code block — read with a language info string
-detected from the path extension, fetch as ```markdown, bash/ls as a
-plain fence.
+Tool RESULTS from content-bearing tools (read, bash, ls, fetch, curl,
+git, search, glob) are wrapped in a fenced code block — read with a
+language info string detected from the path extension, fetch as
+```markdown, the rest as a plain fence.
 The buffer is markdown, and raw file content or command output
 gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
 picks up stray styling; the fence renders it as code instead and lets
@@ -1019,8 +1019,8 @@ R14 The model state is durable YAML frontmatter; everything else is
     The frontmatter holds `provider`/`model` (the combo to resume with)
     and `models` (the ordered history of combos used). yap writes it
     only on :Yap and |:YapChangeModel| — never during a send, so
-    R7's append-only rule holds — reads it on open, and surfaces it in
-    the |:YapSessions| picker. Token/cost totals are deliberately NOT
+    R7's append-only rule holds — reads it on open. Token/cost totals
+    are deliberately NOT
     frontmatter: they accumulate in per-buffer memory for the winbar
     and reset on reopen. The earlier frontmatter design got this wrong
     by folding per-reply usage into the header, which made every
