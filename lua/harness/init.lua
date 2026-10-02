@@ -211,15 +211,23 @@ local start_subagent
 local subagent_done = {}
 local subagent_children = {}
 
+-- The winbar is a statusline: `%` starts a format item there, so any
+-- literal `%` in segment text (the context-fill chip, a session title that
+-- contains a percent sign) must be doubled. This runs on the content only —
+-- the `%#…#` / `%*` highlight markers these helpers add are not escaped.
+local function esc(text)
+  return text:gsub("%%", "%%%%")
+end
+
 local function winbar_hl(text, group)
-  return "%#Yap" .. group .. "#" .. text .. "%*"
+  return "%#Yap" .. group .. "#" .. esc(text) .. "%*"
 end
 
 -- Island segments share one raised background (`YapIsland`); each chip
 -- keeps its own foreground via `YapIsland<Group>`. `%*` resets to the
 -- WinBar default, so every island piece re-applies its own highlight.
 local function island_hl(text, group)
-  return "%#YapIsland" .. (group or "") .. "#" .. text .. "%*"
+  return "%#YapIsland" .. (group or "") .. "#" .. esc(text) .. "%*"
 end
 
 -- Last backend error per buffer; shown in the winbar until the next send.
