@@ -4,20 +4,41 @@
 buffer; the Go binary is just a provider client. No TUI, no hidden state.
 
 Chat LLM APIs are stateless — every request sends the full message array, so
-whoever holds the array holds the truth. In yap that's a text buffer:
-`# @system` / `# @user` / `# @assistant` headings delimit messages, deleting
-a block is branching, editing a reply is rewriting history, and yanking is
-native Neovim yanking.
+whoever holds the array holds the truth. In yap that's a text buffer: `#
+@system` / `# @user` / `# @assistant` headings delimit messages, deleting a
+block is branching, editing a reply is rewriting history
+
+It hooks into Neovim by:
+
+- Rich text-object support for messages and thinking/tool blocks, with actions
+  like `dit` to clear a block and `dam` to drop a message
+- `]`/`[` navigation between messages (`]m`/`[m`), user prompts (`]u`/`[u`),
+  assistant replies (`]a`/`[a`), tool/thinking blocks (`]t`/`[t`) etc
+- A winbar overview of sessions, showing streaming status (`▶N`)
+- Folding views to collapse agent output or tool calls with keyboard shortcuts
+  (<leader>1/2/3)
+- Context slimming and compaction (:YapClear, :YapCompact)
+- Templates and skills injected into the conversation (:YapInsert)
+- Pickers that use `vim.ui.select`, works onfzf-lua, telescope, mini.pick,
+  snacks, or any other picker plugin
+- A winbar with session description, model, token totals and cost
+- Plain-markdown sessions you can resume, fork, and render with any plugin
+- Asynchronous streaming over `vim.system` and a `User YapTurnDone` autocmd
+  for hooking turn completion
+
+This isn't the most stable approach. Removing things or incoming text could put
+the session in unexpected states. Making edits while the buffer is running will
+overwrite the undohistory. This flexability gives it power.
 
 ## Build & install
 
 ```sh
-CGO_ENABLED=0 go build -o ~/go/bin/yap ./agent   # pure Go, no cgo
+CGO_ENABLED=0 go build -o ~/go/bin/yap ./agent
 ```
 
-Add this repo as a Neovim plugin (any plugin manager, or
-`vim.opt.rtp:append("/opt/code/yap")`), then:
+Add this repo as a Neovim plugin (any plugin manager, or `vim.opt.rtp:append("/opt/code/yap")`)
 
+**Setup**
 ```lua
 require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
 ```
@@ -26,7 +47,14 @@ Providers live in `~/.config/yap.json` (native OpenAI/Anthropic/Google/DeepSeek,
 or any OpenAI-compatible endpoint):
 
 ```json
-{ "providers": { "moonshot": { "base_url": "https://api.moonshot.ai/v1", "api_key_env": "MOONSHOT_API_KEY" } } }
+{
+  "providers": {
+    "moonshot": {
+      "base_url": "https://api.moonshot.ai/v1",
+      "api_key_env": "MOONSHOT_API_KEY"
+    }
+  }
+}
 ```
 
 ## Development (Nix)
@@ -37,9 +65,9 @@ Run from the repo root:
 nix develop
 ```
 
-This builds the backend into `.dev/bin/yap` and puts it on PATH,
-plus `go` and `neovim`. Three launchers start a clean dev Neovim
-(`-u NONE -i NONE`) with only this plugin loaded from the working tree:
+This builds the backend into `.dev/bin/yap` and puts it on PATH, plus `go` and
+`neovim`. Three launchers start a clean dev Neovim (`-u NONE -i NONE`) with
+only this plugin loaded from the working tree:
 
 ```sh
 yap-nvim                 # clean: yap only
@@ -49,9 +77,8 @@ yap-nvim-render-markdown # + the render-markdown.nvim renderer
 ```
 
 `yap-nvim-touchup` loads touchup from `$TOUCHUP_ROOT` (default
-`/opt/code/touchup.nvim`; override to point at another checkout).
-Re-enter the shell (or `go build -o .dev/bin/yap ./agent`) after
-editing the agent.
+`/opt/code/touchup.nvim`; override to point at another checkout). Re-enter the
+shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 
 ## Quick start
 
@@ -95,45 +122,28 @@ editing the agent.
 
 The session description, provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals
 and cost live in the winbar. Long descriptions are truncated, and token totals
-use compact `k`/`m` notation. Its trailing glyph marks busy / error /
-`◉ waiting` (the agent
-awaits your next prompt) / idle. Its `▶N` rollup shows how many OTHER
-sessions are streaming a reply, and `◉N` shows how many OTHER sessions
-await your reply. A turn finishing in a background chat
-fires `vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open),
-`<leader>2` folds tool calls and thinking (default when a session
-opens), `<leader>3` unfolds everything.
+use compact `k`/`m` notation. Its trailing glyph marks busy / error / `◉
+waiting` (the agent awaits your next prompt) / idle. Its `▶N` rollup shows how
+many OTHER sessions are streaming a reply, and `◉N` shows how many OTHER
+sessions await your reply. A turn finishing in a background chat fires
+`vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds
+all agent output (user prompts stay open), `<leader>2` folds tool calls and
+thinking (default when a session opens), `<leader>3` unfolds everything.
 
-## Rendering
-
-yap buffers are plain markdown: thinking/tool/error blocks are HTML
-comments, results are raw markdown, and the content is kept
-CommonMark-sane (no stray `-->` inside comments, fences always
-balanced). Any markdown renderer works — yap itself only uses folds
-and never conceal, so it stays out of your renderer's way.
-
+# Rendering
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
-complements yap: a treesitter-based markdown rendering plugin that is
-yap-aware — it colors the `yap:thinking` / `tool` / `error` /
-`usage` comment labels and paints a whole tool region (header, result,
-diff) as one block. But any renderer you already use — render-markdown,
-markview, or just treesitter highlighting — works the same on a yap
-buffer as on any other markdown file.
-
-## Testing
-
-```sh
-tests/run.sh   # go test ./... plus headless-Neovim suites against local mocks
-```
+complements yap: a treesitter-based markdown rendering plugin that is yap-aware
+— it colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and
+paints a whole tool region (header, result, diff) as one block. But any
+renderer you already use — render-markdown, markview, or just treesitter
+highlighting — works the same on a yap buffer as on any other markdown file.
 
 ## Documentation
 
-Full reference — buffer format, markers, sessions, folding, configuration,
-and the design rules this project is built on — is in the vimdoc:
+Full reference — buffer format, markers, sessions, folding, configuration, and
+the design rules this project is built on — is in the vimdoc:
 
-```vim
-:help yap
-```
+`vim :help yap `
 
-Contributors (human or AI): read `:help yap-rules` before changing
-behavior, and update it when you do.
+Contributors (human or AI): read `:help yap-rules` before changing behavior,
+and update it when you do.
