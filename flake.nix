@@ -250,6 +250,16 @@
               '';
             };
 
+            rolesDir = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                Directory of subagent role definitions, passed to the harness
+                as `roles_dir`. When null the harness default
+                ({file}`~/.yap/roles`) is used.
+              '';
+            };
+
             # Harness (Lua) setup options; consumed by the Neovim config.
             provider = mkOption {
               type = types.str;

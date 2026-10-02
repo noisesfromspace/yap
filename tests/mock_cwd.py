@@ -13,6 +13,11 @@ msgs = payload["messages"]
 if not msgs or msgs[0]["role"] != "system" or not msgs[0]["content"].startswith("# About Yap"):
     sys.exit("missing # About Yap system message at top")
 
+about = msgs[0]["content"]
+for instruction in ("## Subagents", "roles_dir", "~/.yap/roles/<role>.md", "self-contained `task`", ":YapSessions", "The call blocks until the child finishes"):
+    if instruction not in about:
+        sys.exit("missing subagent instruction: " + instruction)
+
 for message in msgs:
     if message["role"] == "system" and message["content"].startswith("Current Neovim working directory: "):
         print(message["content"].removeprefix("Current Neovim working directory: "))

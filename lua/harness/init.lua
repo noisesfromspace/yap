@@ -29,6 +29,7 @@ M.config = {
   -- system-prompt material, merged into the # @system block.
   templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
   skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
+  roles_dir = vim.fn.expand("~/.yap/roles"), -- subagent role definitions
   -- List available skills (name + description) in new chats' system block
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
@@ -112,6 +113,21 @@ When asked about Yap itself, inspect the Yap source or documentation rather than
 - Between turns, tool calls and their results become plain text in the
   transcript and are not re-executed or re-sent as native tool messages.
   Only the visible buffer content is replayed on the next send.
+
+## Subagents
+
+- Use `subagent` with a `role` from the configured `roles_dir` (default
+  `~/.yap/roles/<role>.md`) and a self-contained `task`. Roles supply a
+  system prompt and optional tool
+  allowlist; a `provider/model` in the role selects its model, while a bare
+  model name inherits the parent's provider/model.
+- The call blocks until the child finishes. The child is a regular, saved
+  Yap Markdown session named `<parent-session>-<short-random>.md`, accessible
+  through `:YapSessions`. Its final answer and session path return as the
+  tool result; inspect the child session for its full conversation.
+- There is no background spawn or direct agent-to-agent messaging. A stopped
+  parent stops its running child, and a timed-out child is stopped; its
+  Markdown session remains available for inspection.
 ]]
 
 local function system_prompt()
@@ -856,6 +872,9 @@ local function handle_event(buf, json_line)
     end
   elseif ev.type == "subagent_request" then
     start_subagent(buf, ev)
+  elseif ev.type == "subagent_timeout" then
+    local child = subagent_children[buf]
+    if child then M.stop(child) end
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
@@ -1817,7 +1836,7 @@ start_subagent = function(parent, ev)
     reply("error: invalid subagent request")
     return
   end
-  local role_file = vim.fn.expand("~/.pi/agent/roles/") .. ev.role .. ".md"
+  local role_file = vim.fn.expand(M.config.roles_dir) .. "/" .. ev.role .. ".md"
   local ok_lines, lines = pcall(vim.fn.readfile, role_file)
   if not ok_lines or #lines == 0 or lines[1] ~= "---" then
     reply("error: missing role " .. ev.role .. " (" .. role_file .. ")")
@@ -1832,16 +1851,27 @@ start_subagent = function(parent, ev)
   if not closing then reply("error: invalid role " .. role_file); return end
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
   local provider, model = current_combo(parent)
+  -- Pi roles commonly use bare model names; Yap cannot infer their provider.
+  -- Only a provider/model pair overrides the known-working parent combo.
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
-    provider, model = p or provider, m or header.model
+    if p then provider, model = p, m end
   end
   local allowed = { "ls", "read", "search", "glob", "fetch", "bash", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
   if header.tools and header.tools ~= "" then
     allowed = {}
     local aliases = { grep = "search", find = "glob", webfetch = "fetch" }
+    local known = {}
+    for _, name in ipairs({ "ls", "read", "search", "glob", "fetch", "bash", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }) do
+      known[name] = true
+    end
     for name in header.tools:gmatch("[^,%s]+") do
-      allowed[#allowed + 1] = aliases[name] or name
+      name = aliases[name] or name
+      if not known[name] then
+        reply("error: role " .. ev.role .. " requires unsupported tool " .. name)
+        return
+      end
+      allowed[#allowed + 1] = name
     end
   end
   local parent_path = vim.b[parent].yap_path
@@ -1858,7 +1888,7 @@ start_subagent = function(parent, ev)
   subagent_children[parent] = child
   subagent_done[child] = function(success)
     subagent_children[parent] = nil
-    local result = "error: subagent failed or stopped"
+    local result = "error: " .. (errors[child] or "subagent stopped without a result")
     if success then
       -- Only final prose, not the child's tool history, belongs in the parent.
       local text, in_comment = {}, false

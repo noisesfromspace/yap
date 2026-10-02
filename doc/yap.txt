@@ -210,6 +210,7 @@ Lua setup: >lua
     },
     system = "...",       -- fallback system prompt
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
+    roles_dir = vim.fn.expand("~/.yap/roles"), -- subagent role definitions
     notify_done = true,   -- vim.notify when a background turn finishes
     description_model = "openai/gpt-5-nano", -- smallest: on-send label
     description_answer_model = "openai/gpt-5-mini", -- bigger: final whole-session title
@@ -430,16 +431,21 @@ see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
 bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
 jev. The `subagent` tool delegates to a role defined in
-`~/.pi/agent/roles/<name>.md` (YAML frontmatter: `name`, `model`, optional
-comma-separated `tools`; the body is its system prompt). It creates a normal
+`~/.yap/roles/<name>.md` (or the directory set by `roles_dir` in
+`require('harness').setup()`). Roles use YAML frontmatter: `name`, `model`, optional
+comma-separated `tools`; the body is its system prompt. It creates a normal
 Yap session named `<parent-stem>-<six-hex>.md` in the same project directory.
 The parent tool call waits for the child's turn to finish, then receives its
-final answer and session path; open the child via |:YapSessions|. Role models
-without a provider prefix use the parent's provider. Pi tool names `grep`,
-`find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. A role without
+final answer and session path; open the child via |:YapSessions|. Bare Pi
+role model names cannot identify a Yap provider, so they inherit the parent's
+provider/model; use an explicit `provider/model` to override it. Pi tool names
+`grep`, `find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. Unsupported
+role tools are reported before the child starts. A role without
 `tools` has the regular built-in tools except recursive `subagent` calls;
-role tool lists are enforced by the child backend. Stopping the parent stops
-its running child, but retains its Markdown file. Children are linked by the
+role tool lists are enforced by the child backend. The parent receives the
+child's error text on failure. Delegation times out after ten minutes;
+stopping the parent or timing out stops its running child, but retains its
+Markdown file. Children are linked by the
 filename prefix: renaming a parent does not rename its existing children.
 There is no background spawn or child-to-child messaging.
 search and glob shell out to

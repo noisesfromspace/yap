@@ -3,6 +3,7 @@ package tools
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"boers.email/yap/agent/utils"
 )
@@ -17,9 +18,10 @@ type SubagentReply struct {
 }
 
 var subagentID atomic.Uint64
+var subagentWait = 10 * time.Minute
 
 type subagentArgs struct {
-	Role string `json:"role" jsonschema:"description=name of a role from ~/.pi/agent/roles/*.md"`
+	Role string `json:"role" jsonschema:"description=name of a role from ~/.yap/roles/*.md (or configured roles_dir)"`
 	Task string `json:"task" jsonschema:"description=self-contained task for an isolated Yap session"`
 }
 
@@ -30,10 +32,17 @@ func init() {
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
 		utils.EmitEvent(map[string]any{"type": "subagent_request", "id": id, "role": a.Role, "task": a.Task})
+		timer := time.NewTimer(subagentWait)
+		defer timer.Stop()
 		for {
-			reply := <-SubagentReplies
-			if reply.ID == id {
-				return reply.Result, "", nil
+			select {
+			case reply := <-SubagentReplies:
+				if reply.ID == id {
+					return reply.Result, "", nil
+				}
+			case <-timer.C:
+				utils.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})
+				return "", "", fmt.Errorf("subagent timed out after %s", subagentWait)
 			}
 		}
 	})
