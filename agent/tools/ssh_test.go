@@ -285,3 +285,106 @@ func TestSSHAgentIdentity(t *testing.T) {
 		t.Fatalf("agent auth: %q, %v", result, err)
 	}
 }
+
+func TestSSHStaleRedial(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".ssh")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "id_ed25519"), pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(private)}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(hostKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := &ssh.ServerConfig{NoClientAuth: true}
+	config.AddHostKey(signer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	var connections atomic.Int32
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				server, chans, reqs, err := ssh.NewServerConn(conn, config)
+				if err != nil {
+					conn.Close()
+					return
+				}
+				connections.Add(1)
+				go ssh.DiscardRequests(reqs)
+				for ch := range chans {
+					channel, requests, err := ch.Accept()
+					if err != nil {
+						continue
+					}
+					go func() {
+						defer channel.Close()
+						for req := range requests {
+							if req.Type != "exec" {
+								req.Reply(false, nil)
+								continue
+							}
+							req.Reply(true, nil)
+							fmt.Fprint(channel, string(req.Payload[4:]))
+							channel.SendRequest("exit-status", false, make([]byte, 4))
+							return
+						}
+					}()
+				}
+				server.Close()
+			}()
+		}
+	}()
+	host, portString, _ := net.SplitHostPort(listener.Addr().String())
+	var port int
+	fmt.Sscan(portString, &port)
+	known := fmt.Sprintf("[%s]:%d %s %s\n", host, port, signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
+	knownPath := filepath.Join(home, "system_known_hosts")
+	previous := systemKnownHosts
+	systemKnownHosts = knownPath
+	t.Cleanup(func() { systemKnownHosts = previous })
+	if err := os.WriteFile(knownPath, []byte(known), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := &sshArgs{Host: host, Port: port, User: "test", Command: "first", Timeout: 3}
+	if _, err := runSSH(args); err != nil {
+		t.Fatal(err)
+	}
+	// Drop the cached connection out from under the client, as a dead peer
+	// would. The next command must notice on session setup and re-dial.
+	sshClients.Lock()
+	var cached *sshConn
+	for _, c := range sshClients.clients {
+		cached = c
+	}
+	sshClients.Unlock()
+	if cached == nil {
+		t.Fatal("no cached connection")
+	}
+	cached.conn.Close()
+	args.Command = "second"
+	if _, err := runSSH(args); err != nil {
+		t.Fatal(err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("expected a re-dial after the stale connection, got %d connections", got)
+	}
+}

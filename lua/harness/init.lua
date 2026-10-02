@@ -400,8 +400,19 @@ end
 -- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
 running = stream.running
 
--- One persistent backend per chat buffer; a stopped process is restarted on send.
-local servers = {}
+-- One persistent serve backend shared by every chat buffer, so tool state
+-- (SSH connections above all) survives closing a buffer. The backend runs
+-- turns serially: exactly one turn may be in flight at a time.
+local server = nil        -- the vim.SystemObj backing :YapSend
+local server_buf = nil    -- buffer owning the in-flight turn, or nil
+local s_partial = ""      -- unparsed stdout tail (partial sentinel line)
+local s_err_partial = ""  -- unparsed stderr tail
+local s_err_chunks = {}   -- non-event stderr lines for the current turn
+local s_status = nil      -- decoded turn_end status for the current turn
+local s_barrier = false   -- turn_complete event seen for the current turn
+local s_append = nil      -- fn(data) streams stdout prose into server_buf
+local s_complete = nil    -- fn(result) finalizes the current turn
+local s_event = nil       -- fn(ev) routes a tool event into server_buf
 
 -- Live tool per buffer while it runs: { name, log, since }. Set from
 -- the binary's `yap:event` stderr lines (bash announces the temp file
@@ -1172,7 +1183,7 @@ end
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send()
   local buf = vim.api.nvim_get_current_buf()
-  if running[buf] then
+  if running[buf] or server_buf then
     vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
     return
   end
@@ -1226,142 +1237,144 @@ function M.send()
   -- the new assistant block opens by itself in every view.
   spinner_start()
 
-  local payload = vim.json.encode({ provider = provider, model = model, messages = messages }) .. "\n"
-  local process = servers[buf]
-  if not process then
-    local partial = ""
-    local stderr_partial = ""
-    local stderr_chunks = {}
-    local status, barrier
-    local function append(data)
-      if data == "" then return end
-      sync_followers()
-      document.append_text(buf, data)
-      follow_tail()
+  -- Wire the shared stream to this buffer for this turn.
+  s_partial, s_err_partial, s_err_chunks, s_status, s_barrier = "", "", {}, nil, false
+  s_append = function(data)
+    if data == "" then return end
+    sync_followers()
+    document.append_text(buf, data)
+    follow_tail()
+  end
+  s_event = function(ev)
+    sync_followers()
+    handle_event(buf, ev)
+    follow_tail()
+  end
+  s_complete = function(result)
+    s_status, s_barrier = nil, false
+    server_buf = nil
+    sync_followers()
+    running[buf] = nil
+    s_err_chunks = {}
+    local compact = vim.b[buf].yap_compact_pending
+    vim.b[buf].yap_compact_pending = nil
+    local l = live[buf]
+    drain_tail(buf) -- final bytes; a killed tool never sent tool_end
+    if l then
+      live[buf] = nil
+      pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
     end
-    local function complete(result)
-      status, barrier = nil, false
-      sync_followers()
-      running[buf] = nil
-      stderr_chunks = {}
-      local compact = vim.b[buf].yap_compact_pending
-      vim.b[buf].yap_compact_pending = nil
-      local l = live[buf]
-      drain_tail(buf) -- final bytes; a killed tool never sent tool_end
-      if l then
-        live[buf] = nil
-        pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
-      end
-      spinner_stop_if_idle()
-      repair_stream_tail(buf)
-      if not result.ok then
-        local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
-        report_error(buf, err ~= "" and err or "backend exited")
-        close_stream(buf)
-        follow_tail()
-        return
-      end
-      consume_usage(buf)
-      -- The binary can complete "successfully" with an embedded error
-      -- marker (e.g. empty completion, max tool iterations): surface it.
-      do
-        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-        for i = #lines, 1, -1 do
-          local l = lines[i]
-          if l:match("^# @%a+") then
-            break
-          end
-          local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
-          if err then
-            errors[buf] = err
-            vim.notify("yap: " .. err, vim.log.levels.WARN)
-            break
-          end
+    spinner_stop_if_idle()
+    repair_stream_tail(buf)
+    if not result.ok then
+      local err = result.error or table.concat(s_err_chunks, "\n"):gsub("%s+$", "")
+      report_error(buf, err ~= "" and err or "backend exited")
+      close_stream(buf)
+      follow_tail()
+      return
+    end
+    consume_usage(buf)
+    -- The binary can complete "successfully" with an embedded error
+    -- marker (e.g. empty completion, max tool iterations): surface it.
+    do
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      for i = #lines, 1, -1 do
+        local l = lines[i]
+        if l:match("^# @%a+") then
+          break
+        end
+        local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
+        if err then
+          errors[buf] = err
+          vim.notify("yap: " .. err, vim.log.levels.WARN)
+          break
         end
       end
-      document.append_block(buf, { "# @user", "" })
-      follow_tail()
-      awaiting[buf] = true
-      require("harness.session").save(buf)
-      refresh_description(buf, "answer")
-      audit_follow(buf) -- first save named the session; rename the log to match
-      -- A completed turn is a first-class event (herdr's "working → blocked
-      -- → idle" notification). Fire it once the buffer is in its final state
-      -- so handlers see the appended `# @user` and the saved session.
-      vim.api.nvim_exec_autocmds("User", {
-        pattern = "YapTurnDone",
-        modeline = false,
-        data = { buf = buf, turn = last_turn[buf] },
-      })
-      if compact then
-        M.compact_offer(buf)
-      end
     end
-    local handle
+    document.append_block(buf, { "# @user", "" })
+    follow_tail()
+    awaiting[buf] = true
+    require("harness.session").save(buf)
+    refresh_description(buf, "answer")
+    audit_follow(buf) -- first save named the session; rename the log to match
+    -- A completed turn is a first-class event (herdr's "working → blocked
+    -- → idle" notification). Fire it once the buffer is in its final state
+    -- so handlers see the appended `# @user` and the saved session.
+    vim.api.nvim_exec_autocmds("User", {
+      pattern = "YapTurnDone",
+      modeline = false,
+      data = { buf = buf, turn = last_turn[buf] },
+    })
+    if compact then
+      M.compact_offer(buf)
+    end
+  end
+
+  if not server then
     local ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
       stdin = true,
       text = true,
       stdout = vim.schedule_wrap(function(_, data)
-        if not data or servers[buf] ~= handle then return end
-        partial = partial .. data
-        while partial ~= "" do
-          if partial:sub(1, 1) == "\30" then
-            local i = partial:find("\n", 1, true)
+        if not data or server ~= started then return end
+        s_partial = s_partial .. data
+        while s_partial ~= "" do
+          if s_partial:sub(1, 1) == "\30" then
+            local i = s_partial:find("\n", 1, true)
             if not i then break end
-            local line = partial:sub(2, i - 1)
-            partial = partial:sub(i + 1)
+            local line = s_partial:sub(2, i - 1)
+            s_partial = s_partial:sub(i + 1)
             local status_line = line:match("^yap:turn_end (.+)$")
             local parsed, result = pcall(vim.json.decode, status_line or "")
             if status_line and parsed and type(result) == "table" and type(result.ok) == "boolean" then
-              status = result
-              if running[buf] and barrier then complete(status) end
+              s_status = result
+              if server_buf and running[server_buf] and s_barrier then s_complete(result) end
             else
-              append("?" .. line .. "\n")
+              s_append("?" .. line .. "\n")
             end
           else
-            local i = partial:find("\30", 1, true)
+            local i = s_partial:find("\30", 1, true)
             if i then
-              append(partial:sub(1, i - 1))
-              partial = partial:sub(i)
+              s_append(s_partial:sub(1, i - 1))
+              s_partial = s_partial:sub(i)
             else
-              append(partial)
-              partial = ""
+              s_append(s_partial)
+              s_partial = ""
             end
           end
         end
       end),
       stderr = vim.schedule_wrap(function(_, data)
-        if not data or servers[buf] ~= handle then return end
-        stderr_partial = stderr_partial .. data
+        if not data or server ~= started then return end
+        s_err_partial = s_err_partial .. data
         while true do
-          local i = stderr_partial:find("\n", 1, true)
+          local i = s_err_partial:find("\n", 1, true)
           if not i then break end
-          local line = stderr_partial:sub(1, i - 1)
-          stderr_partial = stderr_partial:sub(i + 1)
+          local line = s_err_partial:sub(1, i - 1)
+          s_err_partial = s_err_partial:sub(i + 1)
           local ev = line:match("^yap:event (.+)$")
           if ev then
             local parsed, event = pcall(vim.json.decode, ev)
             if parsed and event.type == "turn_complete" then
-              barrier = true
-              if running[buf] and status then complete(status) end
-            else
-              sync_followers()
-              handle_event(buf, ev)
-              follow_tail()
+              s_barrier = true
+              if server_buf and running[server_buf] and s_status then s_complete(s_status) end
+            elseif s_event then
+              s_event(ev)
             end
           else
-            table.insert(stderr_chunks, line)
+            table.insert(s_err_chunks, line)
           end
         end
       end),
     }, vim.schedule_wrap(function(result)
-      if servers[buf] ~= handle then return end
-      servers[buf] = nil
-      if partial ~= "" then append(partial); partial = "" end
-      if stderr_partial ~= "" then table.insert(stderr_chunks, stderr_partial) end
-      if running[buf] then
-        complete({ ok = false, error = table.concat(stderr_chunks, "\n"):gsub("%s+$", "") ~= ""
-          and table.concat(stderr_chunks, "\n") or ("exit " .. result.code) })
+      if server ~= started then return end
+      server = nil
+      local b = server_buf
+      server_buf = nil
+      if s_partial ~= "" then s_append(s_partial); s_partial = "" end
+      if s_err_partial ~= "" then table.insert(s_err_chunks, s_err_partial) end
+      if b and running[b] then
+        s_complete({ ok = false, error = table.concat(s_err_chunks, "\n"):gsub("%s+$", "") ~= ""
+          and table.concat(s_err_chunks, "\n") or ("exit " .. result.code) })
       end
     end))
     if not ok then
@@ -1370,14 +1383,15 @@ function M.send()
       close_stream(buf)
       return
     end
-    handle = started
-    servers[buf] = handle
-    process = handle
+    server = started
   end
-  running[buf] = process
-  local ok, err = pcall(function() process:write(payload) end)
+
+  server_buf = buf
+  running[buf] = server
+  local payload = vim.json.encode({ provider = provider, model = model, messages = messages }) .. "\n"
+  local ok, err = pcall(function() server:write(payload) end)
   if not ok then
-    process:kill(15)
+    server:kill(15)
   end
 end
 
@@ -1387,7 +1401,8 @@ function M.stop()
   local handle = running[buf]
   if handle then
     handle:kill(15) -- the exit callback closes the interrupted turn
-    servers[buf] = nil
+    server = nil
+    server_buf = nil
     running[buf] = nil
     spinner_stop_if_idle()
     drain_tail(buf)
@@ -1693,16 +1708,20 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = adopt_group,
     callback = function(args)
-      local process = servers[args.buf]
-      if process then process:kill(15) end
-      servers[args.buf] = nil
       running[args.buf] = nil
+      -- The shared backend outlives ordinary buffer closes; only tear it
+      -- down when the buffer actually streaming is wiped out from under it.
+      if server_buf == args.buf then
+        if server then server:kill(15) end
+        server = nil
+        server_buf = nil
+      end
     end,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = adopt_group,
     callback = function()
-      for _, process in pairs(servers) do process:kill(15) end
+      if server then server:kill(15) end
     end,
   })
   local function is_session_path(buf)

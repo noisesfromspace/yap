@@ -123,10 +123,11 @@ truth, and that can be a text buffer. Consequences:
                                                             *:YapSessions*
 :YapSessions [all]    Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project.
-                        Each line shows the first user message and the
-                        session's recorded model (its frontmatter); the
-                        "all" list leads with the project as a column
-                        instead of a trailing path slug.
+                        Sessions still on their auto-generated filename
+                        (no description yet) are hidden; name one with
+                        |:file| or let the first reply label it. Open
+                        sessions stay listed by filename via
+                        |:YapInstances|.
 
                                                             *:YapInstances*
 :YapInstances         List every open yap session by its file path and
@@ -417,6 +418,11 @@ NixOS's /etc/ssh/ssh_known_hosts with a matching host key. Entries only in
 do not authorize a connection; unknown and mismatched hosts are refused.
 Calls to the same
 user/host/port reuse the authenticated connection; close=true disconnects.
+A keepalive is sent every 30s, and a connection whose peer stops answering
+is dropped so the next command re-dials instead of reusing a dead link.
+The backend — and with it the cached connection — is shared across session
+buffers and lives until Neovim exits, so closing or switching buffers does
+not force a reconnect.
 A command runs in a new session with a 120s default timeout, returning its
 output and exit status. :YapStop terminates the backend and its SSH sessions.
 No control socket, SSH agent forwarding, or X11 forwarding is used.

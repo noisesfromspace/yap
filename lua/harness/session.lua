@@ -3,8 +3,10 @@
 -- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
 -- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
--- autosaved after every completed reply. Pickers identify sessions by their
--- generated description, falling back to the filename.
+-- autosaved after every completed reply. The resume picker identifies
+-- sessions by their generated description; unnamed sessions (no description,
+-- still on the auto-generated filename) are hidden, while open sessions stay
+-- visible in :YapInstances via the filename fallback.
 
 local M = {}
 
@@ -97,6 +99,12 @@ local function slug_cwd(dir)
   return M.project_cwd(dir .. "/session.md")
 end
 
+--- True when a session still carries the auto-generated filename from
+--- save() (never named with :file). These are unnamed scratch sessions.
+local function default_id(path)
+  return vim.fn.fnamemodify(path, ":t"):match("^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$") ~= nil
+end
+
 --- Shared picker identity: generated description, filename fallback. Project
 --- overviews prefix the cwd so sessions from different worktrees are obvious.
 function M.label(path, description, project_cwd)
@@ -121,14 +129,21 @@ function M.list(scope)
     for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
-      local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
-      table.insert(items, {
-        path = path,
-        mtime = vim.fn.getftime(path),
-        text = M.label(path, fm and fm.description, scope == "all" and slug_cwd(dir) or nil),
-        model = model,
-        models = (fm and #fm.models > 1) and fm.models or nil,
-      })
+      local description = fm and fm.description or ""
+      -- Hide unnamed sessions: no generated description and still on the
+      -- auto-generated filename. They stay visible as open sessions via
+      -- :YapInstances, which falls back to the filename.
+      local unnamed = description == "" and default_id(path)
+      if not unnamed then
+        local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
+        table.insert(items, {
+          path = path,
+          mtime = vim.fn.getftime(path),
+          text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
+          model = model,
+          models = (fm and #fm.models > 1) and fm.models or nil,
+        })
+      end
     end
   end
 

@@ -28,10 +28,23 @@ type sshArgs struct {
 
 var systemKnownHosts = "/etc/ssh/ssh_known_hosts"
 
+// keepaliveInterval is how often a cached connection is probed, and how long
+// TCP waits idle before probing the raw socket. A peer that died without a
+// FIN (suspend/resume, roam, NAT idle timeout) is detected within one interval
+// and evicted, so the next command re-dials instead of hanging mid-command.
+const keepaliveInterval = 30 * time.Second
+
+// sshConn pairs a client with its raw connection so session setup can be
+// bounded by a deadline.
+type sshConn struct {
+	client *ssh.Client
+	conn   net.Conn
+}
+
 var sshClients = struct {
 	sync.Mutex
-	clients map[string]*ssh.Client
-}{clients: make(map[string]*ssh.Client)}
+	clients map[string]*sshConn
+}{clients: make(map[string]*sshConn)}
 
 func init() {
 	Register("ssh", "Run commands over a reused in-process SSH connection. Only hosts named in the NixOS /etc/ssh/ssh_known_hosts are allowed; unknown or mismatched hosts are refused. Authenticates with ~/.ssh/id_ed25519 or keys loaded in the local ssh-agent (including FIDO keys). close=true disconnects. Non-interactive; no agent or X11 forwarding.", func(a *sshArgs) (string, string, error) {
@@ -64,16 +77,19 @@ func runSSH(a *sshArgs) (string, error) {
 	}
 	key := name + "@" + net.JoinHostPort(a.Host, strconv.Itoa(port))
 	sshClients.Lock()
-	defer sshClients.Unlock()
-	client := sshClients.clients[key]
+	c := sshClients.clients[key]
 	if a.Close {
-		if client != nil {
-			client.Close()
+		if c != nil {
 			delete(sshClients.clients, key)
+		}
+		sshClients.Unlock()
+		if c != nil {
+			c.client.Close()
 		}
 		return "connection closed", nil
 	}
 	if strings.TrimSpace(a.Command) == "" {
+		sshClients.Unlock()
 		return "", fmt.Errorf("empty command")
 	}
 	timeout := 120 * time.Second
@@ -82,27 +98,33 @@ func runSSH(a *sshArgs) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if client == nil {
+	if c == nil {
 		var err error
-		client, err = dialSSH(ctx, a.Host, port, name)
+		c, err = dialSSH(ctx, a.Host, port, name)
 		if err != nil {
+			sshClients.Unlock()
 			return "", err
 		}
-		sshClients.clients[key] = client
+		sshClients.clients[key] = c
+		go keepalive(c, key)
 	}
-	session, err := client.NewSession()
+	sshClients.Unlock()
+
+	session, err := c.newSession(ctx)
 	if err != nil {
-		client.Close()
-		delete(sshClients.clients, key)
-		client, err = dialSSH(ctx, a.Host, port, name)
+		// The cached connection is stale: evict it and redial once.
+		evict(key, c)
+		c, err = dialSSH(ctx, a.Host, port, name)
 		if err != nil {
 			return "", err
 		}
-		sshClients.clients[key] = client
-		session, err = client.NewSession()
+		sshClients.Lock()
+		sshClients.clients[key] = c
+		sshClients.Unlock()
+		go keepalive(c, key)
+		session, err = c.newSession(ctx)
 		if err != nil {
-			client.Close()
-			delete(sshClients.clients, key)
+			evict(key, c)
 			return "", err
 		}
 	}
@@ -114,8 +136,7 @@ func runSSH(a *sshArgs) (string, error) {
 	select {
 	case err = <-done:
 	case <-ctx.Done():
-		client.Close()
-		delete(sshClients.clients, key)
+		evict(key, c)
 		return "", fmt.Errorf("SSH command timed out after %s", timeout)
 	}
 	text := output.String()
@@ -129,14 +150,50 @@ func runSSH(a *sshArgs) (string, error) {
 		if e, ok := err.(*ssh.ExitError); ok {
 			return fmt.Sprintf("%s\n[exit code %d]", text, e.ExitStatus()), nil
 		}
-		client.Close()
-		delete(sshClients.clients, key)
+		evict(key, c)
 		return "", err
 	}
 	return text, nil
 }
 
-func dialSSH(ctx context.Context, host string, port int, name string) (*ssh.Client, error) {
+// evict removes c from the cache if it is still the cached connection, then
+// closes it. The close happens outside the lock so it never blocks a dial.
+func evict(key string, c *sshConn) {
+	sshClients.Lock()
+	if sshClients.clients[key] == c {
+		delete(sshClients.clients, key)
+	}
+	sshClients.Unlock()
+	c.client.Close()
+}
+
+// newSession opens a session, bounding the channel-open handshake by ctx's
+// deadline so a half-open peer fails fast instead of blocking forever.
+func (c *sshConn) newSession(ctx context.Context) (*ssh.Session, error) {
+	if deadline, ok := ctx.Deadline(); ok {
+		c.conn.SetDeadline(deadline)
+		defer c.conn.SetDeadline(time.Time{})
+	}
+	return c.client.NewSession()
+}
+
+// keepalive probes a cached connection so it is evicted as soon as the peer
+// stops answering. One goroutine per connection; it exits after the first
+// failed probe, at which point the client has been closed and re-dialed on
+// the next command (prompting a fresh FIDO touch only then).
+func keepalive(c *sshConn, key string) {
+	t := time.NewTicker(keepaliveInterval)
+	defer t.Stop()
+	for range t.C {
+		if _, _, err := c.client.SendRequest("keepalive@openssh.com", true, nil); err == nil {
+			continue
+		}
+		evict(key, c)
+		return
+	}
+}
+
+func dialSSH(ctx context.Context, host string, port int, name string) (*sshConn, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -178,7 +235,7 @@ func dialSSH(ctx context.Context, host string, port int, name string) (*ssh.Clie
 		return nil, err
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	conn, err := (&net.Dialer{KeepAlive: keepaliveInterval}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -194,5 +251,5 @@ func dialSSH(ctx context.Context, host string, port int, name string) (*ssh.Clie
 		return nil, err
 	}
 	conn.SetDeadline(time.Time{})
-	return ssh.NewClient(c, chans, reqs), nil
+	return &sshConn{client: ssh.NewClient(c, chans, reqs), conn: conn}, nil
 }
