@@ -27,7 +27,7 @@ local path = vim.b[buf].yap_path
 assert(path and vim.fn.filereadable(path) == 1, "session not saved")
 vim.cmd("bwipeout!")
 local early_unlisted
-local watch = vim.api.nvim_create_autocmd("BufNew", {
+local watch = vim.api.nvim_create_autocmd("BufAdd", {
   callback = function(args)
     if vim.api.nvim_buf_get_name(args.buf) == path then
       early_unlisted = not vim.bo[args.buf].buflisted
@@ -39,7 +39,7 @@ local watch = vim.api.nvim_create_autocmd("BufNew", {
 vim.cmd("edit " .. vim.fn.fnameescape(path))
 vim.api.nvim_del_autocmd(watch)
 local b = vim.api.nvim_get_current_buf()
-assert(early_unlisted, "session should be unlisted as soon as its named buffer is created")
+assert(early_unlisted, "session should be unlisted as soon as it enters the buffer list")
 assert(vim.b[b].yap == true, "direct/file-explorer open session not marked as yap")
 assert(not vim.bo[b].buflisted, "adopted session should be unlisted")
 assert(vim.b[b].yap_path == path, "yap_path not set on adopt: " .. tostring(vim.b[b].yap_path))
@@ -50,4 +50,25 @@ for _, m in ipairs(vim.api.nvim_buf_get_keymap(b, "n")) do
   end
 end
 assert(mapped, "adopted session has no buffer-local keymaps")
+
+-- A session buffer stays out of :ls even after something re-lists it:
+-- BufAdd fires whenever a buffer enters the buffer list (:badd,
+-- :args/:next, plugins), and the guard re-unlists on every path.
+local function ls_shows(p)
+  local out = vim.api.nvim_exec2("silent ls", { output = true }).output
+  return out:find(p, 1, true) ~= nil
+end
+
+vim.cmd("enew")
+vim.cmd("badd " .. vim.fn.fnameescape(path))
+assert(not vim.bo[b].buflisted, "badd relisted the session")
+assert(not ls_shows(path), "session visible in :ls after :badd")
+
+vim.cmd("enew")
+vim.cmd("args " .. vim.fn.fnameescape(path) .. " " .. vim.fn.fnameescape(vim.fn.tempname() .. ".md"))
+vim.cmd("next")
+assert(not vim.bo[b].buflisted, "args/next relisted the session")
+vim.cmd("enew")
+assert(not ls_shows(path), "session visible in :ls after :args/:next")
+
 print("OK adopt")

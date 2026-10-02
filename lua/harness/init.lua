@@ -1609,16 +1609,19 @@ function M.setup(opts)
   end, { silent = true, desc = "yap: sessions" })
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file
-  -- explorer) adopts it as a managed yap session. Hide a newly-created
-  -- session buffer as soon as its name exists, before buffer pickers can
-  -- observe it; BufReadPost still owns full adoption once content exists.
+  -- explorer) adopts it as a managed yap session. Session buffers stay
+  -- out of :ls no matter how they got in: BufAdd fires whenever a buffer
+  -- enters the buffer list (new buffers, :badd, :args/:next, and plugins
+  -- that relist), so unlisting there is the single consistent guard. It
+  -- does not fire during startup, so the BufReadPost adopt below and the
+  -- lazy-setup scan after it own that path.
   local adopt_group = vim.api.nvim_create_augroup("YapAdopt", { clear = true })
   local function is_session_path(buf)
     local name = vim.api.nvim_buf_get_name(buf)
     local root = require("harness.session").sessions_root()
     return name, name:sub(1, #root + 1) == root .. "/"
   end
-  vim.api.nvim_create_autocmd("BufNew", {
+  vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,
     callback = function(args)
       local _, session_path = is_session_path(args.buf)
@@ -1636,6 +1639,14 @@ function M.setup(opts)
       end
     end,
   })
+  -- Session files loaded before setup() ran (lazy loading) missed both
+  -- BufAdd and BufReadPost; unlist them once, when setup() finally runs.
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    local _, session_path = is_session_path(b)
+    if session_path then
+      vim.bo[b].buflisted = false
+    end
+  end
 
   -- yap buffers carry no language server: the buffer is the conversation
   -- (R1), and a markdown LSP streaming semantic-token/inlay-hint updates is
