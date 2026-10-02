@@ -3,15 +3,15 @@
 *Inspired by pi and gptel*: the conversation is a real Neovim buffer you
 edit, so deleting text is branching and editing a reply is rewriting history.
 
-Chat LLM APIs are stateless — every request sends the full message array, so
+Chat LLM APIs are stateless. Every request sends the full message array, so
 whoever holds the array holds the truth. In yap that's a text buffer: `#
 @system` / `# @user` / `# @assistant` headings delimit messages, deleting a
 block is branching, editing a reply is rewriting history
 
 It hooks into Neovim by:
 
-- Text objects for messages and thinking/tool blocks — `dit` clears a
-  block, `dam` drops a message
+- Text objects for messages and thinking/tool blocks (`dit` clears a
+  block, `dam` drops a message)
 - `]`/`[` navigation between messages (`]m`/`[m`), user prompts (`]u`/`[u`),
   assistant replies (`]a`/`[a`), tool/thinking blocks (`]t`/`[t`) etc
 - A winbar showing the session description, model, token totals, cost, and
@@ -20,7 +20,7 @@ It hooks into Neovim by:
   (<leader>1/2/3)
 - Context slimming and compaction (:YapClear, :YapCompact)
 - Templates and skills injected into the conversation (:YapInsert)
-- Pickers via `vim.ui.select` — works with fzf-lua, telescope, mini.pick,
+- Pickers via `vim.ui.select`, works with fzf-lua, telescope, mini.pick,
   snacks, or any picker plugin you use
 - Plain-markdown sessions you can resume, fork, and render with any plugin
 - Asynchronous streaming over `vim.system`, with a `User YapTurnDone` autocmd
@@ -128,25 +128,25 @@ streaming, then a rollup of your other sessions: `▶N` streaming and `◉N`
 awaiting your reply (the current buffer is never counted there).
 After that: the session description, provider/model, and fold view (`Ⓕ1`-`Ⓕ3`).
 Long descriptions are truncated, and token totals use compact `k`/`m` notation
-on the right, followed by the trailing state glyph — busy / error / `◉
+on the right, followed by the trailing state glyph: busy / error / `◉
 waiting` (the agent awaits your next prompt) / idle. A turn finishing in a
-background chat fires `vim.notify` — and a `User YapTurnDone` autocmd you can
+background chat fires `vim.notify` and a `User YapTurnDone` autocmd you can
 hook. `<leader>1` folds all agent output (user prompts stay open), `<leader>2`
 folds tool calls and thinking (default when a session opens), `<leader>3`
 unfolds everything.
 
 # Rendering
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
-complements yap: a treesitter-based markdown rendering plugin that is yap-aware
-— it colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and
+complements yap: a treesitter-based markdown rendering plugin that is yap-aware.
+It colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and
 paints a whole tool region (header, result, diff) as one block. Any
-renderer you already use — render-markdown, markview, or plain treesitter
-highlighting — works fine on a yap buffer.
+renderer you already use (render-markdown, markview, or plain treesitter
+highlighting) works fine on a yap buffer.
 
 ## Documentation
 
-Full reference — buffer format, markers, sessions, folding, configuration, and
-the design rules this project is built on — is in the vimdoc:
+The full reference (buffer format, markers, sessions, folding, configuration,
+and the design rules this project is built on) is in the vimdoc:
 
 `vim :help yap`
 

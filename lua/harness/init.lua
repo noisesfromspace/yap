@@ -129,6 +129,7 @@ end
 
 local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
+local fold = require("harness.fold")
 
 --- The combo yap will send with: per-buffer vars (set by :Yap),
 --- falling back to the global config.
@@ -1293,6 +1294,7 @@ local function report_error(buf, err)
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   document.append_block(buf, block)
+  fold.after_append(buf, block)
   vim.notify("yap: " .. err, vim.log.levels.ERROR)
 end
 
@@ -1439,6 +1441,7 @@ end
 local function close_stream(buf)
   repair_stream_tail(buf)
   document.append_block(buf, { "# @user", "" })
+  fold.after_append(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
   if subagent_done[buf] then
@@ -1494,6 +1497,7 @@ function M.send(buf)
     document.follow_windows(buf, follow, expected_follow)
   end
   document.append_block(buf, { "# @assistant", "" })
+  fold.after_append(buf, { "# @assistant", "" })
   -- Mark that a reply has streamed here: the folder keeps the latest
   -- assistant block open in view 1 so the reply is visible as it arrives
   -- (R10: the new assistant block opens by itself); older replies fold.
@@ -1515,6 +1519,7 @@ function M.send(buf)
       if data == "" then return end
       sync_followers()
       document.append_text(buf, data)
+      fold.after_append(buf, vim.split(data, "\n", { plain = true }))
       follow_tail()
     end
     local function route_event(ev)
@@ -1563,6 +1568,7 @@ function M.send(buf)
         end
       end
       document.append_block(buf, { "# @user", "" })
+      fold.after_append(buf, { "# @user", "" })
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)

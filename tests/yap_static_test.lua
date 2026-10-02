@@ -51,9 +51,11 @@ local ok = vim.wait(8000, function()
 end, 100)
 assert(ok, "turn did not complete cleanly")
 vim.wait(300)
--- 1. fold state preserved across the whole send
-assert(vim.fn.foldclosed(user1) == user1, "send reopened a user-closed fold: " .. vim.fn.foldclosed(user1))
-assert(vim.fn.foldclosed(asst1) == user1, "send reopened the nested assistant fold: " .. vim.fn.foldclosed(asst1))
+-- 1. a send's structural appends snap the buffer back to its view: the
+-- manual close is discarded (manual tweaks are ephemeral, only the view
+-- persists) and the nested assistant folds back to its own level
+assert(vim.fn.foldclosed(user1) == -1, "send did not snap back to view 1: " .. vim.fn.foldclosed(user1))
+assert(vim.fn.foldclosed(asst1) == asst1, "assistant not refolded at its own level: " .. vim.fn.foldclosed(asst1))
 -- 2. every pre-send line is byte-identical (sends only append)
 local post = vim.api.nvim_buf_get_lines(buf, 0, n_before, false)
 for i = 1, n_before do

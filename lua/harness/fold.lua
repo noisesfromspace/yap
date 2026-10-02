@@ -237,9 +237,8 @@ end
 -- large session. foldlevel alone keeps the same visuals. A real CHANGE of
 -- 'foldlevel' resets all manual za toggles to the level's state, so bump
 -- first to guarantee the change — a keypress always lands on the same
--- state. Between keypresses NOTHING touches fold state: new folds adopt
--- 'foldlevel' (streamed tool regions appear folded in views 1/2, open in
--- 3), manual za persists, typing changes nothing.
+-- state. Between keypresses typing changes nothing; the send path snaps
+-- back to the view on structural appends (see M.snap / M.after_append).
 function M.set_view_level(level)
   applied[vim.api.nvim_get_current_buf()] = level
   local target = ({ 1, 2, 3 })[level] or 3
@@ -247,10 +246,79 @@ function M.set_view_level(level)
   vim.wo.foldlevel = target
 end
 
+--- Snap the buffer back to its applied view, discarding every manual
+--- foldopen/foldclose. A peek (an exclusive manual open) is ephemeral:
+--- when the conversation structure advances — a new heading, tool or
+--- thinking/error opener is appended — the buffer returns to its view so
+--- a manual open can't leak into folds created later (Neovim inherits a
+--- manual foldopen into child folds; manual closes stay local but are
+--- equally transient here). The 99 bump is the same trick set_view_level
+--- uses: a real change of 'foldlevel' is what clears the manual flags.
+function M.snap(buf)
+  buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local level = applied[buf] or 3
+  local target = ({ 1, 2, 3 })[level] or 3
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.api.nvim_set_option_value("foldlevel", 99, { win = w })
+    vim.api.nvim_set_option_value("foldlevel", target, { win = w })
+  end
+end
+
+--- Open exactly one fold — the one containing `lnum` — and nothing else:
+--- snap back to the view first, then foldopen the target. In view 2 this
+--- opens a single tool/thinking chip while its siblings stay folded; in
+--- view 1 it opens the enclosing assistant message (zo on a hidden line
+--- opens its outermost closed fold).
+function M.peek(lnum)
+  M.snap()
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.cmd("normal! zo")
+end
+
+--- <Tab>: toggle the fold under `lnum`. A closed fold is opened as an
+--- exclusive peek; an open fold is closed back to the view.
+function M.toggle(lnum)
+  if vim.fn.foldclosed(lnum) ~= -1 then
+    M.peek(lnum)
+  else
+    vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+    vim.cmd("normal! zc")
+  end
+end
+
+--- A line that starts a new fold when it lands in the buffer (the
+--- snap-back trigger). `yap:ui` is deliberately excluded: it is content
+--- inside a tool region, not a fold of its own, so a peek at a streaming
+--- tool survives its own ui diff.
+local function is_fold_opener(line)
+  return line:match(HEAD) ~= nil
+    or line:match(TOOL_OPEN) ~= nil
+    or line:match("^<!%-%-.*yap:thinking%s*$") ~= nil
+    or line:match("^<!%-%-.*yap:error%s*$") ~= nil
+end
+
+--- Called by the send/stream path after appending `lines` to a session
+--- buffer (never by user edits). If any line opens a new fold, snap back
+--- so a manual peek can't leak into it.
+function M.after_append(buf, lines)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  for _, l in ipairs(lines or {}) do
+    if is_fold_opener(l) then
+      M.snap(buf)
+      return
+    end
+  end
+end
+
 -- ─── Message navigation ────────────────────────────────────────────────────
 
 local function jump(pattern, backwards)
-  vim.fn.search(pattern, backwards and "bW" or "W")
+  return vim.fn.search(pattern, backwards and "bW" or "W")
 end
 
 -- Vim-regex equivalents of HEAD for search() (Lua patterns don't apply).
@@ -261,27 +329,27 @@ local VIM_USER = [[^# @user]]
 local VIM_ASSISTANT = [[^# @assistant]]
 
 function M.next_message()
-  jump(VIM_HEAD, false)
+  return jump(VIM_HEAD, false)
 end
 
 function M.prev_message()
-  jump(VIM_HEAD, true)
+  return jump(VIM_HEAD, true)
 end
 
 function M.next_user_message()
-  jump(VIM_USER, false)
+  return jump(VIM_USER, false)
 end
 
 function M.prev_user_message()
-  jump(VIM_USER, true)
+  return jump(VIM_USER, true)
 end
 
 function M.next_assistant_message()
-  jump(VIM_ASSISTANT, false)
+  return jump(VIM_ASSISTANT, false)
 end
 
 function M.prev_assistant_message()
-  jump(VIM_ASSISTANT, true)
+  return jump(VIM_ASSISTANT, true)
 end
 
 -- Block-region navigation: the three display blocks worth hopping between
@@ -295,27 +363,27 @@ local VIM_ERROR = [[^<!-- yap:error]]
 local VIM_TOOL_OR_THINK = [[^<!-- yap:\(tool\|thinking\)]]
 
 function M.next_tool()
-  jump(VIM_TOOL_OR_THINK, false)
+  return jump(VIM_TOOL_OR_THINK, false)
 end
 
 function M.prev_tool()
-  jump(VIM_TOOL_OR_THINK, true)
+  return jump(VIM_TOOL_OR_THINK, true)
 end
 
 function M.next_think()
-  jump(VIM_THINK, false)
+  return jump(VIM_THINK, false)
 end
 
 function M.prev_think()
-  jump(VIM_THINK, true)
+  return jump(VIM_THINK, true)
 end
 
 function M.next_error()
-  jump(VIM_ERROR, false)
+  return jump(VIM_ERROR, false)
 end
 
 function M.prev_error()
-  jump(VIM_ERROR, true)
+  return jump(VIM_ERROR, true)
 end
 
 -- ─── Buffer setup ──────────────────────────────────────────────────────────
@@ -348,12 +416,23 @@ function M.setup_buffer(buf, keys)
   map(keys.prev_user, M.prev_user_message, "Previous user message")
   map(keys.next_assistant, M.next_assistant_message, "Next assistant message")
   map(keys.prev_assistant, M.prev_assistant_message, "Previous assistant message")
-  map(keys.next_tool, M.next_tool, "Next tool call or thinking block")
-  map(keys.prev_tool, M.prev_tool, "Previous tool call or thinking block")
-  map(keys.next_think, M.next_think, "Next thinking block")
-  map(keys.prev_think, M.prev_think, "Previous thinking block")
-  map(keys.next_error, M.next_error, "Next error block")
-  map(keys.prev_error, M.prev_error, "Previous error block")
+  -- Block navigation (tools, thinking, errors) opens the fold it lands
+  -- on — the neogit "OpenOrScroll" feel — closing any previously peeked
+  -- fold (M.peek snaps first). The bare functions stay pure jumps so they
+  -- still work as x/o motions (v]t, d]c).
+  local block_jump = function(fn)
+    return function()
+      if fn() ~= 0 then
+        M.peek(vim.api.nvim_win_get_cursor(0)[1])
+      end
+    end
+  end
+  map(keys.next_tool, block_jump(M.next_tool), "Next tool call or thinking block")
+  map(keys.prev_tool, block_jump(M.prev_tool), "Previous tool call or thinking block")
+  map(keys.next_think, block_jump(M.next_think), "Next thinking block")
+  map(keys.prev_think, block_jump(M.prev_think), "Previous thinking block")
+  map(keys.next_error, block_jump(M.next_error), "Next error block")
+  map(keys.prev_error, block_jump(M.prev_error), "Previous error block")
   map_motion(keys.next_tool, M.next_tool, "Select to next tool call or thinking block")
   map_motion(keys.prev_tool, M.prev_tool, "Select to previous tool call or thinking block")
   map_motion(keys.next_think, M.next_think, "Select to next thinking block")
@@ -368,7 +447,9 @@ function M.setup_buffer(buf, keys)
   bind_view(keys.view_1, 1, "Fold all agent messages (user prompts stay open)")
   bind_view(keys.view_2, 2, "Fold all tool calls and thinking blocks")
   bind_view(keys.view_3, 3, "Unfold everything")
-  map(keys.toggle_fold, "za", "Toggle fold")
+  map(keys.toggle_fold, function()
+    M.toggle(vim.api.nvim_win_get_cursor(0)[1])
+  end, "Toggle fold")
 end
 
 -- Exposed for the shared Go/Lua fence conformance test (see
