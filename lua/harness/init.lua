@@ -1684,7 +1684,7 @@ local function setup_buffer(buf)
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-      pcall(vim.lsp.stop_client, client.id)
+      pcall(client.stop, client)
     end
   end
 
@@ -2041,7 +2041,10 @@ function M.setup(opts)
     group = group,
     callback = function(args)
       if vim.b[args.buf].yap and args.data and args.data.client_id then
-        pcall(vim.lsp.stop_client, args.data.client_id)
+        local client = vim.lsp.get_client_by_id(args.data.client_id)
+        if client then
+          pcall(client.stop, client)
+        end
       end
     end,
   })

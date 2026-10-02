@@ -9,14 +9,26 @@
 -- VimLeavePre handler iterates get_clients() and expects real client objects,
 -- so the fake must not outlive the test.
 local real_get_clients = vim.lsp.get_clients
-local real_stop_client = vim.lsp.stop_client
+local real_get_client_by_id = vim.lsp.get_client_by_id
 
 local stopped = {}
-vim.lsp.get_clients = function()
-  return { { id = 7, name = "markdown_oxide" } }
+
+local function fake_client(id)
+  return {
+    id = id,
+    stop = function(self)
+      stopped[self.id] = (stopped[self.id] or 0) + 1
+    end,
+  }
 end
-vim.lsp.stop_client = function(id)
-  stopped[id] = true
+
+vim.lsp.get_clients = function()
+  return { fake_client(7) }
+end
+vim.lsp.get_client_by_id = function(id)
+  if id == 99 then
+    return fake_client(id)
+  end
 end
 
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -27,12 +39,9 @@ yap.setup({ bin = ROOT .. "/yap" })
 -- 1. a new yap buffer is marked, and a pre-attached markdown client is stopped
 local buf = yap.new({ provider = "mock", model = "m1" })
 assert(vim.b[buf].yap == true, "yap buffer was not marked")
-assert(stopped[7] == true, "pre-attached LSP client was not stopped")
+assert(stopped[7] == 1, "pre-attached LSP client was not stopped")
 
 -- 2. the LspAttach guard stops a client that attaches after setup
-vim.lsp.stop_client = function(id)
-  stopped[id] = (stopped[id] or 0) + 1
-end
 vim.api.nvim_exec_autocmds("LspAttach", {
   buffer = buf,
   data = { client_id = 99 },
@@ -49,6 +58,6 @@ assert(stopped[100] == nil, "LspAttach guard stopped a client on a non-yap buffe
 
 -- Restore the real LSP functions before exit (see the comment at the top).
 vim.lsp.get_clients = real_get_clients
-vim.lsp.stop_client = real_stop_client
+vim.lsp.get_client_by_id = real_get_client_by_id
 
 print("yap LSP guard: marked, stopped pre-attached and late clients, left others alone")
