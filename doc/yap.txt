@@ -689,8 +689,9 @@ to 40 display columns), provider/model combo, and the applied fold view (`Ⓕ1`
 agent output folded, `Ⓕ2` tools & thinking folded, `Ⓕ3` all open — the last
 view applied with <leader>1..3;
 manual |za| toggles don't update it), and — when other sessions are
-waiting for your reply — a `◉N` rollup (N other yap buffers await
-you; jump to one with |:YapInstances|). Right: token totals and cost
+running or waiting for your reply — rollup chips: `▶N` (N other yap
+buffers streaming a reply) and `◉N` (N other yap buffers await you;
+jump to one with |:YapInstances|). Right: token totals and cost
 for this buffer (accumulated over its lifetime, compact k/m format), then
 the state glyph pinned to the far right edge:
 
@@ -704,9 +705,10 @@ the state glyph pinned to the far right edge:
             (the herdr-style "needs you" state).
   ○ idle    Nothing running, nothing pending.
 
-Example: `moonshot/kimi-k3 Ⓕ2 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
+Example: `moonshot/kimi-k3 Ⓕ2 ▶1 ◉2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
 
-The `◉N` rollup counts OTHER yap buffers with a completed turn awaiting
+The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
+`◉N` rollup counts OTHER yap buffers with a completed turn awaiting
 your reply. Live sessions enter it when a send finishes; a reopened
 session enters it when it ends on a `# @user` heading with assistant
 history above it. For a global segment independent of yap buffers, use

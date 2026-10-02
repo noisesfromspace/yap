@@ -97,8 +97,9 @@ The session description, provider/model, fold view (`Ⓕ1`-`Ⓕ3`), token totals
 and cost live in the winbar. Long descriptions are truncated, and token totals
 use compact `k`/`m` notation. Its trailing glyph marks busy / error /
 `◉ waiting` (the agent
-awaits your next prompt) / idle, and whose `◉N` rollup shows how many
-OTHER sessions await your reply. A turn finishing in a background chat
+awaits your next prompt) / idle. Its `▶N` rollup shows how many OTHER
+sessions are streaming a reply, and `◉N` shows how many OTHER sessions
+await your reply. A turn finishing in a background chat
 fires `vim.notify` — and a `User YapTurnDone` autocmd you can hook. `<leader>1` folds all agent output (user prompts stay open),
 `<leader>2` folds tool calls and thinking (default when a session
 opens), `<leader>3` unfolds everything.

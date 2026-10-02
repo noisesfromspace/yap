@@ -17,6 +17,11 @@ for i = 2, #lines do
     assert(lines[i - 1] == "" and lines[i - 2] ~= "", "no blank before heading at line " .. i)
   end
 end
+-- While the first session streams, a second buffer's winbar rolls up how
+-- many OTHER sessions are running (the current buffer's own `▶` has no digit).
+local buf2 = yap.new({ provider = "mock", model = "m1" })
+assert(yap.winbar(buf2):match("▶1"), "running rollup missing on the other buffer: " .. yap.winbar(buf2))
+assert(not yap.winbar(buf):match("▶%d"), "running rollup counts the current buffer: " .. yap.winbar(buf))
 -- wait for completion and check the whole buffer obeys R7
 local done = vim.wait(8000, function()
   local l = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

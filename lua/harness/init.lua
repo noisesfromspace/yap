@@ -162,6 +162,19 @@ local function awaiting_others(buf)
   return n
 end
 
+-- Other yap buffers with an in-flight request: the `▶N` running rollup,
+-- mirroring awaiting_others so both chips skip the current buffer and
+-- stale entries.
+local function running_others(buf)
+  local n = 0
+  for b in pairs(running) do
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
+      n = n + 1
+    end
+  end
+  return n
+end
+
 -- Seed the awaiting hint for a reopened session from its content (R1):
 -- it awaits the next reply when it has assistant history and ends on a
 -- `# @user` heading. One-time scan at open, never on redraw.
@@ -250,6 +263,10 @@ local function render_winbar(buf)
   end
   parts[#parts + 1] = winbar_hl(provider .. "/" .. model, "Model")
   parts[#parts + 1] = winbar_hl(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle")
+  local running_others_n = running_others(buf)
+  if running_others_n > 0 then
+    parts[#parts + 1] = winbar_hl(" ▶" .. running_others_n .. " ", "Busy")
+  end
   local others = awaiting_others(buf)
   if others > 0 then
     parts[#parts + 1] = winbar_hl(" ◉" .. others .. " ", "Needs")
