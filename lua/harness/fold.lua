@@ -243,6 +243,7 @@ local applied = {}
 -- it — the re-apply validates the line is still a fold opener and drops it
 -- otherwise).
 local pinned = {}
+local live_heading = {} -- previous live assistant, open by default rather than manually
 
 function M.level()
   return applied[vim.api.nvim_get_current_buf()] or 3
@@ -261,6 +262,16 @@ function M.set_view_level(level)
   local buf = vim.api.nvim_get_current_buf()
   applied[buf] = level
   pinned[buf] = {}
+  live_heading[buf] = nil
+  if level == 1 and vim.b[buf].yap_live then
+    local levels = M.levels(buf)
+    for i = #levels, 1, -1 do
+      if levels[i] == ">1" and vim.api.nvim_buf_get_lines(buf, i - 1, i, false)[1] == "# @assistant" then
+        live_heading[buf] = i
+        break
+      end
+    end
+  end
   local target = ({ 1, 2, 3 })[level] or 3
   vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
   vim.wo.foldlevel = target
@@ -302,6 +313,20 @@ end
 --- stream never yanks the user's cursor away from where they were reading.
 local function reapply_window(w, buf)
   vim.api.nvim_win_call(w, function()
+    -- In view 1, za/zo can open an old assistant without going through
+    -- M.open. Remember those opens before zX clears manual fold state.
+    -- Don't pin the previous live reply: it was open by default and should
+    -- fold when the next assistant starts.
+    if M.level() == 1 then
+      for lnum, lv in ipairs(M.levels(buf)) do
+        if lv == ">2" and lnum ~= live_heading[buf]
+          and vim.fn.getline(lnum) == "# @assistant"
+          and vim.fn.foldclosed(lnum) == -1 then
+          pinned[buf] = pinned[buf] or {}
+          pinned[buf][lnum] = true
+        end
+      end
+    end
     vim.cmd("normal! zX")
     local pins = {}
     for lnum in pairs(pinned[buf] or {}) do
@@ -382,6 +407,15 @@ function M.after_append(buf, lines)
     if is_fold_opener(l) then
       for _, w in ipairs(vim.fn.win_findbuf(buf)) do
         reapply_window(w, buf)
+      end
+      if vim.b[buf].yap_live and vim.tbl_contains(lines, "# @assistant") then
+        local levels = M.levels(buf)
+        for i = #levels, 1, -1 do
+          if levels[i] == ">1" and vim.api.nvim_buf_get_lines(buf, i - 1, i, false)[1] == "# @assistant" then
+            live_heading[buf] = i
+            break
+          end
+        end
       end
       return
     end
