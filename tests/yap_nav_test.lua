@@ -42,12 +42,22 @@ assert(cursor() == think1, "prev_think -> " .. think1 .. ", got " .. cursor())
 fold.prev_think()
 assert(cursor() == think1, "prev_think wraps past first stays put, got " .. cursor())
 
--- tool
+-- tool or thinking
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 fold.next_tool()
+assert(cursor() == think1, "next_tool -> " .. think1 .. ", got " .. cursor())
+fold.next_tool()
 assert(cursor() == tool1, "next_tool -> " .. tool1 .. ", got " .. cursor())
+fold.next_tool()
+assert(cursor() == think2, "next_tool -> " .. think2 .. ", got " .. cursor())
+fold.next_tool()
+assert(cursor() == think2, "next_tool past last block stays put, got " .. cursor())
 fold.prev_tool()
-assert(cursor() == tool1, "prev_tool past only tool stays put, got " .. cursor())
+assert(cursor() == tool1, "prev_tool -> " .. tool1 .. ", got " .. cursor())
+fold.prev_tool()
+assert(cursor() == think1, "prev_tool -> " .. think1 .. ", got " .. cursor())
+fold.prev_tool()
+assert(cursor() == think1, "prev_tool past first block stays put, got " .. cursor())
 
 -- error
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -61,8 +71,8 @@ local seen = {}
 for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
   seen[m.lhs] = m.desc or ""
 end
-assert(seen["]t"] == "Next tool call", "]t mapping missing/wrong: " .. tostring(seen["]t"]))
-assert(seen["[t"] == "Previous tool call", "[t mapping missing/wrong")
+assert(seen["]t"] == "Next tool call or thinking block", "]t mapping missing/wrong: " .. tostring(seen["]t"]))
+assert(seen["[t"] == "Previous tool call or thinking block", "[t mapping missing/wrong")
 assert(seen["]c"] == "Next thinking block", "]c mapping missing/wrong")
 assert(seen["[c"] == "Previous thinking block", "[c mapping missing/wrong")
 assert(seen["]e"] == "Next error block", "]e mapping missing/wrong")

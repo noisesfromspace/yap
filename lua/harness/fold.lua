@@ -285,16 +285,19 @@ end
 -- Block-region navigation: the three display blocks worth hopping between
 -- when reviewing a long reply. Vim-regex twins of the Lua patterns above
 -- (Lua patterns don't apply to vim.fn.search).
-local VIM_TOOL = [[^<!-- yap:tool]]
 local VIM_THINK = [[^<!-- yap:thinking]]
 local VIM_ERROR = [[^<!-- yap:error]]
+-- `]t`/`[t` hop between tool calls and thinking: both are machine blocks
+-- worth reviewing, and a tool call is usually preceded by thinking. `]c`
+-- remains thinking-only.
+local VIM_TOOL_OR_THINK = [[^<!-- yap:\(tool\|thinking\)]]
 
 function M.next_tool()
-  jump(VIM_TOOL, false)
+  jump(VIM_TOOL_OR_THINK, false)
 end
 
 function M.prev_tool()
-  jump(VIM_TOOL, true)
+  jump(VIM_TOOL_OR_THINK, true)
 end
 
 function M.next_think()
@@ -336,14 +339,14 @@ function M.setup_buffer(buf)
   map("[u", M.prev_user_message, "Previous user message")
   map("]a", M.next_assistant_message, "Next assistant message")
   map("[a", M.prev_assistant_message, "Previous assistant message")
-  map("]t", M.next_tool, "Next tool call")
-  map("[t", M.prev_tool, "Previous tool call")
+  map("]t", M.next_tool, "Next tool call or thinking block")
+  map("[t", M.prev_tool, "Previous tool call or thinking block")
   map("]c", M.next_think, "Next thinking block")
   map("[c", M.prev_think, "Previous thinking block")
   map("]e", M.next_error, "Next error block")
   map("[e", M.prev_error, "Previous error block")
-  map_motion("]t", M.next_tool, "Select to next tool call")
-  map_motion("[t", M.prev_tool, "Select to previous tool call")
+  map_motion("]t", M.next_tool, "Select to next tool call or thinking block")
+  map_motion("[t", M.prev_tool, "Select to previous tool call or thinking block")
   map_motion("]c", M.next_think, "Select to next thinking block")
   map_motion("[c", M.prev_think, "Select to previous thinking block")
   map_motion("]e", M.next_error, "Select to next error block")
