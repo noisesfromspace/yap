@@ -57,6 +57,21 @@ assert(live_preview[1] == "Initial user message:" and live_preview[2] == "hello"
   "instances preview wrong: " .. vim.inspect(live_preview))
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
 
+-- Open child sessions are explicitly identified by their subagent role.
+local child = yap.new({ role = "scout", hidden = true })
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.instances()
+vim.ui.select = orig_select
+local child_item
+for _, item in ipairs(captured.items) do
+  if item.buf == child then child_item = item; break end
+end
+assert(child_item and child_item.text:find("[subagent: scout]", 1, true),
+  "subagent role missing from instances label: " .. vim.inspect(child_item))
+
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
 vim.api.nvim_buf_set_lines(saved, 0, -1, false, {

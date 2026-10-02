@@ -2024,7 +2024,11 @@ local function live_session_label(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  return require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
+  local label = require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
+  if fm and fm.role then
+    label = label .. "  [subagent: " .. fm.role .. "]"
+  end
+  return label
 end
 
 --- Status word + glyph for the session picker, mirroring the winbar state
