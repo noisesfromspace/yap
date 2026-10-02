@@ -218,6 +218,31 @@ func escapeComment(s string) string {
 	return strings.ReplaceAll(s, "-->", "-- >")
 }
 
+// marshalCommentJSON renders v as JSON safe to embed inside an HTML
+// comment (`<!-- yap:tool … -->`, `<!-- yap:usage … -->`). json.Marshal's
+// default HTML-escaping turns `&`, `<` and `>` into `\u0026` etc.; those
+// sequences then sit in the buffer as literal backslash text and read like
+// a mangled command. Only two constructs are load-bearing, and both are
+// kept as JSON escapes so the Lua side still decodes the original text:
+//   - `-->` would close the HTML comment early for markdown renderers,
+//     so it becomes `--\u003e`;
+//   - a raw `<style`/`<script` open tag poisons treesitter's combined
+//     html/css/js injections (see escapeMarkerPrefixes), so its `<`
+//     becomes `\u003c`.
+//
+// Everything else stays readable. indent indents each level.
+func marshalCommentJSON(v any, indent string) []byte {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", indent)
+	_ = enc.Encode(v) // payloads here are built by yap and cannot fail
+	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	b = bytes.ReplaceAll(b, []byte("-->"), []byte(`--\u003e`))
+	b = rawTextTagRe.ReplaceAll(b, []byte(`\u003c$1$2`))
+	return b
+}
+
 // escapeMarkerPrefixes neutralizes dangerous constructs in tool results
 // (raw markdown in the buffer) with a VISIBLE backslash-escape, valid
 // CommonMark for ASCII punctuation: renderers show the literal text,
@@ -266,15 +291,15 @@ func emitToolHeader(out *bufio.Writer, call providers.ToolCall) {
 		}
 	}
 	// Struct, not map: stable key order (id, name, arguments).
-	header, _ := json.Marshal(struct {
+	header := marshalCommentJSON(struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
 		Arguments any    `json:"arguments"`
-	}{call.ID, call.Name, args})
+	}{call.ID, call.Name, args}, "")
 	if len(header) <= toolHeaderMaxSingle {
 		fmt.Fprintf(out, "<!-- yap:tool %s -->\n", header)
 	} else {
-		pretty, _ := json.MarshalIndent(json.RawMessage(header), "", "  ")
+		pretty := marshalCommentJSON(json.RawMessage(header), "  ")
 		fmt.Fprintf(out, "<!-- yap:tool\n%s\n-->\n", pretty)
 	}
 	out.Flush()
@@ -597,7 +622,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 		if havePricing || input > 0 || output > 0 {
 			m["cost"] = float64(totPrompt)/1e6*input + float64(totCompletion)/1e6*output
 		}
-		b, _ := json.Marshal(m)
+		b := marshalCommentJSON(m, "")
 		pad()
 		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
 		out.Flush() // session state must precede the corresponding audit event

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +17,14 @@ var eventOut io.Writer = os.Stderr
 
 // EmitEvent writes one yap:event line (JSON) to eventOut.
 func EmitEvent(v any) {
-	b, _ := json.Marshal(v)
+	// Events land in the JSONL audit log and the plain-text tail buffer,
+	// never inside an HTML comment, so HTML-escaping only mangles the raw
+	// log (`&&` -> `\u0026`). Skip it; keep `&`/`<`/`>` readable.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(v) // event payloads are built by yap and cannot fail
+	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	fmt.Fprintf(eventOut, "yap:event %s\n", b)
 }
 
