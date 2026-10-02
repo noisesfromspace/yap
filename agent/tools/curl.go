@@ -33,6 +33,7 @@ type curlArgs struct {
 	FollowRedirects *bool             `json:"followRedirects,omitempty" jsonschema:"description=follow HTTP redirects (default true)"`
 	Timeout         int               `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 30)"`
 	Flags           string            `json:"flags,omitempty" jsonschema:"description=space-separated extra curl flags (e.g. --http1.1); values with spaces (like header values) belong in headers"`
+	Safety          bool              `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 }
 
 func init() {
@@ -130,7 +131,7 @@ func runCurl(a *curlArgs) (string, string, error) {
 			return "", "", fmt.Errorf("curl: %w", err)
 		}
 	}
-	return text, "", nil
+	return safetyGuarded(a.Safety, text), "", nil
 }
 
 // headBuffer keeps the first readMaxBytes (50KB) of the response body,

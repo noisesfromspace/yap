@@ -74,23 +74,76 @@ function M.save(buf)
   end
 end
 
--- First non-empty line of the first `# @user` block, compacted.
-local function first_user_snippet(lines)
-  local in_user = false
+local function trim_block(acc)
+  while #acc > 0 and acc[1]:match("^%s*$") do
+    table.remove(acc, 1)
+  end
+  while #acc > 0 and acc[#acc]:match("^%s*$") do
+    table.remove(acc)
+  end
+  return acc
+end
+
+-- Body of the first `# @role` block, heading excluded, surrounding
+-- blank lines trimmed.
+local function first_block(lines, role)
+  local acc = {}
+  local in_block = false
   for _, line in ipairs(lines) do
-    if line:match("^# @%a+%s*$") then
-      in_user = line:match("^# @user%s*$") ~= nil
-    elseif in_user then
-      local text = line:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-      if text ~= "" then
-        if #text > 60 then
-          return text:sub(1, 60) .. "…"
-        end
-        return text
+    local heading = line:match("^# @(%a+)%s*$")
+    if heading then
+      if in_block then
+        break
       end
+      in_block = heading == role
+    elseif in_block then
+      acc[#acc + 1] = line
     end
   end
-  return ""
+  return trim_block(acc)
+end
+
+-- Body of the last `# @role` block, heading excluded, surrounding
+-- blank lines trimmed.
+local function last_block(lines, role)
+  local acc = {}
+  local in_block = false
+  for _, line in ipairs(lines) do
+    local heading = line:match("^# @(%a+)%s*$")
+    if heading then
+      in_block = heading == role
+      if in_block then
+        acc = {}
+      end
+    elseif in_block then
+      acc[#acc + 1] = line
+    end
+  end
+  return trim_block(acc)
+end
+
+--- Preview content for a session: the initial `# @user` message followed by
+--- the last `# @assistant` answer. Shared by :YapInstances and :YapSessions
+--- so both pickers preview the same two excerpts.
+function M.preview_lines(lines)
+  local preview = {}
+  local user = first_block(lines, "user")
+  local assistant = last_block(lines, "assistant")
+  if #user > 0 then
+    preview[#preview + 1] = "Initial user message:"
+    vim.list_extend(preview, user)
+  end
+  if #assistant > 0 then
+    if #preview > 0 then
+      preview[#preview + 1] = ""
+    end
+    preview[#preview + 1] = "Last agent answer:"
+    vim.list_extend(preview, assistant)
+  end
+  if #preview == 0 then
+    preview = { "(no messages yet)" }
+  end
+  return preview
 end
 
 --- The persisted directory name is a lossy cwd slug; this is deliberately a
@@ -154,24 +207,7 @@ function M.list(scope)
 end
 
 local function preview_item(item)
-  local lines = vim.fn.readfile(item.path)
-  local n = math.min(80, #lines)
-  local preview = { "# yap session" .. (item.model and (" · " .. item.model) or "") }
-  if item.models then
-    table.insert(preview, "used: " .. table.concat(item.models, " · "))
-  end
-  table.insert(preview, "")
-  table.insert(preview, item.path)
-  table.insert(preview, "")
-  table.insert(preview, "showing last " .. n .. "/" .. #lines .. " lines")
-  table.insert(preview, "")
-  for i = #lines - n + 1, #lines do
-    table.insert(preview, lines[i])
-  end
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, preview)
-  vim.bo[buf].bufhidden = "wipe"
-  return { buf = buf, pos = { 1, 0 } }
+  return M.preview_lines(vim.fn.readfile(item.path))
 end
 
 --- Pick a session; on_choice(path) is called with the selected file.

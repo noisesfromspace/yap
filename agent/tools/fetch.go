@@ -22,7 +22,8 @@ const (
 )
 
 type fetchArgs struct {
-	URL string `json:"url" jsonschema:"description=http(s) URL to fetch"`
+	URL    string `json:"url" jsonschema:"description=http(s) URL to fetch"`
+	Safety bool   `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 }
 
 func init() {
@@ -57,7 +58,7 @@ func init() {
 			}
 
 			if !isHTML {
-				return capText(string(body)), "", nil
+				return safetyGuarded(a.Safety, capText(string(body))), "", nil
 			}
 
 			text, err := extractMarkdown(body, pageURL(resp.Request, a.URL))
@@ -66,11 +67,11 @@ func init() {
 				// back to converting the whole page, mirroring the old
 				// raw-HTML path but still returning Markdown, not tags.
 				if md, mdErr := htmltomarkdown.ConvertString(string(body)); mdErr == nil {
-					return capText(md), "", nil
+					return safetyGuarded(a.Safety, capText(md)), "", nil
 				}
 				return "", "", err
 			}
-			return capText(text), "", nil
+			return safetyGuarded(a.Safety, capText(text)), "", nil
 		})
 }
 

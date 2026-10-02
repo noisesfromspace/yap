@@ -157,8 +157,8 @@ below.
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch queue buffer: a
-                        fixed-height, nofile jotter above the chat
-                        (never written to disk).
+                        fixed-height, file-backed jotter above the chat.
+                        `:w` saves it; an unsaved queue prompts on exit.
   <leader>t             Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -405,7 +405,8 @@ Config and runtime data:
                         and the pinned `typesafe/jev-1.13` release.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
-  ~/.yap/sessions/          Autosaved sessions, see |yap-sessions|.
+  ~/.yap/sessions/          Autosaved sessions and their scratch queues,
+                            see |yap-sessions|.
   ~/.yap/audit/             Audit logs, see |yap-audit|.
 
 Tools                                                        *yap-tools*
@@ -437,7 +438,13 @@ body, redirects, timeout and extra curl flags are all settable, and it
 sends a browser User-Agent by default to get past agent blocks (it is
 fetch's versatile sibling for follow-up fetches; fetch extracts the
 main content as Markdown, while curl returns the raw response body and
-does not run JavaScript). git runs read-only subcommands
+does not run JavaScript). Both `fetch` and `curl` accept an optional
+`safety` parameter: when true, the result is scanned with the decision
+model (jev, see above) for prompt-injection content before it is
+returned, and flagged content gets an advisory warning line prepended
+naming the probability (the content is still shown and sent, only
+marked). Each true call costs one extra decision-model round-trip, so
+use it for untrusted sources rather than every fetch. git runs read-only subcommands
 (status, diff, log, show, blame) in the project root with pager, color
 and credential prompts disabled; output is head-truncated like search.
 
@@ -671,7 +678,12 @@ reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 The audit log (<session>.jsonl) is written in the audit dir
 (|yap-audit|) as the session runs and follows the session name across
-|:file| renames. Opening a session file directly — plain |:edit| or
+|:file| renames. The scratch queue is the same kind of sibling:
+~/.yap/sessions/<cwd-slug>/<session>.queue, a plain file-backed buffer
+for queuing agent tasks. Unlike the autosaved session, the queue is
+saved manually — `:w` in the jotter writes it, and an unsaved queue
+triggers the normal modified-buffer prompt on exit. Opening a session
+file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
 resume.

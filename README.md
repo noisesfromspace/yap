@@ -99,9 +99,10 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   `~/.yap/audit/<cwd-slug>/<session>.jsonl` is JSON Lines — one
   structured event per line — and keeps the full record (full tool
   arguments and results)
-- `<leader>s` — toggle a scratch queue buffer: a fixed-height, nofile
-  jotter above the session (never written to disk; a quick queue of
-  tasks for the agent)
+- `<leader>s` — toggle a scratch queue buffer: a fixed-height,
+  file-backed jotter above the session (a quick queue of tasks for the
+  agent; `:w` saves it next to the session as `<session>.queue` and an
+  unsaved queue prompts on exit)
 - `:YapClear [keep]` — slim the context: replace all but the last
   `keep` (default 2) tool result bodies with a pointer to the exact
   audit-log lines they were cleared from. write/edit tool headers are

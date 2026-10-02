@@ -1089,10 +1089,33 @@ function M.live(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 
---- Toggle the session's scratch buffer (<leader>s): a fixed-height,
---- nofile jotter opened above the chat window. Deliberately not
---- file-backed (`:write` has nothing to write to) — it is a quick
---- "queue" for agent tasks, never part of the conversation.
+--- The queue file is a sibling of the session file, sharing its basename
+--- with a `.queue` extension, so it lives in the sessions dir but
+--- session.list()'s `*.md` glob never mistakes it for a session.
+local function queue_path(buf)
+  local path = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":r") .. ".queue"
+end
+
+--- Drag the queue file and buffer along after a `:file` rename of the
+--- session, the same way the audit log follows (see audit_follow).
+local function queue_follow(buf, scratch)
+  local want = queue_path(buf)
+  local name = vim.api.nvim_buf_get_name(scratch)
+  if name == want then
+    return
+  end
+  if name ~= "" and vim.fn.filereadable(name) == 1 and vim.fn.filereadable(want) == 0 then
+    os.rename(name, want)
+  end
+  vim.api.nvim_buf_set_name(scratch, want)
+end
+
+--- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
+--- opened above the chat window. It is a real, file-backed buffer — a
+--- sibling `*.queue` file of the session — so `:write` saves it and an
+--- unsaved queue prompts on exit like any other modified buffer. It is a
+--- quick "queue" for agent tasks, never part of the conversation.
 local SCRATCH_HEIGHT = 8
 
 function M.scratch_toggle(buf)
@@ -1112,8 +1135,25 @@ function M.scratch_toggle(buf)
       return
     end
   else
-    scratch = vim.api.nvim_create_buf(false, true) -- unlisted, nofile: never written to disk
+    -- Reuse a leftover queue buffer from a wiped-and-reopened session
+    -- (naming a fresh one identically would E95), otherwise create a
+    -- file-backed buffer and load the saved queue if there is one.
+    local want = queue_path(buf)
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_get_name(b) == want then
+        scratch = b
+        break
+      end
+    end
+    if not scratch then
+      scratch = vim.api.nvim_create_buf(false, false) -- unlisted, file-backed
+      vim.api.nvim_buf_set_name(scratch, want)
+      if vim.fn.filereadable(want) == 1 then
+        vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
+      end
+    end
     vim.bo[scratch].bufhidden = "hide"
+    vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     if M.config.keymaps.scratch ~= "" then
       vim.keymap.set("n", M.config.keymaps.scratch, function()
@@ -1121,6 +1161,8 @@ function M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
     end
   end
+
+  queue_follow(buf, scratch) -- session renamed? drag the queue file along
 
   vim.cmd("aboveleft " .. SCRATCH_HEIGHT .. "split")
   vim.api.nvim_win_set_buf(0, scratch)
@@ -1794,6 +1836,9 @@ function M.instances()
     prompt = "yap sessions",
     format_item = function(item)
       return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
+    end,
+    preview_item = function(item)
+      return require("harness.session").preview_lines(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
     end,
   }, function(choice)
     if choice then
