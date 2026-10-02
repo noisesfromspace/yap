@@ -1905,7 +1905,7 @@ start_subagent = function(parent, ev)
       result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
       if result == "" then result = "error: subagent returned no final answer" end
     end
-    reply("Session: " .. child_path .. "\n" .. result)
+    reply("Session: [" .. child_path .. "](" .. child_path .. ")\n" .. result)
   end
   M.send(child)
 end

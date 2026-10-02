@@ -40,8 +40,10 @@ local function delegate(task)
 end
 local success = delegate("delegate success")
 assert(success:find("child finished", 1, true), success)
-local child_path = success:match("Session: ([^\n]+%.md)")
-assert(child_path and vim.fn.filereadable(child_path) == 1, "child session missing")
+local session_line, linked_path = success:match("Session: %[(.-)%]%((.-)%)")
+assert(session_line and linked_path == session_line, "child session link missing")
+local child_path = linked_path
+assert(vim.fn.filereadable(child_path) == 1, "child session missing")
 local fm = require("harness.frontmatter").parse(vim.fn.readfile(child_path))
 assert(fm.provider == "mock" and fm.model == "working", "bare Pi model did not inherit parent combo")
 assert(table.concat(fm.tools, ",") == "read,search", "role aliases not normalized")
