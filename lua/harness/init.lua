@@ -51,6 +51,7 @@ M.config = {
     stop = "<leader>c",
     change_model = "<leader>m",
     live = "<leader>l",
+    scratch = "<leader>s",
     insert = "<leader>t",
     insert_here = "<leader>T",
     sessions = "<leader>r",
@@ -1088,6 +1089,45 @@ function M.live(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 
+--- Toggle the session's scratch buffer (<leader>s): a fixed-height,
+--- nofile jotter opened above the chat window. Deliberately not
+--- file-backed (`:write` has nothing to write to) — it is a quick
+--- "queue" for agent tasks, never part of the conversation.
+local SCRATCH_HEIGHT = 8
+
+function M.scratch_toggle(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  if not vim.b[buf].yap then
+    vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
+    return
+  end
+
+  local scratch = vim.b[buf].yap_scratch
+  if scratch and vim.api.nvim_buf_is_valid(scratch) then
+    local wins = vim.fn.win_findbuf(scratch)
+    if #wins > 0 then
+      for _, win in ipairs(wins) do
+        vim.api.nvim_win_close(win, false)
+      end
+      return
+    end
+  else
+    scratch = vim.api.nvim_create_buf(false, true) -- unlisted, nofile: never written to disk
+    vim.bo[scratch].bufhidden = "hide"
+    vim.b[buf].yap_scratch = scratch
+    if M.config.keymaps.scratch ~= "" then
+      vim.keymap.set("n", M.config.keymaps.scratch, function()
+        vim.api.nvim_win_close(0, false)
+      end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
+    end
+  end
+
+  vim.cmd("aboveleft " .. SCRATCH_HEIGHT .. "split")
+  vim.api.nvim_win_set_buf(0, scratch)
+  vim.wo.winfixheight = true
+  vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
+end
+
 --- Record a backend error: notify, persist it in the winbar, and leave a
 --- parse-excluded marker in the buffer as a record.
 local function report_error(buf, err)
@@ -1526,6 +1566,9 @@ local function setup_buffer(buf)
   map("n", keys.live, function()
     M.live()
   end, "yap: live tool output")
+  map("n", keys.scratch, function()
+    M.scratch_toggle()
+  end, "yap: toggle scratch")
   map("n", keys.insert, function()
     M.insert()
   end, "yap: insert template or skill")

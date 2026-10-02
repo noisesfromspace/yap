@@ -21,9 +21,20 @@ type Websearch struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
+// Decision configures the decision-model backend used by the jev tool.
+// It is Jev-specific today; agent/decision.Model is the plug point for
+// other decision backends. Zero values fall back to OpenRouter's
+// Decisions API, OPENROUTER_API_KEY, and the pinned Jev release.
+type Decision struct {
+	BaseURL   string `json:"base_url"`
+	APIKeyEnv string `json:"api_key_env"`
+	Model     string `json:"model"`
+}
+
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
 	Websearch Websearch           `json:"websearch"`
+	Decision  Decision            `json:"decision"`
 	// Optional per-model pricing in USD per 1M tokens; used to compute the
 	// cost field in the yap:usage marker.
 	Pricing map[string]Pricing `json:"pricing"`

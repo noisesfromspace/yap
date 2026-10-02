@@ -156,6 +156,9 @@ below.
   <leader>c             Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
+  <leader>s             Toggle the session's scratch queue buffer: a
+                        fixed-height, nofile jotter above the chat
+                        (never written to disk).
   <leader>t             Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -222,7 +225,7 @@ event with your own `User YapTurnDone` autocmd.
 
 `keymaps` maps each action to its key sequence, so any of |yap-keymaps|
 can be rebound from `setup()`. The table keys are: `send`, `stop`,
-`change_model`, `live`, `insert`, `insert_here`, `sessions` (global),
+`change_model`, `live`, `scratch`, `insert`, `insert_here`, `sessions` (global),
 `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
@@ -382,6 +385,9 @@ Config and runtime data:
         "moonshot": { "base_url": "https://api.moonshot.ai/v1",
                       "api_key_env": "MOONSHOT_API_KEY" }
       },
+      "decision": { "base_url": "https://openrouter.ai/api/alpha/decisions",
+                    "api_key_env": "OPENROUTER_API_KEY",
+                    "model": "typesafe/jev-1.13" },
       "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
     }
 <
@@ -392,7 +398,11 @@ Config and runtime data:
                         priced automatically from the embedded catalog
                         (agent/pricing), so `pricing` is only needed for
                         models the catalog misses or for a provider whose
-                        price differs from the catalog.
+                        price differs from the catalog. `decision`
+                        configures the decision-model backend behind the
+                        jev tool (|yap-tools|); it defaults to Jev via
+                        OpenRouter's Decisions API, OPENROUTER_API_KEY,
+                        and the pinned `typesafe/jev-1.13` release.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
   ~/.yap/sessions/          Autosaved sessions, see |yap-sessions|.
@@ -407,12 +417,21 @@ and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
 model) and optionally a ui payload (display-only yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 50 iterations per send. Built-ins: ls, read, fetch,
-bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh. search and glob shell out to
+bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
+jev. search and glob shell out to
 ripgrep (rg): search returns path:line:content matches, glob lists files
 (gitignore-aware); both truncate to read's limits (2000 lines / 50KB).
 websearch queries the Exa search API (api.exa.ai) and returns up to N
 results as markdown; its API key is read from the env var named by
 `websearch.api_key_env` in ~/.config/yap.json (default `EXA_API_KEY`).
+jev asks a decision model (Jev via OpenRouter's Decisions API by
+default) for typed, calibrated answers — P(yes) for noul questions, a
+winner + confidence + probabilities for choice, a weighted position for
+score — about a state the caller supplies. It is a decision primitive,
+not a chat model, and returns probabilities rather than prose. The
+backend is the agent/decision.Model interface, so other decision models
+with the same typed surface can be swapped in; `decision.*` in
+~/.config/yap.json sets base_url, api_key_env, and model.
 curl shells out to the system curl binary: method, headers, user-agent,
 body, redirects, timeout and extra curl flags are all settable, and it
 sends a browser User-Agent by default to get past agent blocks (it is

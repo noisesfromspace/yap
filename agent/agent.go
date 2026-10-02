@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decision/jev"
 	"boers.email/yap/agent/pricing"
 	"boers.email/yap/agent/providers"
 	"boers.email/yap/agent/providers/goai"
@@ -420,6 +422,21 @@ var providerFactory = func(name string, prov Provider) (providers.Provider, erro
 	})
 }
 
+// decisionModel builds the backend for the jev tool from config, defaulting
+// to Jev via OpenRouter's Decisions API. OPENROUTER_API_KEY authenticates
+// both the chat and decisions surfaces.
+func decisionModel(cfg *Config) decision.Model {
+	env := cfg.Decision.APIKeyEnv
+	if env == "" {
+		env = "OPENROUTER_API_KEY"
+	}
+	return jev.New(jev.Config{
+		BaseURL: cfg.Decision.BaseURL,
+		APIKey:  os.Getenv(env),
+		Model:   cfg.Decision.Model,
+	})
+}
+
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	var req Request
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
@@ -435,6 +452,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 		return err
 	}
 	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
+	tools.SetDecisionModel(decisionModel(cfg))
 	prov, ok := cfg.Providers[providerName]
 	if !ok {
 		names := make([]string, 0, len(cfg.Providers))
