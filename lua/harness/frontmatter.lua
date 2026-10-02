@@ -15,7 +15,8 @@
 -- `provider`/`model` is the combo to resume with; `created_at` records
 -- when the session was created; `models` is the ordered history of every
 -- combo actually used (most-recent-last). Token/cost totals are NOT
--- persisted here — they are ephemeral per-buffer state in the winbar.
+-- persisted here — the winbar accumulates them per-buffer, and the
+-- durable session total is derived from the audit log, not the file.
 -- yap owns the block, so parsing is a few pattern matches,
 -- not a YAML library; Neovim has no YAML parser and does not need one.
 --

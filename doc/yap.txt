@@ -528,9 +528,11 @@ lives, as YAML frontmatter:
 history of every combo used in the session (most-recent-last). The
 frontmatter is the ONLY durable session state: yap writes it on :Yap
 and |:YapChangeModel|, reads it on open, and sends never touch it.
-Token totals and cost are NOT stored here — they are ephemeral
-per-buffer state in the winbar (|yap-winbar|). Legacy session files
-without frontmatter simply keep the setup() default combo.
+Token totals and cost are NOT stored here — the winbar accumulates
+them per-buffer (|yap-winbar|), and the durable session total is
+derived from the audit log's turn journals (|yap-audit|), not from
+the file. Legacy session files without frontmatter simply keep the
+setup() default combo.
 
 A yap buffer never attaches a language server: the buffer is the
 conversation (R1), and a markdown LSP's semantic-token/inlay-hint stream is
@@ -768,7 +770,9 @@ session description (truncated to 40 display columns), provider/model combo,
 and the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
 manual |za| toggles don't update it). Right: token totals and cost
-for this buffer (accumulated over its lifetime, compact k/m format), then
+for this buffer (accumulated over its lifetime, compact k/m format),
+then the session-wide cost from the audit log (`session $N` or `Σ$N`,
+summed over every |yap-audit| turn journal, surviving restarts), then
 the state glyph pinned to the far right edge:
 
   ⠋ busy    A request is in flight (driven by the job table). While a
@@ -781,7 +785,39 @@ the state glyph pinned to the far right edge:
             (the herdr-style "needs you" state).
   ○ idle    Nothing running, nothing pending.
 
-Example: `▶1 ◉2 moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 ◉ waiting`
+Example: `▶1 ◉2 moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 · Σ$0.51 ◉ waiting`
+
+Reading the numbers                                    *yap-winbar-numbers*
+
+The right side mixes token counts and cost. Each piece means:
+
+  in / out   Token counts for this buffer. `in` is the prompt — every
+             token of conversation and tool output sent to the model;
+             `out` is the completion — the tokens the model produced.
+             Suffixes are compact: `k` = thousands, `m` = millions
+             (`1.5k` = 1,500 tokens, `1.2m` = 1,200,000).
+  $N         This buffer's cost in USD, accumulated since it was
+             opened. Computed as `in × input price + out × output
+             price`, where prices are USD per 1M tokens — your
+             `pricing` overrides first, then the embedded catalog
+             (see |yap-configuration|). This number resets when the
+             session is reopened.
+  Σ$N        The session's all-time cost (shown as `session $N` on a
+             wide bar), summed from every `turn_end` journal entry in
+             the audit log (|yap-audit|). It survives restarts and is
+             the number that answers "what has this session cost".
+             On a freshly opened session with no prior turns the two
+             prices are equal; after a reopen they diverge.
+
+The bar is width-aware, so a narrow window never crowds out the parts
+that matter. It drops parts in this order as the window shrinks: the
+right-hand state glyph (busy is already duplicated by the left `▶`
+beacon), then the provider/model + fold-view cluster, then the token
+phrase (collapsing `1.5k in · 42 out` to `1.5k→42`, then dropping the
+tokens entirely), and finally the session description, which truncates
+shorter. The left island (`▶N`/`◉N`) and the two prices (buffer cost +
+`Σ` session total) are the last things standing, and the winbar
+re-lays itself out on `WinResized`.
 
 The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
 `◉N` rollup counts OTHER yap buffers with a completed turn awaiting

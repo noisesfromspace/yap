@@ -64,8 +64,10 @@ EOF
   rm -f "$log" "$exitfile"
 
   # Run nvim in a background subshell and write its exit code to exitfile.
+  # Point XDG_CONFIG_HOME at the test dir so the spawned agent binary reads
+  # the mock provider config written above instead of the user's real one.
   (
-    HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" -l "tests/$name.lua" >"$log" 2>&1
+    XDG_CONFIG_HOME="$TEST_DIR/.config" HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" -l "tests/$name.lua" >"$log" 2>&1
     echo $? > "$exitfile"
   ) &
   local pid=$!
@@ -80,6 +82,7 @@ EOF
 # Start all tests in background
 run yap_test 18132 mock_slow.py
 run yap_static_test 18132 mock_slow.py
+run yap_session_usage_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
 run yap_e2e_tool_test 18133 mock_tool.py
@@ -95,7 +98,7 @@ for t in yap_fold_test yap_detailfold_test yap_think_test yap_error_test yap_ml_
          yap_streamfold_test yap_marker_test yap_model_test yap_map_test yap_keymap_test yap_clear_test \
          yap_live_open_test yap_uidiff_test yap_fencefold_test yap_lsp_test \
          yap_template_test yap_frontmatter_test yap_adopt_test yap_textobj_test \
-         yap_nav_test yap_scratch_test yap_session_preview_test; do
+         yap_nav_test yap_scratch_test yap_session_preview_test yap_winbar_resize_test; do
   run "$t" 18132
 done
 

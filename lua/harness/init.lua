@@ -262,9 +262,10 @@ end
 
 --- The session description for the winbar. A bounded read of the short
 --- frontmatter block, so hand edits show up on the next redraw (the buffer
---- stays the source of truth); truncate so a long phrase cannot crowd out
---- the right-hand usage/state chips.
-local function winbar_description(buf)
+--- stays the source of truth); truncate to `max` display columns so a long
+--- phrase cannot crowd out the right-hand usage/state chips.
+local function winbar_description(buf, max)
+  max = max or 40
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
@@ -274,10 +275,10 @@ local function winbar_description(buf)
   if not d or d == "" then
     return nil
   end
-  if vim.fn.strdisplaywidth(d) > 40 then
-    local chars = math.min(vim.fn.strchars(d), 39)
+  if vim.fn.strdisplaywidth(d) > max then
+    local chars = math.min(vim.fn.strchars(d), math.max(1, max - 1))
     d = vim.fn.strcharpart(d, 0, chars)
-    while vim.fn.strdisplaywidth(d .. "…") > 40 do
+    while vim.fn.strdisplaywidth(d .. "…") > max and chars > 1 do
       chars = chars - 1
       d = vim.fn.strcharpart(d, 0, chars)
     end
@@ -289,64 +290,161 @@ end
 -- Layout: a busy beacon and a global-session island on the left, then the
 -- current session's title/model/fold view; activity on the right — usage
 -- totals first, then the state glyph pinned to the far right edge so it
--- never moves as numbers grow.
+-- never moves as numbers grow. The bar is width-aware: as the window
+-- narrows it drops the state glyph first (busy is duplicated by the left
+-- beacon), then the model/fold cluster, then collapses the token phrase
+-- (in→out), and finally shrinks the description. The island and the two
+-- prices are the last things standing.
 local function render_winbar(buf)
   local provider, model = current_combo(buf)
-  local parts = {}
-  -- A request in flight is the one state worth flagging at the start of
-  -- the bar too: the far-right chip is easy to miss when you glance at
-  -- the left edge. ▶ is deliberately not a circle, so it can't be
-  -- confused with ○ idle / ◉ waiting.
-  if running and running[buf] then
-    parts[#parts + 1] = winbar_hl(" ▶ ", "Busy")
+  local ok_w, width = pcall(vim.api.nvim_win_get_width, 0)
+  if not ok_w or not width or width <= 0 then
+    width = 999 -- no window context: render the full bar
   end
-  -- The island rolls up ALL OTHER yap sessions (never the current buffer,
-  -- whose own state is on the right). It reads before the session identity
-  -- that follows, as one raised pill.
-  local running_others_n = running_others(buf)
-  local others = awaiting_others(buf)
-  if running_others_n > 0 or others > 0 then
-    parts[#parts + 1] = island_hl(" ")
-    if running_others_n > 0 then
-      parts[#parts + 1] = island_hl("▶" .. running_others_n, "Busy")
+
+  local function seg(text, group, island)
+    return { text = text, group = group, island = island }
+  end
+  local function render_seg(s)
+    if s.island then
+      return island_hl(s.text, s.group)
     end
-    if running_others_n > 0 and others > 0 then
-      parts[#parts + 1] = island_hl(" │ ")
+    return winbar_hl(s.text, s.group or "Idle")
+  end
+  local function width_of(segs)
+    local n = 0
+    for _, s in ipairs(segs) do
+      n = n + vim.fn.strdisplaywidth(s.text)
     end
-    if others > 0 then
-      parts[#parts + 1] = island_hl("◉" .. others, "Needs")
+    return n
+  end
+
+  -- Mandatory left cluster (never dropped; the description shrinks).
+  local function left_segments(desc_max)
+    local left = {}
+    if running and running[buf] then
+      left[#left + 1] = seg(" ▶ ", "Busy")
     end
-    parts[#parts + 1] = island_hl(" ")
-  end
-  local desc = winbar_description(buf)
-  if desc then
-    parts[#parts + 1] = winbar_hl(" " .. desc, "Description")
-    parts[#parts + 1] = winbar_hl(" · ", "Idle")
-  end
-  parts[#parts + 1] = winbar_hl(provider .. "/" .. model, "Model")
-  parts[#parts + 1] = winbar_hl(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle")
-  parts[#parts + 1] = "%="
-  local u = vim.b[buf].yap_usage
-  if u and (u.prompt > 0 or u.completion > 0) then
-    local usage = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
-    if u.cost then
-      usage = usage .. " · " .. string.format("$%.4g", u.cost)
+    local running_others_n = running_others(buf)
+    local others = awaiting_others(buf)
+    if running_others_n > 0 or others > 0 then
+      left[#left + 1] = seg(" ", nil, true)
+      if running_others_n > 0 then
+        left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
+      end
+      if running_others_n > 0 and others > 0 then
+        left[#left + 1] = seg(" │ ", nil, true)
+      end
+      if others > 0 then
+        left[#left + 1] = seg("◉" .. others, "Needs", true)
+      end
+      left[#left + 1] = seg(" ", nil, true)
     end
-    table.insert(parts, winbar_hl(" " .. usage .. " ", "Idle"))
+    local desc = winbar_description(buf, desc_max)
+    if desc then
+      left[#left + 1] = seg(" " .. desc, "Description")
+      left[#left + 1] = seg(" · ", "Idle")
+    end
+    return left
   end
-  if running and running[buf] then
-    local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
-    local l = live and live[buf]
-    local state = l and (frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s") or (frame .. " busy")
-    table.insert(parts, winbar_hl(" " .. state .. " ", "Busy"))
-  elseif errors[buf] then
-    table.insert(parts, winbar_hl(" ✗ error ", "Error"))
-  elseif awaiting[buf] then
-    table.insert(parts, winbar_hl(" ◉ waiting ", "Needs"))
-  else
-    table.insert(parts, winbar_hl(" ○ idle ", "Idle"))
+
+  -- Droppable middle: provider/model and the applied fold view.
+  local function mid_segments()
+    return {
+      seg(provider .. "/" .. model, "Model"),
+      seg(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle"),
+    }
   end
-  return table.concat(parts, "")
+
+  -- Usage/cost cluster. mode: "full" (tokens + both prices), "compact"
+  -- (in→out tokens + both prices), "prices" (both prices only). The first
+  -- $ is this buffer's accumulated cost; Σ is the all-time session cost
+  -- from the audit log.
+  local function usage_segment(mode)
+    local words = {}
+    local u = vim.b[buf].yap_usage
+    local s = vim.b[buf].yap_session_usage
+    if u and (u.prompt > 0 or u.completion > 0) and mode ~= "prices" then
+      if mode == "full" then
+        words[#words + 1] = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
+      else
+        words[#words + 1] = fmt_tokens(u.prompt) .. "→" .. fmt_tokens(u.completion)
+      end
+    end
+    if u and u.cost then
+      words[#words + 1] = string.format("$%.4g", u.cost)
+    end
+    if s and s.cost then
+      words[#words + 1] = (mode == "full" and "session " or "Σ") .. string.format("$%.4g", s.cost)
+    end
+    if #words == 0 then
+      return nil
+    end
+    return seg(" " .. table.concat(words, " · ") .. " ", "Idle")
+  end
+
+  local function state_segment()
+    if running and running[buf] then
+      local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
+      local l = live and live[buf]
+      local state = l and (frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s") or (frame .. " busy")
+      return seg(" " .. state .. " ", "Busy")
+    elseif errors[buf] then
+      return seg(" ✗ error ", "Error")
+    elseif awaiting[buf] then
+      return seg(" ◉ waiting ", "Needs")
+    else
+      return seg(" ○ idle ", "Idle")
+    end
+  end
+
+  local function render(left, mid, usage, state)
+    local parts = {}
+    for _, s in ipairs(left) do
+      parts[#parts + 1] = render_seg(s)
+    end
+    for _, s in ipairs(mid) do
+      parts[#parts + 1] = render_seg(s)
+    end
+    parts[#parts + 1] = "%="
+    if usage then
+      parts[#parts + 1] = render_seg(usage)
+    end
+    if state then
+      parts[#parts + 1] = render_seg(state)
+    end
+    return table.concat(parts, "")
+  end
+
+  -- Degrade until the bar fits, dropping the least important parts first:
+  -- state glyph → model/fold → token phrase → description. Prices and the
+  -- island survive; past that the bar clips rather than hiding prices.
+  local desc_max, mode, show_mid, show_state = 40, "full", true, true
+  while true do
+    local left = left_segments(desc_max)
+    local mid = show_mid and mid_segments() or {}
+    local usage = usage_segment(mode)
+    local state = show_state and state_segment() or nil
+    local total = width_of(left) + width_of(mid)
+      + (usage and width_of({ usage }) or 0)
+      + (state and width_of({ state }) or 0)
+    if total <= width then
+      return render(left, mid, usage, state)
+    end
+    if show_state then
+      show_state = false
+    elseif show_mid then
+      show_mid = false
+    elseif mode == "full" then
+      mode = "compact"
+    elseif mode == "compact" then
+      mode = "prices"
+    elseif desc_max > 15 then
+      desc_max = desc_max - 5
+    else
+      return render(left, mid, usage, state) -- smallest layout; let it clip
+    end
+  end
 end
 
 --- Winbar expression: the winbar is set to a self-evaluating `%!` call of
@@ -549,6 +647,31 @@ local function audit_follow(buf)
       t.audit = want
     end
   end
+end
+
+--- Seed the all-time session usage from the audit log: sum every turn_end
+--- journal entry so a reopened session shows its full historical cost
+--- immediately. yap_usage is per-buffer and resets on reopen; this is its
+--- durable per-session counterpart (the audit log, not the session file,
+--- is the source of truth).
+local function seed_session_usage(buf)
+  local su = { prompt = 0, completion = 0 }
+  local path = audit_path(buf)
+  if vim.fn.filereadable(path) == 1 then
+    for _, line in ipairs(vim.fn.readfile(path)) do
+      if line ~= "" then
+        local ok, ev = pcall(vim.json.decode, line)
+        if ok and type(ev) == "table" and ev.type == "turn_end" then
+          su.prompt = su.prompt + (ev.prompt or 0)
+          su.completion = su.completion + (ev.completion or 0)
+          if ev.cost then
+            su.cost = (su.cost or 0) + ev.cost
+          end
+        end
+      end
+    end
+  end
+  vim.b[buf].yap_session_usage = su
 end
 
 --- Render one audit event as tail-buffer text. Returns (text, kind)
@@ -847,6 +970,15 @@ local function handle_event(buf, json_line)
     -- its own anchor.
     vim.b[buf].yap_reorder = { assistant = nil, stash = {}, pending = false, open = 0 }
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
+    -- Fold this turn into the session's all-time totals (seeded from the
+    -- audit log on open; this keeps the in-memory copy in step with it).
+    local su = vim.b[buf].yap_session_usage or { prompt = 0, completion = 0 }
+    su.prompt = su.prompt + (ev.prompt or 0)
+    su.completion = su.completion + (ev.completion or 0)
+    if ev.cost then
+      su.cost = (su.cost or 0) + ev.cost
+    end
+    vim.b[buf].yap_session_usage = su
     append_event(buf, ev)
   end
 end
@@ -1748,6 +1880,7 @@ local function adopt(buf, path)
   seed_awaiting(buf)
   setup_buffer(buf)
   ensure_tail(buf) -- restore the live view from the audit log (create if missing)
+  seed_session_usage(buf) -- durable all-time totals from the audit log
   return buf
 end
 
@@ -1962,6 +2095,14 @@ function M.setup(opts)
       if session_path then
         adopt(args.buf, name)
       end
+    end,
+  })
+  -- The winbar degrades with window width (see render_winbar); re-evaluate
+  -- its `%!` expression whenever a window is resized.
+  vim.api.nvim_create_autocmd("WinResized", {
+    group = adopt_group,
+    callback = function()
+      vim.cmd.redrawstatus()
     end,
   })
   -- Session files loaded before setup() ran (lazy loading) missed both
