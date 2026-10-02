@@ -216,13 +216,35 @@
               '';
             };
 
-            agentsMd = mkOption {
-              type = types.nullOr types.lines;
+            agentsFile = mkOption {
+              type = types.nullOr types.str;
               default = null;
               description = ''
-                System prompt for new buffers, written to
-                {file}`~/.config/yap/AGENTS.md`. When null the file is left
-                alone and the harness falls back to `system`.
+                Path to the system-prompt file for new buffers, passed to
+                the harness as `agents_file`. The file is user-managed;
+                point it at a file outside the Nix store (for example
+                {file}`~/.yap/AGENTS.md`). When null the harness falls back
+                to its default and then to `system`.
+              '';
+            };
+
+            templatesDir = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                Directory of `:YapInsert` templates, passed to the harness
+                as `templates_dir`. When null the harness default
+                ({file}`~/.config/yap/templates`) is used.
+              '';
+            };
+
+            skillsDir = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                Directory of skill files merged into the system block,
+                passed to the harness as `skills_dir`. When null the
+                harness default ({file}`~/.config/yap/skills`) is used.
               '';
             };
 
@@ -262,9 +284,6 @@
           config = lib.mkIf cfg.enable {
             home.file.".config/yap.json" = lib.mkIf (cfg.settings != { }) {
               source = json.generate "yap.json" cfg.settings;
-            };
-            home.file.".config/yap/AGENTS.md" = lib.mkIf (cfg.agentsMd != null) {
-              text = cfg.agentsMd;
             };
           };
         };
