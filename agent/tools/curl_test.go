@@ -46,7 +46,7 @@ func TestCurl(t *testing.T) {
 	}
 
 	// method + headers + data: explicit values win over defaults.
-	r, _, err = run(t, "curl", `{"url":"`+srv.URL+`/b","method":"POST","headers":{"Accept":"application/json","X-Test":"yes"},"userAgent":"custom/1.0","data":"{\"n\":1}"}`)
+	_, _, err = run(t, "curl", `{"url":"`+srv.URL+`/b","method":"POST","headers":{"Accept":"application/json","X-Test":"yes"},"userAgent":"custom/1.0","data":"{\"n\":1}"}`)
 	if err != nil {
 		t.Fatalf("curl POST: %v", err)
 	}

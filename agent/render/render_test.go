@@ -1,4 +1,4 @@
-package main
+package render
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 
 func TestMarshalCommentJSON(t *testing.T) {
 	cmd := "grep x | awk 'NR>=57 && NR<=152' ; echo '-->'"
-	got := string(marshalCommentJSON(map[string]any{"command": cmd}, ""))
+	got := string(MarshalCommentJSON(map[string]any{"command": cmd}, ""))
 
 	if strings.Contains(got, `\u0026`) {
 		t.Fatalf("& should be literal, not escaped: %s", got)
@@ -39,7 +39,7 @@ func TestMarshalCommentJSON(t *testing.T) {
 
 func TestMarshalCommentJSONStyleTag(t *testing.T) {
 	cmd := "echo '<style>body{x:y}</style>'"
-	got := string(marshalCommentJSON(map[string]any{"command": cmd}, ""))
+	got := string(MarshalCommentJSON(map[string]any{"command": cmd}, ""))
 
 	if strings.Contains(got, "<style") {
 		t.Fatalf("raw <style must be neutralized: %s", got)
@@ -59,7 +59,7 @@ func TestMarshalCommentJSONStyleTag(t *testing.T) {
 func TestEmitToolHeaderNoHTMLEscaping(t *testing.T) {
 	var buf bytes.Buffer
 	out := bufio.NewWriter(&buf)
-	emitToolHeader(out, llm.ToolCall{
+	EmitToolHeader(out, llm.ToolCall{
 		ID:    "c1",
 		Name:  "bash",
 		Input: json.RawMessage(`{"command":"grep x | awk 'NR>=57 && NR<=152' ; echo '-->'"}`),

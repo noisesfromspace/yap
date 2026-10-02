@@ -144,7 +144,7 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 		if msg == "" {
 			msg = resp.Status
 		}
-		return "", "", fmt.Errorf("Exa API error %s: %s", resp.Status, msg)
+		return "", "", fmt.Errorf("exa API error %s: %s", resp.Status, msg)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return "", "", err

@@ -309,7 +309,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	// Record writes to session stdout and audit-event output in one journal.
-	// emitToolHeader must flush before EmitEvent writes tool_call.
+	// render.EmitToolHeader must flush before EmitEvent writes tool_call.
 	var mu sync.Mutex
 	var journal strings.Builder
 	writer := writerFunc(func(p []byte) (int, error) {
@@ -336,30 +336,6 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
-
-func TestUnclosedFence(t *testing.T) {
-	cases := []struct {
-		lines []string
-		want  string
-	}{
-		{[]string{"plain", "text"}, ""},
-		{[]string{"```lua", "local x = 1", "```"}, ""},
-		{[]string{"```lua", "local x = 1"}, "```"},
-		{[]string{"~~~", "tildes"}, "~~~"},
-		{[]string{"````", "x", "```"}, "````"},                    // closer must match length
-		{[]string{"```", "x", "```", "y", "```"}, "```"},          // re-open after close
-		{[]string{"    ```", "indented four spaces is code"}, ""}, // >3 indent: not a fence
-		{[]string{"  ```go", "up to 3 spaces ok"}, "```"},
-		{[]string{"```", "x", "~~~", "y"}, "```"},  // tilde doesn't close backtick
-		{[]string{"```", "```python", "x"}, "```"}, // info string after a closer keeps the fence open
-		{[]string{"\t```", "x"}, ""},               // tab indent: not a fence (advances past 3 columns)
-	}
-	for _, c := range cases {
-		if got := unclosedFence(c.lines); got != c.want {
-			t.Errorf("unclosedFence(%q) = %q, want %q", c.lines, got, c.want)
-		}
-	}
-}
 
 func TestListModelsNativeShapes(t *testing.T) {
 	tests := []struct {

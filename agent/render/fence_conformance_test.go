@@ -1,4 +1,4 @@
-package main
+package render
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 // fixture so the two grammars cannot drift apart unnoticed; a change to
 // one must pass the same table as the other.
 func TestFenceConformance(t *testing.T) {
-	path := filepath.Join("..", "tests", "fence_cases.json")
+	path := filepath.Join("..", "..", "tests", "fence_cases.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read conformance fixture: %v", err)

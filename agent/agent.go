@@ -6,14 +6,12 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -22,6 +20,7 @@ import (
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/pricing"
+	"boers.email/yap/agent/render"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 )
@@ -81,49 +80,6 @@ type turn struct {
 	responseMessages []llm.Message
 }
 
-// lineEscaper buffers streamed text to line granularity so dangerous
-// sequences can be neutralized before they reach the buffer. Used for
-// thinking text: ANY `-->` closes the HTML comment for renderers, even
-// inline — so every one is neutralized. Chunks split mid-line, so
-// per-chunk replacement doesn't work.
-type lineEscaper struct {
-	w      *bufio.Writer
-	buf    []byte
-	esc    func(string) string
-	lastNL bool // last byte written to w was '\n'
-}
-
-func newCommentEscaper(w *bufio.Writer) *lineEscaper {
-	return &lineEscaper{w: w, esc: escapeComment}
-}
-
-func (l *lineEscaper) WriteString(s string) {
-	l.buf = append(l.buf, s...)
-	flushed := false
-	for {
-		i := bytes.IndexByte(l.buf, '\n')
-		if i < 0 {
-			break
-		}
-		l.w.WriteString(l.esc(string(l.buf[:i])) + "\n")
-		l.buf = l.buf[i+1:]
-		flushed = true
-	}
-	if flushed {
-		l.lastNL = true
-		l.w.Flush()
-	}
-}
-
-func (l *lineEscaper) Flush() {
-	if len(l.buf) > 0 {
-		l.w.WriteString(l.esc(string(l.buf)))
-		l.buf = nil
-		l.lastNL = false
-	}
-	l.w.Flush()
-}
-
 // streamStep runs one generation step via the adapter. It writes thinking
 // markers and streams assistant prose live. Prose from a tool-bearing round
 // stays where it streamed (before the tool blocks), matching the model's
@@ -137,7 +93,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	t := &turn{}
 	inThinking := false
 	sawThinking := false
-	esc := newCommentEscaper(out)
+	esc := render.NewCommentEscaper(out)
 	firstWrite := func() {
 		if !wrote {
 			out.WriteString("\n")
@@ -151,7 +107,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	// comment.
 	closeThinking := func() {
 		esc.Flush()
-		if !esc.lastNL {
+		if !esc.LastNL() {
 			out.WriteString("\n")
 		}
 		out.WriteString("-->\n\n")
@@ -240,108 +196,6 @@ func retryDelay(attempt int) time.Duration {
 	return d
 }
 
-// toolHeaderMaxSingle is the longest header kept on one line; longer
-// calls (write/edit content) are emitted as pretty-printed multi-line
-// JSON inside the marker, which the Lua side folds closed by default.
-const toolHeaderMaxSingle = 120
-
-// escapeComment neutralizes every `-->` in text that lives inside an
-// HTML comment region (thinking, ui): HTML comments are not line-based,
-// so even an inline `-->` (e.g. in backticked prose) closes the comment
-// early for markdown renderers. A space keeps the text readable. (A
-// backslash-escape can't work here: `\-->` still CONTAINS the `-->`
-// sequence a character-based comment scanner looks for.)
-func escapeComment(s string) string {
-	return strings.ReplaceAll(s, "-->", "-- >")
-}
-
-// marshalCommentJSON renders v as JSON safe to embed inside an HTML
-// comment (`<!-- yap:tool … -->`, `<!-- yap:usage … -->`). json.Marshal's
-// default HTML-escaping turns `&`, `<` and `>` into `\u0026` etc.; those
-// sequences then sit in the buffer as literal backslash text and read like
-// a mangled command. Only two constructs are load-bearing, and both are
-// kept as JSON escapes so the Lua side still decodes the original text:
-//   - `-->` would close the HTML comment early for markdown renderers,
-//     so it becomes `--\u003e`;
-//   - a raw `<style`/`<script` open tag poisons treesitter's combined
-//     html/css/js injections (see escapeMarkerPrefixes), so its `<`
-//     becomes `\u003c`.
-//
-// Everything else stays readable. indent indents each level.
-func marshalCommentJSON(v any, indent string) []byte {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", indent)
-	_ = enc.Encode(v) // payloads here are built by yap and cannot fail
-	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
-	b = bytes.ReplaceAll(b, []byte("-->"), []byte(`--\u003e`))
-	b = rawTextTagRe.ReplaceAll(b, []byte(`\u003c$1$2`))
-	return b
-}
-
-// escapeMarkerPrefixes neutralizes dangerous constructs in tool results
-// (raw markdown in the buffer) with a VISIBLE backslash-escape, valid
-// CommonMark for ASCII punctuation: renderers show the literal text,
-// treesitter sees an escape instead of a tag, and the line-start-anchored
-// Lua parser never matches. No invisible bytes (a ZWSP breaks
-// markdown_inline's html_tag grammar and renders as a literal <200b>;
-// a soft hyphen hides corruption from the user while still reaching
-// registers and the model).
-//
-// Two cases:
-//   - lines starting with a yap marker opener — they would end the
-//     tool region early during parsing;
-//   - `<style`/`<script` open tags — in an extracted-Markdown result
-//     (fetch converts pages to Markdown, which may embed raw HTML)
-//     treesitter's combined HTML injection hands their
-//     content to the css/javascript parsers, whose raw-text injection
-//     ranges then bleed to the end of the buffer.
-var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
-
-func escapeMarkerPrefixes(s string) string {
-	s = rawTextTagRe.ReplaceAllString(s, "\\<$1$2")
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		if strings.HasPrefix(l, "<!-- yap:") || strings.HasPrefix(l, "<!-- /yap:") {
-			lines[i] = "\\" + l
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// emitToolHeader writes the yap:tool opener (full call as JSON)
-// immediately when the model commits to the call — the arguments are
-// visible in the buffer while the tool runs, and the gap to the result
-// honestly represents execution time. Flushed so the header lands
-// before a long-running tool's result. Blocks carry no leading
-// newlines; the caller pads (one blank line between blocks, R7).
-func emitToolHeader(out *bufio.Writer, call llm.ToolCall) {
-	// write/edit carry their full content in the arguments; the header
-	// keeps only the shape — the yap:ui diff shows the change and the
-	// audit log has the full arguments (R12).
-	argsJSON := string(call.Input)
-	args, ok := utils.SlimArgs(call.Name, argsJSON)
-	if !ok {
-		if err := json.Unmarshal(call.Input, &args); err != nil {
-			args = argsJSON // malformed/truncated JSON: keep raw
-		}
-	}
-	// Struct, not map: stable key order (id, name, arguments).
-	header := marshalCommentJSON(struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Arguments any    `json:"arguments"`
-	}{call.ID, call.Name, args}, "")
-	if len(header) <= toolHeaderMaxSingle {
-		fmt.Fprintf(out, "<!-- yap:tool %s -->\n", header)
-	} else {
-		pretty := marshalCommentJSON(json.RawMessage(header), "  ")
-		fmt.Fprintf(out, "<!-- yap:tool\n%s\n-->\n", pretty)
-	}
-	out.Flush()
-}
-
 // trailingNL counts the newline characters at the end of s.
 func trailingNL(s string) int {
 	n := 0
@@ -349,124 +203,6 @@ func trailingNL(s string) int {
 		n++
 	}
 	return n
-}
-
-// emitToolResult finishes an open yap:tool region: the result text
-// (what the model received), an optional display-only ui section, and
-// the region closer.
-func emitToolResult(out *bufio.Writer, result, ui string) {
-	result = escapeMarkerPrefixes(result)
-	out.WriteString(result + "\n")
-	// Results are raw markdown in the buffer. A fence left open (truncated
-	// read/bash output, or a file that genuinely contains a lone ``` line)
-	// would swallow the rest of the buffer as a code block in every
-	// CommonMark renderer, treesitter included. Close it before the ui
-	// block so that still parses.
-	if fence := unclosedFence(strings.Split(result, "\n")); fence != "" {
-		out.WriteString(fence + "\n")
-	}
-	if ui != "" {
-		// The ui diff used to live INSIDE a `<!-- yap:ui … -->` comment,
-		// where treesitter never parses a fence — a comment is one leaf
-		// html_block node, so a ```diff inside it got no highlighting.
-		// Paired one-line markers leave the fence at block level, so the
-		// markdown grammar parses it and injects the diff parser.
-		fence := backtickFence(ui)
-		fmt.Fprintf(out, "<!-- yap:ui -->\n%sdiff\n%s\n%s\n<!-- /yap:ui -->\n", fence, ui, fence)
-	}
-	// Regions self-terminate with exactly one blank line (R7).
-	out.WriteString("<!-- /yap:tool -->\n\n")
-	out.Flush()
-}
-
-// fenceRun reports the leading fence run of a line already trimmed of
-// indent: (char, run-length, remainder-after-the-run). char is 0 when the
-// line does not open a fence.
-func fenceRun(s string) (byte, int, string) {
-	if s == "" || (s[0] != '`' && s[0] != '~') {
-		return 0, 0, ""
-	}
-	i := 0
-	for i < len(s) && s[i] == s[0] {
-		i++
-	}
-	return s[0], i, s[i:]
-}
-
-// fenceLine classifies a RAW line as a fence opener: up to 3 leading
-// spaces, then a run of >=3 backticks or tildes. Returns (char, run,
-// tail, ok). This is the CommonMark "is this line a fence" primitive;
-// Lua's fold.fence_run must agree with it — they are locked together by
-// the shared table in tests/fence_cases.json (see fence_conformance_test.go
-// and yap_fence_conformance_test.lua).
-func fenceLine(line string) (byte, int, string, bool) {
-	t := strings.TrimLeft(line, " ")
-	if len(line)-len(t) > 3 {
-		return 0, 0, "", false
-	}
-	c, k, tail := fenceRun(t)
-	if k < 3 {
-		return 0, 0, "", false
-	}
-	return c, k, tail, true
-}
-
-// unclosedFence returns the fence run left open at the end of lines
-// (e.g. "```"), or "" when all fences balance. Follows CommonMark: an
-// opener is up to 3 spaces + a run of >=3 backticks or tildes; a closer
-// is a run of the same char at least as long, followed only by
-// whitespace (an info string after a closer keeps the fence open).
-func unclosedFence(lines []string) string {
-	var char byte
-	var n int
-	for _, l := range lines {
-		c, k, tail, ok := fenceLine(l)
-		if !ok {
-			continue
-		}
-		if n == 0 {
-			char, n = c, k
-		} else if c == char && k >= n && strings.TrimSpace(tail) == "" {
-			char, n = 0, 0
-		}
-	}
-	if n == 0 {
-		return ""
-	}
-	return strings.Repeat(string(char), n)
-}
-
-// backtickFence returns a run of backticks one longer than any run in s
-// (min 3), so s can be embedded in a fenced block it cannot close early.
-func backtickFence(s string) string {
-	max := 0
-	for _, l := range strings.Split(s, "\n") {
-		if c, k, _, ok := fenceLine(l); ok && c == '`' && k > max {
-			max = k
-		}
-	}
-	n := max + 1
-	if n < 3 {
-		n = 3
-	}
-	return strings.Repeat("`", n)
-}
-
-// fenceResult wraps a content-bearing tool result in a fenced code
-// block (with a language info string when detectable) so the chat
-// buffer's markdown parser renders it as code, not prose — raw file
-// content and command output otherwise get markdown_inline styling
-// (links, emphasis, headings, <hr>). The fence is one backtick longer
-// than any run inside, so content fences can't close it early. Applied
-// to the SAME string that goes to the model, so the buffer and the
-// replayed history stay identical across turns.
-func fenceResult(name, argsJSON, result string) string {
-	lang, ok := utils.ResultFence(name, argsJSON)
-	if !ok {
-		return result
-	}
-	fence := backtickFence(result)
-	return fence + lang + "\n" + strings.TrimRight(result, "\n") + "\n" + fence
 }
 
 // providerFactory builds a Yap provider for the given configured provider.
@@ -636,7 +372,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			// stdout/stderr are separate pipes, so this is the only causal
 			// boundary Yap can establish before the tool starts.
 			pad()
-			emitToolHeader(out, call)
+			render.EmitToolHeader(out, call)
 			// Audit trail (yap:event on stderr): the full call before
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
@@ -658,7 +394,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			var result, ui string
 			if !ok {
 				result = "error: unknown tool " + call.Name
-				emitToolResult(out, result, "")
+				render.EmitToolResult(out, result, "")
 			} else {
 				var err error
 				result, ui, err = tool.Run(call.Input)
@@ -666,10 +402,10 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 					result = "error: " + err.Error()
 					ui = ""
 				} else {
-					result = fenceResult(call.Name, string(call.Input), result)
+					result = render.FenceResult(call.Name, string(call.Input), result)
 				}
 				result = tools.Scrub(result)
-				emitToolResult(out, result, ui)
+				render.EmitToolResult(out, result, ui)
 			}
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
@@ -714,7 +450,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 		if havePricing || input > 0 || output > 0 {
 			m["cost"] = float64(totPrompt)/1e6*input + float64(totCompletion)/1e6*output
 		}
-		b := marshalCommentJSON(m, "")
+		b := render.MarshalCommentJSON(m, "")
 		pad()
 		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
 		out.Flush() // session state must precede the corresponding audit event
