@@ -189,6 +189,9 @@ func (m *modelImpl) DoStream(ctx context.Context, params providers.Params) (*pro
 		sdk.WithTools(toSDKTools(params.Tools)...),
 		sdk.WithMaxSteps(1),
 	}
+	if params.MaxOutputTokens > 0 {
+		opts = append(opts, sdk.WithMaxOutputTokens(params.MaxOutputTokens))
+	}
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))
 	}

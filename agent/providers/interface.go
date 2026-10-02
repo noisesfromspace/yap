@@ -97,6 +97,9 @@ type Result struct {
 type Params struct {
 	Messages []Message
 	Tools    []Tool
+	// MaxOutputTokens caps the assistant output; 0 leaves the provider
+	// default. Used for description/title refreshes.
+	MaxOutputTokens int
 }
 
 // Stream yields display events then, once drained, the final Result.

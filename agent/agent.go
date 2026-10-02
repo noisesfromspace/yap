@@ -35,6 +35,10 @@ type Message struct {
 
 type Request struct {
 	Messages []Message `json:"messages"`
+	// MaxTokens caps the assistant output for this request; 0 leaves the
+	// provider default. Description/title refreshes set it so a verbose
+	// model can't turn a short label into a paragraph.
+	MaxTokens int `json:"max_tokens,omitempty"`
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -116,8 +120,8 @@ func (l *lineEscaper) Flush() {
 // markers and streams assistant prose live; defers prose for tool-bearing
 // rounds to the caller (which re-writes it after the tool regions — the
 // harness relocates the live-streamed copy).
-func streamStep(ctx context.Context, model providers.LanguageModel, messages []providers.Message, out *bufio.Writer, wrote bool) (*turn, error) {
-	stream, err := model.DoStream(ctx, providers.Params{Messages: messages, Tools: providerToolDefs()})
+func streamStep(ctx context.Context, model providers.LanguageModel, messages []providers.Message, out *bufio.Writer, wrote bool, maxTokens int) (*turn, error) {
+	stream, err := model.DoStream(ctx, providers.Params{Messages: messages, Tools: providerToolDefs(), MaxOutputTokens: maxTokens})
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +503,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {
-		t, err := streamStep(ctx, modelImpl, messages, out, wrote)
+		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.MaxTokens)
 		if err != nil {
 			return err
 		}
