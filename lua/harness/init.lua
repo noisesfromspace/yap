@@ -1281,7 +1281,7 @@ function M.scratch_send(scratch)
     vim.notify("yap: scratch is empty", vim.log.levels.WARN)
     return
   end
-  require("harness.template").append_as_block(owner, text)
+  document.append_message(owner, "user", text)
   M.send(owner)
 end
 

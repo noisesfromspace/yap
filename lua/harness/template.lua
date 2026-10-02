@@ -94,18 +94,23 @@ end
 
 --- Append a template as a message block: a leading `# @role` heading is
 --- used as-is (so a template can be a prefill or raw block); otherwise the
---- text is wrapped in `# @user`. Blank-line handling is append_block's (R7).
+--- text is a `# @user` message. `document.append_message` owns the
+--- reuse-the-trailing-heading-or-wrap decision.
 function M.append_as_block(buf, lines)
   if #lines == 0 then
     vim.notify("yap: template is empty", vim.log.levels.WARN)
     return
   end
-  if not lines[1]:match(HEAD) then
-    local wrapped = { "# @user", "" }
-    vim.list_extend(wrapped, lines)
-    lines = wrapped
+  local role = lines[1]:match(HEAD)
+  if role then
+    local body = {}
+    for i = 2, #lines do
+      body[#body + 1] = lines[i]
+    end
+    document.append_message(buf, role, body)
+  else
+    document.append_message(buf, "user", lines)
   end
-  document.append_block(buf, lines)
 end
 
 --- Append `body` (a message block, no surrounding blank lines) to the end
@@ -230,7 +235,9 @@ function M.insert(name, opts)
       if opts.at_cursor then
         M.insert_snippet_at_cursor(buf, body)
       else
-        if not lines[1]:match(HEAD) then
+        -- Same reuse decision as append_message: an unheaded snippet fills
+        -- the trailing `# @user` block instead of adding a second heading.
+        if not lines[1]:match(HEAD) and document.trailing_role(buf) ~= "user" then
           body = "# @user\n\n" .. body
         end
         M.append_snippet_block(buf, body)

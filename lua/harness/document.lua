@@ -253,4 +253,80 @@ function M.append_block(buf, block)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
 end
 
+--- The role of the buffer's last message heading (`# @user`, ...), or nil
+--- when the buffer has no heading yet. This is the single place that reads
+--- "what block would an append land in", shared by the plain-text inserter
+--- (append_message) and the snippet inserter so both reuse the trailing
+--- heading instead of duplicating it.
+function M.trailing_role(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #lines, 1, -1 do
+    local role = lines[i]:match("^# @(%a+)%s*$")
+    if role then
+      return role
+    end
+  end
+  return nil
+end
+
+--- Append `lines` as a `# @<role>` message. If the buffer's last heading
+--- is already that role (e.g. the empty `# @user` prompt a completed turn
+--- leaves behind), the lines fill that block — merging with any body the
+--- user already typed — instead of emitting a duplicate heading above it.
+--- Otherwise a fresh heading block is appended. This is the single place
+--- that decides reuse-vs-wrap for plain-text appends; snippet appends use
+--- trailing_role directly for the same decision. (R6 makes reuse and a new
+--- adjacent block parse the same, so this is purely about keeping the
+--- visible buffer well-formed.)
+function M.append_message(buf, role, lines)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local heading
+  for i = #all, 1, -1 do
+    if all[i]:match("^# @%a+%s*$") then
+      heading = i
+      break
+    end
+  end
+  if not (heading and all[heading]:match("^# @" .. role .. "%s*$")) then
+    local block = { "# @" .. role, "" }
+    vim.list_extend(block, lines)
+    M.append_block(buf, block)
+    return
+  end
+  -- Keep everything through the heading, then any body already under it,
+  -- then the new lines (R7: one blank line after the heading, one between
+  -- merged bodies).
+  local out = {}
+  for i = 1, heading do
+    out[#out + 1] = all[i]
+  end
+  local existing = {}
+  for i = heading + 1, #all do
+    existing[#existing + 1] = all[i]
+  end
+  while #existing > 0 and existing[#existing]:match("^%s*$") do
+    existing[#existing] = nil
+  end
+  while #existing > 0 and existing[1]:match("^%s*$") do
+    table.remove(existing, 1)
+  end
+  out[#out + 1] = ""
+  for _, l in ipairs(existing) do
+    out[#out + 1] = l
+  end
+  if #existing > 0 then
+    out[#out + 1] = ""
+  end
+  for _, l in ipairs(lines) do
+    out[#out + 1] = l
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
+end
+
 return M
