@@ -1111,6 +1111,48 @@ local function queue_follow(buf, scratch)
   vim.api.nvim_buf_set_name(scratch, want)
 end
 
+--- The text to send from the scratch buffer: the active visual selection,
+--- or the whole buffer in normal mode.
+local function scratch_text(scratch)
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "v" or mode == "V" or mode == "\22" then
+    local ok, sel = pcall(vim.fn.getregion, vim.fn.getpos("v"), vim.fn.getpos("."), { type = mode })
+    if ok and #sel > 0 then
+      return sel
+    end
+  end
+  return vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
+end
+
+--- Send the scratch queue — all of it, or the visual selection — into the
+--- owning chat buffer as a `# @user` message, then submit it.
+function M.scratch_send(scratch)
+  scratch = scratch or vim.api.nvim_get_current_buf()
+  local owner = vim.b[scratch].yap_owner
+  if not (owner and vim.api.nvim_buf_is_valid(owner)) then
+    vim.notify("yap: scratch has no chat buffer", vim.log.levels.WARN)
+    return
+  end
+  if M.is_running(owner) then
+    vim.notify("yap: send in flight, not queueing", vim.log.levels.WARN)
+    return
+  end
+  local text = scratch_text(scratch)
+  local blank = true
+  for _, l in ipairs(text) do
+    if l:match("%S") then
+      blank = false
+      break
+    end
+  end
+  if blank then
+    vim.notify("yap: scratch is empty", vim.log.levels.WARN)
+    return
+  end
+  require("harness.template").append_as_block(owner, text)
+  M.send(owner)
+end
+
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
 --- opened above the chat window. It is a real, file-backed buffer — a
 --- sibling `*.queue` file of the session — so `:write` saves it and an
@@ -1126,15 +1168,7 @@ function M.scratch_toggle(buf)
   end
 
   local scratch = vim.b[buf].yap_scratch
-  if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    local wins = vim.fn.win_findbuf(scratch)
-    if #wins > 0 then
-      for _, win in ipairs(wins) do
-        vim.api.nvim_win_close(win, false)
-      end
-      return
-    end
-  else
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     -- Reuse a leftover queue buffer from a wiped-and-reopened session
     -- (naming a fresh one identically would E95), otherwise create a
     -- file-backed buffer and load the saved queue if there is one.
@@ -1155,14 +1189,39 @@ function M.scratch_toggle(buf)
     vim.bo[scratch].bufhidden = "hide"
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
+    vim.b[scratch].yap_owner = buf
     if M.config.keymaps.scratch ~= "" then
       vim.keymap.set("n", M.config.keymaps.scratch, function()
         vim.api.nvim_win_close(0, false)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
     end
+    if M.config.keymaps.send ~= "" then
+      vim.keymap.set("n", M.config.keymaps.send, function()
+        M.scratch_send(scratch)
+      end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
+      vim.keymap.set("i", M.config.keymaps.send, function()
+        vim.cmd.stopinsert()
+        M.scratch_send(scratch)
+      end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
+      vim.keymap.set("x", M.config.keymaps.send, function()
+        M.scratch_send(scratch)
+      end, { buffer = scratch, silent = true, desc = "yap: send scratch selection" })
+    end
+  else
+    vim.b[scratch].yap_owner = buf
   end
 
   queue_follow(buf, scratch) -- session renamed? drag the queue file along
+
+  -- Toggle: if the queue is already on screen, close it instead of opening
+  -- a second window onto the same buffer (leftover reuse was doing that).
+  local wins = vim.fn.win_findbuf(scratch)
+  if #wins > 0 then
+    for _, win in ipairs(wins) do
+      vim.api.nvim_win_close(win, false)
+    end
+    return
+  end
 
   vim.cmd("aboveleft " .. SCRATCH_HEIGHT .. "split")
   vim.api.nvim_win_set_buf(0, scratch)
@@ -1331,8 +1390,8 @@ local function close_stream(buf)
 end
 
 --- Serialize the current buffer and stream the assistant reply into it.
-function M.send()
-  local buf = vim.api.nvim_get_current_buf()
+function M.send(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
   if running[buf] then
     vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
     return
