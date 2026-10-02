@@ -5,7 +5,9 @@ package goai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	sdk "github.com/zendev-sh/goai"
@@ -39,6 +41,35 @@ func NewProvider(cfg llm.ProviderConfig) (llm.Provider, error) {
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		apiKey:  cfg.APIKey,
 	}, nil
+}
+
+// IsRetryable reports whether err is a transient error worth retrying: a
+// provider API error flagged retryable (429, 5xx, OpenAI 404), or a
+// network-level error (timeout, connection reset/refused, DNS). Context
+// cancellation/deadline is deliberately not retryable. It mirrors the SDK's
+// own classifier so the agent can decide whether a mid-stream failure is safe
+// to retry; the SDK already retries pre-stream failures (MaxRetries).
+func IsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *sdk.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.IsRetryable
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "TLS handshake timeout") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "i/o timeout")
 }
 
 type providerImpl struct {

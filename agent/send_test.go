@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/utils"
 )
 
@@ -429,5 +432,71 @@ func TestModels(t *testing.T) {
 	}
 	if got := strings.Fields(buf.String()); len(got) != 2 || got[0] != "alpha/m1" || got[1] != "alpha/m2" {
 		t.Fatalf("output: %v", got)
+	}
+}
+
+type retryableNetErr struct{}
+
+func (retryableNetErr) Error() string   { return "i/o timeout" }
+func (retryableNetErr) Timeout() bool   { return true }
+func (retryableNetErr) Temporary() bool { return true }
+
+// retryFakeModel fails its first DoStream with a transient mid-stream error
+// (no events, retryable Result.Err) and succeeds on the second call.
+type retryFakeModel struct{ calls int }
+
+func (m *retryFakeModel) DoStream(_ context.Context, _ llm.Params) (*llm.Stream, error) {
+	m.calls++
+	events := make(chan llm.Event, 1)
+	stream := llm.NewStream(events)
+	if m.calls == 1 {
+		close(events)
+		stream.SetResult(llm.Result{Err: retryableNetErr{}})
+		return stream, nil
+	}
+	events <- llm.Event{Type: llm.EventText, Text: "done"}
+	close(events)
+	stream.SetResult(llm.Result{Text: "done", Usage: llm.Usage{PromptTokens: 1, CompletionTokens: 1}})
+	return stream, nil
+}
+
+type retryFakeProvider struct{ model *retryFakeModel }
+
+func (p retryFakeProvider) Model(string) llm.LanguageModel { return p.model }
+
+// TestRetryTransientStepError: a transient generation error before any output
+// is emitted is retried (with a `retry` audit event), and the turn succeeds.
+func TestRetryTransientStepError(t *testing.T) {
+	writeConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	model := &retryFakeModel{}
+	oldFactory := providerFactory
+	providerFactory = func(string, Provider) (llm.Provider, error) { return retryFakeProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	oldDelay := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = oldDelay }()
+
+	var journal strings.Builder
+	oldEventOut := utils.SetEventWriter(writerFunc(func(p []byte) (int, error) {
+		journal.Write(p)
+		return len(p), nil
+	}))
+	defer utils.SetEventWriter(oldEventOut)
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if model.calls != 2 {
+		t.Fatalf("model called %d times, want 2 (one retry)", model.calls)
+	}
+	if !strings.Contains(journal.String(), `"type":"retry"`) {
+		t.Fatalf("no retry event: %s", journal.String())
+	}
+	if !strings.Contains(out.String(), "done") {
+		t.Fatalf("missing answer: %s", out.String())
 	}
 }

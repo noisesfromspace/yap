@@ -128,7 +128,8 @@ streaming, then a rollup of your other sessions: `▶N` streaming and `◉N`
 awaiting your reply (the current buffer is never counted there).
 After that: the session description, provider/model, and fold view (`Ⓕ1`-`Ⓕ3`).
 Long descriptions are truncated, and token totals use compact `k`/`m` notation
-on the right, followed by the trailing state glyph: busy / error / `◉
+on the right (with a `NN% ctx` context-fill chip after the first turn),
+followed by the trailing state glyph: busy / error / `◉
 waiting` (the agent awaits your next prompt) / idle. A turn finishing in a
 background chat fires `vim.notify` and a `User YapTurnDone` autocmd you can
 hook. `<leader>1` folds all agent output (user prompts stay open), `<leader>2`

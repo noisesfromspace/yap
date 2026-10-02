@@ -743,6 +743,9 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
   output       {"type","name","data","ts"} — streamed bash output chunks
                (synthesized by the Lua side as it drains the temp log)
   tool_result  {"type","id","name","bytes","result","ts"} — full result
+  retry        {"type","attempt","delay_ms","error","ts"} — a transient
+               generation error (429/5xx/network) was retried before the
+               step emitted any output
   turn_end     {"type","model","prompt","completion","cost",?,
                "context_window",?,"ms","ts"} — one per completed send
 
@@ -858,6 +861,13 @@ The right side mixes token counts and cost. Each piece means:
              On a freshly opened session with no prior turns the two
              prices are equal; after a reopen they diverge.
 
+  NN% ctx    The last turn's prompt size as a share of the model's
+             context window (both carried by the `turn_end` journal),
+             so you can see how full the context is before the next
+             send. Turns amber (`YapNeeds`) at 90% or more. Absent
+             until the first turn completes, and only for models the
+             pricing catalog knows a context window for.
+
 The bar is width-aware, so a narrow window never crowds out the parts
 that matter. It drops parts in this order as the window shrinks: the
 right-hand state glyph (busy is already duplicated by the left `▶`
@@ -902,6 +912,9 @@ history above it. For a global segment independent of yap buffers, use
                          runs, full arguments (the buffer header keeps
                          only slimmed write/edit args, R12)
             tool_result  {"type","name","bytes","result"} — full result
+            retry        {"type","attempt","delay_ms","error"} — a
+                         transient generation error (429/5xx/network)
+                         was retried before any output was emitted
             turn_end     {"type","model","prompt","completion","cost",?,
                          "context_window",?,"ms"} — one per completed send
           The Lua side also synthesizes `output` events (streamed bash

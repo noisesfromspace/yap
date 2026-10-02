@@ -166,6 +166,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 				out.WriteString("<!-- yap:thinking\n")
 				inThinking = true
 				sawThinking = true
+				t.outWrote = true
 			}
 			esc.WriteString(ev.Text)
 		case llm.EventText:
@@ -195,7 +196,10 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 
 	res := stream.Result()
 	if res.Err != nil {
-		return nil, res.Err
+		// Report what was already emitted (if anything) so the caller can
+		// decide whether a retry is safe: a mid-stream error after text has
+		// streamed cannot be retried without corrupting the document.
+		return t, res.Err
 	}
 
 	if len(res.ToolCalls) > 0 && len(res.ResponseMessages) == 0 {
@@ -217,6 +221,24 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 // iteration, capped so a model stuck emitting tool calls cannot loop
 // forever.
 const maxToolIterations = 300
+
+// retryMaxAttempts bounds how many times a transient generation error is
+// retried (on top of the initial call) when the failed step emitted nothing.
+const retryMaxAttempts = 3
+
+// retryBaseDelay is the backoff before the first retry; each attempt doubles
+// it. A var so tests can shorten it.
+var retryBaseDelay = 2 * time.Second
+
+// retryDelay returns the sleep before retry attempt n (0-indexed): 2s, 4s,
+// 8s, capped at 30s.
+func retryDelay(attempt int) time.Duration {
+	d := retryBaseDelay << attempt
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	return d
+}
 
 // toolHeaderMaxSingle is the longest header kept on one line; longer
 // calls (write/edit content) are emitted as pretty-printed multi-line
@@ -553,7 +575,29 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 	for iter := 0; ; iter++ {
 		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 		if err != nil {
-			return err
+			// Retry transient errors (429/5xx, network) only while the failed
+			// step emitted nothing to the buffer: a mid-stream failure after
+			// text has already streamed cannot be retried without corrupting
+			// the document. Pre-stream failures are already retried by the
+			// SDK, so this is a safety net for the remainder.
+			for attempt := 0; err != nil && goai.IsRetryable(err) && (t == nil || !t.outWrote) && attempt < retryMaxAttempts; attempt++ {
+				delay := retryDelay(attempt)
+				utils.EmitEvent(map[string]any{
+					"type":     "retry",
+					"attempt":  attempt + 1,
+					"delay_ms": delay.Milliseconds(),
+					"error":    err.Error(),
+				})
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(delay):
+				}
+				t, err = streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
+			}
+			if err != nil {
+				return err
+			}
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion

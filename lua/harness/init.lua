@@ -403,28 +403,43 @@ local function render_winbar(buf)
   -- Usage/cost cluster. mode: "full" (tokens + both prices), "compact"
   -- (in→out tokens + both prices), "prices" (both prices only). The first
   -- $ is this buffer's accumulated cost; Σ is the all-time session cost
-  -- from the audit log.
+  -- from the audit log. Returns a list of segments so the context-fill
+  -- chip can carry its own highlight.
   local function usage_segment(mode)
-    local words = {}
+    local items = {} -- { text, group }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
     if u and (u.prompt > 0 or u.completion > 0) and mode ~= "prices" then
       if mode == "full" then
-        words[#words + 1] = fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out"
+        items[#items + 1] = { fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out", "Idle" }
       else
-        words[#words + 1] = fmt_tokens(u.prompt) .. "→" .. fmt_tokens(u.completion)
+        items[#items + 1] = { fmt_tokens(u.prompt) .. "→" .. fmt_tokens(u.completion), "Idle" }
       end
     end
+    -- Context fill: the last turn's prompt tokens against the model's
+    -- context window (both carried by the turn_end event). A near-full
+    -- window is a safety signal, so it gets the warning color.
+    local t = last_turn[buf]
+    local ctx = t and tonumber(t.context_window) or nil
+    if ctx and ctx > 0 and t.prompt and t.prompt > 0 then
+      local pct = math.floor(t.prompt / ctx * 100 + 0.5)
+      items[#items + 1] = { pct .. "% ctx", pct >= 90 and "Needs" or "Idle" }
+    end
     if u and u.cost then
-      words[#words + 1] = string.format("$%.4g", u.cost)
+      items[#items + 1] = { string.format("$%.4g", u.cost), "Idle" }
     end
     if s and s.cost then
-      words[#words + 1] = (mode == "full" and "session " or "Σ") .. string.format("$%.4g", s.cost)
+      items[#items + 1] = { (mode == "full" and "session " or "Σ") .. string.format("$%.4g", s.cost), "Idle" }
     end
-    if #words == 0 then
+    if #items == 0 then
       return nil
     end
-    return seg(" " .. table.concat(words, " · ") .. " ", "Idle")
+    local segs = { seg(" " .. items[1][1], items[1][2]) }
+    for i = 2, #items do
+      segs[#segs + 1] = seg(" · " .. items[i][1], items[i][2])
+    end
+    segs[#segs].text = segs[#segs].text .. " "
+    return segs
   end
 
   local function state_segment()
@@ -452,7 +467,9 @@ local function render_winbar(buf)
     end
     parts[#parts + 1] = "%="
     if usage then
-      parts[#parts + 1] = render_seg(usage)
+      for _, s in ipairs(usage) do
+        parts[#parts + 1] = render_seg(s)
+      end
     end
     if state then
       parts[#parts + 1] = render_seg(state)
@@ -470,7 +487,7 @@ local function render_winbar(buf)
     local usage = usage_segment(mode)
     local state = show_state and state_segment() or nil
     local total = width_of(left) + width_of(mid)
-      + (usage and width_of({ usage }) or 0)
+      + (usage and width_of(usage) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
       return render(left, mid, usage, state)
@@ -725,6 +742,8 @@ local function render_event(ev)
     end
     table.insert(lines, ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"))
     return table.concat(lines, "\n"), "block"
+  elseif ev.type == "retry" then
+    return ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), "block"
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -898,6 +917,8 @@ local function handle_event(buf, json_line)
     append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
     append_event(buf, ev) -- full result; bash output already streamed above
+  elseif ev.type == "retry" then
+    append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "turn_end" then
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     -- Fold this turn into the session's all-time totals (seeded from the
