@@ -1,5 +1,7 @@
 /yap
 /vendor/
 /.dev/
+/result
+/result-*
 tests/logs/
 /.yap/
