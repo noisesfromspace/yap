@@ -201,9 +201,9 @@ function M.text(start, finish)
     return string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
   end
 
-  local region = first:match("^<!%-%-.*(yap:%a+)")
+  local region = first:match("^<!%-%-.*yap:(%a+)")
   if region then
-    return string.format("▸ %s (%d lines)", region, finish - start + 1)
+    return string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
   end
 
   local role = first:match(HEAD) or "?"
