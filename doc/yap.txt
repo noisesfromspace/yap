@@ -686,9 +686,10 @@ ZWSP renders as a literal <200b>), and a soft hyphen hides the
 mutation from the user while still reaching registers and the model.
 
 Tool RESULTS from content-bearing tools (read, bash, ls, fetch, curl,
-git, search, glob) are wrapped in a fenced code block — read with a
-language info string detected from the path extension, fetch as
-```markdown, the rest as a plain fence.
+git, search, glob, ssh, python) are wrapped in a fenced code block —
+read with a language info string detected from the path extension,
+fetch as ```markdown, python as ```json when its output is a complete
+JSON object/array (otherwise a plain fence), the rest as a plain fence.
 The buffer is markdown, and raw file content or command output
 gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
 picks up stray styling; the fence renders it as code instead and lets

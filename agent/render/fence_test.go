@@ -34,6 +34,14 @@ func TestFenceResult(t *testing.T) {
 	if !strings.HasPrefix(got, "````\n") || !strings.HasSuffix(got, "\n````") {
 		t.Errorf("FenceResult(bash with inner fence) = %q", got)
 	}
+
+	// Printed JSON gets a ```json fence; arbitrary output stays plain.
+	if got = FenceResult("python", `{"code":"print('{\"a\": 1}')"}`, "{\"a\": 1}"); got != "```json\n{\"a\": 1}\n```" {
+		t.Errorf("FenceResult(python json) = %q", got)
+	}
+	if got = FenceResult("python", `{"code":"print('hi')"}`, "hi"); got != "```\nhi\n```" {
+		t.Errorf("FenceResult(python plain) = %q", got)
+	}
 }
 
 func TestResultFence(t *testing.T) {
@@ -54,6 +62,8 @@ func TestResultFence(t *testing.T) {
 		{"fetch", `{"url":"http://x"}`, "markdown", true},
 		{"bash", `{"command":"ls"}`, "", true},
 		{"git", `{"command":"diff"}`, "", true},
+		{"ssh", `{"command":"ls"}`, "", true},
+		{"python", `{"code":"print(1)"}`, "", true},
 		{"ls", `{"path":"/tmp"}`, "", true},
 		{"search", `{"pattern":"x"}`, "", true},
 		{"glob", `{"pattern":"*.go"}`, "", true},
