@@ -24,6 +24,7 @@ assert(
   "scratch window is not above the chat"
 )
 assert(vim.wo.winbar == "", "scratch window inherited the yap winbar")
+assert(vim.wo.foldmethod == "manual", "scratch window inherited the chat's expr folds")
 
 -- the scratch buffer is a real file: :write saves it next to the session
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "task one", "task two" })

@@ -1239,9 +1239,25 @@ local function scratch_take(scratch)
   return text
 end
 
+--- Write the queue buffer to its sibling file so the drained state survives
+--- reopening the session. Like session.save it goes through `:write!` so the
+--- buffer keeps owning the file (mtime/'modified' bookkeeping stay correct).
+local function scratch_save(scratch)
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return
+  end
+  if vim.api.nvim_buf_get_name(scratch) == "" then
+    return
+  end
+  vim.api.nvim_buf_call(scratch, function()
+    vim.cmd("silent noautocmd keepjumps write!")
+  end)
+end
+
 --- Send the scratch queue — all of it, or the visual selection — into the
 --- owning chat buffer as a `# @user` message, then submit it. The sent text
---- is removed from the queue by scratch_take.
+--- is removed from the queue by scratch_take, and the drained queue is saved
+--- so already-sent tasks don't come back when the buffer is recreated.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -1266,6 +1282,7 @@ function M.scratch_send(scratch)
     return
   end
   document.append_message(owner, "user", text)
+  scratch_save(scratch) -- persist the drain before the turn streams
   M.send(owner)
 end
 
@@ -1334,6 +1351,12 @@ function M.scratch_toggle(buf)
   vim.api.nvim_win_set_buf(0, scratch)
   vim.wo.winfixheight = true
   vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
+  -- The split inherited the chat window's expr folds; a queue is a plain
+  -- jotter, so drop foldexpr/foldtext evaluation (arbitrary queued text
+  -- must never be interpreted as yap fold structure).
+  vim.wo.foldmethod = "manual"
+  vim.wo.foldexpr = ""
+  vim.wo.foldtext = ""
 end
 
 --- Record a backend error: notify, persist it in the winbar, and leave a

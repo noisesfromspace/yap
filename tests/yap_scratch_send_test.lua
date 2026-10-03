@@ -30,6 +30,14 @@ assert(
   table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n") == "",
   "normal-mode send did not clear the queue"
 )
+-- sending drains the queue, so the .queue file is saved empty: reopened
+-- sessions must not resurrect already-sent tasks.
+local queue_file = vim.api.nvim_buf_get_name(scratch)
+assert(vim.fn.filereadable(queue_file) == 1, "queue file not written after send")
+assert(
+  table.concat(vim.fn.readfile(queue_file), "\n") == "",
+  "queue file not drained after send"
+)
 wait_turn(buf)
 assert(chat_text(buf):match("task one") and chat_text(buf):match("task two"), "queued tasks missing from chat")
 
@@ -44,6 +52,10 @@ yap.scratch_send(scratch)
 assert(
   table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n") == "line gamma",
   "visual send removed the wrong lines: " .. vim.inspect(vim.api.nvim_buf_get_lines(scratch, 0, -1, false))
+)
+assert(
+  table.concat(vim.fn.readfile(queue_file), "\n") == "line gamma",
+  "queue file not saved after visual send"
 )
 wait_turn(buf)
 assert(chat_text(buf):match("line alpha") and chat_text(buf):match("line beta"), "visual selection missing from chat")
