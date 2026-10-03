@@ -20,15 +20,32 @@
         in
         {
           # Go backend: provider client + agent loop, invoked by the harness.
-          agent = pkgs.buildGoModule {
-            pname = "yap-agent";
-            version = self.shortRev or self.dirtyShortRev or "dev";
-            src = self;
-            subPackages = [ "agent" ];
-            vendorHash = "sha256-84XL+Y4InzLLiKG+BWrPS/t2ryb81EBA2PmixqxnlPY=";
-            env.CGO_ENABLED = "0";
-            meta.mainProgram = "agent";
-          };
+          # Wrapped with the Playwright runtime (Node driver + Chromium) so the
+          # playwright tool works out of the box, not only in the devShell. The
+          # driver JS itself is downloaded once by playwright-go into
+          # ~/.cache/ms-playwright-go on first use; the Node runtime and the
+          # browser come from nixpkgs, not npm or the devShell.
+          agent =
+            let
+              agentBin = pkgs.buildGoModule {
+                pname = "yap-agent";
+                version = self.shortRev or self.dirtyShortRev or "dev";
+                src = self;
+                subPackages = [ "agent" ];
+                vendorHash = "sha256-I7sLCaZx1WvnjQeX23f/ihpXHnWPOXnOdKzah4PZ4hs=";
+                env.CGO_ENABLED = "0";
+                meta.mainProgram = "agent";
+              };
+            in
+            pkgs.runCommand "yap-agent" {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              meta.mainProgram = "agent";
+            } ''
+              mkdir -p "$out/bin"
+              makeWrapper "${agentBin}/bin/agent" "$out/bin/agent" \
+                --set-default PLAYWRIGHT_NODEJS_PATH "${pkgs.nodejs}/bin/node" \
+                --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium"
+            '';
 
           # Neovim plugin (the harness). Provides require("harness").
           harness = pkgs.vimUtils.buildVimPlugin {
@@ -141,6 +158,10 @@
             packages = [
               pkgs.go
               pkgs.neovim
+              # Browser + runtime for the playwright tool (native Go client;
+              # it shells out to the Node driver and drives nixpkgs chromium).
+              pkgs.nodejs
+              pkgs.chromium
               yap-nvim
               yap-nvim-treesitter
               yap-nvim-touchup
