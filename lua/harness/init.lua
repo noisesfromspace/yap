@@ -98,46 +98,17 @@ local paths = require("harness.path")
 local function yap_about()
   return [[# About Yap
 
-You are running inside Yap, an agent harness for Neovim inspired by pi and gptel. The conversation is an editable Markdown buffer and is the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages. Editing or deleting messages edits the context sent on the next turn.
+You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply — indent or fence it instead.
 
-When asked about Yap itself, inspect the Yap source or documentation rather than guessing. The project is normally at `/opt/code/yap`; `README.md` is the overview and `doc/yap.txt` is the full reference. Because the buffer is intentionally transparent and editable, prefer explaining what is actually present in the buffer, configuration, source, or audit trail over implying hidden state.
-
-## Buffer semantics
-
-- The parser treats a line exactly matching `# @system`, `# @user`, or
-  `# @assistant` as a message boundary, and a line starting with `<!-- yap:`
-  as a marker. Never emit either in your replies — indent or fence such
-  content instead.
-- The user may edit or delete earlier messages, including your replies.
-  The visible transcript is the real history; if it looks inconsistent,
-  re-read the relevant block rather than assuming it is intact.
-- Between turns, tool calls and their results become plain text in the
-  transcript and are not re-executed or re-sent as native tool messages.
-  Only the visible buffer content is replayed on the next send.
+Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the project (normally `/opt/code/yap`) rather than guessing.
 
 ## Skills
 
-Skills are the agent's own reusable, on-demand instructions for specific
-domains. They are Markdown files in ]] .. M.config.skills_dir .. [[ (one
-per skill, named `<name>.md`); the `## Skills` list in the system block
-names what is available with a one-line description each. Before doing
-work in one of those domains, `read` the matching skill file and follow
-it. Read only the skill(s) you need, never the whole directory.
+Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system block names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
 
 ## Subagents
 
-- Use `subagent` with a `role` from the configured `roles_dir` (default
-  `~/.yap/roles/<role>.md`) and a self-contained `task`. Roles supply a
-  system prompt and optional tool
-  allowlist; a `provider/model` in the role selects its model, while a bare
-  model name inherits the parent's provider/model.
-- The call blocks until the child finishes. The child is a regular, saved
-  Yap Markdown session named `<parent-session>-<short-random>.md`, accessible
-  through `:YapSessions`. Its final answer and session path return as the
-  tool result; inspect the child session for its full conversation.
-- There is no background spawn or direct agent-to-agent messaging. A stopped
-  parent stops its running child, and a timed-out child is stopped; its
-  Markdown session remains available for inspection.
+- `subagent` takes a `role` (from `roles_dir`, default `~/.yap/roles/<role>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. A bare model name inherits the parent's provider/model.
 ]]
 end
 
