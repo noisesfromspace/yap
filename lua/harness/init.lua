@@ -419,7 +419,7 @@ local function render_winbar(buf)
       items[#items + 1] = { string.format("$%.4g", u.cost), "Idle" }
     end
     if s and s.cost then
-      items[#items + 1] = { (mode == "full" and "session " or "Σ") .. string.format("$%.4g", s.cost), "Idle" }
+      items[#items + 1] = { (mode == "full" and "total " or "Σ") .. string.format("$%.4g", s.cost), "Idle" }
     end
     if #items == 0 then
       return nil
