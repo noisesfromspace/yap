@@ -70,7 +70,7 @@ func runPW(a *playwrightArgs) (string, string, error) {
 	headed := a.Headed || handover
 	session := a.Session
 	if session == "" {
-		session = "default"
+		session = "yap"
 	}
 	if err := browser.ensure(session, headed); err != nil {
 		return "", "", err
@@ -144,10 +144,11 @@ func runPW(a *playwrightArgs) (string, string, error) {
 		}
 		return withChallenge(browser.afterAction(page)), "", nil
 	case "eval":
-		if len(args) == 0 {
+		expr := strings.TrimSpace(strings.TrimPrefix(a.Command, "eval"))
+		if expr == "" {
 			return "", "", fmt.Errorf("eval requires a JavaScript expression")
 		}
-		res, err := page.Evaluate(strings.Join(args, " "))
+		res, err := page.Evaluate(expr)
 		if err != nil {
 			return "", "", err
 		}
@@ -286,13 +287,16 @@ func (b *pwState) snapshot(page playwright.Page, args []string) (string, error) 
 
 // afterAction returns title/url plus a fresh snapshot, so refs stay current.
 func (b *pwState) afterAction(page playwright.Page) string {
+	// Snapshot first: AriaSnapshot auto-waits for the post-action state, so the
+	// status (URL/title) read afterwards reflects the settled page, not the
+	// pre-action one.
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s", pageStatus(page))
 	if s, err := b.snapshot(page, nil); err == nil {
-		sb.WriteString("\n\n" + s)
+		sb.WriteString(s)
 	} else {
-		fmt.Fprintf(&sb, "\n\n[snapshot failed: %v]", err)
+		fmt.Fprintf(&sb, "[snapshot failed: %v]", err)
 	}
+	sb.WriteString("\n\n" + pageStatus(page))
 	return sb.String()
 }
 
