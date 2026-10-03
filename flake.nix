@@ -17,6 +17,33 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          lib = pkgs.lib;
+
+          # Filter what each derivation ships. The flake is consumed via a
+          # `path:` input (see /etc/nixos/flake), which copies the raw tree —
+          # including .git/, build artifacts, and any `result` symlink that
+          # `nix build` (without --no-link) drops in the repo root. Shipping
+          # `self` verbatim leaks all of that into the store paths and trips
+          # the plugin's noBrokenSymlinks check.
+          pluginSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./lua
+              ./plugin
+              ./doc
+              ./README.md
+              ./LICENSE
+            ];
+          };
+
+          agentSrc = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./go.mod
+              ./go.sum
+              ./agent
+            ];
+          };
         in
         {
           # Go backend: provider client + agent loop, invoked by the harness.
@@ -30,7 +57,7 @@
               agentBin = pkgs.buildGoModule {
                 pname = "yap-agent";
                 version = self.shortRev or self.dirtyShortRev or "dev";
-                src = self;
+                src = agentSrc;
                 subPackages = [ "agent" ];
                 vendorHash = "sha256-I7sLCaZx1WvnjQeX23f/ihpXHnWPOXnOdKzah4PZ4hs=";
                 env.CGO_ENABLED = "0";
@@ -51,7 +78,7 @@
           harness = pkgs.vimUtils.buildVimPlugin {
             pname = "yap";
             version = self.shortRev or self.dirtyShortRev or "dev";
-            src = self;
+            src = pluginSrc;
           };
 
           default = self.packages.${system}.agent;
