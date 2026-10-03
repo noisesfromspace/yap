@@ -69,9 +69,77 @@ func TestPython(t *testing.T) {
 		t.Fatalf("stdin not null: %q", r)
 	}
 
-	// empty code is a tool error
-	if _, _, err := run(t, "python", `{"code":"   "}`); err == nil || !strings.Contains(err.Error(), "empty code") {
+	// empty code (after trim) counts as neither code nor file
+	if _, _, err := run(t, "python", `{"code":"   "}`); err == nil || !strings.Contains(err.Error(), "code or file") {
 		t.Fatalf("empty code: %v", err)
+	}
+	// neither code nor file, and both, are tool errors
+	if _, _, err := run(t, "python", `{}`); err == nil || !strings.Contains(err.Error(), "code or file") {
+		t.Fatalf("neither: %v", err)
+	}
+	if _, _, err := run(t, "python", `{"code":"1","file":"x.py"}`); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("both: %v", err)
+	}
+}
+
+func TestPythonFile(t *testing.T) {
+	dir := t.TempDir()
+	// write the script the way the model would (relative to cwd), then run
+	// it by file reference.
+	script := filepath.Join(dir, "gen.py")
+	if err := os.WriteFile(script, []byte("print('from file')\nimport sys; sys.exit(4)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := run(t, "python", `{"file":"`+script+`"}`)
+	if err != nil || !strings.Contains(r, "from file") || !strings.Contains(r, "[exit code 4]") {
+		t.Fatalf("file run: %q %v", r, err)
+	}
+
+	// a failing file returns its traceback as text
+	if err := os.WriteFile(script, []byte("raise RuntimeError('bad')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, _, _ = run(t, "python", `{"file":"`+script+`"}`)
+	if !strings.Contains(r, "RuntimeError") || !strings.Contains(r, "bad") {
+		t.Fatalf("file traceback: %q", r)
+	}
+
+	// missing file and directory are tool errors
+	if _, _, err := run(t, "python", `{"file":"`+filepath.Join(dir, "nope.py")+`"}`); err == nil || !strings.Contains(err.Error(), "script file") {
+		t.Fatalf("missing file: %v", err)
+	}
+	if _, _, err := run(t, "python", `{"file":"`+dir+`"}`); err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("directory: %v", err)
+	}
+}
+
+func TestPythonFileToolStartLabel(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "s.py")
+	if err := os.WriteFile(script, []byte("print('x')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	old := utils.SetEventWriter(&buf)
+	defer utils.SetEventWriter(old)
+
+	if _, _, err := run(t, "python", `{"file":"`+script+`"}`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	jsonLine, ok := strings.CutPrefix(lines[0], "yap:event ")
+	if !ok {
+		t.Fatalf("no yap:event line: %q", lines[0])
+	}
+	var ev struct {
+		Type    string `json:"type"`
+		Name    string `json:"name"`
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal([]byte(jsonLine), &ev); err != nil {
+		t.Fatalf("event not JSON: %v", err)
+	}
+	if ev.Command != "python3 "+script {
+		t.Fatalf("command label: %q", ev.Command)
 	}
 }
 

@@ -528,12 +528,17 @@ the temp file; a non-zero exit is reported to the model, not treated
 as an error. There is deliberately no sandbox and no confirmation
 prompt (R15).
 
-python runs a Python 3 script the same way: the code is written to a
-temp file and executed as `python3 <file>` in a fresh process (no
-state carries between calls — one self-contained script per call),
-with the same process-group timeout, live tail, and 2000-line / 50KB
-tail truncation. A failed script returns its traceback to the model
-as text. Like bash, there is no sandbox and no confirmation prompt.
+python runs a Python 3 script the same way, as a fresh process (no
+state carries between calls — one self-contained script per call), with
+the same process-group timeout, live tail, and 2000-line / 50KB tail
+truncation. It takes exactly one of `code` (a small inline script,
+written to a temp file and run as `python3 <file>`) or `file` (a path
+to an existing script, resolved relative to the Neovim cwd like write's
+path — write the file first with the write tool, then run it). `file`
+is for larger scripts so the code lives in a real, editable file the
+user can `gf` to; the header shows only the file reference. A failed
+script returns its traceback to the model as text. Like bash, there is
+no sandbox and no confirmation prompt.
 
 write/edit tool headers in the buffer are SLIMMED (R12): the arguments
 show `[N lines]` / `[N edits, +A/-B lines]` instead of the content —
@@ -686,10 +691,9 @@ ZWSP renders as a literal <200b>), and a soft hyphen hides the
 mutation from the user while still reaching registers and the model.
 
 Tool RESULTS from content-bearing tools (read, bash, ls, fetch, curl,
-git, search, glob, ssh, python) are wrapped in a fenced code block —
-read with a language info string detected from the path extension,
-fetch as ```markdown, python as ```json when its output is a complete
-JSON object/array (otherwise a plain fence), the rest as a plain fence.
+git, search, glob) are wrapped in a fenced code block — read with a
+language info string detected from the path extension, fetch as
+```markdown, the rest as a plain fence.
 The buffer is markdown, and raw file content or command output
 gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
 picks up stray styling; the fence renders it as code instead and lets

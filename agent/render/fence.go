@@ -24,7 +24,7 @@ func resultFence(name, argsJSON string) (lang string, ok bool) {
 		return langForPath(a.Path), true
 	case "fetch":
 		return "markdown", true
-	case "bash", "curl", "git", "ssh", "python":
+	case "bash", "curl", "git":
 		return "", true // plain fence: command output is arbitrary text
 	case "ls", "search", "glob":
 		return "", true // plain fence: directory/listing output is arbitrary text
@@ -192,20 +192,6 @@ func FenceResult(name, argsJSON, result string) string {
 	if !ok {
 		return result
 	}
-	if name == "python" && isJSON(result) {
-		lang = "json" // printed JSON (json.dumps, ...) gets real highlighting
-	}
 	fence := backtickFence(result)
 	return fence + lang + "\n" + strings.TrimRight(result, "\n") + "\n" + fence
-}
-
-// isJSON reports whether s is a complete JSON object or array — the
-// common python-tool case of printing a serialized payload, where a
-// ```json fence gives syntax highlighting instead of a plain code block.
-func isJSON(s string) bool {
-	t := strings.TrimSpace(s)
-	if t == "" || (t[0] != '{' && t[0] != '[') {
-		return false
-	}
-	return json.Valid([]byte(t))
 }
