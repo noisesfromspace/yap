@@ -1215,7 +1215,10 @@ function M.send(buf)
     -- Coalesce rapid per-token stdout flushes into one buffer edit per
     -- ~STREAM_FLUSH_MS: every edit makes Neovim recompute expr folds for the
     -- whole buffer (O(n)), so batching keeps a fast stream smooth on large
-    -- sessions instead of stalling once per token.
+    -- sessions instead of stalling once per token. This is a THROTTLE: the
+    -- timer starts on the first token of a batch and fires 30ms later, so
+    -- text is never delayed by more than one tick even under continuous
+    -- token flow (a debounce would freeze text until a silence gap).
     local STREAM_FLUSH_MS = 30
     local pending = ""
     local flush_timer = nil
@@ -1230,7 +1233,13 @@ function M.send(buf)
       fold.after_append(buf, vim.split(data, "\n", { plain = true }))
       follow_tail()
     end
-    local on_flush_tick = vim.schedule_wrap(flush_pending)
+    local function on_flush_tick()
+      flush_timer = nil
+      flush_pending()
+    end
+    -- uv timer callbacks run in a fast event context; schedule_wrap escapes
+    -- it so nvim_buf_set_text is legal inside flush_pending.
+    local on_flush_tick_wrapped = vim.schedule_wrap(on_flush_tick)
     local function finish_flush()
       if flush_timer then
         flush_timer:stop()
@@ -1242,11 +1251,12 @@ function M.send(buf)
     stream_flush[buf] = finish_flush
     local function append(data)
       if data == "" then return end
+      local was_empty = pending == ""
       pending = pending .. data
-      if not flush_timer then
+      if was_empty then
         flush_timer = vim.uv.new_timer()
+        flush_timer:start(STREAM_FLUSH_MS, 0, on_flush_tick_wrapped)
       end
-      flush_timer:start(STREAM_FLUSH_MS, 0, on_flush_tick)
     end
     local function route_event(ev)
       sync_followers()

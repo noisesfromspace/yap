@@ -218,16 +218,22 @@ end
 -- longer update the chip.
 local applied = {}
 
--- Pinned folds: folds the user opened with <Tab> or the block-navigation
--- keys and wants to KEEP open. The send path also captures native za/zo
--- opens (see reapply_window) and re-opens the union after clearing manual
--- state. Keyed by the fold's start line; sends only append, so a pin's
--- line number stays stable for the lifetime of a session (a user edit
--- above a pin can shift it — the re-apply validates the line is still a
--- fold opener and drops it otherwise).
-local pinned = {}
+-- User-opened folds: folds the user opened and wants to KEEP open, whether
+-- via <Tab>, a block-navigation key, or native za/zo. Keyed by the fold's
+-- start line; sends only append, so a line number stays stable for the
+-- lifetime of a session (a user edit above it can shift it — the reconcile
+-- validates the line is still a fold opener and drops it otherwise).
+--
+-- IMPORTANT: this set is reconciled against Neovim WITHOUT zX. The old
+-- zX-per-append approach closed every fold and re-opened a handful, which
+-- collapsed the view (cursor/scrolling jumps) and flickered. Instead each
+-- structural append only touches folds that actually changed: it closes
+-- the folds the append newly created that leaked open (Neovim inherits a
+-- manual foldopen into same/lower-level folds), folds the superseded live
+-- assistant, and re-opens the user-opened set + live assistant.
+local opened = {}
 local live_heading = {} -- the last assistant: auto-opened in view 1, folds when the next reply arrives
-local prev_openers = {} -- opener lines present before the last re-apply; new folds are excluded from the manual-open capture
+local prev_openers = {} -- opener lines present before the last reconcile; new folds are excluded from the za/zo capture
 
 --- The set of fold-opener line numbers in a levels array (the ">N" entries).
 local function openers(levels)
@@ -252,20 +258,12 @@ local function find_live_heading(buf, levels)
   return nil
 end
 
---- Open the auto-open (live) assistant in the current window, if it is
---- currently closed. Views 2/3 keep it open by foldlevel, so this only has
---- an effect in view 1.
-local function reopen_live(buf)
-  local ln = live_heading[buf]
-  if not ln then
-    return
-  end
-  local levels = M.levels(buf)
-  if levels[ln] == ">2"
-    and vim.fn.getline(ln) == "# @assistant"
-    and vim.fn.foldclosed(ln) == ln then
-    vim.cmd(("silent! %dfoldopen"):format(ln))
-  end
+local function fold_open(lnum)
+  vim.cmd(("silent! %dfoldopen"):format(lnum))
+end
+
+local function fold_close(lnum)
+  vim.cmd(("silent! %dfoldclose"):format(lnum))
 end
 
 function M.level()
@@ -280,22 +278,26 @@ end
 -- large session. foldlevel alone keeps the same visuals. A real CHANGE of
 -- 'foldlevel' resets all manual za toggles to the level's state, so bump
 -- first to guarantee the change — a keypress always lands on the same
--- state. A view keypress also clears every pin and manual open (it is an
+-- state. A view keypress also clears every user-opened fold (it is an
 -- explicit reset).
 function M.set_view_level(level)
   local buf = vim.api.nvim_get_current_buf()
   applied[buf] = level
-  pinned[buf] = {}
+  opened[buf] = {}
   live_heading[buf] = nil
   local target = ({ 1, 2, 3 })[level] or 3
   vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
   vim.wo.foldlevel = target
-  prev_openers[buf] = openers(M.levels(buf))
+  local levels = M.levels(buf)
+  prev_openers[buf] = openers(levels)
   -- View 1 keeps the last assistant open so the latest reply is visible;
   -- views 2/3 open it by foldlevel, so only view 1 auto-opens it here.
   if level == 1 then
-    live_heading[buf] = find_live_heading(buf, M.levels(buf))
-    reopen_live(buf)
+    live_heading[buf] = find_live_heading(buf, levels)
+  end
+  local ln = live_heading[buf]
+  if ln and vim.fn.foldclosed(ln) ~= -1 then
+    fold_open(ln)
   end
 end
 
@@ -325,54 +327,81 @@ local function fold_start(buf, lnum)
   return -1
 end
 
---- Re-apply the applied view to one window: clear every manual open/close
---- (zX re-applies 'foldlevel' without changing its value), then re-open the
---- folds the user had opened:
----   * pinned — folds opened with <Tab> or the block-navigation keys;
----   * manual — folds opened with native za/zo (including za on the system
----              prompt), captured from their open state before zX wipes it;
----   * live   — the last assistant, auto-opened in view 1.
---- `old_live` is the live assistant BEFORE this append: it is excluded from
---- the manual capture so a superseded reply folds instead of being re-opened
---- as if the user had opened it. Folds created by this append are also NOT
---- captured (they are not in prev_openers): Neovim inherits a manual foldopen
---- into child folds, so a freshly-streamed fold would otherwise arrive open.
---- Re-open in line order so a parent opens before its nested children.
---- `:Nfoldopen` opens the fold on line N without moving the cursor, so
---- re-applying during a stream never yanks the user's cursor.
-local function reapply_window(w, buf, levels, old_live)
+--- Reconcile one window to the desired fold state after a structural
+--- append, WITHOUT zX (zX collapsed the whole view and flickered). Only
+--- the folds that actually changed are touched:
+---
+---   1. Capture native za/zo opens on pre-existing folds: a fold that is
+---      currently open beyond the view's foldlevel (and is not the auto-open
+---      live assistant) was opened by the user. A fold the user opened before
+---      but has since closed (zc/za) is dropped.
+---   2. Fold the superseded live assistant (view 1) unless the user opened it.
+---   3. New folds: set to the view default. This is what stops Neovim's
+---      manual-foldopen inheritance — a fold streamed in after the user
+---      opened a sibling arrives open, and is closed back here (or opened,
+---      if it is the live assistant).
+---   4. Re-open the user-opened set and the live assistant (idempotent).
+---
+--- `:Nfoldopen`/`:Nfoldclose` operate on a single line without moving the
+--- cursor, so reconciling during a stream never yanks the user's cursor.
+local function reconcile_window(w, buf, levels, old_live, new_openers)
   vim.api.nvim_win_call(w, function()
     local foldlevel = vim.wo.foldlevel
     local prev = prev_openers[buf] or {}
-    local manual = {}
+    local o = opened[buf] or {}
+    -- 1. za/zo opens and closes on pre-existing folds.
     for lnum, lv in ipairs(levels) do
       if lv:sub(1, 1) == ">" then
         local lvl = tonumber(lv:sub(2))
-        if lvl and lvl > foldlevel
-          and prev[lnum]
-          and lnum ~= old_live
-          and vim.fn.foldclosed(lnum) == -1 then
-          manual[lnum] = true
+        if lvl and prev[lnum] and lnum ~= old_live then
+          if vim.fn.foldclosed(lnum) == -1 then
+            if lvl > foldlevel then
+              o[lnum] = true
+            end
+          elseif o[lnum] then
+            o[lnum] = nil -- user closed a fold they had opened
+          end
         end
       end
     end
-    vim.cmd("normal! zX")
-    for lnum in pairs(pinned[buf] or {}) do
-      manual[lnum] = true
+    opened[buf] = o
+    -- 2. Fold the superseded live assistant (it was auto-open, not user-open).
+    if old_live and old_live ~= live_heading[buf] and not o[old_live] then
+      local lv = levels[old_live]
+      local lvl = lv and tonumber(lv:sub(2))
+      if lvl and lvl > foldlevel and vim.fn.foldclosed(old_live) == -1 then
+        fold_close(old_live)
+      end
+    end
+    -- 3. New folds adopt the view's default (undo the inheritance leak).
+    for lnum in pairs(new_openers) do
+      local lv = levels[lnum]
+      local lvl = lv and tonumber(lv:sub(2))
+      if lvl then
+        local want_open = lnum == live_heading[buf] or lvl <= foldlevel
+        if want_open then
+          if vim.fn.foldclosed(lnum) ~= -1 then
+            fold_open(lnum)
+          end
+        elseif vim.fn.foldclosed(lnum) == -1 then
+          fold_close(lnum)
+        end
+      end
+    end
+    -- 4. Re-open the user-opened set and the live assistant.
+    local reopens = {}
+    for lnum in pairs(o) do
+      reopens[#reopens + 1] = lnum
     end
     local ln = live_heading[buf]
-    if ln and levels[ln] == ">2" and vim.fn.getline(ln) == "# @assistant" then
-      manual[ln] = true
-    end
-    local reopens = {}
-    for lnum in pairs(manual) do
-      reopens[#reopens + 1] = lnum
+    if ln then
+      reopens[#reopens + 1] = ln
     end
     table.sort(reopens)
     for _, lnum in ipairs(reopens) do
       local lv = levels[lnum]
       if lv and lv:sub(1, 1) == ">" and vim.fn.foldclosed(lnum) ~= -1 then
-        vim.cmd(("silent! %dfoldopen"):format(lnum))
+        fold_open(lnum)
       end
     end
   end)
@@ -390,16 +419,15 @@ function M.open(lnum)
   if start == -1 then
     return
   end
-  pinned[buf] = pinned[buf] or {}
-  pinned[buf][start] = true
+  opened[buf] = opened[buf] or {}
+  opened[buf][start] = true
   if vim.fn.foldclosed(start) ~= -1 then
-    vim.api.nvim_win_set_cursor(0, { start, 0 })
-    vim.cmd("normal! zo")
+    fold_open(start)
   end
 end
 
---- <Tab>: toggle the fold under `lnum`. Opening pins it; closing un-pins
---- it. Pins persist across sends and streaming.
+--- <Tab>: toggle the fold under `lnum`. Opening records it as user-opened;
+--- closing forgets it. User opens persist across sends and streaming.
 function M.toggle(lnum)
   local buf = vim.api.nvim_get_current_buf()
   local start = vim.fn.foldclosed(lnum)
@@ -410,10 +438,9 @@ function M.toggle(lnum)
     return
   end
   if vim.fn.foldclosed(lnum) == -1 then
-    local pin = pinned[buf] or {}
-    pin[start] = nil
-    vim.api.nvim_win_set_cursor(0, { start, 0 })
-    vim.cmd("normal! zc")
+    local o = opened[buf] or {}
+    o[start] = nil
+    fold_close(start)
   else
     M.open(lnum)
   end
@@ -431,29 +458,38 @@ local function is_fold_opener(line)
 end
 
 --- Called by the send/stream path after appending `lines` to a session
---- buffer (never by user edits). If any line opens a new fold, re-apply
---- the view in every window showing the buffer: this clears the manual
---- foldopen that would otherwise leak into the new fold, then restores
---- the folds the user had opened (pins and native za/zo opens) plus the
---- auto-opened last assistant.
+--- buffer (never by user edits). If any line opens a new fold, reconcile
+--- the view in every window showing the buffer: close folds the append
+--- newly created that leaked open, fold the superseded live assistant, and
+--- keep the user-opened folds + live assistant open. Plain-text appends
+--- (no opener) change nothing, so streaming prose never touches folds.
 function M.after_append(buf, lines)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  local has_opener = false
   for _, l in ipairs(lines or {}) do
     if is_fold_opener(l) then
-      local levels = M.levels(buf)
-      local old_live = live_heading[buf]
-      if vim.tbl_contains(lines, "# @assistant") then
-        live_heading[buf] = find_live_heading(buf, levels)
-      end
-      for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-        reapply_window(w, buf, levels, old_live)
-      end
-      prev_openers[buf] = openers(levels)
-      return
+      has_opener = true
+      break
     end
   end
+  if not has_opener then
+    return
+  end
+  local levels = M.levels(buf)
+  local old_live = live_heading[buf]
+  local new_openers = openers(levels)
+  for lnum in pairs(prev_openers[buf] or {}) do
+    new_openers[lnum] = nil
+  end
+  if vim.tbl_contains(lines, "# @assistant") then
+    live_heading[buf] = find_live_heading(buf, levels)
+  end
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    reconcile_window(w, buf, levels, old_live, new_openers)
+  end
+  prev_openers[buf] = openers(levels)
 end
 
 -- ─── Message navigation ────────────────────────────────────────────────────

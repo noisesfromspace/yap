@@ -1,7 +1,7 @@
--- Native za/zo fold opens survive streaming: the manual-open capture in
--- reapply_window must preserve a fold opened with za (not just yap's <Tab>)
--- across structural appends, while a NEW fold streamed in afterwards still
--- adopts the view's foldlevel (does not inherit the manual open).
+-- Native za/zo fold opens survive streaming: the reconcile must preserve
+-- a fold opened with za (not just yap's <Tab>) across structural appends,
+-- while a NEW fold streamed in afterwards still adopts the view's foldlevel
+-- (does not inherit the manual open).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")

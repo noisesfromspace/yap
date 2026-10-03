@@ -828,17 +828,23 @@ An open fold STAYS open: it is tracked by its fold-start line, not a
 transient peek — whether it was opened with <Tab>, a navigation key, or
 plain za/zo. When the conversation structure advances — a new `# @role`
 heading, tool, thinking or error opener streams into the buffer — yap
-clears Neovim's manual fold state and re-opens only the folds that were
-already open beyond the view's default. That is what keeps a manual
-foldopen from leaking into folds created later (Neovim inherits a manual
-foldopen into child folds, so "open one level-2 fold" used to make
-everything underneath start opening): the new fold adopts the view's
-foldlevel, and the previously-opened folds come back exactly. Typing
-(user edits) still changes nothing.
+reconciles only what changed, WITHOUT clearing Neovim's manual fold
+state. The old zX-per-append approach closed every fold and re-opened a
+handful, which collapsed the view (cursor/scroll jumps) and flickered;
+instead each structural append only (1) closes folds the append newly
+created that leaked open — Neovim inherits a manual foldopen into
+same-or-deeper folds, so "open one tool" used to make every later tool
+arrive open — (2) folds the superseded live assistant, and (3) re-opens
+the user-opened folds and the live assistant. Plain-text appends change
+nothing, so streaming prose never touches folds, and the cursor and
+scroll position stay exactly where the user left them. Typing (user
+edits) likewise changes nothing.
 
 A view keypress (<leader>1..3) is an explicit reset: it clears every
-pin. Pins are keyed by line number, so they survive sends and streaming
-(sends only append); an edit that shifts a pin's line drops it.
+user-opened fold. Folds are keyed by line number, so they survive sends
+and streaming (sends only append); an edit that shifts a fold's line
+drops it. A send does NOT snap folds back to the view — manual opens and
+closes persist until you change the view.
 
 Navigation keymaps jump between headings, see |yap-keymaps|.
 
@@ -1062,13 +1068,17 @@ R10 View levels: <leader>1 folds all agent output except the last
     plain za/zo drill by opening a fold (non-exclusive): the open is
     keyed by its fold-start line and survives sends/streaming. On a
     structural append (heading, tool, thinking, error) the send path
-    clears Neovim's manual fold state (zX) and re-opens only the folds
-    that were open beyond the view's default, so a manual foldopen
-    can't leak into folds created later — the new fold adopts the
-    view's foldlevel and the opened folds come back exactly.
-    A view keypress clears all manual opens. Typing (user edits) still
-    changes nothing. The winbar Ⓕ chip shows the last APPLIED view,
-    not measured fold state (measuring made <leader>3 read Ⓕ0).
+    reconciles WITHOUT zX: it closes only the folds the append newly
+    created that leaked open (Neovim inherits a manual foldopen into
+    same-or-deeper folds), folds the superseded live assistant, and
+    re-opens the user-opened folds + live assistant. zX was dropped
+    because it collapsed the whole view and flickered every append;
+    plain-text appends now change nothing and the cursor/scroll stay
+    put. A view keypress clears all manual opens. Typing (user edits)
+    still changes nothing. A send no longer snaps folds back to the
+    view — manual opens AND closes persist until the view changes.
+    The winbar Ⓕ chip shows the last APPLIED view, not measured fold
+    state (measuring made <leader>3 read Ⓕ0).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the
