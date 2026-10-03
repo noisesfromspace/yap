@@ -3,7 +3,7 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 assert(type(require("harness.document").parse_buffer) == "function", "document module")
 assert(type(require("harness.template").template_names) == "function", "template module")
-assert(type(require("harness.stream").is_running) == "function", "stream module")
+assert(type(require("harness.state").is_running) == "function", "state module")
 local session = require("harness.session")
 
 -- 1. new buffer with a fake conversation

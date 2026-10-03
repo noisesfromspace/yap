@@ -89,8 +89,27 @@ M.config = {
 -- dropped); model lists rarely change between sessions.
 local models_cache = nil
 
+local state = require("harness.state")
+local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
 local paths = require("harness.path")
+local winbar = require("harness.winbar")
+
+M.winbar = winbar.winbar
+M.overview = winbar.overview
+
+-- Shared per-buffer state lives in harness.state; these aliases keep the
+-- orchestration code reading like the pre-split module. The winbar reads
+-- the same tables directly.
+local running = state.running
+local live = state.live
+local errors = state.errors
+local last_turn = state.last_turn
+local awaiting = state.awaiting
+
+local start_subagent
+local subagent_done = {}
+local subagent_children = {}
 
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
@@ -129,12 +148,6 @@ local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
 local fold = require("harness.fold")
 
---- The combo yap will send with: per-buffer vars (set by :Yap),
---- falling back to the global config.
-local function current_combo(buf)
-  return vim.b[buf].yap_provider or M.config.provider, vim.b[buf].yap_model or M.config.model
-end
-
 --- End line (0-based, exclusive) of the frontmatter block, or nil when
 --- the buffer has none. Only the model state lives there (see
 --- harness.frontmatter); token/cost totals stay in the winbar.
@@ -155,7 +168,7 @@ end
 --- the `models` history. Called only from new()/change_model() — never
 --- during a send (R7: sends only append).
 local function sync_frontmatter(buf)
-  local provider, model = current_combo(buf)
+  local provider, model = util.current_combo(buf)
   local combo = provider .. "/" .. model
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
@@ -175,407 +188,6 @@ local function sync_frontmatter(buf)
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
   end
 end
-
--- ─── Winbar (busy indicator, provider/model) ──────────────────────────────
-
-local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
-local spinner_tick = 0
-local spinner_timer = nil
-
--- Forward declarations: `running`, `live` and `drain_tail` are defined
--- with the send logic below.
-local running
-local live
-local drain_tail
--- Defined with the description stages below; send() calls it.
-local refresh_description
-local start_subagent
-local subagent_done = {}
-local subagent_children = {}
-
--- The winbar is a statusline: `%` starts a format item there, so any
--- literal `%` in segment text (the context-fill chip, a session title that
--- contains a percent sign) must be doubled. This runs on the content only —
--- the `%#…#` / `%*` highlight markers these helpers add are not escaped.
-local function esc(text)
-  return text:gsub("%%", "%%%%")
-end
-
-local function winbar_hl(text, group)
-  return "%#Yap" .. group .. "#" .. esc(text) .. "%*"
-end
-
--- Island segments share one raised background (`YapIsland`); each chip
--- keeps its own foreground via `YapIsland<Group>`. `%*` resets to the
--- WinBar default, so every island piece re-applies its own highlight.
-local function island_hl(text, group)
-  return "%#YapIsland" .. (group or "") .. "#" .. esc(text) .. "%*"
-end
-
--- Last backend error per buffer; shown in the winbar until the next send.
-local stream = require("harness.stream")
-local errors = stream.errors
-
--- The agent is awaiting the user's next prompt: set when a turn
--- completes (a `# @user` heading is appended), cleared when the user
--- sends. Drives the herdr-style "needs you" winbar state. A UI hint,
--- not conversation state (R1) — same drift tradeoff as yap_usage.
-local awaiting = {}
-
--- Data of the last completed turn per buffer (the binary's `turn_end`
--- event), handed to the User YapTurnDone autocmd. Ephemeral.
-local last_turn = stream.last_turn
-
--- Other yap buffers awaiting the user's reply: the count for the
--- global overview chip. A tiny module map, so no buffer scans on redraw
--- (R10); stale entries are skipped via the validity check.
-local function awaiting_others(buf)
-  local n = 0
-  for b in pairs(awaiting) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
-      n = n + 1
-    end
-  end
-  return n
-end
-
--- Other yap buffers with an in-flight request: the `▶N` running rollup,
--- mirroring awaiting_others so both chips skip the current buffer and
--- stale entries.
-local function running_others(buf)
-  local n = 0
-  for b in pairs(running) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
-      n = n + 1
-    end
-  end
-  return n
-end
-
--- Seed the awaiting hint for a reopened session from its content (R1):
--- it awaits the next reply when it has assistant history and ends on a
--- `# @user` heading. One-time scan at open, never on redraw.
-local function seed_awaiting(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local has_asst = false
-  for _, l in ipairs(lines) do
-    if l == "# @assistant" then
-      has_asst = true
-      break
-    end
-  end
-  if not has_asst then
-    awaiting[buf] = nil
-    return
-  end
-  awaiting[buf] = nil
-  for i = #lines, 1, -1 do
-    if lines[i] == "# @user" then
-      awaiting[buf] = true
-      return
-    elseif lines[i] == "# @assistant" then
-      return
-    end
-  end
-end
-
-local function fmt_tokens(n)
-  local value, suffix
-  if n >= 1000000 then
-    value, suffix = n / 1000000, "m"
-  elseif n >= 1000 then
-    value, suffix = n / 1000, "k"
-  else
-    return tostring(n)
-  end
-  if value == math.floor(value) then
-    return string.format("%d%s", value, suffix)
-  end
-  return string.format("%.1f%s", value, suffix)
-end
-
---- The session description for the winbar. A bounded read of the short
---- frontmatter block, so hand edits show up on the next redraw (the buffer
---- stays the source of truth); truncate to `max` display columns so a long
---- phrase cannot crowd out the right-hand usage/state chips.
-local function winbar_description(buf, max)
-  max = max or 40
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
-  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
-    return nil
-  end
-  local fm = frontmatter.parse(lines)
-  local d = fm and fm.description
-  if not d or d == "" then
-    return nil
-  end
-  if vim.fn.strdisplaywidth(d) > max then
-    local chars = math.min(vim.fn.strchars(d), math.max(1, max - 1))
-    d = vim.fn.strcharpart(d, 0, chars)
-    while vim.fn.strdisplaywidth(d .. "…") > max and chars > 1 do
-      chars = chars - 1
-      d = vim.fn.strcharpart(d, 0, chars)
-    end
-    d = d .. "…"
-  end
-  return d
-end
-
--- Layout: a busy beacon and a global-session island on the left, then the
--- current session's title/model/fold view; activity on the right — usage
--- totals first, then the state glyph pinned to the far right edge so it
--- never moves as numbers grow. The bar is width-aware: as the window
--- narrows it drops the state glyph first (busy is duplicated by the left
--- beacon), then the model/fold cluster, then collapses the token phrase
--- (in→out), and finally shrinks the description. The island and the two
--- prices are the last things standing.
-local function render_winbar(buf)
-  local provider, model = current_combo(buf)
-  local ok_w, width = pcall(vim.api.nvim_win_get_width, 0)
-  if not ok_w or not width or width <= 0 then
-    width = 999 -- no window context: render the full bar
-  end
-
-  local function seg(text, group, island)
-    return { text = text, group = group, island = island }
-  end
-  local function render_seg(s)
-    if s.island then
-      return island_hl(s.text, s.group)
-    end
-    return winbar_hl(s.text, s.group or "Idle")
-  end
-  local function width_of(segs)
-    local n = 0
-    for _, s in ipairs(segs) do
-      n = n + vim.fn.strdisplaywidth(s.text)
-    end
-    return n
-  end
-
-  -- Mandatory left cluster (never dropped; the description shrinks).
-  local function left_segments(desc_max)
-    local left = {}
-    if running and running[buf] then
-      left[#left + 1] = seg(" ▶ ", "Busy")
-    end
-    local running_others_n = running_others(buf)
-    local others = awaiting_others(buf)
-    if running_others_n > 0 or others > 0 then
-      left[#left + 1] = seg(" ", nil, true)
-      if running_others_n > 0 then
-        left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
-      end
-      if running_others_n > 0 and others > 0 then
-        left[#left + 1] = seg(" │ ", nil, true)
-      end
-      if others > 0 then
-        left[#left + 1] = seg("◉" .. others, "Needs", true)
-      end
-      left[#left + 1] = seg(" ", nil, true)
-    end
-    local desc = winbar_description(buf, desc_max)
-    if desc then
-      left[#left + 1] = seg(" " .. desc, "Description")
-      left[#left + 1] = seg(" · ", "Idle")
-    end
-    return left
-  end
-
-  -- Droppable middle: provider/model and the applied fold view.
-  local function mid_segments()
-    return {
-      seg(provider .. "/" .. model, "Model"),
-      seg(" · Ⓕ" .. require("harness.fold").level() .. " ", "Idle"),
-    }
-  end
-
-  -- Usage/cost cluster. mode: "full" (tokens + both prices), "compact"
-  -- (in→out tokens + both prices), "prices" (both prices only). The first
-  -- $ is this buffer's accumulated cost; Σ is the all-time session cost
-  -- from the audit log. Returns a list of segments so the context-fill
-  -- chip can carry its own highlight.
-  local function usage_segment(mode)
-    local items = {} -- { text, group }
-    local u = vim.b[buf].yap_usage
-    local s = vim.b[buf].yap_session_usage
-    if u and (u.prompt > 0 or u.completion > 0) and mode ~= "prices" then
-      if mode == "full" then
-        items[#items + 1] = { fmt_tokens(u.prompt) .. " in · " .. fmt_tokens(u.completion) .. " out", "Idle" }
-      else
-        items[#items + 1] = { fmt_tokens(u.prompt) .. "→" .. fmt_tokens(u.completion), "Idle" }
-      end
-    end
-    -- Context fill: the last turn's prompt tokens against the model's
-    -- context window (both carried by the turn_end event). A near-full
-    -- window is a safety signal, so it gets the warning color.
-    local t = last_turn[buf]
-    local ctx = t and tonumber(t.context_window) or nil
-    if ctx and ctx > 0 and t.prompt and t.prompt > 0 then
-      local pct = math.floor(t.prompt / ctx * 100 + 0.5)
-      items[#items + 1] = { pct .. "% ctx", pct >= 90 and "Needs" or "Idle" }
-    end
-    if u and u.cost then
-      items[#items + 1] = { string.format("$%.4g", u.cost), "Idle" }
-    end
-    if s and s.cost then
-      items[#items + 1] = { (mode == "full" and "total " or "Σ") .. string.format("$%.4g", s.cost), "Idle" }
-    end
-    if #items == 0 then
-      return nil
-    end
-    local segs = { seg(" " .. items[1][1], items[1][2]) }
-    for i = 2, #items do
-      segs[#segs + 1] = seg(" · " .. items[i][1], items[i][2])
-    end
-    segs[#segs].text = segs[#segs].text .. " "
-    return segs
-  end
-
-  local function state_segment()
-    if running and running[buf] then
-      local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
-      local l = live and live[buf]
-      local state = l and (frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s") or (frame .. " busy")
-      return seg(" " .. state .. " ", "Busy")
-    elseif errors[buf] then
-      return seg(" ✗ error ", "Error")
-    elseif awaiting[buf] then
-      return seg(" ◉ waiting ", "Needs")
-    else
-      return seg(" ○ idle ", "Idle")
-    end
-  end
-
-  local function render(left, mid, usage, state)
-    local parts = {}
-    for _, s in ipairs(left) do
-      parts[#parts + 1] = render_seg(s)
-    end
-    for _, s in ipairs(mid) do
-      parts[#parts + 1] = render_seg(s)
-    end
-    parts[#parts + 1] = "%="
-    if usage then
-      for _, s in ipairs(usage) do
-        parts[#parts + 1] = render_seg(s)
-      end
-    end
-    if state then
-      parts[#parts + 1] = render_seg(state)
-    end
-    return table.concat(parts, "")
-  end
-
-  -- Degrade until the bar fits, dropping the least important parts first:
-  -- state glyph → model/fold → token phrase → description. Prices and the
-  -- island survive; past that the bar clips rather than hiding prices.
-  local desc_max, mode, show_mid, show_state = 40, "full", true, true
-  while true do
-    local left = left_segments(desc_max)
-    local mid = show_mid and mid_segments() or {}
-    local usage = usage_segment(mode)
-    local state = show_state and state_segment() or nil
-    local total = width_of(left) + width_of(mid)
-      + (usage and width_of(usage) or 0)
-      + (state and width_of({ state }) or 0)
-    if total <= width then
-      return render(left, mid, usage, state)
-    end
-    if show_state then
-      show_state = false
-    elseif show_mid then
-      show_mid = false
-    elseif mode == "full" then
-      mode = "compact"
-    elseif mode == "compact" then
-      mode = "prices"
-    elseif desc_max > 15 then
-      desc_max = desc_max - 5
-    else
-      return render(left, mid, usage, state) -- smallest layout; let it clip
-    end
-  end
-end
-
---- Winbar expression: the winbar is set to a self-evaluating `%!` call of
---- this function, so it always reflects current buffer state on redraw —
---- no imperative refresh calls anywhere.
-function M.winbar(buf)
-  buf = buf or tonumber(vim.g.actual_curbuf) or vim.api.nvim_get_current_buf()
-  return render_winbar(buf)
-end
-
---- The herdr-style rollup for a statusline/tabline: `◉N` when N OTHER
---- yap buffers await the user's reply, "" otherwise. The winbar shows
---- the same chip, so this is the reusable segment for global visibility.
-function M.overview(buf)
-  buf = buf or vim.api.nvim_get_current_buf()
-  local n = awaiting_others(buf)
-  return n > 0 and ("◉" .. n) or ""
-end
-
-local function spinner_stop_if_idle()
-  if spinner_timer and not next(running) then
-    spinner_timer:stop()
-    spinner_timer:close()
-    spinner_timer = nil
-  end
-end
-
-local function spinner_start()
-  if spinner_timer then
-    return
-  end
-  spinner_timer = vim.uv.new_timer()
-  spinner_timer:start(
-    0,
-    100,
-    vim.schedule_wrap(function()
-      spinner_tick = spinner_tick + 1
-      for b in pairs(running) do
-        drain_tail(b) -- pull new tool output into the tail buffers
-      end
-      vim.cmd.redrawstatus() -- re-evaluates the winbar expression
-      spinner_stop_if_idle()
-    end)
-  )
-end
-
-local function define_winbar_hl()
-  local links = {
-    Model = "Keyword",
-    Description = "Title",
-    Busy = "DiagnosticOk",
-    Idle = "Comment",
-    Error = "DiagnosticError",
-    Needs = "DiagnosticWarn",
-  }
-  for name, link in pairs(links) do
-    vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
-  end
-
-  -- The island is a raised pill: a theme-aware background (NormalFloat,
-  -- falling back to Visual) with the chip foregrounds pulled from the
-  -- linked groups above so user `:hi YapBusy` overrides still win.
-  local function attr(group, key)
-    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = group, link = false })
-    if ok and hl and hl[key] then
-      return hl[key]
-    end
-  end
-  local bg = attr("NormalFloat", "bg") or attr("Visual", "bg")
-  local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  vim.api.nvim_set_hl(0, "YapIsland", { default = true, fg = fg, bg = bg })
-  vim.api.nvim_set_hl(0, "YapIslandBusy", { default = true, fg = attr("YapBusy", "fg"), bg = bg })
-  vim.api.nvim_set_hl(0, "YapIslandNeeds", { default = true, fg = attr("YapNeeds", "fg"), bg = bg })
-end
-
-define_winbar_hl()
-vim.api.nvim_create_autocmd("ColorScheme", {
-  group = vim.api.nvim_create_augroup("YapWinbarHl", { clear = true }),
-  callback = define_winbar_hl,
-})
 
 -- Conversation document parsing/appending lives in harness.document.
 
@@ -614,24 +226,16 @@ function M.template_names()
   return require("harness.template").template_names()
 end
 function M.is_running(buf)
-  return stream.is_running(buf)
+  return state.is_running(buf)
 end
 
 -- ─── Send ──────────────────────────────────────────────────────────────────
-
--- In-flight jobs per buffer (vim.SystemObj can't live in vim.b).
-running = stream.running
 
 -- One persistent serve backend per chat buffer, so several sessions can
 -- stream at once. Each backend keeps its own tool state (SSH connections
 -- above all) for the life of its buffer; a stopped process is restarted
 -- on the next send.
 local servers = {} -- buf → vim.SystemObj
-
--- Live tool per buffer while it runs: { name, log, since }. Set from
--- the binary's `yap:event` stderr lines (bash announces the temp file
--- its output streams into), cleared on tool_end / process exit.
-live = stream.live
 
 -- Per-chat-buffer persistent tail: every audit event is rendered into
 -- ONE unlisted buffer, yap://<session>-tail, opened by :YapLive. The
@@ -848,7 +452,7 @@ local LIVE_OUTPUT_CAP = 256 * 1024
 --- buffer (called on the spinner tick, on tool_end, and on process
 --- exit). Defined via the forward declaration: the spinner ticks
 --- before this section runs.
-drain_tail = function(buf)
+local function drain_tail(buf)
   local t, l = tails[buf], live[buf]
   if not t or not l then
     return
@@ -880,6 +484,8 @@ drain_tail = function(buf)
     append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(LIVE_OUTPUT_CAP, stat.size - LIVE_OUTPUT_CAP) })
   end
 end
+
+state.drain_tail = drain_tail
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
 local function handle_event(buf, json_line)
@@ -1423,7 +1029,7 @@ local description_seq = {}
 ---   "user"   — smallest model, the latest user message only (runs on send)
 ---   "answer" — bigger model, the whole session as a final title (runs once
 ---              the turn is back on the user block)
-refresh_description = function(buf, kind, messages)
+local function refresh_description(buf, kind, messages)
   local combo, system, content
   if kind == "user" then
     combo = M.config.description_model
@@ -1559,7 +1165,7 @@ function M.send(buf)
   -- provider/model come from the buffer vars (set by :Yap /
   -- :YapChangeModel), falling back to config; sync them so the winbar
   -- and this send agree.
-  local provider, model = current_combo(buf)
+  local provider, model = util.current_combo(buf)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
 
@@ -1586,7 +1192,7 @@ function M.send(buf)
   -- is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
   -- the new assistant block opens by itself in every view.
-  spinner_start()
+  winbar.spinner_start()
 
   local process = servers[buf]
   if not process then
@@ -1619,7 +1225,7 @@ function M.send(buf)
         live[buf] = nil
         pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
-      spinner_stop_if_idle()
+      winbar.spinner_stop_if_idle()
       repair_stream_tail(buf)
       if not result.ok then
         local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
@@ -1736,7 +1342,7 @@ function M.send(buf)
       end
     end))
     if not ok then
-      spinner_stop_if_idle()
+      winbar.spinner_stop_if_idle()
       report_error(buf, tostring(started))
       close_stream(buf)
       return
@@ -1765,7 +1371,7 @@ function M.stop(buf)
     handle:kill(15) -- the exit callback closes the interrupted turn
     servers[buf] = nil
     running[buf] = nil
-    spinner_stop_if_idle()
+    winbar.spinner_stop_if_idle()
     drain_tail(buf)
     local l = live[buf]
     if l then live[buf] = nil; pcall(os.remove, l.log) end
@@ -1885,6 +1491,10 @@ end
 
 -- A child has an ordinary session file and its own backend. The parent tool
 -- waits in Go; a reply line to its serve process releases that tool call.
+-- The tools a subagent role may request; role files also use the aliases
+-- below (grep/find/webfetch) which are mapped onto these canonical names.
+local ALLOWED_TOOLS = { "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
+
 start_subagent = function(parent, ev)
   local function reply(text)
     local process = servers[parent]
@@ -1910,19 +1520,19 @@ start_subagent = function(parent, ev)
   end
   if not closing then reply("error: invalid role " .. role_file); return end
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
-  local provider, model = current_combo(parent)
+  local provider, model = util.current_combo(parent)
   -- Pi roles commonly use bare model names; Yap cannot infer their provider.
   -- Only a provider/model pair overrides the known-working parent combo.
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
     if p then provider, model = p, m end
   end
-  local allowed = { "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
+  local allowed = vim.deepcopy(ALLOWED_TOOLS)
   if header.tools and header.tools ~= "" then
     allowed = {}
     local aliases = { grep = "search", find = "glob", webfetch = "fetch" }
     local known = {}
-    for _, name in ipairs({ "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }) do
+    for _, name in ipairs(ALLOWED_TOOLS) do
       known[name] = true
     end
     for name in header.tools:gmatch("[^,%s]+") do
@@ -1994,7 +1604,7 @@ local function adopt(buf, path)
   end
   -- A reopened session that ended on `# @user` awaits the next reply;
   -- seed the overview hint so it counts before its first send here.
-  seed_awaiting(buf)
+  winbar.seed_awaiting(buf)
   setup_buffer(buf)
   ensure_tail(buf) -- restore the live view from the audit log (create if missing)
   seed_session_usage(buf) -- durable all-time totals from the audit log
@@ -2278,7 +1888,7 @@ function M.setup(opts)
       local t = data.turn or {}
       local msg = t.model and ("yap: %s done"):format(t.model) or "yap: turn done"
       if t.prompt or t.completion then
-        msg = msg .. (" · %s in · %s out"):format(fmt_tokens(t.prompt or 0), fmt_tokens(t.completion or 0))
+        msg = msg .. (" · %s in · %s out"):format(util.fmt_tokens(t.prompt or 0), util.fmt_tokens(t.completion or 0))
       end
       if t.cost then
         msg = msg .. (" · $%.4g"):format(t.cost)

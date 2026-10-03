@@ -25,7 +25,7 @@ local wb = winbar_at(80)
 assert(wb:match("mock/m1"), "wide winbar missing model: " .. wb)
 assert(wb:match("1.5k in · 42 out"), "wide winbar missing full tokens: " .. wb)
 assert(wb:match("%$0.00342"), "wide winbar missing buffer cost: " .. wb)
-assert(wb:match("session %$0.51"), "wide winbar missing session cost: " .. wb)
+assert(wb:match("total %$0.51"), "wide winbar missing session cost: " .. wb)
 assert(wb:match("○ idle"), "wide winbar missing state: " .. wb)
 
 -- Narrow: state glyph (busy is duplicated on the left) and model/fold go

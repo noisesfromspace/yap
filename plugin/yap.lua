@@ -64,10 +64,11 @@ end, {
 
 vim.api.nvim_create_user_command("YapReload", function()
   local old_config = require("harness").config
-  package.loaded.harness = nil
-  package.loaded["harness.session"] = nil
-  package.loaded["harness.fold"] = nil
-  package.loaded["harness.frontmatter"] = nil
+  for k in pairs(package.loaded) do
+    if k == "harness" or k:match("^harness%.") then
+      package.loaded[k] = nil
+    end
+  end
   require("harness").setup(old_config)
   local src = debug.getinfo(require("harness").send, "S").source:sub(2)
   vim.notify("yap: reloaded from " .. src)
