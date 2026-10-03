@@ -92,7 +92,6 @@ assert(fold.level() == 2, "re-apply changed the applied view level")
 -- survives structural appends, while the previous live reply folds when
 -- the next assistant starts.
 fold.set_view_level(1)
-vim.b[buf].yap_live = true
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @assistant", "", "live answer", "" })
 fold.after_append(buf, { "# @assistant", "" })
 local live_reply = 26

@@ -93,11 +93,11 @@ assert(fold.text(opener, 14) == "▸ yap: thinking (4 lines)", "foldtext: " .. f
 assert(fold.text(tool, 32) == "▸ tool: write (15 lines)", "foldtext: " .. fold.text(tool, 32))
 assert(fold.text(single, 38) == "▸ tool: bash (3 lines)", "foldtext: " .. fold.text(single, 38))
 
--- view 3 unfolds everything but the system prompt, deterministically
+-- view 3 unfolds everything including the system prompt, deterministically
 fold.set_view_level(3)
 assert(vim.fn.foldclosed(opener) == -1, "view 3 opens thinking")
 assert(vim.fn.foldclosed(tool) == -1, "view 3 opens tool region")
-assert(vim.fn.foldclosed(1) == 1, "view 3 opens the system prompt")
+assert(vim.fn.foldclosed(1) == -1, "view 3 unfolds the system prompt")
 assert(fold.level() == 3, "view 3 reports level 3")
 
 -- view 2 from mixed state: close thinking only, open the tool fold, reapply
@@ -108,11 +108,12 @@ assert(vim.fn.foldclosed(opener) == opener, "view 2 refolds thinking")
 assert(vim.fn.foldclosed(tool) == tool, "view 2 refolds tool region")
 assert(vim.fn.foldclosed(single) == single, "view 2 refolds single-line tool region")
 
--- view 1 hides the whole assistant block including its regions
+-- view 1 shows the last assistant, but its thinking/tool regions stay folded
 fold.set_view_level(1)
-assert(vim.fn.foldclosed(9) == 9, "view 1 folds assistant")
+assert(vim.fn.foldclosed(9) == -1, "view 1 keeps last assistant open")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
-assert(vim.fn.foldlevel(opener) == 3, "level-3 fold under folded block still level 3")
+assert(vim.fn.foldclosed(opener) == opener, "view 1 folds thinking inside the open assistant")
+assert(vim.fn.foldlevel(opener) == 3, "thinking stays level 3 under the open block")
 
 -- fold state is STATIC between view keypresses: manually open a region
 -- with za, then type a new message — nothing may move

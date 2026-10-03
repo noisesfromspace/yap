@@ -241,6 +241,13 @@ end
 -- on the next send.
 local servers = {} -- buf → vim.SystemObj
 
+-- buf → flush function: flushes streamed stdout that has been buffered for
+-- a redraw tick into the buffer. The send path coalesces per-token stdout
+-- flushes into one edit per ~STREAM_FLUSH_MS so a fast model streaming
+-- many tokens a second does not force Neovim to recompute expr folds once
+-- per token (O(n) per edit on large sessions).
+local stream_flush = {}
+
 -- Per-chat-buffer persistent tail: every audit event is rendered into
 -- ONE unlisted buffer, yap://<session>-tail, opened by :YapLive. The
 -- tail is not a second log — it is the live, human-readable rendering
@@ -1187,12 +1194,9 @@ function M.send(buf)
   local function follow_tail()
     document.follow_windows(buf, follow, expected_follow)
   end
-  -- Mark that a reply has streamed here: the folder keeps the latest
-  -- assistant block open in view 1 so the reply is visible as it arrives
-  -- (R10: the new assistant block opens by itself); older replies fold.
-  -- Set before the append so the after_append fold re-apply already sees
-  -- this block as live (level 1) rather than folding it once in view 1.
-  vim.b[buf].yap_live = true
+  -- The folder keeps the last assistant block open in view 1 so the reply
+  -- is visible as it arrives (R10: the new assistant block opens by itself);
+  -- older replies fold. This append makes it the last assistant.
   document.append_block(buf, { "# @assistant", "" })
   fold.after_append(buf, { "# @assistant", "" })
   follow_tail()
@@ -1208,12 +1212,41 @@ function M.send(buf)
     local stderr_partial = ""
     local stderr_chunks = {}
     local status, barrier
-    local function append(data)
-      if data == "" then return end
+    -- Coalesce rapid per-token stdout flushes into one buffer edit per
+    -- ~STREAM_FLUSH_MS: every edit makes Neovim recompute expr folds for the
+    -- whole buffer (O(n)), so batching keeps a fast stream smooth on large
+    -- sessions instead of stalling once per token.
+    local STREAM_FLUSH_MS = 30
+    local pending = ""
+    local flush_timer = nil
+    local function flush_pending()
+      if pending == "" then
+        return
+      end
+      local data = pending
+      pending = ""
       sync_followers()
       document.append_text(buf, data)
       fold.after_append(buf, vim.split(data, "\n", { plain = true }))
       follow_tail()
+    end
+    local on_flush_tick = vim.schedule_wrap(flush_pending)
+    local function finish_flush()
+      if flush_timer then
+        flush_timer:stop()
+        flush_timer:close()
+        flush_timer = nil
+      end
+      flush_pending()
+    end
+    stream_flush[buf] = finish_flush
+    local function append(data)
+      if data == "" then return end
+      pending = pending .. data
+      if not flush_timer then
+        flush_timer = vim.uv.new_timer()
+      end
+      flush_timer:start(STREAM_FLUSH_MS, 0, on_flush_tick)
     end
     local function route_event(ev)
       sync_followers()
@@ -1222,6 +1255,7 @@ function M.send(buf)
     end
     local function complete(result)
       status, barrier = nil, false
+      finish_flush()
       sync_followers()
       running[buf] = nil
       stderr_chunks = {}
@@ -1359,6 +1393,7 @@ function M.send(buf)
     end))
     if not ok then
       winbar.spinner_stop_if_idle()
+      stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
       return
@@ -1391,6 +1426,11 @@ function M.stop(buf)
     drain_tail(buf)
     local l = live[buf]
     if l then live[buf] = nil; pcall(os.remove, l.log) end
+    local f = stream_flush[buf]
+    if f then
+      f()
+      stream_flush[buf] = nil
+    end
     repair_stream_tail(buf)
     close_stream(buf)
   end

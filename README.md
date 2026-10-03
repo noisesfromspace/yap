@@ -136,9 +136,9 @@ on the right (with a `NN% ctx` context-fill chip after the first turn),
 followed by the trailing state glyph: busy / error / `◉
 waiting` (the agent awaits your next prompt) / idle. A turn finishing in a
 background chat fires `vim.notify` and a `User YapTurnDone` autocmd you can
-hook. `<leader>1` folds all agent output (user prompts stay open), `<leader>2`
-folds tool calls and thinking (default when a session opens), `<leader>3`
-unfolds everything.
+hook. `<leader>1` folds all agent output except the last reply (user prompts
+and the latest assistant stay open), `<leader>2` folds tool calls and thinking
+(default when a session opens), `<leader>3` unfolds everything.
 
 # Rendering
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)

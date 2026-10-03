@@ -33,11 +33,11 @@ assert(vim.fn.foldclosed(9) == -1, "assistant should be open by default")
 assert(vim.fn.foldclosed(14) == -1, "user 2 should be open")
 assert(fold.level() == 2, "default view is 2")
 
--- view 1 reapplied: same state
+-- view 1 reapplied: only user messages and the LAST assistant open
 fold.set_view_level(1)
 assert(vim.fn.foldclosed(1) == 1, "view 1 folds system")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
-assert(vim.fn.foldclosed(9) == 9, "view 1 folds assistant")
+assert(vim.fn.foldclosed(9) == -1, "view 1 keeps last assistant open")
 assert(vim.fn.foldclosed(14) == -1, "view 1 keeps last user open")
 assert(fold.level() == 1, "view 1 reports level 1")
 
@@ -53,9 +53,9 @@ assert(vim.fn.foldclosed(1) == 1, "view 2 opens the system prompt")
 assert(vim.fn.foldclosed(9) == -1, "view 2 folds assistant")
 assert(fold.level() == 2, "view 2 reports level 2")
 
--- view 3: everything open except the system prompt
+-- view 3: everything open including the system prompt
 fold.set_view_level(3)
-assert(vim.fn.foldclosed(1) == 1, "view 3 opens the system prompt")
+assert(vim.fn.foldclosed(1) == -1, "view 3 unfolds the system prompt")
 assert(vim.fn.foldclosed(9) == -1, "view 3 folds assistant")
 assert(fold.level() == 3, "view 3 reports level 3")
 

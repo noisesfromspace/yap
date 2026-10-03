@@ -192,7 +192,7 @@ below.
                         removes it entirely.
 
   View 1 is the default for opened session buffers; the system prompt
-  stays folded in every view. See |yap-folding|.
+  stays folded in views 1 and 2. See |yap-folding|.
 
 ==============================================================================
 4. CONFIGURATION                                        *yap-configuration*
@@ -798,22 +798,25 @@ and error comment regions fold likewise.
 Three views, bound to <leader>1..3, each applied unconditionally so a
 keypress always lands on the same state:
 
-  <leader>1   agent output folded — only user prompts stay open
+  <leader>1   only user prompts and the last assistant stay open
   <leader>2   conversation open, tool calls and thinking folded (default)
   <leader>3   everything unfolded
 
-The system prompt is reference material: it stays folded in EVERY view
-until opened manually (za).
+The system prompt is reference material: it stays folded in views 1 and
+2 and opens with everything else in view 3 (or earlier with za).
 
 The applied view shows in the winbar (`Ⓕ1`-`Ⓕ3`), see |yap-winbar|.
 View 2 is applied once when a session buffer is opened. Fold levels are
-role-dependent (user 1, assistant 2, tool/thinking 3, system 4), so the
+role-dependent (user 1, assistant 2, tool/thinking/system 3), so the
 three views are pure 'foldlevel' 1/2/3 with no manual foldclose: manual
 closes combined with expr folds made Neovim re-evaluate every fold on
-each edit — hundreds of ms per keystroke on a large session. A send
-needs no fold commands at all: the new assistant block opens by itself,
-streamed tool regions appear folded in views 1/2, and the next prompt is
-always open.
+each edit — hundreds of ms per keystroke on a large session. The LAST
+assistant is additionally auto-opened in view 1 (a manual foldopen
+re-applied after each structural append), so the latest reply stays
+visible while older replies fold; streamed tool regions appear folded in
+views 1/2, and the next prompt is always open. Levels are kept monotonic
+(a tool is always exactly one deeper than its enclosing assistant) so
+Neovim's fold tree stays valid and za/zo behave predictably.
 
 Above the view, <Tab> and the block-navigation keys DRILL: <Tab> opens
 the fold under the cursor persistently (pins it) or closes it again;
@@ -821,15 +824,17 @@ the fold under the cursor persistently (pins it) or closes it again;
 non-exclusive — opening one fold leaves previously opened folds alone.
 ]m/]u/]a move at message granularity without opening anything.
 
-An open fold STAYS open: it is a pin, tracked by its fold-start line,
-not a transient peek. When the conversation structure advances — a new
-`# @role` heading, tool, thinking or error opener streams into the
-buffer — yap clears Neovim's manual fold state and re-opens only the
-pins. That is what keeps a manual foldopen from leaking into folds
-created later (Neovim inherits a manual foldopen into child folds, so
-"open one level-2 fold" used to make everything underneath start
-opening): the new fold adopts the view's foldlevel, and the pins come
-back exactly. Typing (user edits) still changes nothing.
+An open fold STAYS open: it is tracked by its fold-start line, not a
+transient peek — whether it was opened with <Tab>, a navigation key, or
+plain za/zo. When the conversation structure advances — a new `# @role`
+heading, tool, thinking or error opener streams into the buffer — yap
+clears Neovim's manual fold state and re-opens only the folds that were
+already open beyond the view's default. That is what keeps a manual
+foldopen from leaking into folds created later (Neovim inherits a manual
+foldopen into child folds, so "open one level-2 fold" used to make
+everything underneath start opening): the new fold adopts the view's
+foldlevel, and the previously-opened folds come back exactly. Typing
+(user edits) still changes nothing.
 
 A view keypress (<leader>1..3) is an explicit reset: it clears every
 pin. Pins are keyed by line number, so they survive sends and streaming
@@ -1038,26 +1043,30 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     (record). Spawn failures of the binary are caught and reported the
     same way.
 
-R10 View levels: <leader>1 folds all agent output (user prompts stay
-    open), <leader>2 folds tool calls and thinking only, <leader>3
-    unfolds everything; the system prompt stays folded in every view
-    until opened manually. Fold levels are role-dependent — user
-    messages 1, assistant messages 2, tool/thinking/error regions 3,
-    the system prompt 4. One display-only exception keeps the latest
-    assistant block in a buffer that has sent a turn at level 1, so its
-    reply remains visible in view 1 while older assistant blocks stay at
-    level 2. The three views themselves are still pure 'foldlevel'
-    (1, 2, 3) with no manual foldclose: manual closes plus expr folds
-    made Neovim re-evaluate every fold on each edit (hundreds of ms
-    per keystroke on a large session). View 2 is applied ONLY when a
-    session buffer is opened. <Tab> and the block-navigation keys
-    drill by pinning a fold open (non-exclusive): the pin is keyed by
-    its fold-start line and survives sends/streaming. On a structural
-    append (heading, tool, thinking, error) the send path clears
-    Neovim's manual fold state (zX) and re-opens only the pins, so a
-    manual foldopen can't leak into folds created later — the new
-    fold adopts the view's foldlevel and the pins come back exactly.
-    A view keypress clears all pins. Typing (user edits) still
+R10 View levels: <leader>1 folds all agent output except the last
+    assistant (user prompts and the latest reply stay open), <leader>2
+    folds tool calls and thinking only, <leader>3 unfolds everything;
+    the system prompt stays folded in views 1 and 2 and opens in
+    view 3. Fold levels are role-dependent — user messages 1,
+    assistant messages 2, tool/thinking/error regions and the system
+    prompt 3. The LAST assistant is auto-opened in view 1 (a manual
+    foldopen re-applied after each structural append) so the latest
+    reply remains visible while older assistant blocks stay folded;
+    this replaces the old level-demotion trick, which produced a
+    >1 → >3 jump that corrupted Neovim's fold tree and broke za/zo on
+    nested tool folds. The three views themselves are still pure
+    'foldlevel' (1, 2, 3) with no manual foldclose: manual closes plus
+    expr folds made Neovim re-evaluate every fold on each edit (hundreds
+    of ms per keystroke on a large session). View 2 is applied ONLY when
+    a session buffer is opened. <Tab>, the block-navigation keys and
+    plain za/zo drill by opening a fold (non-exclusive): the open is
+    keyed by its fold-start line and survives sends/streaming. On a
+    structural append (heading, tool, thinking, error) the send path
+    clears Neovim's manual fold state (zX) and re-opens only the folds
+    that were open beyond the view's default, so a manual foldopen
+    can't leak into folds created later — the new fold adopts the
+    view's foldlevel and the opened folds come back exactly.
+    A view keypress clears all manual opens. Typing (user edits) still
     changes nothing. The winbar Ⓕ chip shows the last APPLIED view,
     not measured fold state (measuring made <leader>3 read Ⓕ0).
 
