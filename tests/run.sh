@@ -87,6 +87,7 @@ run yap_scratch_send_test 18132 mock_slow.py
 run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
 run yap_toolparse_test 18133 mock_tool.py
+run yap_close_session_test 18142 mock_close.py
 run yap_e2e_livetool 18141 mock_stream.py
 run yap_e2e_streamfold 18135 mock_write.py
 run yap_audit_test 18135 mock_write.py

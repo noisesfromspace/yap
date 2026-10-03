@@ -122,6 +122,10 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   locations, e.g. review findings. Each call pushes a new list, so previous
   ones stay reachable with `:colder` / `:cnewer`. Reopening a saved session
   doesn't re-run it.
+- The agent's `close_session` tool closes the buffer once the turn has
+  finished streaming and the session file has been saved — so "close the
+  session when done" works as a tool call. The file is kept, so it stays
+  resumable via `:YapSessions`.
 
 The winbar leads with a `▶` busy beacon while the current session is
 streaming, then a rollup of your other sessions: `▶N` streaming and `◉N`

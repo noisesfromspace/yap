@@ -110,6 +110,10 @@ local awaiting = state.awaiting
 local start_subagent
 local subagent_done = {}
 local subagent_children = {}
+-- close_session is a request-scoped frontend side effect (like quickfix):
+-- the agent asked to end the session, so the buffer is wiped once the turn
+-- has fully completed and the session file has been saved.
+local close_after_turn = {}
 
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
@@ -531,6 +535,10 @@ local function handle_event(buf, json_line)
         -- preserving the previous one for :colder/:cnewer.
         vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
       end
+    elseif ev.name == "close_session" then
+      -- Defer to turn completion so the reply streams out and the session
+      -- file is saved before the buffer is wiped (complete() below).
+      close_after_turn[buf] = true
     end
     append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
@@ -1274,6 +1282,14 @@ function M.send(buf)
       })
       if compact then
         M.compact_offer(buf)
+      end
+      -- close_session is a frontend side effect (like quickfix): the agent
+      -- asked to end the session, so once the turn is fully done and the
+      -- session file is saved, wipe the buffer. The BufWipeout autocmd in
+      -- setup() tears down this buffer's serve backend.
+      if close_after_turn[buf] then
+        close_after_turn[buf] = nil
+        vim.api.nvim_buf_delete(buf, { force = true })
       end
     end
     local handle

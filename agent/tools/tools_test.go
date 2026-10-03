@@ -206,7 +206,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "curl", "edit", "fetch", "glob", "jev", "ls", "python", "quickfix", "read", "search", "websearch", "write"} {
+	for _, name := range []string{"bash", "close_session", "curl", "edit", "fetch", "glob", "jev", "ls", "python", "quickfix", "read", "search", "websearch", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)
@@ -255,6 +255,16 @@ func TestUnifiedDiff(t *testing.T) {
 		if !strings.Contains(ui, want) {
 			t.Fatalf("diff missing %q: %q", want, ui)
 		}
+	}
+}
+
+func TestCloseSession(t *testing.T) {
+	// A no-arg frontend side effect: it registers, accepts `{}`, and returns
+	// a confirmation. The buffer close happens on the Neovim side (see
+	// init.lua), not here.
+	r, ui, err := run(t, "close_session", `{}`)
+	if err != nil || !strings.Contains(r, "close requested") || ui != "" {
+		t.Fatalf("close_session: %q %q %v", r, ui, err)
 	}
 }
 

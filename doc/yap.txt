@@ -433,7 +433,7 @@ yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
 bash, python, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
-jev. The `subagent` tool delegates to a role defined in
+jev, close_session. The `subagent` tool delegates to a role defined in
 `~/.yap/roles/<name>.md` (or the directory set by `roles_dir` in
 `require('harness').setup()`). Roles use YAML frontmatter: `name`, `model`, optional
 comma-separated `tools`; the body is its system prompt. It creates a normal
@@ -506,6 +506,15 @@ previous list remains reachable with |:colder| / |:cnewer| (subject to
 |'chistory'|). The Neovim side applies the structured live tool_call event;
 there is no parsing of assistant text. Historical tool blocks do not execute,
 so reopening a saved session never replays the quickfix side effect.
+
+close_session asks Neovim to close the session buffer once the current turn
+has finished and the session file has been saved. It is a frontend side effect
+like quickfix: the tool returns only a confirmation, and the Neovim side
+marks the buffer from the live tool_call event and wipes it on turn
+completion (the reply still streams, then the file is saved, then the buffer
+is deleted). The session file is untouched, so the conversation remains
+resumable via |:YapSessions|. Subagents do not get this tool, so a child
+cannot close the parent session.
 
 write creates or overwrites files (creating parent directories); edit
 does exact-text replacement with pi's semantics: every edits[].oldText
