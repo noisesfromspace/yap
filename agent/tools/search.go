@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 // searchTimeout bounds a single ripgrep run (a huge tree or a network
@@ -35,6 +37,7 @@ func runSearch(a *searchArgs) (string, string, error) {
 	if strings.TrimSpace(a.Pattern) == "" {
 		return "", "", fmt.Errorf("empty pattern")
 	}
+	a.Path = utils.ExpandHome(a.Path)
 	max := a.MaxCount
 	if max <= 0 {
 		max = searchMaxCount

@@ -38,6 +38,7 @@ func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
+	a.Cwd = utils.ExpandHome(a.Cwd)
 	timeout := bashDefaultTimeout
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second

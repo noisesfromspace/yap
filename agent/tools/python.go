@@ -8,11 +8,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 type pythonArgs struct {
 	Code    string `json:"code,omitempty" jsonschema:"description=Python 3 code to run (for small inline scripts; mutually exclusive with file)"`
-	File    string `json:"file,omitempty" jsonschema:"description=path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code)"`
+	File    string `json:"file,omitempty" jsonschema:"description=path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code; ~ expands to the home directory)"`
 	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
 	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 }
@@ -21,8 +23,9 @@ func init() {
 	Register("python",
 		"Run a Python 3 script. Each call is a fresh process with no state carried between "+
 			"calls. Pass exactly one of code (a small inline script) or file (a script path written "+
-			"with the write tool, resolved relative to the Neovim cwd) — use file for larger scripts "+
-			"so the code lives in a real, editable file. Returns combined stdout/stderr and the exit "+
+			"with the write tool) — use file for larger scripts so the code lives in a real, editable file. "+
+			"Write larger scripts under ~/.yap/scratch/ (outside the repo, gitignored); ~ is expanded "+
+			"to the home directory in path fields. Returns combined stdout/stderr and the exit "+
 			"code (a non-zero exit is reported, not an error); a failed script returns its traceback "+
 			"as text. Output is truncated to the LAST 2000 lines / 50KB; when truncated, the full "+
 			"output is saved to a temp file. Non-interactive: stdin is /dev/null. Runs in its own "+
@@ -33,6 +36,8 @@ func init() {
 }
 
 func runPython(a *pythonArgs) (string, string, error) {
+	a.File = utils.ExpandHome(a.File)
+	a.Cwd = utils.ExpandHome(a.Cwd)
 	hasCode := strings.TrimSpace(a.Code) != ""
 	hasFile := strings.TrimSpace(a.File) != ""
 	if !hasCode && !hasFile {

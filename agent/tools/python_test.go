@@ -113,6 +113,26 @@ func TestPythonFile(t *testing.T) {
 	}
 }
 
+func TestPythonWriteFileRoundtrip(t *testing.T) {
+	// An isolated $HOME lets us exercise the full `~` path without touching
+	// the real home directory: write the script, then run it via `file=`.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	script := "~/.yap/scratch/gen.py"
+	if _, _, err := run(t, "write", `{"path":"`+script+`","content":"print('from-file')\n"}`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	r, _, err := run(t, "python", `{"file":"`+script+`"}`)
+	if err != nil || !strings.Contains(r, "from-file") {
+		t.Fatalf("run: %q %v", r, err)
+	}
+	// the script landed under $HOME, not a literal ~/ dir in the project
+	if _, err := os.Stat(filepath.Join(home, ".yap", "scratch", "gen.py")); err != nil {
+		t.Fatalf("script not under $HOME: %v", err)
+	}
+}
+
 func TestPythonFileToolStartLabel(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "s.py")
 	if err := os.WriteFile(script, []byte("print('x')\n"), 0o644); err != nil {

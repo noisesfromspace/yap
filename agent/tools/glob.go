@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"boers.email/yap/agent/utils"
 )
 
 type globArgs struct {
@@ -23,6 +25,7 @@ func runGlob(a *globArgs) (string, string, error) {
 	if strings.TrimSpace(a.Pattern) == "" {
 		return "", "", fmt.Errorf("empty pattern")
 	}
+	a.Path = utils.ExpandHome(a.Path)
 	args := []string{"--files", "--sort", "path", "--glob", a.Pattern}
 	if a.Path != "" {
 		args = append(args, a.Path)

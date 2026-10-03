@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 // gitTimeout bounds a single read-only git invocation.
@@ -35,6 +37,7 @@ func init() {
 }
 
 func runGit(a *gitArgs) (string, string, error) {
+	a.Path = utils.ExpandHome(a.Path)
 	// -c color.ui=never and --no-pager keep output plain and non-paged;
 	// GIT_TERMINAL_PROMPT=0 guarantees a credential prompt can never hang
 	// the non-interactive agent loop.

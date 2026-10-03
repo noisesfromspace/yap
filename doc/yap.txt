@@ -540,6 +540,11 @@ user can `gf` to; the header shows only the file reference. A failed
 script returns its traceback to the model as text. Like bash, there is
 no sandbox and no confirmation prompt.
 
+Path fields on write, edit, read, ls, glob, search, git, and python
+(file and cwd) — plus bash's cwd — expand a leading ~ or ~/ to the
+home directory. Write larger generated scripts under ~/.yap/scratch/
+(shared, outside any project repo) so they stay out of git.
+
 write/edit tool headers in the buffer are SLIMMED (R12): the arguments
 show `[N lines]` / `[N edits, +A/-B lines]` instead of the content —
 the yap:ui diff below shows the change, the file on disk is the

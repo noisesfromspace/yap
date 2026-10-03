@@ -80,6 +80,28 @@ func TestGuardWritePath(t *testing.T) {
 	}
 }
 
+func TestExpandHome(t *testing.T) {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ~ and ~/ expand to the home directory
+	if got := ExpandHome("~"); got != h {
+		t.Fatalf("bare ~: got %q want %q", got, h)
+	}
+	if got := ExpandHome("~/.yap/scratch/x.py"); got != filepath.Join(h, ".yap", "scratch", "x.py") {
+		t.Fatalf("~/path: got %q", got)
+	}
+
+	// non-~ paths pass through unchanged (absolute, relative, ~user/)
+	for _, p := range []string{"/etc/passwd", "foo.py", "~someone/x"} {
+		if got := ExpandHome(p); got != p {
+			t.Fatalf("pass-through %q: got %q", p, got)
+		}
+	}
+}
+
 func TestResolvePath(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "real")

@@ -32,6 +32,7 @@ func init() {
 			if len(a.Edits) == 0 {
 				return "", "", fmt.Errorf("no edits given")
 			}
+			a.Path = utils.ExpandHome(a.Path)
 			note, err := utils.GuardWritePath(a.Path)
 			if err != nil {
 				return "", "", err

@@ -19,6 +19,7 @@ func init() {
 			"overwrites if it does. Automatically creates parent directories. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {
+			a.Path = utils.ExpandHome(a.Path)
 			note, err := utils.GuardWritePath(a.Path)
 			if err != nil {
 				return "", "", err

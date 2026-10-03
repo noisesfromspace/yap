@@ -57,6 +57,26 @@ func resolvePath(p string) (string, error) {
 	}
 }
 
+// ExpandHome resolves a leading ~ or ~/ in a user-supplied path to the
+// home directory, so `~/.yap/scratch/x.py` works in every path field. Only
+// the bare ~ form is handled (tools never need other-user home lookup);
+// anything else — including `~user/` — is returned unchanged. On a home-dir
+// lookup failure the input is returned untouched and the tool's normal
+// error path applies.
+func ExpandHome(p string) string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if p == "~" {
+		return h
+	}
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(h, p[2:])
+	}
+	return p
+}
+
 func isSecretPath(abs string) bool {
 	for _, s := range secretPaths {
 		if abs == s || strings.HasPrefix(abs, s+string(filepath.Separator)) {

@@ -836,6 +836,14 @@ local function append_event(buf, ev)
   end
 end
 
+--- Cap the raw tool output streamed into the live tail (and audit log)
+--- per tool run. The returned tool result is already tail-truncated to
+--- 50KB; the live tail must not accumulate the full log — a runaway
+--- command writing gigabytes would otherwise balloon the tail buffer
+--- (and audit log) and OOM the editor. 256KB is ample for watching
+--- progress while keeping memory bounded.
+local LIVE_OUTPUT_CAP = 256 * 1024
+
 --- Append newly written bytes of the running tool's log to the tail
 --- buffer (called on the spinner tick, on tool_end, and on process
 --- exit). Defined via the forward declaration: the spinner ticks
@@ -850,15 +858,27 @@ drain_tail = function(buf)
     return
   end
   local stat = vim.uv.fs_fstat(fd)
-  local data = stat and stat.size > t.offset and vim.uv.fs_read(fd, stat.size - t.offset, t.offset) or nil
-  if stat then
-    t.offset = stat.size
-  end
-  vim.uv.fs_close(fd)
-  if not data then
+  if not stat then
+    vim.uv.fs_close(fd)
     return
   end
-  append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
+  local data
+  local room = LIVE_OUTPUT_CAP - (l.out or 0)
+  if stat.size > t.offset and room > 0 then
+    local want = math.min(stat.size - t.offset, room)
+    data = vim.uv.fs_read(fd, want, t.offset)
+    if data then
+      l.out = (l.out or 0) + #data
+    end
+  end
+  t.offset = stat.size -- always advance past the read (or skipped) bytes
+  vim.uv.fs_close(fd)
+  if data and #data > 0 then
+    append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
+  elseif room <= 0 and stat.size > 0 and not l.truncated then
+    l.truncated = true
+    append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(LIVE_OUTPUT_CAP, stat.size - LIVE_OUTPUT_CAP) })
+  end
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
@@ -869,7 +889,7 @@ local function handle_event(buf, json_line)
   end
   ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
-    live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time() }
+    live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0 }
     local t = ensure_tail(buf)
     t.offset = 0
     append_event(buf, ev)

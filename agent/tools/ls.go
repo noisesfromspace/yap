@@ -4,6 +4,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"boers.email/yap/agent/utils"
 )
 
 type lsArgs struct {
@@ -14,7 +16,7 @@ func init() {
 	Register("ls",
 		"List entries of a directory (directories end with /). Use an absolute path.",
 		func(a *lsArgs) (string, string, error) {
-			dir := a.Path
+			dir := utils.ExpandHome(a.Path)
 			if dir == "" {
 				dir = "."
 			}
