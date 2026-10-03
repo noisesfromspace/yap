@@ -412,7 +412,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
-			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": tools.Scrub(string(call.Input))})
+			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": utils.Scrub(string(call.Input))})
 			tool, ok := tools.Get(call.Name)
 			if req.Tools != nil {
 				permitted := false
@@ -439,7 +439,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 				} else {
 					result = render.FenceResult(call.Name, string(call.Input), result)
 				}
-				result = tools.Scrub(result)
+				result = utils.Scrub(result)
 				render.EmitToolResult(out, result, ui)
 			}
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})

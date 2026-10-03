@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 // curl shell-outs to the system curl binary — the most versatile way to
@@ -55,7 +57,7 @@ func runCurl(a *curlArgs) (string, string, error) {
 	if perr != nil {
 		return "", "", fmt.Errorf("invalid URL: %w", perr)
 	}
-	if err := checkURLHost(u); err != nil {
+	if err := utils.CheckURLHost(u); err != nil {
 		return "", "", err
 	}
 
@@ -140,7 +142,7 @@ func runCurl(a *curlArgs) (string, string, error) {
 			return "", "", fmt.Errorf("curl: %w", err)
 		}
 	}
-	return safetyGuarded(a.Safety, text), "", nil
+	return utils.SafetyGuarded(decisionModel, a.Safety, text), "", nil
 }
 
 // headBuffer keeps the first readMaxBytes (50KB) of the response body,

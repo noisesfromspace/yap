@@ -5,6 +5,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"boers.email/yap/agent/utils"
 )
 
 // pi's edit semantics (doc: R12 result policy): every oldText is matched
@@ -30,7 +32,7 @@ func init() {
 			if len(a.Edits) == 0 {
 				return "", "", fmt.Errorf("no edits given")
 			}
-			note, err := guardWritePath(a.Path)
+			note, err := utils.GuardWritePath(a.Path)
 			if err != nil {
 				return "", "", err
 			}
@@ -85,7 +87,7 @@ func init() {
 			if err := os.WriteFile(a.Path, []byte(content), 0o644); err != nil {
 				return "", "", err
 			}
-			ui := unifiedDiff(a.Path, orig, content)
+			ui := utils.UnifiedDiff(a.Path, orig, content)
 			result := fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(a.Edits), a.Path)
 			if note != "" {
 				result = note + "\n" + result

@@ -1,4 +1,4 @@
-package tools
+package utils
 
 import (
 	"fmt"
@@ -70,10 +70,10 @@ func isWithin(root, p string) bool {
 	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
 }
 
-// guardReadPath blocks reads of secret paths. Both the literal path and the
+// GuardReadPath blocks reads of secret paths. Both the literal path and the
 // symlink-resolved path are checked. A non-existent path is left for the
 // caller's normal not-found error.
-func guardReadPath(p string) error {
+func GuardReadPath(p string) error {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return err
@@ -87,12 +87,12 @@ func guardReadPath(p string) error {
 	return nil
 }
 
-// guardWritePath blocks writes to secret paths and returns an advisory note
+// GuardWritePath blocks writes to secret paths and returns an advisory note
 // for writes outside the project root (the backend process cwd). The note
 // is surfaced to the model, not an error: yap deliberately runs bash
 // unsandboxed, so this is defense against accidental path mistakes, not a
 // security boundary.
-func guardWritePath(p string) (note string, err error) {
+func GuardWritePath(p string) (note string, err error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err

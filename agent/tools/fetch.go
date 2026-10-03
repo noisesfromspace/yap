@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"boers.email/yap/agent/utils"
+
 	readability "codeberg.org/readeck/go-readability/v2"
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 )
@@ -37,7 +39,7 @@ func init() {
 				return "", "", fmt.Errorf("only http(s) URLs supported")
 			}
 
-			client := &http.Client{Timeout: 30 * time.Second, Transport: checkedTransport()}
+			client := &http.Client{Timeout: 30 * time.Second, Transport: utils.CheckedTransport()}
 			resp, err := client.Get(a.URL)
 			if err != nil {
 				return "", "", err
@@ -58,7 +60,7 @@ func init() {
 			}
 
 			if !isHTML {
-				return safetyGuarded(a.Safety, capText(string(body))), "", nil
+				return utils.SafetyGuarded(decisionModel, a.Safety, capText(string(body))), "", nil
 			}
 
 			text, err := extractMarkdown(body, pageURL(resp.Request, a.URL))
@@ -67,11 +69,11 @@ func init() {
 				// back to converting the whole page, mirroring the old
 				// raw-HTML path but still returning Markdown, not tags.
 				if md, mdErr := htmltomarkdown.ConvertString(string(body)); mdErr == nil {
-					return safetyGuarded(a.Safety, capText(md)), "", nil
+					return utils.SafetyGuarded(decisionModel, a.Safety, capText(md)), "", nil
 				}
 				return "", "", err
 			}
-			return safetyGuarded(a.Safety, capText(text)), "", nil
+			return utils.SafetyGuarded(decisionModel, a.Safety, capText(text)), "", nil
 		})
 }
 

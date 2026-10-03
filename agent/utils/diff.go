@@ -1,4 +1,4 @@
-package tools
+package utils
 
 import (
 	"fmt"
@@ -7,11 +7,11 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// unifiedDiff returns unified-diff output for old vs new content of path,
+// UnifiedDiff returns unified-diff output for old vs new content of path,
 // or "" when the inputs are identical or too large. Display-only
 // (yap:ui), never sent to the model — any imperfection degrades
 // gracefully. Self-contained (sergi/go-diff, line mode).
-func unifiedDiff(path, oldContent, newContent string) string {
+func UnifiedDiff(path, oldContent, newContent string) string {
 	const maxDiffBytes = 512 * 1024
 	if oldContent == newContent || len(oldContent)+len(newContent) > maxDiffBytes {
 		return ""

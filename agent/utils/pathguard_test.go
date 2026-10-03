@@ -1,4 +1,4 @@
-package tools
+package utils
 
 import (
 	"os"
@@ -31,12 +31,12 @@ func TestGuardReadPath(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := guardReadPath(f); err != nil {
+	if err := GuardReadPath(f); err != nil {
 		t.Fatalf("normal read blocked: %v", err)
 	}
 
 	// direct secret path is blocked
-	if err := guardReadPath(filepath.Join(h, ".ssh", "id_ed25519")); err == nil || !strings.Contains(err.Error(), "secret path") {
+	if err := GuardReadPath(filepath.Join(h, ".ssh", "id_ed25519")); err == nil || !strings.Contains(err.Error(), "secret path") {
 		t.Fatalf("direct secret path: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestGuardReadPath(t *testing.T) {
 	if err := os.Symlink(filepath.Join(h, ".ssh"), link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	if err := guardReadPath(filepath.Join(link, "id_ed25519")); err == nil || !strings.Contains(err.Error(), "secret path") {
+	if err := GuardReadPath(filepath.Join(link, "id_ed25519")); err == nil || !strings.Contains(err.Error(), "secret path") {
 		t.Fatalf("symlinked secret path: %v", err)
 	}
 }
@@ -57,25 +57,25 @@ func TestGuardWritePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	// secret paths are blocked
-	if _, err := guardWritePath(filepath.Join(h, ".ssh", "authorized_keys")); err == nil || !strings.Contains(err.Error(), "secret path") {
+	if _, err := GuardWritePath(filepath.Join(h, ".ssh", "authorized_keys")); err == nil || !strings.Contains(err.Error(), "secret path") {
 		t.Fatalf("secret write: %v", err)
 	}
 
 	// /run/agenix is itself a symlink; the literal path must still block
-	if _, err := guardWritePath("/run/agenix/foo"); err == nil || !strings.Contains(err.Error(), "secret path") {
+	if _, err := GuardWritePath("/run/agenix/foo"); err == nil || !strings.Contains(err.Error(), "secret path") {
 		t.Fatalf("agenix write: %v", err)
 	}
 
 	// writes inside the project root carry no note
 	proj := t.TempDir()
 	chdir(t, proj)
-	if note, err := guardWritePath(filepath.Join(proj, "a.txt")); err != nil || note != "" {
+	if note, err := GuardWritePath(filepath.Join(proj, "a.txt")); err != nil || note != "" {
 		t.Fatalf("in-root write: note=%q err=%v", note, err)
 	}
 
 	// writes outside the project root are annotated, not blocked
 	outside := t.TempDir()
-	if note, err := guardWritePath(filepath.Join(outside, "b.txt")); err != nil || !strings.Contains(note, "outside project root") {
+	if note, err := GuardWritePath(filepath.Join(outside, "b.txt")); err != nil || !strings.Contains(note, "outside project root") {
 		t.Fatalf("out-of-root write: note=%q err=%v", note, err)
 	}
 }

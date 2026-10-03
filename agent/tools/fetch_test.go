@@ -61,3 +61,10 @@ func TestFetchSchemeCheck(t *testing.T) {
 		t.Fatalf("scheme check: %v", err)
 	}
 }
+
+func TestFetchRejectsPrivateIP(t *testing.T) {
+	_, _, err := run(t, "fetch", `{"url":"http://169.254.169.254/latest/meta-data/"}`)
+	if err == nil || !strings.Contains(err.Error(), "private/link-local") {
+		t.Fatalf("fetch private IP: %v", err)
+	}
+}

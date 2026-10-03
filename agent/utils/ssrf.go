@@ -1,4 +1,4 @@
-package tools
+package utils
 
 import (
 	"context"
@@ -60,11 +60,11 @@ func resolveAllowed(ctx context.Context, host string) (net.IP, error) {
 	return ips[0], nil
 }
 
-// checkURLHost validates an http(s) URL's host without dialing. It is the
+// CheckURLHost validates an http(s) URL's host without dialing. It is the
 // curl guard: a single pre-exec check of the initial URL. Redirect hops
 // curl follows internally (-L) are not re-checked — fetch's dialer below
 // is the thorough path.
-func checkURLHost(u *url.URL) error {
+func CheckURLHost(u *url.URL) error {
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("missing host in URL")
@@ -75,13 +75,13 @@ func checkURLHost(u *url.URL) error {
 	return err
 }
 
-// checkedTransport returns an http.Transport whose dialer resolves each
+// CheckedTransport returns an http.Transport whose dialer resolves each
 // connection's host, rejects blocked addresses, and dials the checked IP —
 // so both the initial request and every redirect hop are checked, and DNS
 // rebinding cannot slip a private address between the check and the dial.
 // Proxy is nil (no proxy): an HTTP proxy would receive the request and
 // connect to the real target itself, bypassing the IP check entirely.
-func checkedTransport() *http.Transport {
+func CheckedTransport() *http.Transport {
 	return &http.Transport{
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {

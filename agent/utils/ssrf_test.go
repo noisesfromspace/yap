@@ -1,9 +1,8 @@
-package tools
+package utils
 
 import (
 	"net"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -54,7 +53,7 @@ func TestCheckURLHost(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", raw, err)
 		}
-		if err := checkURLHost(u); err != nil {
+		if err := CheckURLHost(u); err != nil {
 			t.Errorf("%s should be allowed: %v", raw, err)
 		}
 	}
@@ -63,15 +62,8 @@ func TestCheckURLHost(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", raw, err)
 		}
-		if err := checkURLHost(u); err == nil {
+		if err := CheckURLHost(u); err == nil {
 			t.Errorf("%s should be blocked", raw)
 		}
-	}
-}
-
-func TestFetchRejectsPrivateIP(t *testing.T) {
-	_, _, err := run(t, "fetch", `{"url":"http://169.254.169.254/latest/meta-data/"}`)
-	if err == nil || !strings.Contains(err.Error(), "private/link-local") {
-		t.Fatalf("fetch private IP: %v", err)
 	}
 }

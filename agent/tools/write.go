@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"boers.email/yap/agent/utils"
 )
 
 type writeArgs struct {
@@ -17,7 +19,7 @@ func init() {
 			"overwrites if it does. Automatically creates parent directories. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {
-			note, err := guardWritePath(a.Path)
+			note, err := utils.GuardWritePath(a.Path)
 			if err != nil {
 				return "", "", err
 			}
@@ -35,7 +37,7 @@ func init() {
 			}
 			// Always diff, creates included (old = ""): the yap:ui diff
 			// is the visual record since long argument headers are folded.
-			ui := unifiedDiff(a.Path, string(old), a.Content)
+			ui := utils.UnifiedDiff(a.Path, string(old), a.Content)
 			result := fmt.Sprintf("Successfully wrote %d bytes to %s", len(a.Content), a.Path)
 			if note != "" {
 				result = note + "\n" + result

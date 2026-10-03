@@ -9,7 +9,8 @@
 // schemas and raw unmarshal errors are both gone.
 //
 // Non-tool helpers (events, process-group tracking, result fencing and
-// arg slimming for the buffer) live in agent/utils.
+// arg slimming for the buffer, path guarding, SSRF checks, secret scrubbing,
+// safety scanning, and unified diffs) live in agent/utils.
 package tools
 
 import (
