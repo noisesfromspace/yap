@@ -1,16 +1,20 @@
-// Package tools holds yap's built-in tools: one file per tool, each
-// self-registering in init(). Adding or changing a tool = editing a file
-// here and recompiling (CGO_ENABLED=0).
+// Package tools holds ONLY the agent's callable tools — nothing else.
+// Every non-test Go file in this directory except tools.go (the registry
+// below) defines exactly one tool: one file per tool, each self-registering
+// via Register in init(). Adding or changing a tool = editing a file here
+// and recompiling (CGO_ENABLED=0).
 //
-// Tools define an Args struct; the JSON schema sent to the provider is
+// A tool defines an Args struct; the JSON schema sent to the provider is
 // generated from it by reflection (invopop/jsonschema), and incoming
 // model arguments are validated against the compiled schema
 // (santhosh-tekuri/jsonschema) before Run is called — hand-written
 // schemas and raw unmarshal errors are both gone.
 //
-// Non-tool helpers (events, process-group tracking, result fencing and
-// arg slimming for the buffer, path guarding, SSRF checks, secret scrubbing,
-// safety scanning, and unified diffs) live in agent/utils.
+// Helpers do NOT belong here, even when only tools call them. Shared
+// helpers (path guarding, SSRF checks, secret scrubbing, safety scanning,
+// unified diffs, events, process-group tracking, arg slimming) live in
+// agent/utils. If you are adding something that does not call Register,
+// it goes in agent/utils.
 package tools
 
 import (

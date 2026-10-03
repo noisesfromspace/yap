@@ -424,9 +424,12 @@ Tools                                                        *yap-tools*
 
 Tools are NOT configured anywhere — they are Go files in agent/tools/
 package of the yap source tree, one file per tool, each
-self-registering in init(). Adding or changing a tool = editing a file
-and recompiling (CGO_ENABLED=0). A tool returns a result (sent to the
-model) and optionally a ui payload (display-only yap:ui section,
+self-registering in init(). Only tool files live in agent/tools/;
+shared helpers (path guarding, SSRF checks, secret scrubbing, safety
+scanning, unified diffs) go in agent/utils/. Adding or changing a tool
+= editing a file and recompiling (CGO_ENABLED=0). A tool returns a
+result (sent to the model) and optionally a ui payload (display-only
+yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
 bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,

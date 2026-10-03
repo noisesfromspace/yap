@@ -51,17 +51,32 @@ func runBash(a *bashArgs) (string, string, error) {
 		}
 		cmd.Dir = a.Cwd
 	}
+	text, err := runStreamed("bash", a.Command, cmd, timeout)
+	if err != nil {
+		return "", "", err
+	}
+	return text, "", nil
+}
+
+// runStreamed runs cmd with stdout/stderr merged into a temp log that the
+// Lua side tails live (tool_start/tool_end announce the log path). stdin
+// is /dev/null. On timeout the whole process group is SIGKILLed. It
+// returns the tail-truncated output with the standard exit/timeout notes,
+// or an error for a failed start or a non-exit wait error. Shared by bash
+// and python; cmd must already have SysProcAttr.Setpgid set and its Dir
+// validated.
+func runStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (string, error) {
 	// Stream output to a temp file instead of accumulating in memory: a
 	// runaway command must not OOM the binary. Stdout and Stderr are the
 	// same *os.File, so the child gets one fd for both — output is
 	// interleaved like a terminal. The file doubles as the live view:
 	// announce its path and let the Lua side tail it.
-	out, err := os.CreateTemp("", "yap-bash-*.log")
+	out, err := os.CreateTemp("", "yap-"+name+"-*.log")
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	outPath := out.Name()
-	utils.EmitEvent(map[string]string{"type": "tool_start", "name": "bash", "log": outPath, "command": a.Command})
+	utils.EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": command})
 	cmd.Stdin = nil // /dev/null
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -69,7 +84,7 @@ func runBash(a *bashArgs) (string, string, error) {
 	if err := cmd.Start(); err != nil {
 		out.Close()
 		os.Remove(outPath)
-		return "", "", err
+		return "", err
 	}
 	out.Close()             // the child has its own fd
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
@@ -95,14 +110,14 @@ func runBash(a *bashArgs) (string, string, error) {
 		size = st.Size()
 	}
 	text, truncated := readTail(outPath, size)
-	utils.EmitEvent(map[string]any{"type": "tool_end", "name": "bash", "log": outPath, "truncated": truncated})
+	utils.EmitEvent(map[string]any{"type": "tool_end", "name": name, "log": outPath, "truncated": truncated})
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {
 		exit = ee.ExitCode() // -1 when killed by signal
 	} else if err != nil {
 		os.Remove(outPath)
-		return "", "", fmt.Errorf("run: %w", err)
+		return "", fmt.Errorf("run: %w", err)
 	}
 
 	if truncated {
@@ -119,7 +134,7 @@ func runBash(a *bashArgs) (string, string, error) {
 	if exit != 0 {
 		text += fmt.Sprintf("\n[exit code %d]", exit)
 	}
-	return text, "", nil
+	return text, nil
 }
 
 // readTail reads the end of the file at path, keeping the LAST
