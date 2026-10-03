@@ -728,9 +728,9 @@ local function render_event(ev)
   elseif ev.type == "output" then
     return ev.data or "", "stream"
   elseif ev.type == "tool_call" then
-    -- bash renders its own `$ command` header from tool_start; its full
-    -- arguments are still in the audit log as this event.
-    if ev.name == "bash" then
+    -- bash/python render their own `$ command` header from tool_start; the
+    -- full arguments are still in the audit log as this event.
+    if ev.name == "bash" or ev.name == "python" then
       return nil
     end
     local target = ""
@@ -740,8 +740,8 @@ local function render_event(ev)
     end
     return ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), "block"
   elseif ev.type == "tool_result" then
-    -- bash output already streamed via output events; don't duplicate it.
-    if ev.name == "bash" then
+    -- bash/python output already streamed via output events; don't duplicate it.
+    if ev.name == "bash" or ev.name == "python" then
       return nil
     end
     local lines = {}
@@ -1892,12 +1892,12 @@ start_subagent = function(parent, ev)
     local p, m = header.model:match("^([^/]+)/(.+)$")
     if p then provider, model = p, m end
   end
-  local allowed = { "ls", "read", "search", "glob", "fetch", "bash", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
+  local allowed = { "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
   if header.tools and header.tools ~= "" then
     allowed = {}
     local aliases = { grep = "search", find = "glob", webfetch = "fetch" }
     local known = {}
-    for _, name in ipairs({ "ls", "read", "search", "glob", "fetch", "bash", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }) do
+    for _, name in ipairs({ "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }) do
       known[name] = true
     end
     for name in header.tools:gmatch("[^,%s]+") do

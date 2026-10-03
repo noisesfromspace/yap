@@ -432,7 +432,7 @@ result (sent to the model) and optionally a ui payload (display-only
 yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
-bash, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
+bash, python, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
 jev. The `subagent` tool delegates to a role defined in
 `~/.yap/roles/<name>.md` (or the directory set by `roles_dir` in
 `require('harness').setup()`). Roles use YAML frontmatter: `name`, `model`, optional
@@ -527,6 +527,13 @@ truncated to the LAST 2000 lines / 50KB with the full output kept in
 the temp file; a non-zero exit is reported to the model, not treated
 as an error. There is deliberately no sandbox and no confirmation
 prompt (R15).
+
+python runs a Python 3 script the same way: the code is written to a
+temp file and executed as `python3 <file>` in a fresh process (no
+state carries between calls — one self-contained script per call),
+with the same process-group timeout, live tail, and 2000-line / 50KB
+tail truncation. A failed script returns its traceback to the model
+as text. Like bash, there is no sandbox and no confirmation prompt.
 
 write/edit tool headers in the buffer are SLIMMED (R12): the arguments
 show `[N lines]` / `[N edits, +A/-B lines]` instead of the content —
@@ -742,8 +749,8 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
                runs, FULL arguments (bash included, so timeout/cwd
                survive); id matches the buffer's tool header and the
                tool_result below
-  tool_start   {"type","name","log","command","ts"} — bash's temp log
-  output       {"type","name","data","ts"} — streamed bash output chunks
+  tool_start   {"type","name","log","command","ts"} — bash/python's temp log
+  output       {"type","name","data","ts"} — streamed bash/python output chunks
                (synthesized by the Lua side as it drains the temp log)
   tool_result  {"type","id","name","bytes","result","ts"} — full result
   retry        {"type","attempt","delay_ms","error","ts"} — a transient
@@ -906,10 +913,10 @@ history above it. For a global segment independent of yap buffers, use
           progress lines; the Lua side timestamps each one and appends
           it to the audit log (|yap-audit|), and renders it into the
           tail buffer (|:YapLive|):
-            tool_start   {"type","name":"bash","log","command"} — bash's
-                         output streams into `log`; tail it for live view
-            tool_end     {"type","name":"bash","log","truncated"} —
-                         bash's log is complete; the Lua side drains the
+            tool_start   {"type","name":"bash"|"python","log","command"} — the
+                         tool's output streams into `log`; tail it for live view
+            tool_end     {"type","name":"bash"|"python","log","truncated"} —
+                         the tool's log is complete; the Lua side drains the
                          final bytes and removes the untruncated temp log
             tool_call    {"type","name","args"} — every tool before it
                          runs, full arguments (the buffer header keeps
@@ -920,8 +927,8 @@ history above it. For a global segment independent of yap buffers, use
                          was retried before any output was emitted
             turn_end     {"type","model","prompt","completion","cost",?,
                          "context_window",?,"ms"} — one per completed send
-          The Lua side also synthesizes `output` events (streamed bash
-          output chunks) as it drains the temp log, so the audit log
+          The Lua side also synthesizes `output` events (streamed
+          bash/python output chunks) as it drains the temp log, so the audit log
           carries live output, not just the final result.
           The rest is error text.
 
@@ -1090,11 +1097,11 @@ R15 Tools are compiled-in Go files, one per file in agent/tools/.
     Each file self-registers via init(); adding a tool = adding a file
     and recompiling. Not config files (the author wants tool code, not
     opaque declarations), not subprocesses (recompiling is accepted and
-    the binary stays self-contained). bash, write and edit are
+    the binary stays self-contained). bash, python, write and edit are
     deliberately included without sandbox or confirmation — the author
-    runs pi the same way and accepts the risk. bash's safety mechanics
-    are operational, not authorizing: own process group, group kill on
-    timeout and on :YapStop, tail-truncation, closed stdin. If
+    runs pi the same way and accepts the risk. bash/python's safety
+    mechanics are operational, not authorizing: own process group, group
+    kill on timeout and on :YapStop, tail-truncation, closed stdin. If
     sandboxing is ever wanted, the evidence-backed direction is
     bubblewrap (Codex's Linux choice), not command-pattern allowlists
     (documented as bypassable).
@@ -1104,7 +1111,7 @@ R16 Live tool output never enters the chat buffer.
     command output into it forces incremental escaping, dangling-region
     repair and post-turn dedup (the yap:stream/keepstream design this
     rule replaced). Instead each session has ONE persistent tail buffer
-    (yap://<session>-tail): bash announces its temp log via a
+    (yap://<session>-tail): bash/python announce their temp log via a
     yap:event stderr line, the Lua side drains new bytes into the
     tail (a `$ command` header per call), and :YapLive opens it. The
     drained bytes are recorded in the audit log as `output` events, and
@@ -1125,8 +1132,8 @@ R17 The audit log is the durable record of everything the context
     doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.jsonl, JSON Lines
     (one timestamped JSON object per line), append-only, written by the
     Lua side from yap:event lines plus synthesized `output` events for
-    streamed bash output: full tool arguments, streamed bash output,
-    full results, and one journal line per turn
+    streamed bash/python output: full tool arguments, streamed
+    bash/python output, full results, and one journal line per turn
     (model, tokens, cost, ms). The tail buffer (|:YapLive|) renders
     these events and is rebuilt from the file on reopen; the audit file
     is the authoritative record and survives restarts.
