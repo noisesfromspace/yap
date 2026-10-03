@@ -95,7 +95,8 @@ local paths = require("harness.path")
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
 -- rules) and lives here so session files never store it.
-local yap_about = [[# About Yap
+local function yap_about()
+  return [[# About Yap
 
 You are running inside Yap, an agent harness for Neovim inspired by pi and gptel. The conversation is an editable Markdown buffer and is the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages. Editing or deleting messages edits the context sent on the next turn.
 
@@ -114,6 +115,15 @@ When asked about Yap itself, inspect the Yap source or documentation rather than
   transcript and are not re-executed or re-sent as native tool messages.
   Only the visible buffer content is replayed on the next send.
 
+## Skills
+
+Skills are the agent's own reusable, on-demand instructions for specific
+domains. They are Markdown files in ]] .. M.config.skills_dir .. [[ (one
+per skill, named `<name>.md`); the `## Skills` list in the system block
+names what is available with a one-line description each. Before doing
+work in one of those domains, `read` the matching skill file and follow
+it. Read only the skill(s) you need, never the whole directory.
+
 ## Subagents
 
 - Use `subagent` with a `role` from the configured `roles_dir` (default
@@ -129,6 +139,7 @@ When asked about Yap itself, inspect the Yap source or documentation rather than
   parent stops its running child, and a timed-out child is stopped; its
   Markdown session remains available for inspection.
 ]]
+end
 
 local function system_prompt()
   local f = io.open(M.config.agents_file, "r")
@@ -1538,7 +1549,7 @@ function M.send(buf)
   -- The harness always prepends its own boilerplate, then the
   -- request-scoped cwd: neither is stored in the buffer, so the visible
   -- session stays clean and :cd takes effect on the very next turn.
-  table.insert(messages, 1, { role = "system", content = yap_about })
+  table.insert(messages, 1, { role = "system", content = yap_about() })
   table.insert(messages, 2, {
     role = "system",
     content = "Current Neovim working directory: " .. vim.fn.getcwd(),
