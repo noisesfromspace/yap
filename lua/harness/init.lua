@@ -61,7 +61,7 @@ M.config = {
   description_answer_model = "openai/gpt-5-mini",
   -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
   -- to disable it. Buffer-local maps are applied when a session opens;
-  -- `sessions` is the only global one (installed by setup()).
+  -- `sessions` and `waiting` are global (installed by setup()).
   keymaps = {
     send = "<C-s>",
     stop = "<leader>c",
@@ -71,6 +71,7 @@ M.config = {
     insert = "<leader>t",
     insert_here = "<leader>T",
     sessions = "<leader>r",
+    waiting = "<leader>w",
 
     next_message = "]m",
     prev_message = "[m",
@@ -1898,18 +1899,26 @@ local function live_session_label(buf)
   return label
 end
 
+--- Plain state token for a buffer: the key |M.instances| filters on, and
+--- the word behind each picker status glyph.
+local function session_state(buf)
+  if running and running[buf] then
+    return "running"
+  elseif errors[buf] then
+    return "error"
+  elseif awaiting[buf] then
+    return "waiting"
+  end
+  return "idle"
+end
+
 --- Status word + glyph for the session picker, mirroring the winbar state
 --- chips so both views agree. The picker is static, so a filled circle
 --- stands in for the winbar's animated spinner.
 local function session_status(buf)
-  if running and running[buf] then
-    return "▶ running"
-  elseif errors[buf] then
-    return "✗ error"
-  elseif awaiting[buf] then
-    return "◉ waiting"
-  end
-  return "○ idle"
+  local glyph = { running = "▶", error = "✗", waiting = "◉", idle = "○" }
+  local state = session_state(buf)
+  return glyph[state] .. " " .. state
 end
 
 --- Sort needing-attention sessions first (error > waiting > busy > idle) so
@@ -1926,12 +1935,14 @@ local function session_rank(buf)
 end
 
 --- Every open yap chat buffer, annotated with its live state and sorted so
---- sessions needing attention lead. Replaces the old <leader>w / <leader>r
---- split (tails are never here — use :YapLive / <leader>l).
-function M.instances()
+--- sessions needing attention lead. An optional `state` ("running",
+--- "error", "waiting" or "idle") narrows the list to one state; the
+--- default lists every session. Tails are never here — use :YapLive /
+--- <leader>l.
+function M.instances(state)
   local items = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap then
+    if vim.b[b].yap and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
@@ -1940,7 +1951,7 @@ function M.instances()
     end
   end
   if #items == 0 then
-    vim.notify("yap: no open sessions", vim.log.levels.INFO)
+    vim.notify(state == "waiting" and "yap: nothing waiting for a reply" or "yap: no open sessions", vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
@@ -1955,7 +1966,7 @@ function M.instances()
     width = math.max(width, vim.fn.strdisplaywidth(item.text))
   end
   vim.ui.select(items, {
-    prompt = "yap sessions",
+    prompt = state == "waiting" and "yap waiting" or "yap sessions",
     format_item = function(item)
       return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
     end,
@@ -1969,16 +1980,27 @@ function M.instances()
   end)
 end
 
+--- Just the sessions awaiting a reply — the "needs you" set (<leader>w).
+function M.waiting()
+  M.instances("waiting")
+end
+
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
-  -- <leader>r is global: it lists sessions across every buffer, so it
-  -- must work from any file, not just inside a chat. The other keymaps
-  -- act on the current buffer and stay buffer-local in setup_buffer.
+  -- <leader>r and <leader>w are global: they list sessions across every
+  -- buffer, so they must work from any file, not just inside a chat. The
+  -- other keymaps act on the current buffer and stay buffer-local in
+  -- setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.instances()
     end, { silent = true, desc = "yap: sessions" })
+  end
+  if M.config.keymaps.waiting ~= "" then
+    vim.keymap.set("n", M.config.keymaps.waiting, function()
+      M.waiting()
+    end, { silent = true, desc = "yap: waiting sessions" })
   end
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file

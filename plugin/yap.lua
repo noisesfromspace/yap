@@ -87,3 +87,7 @@ end, {
 vim.api.nvim_create_user_command("YapInstances", function()
   require("harness").instances()
 end, { desc = "List open yap sessions with status and jump to the picked one" })
+
+vim.api.nvim_create_user_command("YapWaiting", function()
+  require("harness").waiting()
+end, { desc = "List open yap sessions awaiting a reply and jump to the picked one" })

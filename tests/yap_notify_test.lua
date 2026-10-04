@@ -108,6 +108,17 @@ assert(fmt(items[1]):match("◉ waiting$"), "status not rendered: " .. fmt(items
 assert(items[2].buf == buf2, "idle session should sort last")
 assert(items[2].status == "○ idle", "idle status missing: " .. vim.inspect(items[2]))
 
+-- :YapWaiting / <leader>w list just the sessions awaiting a reply.
+local waiting_items
+vim.ui.select = function(list, opts)
+  waiting_items = list
+end
+yap.waiting()
+vim.ui.select = orig_select
+assert(waiting_items and #waiting_items == 1, "expected one waiting session, got " .. vim.inspect(waiting_items))
+assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
+assert(waiting_items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(waiting_items[1]))
+
 -- A description replaces the filename fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 table.insert(first_lines, 1, "---")

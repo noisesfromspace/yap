@@ -121,7 +121,8 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 - `:YapInstances` / `<leader>r` — list every open session by file path
   with its status (`◉ waiting`, `✗ error`, `▶ running`, `○ idle`) and
   jump to the picked one (sessions are unlisted: they never appear in
-  `:ls` or buffer pickers)
+  `:ls` or buffer pickers); `<leader>w` / `:YapWaiting` lists just the
+  sessions awaiting your reply
 - The agent's `quickfix` tool can fill the quickfix list with source
   locations, e.g. review findings. Each call pushes a new list, so previous
   ones stay reachable with `:colder` / `:cnewer`. Reopening a saved session
