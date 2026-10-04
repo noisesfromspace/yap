@@ -191,7 +191,6 @@ local function render_winbar(buf)
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
     if running_others_n > 0 or others > 0 then
-      left[#left + 1] = seg(" ", nil, true)
       if running_others_n > 0 then
         left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
       end
