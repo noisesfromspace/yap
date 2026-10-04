@@ -26,10 +26,11 @@ local SPINNER = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
 local spinner_tick = 0
 local spinner_timer = nil
 
--- Context-fill gauge: a fixed-width meter (in display cells) of filled
+-- Context-fill gauge: a minimum-width meter (in display cells) of filled
 -- `█` blocks over a dim `░` track, with a partial eighth-block for the
--- tail so the fill reads continuously rather than snapping per cell.
-local GAUGE_W = 8
+-- tail so the fill reads continuously rather than snapping per cell. It
+-- expands into otherwise-unused winbar width when the layout fits.
+local GAUGE_MIN_W = 8
 local GAUGE_EIGHTHS = { "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
 
 -- The winbar is a statusline: `%` starts a format item there, so any
@@ -225,18 +226,19 @@ local function render_winbar(buf)
   -- Context-fill gauge: filled blocks in a band color (green → amber →
   -- red as the window fills), a partial eighth-block for the tail, and a
   -- dim `░` track so the bar reads as a 0–100% meter.
-  local function gauge_segments(pct)
+  local function gauge_segments(pct, gauge_w)
+    gauge_w = gauge_w or GAUGE_MIN_W
     local color = "GaugeLow"
     if pct >= 90 then
       color = "GaugeHigh"
     elseif pct >= 70 then
       color = "GaugeMid"
     end
-    local filled = math.min(pct, 100) / 100 * GAUGE_W
+    local filled = math.min(pct, 100) / 100 * gauge_w
     local full = math.floor(filled)
     local tail = math.max(0, math.min(7, math.floor((filled - full) * 8 + 0.5)))
     local fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
-    local track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
+    local track = string.rep("░", gauge_w - full - (tail > 0 and 1 or 0))
     local out = {}
     if fill ~= "" then
       out[#out + 1] = { fill, color }
@@ -253,7 +255,7 @@ local function render_winbar(buf)
   -- still disambiguate the two scopes). A chip is a list of part segments,
   -- so the context chip can lay the label, band-colored fill and dim track
   -- side by side in one contiguous run.
-  local function usage_segment(mode)
+  local function usage_segment(mode, gauge_w)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
@@ -285,7 +287,7 @@ local function render_winbar(buf)
       local parts = {
         { icons.ctx .. " " .. util.fmt_tokens(t.prompt) .. "/" .. util.fmt_tokens(ctx) .. " · " .. pct_text .. " ", "Idle" },
       }
-      for _, g in ipairs(gauge_segments(pct)) do
+      for _, g in ipairs(gauge_segments(pct, gauge_w)) do
         parts[#parts + 1] = g
       end
       chips[#chips + 1] = parts
@@ -360,6 +362,11 @@ local function render_winbar(buf)
       + (usage and width_of(usage) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
+      -- Keep the gauge at its minimum when the layout is tight; otherwise
+      -- let it fill the unused space rather than reserving a fixed-width chip.
+      if usage and mode ~= "prices" then
+        usage = usage_segment(mode, GAUGE_MIN_W + width - total)
+      end
       return render(left, mid, usage, state)
     end
     if show_mid then

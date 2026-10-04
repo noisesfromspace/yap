@@ -35,4 +35,26 @@ state.last_turn[buf] = { prompt = 5000, completion = 200, context_window = 10000
 wb = yap.winbar(buf)
 assert(wb:match("0.5%%"), "sub-1% fill not shown: " .. wb)
 
+-- With room to spare, the graph grows to use the otherwise-empty winbar
+-- width. Its band color is still driven by context fill, not graph width.
+state.last_turn[buf] = { prompt = 200000, completion = 200, context_window = 250000 }
+vim.b[buf].yap_usage = nil
+vim.b[buf].yap_session_usage = nil
+local function winbar_at(cols)
+  vim.cmd("vsplit")
+  vim.api.nvim_win_set_width(0, cols)
+  local bar = yap.winbar(buf)
+  vim.cmd("close")
+  return bar
+end
+local narrow = winbar_at(30)
+local wide = winbar_at(60)
+local function graph_width(bar)
+  local _, filled = bar:gsub("█", "")
+  local _, track = bar:gsub("░", "")
+  return filled + track
+end
+assert(graph_width(wide) > graph_width(narrow), "context graph did not expand with available width")
+assert(wide:match("YapGaugeMid"), "expanded graph lost its context-fill color")
+
 print("OK winbar_ctx")
