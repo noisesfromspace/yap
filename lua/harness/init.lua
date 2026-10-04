@@ -49,14 +49,13 @@ M.config = {
   -- "treesitter" in profiling was actually touchup re-rendering plus live
   -- buffer churn, not the highlighter. Set false to drop syntax colors.
   syntax_highlight = true,
-  -- Leading glyphs for the three winbar usage chips (see doc/yap.txt
-  -- |yap-winbar|): "since" the buffer opened, "total" over the session's
-  -- whole life (audit log), and context-fill. Nerd Font glyphs by default;
-  -- set any to "" to drop the glyph on fonts that lack it.
+  -- Leading glyphs for the two winbar usage chips (see doc/yap.txt
+  -- |yap-winbar|): "since" the buffer opened and "total" over the
+  -- session's whole life (audit log). Nerd Font glyphs by default; set
+  -- either to "" to drop the glyph on fonts that lack it.
   icons = {
     since = "󰅐", -- nf-md-clock_outline
     total = "󰆼", -- nf-md-database
-    ctx = "󰊚", -- nf-md-gauge
   },
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title

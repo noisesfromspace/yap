@@ -248,7 +248,7 @@ Lua setup: >lua
     description_model = "openai/gpt-5-nano", -- smallest: on-send label
     description_answer_model = "openai/gpt-5-mini", -- bigger: final whole-session title
     syntax_highlight = true, -- keep markdown syntax colors (default)
-    icons = { since = "󰅐", total = "󰆼", ctx = "󰊚" }, -- winbar chip glyphs ("" drops one)
+    icons = { since = "󰅐", total = "󰆼" }, -- winbar usage-chip glyphs ("" drops one)
     keymaps = { stop = "<C-c>" },  -- override any key; "" disables it
   })
 <
@@ -975,7 +975,7 @@ it never counts the current buffer. After the island: the session
 description (truncated to 40 display columns), provider/model combo, and
 the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
-manual |za| toggles don't update it). Right: three usage chips
+manual |za| toggles don't update it). Right: two usage chips
 (|yap-winbar-numbers|). A state glyph appears on the far right only when
 something is wrong:
 
@@ -985,11 +985,11 @@ something is wrong:
 Idle and "awaiting your reply" show no glyph — the absence of the left
 spinner already tells you nothing is running.
 
-Example: `⣾ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 󰊚 35k/200k · 18% █▍░░░░░░`
+Example: `⣾ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51`
 
 Reading the numbers                                    *yap-winbar-numbers*
 
-The right side shows three chips, each led by a config icon (the `icons`
+The right side shows two chips, each led by a config icon (the `icons`
 table in |yap-configuration|; set one to `""` to drop its glyph):
 
   󰅐 N        Since-open: total tokens (prompt + completion) and cost
@@ -999,17 +999,6 @@ table in |yap-configuration|; set one to `""` to drop its glyph):
              file, summed from every `turn_end` journal entry in the
              audit log (|yap-audit|). Survives restarts; answers "what
              has this session cost".
-  󰊚 N/M · P% Context fill: the last turn's prompt size against the
-             model's context window (both from the `turn_end` journal),
-             plus the fill percentage and a fixed-width, eight-cell gauge —
-             the "how full is my context" answer, e.g.
-             `35k/200k · 18% █▍░░░░░░`. The gauge fill is green below
-             70%, amber from 70–90%, and red at 90% or more
-             (`YapGaugeLow`/`Mid`/`High`; the dim track is
-             `YapGaugeEmpty`). Absent until the first turn
-             completes, and only for models the pricing catalog knows a
-             context window for.
-
 Suffixes are compact: `k` = thousands, `m` = millions (`1.5k` = 1,500
 tokens). Costs are USD, computed as `in × input price + out × output
 price` (USD per 1M tokens) — your `pricing` overrides first, then the

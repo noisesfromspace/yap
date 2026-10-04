@@ -16,7 +16,6 @@ local running = state.running
 local live = state.live
 local errors = state.errors
 local awaiting = state.awaiting
-local last_turn = state.last_turn
 local steer = state.steer
 
 -- A compact, offbeat cycle of typographic marks. Teal, blue and violet
@@ -30,16 +29,10 @@ local SPINNER = {
 local spinner_tick = 0
 local spinner_timer = nil
 
--- Context-fill gauge: a fixed-width meter (in display cells) of filled
--- `█` blocks over a dim `░` track, with a partial eighth-block for the
--- tail so the fill reads continuously rather than snapping per cell.
-local GAUGE_W = 8
-local GAUGE_EIGHTHS = { "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
-
 -- The winbar is a statusline: `%` starts a format item there, so any
--- literal `%` in segment text (the context-fill chip, a session title that
--- contains a percent sign) must be doubled. This runs on the content only —
--- the `%#…#` / `%*` highlight markers these helpers add are not escaped.
+-- literal `%` in segment text (a session title that contains a percent sign)
+-- must be doubled. This runs on the content only — the `%#…#` / `%*`
+-- highlight markers these helpers add are not escaped.
 local function esc(text)
   return text:gsub("%%", "%%%%")
 end
@@ -226,37 +219,8 @@ local function render_winbar(buf)
     }
   end
 
-  -- Context-fill gauge: filled blocks in a band color (green → amber →
-  -- red as the window fills), a partial eighth-block for the tail, and a
-  -- dim `░` track so the bar reads as a 0–100% meter.
-  local function gauge_segments(pct)
-    local color = "GaugeLow"
-    if pct >= 90 then
-      color = "GaugeHigh"
-    elseif pct >= 70 then
-      color = "GaugeMid"
-    end
-    local filled = math.min(pct, 100) / 100 * GAUGE_W
-    local full = math.floor(filled)
-    local tail = math.max(0, math.min(7, math.floor((filled - full) * 8 + 0.5)))
-    local fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
-    local track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
-    local out = {}
-    if fill ~= "" then
-      out[#out + 1] = { fill, color }
-    end
-    if track ~= "" then
-      out[#out + 1] = { track, "GaugeEmpty" }
-    end
-    return out
-  end
-
-  -- Usage/cost cluster: three chips, each led by its config icon —
-  -- since-open, all-time, context-fill. mode "full" shows tokens + cost,
-  -- "compact" drops the cost, "prices" keeps only the two costs (the icons
-  -- still disambiguate the two scopes). A chip is a list of part segments,
-  -- so the context chip can lay the label, band-colored fill and dim track
-  -- side by side in one contiguous run.
+  -- Usage/cost cluster: since-open and all-time chips. mode "full" shows
+  -- tokens + cost, "compact" drops the cost, "prices" keeps only costs.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
@@ -276,23 +240,6 @@ local function render_winbar(buf)
         text = text .. " · " .. string.format("$%.4g", s.cost)
       end
       chips[#chips + 1] = { { text, "Idle" } }
-    end
-
-    -- Context fill: the last turn's prompt tokens against the model's
-    -- context window (both carried by the turn_end event), plus a fixed-
-    -- width gauge whose fill color bands green → amber → red as it fills.
-    local t = last_turn[buf]
-    local ctx = t and tonumber(t.context_window) or nil
-    if ctx and ctx > 0 and t.prompt and t.prompt > 0 and mode ~= "prices" then
-      local pct = t.prompt / ctx * 100
-      local pct_text = pct < 1 and string.format("%.1f%%", pct) or string.format("%.0f%%", pct)
-      local parts = {
-        { icons.ctx .. " " .. util.fmt_tokens(t.prompt) .. "/" .. util.fmt_tokens(ctx) .. " · " .. pct_text .. " ", "Idle" },
-      }
-      for _, g in ipairs(gauge_segments(pct)) do
-        parts[#parts + 1] = g
-      end
-      chips[#chips + 1] = parts
     end
 
     if mode == "prices" then
@@ -438,10 +385,6 @@ local function define_winbar_hl()
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
-    GaugeEmpty = "NonText",
-    GaugeLow = "DiagnosticOk",
-    GaugeMid = "DiagnosticWarn",
-    GaugeHigh = "DiagnosticError",
   }
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })

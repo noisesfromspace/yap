@@ -489,8 +489,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		m := map[string]any{"prompt": totPrompt, "completion": totCompletion}
 		// Cost: explicit config pricing wins; the committed catalog
 		// (agent/pricing) is the fallback. A miss on both tracks tokens
-		// only. The catalog also supplies the context window for the
-		// toolbar's context-fill display.
+		// only. The catalog also supplies context-window metadata in turn_end.
 		input, output := 0.0, 0.0
 		havePricing := false
 		if p, ok := cfg.Pricing[model]; ok {
