@@ -19,9 +19,16 @@ local awaiting = state.awaiting
 local last_turn = state.last_turn
 local steer = state.steer
 
--- A compact sparkle cycle gives the busy state a little more character
--- than a conventional spinner, while staying one cell wide in the winbar.
-local SPINNER = { "✢", "✳", "✶", "✻", "✽", "✺", "✻", "✶", "✳" }
+-- A compact, offbeat signal cycle. The glyphs stay similarly small, while
+-- teal, blue and violet rotate to give the busy state a little extra life.
+local SPINNER = {
+  { "∿", "BusyTeal" },
+  { "⌁", "BusyBlue" },
+  { "≋", "BusyViolet" },
+  { "⌇", "BusyTeal" },
+  { "⌖", "BusyBlue" },
+  { "⌁", "BusyViolet" },
+}
 local spinner_tick = 0
 local spinner_timer = nil
 
@@ -186,9 +193,9 @@ local function render_winbar(buf)
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
       if l and os.time() - l.since >= 2 then
-        left[#left + 1] = seg(" " .. frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s ", "Busy")
+        left[#left + 1] = seg(" " .. frame[1] .. " " .. l.name .. " " .. (os.time() - l.since) .. "s ", frame[2])
       else
-        left[#left + 1] = seg(" " .. frame .. " ", "Busy")
+        left[#left + 1] = seg(" " .. frame[1] .. " ", frame[2])
       end
     end
     local running_others_n = count_others(running, buf)
@@ -448,6 +455,9 @@ local function define_winbar_hl()
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
+  vim.api.nvim_set_hl(0, "YapBusyTeal", { default = true, fg = "#5fd7c7" })
+  vim.api.nvim_set_hl(0, "YapBusyBlue", { default = true, fg = "#7aa2f7" })
+  vim.api.nvim_set_hl(0, "YapBusyViolet", { default = true, fg = "#bb9af7" })
 
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the
