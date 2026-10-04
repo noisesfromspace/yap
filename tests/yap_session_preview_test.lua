@@ -67,6 +67,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
+vim.api.nvim_set_current_buf(buf)
 yap.instances()
 vim.ui.select = orig_select
 local parent_item, child_item
@@ -75,7 +76,7 @@ for _, item in ipairs(captured.items) do
   if item.buf == child then child_item = item end
 end
 assert(parent_item and not parent_item.text:find("\n", 1, true),
-  "parent should have its own single-line picker row: " .. vim.inspect(parent_item))
+  "current parent with an open subagent should have its own picker row: " .. vim.inspect(parent_item))
 assert(child_item and child_item.text == "  ↳ scout: inspect this task",
   "subagent should have a separate indented row: " .. vim.inspect(child_item))
 

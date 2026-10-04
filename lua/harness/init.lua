@@ -2201,15 +2201,27 @@ end
 
 --- Every open yap chat buffer except the current one, annotated with its live
 --- state and sorted with waiting sessions last. An optional `state`
---- ("running", "error", "waiting" or "idle") narrows the list to one state;
---- the default lists every other session. Tails are never here — use :YapLive /
---- <leader>l.
+--- ("running", "error", "waiting" or "idle") narrows the list; a current
+--- parent remains visible while it has an open subagent. Tails are never here —
+--- use :YapLive / <leader>l.
+local function has_open_subagent(parent)
+  local child = subagent_children[parent]
+  if child and vim.api.nvim_buf_is_valid(child) then
+    return true
+  end
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if buf ~= parent and vim.b[buf].yap and vim.b[buf].yap_subagent_parent == parent then
+      return true
+    end
+  end
+  return false
+end
+
 function M.instances(state)
   local items = {}
   local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    local child = subagent_children[b]
-    local include_current_parent = child and vim.api.nvim_buf_is_valid(child)
+    local include_current_parent = b == current and has_open_subagent(b)
     if (b ~= current or include_current_parent) and vim.b[b].yap and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
