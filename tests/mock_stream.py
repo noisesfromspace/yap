@@ -14,7 +14,7 @@ class H(BaseHTTPRequestHandler):
             chunks = [
                 {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "b1", "type": "function",
                     "function": {"name": "bash", "arguments": json.dumps({"command":
-                        "printf 'l1\\nl2\\n'; sleep 0.4; printf 'l3\\n'; printf '<!-- yap:tool -->\\n'; printf 'tail-without-newline'"})}}]}}]},
+                        "printf 'l1\\nl2\\n'; sleep 2.2; printf 'l3\\n'; printf '<!-- yap:tool -->\\n'; printf 'tail-without-newline'"})}}]}}]},
                 {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
                 {"choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2}},
             ]

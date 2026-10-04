@@ -137,16 +137,17 @@ local function winbar_description(buf, max)
   return d
 end
 
--- Layout: a busy beacon and a global-session island on the left, then the
--- current session's title/model/fold view; activity on the right — usage
--- totals first, then the state glyph pinned to the far right edge so it
--- never moves as numbers grow. The bar is width-aware: as the window
--- narrows it drops the state glyph first (busy is duplicated by the left
--- beacon), then the model/fold cluster, then collapses the token phrase
--- (in→out), and finally shrinks the description. The island and the two
--- prices are the last things standing.
+-- Layout: a spinner beacon on the left (this buffer streaming, plus the
+-- running tool's name once it has run 2s), then a global-session island,
+-- then the current session's title/model/fold view; usage on the right —
+-- the three chips first, then the state glyph pinned to the far right edge
+-- so it never moves as numbers grow. The bar is width-aware: as the window
+-- narrows it drops the state glyph first (in-flight is the left spinner),
+-- then the model/fold cluster, then the chip costs, then the chip tokens;
+-- the prices and the island survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
+  local icons = require("harness").config.icons
   local ok_w, width = pcall(vim.api.nvim_win_get_width, 0)
   if not ok_w or not width or width <= 0 then
     width = 999 -- no window context: render the full bar
@@ -173,7 +174,13 @@ local function render_winbar(buf)
   local function left_segments(desc_max)
     local left = {}
     if running and running[buf] then
-      left[#left + 1] = seg(" ▶ ", "Busy")
+      local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
+      local l = live and live[buf]
+      if l and os.time() - l.since >= 2 then
+        left[#left + 1] = seg(" " .. frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s ", "Busy")
+      else
+        left[#left + 1] = seg(" " .. frame .. " ", "Busy")
+      end
     end
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
@@ -206,40 +213,54 @@ local function render_winbar(buf)
     }
   end
 
-  -- Usage/cost cluster. mode: "full" (tokens + both prices), "compact"
-  -- (in→out tokens + both prices), "prices" (both prices only). The first
-  -- $ is this buffer's accumulated cost; Σ is the all-time session cost
-  -- from the audit log. Returns a list of segments so the context-fill
-  -- chip can carry its own highlight.
+  -- Usage/cost cluster: three chips, each led by its config icon —
+  -- since-open, all-time, context-fill. mode "full" shows tokens + cost,
+  -- "compact" drops the cost, "prices" keeps only the two costs (the icons
+  -- still disambiguate the two scopes). Returns a list of segments so the
+  -- context chip can carry the warning color.
   local function usage_segment(mode)
     local items = {} -- { text, group }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
+
     if u and (u.prompt > 0 or u.completion > 0) and mode ~= "prices" then
-      if mode == "full" then
-        items[#items + 1] = {
-          util.fmt_tokens(u.prompt) .. " in · " .. util.fmt_tokens(u.completion) .. " out",
-          "Idle",
-        }
-      else
-        items[#items + 1] = { util.fmt_tokens(u.prompt) .. "→" .. util.fmt_tokens(u.completion), "Idle" }
+      local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)
+      if mode == "full" and u.cost then
+        text = text .. " · " .. string.format("$%.4g", u.cost)
       end
+      items[#items + 1] = { text, "Idle" }
     end
+
+    if s and (s.prompt > 0 or s.completion > 0) and mode ~= "prices" then
+      local text = icons.total .. " " .. util.fmt_tokens(s.prompt + s.completion)
+      if mode == "full" and s.cost then
+        text = text .. " · " .. string.format("$%.4g", s.cost)
+      end
+      items[#items + 1] = { text, "Idle" }
+    end
+
     -- Context fill: the last turn's prompt tokens against the model's
     -- context window (both carried by the turn_end event). A near-full
     -- window is a safety signal, so it gets the warning color.
     local t = last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
-    if ctx and ctx > 0 and t.prompt and t.prompt > 0 then
+    if ctx and ctx > 0 and t.prompt and t.prompt > 0 and mode ~= "prices" then
       local pct = math.floor(t.prompt / ctx * 100 + 0.5)
-      items[#items + 1] = { pct .. "% ctx", pct >= 90 and "Needs" or "Idle" }
+      items[#items + 1] = {
+        icons.ctx .. " " .. util.fmt_tokens(t.prompt) .. "/" .. util.fmt_tokens(ctx),
+        pct >= 90 and "Needs" or "Idle",
+      }
     end
-    if u and u.cost then
-      items[#items + 1] = { string.format("$%.4g", u.cost), "Idle" }
+
+    if mode == "prices" then
+      if u and u.cost then
+        items[#items + 1] = { icons.since .. " " .. string.format("$%.4g", u.cost), "Idle" }
+      end
+      if s and s.cost then
+        items[#items + 1] = { icons.total .. " " .. string.format("$%.4g", s.cost), "Idle" }
+      end
     end
-    if s and s.cost then
-      items[#items + 1] = { (mode == "full" and "total " or "Σ") .. string.format("$%.4g", s.cost), "Idle" }
-    end
+
     if #items == 0 then
       return nil
     end
@@ -253,10 +274,7 @@ local function render_winbar(buf)
 
   local function state_segment()
     if running and running[buf] then
-      local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
-      local l = live and live[buf]
-      local state = l and (frame .. " " .. l.name .. " " .. (os.time() - l.since) .. "s") or (frame .. " busy")
-      return seg(" " .. state .. " ", "Busy")
+      return nil -- in-flight is shown by the left spinner beacon, not here
     elseif errors[buf] then
       return seg(" ✗ error ", "Error")
     elseif awaiting[buf] then
@@ -287,7 +305,7 @@ local function render_winbar(buf)
   end
 
   -- Degrade until the bar fits, dropping the least important parts first:
-  -- state glyph → model/fold → token phrase → description. Prices and the
+  -- state glyph → model/fold → chip costs → chip tokens. Prices and the
   -- island survive; past that the bar clips rather than hiding prices.
   local desc_max, mode, show_mid, show_state = 40, "full", true, true
   while true do

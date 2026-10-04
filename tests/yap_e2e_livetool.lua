@@ -38,14 +38,20 @@ set_prompt(buf, "run the streaming command")
 -- send() goes through vim.system + schedule_wrap: poll until done.
 yap.send()
 
--- Mid-run: the tool header and the winbar entry are there, but NO
--- output has streamed into the buffer (the mock sleeps between l2 and
--- l3, so the turn takes ~0.5s — l1 must be absent until completion).
-local mid_ok = vim.wait(10000, function()
+-- Mid-run: the tool header lands immediately; the winbar shows only the
+-- spinner until the tool has run 2s, then its name joins it. No output
+-- has streamed into the buffer (the mock sleeps ~2.2s between l2 and l3,
+-- so l1 must be absent until completion).
+local header_ok = vim.wait(10000, function()
   local t = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-  return t:match("<!%-%- yap:tool") ~= nil and yap.winbar():match("bash") ~= nil
+  return t:match("<!%-%- yap:tool") ~= nil
 end, 10)
-assert(mid_ok, "tool header / winbar entry not visible mid-run")
+assert(header_ok, "tool header not visible mid-run")
+assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
+local mid_ok = vim.wait(10000, function()
+  return yap.winbar():match("bash") ~= nil
+end, 10)
+assert(mid_ok, "winbar did not show the tool name after 2s: " .. yap.winbar())
 local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")

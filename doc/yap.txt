@@ -217,6 +217,7 @@ Lua setup: >lua
     description_model = "openai/gpt-5-nano", -- smallest: on-send label
     description_answer_model = "openai/gpt-5-mini", -- bigger: final whole-session title
     syntax_highlight = true, -- keep markdown syntax colors (default)
+    icons = { since = "󰅐", total = "󰆼", ctx = "󰊚" }, -- winbar chip glyphs ("" drops one)
     keymaps = { stop = "<M-Esc>" },  -- override any key; "" disables it
   })
 <
@@ -243,6 +244,11 @@ little more headroom. Note that profiling attributed a per-scroll cost to
 "treesitter" that was actually touchup re-rendering plus live-buffer churn:
 the highlighter itself is incremental and effectively free, so the default
 keeps colors on.
+
+`icons` sets the leading glyph of each winbar usage chip (|yap-winbar|):
+`since` (this buffer, since open), `total` (the whole session's audit
+total), and `ctx` (context fill). Defaults are Nerd Font v3 glyphs; set
+any to `""` to drop its glyph on fonts without it.
 
 `relativenumber` is left alone: chat buffers keep whatever `'relativenumber'`
 setting the user has. The slowness that looked like relativenumber was
@@ -871,72 +877,63 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: a `▶` busy beacon while the
-buffer itself is streaming (the far-right glyph mirrors it, but the left edge
-is the at-a-glance cue), then a raised rollup island for ALL OTHER yap
-sessions — `▶N` (N other buffers streaming a reply) and `◉N` (N other
-buffers await you; jump to one with |:YapInstances|). The island appears only
-when at least one other session is running or waiting; it never counts the
-current buffer, whose own state lives on the right. After the island: the
-session description (truncated to 40 display columns), provider/model combo,
-and the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
+The winbar is the session dashboard. Left: an animated spinner beacon while
+the buffer itself is streaming — once a tool has run for 2s its name and
+elapsed time join the spinner (`⠋ bash 12s`) — then a raised rollup island
+for ALL OTHER yap sessions: `▶N` (N other buffers streaming a reply) and
+`◉N` (N other buffers await you; jump to one with |:YapInstances|). The
+island appears only when at least one other session is running or waiting;
+it never counts the current buffer. After the island: the session
+description (truncated to 40 display columns), provider/model combo, and
+the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
-manual |za| toggles don't update it). Right: token totals and cost
-for this buffer (accumulated over its lifetime, compact k/m format),
-then the session-wide cost from the audit log (`session $N` or `Σ$N`,
-summed over every |yap-audit| turn journal, surviving restarts), then
-the state glyph pinned to the far right edge:
+manual |za| toggles don't update it). Right: three usage chips
+(|yap-winbar-numbers|), then the state glyph pinned to the far right edge:
 
-  ⠋ busy    A request is in flight (driven by the job table). While a
-            tool runs, its name and elapsed time replace "busy"
-            (`⠋ bash 12s`). A `▶` marker also leads the bar on the
-            left, so an in-flight request is visible at a glance.
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
   ◉ waiting A turn has completed and the agent awaits your next prompt
             (the herdr-style "needs you" state).
   ○ idle    Nothing running, nothing pending.
 
-Example: `▶1 ◉2 moonshot/kimi-k3 Ⓕ2` ... `1.5k in · 42 out · $0.0034 · Σ$0.51 ◉ waiting`
+While a request is in flight the right-hand glyph is absent — the left
+spinner beacon is the indicator.
+
+Example: `⠋ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 󰊚 35k/200k ◉ waiting`
 
 Reading the numbers                                    *yap-winbar-numbers*
 
-The right side mixes token counts and cost. Each piece means:
+The right side shows three chips, each led by a config icon (the `icons`
+table in |yap-configuration|; set one to `""` to drop its glyph):
 
-  in / out   Token counts for this buffer. `in` is the prompt — every
-             token of conversation and tool output sent to the model;
-             `out` is the completion — the tokens the model produced.
-             Suffixes are compact: `k` = thousands, `m` = millions
-             (`1.5k` = 1,500 tokens, `1.2m` = 1,200,000).
-  $N         This buffer's cost in USD, accumulated since it was
-             opened. Computed as `in × input price + out × output
-             price`, where prices are USD per 1M tokens — your
-             `pricing` overrides first, then the embedded catalog
-             (see |yap-configuration|). This number resets when the
-             session is reopened.
-  Σ$N        The session's all-time cost (shown as `session $N` on a
-             wide bar), summed from every `turn_end` journal entry in
-             the audit log (|yap-audit|). It survives restarts and is
-             the number that answers "what has this session cost".
-             On a freshly opened session with no prior turns the two
-             prices are equal; after a reopen they diverge.
+  󰅐 N        Since-open: total tokens (prompt + completion) and cost
+             for this buffer, accumulated since it was opened in this
+             Neovim. Resets when the session is reopened.
+  󰆼 N        All-time: total tokens and cost for the whole session
+             file, summed from every `turn_end` journal entry in the
+             audit log (|yap-audit|). Survives restarts; answers "what
+             has this session cost".
+  󰊚 N/M      Context fill: the last turn's prompt size against the
+             model's context window (both from the `turn_end` journal),
+             e.g. `35k/200k`. Turns amber (`YapNeeds`) at 90% or more.
+             Absent until the first turn completes, and only for models
+             the pricing catalog knows a context window for.
 
-  NN% ctx    The last turn's prompt size as a share of the model's
-             context window (both carried by the `turn_end` journal),
-             so you can see how full the context is before the next
-             send. Turns amber (`YapNeeds`) at 90% or more. Absent
-             until the first turn completes, and only for models the
-             pricing catalog knows a context window for.
+Suffixes are compact: `k` = thousands, `m` = millions (`1.5k` = 1,500
+tokens). Costs are USD, computed as `in × input price + out × output
+price` (USD per 1M tokens) — your `pricing` overrides first, then the
+embedded catalog (see |yap-configuration|). On a freshly opened session
+with no prior turns the two token/cost chips are equal; after a reopen
+they diverge.
 
 The bar is width-aware, so a narrow window never crowds out the parts
 that matter. It drops parts in this order as the window shrinks: the
-right-hand state glyph (busy is already duplicated by the left `▶`
-beacon), then the provider/model + fold-view cluster, then the token
-phrase (collapsing `1.5k in · 42 out` to `1.5k→42`, then dropping the
-tokens entirely), and finally the session description, which truncates
-shorter. The left island (`▶N`/`◉N`) and the two prices (buffer cost +
-`Σ` session total) are the last things standing, and the winbar
-re-lays itself out on `WinResized`.
+right-hand state glyph (in-flight is already the left spinner beacon),
+then the provider/model + fold-view cluster, then the chip costs, then
+the chip tokens (leaving just the two prices), and finally the session
+description, which truncates shorter. The left island (`▶N`/`◉N`) and
+the two prices are the last things standing, and the winbar re-lays
+itself out on `WinResized`.
 
 The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
 `◉N` rollup counts OTHER yap buffers with a completed turn awaiting

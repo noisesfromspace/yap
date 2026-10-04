@@ -22,7 +22,7 @@ assert(u and u.prompt > 0, "no buffer usage: " .. vim.inspect(u))
 local su = vim.b[buf].yap_session_usage
 assert(su and su.cost and su.cost > 0, "no session usage: " .. vim.inspect(su))
 assert(math.abs(su.cost - u.cost) < 1e-9, "session cost != buffer cost: " .. vim.inspect(su))
-assert(yap.winbar(buf):match("total %$"), "winbar missing session cost: " .. yap.winbar(buf))
+assert(yap.winbar(buf):match("󰆼"), "winbar missing session cost: " .. yap.winbar(buf))
 
 -- Reopen the session (simulating a restart): the totals are seeded from the
 -- audit log, so the all-time cost shows without a new turn.
@@ -31,5 +31,5 @@ vim.cmd("bwipeout!")
 local reopened = yap.open(path)
 local su2 = vim.b[reopened].yap_session_usage
 assert(su2 and su2.cost and math.abs(su2.cost - u.cost) < 1e-9, "reopen did not seed session usage: " .. vim.inspect(su2))
-assert(yap.winbar(reopened):match("total %$"), "reopened winbar missing session cost: " .. yap.winbar(reopened))
+assert(yap.winbar(reopened):match("󰆼"), "reopened winbar missing session cost: " .. yap.winbar(reopened))
 print("OK session_usage")
