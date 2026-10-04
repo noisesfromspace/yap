@@ -793,16 +793,19 @@ end
 --- R18). Returns trimmed body lines, never a leading # @role heading.
 local function compact_prompt_lines()
   local lines = require("harness.template").named_lines("compact")
-  if lines then
-    return lines
+  if not lines then
+    lines = vim.split(
+      "Summarize the conversation above into a compact markdown summary that\n"
+        .. "preserves all facts, decisions, open todos, and current file state.\n"
+        .. "I will use that summary to continue the conversation with full context.",
+      "\n",
+      { plain = true }
+    )
   end
-  return vim.split(
-    "Summarize the conversation above into a compact markdown summary that\n"
-      .. "preserves all facts, decisions, open todos, and current file state.\n"
-      .. "I will use that summary to continue the conversation with full context.",
-    "\n",
-    { plain = true }
-  )
+  vim.list_extend(lines, {
+    "Do not use the colon character anywhere in the summary. Avoid YAML/frontmatter delimiters, Markdown headings, code fences, and HTML comments. Use simple prose or basic bullets so the summary stays safe for Markdown Tree-sitter parsing.",
+  })
+  return lines
 end
 
 --- :YapCompact — compaction as the visible, editable recipe, automated:

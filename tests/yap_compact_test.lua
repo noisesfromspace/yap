@@ -139,4 +139,18 @@ do
   assert(text:match("# @user"), "trailing user prompt lost: " .. text)
 end
 
+-- ── compact always adds the Tree-sitter/frontmatter-safe output constraint ──
+do
+  local buf = yap.new({ provider = "mock", model = "m1" })
+  local original_send = yap.send
+  local sent_text
+  yap.send = function()
+    sent_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+  end
+  yap.compact()
+  yap.send = original_send
+  assert(sent_text and sent_text:match("Do not use the colon character anywhere in the summary"), "compact output constraint missing: " .. tostring(sent_text))
+  assert(sent_text:match("Avoid YAML/frontmatter delimiters"), "frontmatter-safe constraint missing")
+end
+
 print("OK compact")
