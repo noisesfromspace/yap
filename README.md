@@ -110,7 +110,7 @@ notify. For command details and keymaps, see `:help yap-commands`.
 | `:YapLive`                         | `<leader>l` | Open the live tool/audit view.                                        |
 | `:YapClear [keep]`                 |             | Replace older tool output with audit-log references; default keeps 2. |
 | `:YapCompact`                      |             | Ask for a summary, then optionally remove superseded history.         |
-| `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill into the system prompt.            |
+| `:YapInsert [name]`                | `<leader>t` | Insert a template or merge a skill into the system prompt.            |
 | `:YapInsertHere [name]`            | `<leader>T` | Insert template/skill text at the cursor.                             |
 | `:YapSessions [all]`               |             | Resume a saved session in this project, or all projects.              |
 | `:YapFork [name]`                  |             | Fork the conversation into its project session directory.             |
