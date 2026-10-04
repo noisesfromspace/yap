@@ -1998,6 +1998,8 @@ start_subagent = function(parent, ev)
   local ok, child = pcall(M.new, { path = child_path, system = body, role = ev.role, provider = provider, model = model, tools = allowed, hidden = true })
   if not ok then reply("error: cannot create subagent: " .. tostring(child)); return end
   document.append_text(child, ev.task)
+  vim.b[child].yap_subagent_parent = parent
+  vim.b[child].yap_subagent_task = ev.task
   require("harness.session").save(child)
   subagent_children[parent] = child
   record_subagent(parent, child_path)
@@ -2144,6 +2146,18 @@ local function live_session_label(buf)
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
   local label = require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
+  local parent = vim.b[buf].yap_subagent_parent
+  if parent and vim.api.nvim_buf_is_valid(parent) and vim.b[parent].yap then
+    local task = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if vim.fn.strdisplaywidth(task) > 72 then
+      local chars = vim.fn.strchars(task)
+      while chars > 1 and vim.fn.strdisplaywidth(vim.fn.strcharpart(task, 0, chars) .. "…") > 72 do
+        chars = chars - 1
+      end
+      task = vim.fn.strcharpart(task, 0, chars) .. "…"
+    end
+    return live_session_label(parent) .. "\n  ↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. ": " .. task
+  end
   if fm and fm.role then
     label = label .. "  [subagent: " .. fm.role .. "]"
   end
