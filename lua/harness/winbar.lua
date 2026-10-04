@@ -425,7 +425,7 @@ function M.spinner_start()
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,
-    250,
+    180,
     vim.schedule_wrap(function()
       spinner_tick = spinner_tick + 1
       for b in pairs(running) do
