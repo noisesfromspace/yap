@@ -91,19 +91,38 @@ function M.seed_awaiting(buf)
   end
 end
 
---- The session description for the winbar. A bounded read of the short
---- frontmatter block, so hand edits show up on the next redraw (the buffer
---- stays the source of truth); truncate to `max` display columns so a long
---- phrase cannot crowd out the right-hand usage/state chips.
+--- The un-truncated frontmatter description for a buffer, cached per
+--- changedtick. The winbar re-evaluates on every screen draw, and the
+--- description only changes when the buffer is edited, so re-reading and
+--- re-parsing the frontmatter block each redraw is wasted work.
+local desc_cache = {} -- buf -> { tick, full }
+
+local function full_description(buf)
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  local c = desc_cache[buf]
+  if c and c.tick == tick then
+    return c.full
+  end
+  local full
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
+  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
+    local fm = frontmatter.parse(lines)
+    if fm and fm.description and fm.description ~= "" then
+      full = fm.description
+    end
+  end
+  desc_cache[buf] = { tick = tick, full = full }
+  return full
+end
+
+--- The session description for the winbar, truncated to `max` display
+--- columns so a long phrase cannot crowd out the right-hand usage/state
+--- chips. The full description is cached (see full_description); only the
+--- cheap width truncation runs per call.
 local function winbar_description(buf, max)
   max = max or 40
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
-  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
-    return nil
-  end
-  local fm = frontmatter.parse(lines)
-  local d = fm and fm.description
-  if not d or d == "" then
+  local d = full_description(buf)
+  if not d then
     return nil
   end
   if vim.fn.strdisplaywidth(d) > max then
@@ -304,6 +323,12 @@ end
 function M.winbar(buf)
   buf = buf or tonumber(vim.g.actual_curbuf) or vim.api.nvim_get_current_buf()
   return render_winbar(buf)
+end
+
+--- Drop a buffer's cached description (BufWipeout). The changedtick check
+--- already invalidates on buffer-number reuse; this releases the entry sooner.
+function M.clear_desc(buf)
+  desc_cache[buf] = nil
 end
 
 --- The herdr-style rollup for a statusline/tabline: `◉N` when N OTHER

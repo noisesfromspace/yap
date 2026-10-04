@@ -167,10 +167,30 @@ function M.expr(lnum)
   return M.levels()[lnum] or "="
 end
 
+-- Foldtext is re-evaluated for every visible closed fold on every screen
+-- draw, and each evaluation crosses into VimL (vim.fn.getline) plus string
+-- formatting. The text depends only on the buffer content, which changes only
+-- with the changedtick, so cache the rendered string per fold start line:
+-- after the first paint of a given tick, a redraw is a table lookup.
+local text_cache = {} -- buf -> { tick, by_start = { [foldstart] = { finish, text } } }
+
 function M.text(start, finish)
   start = start or vim.v.foldstart
   finish = finish or vim.v.foldend
+  local buf = vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  local c = text_cache[buf]
+  if not c or c.tick ~= tick then
+    c = { tick = tick, by_start = {} }
+    text_cache[buf] = c
+  end
+  local e = c.by_start[start]
+  if e and e.finish == finish then
+    return e.text
+  end
+
   local first = vim.fn.getline(start)
+  local text
 
   if first:match(TOOL_OPEN) then
     -- The name is on the opener line (single-line header) or in the
@@ -182,31 +202,38 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    return string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
-  end
-
-  local region = first:match("^<!%-%-.*yap:(%a+)")
-  if region then
-    return string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
-  end
-
-  local role = first:match(HEAD) or "?"
-
-  local preview = ""
-  for lnum = start + 1, finish do
-    local s = compact(vim.fn.getline(lnum))
-    if s ~= "" then
-      preview = s
-      break
+    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
+  else
+    local region = first:match("^<!%-%-.*yap:(%a+)")
+    if region then
+      text = string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
+    else
+      local role = first:match(HEAD) or "?"
+      local preview = ""
+      for lnum = start + 1, finish do
+        local s = compact(vim.fn.getline(lnum))
+        if s ~= "" then
+          preview = s
+          break
+        end
+      end
+      if #preview > 60 then
+        preview = preview:sub(1, 60) .. "…"
+      elseif preview == "" then
+        preview = "(empty)"
+      end
+      text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
     end
   end
-  if #preview > 60 then
-    preview = preview:sub(1, 60) .. "…"
-  elseif preview == "" then
-    preview = "(empty)"
-  end
 
-  return string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
+  c.by_start[start] = { finish = finish, text = text }
+  return text
+end
+
+--- Drop a buffer's foldtext cache (BufWipeout). The tick check already
+--- invalidates on buffer-number reuse; this just releases the strings sooner.
+function M.clear_text(buf)
+  text_cache[buf] = nil
 end
 
 -- ─── View levels ───────────────────────────────────────────────────────────
@@ -258,12 +285,27 @@ local function find_live_heading(buf, levels)
   return nil
 end
 
+-- Open/close the fold whose OPENER is `lnum`. `:Nfoldopen`/`:Nfoldclose`
+-- act on "one level of folds in range", which is not the fold itself once
+-- folds nest: closing a level-3 tool inside an open level-2 assistant
+-- closes the assistant, and an unterminated trailing opener is left open.
+-- `zo`/`zc` instead target the innermost fold at the cursor, so move the
+-- cursor to the opener, toggle, and restore the view. Inside
+-- nvim_win_call this never disturbs the user's window or cursor; the
+-- callers only invoke these on the exact open/closed state (see guards),
+-- so zo/zc always act on the intended fold.
 local function fold_open(lnum)
-  vim.cmd(("silent! %dfoldopen"):format(lnum))
+  local view = vim.fn.winsaveview()
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.cmd("normal! zo")
+  vim.fn.winrestview(view)
 end
 
 local function fold_close(lnum)
-  vim.cmd(("silent! %dfoldclose"):format(lnum))
+  local view = vim.fn.winsaveview()
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.cmd("normal! zc")
+  vim.fn.winrestview(view)
 end
 
 function M.level()
@@ -342,8 +384,9 @@ end
 ---      if it is the live assistant).
 ---   4. Re-open the user-opened set and the live assistant (idempotent).
 ---
---- `:Nfoldopen`/`:Nfoldclose` operate on a single line without moving the
---- cursor, so reconciling during a stream never yanks the user's cursor.
+--- fold_open/fold_close save and restore the window view around a cursor
+--- jump + zo/zc, so reconciling during a stream never yanks the user's
+--- cursor or scroll position.
 local function reconcile_window(w, buf, levels, old_live, new_openers)
   vim.api.nvim_win_call(w, function()
     local foldlevel = vim.wo.foldlevel
@@ -446,42 +489,36 @@ function M.toggle(lnum)
   end
 end
 
---- A line that starts a new fold when it lands in the buffer (the
---- re-apply trigger). `yap:ui` is deliberately excluded: it is content
---- inside a tool region, not a fold of its own, so a streamed ui diff
---- doesn't re-fold the region it belongs to.
-local function is_fold_opener(line)
-  return line:match(HEAD) ~= nil
-    or line:match(TOOL_OPEN) ~= nil
-    or line:match("^<!%-%-.*yap:thinking%s*$") ~= nil
-    or line:match("^<!%-%-.*yap:error%s*$") ~= nil
-end
-
 --- Called by the send/stream path after appending `lines` to a session
---- buffer (never by user edits). If any line opens a new fold, reconcile
---- the view in every window showing the buffer: close folds the append
---- newly created that leaked open, fold the superseded live assistant, and
---- keep the user-opened folds + live assistant open. Plain-text appends
---- (no opener) change nothing, so streaming prose never touches folds.
+--- buffer (never by user edits). If the buffer gained a fold opener,
+--- reconcile the view in every window showing the buffer: close folds the
+--- append newly created that leaked open, fold the superseded live
+--- assistant, and keep the user-opened folds + live assistant open.
+---
+--- New openers are detected from the BUFFER, not the appended lines:
+--- streamed thinking/tool headers arrive in arbitrary byte chunks, so the
+--- line that completes an opener often contains only the opener's tail
+--- (e.g. `<!-- yap:thinkin` + `g`). Scanning the appended lines would miss
+--- it, leave the fold leaked open (Neovim inherits a manual foldopen into
+--- same/lower-level folds), and let every later streamed fold stay open.
+--- Diffing the buffer's openers against the pre-append set is exact, and
+--- plain-text appends (no new opener) still change nothing.
 function M.after_append(buf, lines)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local has_opener = false
-  for _, l in ipairs(lines or {}) do
-    if is_fold_opener(l) then
-      has_opener = true
-      break
-    end
-  end
-  if not has_opener then
-    return
-  end
   local levels = M.levels(buf)
+  local cur_openers = openers(levels)
   local old_live = live_heading[buf]
-  local new_openers = openers(levels)
+  local new_openers = {}
+  for lnum in pairs(cur_openers) do
+    new_openers[lnum] = true
+  end
   for lnum in pairs(prev_openers[buf] or {}) do
     new_openers[lnum] = nil
+  end
+  if next(new_openers) == nil then
+    return
   end
   if vim.tbl_contains(lines, "# @assistant") then
     live_heading[buf] = find_live_heading(buf, levels)
@@ -489,7 +526,7 @@ function M.after_append(buf, lines)
   for _, w in ipairs(vim.fn.win_findbuf(buf)) do
     reconcile_window(w, buf, levels, old_live, new_openers)
   end
-  prev_openers[buf] = openers(levels)
+  prev_openers[buf] = cur_openers
 end
 
 -- ─── Message navigation ────────────────────────────────────────────────────

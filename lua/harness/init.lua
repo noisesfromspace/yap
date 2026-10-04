@@ -36,6 +36,12 @@ M.config = {
   -- vim.notify when a turn completes in a buffer that is not focused
   -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
+  -- Keep treesitter's markdown syntax highlighting on yap buffers. It is
+  -- off by default: a chat buffer is rendered by touchup, and the
+  -- treesitter highlighter re-highlights the viewport on every scroll —
+  -- one of the larger per-redraw costs on a long session. touchup runs its
+  -- own queries over the treesitter parser, which stays loaded either way.
+  syntax_highlight = false,
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
   -- before the agent answers.
@@ -1470,6 +1476,27 @@ local function setup_buffer(buf)
   -- with :YapInstances.
   vim.bo[buf].buflisted = false
 
+  -- Chat buffers never need relative line numbers; recomputing them on
+  -- every redraw is one of the larger per-key costs on a long session.
+  vim.wo.relativenumber = false
+
+  -- Stop treesitter's syntax highlighter (not the parser). touchup runs
+  -- its own queries over the parser, and nvim-treesitter re-highlights the
+  -- viewport on every scroll — pure per-redraw cost (same rationale as the
+  -- LSP guard above). Deferred so the FileType autocommands that started it
+  -- have run. Set syntax_highlight = true to keep markdown syntax colors.
+  if not M.config.syntax_highlight then
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(buf) then
+        return
+      end
+      local hl = vim.treesitter.highlighter and vim.treesitter.highlighter.active[buf]
+      if hl and hl.destroy then
+        hl:destroy()
+      end
+    end)
+  end
+
   local keys = M.config.keymaps
   local map = function(mode, lhs, rhs, desc)
     if lhs == "" then
@@ -1863,6 +1890,14 @@ function M.setup(opts)
       if process then process:kill(15) end
       servers[args.buf] = nil
       running[args.buf] = nil
+      -- Release the per-buffer UI state so the winbar's rollup and cache
+      -- don't iterate/retain entries for buffers that are gone.
+      live[args.buf] = nil
+      errors[args.buf] = nil
+      last_turn[args.buf] = nil
+      awaiting[args.buf] = nil
+      winbar.clear_desc(args.buf)
+      fold.clear_text(args.buf)
     end,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
