@@ -94,21 +94,21 @@ Successful commands are quiet: edits show in the buffer, model changes show
 in the winbar, and pickers show their selection. Warnings and errors still
 notify. For command details and keymaps, see `:help yap-commands`.
 
-| Command                                          | Purpose                                                               |
-| ------------------------------------------------ | --------------------------------------------------------------------- |
-| `:Yap`                                           | Start a chat.                                                         |
-| `:YapSend` / `<C-s>`                             | Send the transcript.                                                  |
-| `:YapStop` / `<leader>c`                         | Stop the current request.                                             |
-| `:YapChangeModel [provider/model]` / `<leader>m` | Pick or set this chat's model.                                        |
-| `:YapLive` / `<leader>l`                         | Open the live tool/audit view.                                        |
-| `:YapClear [keep]`                               | Replace older tool output with audit-log references; default keeps 2. |
-| `:YapCompact`                                    | Ask for a summary, then optionally remove superseded history.         |
-| `:YapInsert [name]` / `<C-t>`                    | Insert a template or merge a skill into the system prompt.            |
-| `:YapInsertHere [name]` / `<leader>T`            | Insert template/skill text at the cursor.                             |
-| `:YapSessions [all]`                             | Resume a saved session in this project, or all projects.              |
-| `:YapInstances` / `<leader>r`                    | Pick any open chat; sessions needing attention come first.            |
-| `:YapWaiting` / `<leader>w`                      | Pick a chat awaiting your reply.                                      |
-| `:YapReload`                                     | Reload Lua modules (development only).                                |
+| Command                            | Shortcut    | Purpose                                                               |
+| ---------------------------------- | ----------- | --------------------------------------------------------------------- |
+| `:Yap`                             |             | Start a chat.                                                         |
+| `:YapSend`                         | `<C-s>`     | Send the transcript.                                                  |
+| `:YapStop`                         | `<leader>c` | Stop the current request.                                             |
+| `:YapChangeModel [provider/model]` | `<leader>m` | Pick or set this chat's model.                                        |
+| `:YapLive`                         | `<leader>l` | Open the live tool/audit view.                                        |
+| `:YapClear [keep]`                 |             | Replace older tool output with audit-log references; default keeps 2. |
+| `:YapCompact`                      |             | Ask for a summary, then optionally remove superseded history.         |
+| `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill into the system prompt.            |
+| `:YapInsertHere [name]`            | `<leader>T` | Insert template/skill text at the cursor.                             |
+| `:YapSessions [all]`               |             | Resume a saved session in this project, or all projects.              |
+| `:YapInstances`                    | `<leader>r` | Pick any open chat; sessions needing attention come first.            |
+| `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply.                                      |
+| `:YapReload`                       |             | Reload Lua modules (development only).                                |
 
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. `<leader>s` opens the scratch queue; send from it to
