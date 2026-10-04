@@ -53,3 +53,46 @@ local answer_at = t:find("final answer", 1, true)
 assert(steer_at and answer_at and steer_at < answer_at, "steer landed after the final answer:\n" .. t)
 
 print("OK steer")
+
+-- A template inserted mid-turn steers through the same wire path:
+-- instead of refusing or editing the streaming buffer, its body lands
+-- at the next tool boundary as a `# @user` block.
+local tmp = vim.fn.tempname()
+vim.fn.mkdir(tmp .. "/templates", "p")
+vim.fn.mkdir(tmp .. "/skills", "p")
+local f = io.open(tmp .. "/templates/interrupt.md", "w")
+f:write("also check the tests\n")
+f:close()
+yap.setup({
+  bin = ROOT .. "/yap",
+  provider = "mock",
+  model = "m1",
+  templates_dir = tmp .. "/templates",
+  skills_dir = tmp .. "/skills",
+})
+
+local buf2 = yap.new()
+vim.api.nvim_buf_set_lines(buf2, -1, -1, false, { "do some work" })
+yap.send(buf2)
+local ok3 = vim.wait(10000, function()
+  return yap.is_running(buf2)
+end, 50)
+assert(ok3, "template-steer turn did not start")
+vim.wait(400)
+
+vim.api.nvim_set_current_buf(buf2)
+yap.insert("interrupt")
+
+local ok4 = vim.wait(15000, function()
+  local l = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
+  return l[#l - 1] == "# @user" and not yap.is_running(buf2)
+end, 100)
+assert(ok4, "turn did not complete after template steer")
+vim.wait(200)
+
+local t2 = chat_text(buf2)
+assert(t2:match("# @user\nalso check the tests"), "template steer block missing:\n" .. t2)
+assert(t2:match("final answer"), "template steer final answer missing:\n" .. t2)
+assert(not t2:match("STEER MISSING"), "template steer did not reach the model:\n" .. t2)
+
+print("OK template steer")

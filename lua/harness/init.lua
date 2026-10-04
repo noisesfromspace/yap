@@ -930,6 +930,25 @@ local function scratch_save(scratch)
   end)
 end
 
+--- Steer a running turn: hand `text` to the in-flight backend so it is
+--- injected as a `# @user` block at the next tool boundary. Latest wins;
+--- a steer that misses the turn's last poll point degrades to a follow-up
+--- turn in the send-completion path. Assumes the caller checked is_running.
+function M.steer(buf, text)
+  steer[buf] = text
+  local proc = running[buf]
+  local ok = pcall(function()
+    proc:write(vim.json.encode({ type = "steer", text = text }) .. "\n")
+  end)
+  if not ok then
+    steer[buf] = nil
+    vim.notify("yap: could not steer (backend gone)", vim.log.levels.WARN)
+    return false
+  end
+  vim.notify("yap: steering — lands at the next tool boundary", vim.log.levels.INFO)
+  return true
+end
+
 --- Send the scratch queue — all of it, or the visual selection — into the
 --- owning chat buffer as a `# @user` message, then submit it. When the
 --- owner is idle the sent text is drained (scratch_take) and the queue is
@@ -960,18 +979,7 @@ function M.scratch_send(scratch)
       vim.notify("yap: scratch is empty", vim.log.levels.WARN)
       return
     end
-    local msg = table.concat(text, "\n")
-    steer[owner] = msg
-    local proc = running[owner]
-    local ok = pcall(function()
-      proc:write(vim.json.encode({ type = "steer", text = msg }) .. "\n")
-    end)
-    if not ok then
-      steer[owner] = nil
-      vim.notify("yap: could not steer (backend gone)", vim.log.levels.WARN)
-      return
-    end
-    vim.notify("yap: steering — lands at the next tool boundary", vim.log.levels.INFO)
+    M.steer(owner, table.concat(text, "\n"))
     return
   end
 

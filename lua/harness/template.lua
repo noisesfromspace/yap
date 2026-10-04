@@ -203,16 +203,15 @@ end
 --- :YapInsert [name] / :YapInsertHere [name].
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
 --- otherwise a template appends as a message block and a skill merges into
---- the system block. With no name, pick from the combined list.
+--- the system block. While the agent is mid-turn a template steers the
+--- running turn (injected at the next tool boundary) instead of inserting;
+--- skills and at-cursor inserts still refuse. With no name, pick from the
+--- combined list.
 function M.insert(name, opts)
   opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
   if not vim.b[buf].yap then
     vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
-    return
-  end
-  if running(buf) then
-    vim.notify("yap: send in flight, not inserting", vim.log.levels.WARN)
     return
   end
 
@@ -229,6 +228,25 @@ function M.insert(name, opts)
       lines = vim.split(text, "\n", { plain = true })
     end
     lines = trim_blank(lines)
+    if running(buf) then
+      -- Mid-turn a template steers the running turn instead of editing the
+      -- streaming buffer; skills and raw cursor inserts still refuse.
+      if entry.kind ~= "template" or opts.at_cursor then
+        vim.notify("yap: send in flight, not inserting", vim.log.levels.WARN)
+        return
+      end
+      -- Steering is always a `# @user` injection, so a leading role
+      -- heading is stripped and the body is the steering text.
+      if lines[1] and lines[1]:match(HEAD) then
+        local body = {}
+        for i = 2, #lines do
+          body[#body + 1] = lines[i]
+        end
+        lines = trim_blank(body)
+      end
+      require("harness").steer(buf, table.concat(lines, "\n"))
+      return
+    end
     if entry.kind ~= "skill" and is_snippet(table.concat(lines, "\n")) then
       -- Native snippet: expand placeholders/tabstops instead of plain text.
       local body = table.concat(lines, "\n")

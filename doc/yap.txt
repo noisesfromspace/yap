@@ -396,8 +396,13 @@ WHAT INSERT DOES
   :YapInsertHere <name>   raw file above the cursor, no role logic
 
 All three go through the normal append paths (R7 blank-line handling);
-insertion never touches existing lines and is refused while a send is
-in flight. The `## Skills` intro in a new chat is discoverability
+insertion never touches existing lines. While a send is in flight a
+template steers instead: its body (a leading `# @role` heading is
+stripped) is injected at the running turn's next tool boundary as a
+`# @user` block, exactly like a <C-s> steer from the scratch queue
+(see |yap-sessions|). Skills and `:YapInsertHere` are still refused
+mid-turn — they edit the buffer, which a streaming turn must not be
+disturbed. The `## Skills` intro in a new chat is discoverability
 only — names and descriptions, never skill bodies (toggle it off with
 `skills_intro = false`).
 

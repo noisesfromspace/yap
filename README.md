@@ -115,8 +115,9 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   editable turn)
 - `:YapInsert [name]` / `<leader>t` — insert a template (appended as
   `# @user`) or a skill (merged into `# @system`) from
-  `~/.config/yap/templates/` and `~/.config/yap/skills/`;
-  `<leader>T` inserts verbatim at the cursor.
+  `~/.config/yap/templates/` and `~/.config/yap/skills/`; mid-turn a
+  template steers the running agent instead (injected at the next tool
+  boundary). `<leader>T` inserts verbatim at the cursor.
 - `:YapSessions [all]` — resume a saved session
 - `:YapInstances` / `<leader>r` — list every open session by file path
   with its status (`◉ waiting`, `✗ error`, `▶ running`, `○ idle`) and
