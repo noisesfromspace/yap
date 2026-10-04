@@ -19,11 +19,9 @@ local awaiting = state.awaiting
 local last_turn = state.last_turn
 local steer = state.steer
 
--- A six-dot braille fill animation: the 2×3 dots fill down the left
--- column, then down the right, hold briefly, and clear before repeating.
--- Braille dot numbering is column-major, so each frame is one statusline
--- cell while the pattern itself reads vertically.
-local SPINNER = { "⠀", "⠁", "⠃", "⠇", "⠏", "⠟", "⠿", "⠿", "⠿", "⠀", "⠀" }
+-- A compact sparkle cycle gives the busy state a little more character
+-- than a conventional spinner, while staying one cell wide in the winbar.
+local SPINNER = { "✢", "✳", "✶", "✻", "✽", "✺", "✻", "✶", "✳" }
 local spinner_tick = 0
 local spinner_timer = nil
 
