@@ -115,4 +115,15 @@ assert(
 )
 assert(subagents_fm.updated_at == "2025-09-29T19:24:01Z", "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at))
 
+-- 9. a :file-renamed session keeps its chosen name over the description
+local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"
+assert(
+  session.label(named_path, "Generated description") == "fix-picker.md",
+  "named session should use its filename: " .. session.label(named_path, "Generated description")
+)
+assert(
+  session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker.md",
+  "named session label should keep the cwd prefix: " .. session.label(named_path, "Generated description", "/opt/code/yap")
+)
+
 print("OK frontmatter")

@@ -3,10 +3,10 @@
 -- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
 -- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
--- autosaved after every completed reply. The resume picker identifies
--- sessions by their generated description; unnamed sessions (no description,
--- still on the auto-generated filename) are hidden, while open sessions stay
--- visible in :YapInstances via the filename fallback.
+-- autosaved after every completed reply. Pickers identify sessions by their
+-- chosen name (a :file rename) or generated description; unnamed sessions
+-- (no description, still on the auto-generated filename) are hidden, while
+-- open sessions stay visible in :YapInstances via the filename fallback.
 
 local M = {}
 
@@ -173,11 +173,15 @@ local function slug_cwd(dir)
   return paths.slug_cwd(dir)
 end
 
---- Shared picker identity: generated description, filename fallback. Project
---- overviews prefix the cwd so sessions from different worktrees are obvious.
+--- Shared picker identity. A session named with :file keeps that name in
+--- every view, over any generated description; only auto-generated filenames
+--- fall back to the description (then the filename). Project overviews prefix
+--- the cwd so sessions from different worktrees are obvious.
 function M.label(path, description, project_cwd)
   local filename = path and path ~= "" and vim.fn.fnamemodify(path, ":t") or nil
-  local identity = description and description ~= "" and description or filename or "session"
+  local named = filename ~= nil and not paths.is_default_name(path)
+  local identity = named and filename
+    or (description and description ~= "" and description or filename or "session")
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
