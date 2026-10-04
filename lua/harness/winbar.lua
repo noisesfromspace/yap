@@ -184,21 +184,22 @@ local function render_winbar(buf)
   -- Mandatory left cluster (never dropped; the description shrinks).
   local function left_segments(desc_max)
     local left = {}
-    if running and running[buf] then
+    local spinner = running and running[buf]
+    if spinner then
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
       if l and os.time() - l.since >= 2 then
-        left[#left + 1] = seg(" " .. frame[1] .. " " .. l.name .. " " .. (os.time() - l.since) .. "s ", frame[2])
+        left[#left + 1] = seg(" " .. frame[1] .. " " .. l.name .. " " .. (os.time() - l.since) .. "s", frame[2])
       else
-        left[#left + 1] = seg(" " .. frame[1] .. " ", frame[2])
+        left[#left + 1] = seg(" " .. frame[1], frame[2])
       end
     end
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
-    -- A rollup is inset like the local spinner, with two trailing columns;
-    -- don't add another description gap after that padding.
     local has_rollup = running_others_n > 0 or others > 0
     if has_rollup then
+      -- One column separates the rollup from the preceding item, or insets
+      -- it from the left edge when no local spinner is present.
       left[#left + 1] = seg(" ", nil, true)
       if running_others_n > 0 then
         left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
@@ -209,12 +210,18 @@ local function render_winbar(buf)
       if others > 0 then
         left[#left + 1] = seg("◉" .. others, "Needs", true)
       end
-      left[#left + 1] = seg("  ", nil, true)
     end
     local desc = winbar_description(buf, desc_max)
     if desc then
-      left[#left + 1] = seg((has_rollup and "" or " ") .. desc, "Description")
+      if spinner or has_rollup then
+        left[#left + 1] = seg(" ", nil, has_rollup)
+        left[#left + 1] = seg(desc, "Description")
+      else
+        left[#left + 1] = seg(" " .. desc, "Description")
+      end
       left[#left + 1] = seg(" · ", "Idle")
+    elseif has_rollup then
+      left[#left + 1] = seg(" ", nil, true)
     end
     return left
   end
