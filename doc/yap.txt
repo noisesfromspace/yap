@@ -825,10 +825,20 @@ resume.
 
 File operations are the session operations (pi equivalents, but manual):
 
-  :file new-name.md     Name a session; the picker shows the chosen name.
-  :saveas copy.md       Fork: the original file is untouched, the buffer
-                        continues as the copy.
-  delete a block + send Branch the conversation.
+  :file new-name.md     Rename/name the active session; the picker shows
+                        the chosen name. Yap attempts to move the audit log
+                        after a successful turn and the scratch queue when
+                        next toggled.
+  :saveas copy.md       Save the current conversation to a new session file
+                        and continue in that buffer as the copy. The old
+                        session file is left unchanged, but this is not a
+                        full copy of session sidecar data: on the next
+                        successful turn Yap attempts to move the audit log
+                        (not copy it) to the new name; the scratch queue is
+                        similarly moved when next toggled. Thus the original
+                        file remains resumable, but its audit history/queue
+                        may no longer accompany it.
+  delete a block + send Branch the conversation within the active session.
 
 AUDIT LOG                                                        *yap-audit*
 

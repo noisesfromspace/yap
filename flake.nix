@@ -63,16 +63,22 @@
 
                 # Per-user fake passwd/group so the jail exposes no host
                 # accounts (root + the caller), generated at runtime like the
-                # pi-jailed wrapper.
+                # pi-jailed wrapper. uid/gid come from bash builtins; only the
+                # cosmetic group name shells out to id (bash has no builtin
+                # for it), so this is one exec instead of four.
+                uid="''${UID:-$(id -u)}"
+                gid="''${GROUPS[0]:-$(id -g)}"
+                user="''${USER:-$(id -un)}"
+                group="$(id -gn)"
                 jail_dir="''${XDG_CACHE_HOME:-''$HOME/.cache}/yap-jail"
                 mkdir -p "$jail_dir"
                 {
                   printf 'root:x:0:0:System administrator:/root:/bin/false\n'
-                  printf '%s:x:%s:%s::%s:/bin/false\n' "$(id -un)" "$(id -u)" "$(id -g)" "$HOME"
+                  printf '%s:x:%s:%s::%s:/bin/false\n' "$user" "$uid" "$gid" "$HOME"
                 } > "$jail_dir/passwd"
                 {
                   printf 'root:x:0:\n'
-                  printf '%s:x:%s:\n' "$(id -gn)" "$(id -g)"
+                  printf '%s:x:%s:\n' "$group" "$gid"
                 } > "$jail_dir/group"
 
                 cwd="$(pwd -P)"
@@ -82,6 +88,12 @@
                   --unshare-user --unshare-ipc --unshare-pid --unshare-uts --unshare-cgroup
                   --new-session --die-with-parent
                   --proc /proc --dev /dev
+
+                  # Shebang interpreters: scripts (#!...), make, git hooks,
+                  # and npm run all resolve /bin/sh and /usr/bin/env, so point
+                  # them at the store copies instead of leaving them absent.
+                  --symlink ${pkgs.bash}/bin/sh /bin/sh
+                  --symlink ${pkgs.coreutils}/bin/env /usr/bin/env
 
                   # Read-only nix (store + profiles + daemon socket) so the
                   # system's binaries stay usable, plus the system profile
@@ -106,6 +118,13 @@
                 # Shadow secret directories (mirrors agent/utils/pathguard.go).
                 for p in "$HOME/.ssh" "$HOME/.gnupg" "$HOME/.aws" "$HOME/.config/sops"; do
                   if [ -d "$p" ]; then ARGS+=( --tmpfs "$p" ); fi
+                done
+
+                # known_hosts are public host fingerprints (not secrets);
+                # bind them read-only so git-over-ssh works while the private
+                # keys in ~/.ssh stay hidden by the tmpfs shadow above.
+                for kh in "$HOME/.ssh/known_hosts" /etc/ssh/ssh_known_hosts; do
+                  if [ -f "$kh" ]; then ARGS+=( --ro-bind "$kh" "$kh" ); fi
                 done
 
                 # Keep the ssh-agent socket reachable so git-over-ssh works.
