@@ -1078,7 +1078,7 @@ end
 --- sibling `*.queue` file of the session — so `:write` saves it and an
 --- unsaved queue prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
-local SCRATCH_HEIGHT = 5
+local SCRATCH_HEIGHT = 8
 
 function M.scratch_toggle(buf)
   buf = buf or vim.api.nvim_get_current_buf()
@@ -2160,15 +2160,16 @@ local function session_rank(buf)
   return 4
 end
 
---- Every open yap chat buffer, annotated with its live state and sorted so
---- sessions needing attention lead. An optional `state` ("running",
---- "error", "waiting" or "idle") narrows the list to one state; the
---- default lists every session. Tails are never here — use :YapLive /
+--- Every open yap chat buffer except the current one, annotated with its live
+--- state and sorted so sessions needing attention lead. An optional `state`
+--- ("running", "error", "waiting" or "idle") narrows the list to one state;
+--- the default lists every other session. Tails are never here — use :YapLive /
 --- <leader>l.
 function M.instances(state)
   local items = {}
+  local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap and (state == nil or session_state(b) == state) then
+    if b ~= current and vim.b[b].yap and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),

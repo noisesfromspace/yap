@@ -49,6 +49,8 @@ assert(
   "failed stream did not end in a closed user block"
 )
 -- Errors surface in the unified session picker with an error status.
+-- The active session is intentionally omitted, so inspect from another buffer.
+vim.cmd("enew")
 local pick_items
 local orig_select = vim.ui.select
 vim.ui.select = function(items)

@@ -40,9 +40,10 @@ assert(preview[#preview - 1] == "last answer line 1" and preview[#preview] == "l
   "last agent answer wrong: " .. vim.inspect(preview))
 assert(session.preview_lines({})[1] == "(no messages yet)", "empty preview missing")
 
--- :YapInstances previews the live buffer with the same excerpts.
+-- :YapInstances previews another live buffer with the same excerpts.
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hello", "", "# @assistant", "", "bye" })
+yap.new() -- current session is omitted from the picker
 local captured
 local orig_select = vim.ui.select
 vim.ui.select = function(items, opts)
@@ -50,7 +51,8 @@ vim.ui.select = function(items, opts)
 end
 yap.instances()
 vim.ui.select = orig_select
-assert(captured and #captured.items == 1, "expected one open session: " .. vim.inspect(captured and captured.items))
+assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "expected only the other open session: " .. vim.inspect(captured and captured.items))
 assert(type(captured.opts.preview_item) == "function", "instances preview_item missing")
 local live_preview = captured.opts.preview_item(captured.items[1])
 assert(live_preview[1] == "Initial user message:" and live_preview[2] == "hello",
@@ -63,6 +65,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
+vim.api.nvim_set_current_buf(buf)
 yap.instances()
 vim.ui.select = orig_select
 local child_item

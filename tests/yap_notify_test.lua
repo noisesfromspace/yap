@@ -90,8 +90,9 @@ vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
 assert(notified2[1].msg:match("m1 done"), "unexpected message: " .. notified2[1].msg)
 
--- :YapInstances / <leader>r list every open session with its status;
+-- :YapInstances / <leader>r list every other open session with its status;
 -- the awaiting one sorts first, the fresh one is idle.
+vim.cmd("enew")
 local items, fmt
 local orig_select = vim.ui.select
 vim.ui.select = function(list, opts, on_choice)
@@ -100,7 +101,7 @@ vim.ui.select = function(list, opts, on_choice)
 end
 yap.instances()
 vim.ui.select = orig_select
-assert(items and #items == 2, "expected both sessions, got " .. vim.inspect(items))
+assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
 assert(items[1].buf == buf, "awaiting session should sort first")
 assert(items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(items[1]))
 assert(items[1].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[1].text)
@@ -133,7 +134,7 @@ vim.ui.select = function(list, opts)
 end
 yap.instances()
 vim.ui.select = orig_select
-assert(items and #items == 2, "expected two sessions, got " .. vim.inspect(items))
+assert(items and #items == 2, "expected two other sessions, got " .. vim.inspect(items))
 local labels = {}
 for _, it in ipairs(items) do
   labels[it.text] = true
