@@ -5,6 +5,52 @@
 
 local M = {}
 
+-- The .yap data roots. These are the DEFAULTS; yap.setup() may override
+-- them via `sessions_dir` / `audit_dir`. A leading `~` is resolved against
+-- the real home directory (see home()), never the current working
+-- directory, so yap's data can never land inside the project.
+M.dirs = {
+  sessions_dir = "~/.yap/sessions",
+  audit_dir = "~/.yap/audit",
+}
+
+local cached_home
+
+--- The user's home directory, resolved so it can never collapse to the
+--- current working directory. `$HOME` wins when it is a non-empty absolute
+--- path; otherwise the passwd entry (via libuv) supplies the home, which
+--- covers `$HOME` unset, empty, or relative — the cases where
+--- `vim.fn.expand("~")` silently falls back to the project directory.
+local function home()
+  if cached_home then
+    return cached_home
+  end
+  local h = vim.env.HOME
+  if h and h ~= "" and vim.fn.isabsolutepath(h) == 1 then
+    cached_home = vim.fs.normalize(h)
+    return cached_home
+  end
+  local ok, p = pcall(vim.uv.os_get_passwd)
+  if ok and p and p.homedir and p.homedir ~= "" then
+    cached_home = vim.fs.normalize(p.homedir)
+    return cached_home
+  end
+  error("yap: cannot resolve home directory (HOME is unset, empty, or relative)")
+end
+
+--- Expand a data-path setting: a leading `~` resolves against home(), an
+--- absolute path passes through. A relative path is refused — yap's data
+--- directories must never be resolved against the project directory.
+function M.expand(path)
+  if path:sub(1, 1) == "~" then
+    return vim.fs.normalize(home() .. path:sub(2))
+  end
+  if vim.fn.isabsolutepath(path) == 1 then
+    return vim.fs.normalize(path)
+  end
+  error("yap: data path must be absolute or start with ~: " .. path)
+end
+
 --- cwd → slug. The round-trip is lossy (a literal "-" in a path component
 --- is indistinguishable from a separator), which is accepted: it is a
 --- best-effort display conversion, not a key.
@@ -19,11 +65,11 @@ local function unscream(slug)
 end
 
 function M.sessions_root()
-  return vim.fn.expand("~/.yap/sessions")
+  return M.expand(M.dirs.sessions_dir)
 end
 
 function M.audit_root()
-  return vim.fn.expand("~/.yap/audit")
+  return M.expand(M.dirs.audit_dir)
 end
 
 function M.session_dir(cwd)

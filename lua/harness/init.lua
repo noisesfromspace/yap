@@ -12,6 +12,8 @@
 
 local M = {}
 
+local paths = require("harness.path")
+
 M.config = {
   bin = "yap", -- path to the yap binary
   provider = "moonshot",
@@ -29,7 +31,12 @@ M.config = {
   -- system-prompt material, merged into the # @system block.
   templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
   skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
-  roles_dir = vim.fn.expand("~/.yap/roles"), -- subagent role definitions
+  roles_dir = "~/.yap/roles", -- subagent role definitions
+  -- Session and audit data roots. Defaults mirror harness.path (resolved
+  -- against the real home directory, never the project cwd); override in
+  -- setup() to relocate them.
+  sessions_dir = paths.dirs.sessions_dir,
+  audit_dir = paths.dirs.audit_dir,
   -- List available skills (name + description) in new chats' system block
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
@@ -108,7 +115,6 @@ local models_cache = nil
 local state = require("harness.state")
 local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
-local paths = require("harness.path")
 local winbar = require("harness.winbar")
 
 M.winbar = winbar.winbar
@@ -1710,7 +1716,7 @@ start_subagent = function(parent, ev)
     reply("error: invalid subagent request")
     return
   end
-  local role_file = vim.fn.expand(M.config.roles_dir) .. "/" .. ev.role .. ".md"
+  local role_file = paths.expand(M.config.roles_dir) .. "/" .. ev.role .. ".md"
   local ok_lines, lines = pcall(vim.fn.readfile, role_file)
   if not ok_lines or #lines == 0 or lines[1] ~= "---" then
     reply("error: missing role " .. ev.role .. " (" .. role_file .. ")")
@@ -1992,6 +1998,9 @@ end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  -- Propagate the (possibly overridden) data roots to the path resolver.
+  paths.dirs.sessions_dir = M.config.sessions_dir
+  paths.dirs.audit_dir = M.config.audit_dir
 
   -- <leader>r and <leader>w are global: they list sessions across every
   -- buffer, so they must work from any file, not just inside a chat. The

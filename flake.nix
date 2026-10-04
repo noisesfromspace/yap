@@ -304,6 +304,26 @@
               '';
             };
 
+            sessionsDir = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                Directory where yap autosaves sessions and their scratch
+                queues, passed to the harness as `sessions_dir`. When null
+                the harness default ({file}`~/.yap/sessions`) is used.
+              '';
+            };
+
+            auditDir = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                Directory where yap writes audit logs, passed to the harness
+                as `audit_dir`. When null the harness default
+                ({file}`~/.yap/audit`) is used.
+              '';
+            };
+
             # Harness (Lua) setup options; consumed by the Neovim config.
             provider = mkOption {
               type = types.str;
