@@ -22,8 +22,10 @@ end
 local buf2 = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "Second" })
 assert(yap.winbar(buf2):match("▶1"), "running rollup missing on the other buffer: " .. yap.winbar(buf2))
-assert(yap.winbar(buf2):find("%#YapIsland# %*%#YapIslandBusy#▶1", 1, true),
-  "running rollup should have spacing before its icon: " .. yap.winbar(buf2))
+assert(yap.winbar(buf2):find("%#YapIsland# ", 1, true),
+  "running rollup should have left padding: " .. yap.winbar(buf2))
+assert(yap.winbar(buf2):find("%#YapIslandBusy#▶1%*%#YapIsland#  %*", 1, true),
+  "running rollup should have two columns of right padding: " .. yap.winbar(buf2))
 assert(not yap.winbar(buf):match("▶%d"), "running rollup counts the current buffer: " .. yap.winbar(buf))
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.

@@ -195,7 +195,10 @@ local function render_winbar(buf)
     end
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
-    if running_others_n > 0 or others > 0 then
+    -- A rollup is inset like the local spinner, with two trailing columns;
+    -- don't add another description gap after that padding.
+    local has_rollup = running_others_n > 0 or others > 0
+    if has_rollup then
       left[#left + 1] = seg(" ", nil, true)
       if running_others_n > 0 then
         left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
@@ -206,11 +209,11 @@ local function render_winbar(buf)
       if others > 0 then
         left[#left + 1] = seg("◉" .. others, "Needs", true)
       end
-      left[#left + 1] = seg(" ", nil, true)
+      left[#left + 1] = seg("  ", nil, true)
     end
     local desc = winbar_description(buf, desc_max)
     if desc then
-      left[#left + 1] = seg(" " .. desc, "Description")
+      left[#left + 1] = seg((has_rollup and "" or " ") .. desc, "Description")
       left[#left + 1] = seg(" · ", "Idle")
     end
     return left
