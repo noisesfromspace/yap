@@ -782,10 +782,6 @@ function M.clear(buf, keep)
   if cleared > 0 then
     require("harness.session").save(buf)
   end
-  vim.notify(
-    ("yap: cleared %d tool result%s (kept the last %d)"):format(cleared, cleared == 1 and "" or "s", keep),
-    vim.log.levels.INFO
-  )
 end
 
 --- The compaction prompt: a `compact` template in templates_dir overrides
@@ -890,7 +886,6 @@ function M.compact_delete(buf)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, kept)
   require("harness.session").save(buf)
-  vim.notify("yap: compacted — summary kept, history deleted", vim.log.levels.INFO)
 end
 
 --- Open the session's tail buffer (:YapLive): one persistent rendering
@@ -2049,7 +2044,6 @@ function M.change_model(combo)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
-  vim.notify("yap: " .. provider .. "/" .. model)
 end
 
 --- Pick a saved session and open it. scope: "cwd" (default) or "all".

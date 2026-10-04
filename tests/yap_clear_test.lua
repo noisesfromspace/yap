@@ -46,7 +46,12 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
+local notices = {}
+local notify = vim.notify
+vim.notify = function(msg) notices[#notices + 1] = msg end
 yap.clear(buf, 1)
+vim.notify = notify
+assert(#notices == 0, "successful clear should not notify: " .. table.concat(notices, " | "))
 local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 -- the two older regions are cleared, the last one is kept
 assert(not text:match("file1"), "old bash body not cleared")
@@ -71,6 +76,9 @@ assert(asst, "no assistant message after clear")
 assert(select(2, asst.content:gsub("%[output cleared", "")) == 2, "expected 2 placeholders: " .. asst.content)
 assert(asst.content:match("\n/tmp\n") or asst.content:match("^/tmp\n"), "last region result kept: " .. asst.content)
 -- idempotent
+vim.notify = function(msg) notices[#notices + 1] = msg end
 yap.clear(buf, 1)
+vim.notify = notify
+assert(#notices == 0, "idempotent clear should not notify: " .. table.concat(notices, " | "))
 assert(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n") == text, "second clear changed the buffer")
 print("OK clear")

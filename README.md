@@ -83,70 +83,43 @@ yap-nvim-render-markdown # + the render-markdown.nvim renderer
 `/opt/code/touchup.nvim`; override to point at another checkout). Re-enter the
 shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 
-## Quick start
+## Commands at a glance
 
-- `:Yap` — new chat buffer
-- `<C-s>` — send the whole buffer. Every send also injects Neovim's current
-  working directory into the request, so `:cd` takes effect on the next send
-  and references such as “here” refer to the current Neovim directory. This
-  request-only context is not written into the chat buffer.
-- `<leader>m` / `:YapChangeModel` — switch models (queries the providers
-  in config.json for their model lists)
-- `:YapStop` / `<leader>c` — kill the in-flight request
-- `:YapLive` / `<leader>l` — watch tool output live in a persistent
-  `yap://<session>-tail` buffer that renders the session's audit log as
-  it streams. The audit log (`~/.yap/audit/<cwd-slug>/<session>.jsonl`)
-  is JSON Lines, one event per line, and keeps full tool arguments and
-  results
-- `<leader>s` — toggle a scratch queue buffer: a fixed-height,
-  file-backed jotter below the session (a quick queue of tasks for the
-  agent; `:w` saves it next to the session as `<session>.queue` and an
-  unsaved queue prompts on exit). Inside it, `<C-s>` sends the whole
-  buffer (or the visual selection) to the chat and drains it. While the
-  agent is streaming, `<C-s>` steers instead: the current line (or the
-  selection) is injected at the next tool boundary as a `# @user` block,
-  left in the jotter so you can keep editing it until it lands.
-- `:YapClear [keep]` — slim the context: replace all but the last
-  `keep` (default 2) tool result bodies with a pointer to the exact
-  audit-log lines they were cleared from. write/edit tool headers are
-  always slimmed (`[N lines]`); the diff below them shows the change
-- `:YapCompact` — summarize the conversation: insert the compact prompt,
-  send, then offer to delete the old history (the summary stays as an
-  editable turn)
-- `:YapInsert [name]` / `<C-t>` (normal or insert mode) — insert a template (appended as
-  `# @user`) or a skill (merged into `# @system`) from
-  `~/.config/yap/templates/` and `~/.config/yap/skills/`; mid-turn a
-  template steers the running agent instead (injected at the next tool
-  boundary). `<leader>T` inserts verbatim at the cursor.
-- `:YapSessions [all]` — resume a saved session
-- `:YapInstances` / `<leader>r` — list every open session by file path
-  with its status (`◉ waiting`, `✗ error`, `▶ running`, `○ idle`) and
-  jump to the picked one (sessions are unlisted: they never appear in
-  `:ls` or buffer pickers); `<leader>w` / `:YapWaiting` lists just the
-  sessions awaiting your reply
-- The agent's `quickfix` tool can fill the quickfix list with source
-  locations, e.g. review findings. Each call pushes a new list, so previous
-  ones stay reachable with `:colder` / `:cnewer`. Reopening a saved session
-  doesn't re-run it.
-- The agent's `close_session` tool closes the buffer once the turn has
-  finished streaming and the session file has been saved — so "close the
-  session when done" works as a tool call. The file is kept, so it stays
-  resumable via `:YapSessions`.
+`:Yap` opens an editable Markdown chat. Type under `# @user` and press `<C-s>`
+(or run `:YapSend`) to send the whole transcript; the reply streams back into
+the same buffer. Every send uses Neovim's current working directory as
+request-only context.
 
-The winbar leads with a `▶` busy beacon while the current session is
-streaming, then a rollup of your other sessions: `▶N` streaming and `◉N`
-awaiting your reply (the current buffer is never counted there).
-After that: the session description, provider/model, and fold view (`Ⓕ1`-`Ⓕ3`).
-Long descriptions are truncated, and token totals use compact `k`/`m` notation
-on the right (with a context-fill gauge after the first turn),
-followed by the trailing state glyph: busy / error / `◉
-waiting` (the agent awaits your next prompt) / idle. A turn finishing in a
-background chat fires `vim.notify` and a `User YapTurnDone` autocmd you can
-hook. `<leader>1` folds all agent output except the last reply (user prompts
-and the latest assistant stay open), `<leader>2` folds tool calls and thinking
-(default when a session opens), `<leader>3` unfolds everything.
+Successful commands are quiet: edits show in the buffer, model changes show
+in the winbar, and pickers show their selection. Warnings and errors still
+notify. For command details and keymaps, see `:help yap-commands`.
 
-# Rendering
+| Command                                          | Purpose                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| `:Yap`                                           | Start a chat.                                                         |
+| `:YapSend` / `<C-s>`                             | Send the transcript.                                                  |
+| `:YapStop` / `<leader>c`                         | Stop the current request.                                             |
+| `:YapChangeModel [provider/model]` / `<leader>m` | Pick or set this chat's model.                                        |
+| `:YapLive` / `<leader>l`                         | Open the live tool/audit view.                                        |
+| `:YapClear [keep]`                               | Replace older tool output with audit-log references; default keeps 2. |
+| `:YapCompact`                                    | Ask for a summary, then optionally remove superseded history.         |
+| `:YapInsert [name]` / `<C-t>`                    | Insert a template or merge a skill into the system prompt.            |
+| `:YapInsertHere [name]` / `<leader>T`            | Insert template/skill text at the cursor.                             |
+| `:YapSessions [all]`                             | Resume a saved session in this project, or all projects.              |
+| `:YapInstances` / `<leader>r`                    | Pick any open chat; sessions needing attention come first.            |
+| `:YapWaiting` / `<leader>w`                      | Pick a chat awaiting your reply.                                      |
+| `:YapReload`                                     | Reload Lua modules (development only).                                |
+
+Templates and skills live in `~/.config/yap/templates/` and
+`~/.config/yap/skills/`. `<leader>s` opens the scratch queue; send from it to
+append queued text to the chat, or steer a running turn. The winbar shows the
+active session/model, usage, fold view, and whether a turn is running or
+awaiting your reply. `<leader>1` folds agent output, `<leader>2` folds tool
+calls and thinking, and `<leader>3` unfolds everything. The `quickfix` tool can
+populate Neovim's quickfix list, and `close_session` closes a chat after its
+current turn while keeping it resumable from `:YapSessions`.
+
+## Rendering
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
 complements yap: a treesitter-based markdown rendering plugin that is yap-aware.
 It colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and

@@ -35,8 +35,15 @@ truth, and that can be a text buffer. Consequences:
 ==============================================================================
 2. COMMANDS                                                  *yap-commands*
 
+Commands are intentionally quiet on success: visible edits, the winbar and
+pickers confirm ordinary actions. Warnings and errors still notify; actions
+that need a decision (such as |:YapCompact|) still prompt. All commands act on
+the current buffer unless otherwise noted.
+
                                                                     *:Yap*
-:Yap                  Open a new chat buffer.
+:Yap                  Open a new chat buffer with a system message and an
+                        empty `# @user` prompt. Type there and use |:YapSend|
+                        or `<C-s>`; opening a chat does not send anything.
 
                                                                 *:YapSend*
 :YapSend              Send the whole buffer to the provider and stream the
@@ -158,7 +165,8 @@ Set only in yap buffers, except <leader>r and <leader>w, which are global
 binding is a `keymaps` config key (see |yap-configuration|); the defaults
 are shown below.
 
-  <C-s> (n, i)          Send the buffer.
+  <C-s> (n, i)          Send the buffer. The reply streams into the buffer;
+                        normal successful sends don't show a toast.
   <leader>c             Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
@@ -257,8 +265,10 @@ session file, so the `# @system` block stays clean.
 buffer that is not the current one; the turn's `turn_end` payload (model,
 tokens, cost, ms) is attached to the `User YapTurnDone` autocmd so other
 plugins can hook the same event (noice/nf-notify rendering, chaining a
-next send). Disable the toast with `notify_done = false`; hook the same
-event with your own `User YapTurnDone` autocmd.
+next send). This background-completion notification is separate from command
+success feedback; ordinary successful commands stay quiet. Disable the toast
+with `notify_done = false`; hook the same event with your own `User YapTurnDone`
+autocmd.
 
 `syntax_highlight` (default true) keeps tree-sitter's markdown syntax
 highlighting on chat buffers. Set it to false to drop syntax colors for a
@@ -979,11 +989,12 @@ table in |yap-configuration|; set one to `""` to drop its glyph):
              has this session cost".
   󰊚 N/M · P% Context fill: the last turn's prompt size against the
              model's context window (both from the `turn_end` journal),
-             plus the fill percentage and a fixed-width gauge — the "how
-             full is my context" answer, e.g. `35k/200k · 18% █▍░░░░░░`.
-             The gauge fill is green below 70%, amber from 70–90%, and
-             red at 90% or more (`YapGaugeLow`/`Mid`/`High`; the dim
-             track is `YapGaugeEmpty`). Absent until the first turn
+             plus the fill percentage and a gauge that expands into spare
+             winbar width — the "how full is my context" answer, e.g.
+             `35k/200k · 18% █▍░░░░░░`. The gauge fill is green below
+             70%, amber from 70–90%, and red at 90% or more
+             (`YapGaugeLow`/`Mid`/`High`; the dim track is
+             `YapGaugeEmpty`). Absent until the first turn
              completes, and only for models the pricing catalog knows a
              context window for.
 

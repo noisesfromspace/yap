@@ -70,8 +70,6 @@ vim.api.nvim_create_user_command("YapReload", function()
     end
   end
   require("harness").setup(old_config)
-  local src = debug.getinfo(require("harness").send, "S").source:sub(2)
-  vim.notify("yap: reloaded from " .. src)
 end, { desc = "Reload the yap Lua module (development)" })
 
 vim.api.nvim_create_user_command("YapSessions", function(cmd)
