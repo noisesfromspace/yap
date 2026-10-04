@@ -925,11 +925,13 @@ table in |yap-configuration|; set one to `""` to drop its glyph):
              file, summed from every `turn_end` journal entry in the
              audit log (|yap-audit|). Survives restarts; answers "what
              has this session cost".
-  󰊚 N/M      Context fill: the last turn's prompt size against the
+  󰊚 N/M · P% Context fill: the last turn's prompt size against the
              model's context window (both from the `turn_end` journal),
-             e.g. `35k/200k`. Turns amber (`YapNeeds`) at 90% or more.
-             Absent until the first turn completes, and only for models
-             the pricing catalog knows a context window for.
+             plus the fill percentage — the "how full is my context"
+             answer, e.g. `35k/200k · 18%`. Turns amber (`YapNeeds`) at
+             90% or more. Absent until the first turn completes, and
+             only for models the pricing catalog knows a context window
+             for.
 
 Suffixes are compact: `k` = thousands, `m` = millions (`1.5k` = 1,500
 tokens). Costs are USD, computed as `in × input price + out × output

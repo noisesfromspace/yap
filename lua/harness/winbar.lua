@@ -245,9 +245,10 @@ local function render_winbar(buf)
     local t = last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
     if ctx and ctx > 0 and t.prompt and t.prompt > 0 and mode ~= "prices" then
-      local pct = math.floor(t.prompt / ctx * 100 + 0.5)
+      local pct = t.prompt / ctx * 100
+      local pct_text = pct < 1 and string.format("%.1f%%", pct) or string.format("%.0f%%", pct)
       items[#items + 1] = {
-        icons.ctx .. " " .. util.fmt_tokens(t.prompt) .. "/" .. util.fmt_tokens(ctx),
+        icons.ctx .. " " .. util.fmt_tokens(t.prompt) .. "/" .. util.fmt_tokens(ctx) .. " · " .. pct_text,
         pct >= 90 and "Needs" or "Idle",
       }
     end
