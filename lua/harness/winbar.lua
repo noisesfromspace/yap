@@ -29,6 +29,11 @@ local SPINNER = {
 local spinner_tick = 0
 local spinner_timer = nil
 
+-- Context meter: a fixed-width, eight-cell bar. Keeping its width
+-- independent of the window layout avoids redraw/reflow surprises.
+local GAUGE_W = 8
+local GAUGE_EIGHTHS = { "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
+
 -- The winbar is a statusline: `%` starts a format item there, so any
 -- literal `%` in segment text (a session title that contains a percent sign)
 -- must be doubled. This runs on the content only — the `%#…#` / `%*`
@@ -191,6 +196,7 @@ local function render_winbar(buf)
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
     if running_others_n > 0 or others > 0 then
+      left[#left + 1] = seg(" ", nil, true)
       if running_others_n > 0 then
         left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
       end
@@ -218,14 +224,45 @@ local function render_winbar(buf)
     }
   end
 
-  -- Usage/cost cluster: since-open and all-time chips. mode "full" shows
-  -- tokens + cost, "compact" drops the cost, "prices" keeps only costs.
+  -- Fixed-width context meter: percentage plus an eight-cell bar. In the
+  -- narrowest layout, the percentage is dropped but the complete bar stays.
+  local function context_segment(show_percent)
+    local t = state.last_turn[buf]
+    local ctx = t and tonumber(t.context_window) or nil
+    if not ctx or ctx <= 0 or not t.prompt or t.prompt <= 0 then
+      return nil
+    end
+
+    local pct = math.min(t.prompt / ctx * 100, 100)
+    local eighths = math.floor(pct / 100 * GAUGE_W * 8 + 0.5)
+    local full = math.floor(eighths / 8)
+    local tail = eighths % 8
+    local fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
+    local track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
+    local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
+    local parts = {}
+    if show_percent then
+      local text = pct < 1 and string.format("%.1f%% ", pct) or string.format("%.0f%% ", pct)
+      parts[#parts + 1] = { text, "Idle" }
+    end
+    if fill ~= "" then
+      parts[#parts + 1] = { fill, color }
+    end
+    if track ~= "" then
+      parts[#parts + 1] = { track, "GaugeEmpty" }
+    end
+    return parts
+  end
+
+  -- Usage/cost cluster: since-open and all-time chips. As the bar narrows,
+  -- tokens and costs drop before the context meter; its percentage is dropped
+  -- last so the complete eight-cell gauge remains visible.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
 
-    if u and (u.prompt > 0 or u.completion > 0) and mode ~= "prices" then
+    if (mode == "full" or mode == "compact") and u and (u.prompt > 0 or u.completion > 0) then
       local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)
       if mode == "full" and u.cost then
         text = text .. " · " .. string.format("$%.4g", u.cost)
@@ -233,12 +270,17 @@ local function render_winbar(buf)
       chips[#chips + 1] = { { text, "Idle" } }
     end
 
-    if s and (s.prompt > 0 or s.completion > 0) and mode ~= "prices" then
+    if (mode == "full" or mode == "compact") and s and (s.prompt > 0 or s.completion > 0) then
       local text = icons.total .. " " .. util.fmt_tokens(s.prompt + s.completion)
       if mode == "full" and s.cost then
         text = text .. " · " .. string.format("$%.4g", s.cost)
       end
       chips[#chips + 1] = { { text, "Idle" } }
+    end
+
+    local context = context_segment(mode ~= "gauge")
+    if context then
+      chips[#chips + 1] = context
     end
 
     if mode == "prices" then
@@ -318,6 +360,8 @@ local function render_winbar(buf)
       mode = "compact"
     elseif mode == "compact" then
       mode = "prices"
+    elseif mode == "prices" and context_segment(false) then
+      mode = "gauge"
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
@@ -384,6 +428,10 @@ local function define_winbar_hl()
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
+    GaugeEmpty = "NonText",
+    GaugeLow = "DiagnosticOk",
+    GaugeMid = "DiagnosticWarn",
+    GaugeHigh = "DiagnosticError",
   }
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })

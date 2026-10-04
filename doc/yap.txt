@@ -975,9 +975,9 @@ it never counts the current buffer. After the island: the session
 description (truncated to 40 display columns), provider/model combo, and
 the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
-manual |za| toggles don't update it). Right: two usage chips
-(|yap-winbar-numbers|). A state glyph appears on the far right only when
-something is wrong:
+manual |za| toggles don't update it). Right: two usage chips and a
+context-fill meter (|yap-winbar-numbers|). A state glyph appears on the far
+right only when something is wrong:
 
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
@@ -985,12 +985,14 @@ something is wrong:
 Idle and "awaiting your reply" show no glyph — the absence of the left
 spinner already tells you nothing is running.
 
-Example: `⣾ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51`
+Example: `⣾ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 9% █▍░░░░░░`
 
 Reading the numbers                                    *yap-winbar-numbers*
 
-The right side shows two chips, each led by a config icon (the `icons`
-table in |yap-configuration|; set one to `""` to drop its glyph):
+The right side shows two usage chips, each led by a config icon (the `icons`
+table in |yap-configuration|; set one to `""` to drop its glyph), followed by
+the context-fill gauge. The gauge is fixed at eight cells and colored green
+below 70%, amber from 70–90%, and red at 90% or more:
 
   󰅐 N        Since-open: total tokens (prompt + completion) and cost
              for this buffer, accumulated since it was opened in this
@@ -999,6 +1001,10 @@ table in |yap-configuration|; set one to `""` to drop its glyph):
              file, summed from every `turn_end` journal entry in the
              audit log (|yap-audit|). Survives restarts; answers "what
              has this session cost".
+  P% █▍░░░░░░  Context fill: the last turn's prompt as a percentage of
+             the model's context window. In the narrowest layout, the
+             percentage is dropped but the full eight-cell bar remains.
+             The dim track uses `YapGaugeEmpty`.
 Suffixes are compact: `k` = thousands, `m` = millions (`1.5k` = 1,500
 tokens). Costs are USD, computed as `in × input price + out × output
 price` (USD per 1M tokens) — your `pricing` overrides first, then the
@@ -1008,11 +1014,11 @@ they diverge.
 
 The bar is width-aware, so a narrow window never crowds out the parts
 that matter. It drops parts in this order as the window shrinks: the
-provider/model + fold-view cluster, then the chip costs, then the chip
-tokens (leaving just the two prices), and finally the session
-description, which truncates shorter. The error glyph, the left island
-(`▶N`/`◉N`) and the two prices are the last things standing, and the
-winbar re-lays itself out on `WinResized`.
+provider/model + fold-view cluster, usage-chip costs, usage-chip tokens
+(leaving costs), then the costs and gauge percentage. The context graph
+remains a fixed eight-cell gauge; the session description truncates next.
+The error glyph and left island (`▶N`/`◉N`) remain, and the winbar re-lays
+itself out on `WinResized`.
 
 The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
 `◉N` rollup counts OTHER yap buffers with a completed turn awaiting
