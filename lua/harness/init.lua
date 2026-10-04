@@ -75,7 +75,7 @@ M.config = {
     change_model = "<leader>m",
     live = "<leader>l",
     scratch = "<leader>s",
-    insert = "<leader>t",
+    insert = "<C-t>",
     insert_here = "<leader>T",
     sessions = "<leader>r",
     waiting = "<leader>w",
@@ -1710,6 +1710,10 @@ local function setup_buffer(buf)
     M.scratch_toggle()
   end, "yap: toggle scratch")
   map("n", keys.insert, function()
+    M.insert()
+  end, "yap: insert template or skill")
+  map("i", keys.insert, function()
+    vim.cmd.stopinsert()
     M.insert()
   end, "yap: insert template or skill")
   map("n", keys.insert_here, function()

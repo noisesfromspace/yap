@@ -173,7 +173,7 @@ are shown below.
                         injected at its next tool boundary as a `# @user`
                         block, without being removed from the jotter —
                         re-<C-s> to replace it, edit it until it lands.
-  <leader>t             Insert a template or skill (see |:YapInsert|).
+  <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
   <leader>r             List every open session with its status (see
@@ -321,7 +321,7 @@ Where they live: >
   ~/.config/yap/skills/        system-prompt material (|:YapInsert|)
 <
 Both are configurable (`templates_dir`, `skills_dir`). Create the
-directory, drop a file in, then `<leader>t` (or `:YapInsert <name>`)
+directory, drop a file in, then `<C-t>` (or `:YapInsert <name>`)
 to insert it; `<leader>T` (`:YapInsertHere`) dumps the raw file at
 the cursor.
 
@@ -422,7 +422,7 @@ the summary stays a visible, editable turn, never an invisible rewrite.
 |:YapCompact| automates the three steps below (insert, send, then
 offer to delete); the manual recipe remains available:
 
-  1. `<leader>t` and pick `compact` (ships at
+  1. `<C-t>` and pick `compact` (ships at
      `templates/compact.md`; copy it into your templates_dir), or
      write your own "summarize the conversation above…" prompt.
   2. `<C-s>` to send it.

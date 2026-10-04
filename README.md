@@ -113,7 +113,7 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 - `:YapCompact` — summarize the conversation: insert the compact prompt,
   send, then offer to delete the old history (the summary stays as an
   editable turn)
-- `:YapInsert [name]` / `<leader>t` — insert a template (appended as
+- `:YapInsert [name]` / `<C-t>` (normal or insert mode) — insert a template (appended as
   `# @user`) or a skill (merged into `# @system`) from
   `~/.config/yap/templates/` and `~/.config/yap/skills/`; mid-turn a
   template steers the running agent instead (injected at the next tool
