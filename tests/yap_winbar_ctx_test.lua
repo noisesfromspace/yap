@@ -44,11 +44,12 @@ local function winbar_at(cols)
   vim.cmd("vsplit")
   vim.api.nvim_win_set_width(0, cols)
   local bar = yap.winbar(buf)
+  local cols = vim.api.nvim_win_get_width(0)
   vim.cmd("close")
-  return bar
+  return bar, cols
 end
 local narrow = winbar_at(30)
-local wide = winbar_at(60)
+local wide, wide_cols = winbar_at(60)
 local function graph_width(bar)
   local _, filled = bar:gsub("█", "")
   local _, track = bar:gsub("░", "")
@@ -56,5 +57,9 @@ local function graph_width(bar)
 end
 assert(graph_width(wide) > graph_width(narrow), "context graph did not expand with available width")
 assert(wide:match("YapGaugeMid"), "expanded graph lost its context-fill color")
+-- The statusline's literal content stops three cells short of the window;
+-- that reserved alignment space separates the stretched graph from the left.
+local literals = wide:gsub("%%#.-#", ""):gsub("%%[%*=]", ""):gsub("%%%%", "%%")
+assert(vim.fn.strdisplaywidth(literals) == wide_cols - 3, "expanded graph consumed its left-side breathing gap")
 
 print("OK winbar_ctx")

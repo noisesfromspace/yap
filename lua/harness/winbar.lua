@@ -31,6 +31,7 @@ local spinner_timer = nil
 -- tail so the fill reads continuously rather than snapping per cell. It
 -- expands into otherwise-unused winbar width when the layout fits.
 local GAUGE_MIN_W = 8
+local GAUGE_LEFT_GAP = 3
 local GAUGE_EIGHTHS = { "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
 
 -- The winbar is a statusline: `%` starts a format item there, so any
@@ -362,10 +363,10 @@ local function render_winbar(buf)
       + (usage and width_of(usage) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
-      -- Keep the gauge at its minimum when the layout is tight; otherwise
-      -- let it fill the unused space rather than reserving a fixed-width chip.
+      -- Keep a small gap before the right-hand usage cluster; otherwise let
+      -- the gauge fill the remaining width rather than staying fixed-sized.
       if usage and mode ~= "prices" then
-        usage = usage_segment(mode, GAUGE_MIN_W + width - total)
+        usage = usage_segment(mode, GAUGE_MIN_W + math.max(0, width - total - GAUGE_LEFT_GAP))
       end
       return render(left, mid, usage, state)
     end
