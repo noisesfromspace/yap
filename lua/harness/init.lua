@@ -996,7 +996,7 @@ function M.scratch_send(scratch)
 end
 
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
---- opened above the chat window. It is a real, file-backed buffer — a
+--- opened below the chat window. It is a real, file-backed buffer — a
 --- sibling `*.queue` file of the session — so `:write` saves it and an
 --- unsaved queue prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
@@ -1056,7 +1056,7 @@ function M.scratch_toggle(buf)
     return
   end
 
-  vim.cmd("aboveleft " .. SCRATCH_HEIGHT .. "split")
+  vim.cmd("belowright " .. SCRATCH_HEIGHT .. "split")
   vim.api.nvim_win_set_buf(0, scratch)
   vim.wo.winfixheight = true
   vim.wo.winbar = "" -- a plain jotter, not a yap dashboard

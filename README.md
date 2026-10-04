@@ -99,7 +99,7 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
   is JSON Lines, one event per line, and keeps full tool arguments and
   results
 - `<leader>s` — toggle a scratch queue buffer: a fixed-height,
-  file-backed jotter above the session (a quick queue of tasks for the
+  file-backed jotter below the session (a quick queue of tasks for the
   agent; `:w` saves it next to the session as `<session>.queue` and an
   unsaved queue prompts on exit). Inside it, `<C-s>` sends the whole
   buffer (or the visual selection) to the chat and drains it. While the

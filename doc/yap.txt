@@ -164,7 +164,7 @@ are shown below.
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch queue buffer: a
-                        fixed-height, file-backed jotter above the chat.
+                        fixed-height, file-backed jotter below the chat.
                         `:w` saves it; an unsaved queue prompts on exit.
                         Inside the queue, <C-s> sends the whole buffer —
                         or the visual selection — to the chat and removes

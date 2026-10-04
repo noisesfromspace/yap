@@ -8,7 +8,7 @@ local chat_win = vim.api.nvim_get_current_win()
 -- <leader>s is bound in the chat buffer
 assert(vim.fn.maparg("<leader>s", "n", false, true).buffer == 1, "yap buffer has no <leader>s toggle")
 
--- toggle on: a file-backed, unlisted, fixed-height window above the chat
+-- toggle on: a file-backed, unlisted, fixed-height window below the chat
 yap.scratch_toggle()
 local scratch_win = vim.api.nvim_get_current_win()
 assert(scratch_win ~= chat_win, "scratch did not open a new window")
@@ -20,8 +20,8 @@ assert(vim.api.nvim_buf_get_name(scratch):match("%.queue$") ~= nil, "scratch buf
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
 assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
 assert(
-  vim.api.nvim_win_get_position(scratch_win)[1] < vim.api.nvim_win_get_position(chat_win)[1],
-  "scratch window is not above the chat"
+  vim.api.nvim_win_get_position(scratch_win)[1] > vim.api.nvim_win_get_position(chat_win)[1],
+  "scratch window is not below the chat"
 )
 assert(vim.wo.winbar == "", "scratch window inherited the yap winbar")
 assert(vim.wo.foldmethod == "manual", "scratch window inherited the chat's expr folds")
