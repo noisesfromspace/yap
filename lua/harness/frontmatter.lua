@@ -5,6 +5,8 @@
 --   ---
 --   provider: moonshot
 --   model: kimi-k3
+--   role: reviewer
+--   tools: read,search,glob
 --   created_at: 2025-09-29T19:22:33Z
 --   description: Fix session picker labels and summaries
 --   models:
@@ -14,10 +16,12 @@
 --     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
 --   ---
 --
--- `provider`/`model` is the combo to resume with; `created_at` records
--- when the session was created; `models` is the ordered history of every
--- combo actually used (most-recent-last); `subagents` is the ordered list
--- of subagent session paths this session ran (most-recent-last). Token/cost
+-- `provider`/`model` is the combo to resume with; `role`/`tools` mark a
+-- subagent session (its role name and the tools it may call); `created_at`
+-- records when the session was created; `models` is the ordered history of
+-- every combo actually used (most-recent-last); `subagents` is the ordered
+-- list of subagent session paths this session ran (most-recent-last).
+-- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
 -- yap owns the block, so parsing is a few pattern matches,
@@ -33,7 +37,8 @@ local function is_list_key(k)
 end
 
 --- Parse a frontmatter block from a Lua list of lines. Returns
---- { provider, model, created_at, models = {combo,...}, subagents = {path,...} }
+--- { provider, model, created_at, description, role,
+---   tools = {name,...}, models = {combo,...}, subagents = {path,...} }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited block does not
 --- break resuming.

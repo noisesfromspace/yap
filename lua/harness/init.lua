@@ -293,9 +293,6 @@ local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
 -- The audit dir holds one JSON Lines audit log per session, keyed by
 -- the session's basename, so the sessions dir stays clean.
 
---- The tail buffer's name; mirrors the session file's basename so
---- `:file` renames keep the two together.
-
 --- Append one event as a JSON object to the session's audit log.
 local function audit_append(buf, ev)
   local t = tails[buf]

@@ -92,17 +92,16 @@ truth, and that can be a text buffer. Consequences:
                                                                 *:YapInsert*
 :YapInsert [name]     Insert a template or skill into the buffer. A
                         template (see |yap-templates|) is wrapped in
-                        `# @user` and appended at the end — never
-                        write `# @user` in the template itself, the
-                        buffer already ends on one (R8). A different
-                        leading `# @role` heading (`# @assistant`) is
-                        kept as-is, so a template can be a prefill. A
-                        skill merges its body into the `# @system`
-                        block. With no argument, pick from a combined
-                        list. This is the generic text-injection
-                        mechanism: compaction is inserting a
-                        summarize-prompt template, sending, then
-                        deleting the old history.
+                        `# @user` and appended at the end when it has
+                        no leading heading; a leading `# @role`
+                        heading (including `# @user`) is used as-is to
+                        set the role and never duplicates the trailing
+                        block. A skill merges its body into the
+                        `# @system` block. With no argument, pick from
+                        a combined list. This is the generic
+                        text-injection mechanism: compaction is
+                        inserting a summarize-prompt template, sending,
+                        then deleting the old history.
 
                                                              *:YapInsertHere*
 :YapInsertHere [name] Like |:YapInsert| but inserts the file's body
@@ -322,12 +321,9 @@ HOW TO WRITE A TEMPLATE                                      *yap-template*
 A template is generic text you want injected as a message. It behaves
 by one rule: >
 
-  - Never write `# @user` in a template. The buffer already ends on a
-    `# @user` block (R8), and the body is wrapped in `# @user`
-    automatically, so a leading `# @user` heading would only duplicate
-    the one that is already there.
-  - A leading `# @assistant` (or any other `# @role`) heading is kept
-    as-is, so a template can also be a prefill.
+  - A leading `# @role` heading (`# @user`, `# @assistant`, ...) is
+    used as-is to set the role. A `# @user` heading never duplicates
+    the trailing block — it is reused via append_message.
   - Otherwise the body is wrapped in `# @user` and appended at the end.
 <
 A prompt you reach for often, as a template: >
@@ -340,9 +336,10 @@ A prompt you reach for often, as a template: >
 
   Be concise; reference file:line for each finding.
 <
-The body is wrapped in `# @user` for you, so leave the heading out.
-To prefill an assistant reply instead, start the file with
-`# @assistant`.
+The body is wrapped in `# @user` for you, so you can leave the heading
+out. To prefill an assistant reply instead, start the file with
+`# @assistant`. A leading `# @user` heading is fine too — it sets the
+role and fills the trailing `# @user` block without duplicating it.
 
 A template containing LSP snippet syntax is expanded as a native
 Neovim snippet: `$1`/`${1:placeholder}` become tabstops the cursor
@@ -393,8 +390,8 @@ format and quotes the headings as examples.
 WHAT INSERT DOES
 
   :YapInsert <template>   wrap-in-# @user and append at the end
-                            (never a `# @user` of its own; another
-                            `# @role` heading stays as prefill)
+                            (a leading `# @role` heading sets the role
+                            and is never duplicated)
   :YapInsert <skill>      merge the body into the `# @system` block
   :YapInsertHere <name>   raw file above the cursor, no role logic
 
@@ -1205,10 +1202,11 @@ R17 The audit log is the durable record of everything the context
     lossless.
 
 R18 Templates and skills are plain markdown files inserted into the buffer.
-    `templates_dir` files append as a `# @user` message: the body is
-    wrapped automatically and must never carry its own `# @user`
-    heading (the buffer already ends on one, R8); another leading
-    `# @role` heading (`# @assistant`) is kept as-is for prefill.
+    `templates_dir` files append as a `# @user` message: a body with
+    no leading heading is wrapped automatically; a leading `# @role`
+    heading (including `# @user`) is used as-is to set the role, and
+    append_message reuses the trailing heading when it already has that
+    role, so a `# @user` heading never duplicates.
     `skills_dir` files merge into the `# @system` block and so carry
     no `# @user`/`# @assistant` headings of their own (except an agent
     skill that quotes the message format). A skill's optional frontmatter
