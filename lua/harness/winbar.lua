@@ -182,13 +182,13 @@ local function render_winbar(buf)
   end
 
   -- Mandatory left cluster (never dropped; the description shrinks). Build
-  -- logical items first, then put exactly one column between every item.
+  -- logical items first, then use the same vertical separator everywhere.
   -- This avoids component-specific leading/trailing spaces drifting apart.
-  local function left_segments(desc_max)
+  local function left_segments(desc_max, show_mid)
     local left, has_item = {}, false
     local function add_item(item)
-      -- The first space is the left inset; later spaces separate items.
-      left[#left + 1] = seg(" ", "Idle")
+      -- One left inset; separators belong to the layout, not the items.
+      left[#left + 1] = seg(has_item and " │ " or " ", "Idle")
       for _, s in ipairs(item) do
         left[#left + 1] = s
       end
@@ -224,20 +224,18 @@ local function render_winbar(buf)
 
     local desc = winbar_description(buf, desc_max)
     if desc then
-      add_item({ seg(desc, "Description"), seg(" · ", "Idle") })
-    elseif has_item then
-      -- Keep the left cluster clear of the model when it has no title.
+      add_item({ seg(desc, "Description") })
+    end
+
+    -- Droppable middle: provider/model and the applied fold view.
+    if show_mid then
+      add_item({ seg(provider .. "/" .. model, "Model") })
+      add_item({ seg("Ⓕ" .. fold.level(), "Idle") })
+    end
+    if has_item then
       left[#left + 1] = seg(" ", "Idle")
     end
     return left
-  end
-
-  -- Droppable middle: provider/model and the applied fold view.
-  local function mid_segments()
-    return {
-      seg(provider .. "/" .. model, "Model"),
-      seg(" · Ⓕ" .. fold.level() .. " ", "Idle"),
-    }
   end
 
   -- Fixed-width context meter: percentage plus an eight-cell bar. In the
@@ -335,12 +333,9 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, mid, usage, state)
+  local function render(left, usage, state)
     local parts = {}
     for _, s in ipairs(left) do
-      parts[#parts + 1] = render_seg(s)
-    end
-    for _, s in ipairs(mid) do
       parts[#parts + 1] = render_seg(s)
     end
     parts[#parts + 1] = "%="
@@ -360,15 +355,14 @@ local function render_winbar(buf)
   -- survive; past that the bar clips rather than hiding them.
   local desc_max, mode, show_mid = 40, "full", true
   while true do
-    local left = left_segments(desc_max)
-    local mid = show_mid and mid_segments() or {}
+    local left = left_segments(desc_max, show_mid)
     local usage = usage_segment(mode)
     local state = state_segment()
-    local total = width_of(left) + width_of(mid)
+    local total = width_of(left)
       + (usage and width_of(usage) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
-      return render(left, mid, usage, state)
+      return render(left, usage, state)
     end
     if show_mid then
       show_mid = false
@@ -381,7 +375,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, mid, usage, state) -- smallest layout; let it clip
+      return render(left, usage, state) -- smallest layout; let it clip
     end
   end
 end
