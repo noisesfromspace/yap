@@ -122,3 +122,45 @@ func TestCurlRedirectsAndFlags(t *testing.T) {
 		t.Fatalf("bad flag: %q %v", r, err)
 	}
 }
+
+func TestCurlFlagDeny(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	for _, flag := range []string{
+		"--unix-socket /var/run/docker.sock",
+		"--abstract-unix-socket yap",
+		"--config /tmp/c",
+		"-K /tmp/c",
+		"-K/tmp/c",
+		"-o /tmp/out",
+		"-ofile",
+		"-O",
+		"--output /tmp/out",
+		"--remote-name",
+		"--resolve example.com:80:127.0.0.1",
+		"--connect-to example.com:80:127.0.0.1:80",
+		"--dump-header /tmp/h",
+		"--trace-ascii /tmp/t",
+	} {
+		if _, _, err := run(t, "curl", `{"url":"`+srv.URL+`/","flags":"`+flag+`"}`); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Fatalf("flag %q should be refused: %v", flag, err)
+		}
+	}
+}
+
+func TestCurlRedirectToPrivateIP(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	_, _, err := run(t, "curl", `{"url":"`+srv.URL+`/start"}`)
+	if err == nil || !strings.Contains(err.Error(), "private/link-local") {
+		t.Fatalf("redirect to metadata IP should be blocked: %v", err)
+	}
+}

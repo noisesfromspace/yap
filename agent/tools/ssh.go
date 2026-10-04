@@ -100,6 +100,15 @@ func runSSH(a *sshArgs) (string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", fmt.Errorf("empty command")
 	}
+	if utils.IsDangerousCommand(a.Command) {
+		ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command))
+		if err != nil {
+			return "", fmt.Errorf("SSH command requires approval: %w", err)
+		}
+		if !ok {
+			return "", fmt.Errorf("SSH command rejected by user")
+		}
+	}
 	timeout := 120 * time.Second
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second

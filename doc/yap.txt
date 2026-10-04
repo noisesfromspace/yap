@@ -494,8 +494,10 @@ role model names cannot identify a Yap provider, so they inherit the parent's
 provider/model; use an explicit `provider/model` to override it. Pi tool names
 `grep`, `find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. Unsupported
 role tools are reported before the child starts. A role without
-`tools` has the regular built-in tools except recursive `subagent` calls;
-role tool lists are enforced by the child backend. The parent receives the
+`tools` gets a read-only set (ls, read, search, glob, fetch, git,
+websearch, quickfix, jev); write/bash/python/curl/ssh must be requested
+explicitly via `tools`. Role tool lists are enforced by the child
+backend. The parent receives the
 child's error text on failure. Delegation times out after ten minutes;
 stopping the parent or timing out stops its running child, but retains its
 Markdown file. Children are linked by the
@@ -520,7 +522,12 @@ body, redirects, timeout and extra curl flags are all settable, and it
 sends a browser User-Agent by default to get past agent blocks (it is
 fetch's versatile sibling for follow-up fetches; fetch extracts the
 main content as Markdown, while curl returns the raw response body and
-does not run JavaScript). Both `fetch` and `curl` accept an optional
+does not run JavaScript). Redirects are followed one hop at a time and
+each hop's host is re-checked against the SSRF guard; flags that could
+turn curl into a file-writer or an SSRF vector (--unix-socket,
+--config/-K, output/-o/-O/--output-dir, --resolve, --connect-to,
+--dump-header/-D, --trace*, --interface) are refused. Both `fetch` and
+`curl` accept an optional
 `safety` parameter: when true, the result is scanned with the decision
 model (jev, see above) for prompt-injection content before it is
 returned, and flagged content gets an advisory warning line prepended
@@ -543,7 +550,9 @@ The tool disables ~/.ssh/config so aliases and proxy commands cannot bypass
 its trust boundary, and requires the requested host in NixOS's
 /etc/ssh/ssh_known_hosts. User known_hosts entries cannot authorize a host.
 BatchMode disables interactive password/PIN prompts; agent-mediated FIDO touch
-can still prompt through the local agent. The master is shared across session
+can still prompt through the local agent. Commands run unsandboxed over your
+credentials, so a dangerous command (see R15) pauses the turn for a Run/Deny
+confirmation. The master is shared across session
 buffers while Neovim's backend is alive.
 
 Tool parameters are declared as a Go struct per tool; the schema sent
@@ -584,8 +593,8 @@ drains it into the session's tail buffer (:YapLive) — live output
 never enters the chat buffer (R16). The result is
 truncated to the LAST 2000 lines / 50KB with the full output kept in
 the temp file; a non-zero exit is reported to the model, not treated
-as an error. There is deliberately no sandbox and no confirmation
-prompt (R15).
+as an error. bash is unsandboxed, but a dangerous command (see R15)
+pauses the turn for an explicit Run/Deny confirmation before it runs.
 
 python runs a Python 3 script the same way, as a fresh process (no
 state carries between calls — one self-contained script per call), with
@@ -596,8 +605,9 @@ to an existing script, resolved relative to the Neovim cwd like write's
 path — write the file first with the write tool, then run it). `file`
 is for larger scripts so the code lives in a real, editable file the
 user can `gf` to; the header shows only the file reference. A failed
-script returns its traceback to the model as text. Like bash, there is
-no sandbox and no confirmation prompt.
+script returns its traceback to the model as text. Like bash, it is
+unsandboxed, but dangerous source (subprocess/os.system/…, shutil.rmtree,
+see R15) pauses the turn for an explicit Run/Deny confirmation.
 
 Path fields on write, edit, read, ls, glob, search, git, and python
 (file and cwd) — plus bash's cwd — expand a leading ~ or ~/ to the
@@ -832,9 +842,15 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
                survive); id matches the buffer's tool header and the
                tool_result below
   tool_start   {"type","name","log","command","ts"} — bash/python's temp log
+               (`command` is scrubbed of obvious secrets)
   output       {"type","name","data","ts"} — streamed bash/python output chunks
                (synthesized by the Lua side as it drains the temp log)
   tool_result  {"type","id","name","bytes","result","ts"} — full result
+  approval_request {"type","id","command","ts"} — a dangerous command paused
+               the turn for a human Run/Deny
+  approval_result  {"type","id","approved","ts"} — the human's answer
+               (synthesized by the Lua side)
+  approval_timeout {"type","id","ts"} — no answer; denied
   retry        {"type","attempt","delay_ms","error","ts"} — a transient
                generation error (429/5xx/network) was retried before the
                step emitted any output
@@ -848,6 +864,9 @@ line range, so a cleared body points back to exactly what it replaced.
 This is what makes the slimmed write/edit headers (R12) and
 |:YapClear| lossless: anything removed from the context exists here
 verbatim, machine-readable.
+
+The audit directory is created mode 0700 (the log holds full tool
+arguments and results).
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
@@ -1005,6 +1024,10 @@ history above it. For a global segment independent of yap buffers, use
                          runs, full arguments (the buffer header keeps
                          only slimmed write/edit args, R12)
             tool_result  {"type","name","bytes","result"} — full result
+            approval_request {"type","id","command"} — a dangerous command
+                         pauses the turn; the Lua side prompts and replies
+                         {"type":"approval_result","id","approved"} on stdin
+            approval_timeout {"type","id"} — the user never answered; denied
             retry        {"type","attempt","delay_ms","error"} — a
                          transient generation error (429/5xx/network)
                          was retried before any output was emitted
@@ -1185,14 +1208,23 @@ R15 Tools are compiled-in Go files, one per file in agent/tools/.
     Each file self-registers via init(); adding a tool = adding a file
     and recompiling. Not config files (the author wants tool code, not
     opaque declarations), not subprocesses (recompiling is accepted and
-    the binary stays self-contained). bash, python, write and edit are
-    deliberately included without sandbox or confirmation — the author
-    runs pi the same way and accepts the risk. bash/python's safety
-    mechanics are operational, not authorizing: own process group, group
-    kill on timeout and on :YapStop, tail-truncation, closed stdin. If
-    sandboxing is ever wanted, the evidence-backed direction is
-    bubblewrap (Codex's Linux choice), not command-pattern allowlists
-    (documented as bypassable).
+    the binary stays self-contained). bash, python and ssh are
+    deliberately unsandboxed — the author runs pi the same way and
+    accepts the residual risk — but are no longer unconfirmed: a
+    conservative denylist of irreversible / high-blast-radius
+    operations (piped-into-shell, rm -rf, mkfs/dd onto block devices,
+    sudo, git push --force / reset --hard / clean -f, chmod -R /
+    chown -R, redirects onto system or secret paths, shutdown/reboot,
+    fork bombs; for python, subprocess/os.system/... and
+    shutil.rmtree) pauses the turn for an explicit human Run/Deny
+    before the command executes. Denial, timeout, and the absence of a
+    serve process (yap send) all deny. This is a prompt-injection
+    mitigation, NOT a security boundary: the denylist is bypassable. A
+    real sandbox, if ever wanted, is bubblewrap (Codex's Linux
+    choice), not command-pattern allowlists (documented as bypassable).
+    bash/python's operational mechanics are unchanged: own process
+    group, group kill on timeout and on :YapStop, tail-truncation,
+    closed stdin.
 
 R16 Live tool output never enters the chat buffer.
     The buffer is the parseable conversation document (R1); streaming

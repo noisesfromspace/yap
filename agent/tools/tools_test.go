@@ -106,6 +106,32 @@ func TestBashToolStartEvent(t *testing.T) {
 	}
 }
 
+func TestBashApprovalGate(t *testing.T) {
+	// No approval channel (yap send / unit tests): a dangerous command is
+	// denied rather than run silently.
+	if _, _, err := run(t, "bash", `{"command":"rm -rf /tmp/definitely-not-there"}`); err == nil || !strings.Contains(err.Error(), "requires approval") {
+		t.Fatalf("dangerous command without approval: %v", err)
+	}
+
+	old := utils.ApprovalReplies
+	utils.ApprovalReplies = make(chan utils.ApprovalReply, 1)
+	defer func() { utils.ApprovalReplies = old }()
+
+	target := filepath.Join(t.TempDir(), "nothing-here")
+
+	// Denied: the command never runs.
+	go func() { utils.ApprovalReplies <- utils.ApprovalReply{ID: "approval-1", Approved: false} }()
+	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err == nil || !strings.Contains(err.Error(), "rejected") {
+		t.Fatalf("denied command: %v", err)
+	}
+
+	// Approved: the command runs.
+	go func() { utils.ApprovalReplies <- utils.ApprovalReply{ID: "approval-2", Approved: true} }()
+	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err != nil {
+		t.Fatalf("approved command: %v", err)
+	}
+}
+
 func TestBashTempFileHygiene(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)

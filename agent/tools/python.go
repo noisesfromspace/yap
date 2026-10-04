@@ -53,6 +53,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 
 	var cmd *exec.Cmd
 	label := "python3"
+	scan := a.Code
 	if hasCode {
 		// Inline: write the script to a temp file. Tracebacks carry a real
 		// filename and large payloads never hit `python3 -c`'s argv limit.
@@ -91,6 +92,18 @@ func runPython(a *pythonArgs) (string, string, error) {
 		}
 		cmd = exec.Command("python3", scriptPath)
 		label = "python3 " + a.File
+		if data, err := os.ReadFile(scriptPath); err == nil {
+			scan = string(data)
+		}
+	}
+	if scan != "" && utils.IsDangerousPython(scan) {
+		ok, err := utils.RequestApproval(scan)
+		if err != nil {
+			return "", "", fmt.Errorf("python requires approval: %w", err)
+		}
+		if !ok {
+			return "", "", fmt.Errorf("python rejected by user")
+		}
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

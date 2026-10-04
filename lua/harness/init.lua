@@ -354,7 +354,9 @@ local function audit_append(buf, ev)
   end
   if not t.audit then
     t.audit = paths.audit_path(buf)
-    vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p")
+    -- 0700: the audit log holds full tool args and results (potentially
+    -- secrets); the directory must not be world-readable.
+    vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p", "0700")
   end
   vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
 end
@@ -368,7 +370,7 @@ local function audit_follow(buf)
   end
   local want = paths.audit_path(buf)
   if want ~= t.audit and vim.fn.filereadable(want) == 0 then
-    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p")
+    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p", "0700")
     if os.rename(t.audit, want) then
       t.audit = want
     end
@@ -439,6 +441,12 @@ local function render_event(ev)
   elseif ev.type == "steer" then
     local text = (ev.text or ""):gsub("\n", " ")
     return ("%s ⌁ steer: %s"):format(ts, text), "block"
+  elseif ev.type == "approval_request" then
+    return ("%s ⚠ approval requested: %s"):format(ts, (ev.command or ""):gsub("\n", " ")), "block"
+  elseif ev.type == "approval_result" then
+    return ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), "block"
+  elseif ev.type == "approval_timeout" then
+    return ("%s approval timed out (denied)"):format(ts), "block"
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -611,6 +619,22 @@ local function handle_event(buf, json_line)
   elseif ev.type == "subagent_timeout" then
     local child = subagent_children[buf]
     if child then M.stop(child) end
+  elseif ev.type == "approval_request" then
+    append_event(buf, ev)
+    local command = ev.command or ""
+    local preview = command:gsub("%s+", " ")
+    if #preview > 300 then
+      preview = preview:sub(1, 300) .. "..."
+    end
+    local choice = vim.fn.confirm(("yap: run this?\n\n%s"):format(preview), "&Run\n&Deny", 1, "Warning")
+    local approved = choice == 1
+    local process = servers[buf]
+    if process then
+      process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
+    end
+    append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
+  elseif ev.type == "approval_timeout" then
+    append_event(buf, ev)
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.
@@ -1752,6 +1776,12 @@ end
 -- below (grep/find/webfetch) which are mapped onto these canonical names.
 local ALLOWED_TOOLS = { "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
 
+-- A role with no `tools:` header gets this read-only set: a subagent is one
+-- prompt-injection hop removed from the user's attention, so it must opt into
+-- write/bash/python/curl/ssh explicitly. Any role may still request the full
+-- set (minus recursive `subagent`) via its `tools:` header.
+local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "git", "websearch", "quickfix", "jev" }
+
 start_subagent = function(parent, ev)
   local function reply(text)
     local process = servers[parent]
@@ -1784,7 +1814,7 @@ start_subagent = function(parent, ev)
     local p, m = header.model:match("^([^/]+)/(.+)$")
     if p then provider, model = p, m end
   end
-  local allowed = vim.deepcopy(ALLOWED_TOOLS)
+  local allowed = vim.deepcopy(DEFAULT_SUBAGENT_TOOLS)
   if header.tools and header.tools ~= "" then
     allowed = {}
     local aliases = { grep = "search", find = "glob", webfetch = "fetch" }

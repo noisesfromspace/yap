@@ -106,7 +106,11 @@ func (o turnOutput) Write(p []byte) (int, error) {
 
 func serve(in io.Reader, out io.Writer) error {
 	tools.SubagentReplies = make(chan tools.SubagentReply, 1)
-	defer func() { tools.SubagentReplies = nil }()
+	utils.ApprovalReplies = make(chan utils.ApprovalReply, 1)
+	defer func() {
+		tools.SubagentReplies = nil
+		utils.ApprovalReplies = nil
+	}()
 	requests := make(chan []byte)
 	readErr := make(chan error, 1)
 
@@ -132,6 +136,14 @@ func serve(in io.Reader, out io.Writer) error {
 				switch reply.Type {
 				case "subagent_result":
 					tools.SubagentReplies <- reply.SubagentReply
+					continue
+				case "approval_result":
+					var ar struct {
+						ID       string `json:"id"`
+						Approved bool   `json:"approved"`
+					}
+					json.Unmarshal(line, &ar)
+					utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}
 					continue
 				case "steer":
 					steerMu.Lock()

@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -25,6 +27,10 @@ const (
 	// curl's default Accept is */*, which bot checks flag; a browser-like
 	// Accept is only added when the caller did not supply its own.
 	curlDefaultAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+	// curlMaxRedirects bounds manual redirect following. Each hop is
+	// host-checked, so the cap only prevents a redirect cycle from hanging
+	// the turn, not an SSRF.
+	curlMaxRedirects = 10
 )
 
 type curlArgs struct {
@@ -48,26 +54,92 @@ func init() {
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
 }
 
+// curlDenyLong / curlDenyShort are curl options that can turn the tool into
+// an arbitrary file-writer or an SSRF vector (unix sockets, config files,
+// output files, DNS rebinding, interface pinning) and are therefore refused.
+// This is defense-in-depth against prompt-injected curl invocations, not a
+// security boundary — bash is unsandboxed by design (doc: R15).
+var (
+	curlDenyLong = []string{
+		"--unix-socket", "--abstract-unix-socket", "--config", "--output",
+		"--output-dir", "--remote-name", "--remote-name-all", "--dump-header",
+		"--trace", "--trace-ascii", "--resolve", "--connect-to", "--interface",
+	}
+	curlDenyShort = []string{"-K", "-o", "-O", "-D"}
+)
+
+func rejectCurlFlags(flags string) error {
+	for _, f := range strings.Fields(flags) {
+		for _, d := range curlDenyLong {
+			if f == d || strings.HasPrefix(f, d+"=") {
+				return fmt.Errorf("curl flag %q is not allowed", f)
+			}
+		}
+		for _, d := range curlDenyShort {
+			if strings.HasPrefix(f, d) {
+				return fmt.Errorf("curl flag %q is not allowed", f)
+			}
+		}
+	}
+	return nil
+}
+
 func runCurl(a *curlArgs) (string, string, error) {
 	if !strings.HasPrefix(a.URL, "http://") && !strings.HasPrefix(a.URL, "https://") {
 		return "", "", fmt.Errorf("only http(s) URLs supported")
 	}
+	if err := rejectCurlFlags(a.Flags); err != nil {
+		return "", "", err
+	}
 
-	u, perr := url.Parse(a.URL)
-	if perr != nil {
-		return "", "", fmt.Errorf("invalid URL: %w", perr)
+	follow := a.FollowRedirects == nil || *a.FollowRedirects
+	current := a.URL
+	for hop := 0; ; hop++ {
+		body, redirectURL, err := curlOnce(a, current)
+		if err != nil {
+			return "", "", err
+		}
+		if !follow || redirectURL == "" {
+			return utils.SafetyGuarded(decisionModel, a.Safety, body), "", nil
+		}
+		if hop >= curlMaxRedirects-1 {
+			return utils.SafetyGuarded(decisionModel, a.Safety, body+"\n[too many redirects (>10)]"), "", nil
+		}
+		next, err := resolveRedirect(current, redirectURL)
+		if err != nil {
+			return "", "", err
+		}
+		current = next
+	}
+}
+
+// curlOnce runs a single checked hop: the URL's host is resolved and rejected
+// when non-global, and redirects are NOT followed internally (-L is omitted)
+// so every hop is re-checked here. It returns the body text (with the status
+// line appended) and the redirect target ("" when none).
+func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid URL: %w", err)
 	}
 	if err := utils.CheckURLHost(u); err != nil {
 		return "", "", err
 	}
 
-	// -sS: silent, but show errors. --compressed: send Accept-Encoding and
-	// auto-decompress. -w prints the status line to STDERR (via %{stderr})
-	// so a 50KB-truncated body cannot swallow it.
 	args := []string{"-sS", "--compressed", "-w", "%{stderr}[yap curl: HTTP %{http_code} | %{size_download} bytes | %{time_total}s]\n"}
-	if a.FollowRedirects == nil || *a.FollowRedirects {
-		args = append(args, "-L")
+
+	// Response headers land in a temp file so the redirect target can be
+	// parsed without mixing a machine-readable line into the body shown to
+	// the model.
+	hdr, err := os.CreateTemp("", "yap-curl-*.hdr")
+	if err != nil {
+		return "", "", err
 	}
+	hdrPath := hdr.Name()
+	hdr.Close()
+	defer os.Remove(hdrPath)
+	args = append(args, "-D", hdrPath)
+
 	if a.Method != "" {
 		args = append(args, "-X", a.Method)
 	}
@@ -108,7 +180,7 @@ func runCurl(a *curlArgs) (string, string, error) {
 		// data cannot be mistaken for a filename.
 		args = append(args, "--data-binary", "@-")
 	}
-	args = append(args, a.URL)
+	args = append(args, rawURL)
 
 	// curl's --max-time bounds the transfer; the Go context is only a
 	// backstop (5s later) so curl's own "operation timed out" message wins.
@@ -123,7 +195,7 @@ func runCurl(a *curlArgs) (string, string, error) {
 	var stderr bytes.Buffer
 	cmd.Stdout = &body
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	runErr := cmd.Run()
 
 	text := body.String()
 	if body.Truncated() {
@@ -132,17 +204,53 @@ func runCurl(a *curlArgs) (string, string, error) {
 	if s := strings.TrimSpace(stderr.String()); s != "" {
 		text += "\n" + s
 	}
-	if err != nil {
+	if runErr != nil {
 		if ctx.Err() != nil {
 			return "", "", fmt.Errorf("curl killed: %v", ctx.Err())
 		}
-		if ee, ok := err.(*exec.ExitError); ok {
+		if ee, ok := runErr.(*exec.ExitError); ok {
 			text += fmt.Sprintf("\n[curl exit code %d]", ee.ExitCode())
 		} else {
-			return "", "", fmt.Errorf("curl: %w", err)
+			return "", "", fmt.Errorf("curl: %w", runErr)
 		}
 	}
-	return utils.SafetyGuarded(decisionModel, a.Safety, text), "", nil
+
+	return text, parseCurlHeaders(hdrPath), nil
+}
+
+// parseCurlHeaders extracts the Location header (if any) from a curl -D
+// header dump.
+func parseCurlHeaders(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if lower := strings.ToLower(line); strings.HasPrefix(lower, "location:") {
+			return strings.TrimSpace(line[len("location:"):])
+		}
+	}
+	return ""
+}
+
+// resolveRedirect resolves a (possibly relative) redirect Location against
+// the current URL and refuses non-http(s) schemes.
+func resolveRedirect(current, location string) (string, error) {
+	base, err := url.Parse(current)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	ref, err := url.Parse(location)
+	if err != nil {
+		return "", fmt.Errorf("invalid redirect URL %q: %w", location, err)
+	}
+	next := base.ResolveReference(ref)
+	if next.Scheme != "http" && next.Scheme != "https" {
+		return "", fmt.Errorf("redirect to non-http(s) URL %q", next.String())
+	}
+	return next.String(), nil
 }
 
 // headBuffer keeps the first readMaxBytes (50KB) of the response body,

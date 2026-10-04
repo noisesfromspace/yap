@@ -38,6 +38,15 @@ func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
+	if utils.IsDangerousCommand(a.Command) {
+		ok, err := utils.RequestApproval(a.Command)
+		if err != nil {
+			return "", "", fmt.Errorf("command requires approval: %w", err)
+		}
+		if !ok {
+			return "", "", fmt.Errorf("command rejected by user")
+		}
+	}
 	a.Cwd = utils.ExpandHome(a.Cwd)
 	timeout := bashDefaultTimeout
 	if a.Timeout > 0 {
@@ -77,7 +86,10 @@ func runStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		return "", err
 	}
 	outPath := out.Name()
-	utils.EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": command})
+	// The command line is scrubbed here (secrets in a command would otherwise
+	// land verbatim in the audit log); the full unscrubbed text is only ever
+	// held by the child process itself.
+	utils.EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": utils.Scrub(command)})
 	cmd.Stdin = nil // /dev/null
 	cmd.Stdout = out
 	cmd.Stderr = out
