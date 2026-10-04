@@ -150,9 +150,9 @@ the current buffer unless otherwise noted.
                         its file path and focus the picked one. Each line is
                         annotated with its state — `▶ running`, `✗ error`, `◉ waiting`
                         (a completed turn awaits your reply) or `○ idle` —
-                        and needing-attention sessions sort first. Yap
-                        buffers are unlisted — they never appear in |:ls|
-                        or buffer pickers (MiniPick.buffers and friends),
+                        waiting sessions sort last (use |:YapWaiting| to jump
+                        straight to them). Yap buffers are unlisted — they
+                        never appear in |:ls| or buffer pickers (MiniPick.buffers and friends),
                         and a session's tail buffer is never listed at all
                         (open it in the session with |:YapLive|). This is
                         how you move between sessions.

@@ -2172,21 +2172,21 @@ local function session_status(buf)
   return glyph[state] .. " " .. state
 end
 
---- Sort needing-attention sessions first (error > waiting > busy > idle) so
---- the unified picker keeps the old "what needs me" role.
+--- Sort waiting sessions last; their dedicated :YapWaiting / <leader>w picker
+--- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
   if errors[buf] then
     return 1
-  elseif awaiting[buf] then
-    return 2
   elseif running and running[buf] then
-    return 3
+    return 2
+  elseif awaiting[buf] then
+    return 4
   end
-  return 4
+  return 3
 end
 
 --- Every open yap chat buffer except the current one, annotated with its live
---- state and sorted so sessions needing attention lead. An optional `state`
+--- state and sorted with waiting sessions last. An optional `state`
 --- ("running", "error", "waiting" or "idle") narrows the list to one state;
 --- the default lists every other session. Tails are never here — use :YapLive /
 --- <leader>l.

@@ -91,7 +91,7 @@ assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.
 assert(notified2[1].msg:match("m1 done"), "unexpected message: " .. notified2[1].msg)
 
 -- :YapInstances / <leader>r list every other open session with its status;
--- the awaiting one sorts first, the fresh one is idle.
+-- waiting sessions sort last because they have a dedicated <leader>w picker.
 vim.cmd("enew")
 local items, fmt
 local orig_select = vim.ui.select
@@ -102,12 +102,12 @@ end
 yap.instances()
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
-assert(items[1].buf == buf, "awaiting session should sort first")
-assert(items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(items[1]))
-assert(items[1].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[1].text)
-assert(fmt(items[1]):match("◉ waiting$"), "status not rendered: " .. fmt(items[1]))
-assert(items[2].buf == buf2, "idle session should sort last")
-assert(items[2].status == "○ idle", "idle status missing: " .. vim.inspect(items[2]))
+assert(items[1].buf == buf2, "idle session should sort before waiting sessions")
+assert(items[1].status == "○ idle", "idle status missing: " .. vim.inspect(items[1]))
+assert(items[2].buf == buf, "waiting session should sort last")
+assert(items[2].status == "◉ waiting", "waiting status missing: " .. vim.inspect(items[2]))
+assert(items[2].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[2].text)
+assert(fmt(items[2]):match("◉ waiting$"), "status not rendered: " .. fmt(items[2]))
 
 -- :YapWaiting / <leader>w list just the sessions awaiting a reply.
 local waiting_items
