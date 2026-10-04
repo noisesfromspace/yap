@@ -164,10 +164,21 @@ local function focus_forget(buf)
   end
 end
 
--- First focus_mru entry that is still open (loaded) and isn't `buf`.
+-- Landing spot after :bd/:bw/:close of the current session: the most
+-- recently focused session awaiting a reply, otherwise the last non-session
+-- (file) buffer accessed. Idle sessions are not a landing spot — the user
+-- asked to go back to a waiting session, else to a real file.
 local function focus_fallback(buf)
+  local function open(b)
+    return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b)
+  end
   for _, b in ipairs(focus_mru) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b) then
+    if open(b) and vim.b[b].yap and awaiting[b] then
+      return b
+    end
+  end
+  for _, b in ipairs(focus_mru) do
+    if open(b) and not vim.b[b].yap then
       return b
     end
   end
@@ -2079,9 +2090,9 @@ function M.setup(opts)
       focus_forget(args.buf)
     end,
   })
-  -- Record focus order so :bd/:bw/:close on a session can land on the
-  -- buffer the user came from (unlisted sessions are invisible to Neovim's
-  -- own replacement-buffer search).
+  -- Record focus order so :bd/:bw/:close on a session can land on a
+  -- waiting session, else the last file buffer (unlisted sessions are
+  -- invisible to Neovim's own replacement-buffer search).
   vim.api.nvim_create_autocmd("BufEnter", {
     group = adopt_group,
     callback = function(args)
