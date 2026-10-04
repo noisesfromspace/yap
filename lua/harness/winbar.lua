@@ -19,10 +19,11 @@ local awaiting = state.awaiting
 local last_turn = state.last_turn
 local steer = state.steer
 
--- Full-cell braille arc spinner (dots 1-8): every frame fills the whole
--- cell, so it sits vertically centered next to the text. The classic
--- 6-dot set (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏) only uses dots 1-6 and renders raised.
-local SPINNER = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
+-- A six-dot braille fill animation: the 2×3 dots fill down the left
+-- column, then down the right, hold briefly, and clear before repeating.
+-- Braille dot numbering is column-major, so each frame is one statusline
+-- cell while the pattern itself reads vertically.
+local SPINNER = { "⠀", "⠁", "⠃", "⠇", "⠏", "⠟", "⠿", "⠿", "⠿", "⠀", "⠀" }
 local spinner_tick = 0
 local spinner_timer = nil
 

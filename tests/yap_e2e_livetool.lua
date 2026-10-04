@@ -48,6 +48,15 @@ local header_ok = vim.wait(10000, function()
 end, 10)
 assert(header_ok, "tool header not visible mid-run")
 assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
+local vertical_frames = { "⠀", "⠁", "⠃", "⠇", "⠏", "⠟", "⠿" }
+local has_vertical_spinner = false
+for _, frame in ipairs(vertical_frames) do
+  if yap.winbar():find(frame, 1, true) then
+    has_vertical_spinner = true
+    break
+  end
+end
+assert(has_vertical_spinner, "winbar is missing the 2×3 braille fill spinner: " .. yap.winbar())
 local mid_ok = vim.wait(10000, function()
   return yap.winbar():match("bash") ~= nil
 end, 10)
