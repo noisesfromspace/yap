@@ -19,15 +19,13 @@ local awaiting = state.awaiting
 local last_turn = state.last_turn
 local steer = state.steer
 
--- A compact, offbeat signal cycle. The glyphs stay similarly small, while
--- teal, blue and violet rotate to give the busy state a little extra life.
+-- A compact, offbeat cycle of typographic marks. Teal, blue and violet
+-- rotate independently to give the busy state a little extra life.
 local SPINNER = {
-  { "∿", "BusyTeal" },
-  { "⌁", "BusyBlue" },
-  { "≋", "BusyViolet" },
-  { "⌇", "BusyTeal" },
-  { "⌖", "BusyBlue" },
-  { "⌁", "BusyViolet" },
+  { "※", "BusyTeal" },
+  { "⁕", "BusyBlue" },
+  { "⁜", "BusyViolet" },
+  { "⁑", "BusyTeal" },
 }
 local spinner_tick = 0
 local spinner_timer = nil
