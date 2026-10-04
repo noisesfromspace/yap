@@ -108,12 +108,11 @@ assert(vim.fn.foldclosed(opener) == opener, "view 2 refolds thinking")
 assert(vim.fn.foldclosed(tool) == tool, "view 2 refolds tool region")
 assert(vim.fn.foldclosed(single) == single, "view 2 refolds single-line tool region")
 
--- view 1 shows the last assistant, but its thinking/tool regions stay folded
+-- view 1 folds assistant messages, including the newest one
 fold.set_view_level(1)
-assert(vim.fn.foldclosed(9) == -1, "view 1 keeps last assistant open")
+assert(vim.fn.foldclosed(9) == 9, "view 1 folds last assistant")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
-assert(vim.fn.foldclosed(opener) == opener, "view 1 folds thinking inside the open assistant")
-assert(vim.fn.foldlevel(opener) == 3, "thinking stays level 3 under the open block")
+assert(vim.fn.foldlevel(opener) == 3, "thinking stays level 3 under the folded block")
 
 -- fold state is STATIC between view keypresses: manually open a region
 -- with za, then type a new message — nothing may move

@@ -37,7 +37,7 @@ end
 fold.set_view_level(1)
 local a = headings("assistant")
 assert(vim.fn.foldclosed(a[1]) == a[1], "view 1 should fold older assistant")
-assert(vim.fn.foldclosed(a[2]) == -1, "view 1 should open last assistant")
+assert(vim.fn.foldclosed(a[2]) == a[2], "view 1 should fold last assistant")
 
 -- ── no leak: user opens a tool, a NEW tool still arrives folded ─────────
 fold.set_view_level(2)
@@ -63,11 +63,11 @@ local v1 = vim.fn.winsaveview()
 assert(v0.lnum == v1.lnum and v0.col == v1.col, "cursor moved during reconcile")
 assert(v0.topline == v1.topline, "topline moved during reconcile")
 
--- ── superseded live assistant folds, user-opened old one stays open ─────
+-- ── new replies stay folded, user-opened old one stays open ─────────────
 fold.set_view_level(1)
 local a2 = headings("assistant")
 assert(vim.fn.foldclosed(a2[1]) == a2[1], "older assistant should fold in view 1")
-assert(vim.fn.foldclosed(a2[3]) == -1, "newest assistant should open in view 1")
+assert(vim.fn.foldclosed(a2[3]) == a2[3], "newest assistant should stay folded in view 1")
 -- za-open the older assistant, then a new reply must not fold it
 vim.api.nvim_win_set_cursor(0, { a2[1], 0 })
 vim.cmd("normal! za")
@@ -76,7 +76,7 @@ vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @user", "", "Q3", "", "# @as
 fold.after_append(buf, { "# @assistant" })
 local a3 = headings("assistant")
 assert(vim.fn.foldclosed(a2[1]) == -1, "user-opened old assistant folded on new reply")
-assert(vim.fn.foldclosed(a2[2]) == a2[2], "previous auto-open reply did not fold")
-assert(vim.fn.foldclosed(a3[4]) == -1, "newest assistant not open in view 1")
+assert(vim.fn.foldclosed(a2[2]) == a2[2], "other assistant opened")
+assert(vim.fn.foldclosed(a3[4]) == a3[4], "newest assistant opened in view 1")
 
 print("OK fold_reconcile")

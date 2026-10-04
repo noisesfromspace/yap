@@ -88,20 +88,20 @@ assert(vim.fn.foldclosed(think1) == -1, "nav open did not open the thinking bloc
 -- re-apply never changes the applied view
 assert(fold.level() == 2, "re-apply changed the applied view level")
 
--- View 1: an older reply opened with native za (not just Yap's <Tab>)
--- survives structural appends, while the previous live reply folds when
--- the next assistant starts.
+-- View 1: older replies opened with za or <Tab> survive appends, while
+-- the newest reply stays folded, including while its text streams.
 fold.set_view_level(1)
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @assistant", "", "live answer", "" })
 fold.after_append(buf, { "# @assistant", "" })
 local live_reply = 26
-assert(vim.fn.foldclosed(live_reply) == -1, "live reply not open in view 1")
+assert(vim.fn.foldclosed(live_reply) == live_reply, "new reply opened in view 1")
 vim.api.nvim_win_set_cursor(0, { 9, 0 })
 vim.cmd("normal! za")
 assert(vim.fn.foldclosed(9) == -1, "za did not open old assistant")
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { '<!-- yap:tool {"name":"bash"} -->', "result", "<!-- /yap:tool -->" })
 fold.after_append(buf, { '<!-- yap:tool {"name":"bash"} -->' })
 assert(vim.fn.foldclosed(9) == -1, "view 1 closed old assistant on tool append")
+assert(vim.fn.foldclosed(live_reply) == live_reply, "tool append opened new reply")
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @user", "", "next question", "", "# @assistant", "" })
 fold.after_append(buf, { "# @assistant" })
 assert(vim.fn.foldclosed(9) == -1, "view 1 closed old assistant on new reply")
@@ -109,27 +109,26 @@ assert(vim.fn.foldclosed(live_reply) == live_reply, "previous live reply stayed 
 
 -- The actual stream path appends text into the last line, not whole blocks.
 -- Opening an older reply with <Tab> must persist as both text and new
--- structural folds arrive in the live reply.
+-- structural folds arrive in the newest reply.
 fold.set_view_level(1)
 fold.toggle(9)
 assert(vim.fn.foldclosed(9) == -1, "Tab did not open old assistant in view 1")
 require("harness.document").append_text(buf, "streamed text\n")
 fold.after_append(buf, { "streamed text", "" })
 assert(vim.fn.foldclosed(9) == -1, "text stream closed Tab-opened reply")
-require("harness.document").append_text(buf, '<!-- yap:thinking\nmore\n-->\n')
-fold.after_append(buf, { "<!-- yap:thinking", "more", "-->" })
-assert(vim.fn.foldclosed(9) == -1, "thinking stream closed Tab-opened reply")
-
--- Changing the view is an explicit reset: an automatically open live
--- reply should not be mistaken for a manual pin on the next turn.
-fold.set_view_level(1)
 local current
 for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
   if line == "# @assistant" then current = i end
 end
-assert(current > live_reply and vim.fn.foldclosed(current) == -1, "current reply not live")
-vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @user", "", "question", "", "# @assistant", "" })
-fold.after_append(buf, { "# @assistant" })
-assert(vim.fn.foldclosed(current) == current, "view reset pinned the automatically open reply")
+assert(vim.fn.foldclosed(current) == current, "text stream opened current reply")
+require("harness.document").append_text(buf, '<!-- yap:thinking\nmore\n-->\n')
+fold.after_append(buf, { "<!-- yap:thinking", "more", "-->" })
+assert(vim.fn.foldclosed(9) == -1, "thinking stream closed Tab-opened reply")
+assert(vim.fn.foldclosed(current) == current, "thinking stream opened current reply")
+
+-- A view keypress clears the manual open.
+fold.set_view_level(1)
+assert(vim.fn.foldclosed(9) == 9, "view reset did not close old reply")
+assert(vim.fn.foldclosed(current) == current, "view reset opened current reply")
 
 print("OK fold_peek")

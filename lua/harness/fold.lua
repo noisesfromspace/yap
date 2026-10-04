@@ -16,13 +16,10 @@ local HEAD = "^# @(%a+)%s*$"
 --   tool region    level 3 (one deeper than its message)
 --   thinking/error level 3 (same)
 --   # @system      level 3 (folded in views 1 and 2, open in view 3)
--- View 1 = foldlevel 1 (only user open), view 2 = 2 (messages open,
--- tools/thinking/system folded), view 3 = 3 (everything open).
--- The LAST assistant is additionally auto-opened in view 1 (a manual
--- foldopen re-applied after each structural append) so the latest reply
--- stays visible while older replies fold. Levels are kept monotonic (a
--- tool is always exactly one deeper than its enclosing assistant) — a
--- >1 → >3 jump would corrupt Neovim's fold tree and break za/zo. Tool
+-- Views use foldlevel 1/2/3: view 1 folds assistant output (including
+-- the newest reply), view 2 opens messages, view 3 opens all folds.
+-- Levels are kept monotonic (a tool is always exactly one deeper than
+-- its enclosing assistant) so Neovim's fold tree and za/zo work.
 -- regions and thinking/error are folds one level deeper than their
 -- enclosing message; single-line markers (`<!-- yap:usage … -->`) stay
 -- unfolded content.
@@ -33,12 +30,12 @@ local COMMENT_OPEN = "^<!%-%-.*yap:%a+%s*$"
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
 -- folded in views 1 and 2, open in view 3):
---   1: agent output hidden — only user prompts and the last assistant open
+--   1: agent output hidden — only user prompts open
 --   2: conversation visible — tool calls, thinking and other display
 --      regions folded away
 --   3: everything open
 M.views = {
-  { key = "1", label = "user + last assistant open" },
+  { key = "1", label = "agent output folded" },
   { key = "2", label = "tools & thinking folded" },
   { key = "3", label = "everything open" },
 }
@@ -256,10 +253,9 @@ local applied = {}
 -- collapsed the view (cursor/scrolling jumps) and flickered. Instead each
 -- structural append only touches folds that actually changed: it closes
 -- the folds the append newly created that leaked open (Neovim inherits a
--- manual foldopen into same/lower-level folds), folds the superseded live
--- assistant, and re-opens the user-opened set + live assistant.
+-- manual foldopen into same/lower-level folds), and re-opens user-opened
+-- folds.
 local opened = {}
-local live_heading = {} -- the last assistant: auto-opened in view 1, folds when the next reply arrives
 local prev_openers = {} -- opener lines present before the last reconcile; new folds are excluded from the za/zo capture
 
 --- The set of fold-opener line numbers in a levels array (the ">N" entries).
@@ -271,18 +267,6 @@ local function openers(levels)
     end
   end
   return set
-end
-
---- The line number of the LAST `# @assistant` heading (a level-2 opener),
---- or nil. This is the reply that stays open in view 1; older replies fold.
-local function find_live_heading(buf, levels)
-  for i = #levels, 1, -1 do
-    if levels[i] == ">2"
-      and vim.api.nvim_buf_get_lines(buf, i - 1, i, false)[1] == "# @assistant" then
-      return i
-    end
-  end
-  return nil
 end
 
 -- Open/close the fold whose OPENER is `lnum`. `:Nfoldopen`/`:Nfoldclose`
@@ -326,21 +310,10 @@ function M.set_view_level(level)
   local buf = vim.api.nvim_get_current_buf()
   applied[buf] = level
   opened[buf] = {}
-  live_heading[buf] = nil
   local target = ({ 1, 2, 3 })[level] or 3
   vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
   vim.wo.foldlevel = target
-  local levels = M.levels(buf)
-  prev_openers[buf] = openers(levels)
-  -- View 1 keeps the last assistant open so the latest reply is visible;
-  -- views 2/3 open it by foldlevel, so only view 1 auto-opens it here.
-  if level == 1 then
-    live_heading[buf] = find_live_heading(buf, levels)
-  end
-  local ln = live_heading[buf]
-  if ln and vim.fn.foldclosed(ln) ~= -1 then
-    fold_open(ln)
-  end
+  prev_openers[buf] = openers(M.levels(buf))
 end
 
 --- The fold-start line of the fold containing `lnum` (open or closed).
@@ -374,20 +347,17 @@ end
 --- the folds that actually changed are touched:
 ---
 ---   1. Capture native za/zo opens on pre-existing folds: a fold that is
----      currently open beyond the view's foldlevel (and is not the auto-open
----      live assistant) was opened by the user. A fold the user opened before
----      but has since closed (zc/za) is dropped.
----   2. Fold the superseded live assistant (view 1) unless the user opened it.
----   3. New folds: set to the view default. This is what stops Neovim's
+---      currently open beyond the view's foldlevel was opened by the user.
+---      A fold the user opened before but has since closed (zc/za) is dropped.
+---   2. New folds: set to the view default. This stops Neovim's
 ---      manual-foldopen inheritance — a fold streamed in after the user
----      opened a sibling arrives open, and is closed back here (or opened,
----      if it is the live assistant).
----   4. Re-open the user-opened set and the live assistant (idempotent).
+---      opened a sibling arrives open, and is closed back here.
+---   3. Re-open the user-opened set (idempotent).
 ---
 --- fold_open/fold_close save and restore the window view around a cursor
 --- jump + zo/zc, so reconciling during a stream never yanks the user's
 --- cursor or scroll position.
-local function reconcile_window(w, buf, levels, old_live, new_openers)
+local function reconcile_window(w, buf, levels, new_openers)
   vim.api.nvim_win_call(w, function()
     local foldlevel = vim.wo.foldlevel
     local prev = prev_openers[buf] or {}
@@ -396,7 +366,7 @@ local function reconcile_window(w, buf, levels, old_live, new_openers)
     for lnum, lv in ipairs(levels) do
       if lv:sub(1, 1) == ">" then
         local lvl = tonumber(lv:sub(2))
-        if lvl and prev[lnum] and lnum ~= old_live then
+        if lvl and prev[lnum] then
           if vim.fn.foldclosed(lnum) == -1 then
             if lvl > foldlevel then
               o[lnum] = true
@@ -408,21 +378,12 @@ local function reconcile_window(w, buf, levels, old_live, new_openers)
       end
     end
     opened[buf] = o
-    -- 2. Fold the superseded live assistant (it was auto-open, not user-open).
-    if old_live and old_live ~= live_heading[buf] and not o[old_live] then
-      local lv = levels[old_live]
-      local lvl = lv and tonumber(lv:sub(2))
-      if lvl and lvl > foldlevel and vim.fn.foldclosed(old_live) == -1 then
-        fold_close(old_live)
-      end
-    end
-    -- 3. New folds adopt the view's default (undo the inheritance leak).
+    -- 2. New folds adopt the view's default (undo the inheritance leak).
     for lnum in pairs(new_openers) do
       local lv = levels[lnum]
       local lvl = lv and tonumber(lv:sub(2))
       if lvl then
-        local want_open = lnum == live_heading[buf] or lvl <= foldlevel
-        if want_open then
+        if lvl <= foldlevel then
           if vim.fn.foldclosed(lnum) ~= -1 then
             fold_open(lnum)
           end
@@ -431,14 +392,10 @@ local function reconcile_window(w, buf, levels, old_live, new_openers)
         end
       end
     end
-    -- 4. Re-open the user-opened set and the live assistant.
+    -- 3. Re-open the user-opened set.
     local reopens = {}
     for lnum in pairs(o) do
       reopens[#reopens + 1] = lnum
-    end
-    local ln = live_heading[buf]
-    if ln then
-      reopens[#reopens + 1] = ln
     end
     table.sort(reopens)
     for _, lnum in ipairs(reopens) do
@@ -492,8 +449,7 @@ end
 --- Called by the send/stream path after appending `lines` to a session
 --- buffer (never by user edits). If the buffer gained a fold opener,
 --- reconcile the view in every window showing the buffer: close folds the
---- append newly created that leaked open, fold the superseded live
---- assistant, and keep the user-opened folds + live assistant open.
+--- append newly created that leaked open, and keep user-opened folds open.
 ---
 --- New openers are detected from the BUFFER, not the appended lines:
 --- streamed thinking/tool headers arrive in arbitrary byte chunks, so the
@@ -509,7 +465,6 @@ function M.after_append(buf, lines)
   end
   local levels = M.levels(buf)
   local cur_openers = openers(levels)
-  local old_live = live_heading[buf]
   local new_openers = {}
   for lnum in pairs(cur_openers) do
     new_openers[lnum] = true
@@ -520,11 +475,8 @@ function M.after_append(buf, lines)
   if next(new_openers) == nil then
     return
   end
-  if vim.tbl_contains(lines, "# @assistant") then
-    live_heading[buf] = find_live_heading(buf, levels)
-  end
   for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-    reconcile_window(w, buf, levels, old_live, new_openers)
+    reconcile_window(w, buf, levels, new_openers)
   end
   prev_openers[buf] = cur_openers
 end

@@ -128,22 +128,23 @@ do
     "# @assistant", "", "A1", "", -- old assistant (will za-open)
     "# @user", "", "Q2", "",
   })
-  -- The live reply streams in; the last assistant is auto-opened in view 1.
+  -- The new reply streams in; view 1 keeps all assistant messages folded.
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @assistant", "", "A2", "" })
   fold.after_append(buf, { "# @assistant", "" })
   fold.set_view_level(1)
   local old = find_line(buf, "^# @assistant", 1)
   local live = find_line(buf, "^# @assistant", 2)
   assert(vim.fn.foldclosed(old) == old, "precondition: old assistant folded in view 1")
-  assert(vim.fn.foldclosed(live) == -1, "precondition: live assistant open in view 1")
+  assert(vim.fn.foldclosed(live) == live, "new assistant should stay folded in view 1")
   za(buf, old)
   assert(vim.fn.foldclosed(old) == -1, "za did not open old assistant")
-  -- a new reply supersedes the previous live and must fold it, while the
-  -- za-opened old assistant stays open
+  -- a new reply should stay folded while the za-opened old assistant stays open
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @assistant", "", "A3", "" })
   fold.after_append(buf, { "# @assistant", "" })
   assert(vim.fn.foldclosed(old) == -1, "za-opened old assistant closed on new reply")
-  assert(vim.fn.foldclosed(live) == live, "previous live reply stayed open after new reply")
+  assert(vim.fn.foldclosed(live) == live, "previous reply opened after new reply")
+  local newest = find_line(buf, "^# @assistant", 3)
+  assert(vim.fn.foldclosed(newest) == newest, "newest reply opened in view 1")
   print("OK za-opened old assistant survives a new reply in view 1")
 end
 

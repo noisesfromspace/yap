@@ -813,7 +813,7 @@ and error comment regions fold likewise.
 Three views, bound to <leader>1..3, each applied unconditionally so a
 keypress always lands on the same state:
 
-  <leader>1   only user prompts and the last assistant stay open
+  <leader>1   only user prompts stay open
   <leader>2   conversation open, tool calls and thinking folded (default)
   <leader>3   everything unfolded
 
@@ -825,13 +825,12 @@ View 2 is applied once when a session buffer is opened. Fold levels are
 role-dependent (user 1, assistant 2, tool/thinking/system 3), so the
 three views are pure 'foldlevel' 1/2/3 with no manual foldclose: manual
 closes combined with expr folds made Neovim re-evaluate every fold on
-each edit — hundreds of ms per keystroke on a large session. The LAST
-assistant is additionally auto-opened in view 1 (a manual foldopen
-re-applied after each structural append), so the latest reply stays
-visible while older replies fold; streamed tool regions appear folded in
-views 1/2, and the next prompt is always open. Levels are kept monotonic
-(a tool is always exactly one deeper than its enclosing assistant) so
-Neovim's fold tree stays valid and za/zo behave predictably.
+each edit — hundreds of ms per keystroke on a large session. In view 1,
+assistant output stays folded, including the newest reply; streamed tool
+regions appear folded in views 1/2, and the next prompt is always open.
+Levels are kept monotonic (a tool is always exactly one deeper than its
+enclosing assistant) so Neovim's fold tree stays valid and za/zo behave
+predictably.
 
 Above the view, <Tab> and the block-navigation keys DRILL: <Tab> opens
 the fold under the cursor persistently (pins it) or closes it again;
@@ -849,10 +848,9 @@ handful, which collapsed the view (cursor/scroll jumps) and flickered;
 instead each structural append only (1) closes folds the append newly
 created that leaked open — Neovim inherits a manual foldopen into
 same-or-deeper folds, so "open one tool" used to make every later tool
-arrive open — (2) folds the superseded live assistant, and (3) re-opens
-the user-opened folds and the live assistant. Plain-text appends change
-nothing, so streaming prose never touches folds, and the cursor and
-scroll position stay exactly where the user left them. Typing (user
+arrive open — and (2) re-opens the user-opened folds. Plain-text appends
+change nothing, so streaming prose never touches folds, and the cursor
+and scroll position stay exactly where the user left them. Typing (user
 edits) likewise changes nothing.
 
 A view keypress (<leader>1..3) is an explicit reset: it clears every
@@ -1064,36 +1062,31 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     (record). Spawn failures of the binary are caught and reported the
     same way.
 
-R10 View levels: <leader>1 folds all agent output except the last
-    assistant (user prompts and the latest reply stay open), <leader>2
-    folds tool calls and thinking only, <leader>3 unfolds everything;
-    the system prompt stays folded in views 1 and 2 and opens in
-    view 3. Fold levels are role-dependent — user messages 1,
-    assistant messages 2, tool/thinking/error regions and the system
-    prompt 3. The LAST assistant is auto-opened in view 1 (a manual
-    foldopen re-applied after each structural append) so the latest
-    reply remains visible while older assistant blocks stay folded;
-    this replaces the old level-demotion trick, which produced a
-    >1 → >3 jump that corrupted Neovim's fold tree and broke za/zo on
-    nested tool folds. The three views themselves are still pure
-    'foldlevel' (1, 2, 3) with no manual foldclose: manual closes plus
-    expr folds made Neovim re-evaluate every fold on each edit (hundreds
-    of ms per keystroke on a large session). View 2 is applied ONLY when
-    a session buffer is opened. <Tab>, the block-navigation keys and
-    plain za/zo drill by opening a fold (non-exclusive): the open is
-    keyed by its fold-start line and survives sends/streaming. On a
-    structural append (heading, tool, thinking, error) the send path
-    reconciles WITHOUT zX: it closes only the folds the append newly
-    created that leaked open (Neovim inherits a manual foldopen into
-    same-or-deeper folds), folds the superseded live assistant, and
-    re-opens the user-opened folds + live assistant. zX was dropped
-    because it collapsed the whole view and flickered every append;
-    plain-text appends now change nothing and the cursor/scroll stay
-    put. A view keypress clears all manual opens. Typing (user edits)
-    still changes nothing. A send no longer snaps folds back to the
-    view — manual opens AND closes persist until the view changes.
-    The winbar Ⓕ chip shows the last APPLIED view, not measured fold
-    state (measuring made <leader>3 read Ⓕ0).
+R10 View levels: <leader>1 folds all agent output (only user prompts
+    stay open), <leader>2 folds tool calls and thinking only, <leader>3
+    unfolds everything; the system prompt stays folded in views 1 and 2
+    and opens in view 3. Fold levels are role-dependent — user messages
+    1, assistant messages 2, tool/thinking/error regions and the system
+    prompt 3. View 1 leaves the newest reply folded too; auto-opening it
+    caused a brief open/close flicker as the reply completed. Levels stay
+    monotonic (tools remain nested in assistant folds) so Neovim's fold
+    tree and za/zo work. The three views are pure 'foldlevel' (1, 2, 3)
+    with no manual foldclose: manual closes plus expr folds made Neovim
+    re-evaluate every fold on each edit (hundreds of ms per keystroke on
+    a large session). View 2 is applied ONLY when a session buffer is
+    opened. <Tab>, the block-navigation keys and plain za/zo drill by
+    opening a fold (non-exclusive): the open is keyed by its fold-start
+    line and survives sends/streaming. On a structural append (heading,
+    tool, thinking, error) the send path reconciles WITHOUT zX: it
+    closes only newly created folds that leaked open (Neovim inherits a
+    manual foldopen into same-or-deeper folds), and re-opens user-opened
+    folds. zX was dropped because it collapsed the whole view and
+    flickered every append; plain-text appends now change nothing and
+    the cursor/scroll stay put. A view keypress clears all manual opens.
+    Typing (user edits) still changes nothing. A send no longer snaps
+    folds back to the view — manual opens AND closes persist until the
+    view changes. The winbar Ⓕ chip shows the last APPLIED view, not
+    measured fold state (measuring made <leader>3 read Ⓕ0).
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the

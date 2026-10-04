@@ -1200,16 +1200,14 @@ function M.send(buf)
   local function follow_tail()
     document.follow_windows(buf, follow, expected_follow)
   end
-  -- The folder keeps the last assistant block open in view 1 so the reply
-  -- is visible as it arrives (R10: the new assistant block opens by itself);
-  -- older replies fold. This append makes it the last assistant.
+  -- New assistant output adopts the current view: in view 1 it stays
+  -- folded; in views 2/3 it is visible as it arrives.
   document.append_block(buf, { "# @assistant", "" })
   fold.after_append(buf, { "# @assistant", "" })
   follow_tail()
-  -- Sends never touch fold state or rewrite existing lines: the buffer
-  -- is always in its final format, streaming only appends at the end,
-  -- and new folds adopt the view's 'foldlevel' as they appear (R10) —
-  -- the new assistant block opens by itself in every view.
+  -- Sends never touch existing fold state or rewrite existing lines: the
+  -- buffer is always in its final format, streaming only appends at the end,
+  -- and new folds adopt the view's 'foldlevel' as they appear.
   winbar.spinner_start()
 
   local process = servers[buf]
