@@ -4,8 +4,7 @@
 edit, so deleting text is branching and editing a reply is rewriting history.
 
 Chat LLM APIs are stateless. Every request sends the full message array, so
-whoever holds the array holds the truth. In yap that's a text buffer: `#
-@system` / `# @user` / `# @assistant` headings delimit messages, deleting a
+whoever holds the array holds the truth. In yap that's a text buffer: `# @system` / `# @user` / `# @assistant` headings delimit messages, deleting a
 block is branching, editing a reply is rewriting history
 
 It hooks into Neovim by:
@@ -30,35 +29,42 @@ This isn't the most stable approach. Removing things or incoming text could put
 the session in unexpected states. Making edits while the buffer is running will
 overwrite the undohistory. This flexability gives it power.
 
-## Build & install
+## First run
 
-```sh
-CGO_ENABLED=0 go build -o ~/go/bin/yap ./agent
-```
+1. From the repository root, build the backend and make sure `yap` is on
+   Neovim's `PATH`:
 
-Add this repo as a Neovim plugin (any plugin manager, or `vim.opt.rtp:append("/opt/code/yap")`)
+   ```sh
+   CGO_ENABLED=0 go build -o ~/.local/bin/yap ./agent
+   ```
 
-**Setup**
-```lua
-require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
-```
+   Add `~/.local/bin` to `PATH` if needed. The plugin starts the backend when
+   you open a chat; no separate server command is needed. With Nix,
+   `nix develop` builds `.dev/bin/yap` and adds it to `PATH`.
+2. Configure a provider in `~/.config/yap.json` (this example uses
+   Moonshot's OpenAI-compatible API):
 
-Every keymap in the Quick start list below is a `keymaps` config key; set
-one to `""` to disable it, e.g. `keymaps = { stop = "<M-Esc>" }`.
+   ```json
+   {
+     "providers": {
+       "moonshot": {
+         "base_url": "https://api.moonshot.ai/v1",
+         "api_key_env": "MOONSHOT_API_KEY"
+       }
+     }
+   }
+   ```
 
-Providers live in `~/.config/yap.json` (native OpenAI/Anthropic/Google/DeepSeek,
-or any OpenAI-compatible endpoint):
+   Export the key before starting Neovim, e.g. `export MOONSHOT_API_KEY=…`.
+   Keep the key out of the config file.
+3. Install this repository as a Neovim plugin (or add it with
+   `vim.opt.rtp:append("/path/to/yap")`), then configure it in your Neovim
+   config:
 
-```json
-{
-  "providers": {
-    "moonshot": {
-      "base_url": "https://api.moonshot.ai/v1",
-      "api_key_env": "MOONSHOT_API_KEY"
-    }
-  }
-}
-```
+   ```lua
+   require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
+   ```
+4. In Neovim, run `:Yap`, enter a prompt, and press `<C-s>`.
 
 ## Development (Nix)
 
@@ -120,6 +126,7 @@ populate Neovim's quickfix list, and `close_session` closes a chat after its
 current turn while keeping it resumable from `:YapSessions`.
 
 ## Rendering
+
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
 complements yap: a treesitter-based markdown rendering plugin that is yap-aware.
 It colors the `yap:thinking` / `tool` / `error` / `usage` comment labels and
