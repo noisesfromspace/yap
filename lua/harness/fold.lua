@@ -204,6 +204,25 @@ local function same_blocks(a, b)
   return true
 end
 
+local function same_window_blocks(list, applied)
+  if not applied then
+    return false
+  end
+  local count = 0
+  for _ in pairs(applied) do
+    count = count + 1
+  end
+  if count ~= #list then
+    return false
+  end
+  for _, b in ipairs(list) do
+    if applied[b.start] ~= b.finish then
+      return false
+    end
+  end
+  return true
+end
+
 local function block_at(buf, lnum)
   local list = intended(buf, parse(buf))
   for _, b in ipairs(list) do
@@ -284,8 +303,9 @@ local function apply_window(win, buf, list, pins, full)
     for _, b in ipairs(list) do
       local prev = per_win[b.start]
       if prev == nil then
-        if b.finish > b.start then
+        if b.finish > b.start and vim.fn.foldlevel(b.start) == 0 then
           fold_create(b.start, b.finish)
+          fold_close(b.start)
         end
         next_win[b.start] = b.finish
       elseif prev ~= b.finish then
@@ -298,6 +318,7 @@ local function apply_window(win, buf, list, pins, full)
         fold_delete(b.start)
         if b.finish > b.start then
           fold_create(b.start, b.finish)
+          fold_close(b.start)
         end
         next_win[b.start] = b.finish
       else
@@ -327,13 +348,24 @@ function M.reconcile(buf, full)
   end
   local p = parse(buf)
   local list = intended(buf, p)
+  local windows = vim.fn.win_findbuf(buf)
   if not full and same_blocks(list, blocks[buf]) then
-    return
+    local synced = true
+    for _, win in ipairs(windows) do
+      local per_win = created[buf] and created[buf][win]
+      if not same_window_blocks(list, per_win) then
+        synced = false
+        break
+      end
+    end
+    if synced then
+      return
+    end
   end
   blocks[buf] = list
   local pins = opened[buf] or {}
   opened[buf] = pins
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+  for _, win in ipairs(windows) do
     if vim.api.nvim_win_is_valid(win) then
       apply_window(win, buf, list, pins, full)
     end

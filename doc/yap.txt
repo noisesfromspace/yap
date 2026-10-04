@@ -1168,8 +1168,10 @@ R10 View levels: <leader>1 folds all agent output (only user prompts
     structural append (heading, tool, thinking, error), the send path
     reconciles only changed fold ranges without clearing Neovim's manual
     fold state. A new fold streams in closed in views 1/2; unchanged folds
-    retain their state. Plain-text appends do not rebuild folds, and the
-    cursor/scroll stay put. A view keypress clears all yap-tracked opens.
+    retain their state. If a session streams while hidden, its window-local
+    folds are reconciled when it is shown again. Plain-text appends do not
+    rebuild folds, and the cursor/scroll stay put. A view keypress clears
+    all yap-tracked opens.
     Typing (user edits) still changes nothing. A send does not reset the
     view; the winbar Ⓕ chip shows the last APPLIED view, not measured
     fold state (measuring made <leader>3 read Ⓕ0).

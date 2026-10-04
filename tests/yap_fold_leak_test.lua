@@ -5,6 +5,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local fold = require("harness.fold")
 local document = require("harness.document")
 
@@ -66,23 +67,32 @@ do
   vim.cmd("normal! za")
   assert(vim.fn.foldclosed(t1) == -1, "precondition: t1 za-opened")
 
-  local header = '<!-- yap:tool {"id":"t2","name":"bash","arguments":{}} -->'
-  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { header, "result two", "<!-- /yap:tool -->" })
-  fold.after_append(buf, { header })
-
-  local t2 = find_line(buf, '"t2"')
-  assert(vim.fn.foldclosed(t1) == -1, "za-opened tool closed by streamed tool")
-  assert(vim.fn.foldclosed(t2) == t2, "streamed tool leaked open: " .. vim.fn.foldclosed(t2))
-
-  -- Returning to a hidden, already-adopted session must not resurrect a
-  -- stray open fold or change the user's existing fold state.
+  -- Hide the session before the next tool streams. Its block cache can
+  -- advance while this window has no fold structure to reconcile.
+  local enter_count = 0
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    buffer = buf,
+    callback = function() enter_count = enter_count + 1 end,
+  })
   local path = vim.api.nvim_buf_get_name(buf)
   local other = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_set_current_buf(other)
+  local header = '<!-- yap:tool {"id":"t2","name":"bash","arguments":{}} -->'
+  document.append_text(buf, header .. "\nresult two\n<!-- /yap:tool -->")
+  fold.after_append(buf, { header })
+  local t2 = find_line(buf, '"t2"')
+
+  -- Returning to the hidden session reconciles its window-local manual
+  -- folds while retaining t1's explicit open.
   assert(yap.open(path) == buf, "return did not focus the existing session")
+  assert(enter_count == 1, "BufWinEnter did not fire on return: " .. enter_count)
+  local reconciled = vim.wait(100, function() return vim.fn.foldclosed(t2) == t2 end)
+  assert(reconciled, "BufWinEnter did not reconcile the streamed tool fold")
   assert(vim.fn.foldclosed(t1) == -1, "return closed the user-opened fold")
-  assert(vim.fn.foldclosed(t2) == t2, "return opened the new tool fold")
-  print("OK folds survive returning to an existing session")
+  assert(vim.fn.foldclosed(t2) == t2,
+    ("return left streamed tool open: closed=%d level=%d end=%d"):format(
+      vim.fn.foldclosed(t2), vim.fn.foldlevel(t2), vim.fn.foldclosedend(t2)))
+  print("OK hidden-session folds reconcile on return")
   print("OK za-open survives streamed tool")
 end
 

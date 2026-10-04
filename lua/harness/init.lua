@@ -2302,6 +2302,20 @@ function M.setup(opts)
       focus_touch(args.buf)
     end,
   })
+  -- Manual folds are window-local. A session can keep streaming while
+  -- hidden, so its cached block model may be newer than the folds installed
+  -- in the window. Reconcile against that window's applied ranges on return.
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap then
+          fold.reconcile(buf, false)
+        end
+      end)
+    end,
+  })
   -- Redirect :bd/:bw/:bdelete/:bunload of the current session buffer. The
   -- deletion itself fires BufUnload while curbuf is still the session; by
   -- the time a scheduled callback runs, Neovim has moved curbuf to another
