@@ -190,13 +190,31 @@ local function sync_frontmatter(buf)
     table.insert(models, combo)
   end
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools)
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
     table.insert(block, "")
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
   end
+end
+
+--- Append a subagent session path to the parent's frontmatter `subagents`
+--- list. The parent frontmatter is the index of every subagent it ran, and
+--- the only way back to a closed child (subagent sessions are hidden from
+--- :YapSessions — see harness.session).
+local function record_subagent(parent, child_path)
+  local e = frontmatter_end(parent)
+  if not e then return end
+  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false))
+  if not fm then return end
+  local subagents = fm.subagents or {}
+  for _, p in ipairs(subagents) do
+    if p == child_path then return end
+  end
+  subagents[#subagents + 1] = child_path
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents)
+  vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
 
 -- Conversation document parsing/appending lives in harness.document.
@@ -1133,7 +1151,7 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools)
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents)
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
@@ -1655,6 +1673,7 @@ start_subagent = function(parent, ev)
   document.append_text(child, ev.task)
   require("harness.session").save(child)
   subagent_children[parent] = child
+  record_subagent(parent, child_path)
   subagent_done[child] = function(success)
     subagent_children[parent] = nil
     local result = "error: " .. (errors[child] or "subagent stopped without a result")

@@ -163,12 +163,17 @@ function M.list(scope)
     for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
+      -- Subagent sessions are real saved sessions, but they belong to their
+      -- parent: hide them from the session history. While open they appear
+      -- in :YapInstances; once closed, the parent's frontmatter `subagents`
+      -- list is the only index of them.
+      local subagent = fm and fm.role ~= nil
       local description = fm and fm.description or ""
       -- Hide unnamed sessions: no generated description and still on the
       -- auto-generated filename. They stay visible as open sessions via
       -- :YapInstances, which falls back to the filename.
       local unnamed = description == "" and paths.is_default_name(path)
-      if not unnamed then
+      if not subagent and not unnamed then
         local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
         table.insert(items, {
           path = path,

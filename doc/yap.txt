@@ -125,7 +125,9 @@ truth, and that can be a text buffer. Consequences:
                         current project (cwd); "all" lists every project.
                         Sessions still on their auto-generated filename
                         (no description yet) are hidden; name one with
-                        |:file| or let the first reply label it. Open
+                        |:file| or let the first reply label it. Subagent
+                        sessions are hidden too — reach a closed one via
+                        its parent's frontmatter `subagents` list. Open
                         sessions stay listed by filename via
                         |:YapInstances|.
 
@@ -454,7 +456,8 @@ jev, close_session. The `subagent` tool delegates to a role defined in
 comma-separated `tools`; the body is its system prompt. It creates a normal
 Yap session named `<parent-stem>-<six-hex>.md` in the same project directory.
 The parent tool call waits for the child's turn to finish, then receives its
-final answer and session path; open the child via |:YapSessions|. Bare Pi
+final answer and session path; open the child from the parent's frontmatter
+`subagents` list or, while it is open, via |:YapInstances|. Bare Pi
 role model names cannot identify a Yap provider, so they inherit the parent's
 provider/model; use an explicit `provider/model` to override it. Pi tool names
 `grep`, `find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. Unsupported
@@ -595,10 +598,14 @@ lives, as YAML frontmatter:
   models:
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro
+  subagents:
+    - /home/martijn/.yap/sessions/.../session-a1b2c3.md
   ---
 
 `provider`/`model` is the combo to resume with; `models` is the ordered
-history of every combo used in the session (most-recent-last). The
+history of every combo used in the session (most-recent-last); `subagents`
+is the ordered list of subagent session paths the session ran
+(most-recent-last). The
 frontmatter is the ONLY durable session state: yap writes it on :Yap
 and |:YapChangeModel|, reads it on open, and sends never touch it.
 Token totals and cost are NOT stored here — the winbar accumulates

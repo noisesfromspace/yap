@@ -105,4 +105,12 @@ assert(
   "open must not inject frontmatter into legacy files"
 )
 
+-- 8. subagents list renders and parses back
+local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" })
+local subagents_fm = frontmatter.parse(subagents_block)
+assert(
+  vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
+  "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
+)
+
 print("OK frontmatter")

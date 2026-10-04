@@ -10,13 +10,16 @@
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
+--   subagents:
+--     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
 --   ---
 --
 -- `provider`/`model` is the combo to resume with; `created_at` records
 -- when the session was created; `models` is the ordered history of every
--- combo actually used (most-recent-last). Token/cost totals are NOT
--- persisted here — the winbar accumulates them per-buffer, and the
--- durable session total is derived from the audit log, not the file.
+-- combo actually used (most-recent-last); `subagents` is the ordered list
+-- of subagent session paths this session ran (most-recent-last). Token/cost
+-- totals are NOT persisted here — the winbar accumulates them per-buffer,
+-- and the durable session total is derived from the audit log, not the file.
 -- yap owns the block, so parsing is a few pattern matches,
 -- not a YAML library; Neovim has no YAML parser and does not need one.
 --
@@ -25,28 +28,29 @@
 
 local M = {}
 
+local function is_list_key(k)
+  return k == "models" or k == "subagents"
+end
+
 --- Parse a frontmatter block from a Lua list of lines. Returns
---- { provider, model, created_at, models = {combo,...} } or nil when there
---- is none (or it is unterminated). Tolerant on read: unknown keys and comments
---- are ignored, so a hand-edited block does not break resuming.
+--- { provider, model, created_at, models = {combo,...}, subagents = {path,...} }
+--- or nil when there is none (or it is unterminated). Tolerant on read:
+--- unknown keys and comments are ignored, so a hand-edited block does not
+--- break resuming.
 function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {} }
-  local in_models = false
+  local fm = { models = {}, subagents = {} }
+  local list_key = nil
   for i = 2, #lines do
     local line = lines[i]
     if line:match("^%-%-%-%s*$") then
       return fm
     end
-    if in_models then
-      local item = line:match("^%s*%-%s*(.-)%s*$")
-      if item and item ~= "" then
-        fm.models[#fm.models + 1] = item
-      end
-    else
-      local k, v = line:match("^(%S+):%s*(.-)%s*$")
+    local k, v = line:match("^(%S+):%s*(.-)%s*$")
+    if k then
+      list_key = nil
       if k == "provider" then
         fm.provider = v
       elseif k == "model" then
@@ -59,8 +63,17 @@ function M.parse(lines)
         fm.role = v
       elseif k == "tools" then
         fm.tools = vim.split(v, ",", { plain = true })
-      elseif k == "models" then
-        in_models = true
+      elseif is_list_key(k) then
+        list_key = k
+      end
+    elseif list_key then
+      local item = line:match("^%s*%-%s*(.-)%s*$")
+      if item and item ~= "" then
+        if list_key == "models" then
+          fm.models[#fm.models + 1] = item
+        else
+          fm.subagents[#fm.subagents + 1] = item
+        end
       end
     end
   end
@@ -69,7 +82,7 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description, role, tools)
+function M.render(provider, model, models, created_at, description, role, tools, subagents)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
   if role then lines[#lines + 1] = "role: " .. role end
   if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
@@ -83,6 +96,12 @@ function M.render(provider, model, models, created_at, description, role, tools)
     lines[#lines + 1] = "models:"
     for _, c in ipairs(models) do
       lines[#lines + 1] = "  - " .. c
+    end
+  end
+  if subagents and #subagents > 0 then
+    lines[#lines + 1] = "subagents:"
+    for _, p in ipairs(subagents) do
+      lines[#lines + 1] = "  - " .. p
     end
   end
   lines[#lines + 1] = "---"
