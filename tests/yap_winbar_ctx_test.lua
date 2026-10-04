@@ -44,12 +44,14 @@ local function winbar_at(cols)
   vim.cmd("vsplit")
   vim.api.nvim_win_set_width(0, cols)
   local bar = yap.winbar(buf)
-  local cols = vim.api.nvim_win_get_width(0)
+  local win = vim.api.nvim_get_current_win()
+  local cols = vim.api.nvim_win_get_width(win)
+  local rendered = vim.api.nvim_eval_statusline(bar, { winid = win, maxwidth = cols }).str
   vim.cmd("close")
-  return bar, cols
+  return bar, cols, rendered
 end
 local narrow = winbar_at(30)
-local wide, wide_cols = winbar_at(60)
+local wide, wide_cols, wide_rendered = winbar_at(60)
 local function graph_width(bar)
   local _, filled = bar:gsub("█", "")
   local _, track = bar:gsub("░", "")
@@ -57,9 +59,10 @@ local function graph_width(bar)
 end
 assert(graph_width(wide) > graph_width(narrow), "context graph did not expand with available width")
 assert(wide:match("YapGaugeMid"), "expanded graph lost its context-fill color")
--- `%=` is an alignment operator, not literal content; the expanded graph
--- should consume all available width rather than leave an artificial gap.
-local literals = wide:gsub("%%#.-#", ""):gsub("%%[%*=]", ""):gsub("%%%%", "%%")
-assert(vim.fn.strdisplaywidth(literals) == wide_cols, "expanded graph left winbar width unused")
+-- Check the evaluated statusline, not just its raw format string: the
+-- expanded graph should fill the spare width without adding alignment padding
+-- that pushes the usage cluster away from the left/model cluster.
+assert(vim.fn.strdisplaywidth(wide_rendered) == wide_cols, "rendered winbar left width unused")
+assert(wide_rendered:match("Ⓕ2  󰊚"), "expanded graph introduced a gap before the usage cluster: " .. wide_rendered)
 
 print("OK winbar_ctx")
