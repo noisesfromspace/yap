@@ -1203,6 +1203,54 @@ end
 -- clobber a newer one (send and turn-completion refreshes can overlap).
 local description_seq = {}
 
+-- Routine commit/close requests should not become the session's title when
+-- an earlier user request explains what the work was actually about.
+local function title_messages(messages)
+  local latest, earlier_user
+  for i, message in ipairs(messages) do
+    if message.role == "user" then
+      earlier_user, latest = latest or earlier_user, i
+    end
+  end
+  if not latest or not earlier_user then
+    return messages, false, false
+  end
+
+  local text = messages[latest].content:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  local lower = text:lower()
+  local replacement
+  local housekeeping_only = false
+  if lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$") then
+    replacement = nil
+    housekeeping_only = true
+  else
+    replacement = lower:match("^(.-)%s+commit and close[.!]?$")
+    if not replacement then
+      return messages, false, false
+    end
+    replacement = replacement:gsub("%s+$", "")
+  end
+
+  local filtered = {}
+  for i, message in ipairs(messages) do
+    if i ~= latest then
+      filtered[#filtered + 1] = message
+    elseif replacement and replacement ~= "" then
+      filtered[#filtered + 1] = { role = message.role, content = replacement }
+    end
+  end
+  return filtered, true, housekeeping_only
+end
+
+local function current_description(buf)
+  local e = frontmatter_end(buf)
+  if not e then
+    return ""
+  end
+  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  return fm and fm.description or ""
+end
+
 --- Generate or refresh the session description shown in the winbar and
 --- session picker. `kind` selects the model and what it summarizes:
 ---   "user"   — smallest model, the latest user message only (runs on send)
@@ -1210,7 +1258,12 @@ local description_seq = {}
 ---              the turn is back on the user block)
 local function refresh_description(buf, kind, messages)
   local combo, system, content
+  local title_input, housekeeping, housekeeping_only = title_messages(messages or document.parse_buffer(buf))
   if kind == "user" then
+    -- Retain a useful existing title for a pure commit/close housekeeping turn.
+    if housekeeping and current_description(buf) ~= "" then
+      return
+    end
     combo = M.config.description_model
     system = [[Write a short title for the user's request below.
 
@@ -1220,9 +1273,9 @@ Rules:
 - Example: "Add websearch tool", "Fix fold lag on streaming"
 
 Return only the title.]]
-    for i = #messages, 1, -1 do
-      if messages[i].role == "user" then
-        content = messages[i].content
+    for i = #title_input, 1, -1 do
+      if title_input[i].role == "user" then
+        content = title_input[i].content
         break
       end
     end
@@ -1230,6 +1283,10 @@ Return only the title.]]
       return
     end
   else
+    -- A pure commit/close follow-up should not rewrite an already-useful title.
+    if housekeeping_only and current_description(buf) ~= "" then
+      return
+    end
     combo = M.config.description_answer_model
     system = [[Write a short session title centered on the overall goal, one that makes this conversation easy to find later.
 
@@ -1238,10 +1295,11 @@ Rules:
 - No "session", "conversation", "the user", "about"
 - Prefer "Subject: change" so titles stay distinct across sessions in the same project
 - Lead with the goal; only add the latest topic if the goal moved
+- Routine commit/close instructions are housekeeping, not the session goal; when mixed with a real request, title the real work
 - Example: "Fold lag: cache per changedtick"
 
 Return only the title.]]
-    content = vim.json.encode(document.parse_buffer(buf))
+    content = vim.json.encode(title_input)
   end
   if not combo or combo == "" then
     return
