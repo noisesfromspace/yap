@@ -33,6 +33,6 @@ assert(get_lhs("n", "yap: send") == nil, "empty send keymap should disable the n
 assert(get_lhs("i", "yap: send") == nil, "empty send keymap should disable the insert-mode binding")
 assert(get_lhs("n", "yap: change model") ~= nil, "unspecified keymap default was not kept")
 assert(get_lhs("n", "yap: insert template or skill") == ",t", "insert keymap is not <leader>t in normal mode")
-assert(get_lhs("i", "yap: insert template or skill") == ",t", "insert keymap is not <leader>t in insert mode")
+assert(get_lhs("i", "yap: insert template or skill") == nil, "insert keymap should not be mapped in insert mode")
 assert(get_lhs("i", "touchup indent") == "<C-T>", "Yap overrode touchup's insert-mode Ctrl-T mapping")
 print("OK keymap")

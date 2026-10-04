@@ -189,7 +189,7 @@ are shown below.
                         injected at its next tool boundary as a `# @user`
                         block, without being removed from the jotter —
                         re-<C-s> to replace it, edit it until it lands.
-  <leader>t (n, i)      Insert a template or skill (see |:YapInsert|).
+  <leader>t (n)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
   <leader>r             List every open session with its status (see
