@@ -2156,7 +2156,7 @@ local function live_session_label(buf)
       end
       task = vim.fn.strcharpart(task, 0, chars) .. "…"
     end
-    return live_session_label(parent) .. "\n  ↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. ": " .. task
+    return "  ↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. ": " .. task
   end
   if fm and fm.role then
     label = label .. "  [subagent: " .. fm.role .. "]"
@@ -2208,11 +2208,15 @@ function M.instances(state)
   local items = {}
   local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if b ~= current and vim.b[b].yap and (state == nil or session_state(b) == state) then
+    local child = subagent_children[b]
+    local include_current_parent = child and vim.api.nvim_buf_is_valid(child)
+    if (b ~= current or include_current_parent) and vim.b[b].yap and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
         status = session_status(b),
+        group_parent = (vim.b[b].yap_subagent_parent and vim.api.nvim_buf_is_valid(vim.b[b].yap_subagent_parent))
+          and vim.b[b].yap_subagent_parent or b,
       }
     end
   end
@@ -2231,6 +2235,9 @@ function M.instances(state)
     local ra, rb = session_rank(a.buf), session_rank(b.buf)
     if ra ~= rb then
       return ra < rb
+    end
+    if a.group_parent == b.group_parent and a.buf ~= b.buf then
+      return a.buf == a.group_parent
     end
     return a.text < b.text
   end)

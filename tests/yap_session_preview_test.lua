@@ -59,7 +59,7 @@ assert(live_preview[1] == "Initial user message:" and live_preview[2] == "hello"
   "instances preview wrong: " .. vim.inspect(live_preview))
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
 
--- Open child sessions are nested under their parent, with role and task shown.
+-- Open child sessions are a separate picker row, indented beneath their parent.
 local child = yap.new({ role = "scout", hidden = true })
 vim.b[child].yap_subagent_parent = buf
 vim.b[child].yap_subagent_task = "inspect this task"
@@ -67,15 +67,17 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-vim.api.nvim_set_current_buf(buf)
 yap.instances()
 vim.ui.select = orig_select
-local child_item
+local parent_item, child_item
 for _, item in ipairs(captured.items) do
-  if item.buf == child then child_item = item; break end
+  if item.buf == buf then parent_item = item end
+  if item.buf == child then child_item = item end
 end
-assert(child_item and child_item.text:find("\n  ↳ scout: inspect this task", 1, true),
-  "subagent should be nested under its parent with the task: " .. vim.inspect(child_item))
+assert(parent_item and not parent_item.text:find("\n", 1, true),
+  "parent should have its own single-line picker row: " .. vim.inspect(parent_item))
+assert(child_item and child_item.text == "  ↳ scout: inspect this task",
+  "subagent should have a separate indented row: " .. vim.inspect(child_item))
 
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
