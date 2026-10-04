@@ -138,6 +138,42 @@ local subagent_children = {}
 -- has fully completed and the session file has been saved.
 local close_after_turn = {}
 
+-- Most-recently-focused buffers, front first. Session buffers are unlisted,
+-- so Neovim's :bd/:bw/:close skip them when choosing where to land after
+-- deleting the current buffer and drop the user on an empty "No Name"
+-- buffer instead (the "deleting the last listed buffer" path). This order
+-- redirects that landing back to the buffer the user came from.
+local focus_mru = {}
+
+local function focus_touch(buf)
+  for i, b in ipairs(focus_mru) do
+    if b == buf then
+      table.remove(focus_mru, i)
+      break
+    end
+  end
+  table.insert(focus_mru, 1, buf)
+end
+
+local function focus_forget(buf)
+  for i, b in ipairs(focus_mru) do
+    if b == buf then
+      table.remove(focus_mru, i)
+      return
+    end
+  end
+end
+
+-- First focus_mru entry that is still open (loaded) and isn't `buf`.
+local function focus_fallback(buf)
+  for _, b in ipairs(focus_mru) do
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b) then
+      return b
+    end
+  end
+  return nil
+end
+
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
 -- rules) and lives here so session files never store it.
@@ -2040,6 +2076,54 @@ function M.setup(opts)
       awaiting[args.buf] = nil
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
+      focus_forget(args.buf)
+    end,
+  })
+  -- Record focus order so :bd/:bw/:close on a session can land on the
+  -- buffer the user came from (unlisted sessions are invisible to Neovim's
+  -- own replacement-buffer search).
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = adopt_group,
+    callback = function(args)
+      focus_touch(args.buf)
+    end,
+  })
+  -- Redirect :bd/:bw/:bdelete/:bunload of the current session buffer. The
+  -- deletion itself fires BufUnload while curbuf is still the session; by
+  -- the time a scheduled callback runs, Neovim has moved curbuf to another
+  -- listed buffer or to the fresh empty buffer its "last listed buffer"
+  -- path creates. Switch to the fallback and drop that empty buffer.
+  vim.api.nvim_create_autocmd("BufUnload", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if vim.api.nvim_get_current_buf() ~= buf or not vim.b[buf].yap then
+        return
+      end
+      local target = focus_fallback(buf)
+      if not target then
+        return
+      end
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(target) then
+          return
+        end
+        local cur = vim.api.nvim_get_current_buf()
+        if cur == target then
+          return
+        end
+        -- Drop the empty buffer :bd just created so no stray [No Name]
+        -- lingers in :ls.
+        if vim.api.nvim_buf_get_name(cur) == "" and not vim.bo[cur].modified then
+          local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
+          if #lines <= 1 and (#lines == 0 or lines[1] == "") then
+            vim.api.nvim_set_current_buf(target)
+            pcall(vim.api.nvim_buf_delete, cur, { force = true })
+            return
+          end
+        end
+        vim.api.nvim_set_current_buf(target)
+      end)
     end,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
