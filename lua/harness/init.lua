@@ -1206,6 +1206,7 @@ end
 -- Latest description request per buffer, so a slow earlier summary cannot
 -- clobber a newer one (send and turn-completion refreshes can overlap).
 local description_seq = {}
+local description_started = {}
 
 -- Routine commit/close requests should not become the session's title when
 -- an earlier user request explains what the work was actually about. Tool
@@ -1228,7 +1229,7 @@ local function title_messages(messages)
   local lower = text:lower()
   local replacement
   local housekeeping_only = false
-  if earlier_user and (lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$")) then
+  if lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$") then
     replacement = nil
     housekeeping_only = true
   elseif earlier_user then
@@ -1262,15 +1263,15 @@ end
 
 --- Generate or refresh the session description shown in the winbar and
 --- session picker. `kind` selects the model and what it summarizes:
----   "user"   — smallest model, the latest user message only (runs on send)
----   "answer" — bigger model, the whole session as a final title (runs once
----              the turn is back on the user block)
+---   "user"   — smallest model, only the first useful request (runs once)
+---   "answer" — bigger model, the ordered user-request history (runs after turns)
 local function refresh_description(buf, kind, messages)
   local combo, system, content
-  local title_input, housekeeping, housekeeping_only = title_messages(messages or document.parse_buffer(buf))
+  local title_input, housekeeping = title_messages(messages or document.parse_buffer(buf))
   if kind == "user" then
-    -- Retain a useful existing title for a pure commit/close housekeeping turn.
-    if housekeeping and current_description(buf) ~= "" then
+    -- Generate an instant label only once, from the session's first useful
+    -- request. Later turns are summarized by the whole-session stage below.
+    if current_description(buf) ~= "" or description_started[buf] or (housekeeping and #title_input == 0) then
       return
     end
     combo = M.config.description_model
@@ -1282,9 +1283,9 @@ Rules:
 - Example: "Add websearch tool", "Fix fold lag on streaming"
 
 Return only the title.]]
-    for i = #title_input, 1, -1 do
-      if title_input[i].role == "user" then
-        content = title_input[i].content
+    for _, message in ipairs(title_input) do
+      if message.role == "user" then
+        content = message.content
         break
       end
     end
@@ -1292,23 +1293,32 @@ Return only the title.]]
       return
     end
   else
-    -- A pure commit/close follow-up should not rewrite an already-useful title.
-    if housekeeping_only and current_description(buf) ~= "" then
+    if #title_input == 0 then
       return
     end
     combo = M.config.description_answer_model
-    system = [[Write a short session title centered on the overall goal, one that makes this conversation easy to find later.
+    system = [[Write a short session title centered on the overall work, so the session is easy to find later.
+
+The input is the user's requests in order. The first request anchors the session's main goal; later requests may refine or extend it. Summarize the overall work, not just the final request or workflow.
 
 Rules:
 - 2-6 words, a specific noun phrase, not a sentence, no trailing period
 - No "session", "conversation", "the user", "about"
 - Prefer "Subject: change" so titles stay distinct across sessions in the same project
-- Lead with the goal; only add the latest topic if the goal moved
+- Routine commit/close instructions are housekeeping, not the session goal
 - Never title from code, logs, or command output; do not use Markdown fences
 - Example: "Fold lag: cache per changedtick"
 
 Return only the title.]]
-    content = vim.json.encode(title_input)
+    local requests = {}
+    for _, message in ipairs(title_input) do
+      requests[#requests + 1] = message.content
+    end
+    local follow_ups = {}
+    for i = 2, #requests do
+      follow_ups[#follow_ups + 1] = requests[i]
+    end
+    content = vim.json.encode({ initial_request = requests[1], follow_up_requests = follow_ups })
   end
   if not combo or combo == "" then
     return
@@ -1319,6 +1329,9 @@ Return only the title.]]
   end
   local seq = (description_seq[buf] or 0) + 1
   description_seq[buf] = seq
+  if kind == "user" then
+    description_started[buf] = true
+  end
   local payload = vim.json.encode({
     messages = {
       { role = "system", content = system },
@@ -2270,6 +2283,8 @@ function M.setup(opts)
       errors[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil
+      description_seq[args.buf] = nil
+      description_started[args.buf] = nil
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
       focus_forget(args.buf)

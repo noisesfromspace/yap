@@ -1,9 +1,10 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
+package.loaded.harness = nil -- start-packages may have loaded the installed copy before this test prepended the repo
 local yap = require("harness")
 yap.setup({
   bin = ROOT .. "/yap",
-  description_model = "",
+  description_model = "mock/m1",
   description_answer_model = "mock/m1",
 })
 
@@ -39,23 +40,33 @@ end
 
 -- Wait until the completion-title request has been logged.
 ok = vim.wait(10000, function()
-  return read_log():match("centered on the overall goal") ~= nil
+  local text = read_log()
+  return text:match("user's request") and text:match("centered on the overall work")
 end, 100)
 assert(ok, "description requests missing from log: " .. read_log())
 
-local full
-for l in read_log():gmatch("[^\n]+") do
-  if l:match("centered on the overall goal") then
-    full = l
+local tiny, full
+for line in read_log():gmatch("[^\n]+") do
+  local ok, messages = pcall(vim.json.decode, line)
+  if ok and type(messages) == "table" then
+    local system = messages[1] and messages[1].content or ""
+    if system:match("Write a short title for the user's request") then
+      tiny = line
+    elseif system:match("centered on the overall work") then
+      full = line
+    end
   end
 end
 
+assert(tiny and tiny:match("Fix the session picker label"), "instant title missing initial request: " .. tostring(tiny))
+assert(not tiny:match("Commit changes from this session"), "instant title used the commit footer: " .. tiny)
+
 -- The answer title sees the task requests, but excludes assistant transcript/tool output.
-assert(full and full:match("Fix the session picker label"), "answer request missing substantive task: " .. tostring(full))
+assert(full and full:match("Fix the session picker label"), "overall title missing initial request: " .. tostring(full))
 assert(not full:match("described%.") and not full:match("Implemented the picker label fix"),
   "assistant content leaked into title input: " .. full)
 assert(not full:match("Commit changes from this session"), "routine commit footer leaked into title input: " .. full)
-assert(full:match("Never title from code, logs, or command output"), "answer title prompt lacks output guidance: " .. full)
+assert(full:match("first request anchors the session's main goal"), "overall title prompt does not anchor the first request: " .. full)
 
 -- The requests are logged before their replies complete. Wait for the
 -- asynchronous description callback to update the frontmatter.
@@ -68,40 +79,7 @@ assert(ok and
   "description not written to frontmatter: " .. table.concat(lines, "\n")
 )
 
--- A later routine commit/close turn must keep that useful title rather than
--- requesting a replacement from either description stage.
-local title_requests = 0
-for l in read_log():gmatch("[^\n]+") do
-  if l:match("centered on the overall goal") then
-    title_requests = title_requests + 1
-  end
-end
-vim.api.nvim_buf_set_lines(buf, -1, -1, false, {
-  "Commit changes from this session and close.",
-})
-yap.send()
-ok = vim.wait(10000, function()
-  local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-  local answers = 0
-  for _ in text:gmatch("described%.") do
-    answers = answers + 1
-  end
-  return answers >= 3
-end, 100)
-assert(ok, "follow-up housekeeping turn did not complete")
-local after_title_requests = 0
-for l in read_log():gmatch("[^\n]+") do
-  if l:match("centered on the overall goal") then
-    after_title_requests = after_title_requests + 1
-  end
-end
-assert(after_title_requests == title_requests, "housekeeping turn generated a replacement title")
-local after_lines = vim.api.nvim_buf_get_lines(buf, 0, 8, false)
-assert(table.concat(after_lines, "\n"):match("description: described%."), "housekeeping turn changed the existing title")
-
--- Keep the send-time title stage covered: it should summarize only the new
--- request, not prior assistant output from another turn.
-yap.config.description_model = "mock/m1"
+-- A new session still gets an instant label from its first query.
 local tiny_buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(tiny_buf, -1, -1, false, { "Add a searchable session filter" })
 yap.send(tiny_buf)
@@ -147,7 +125,7 @@ end, 100)
 assert(ok, "fence-regression turn did not complete")
 ok = vim.wait(10000, function()
   for line in read_log():gmatch("[^\n]+") do
-    if line:match("centered on the overall goal") and line:match("Fence regression trigger") then
+    if line:match("centered on the overall work") and line:match("Fence regression trigger") then
       return true
     end
   end
@@ -156,7 +134,7 @@ end, 100)
 assert(ok, "fence-regression title request was not logged")
 local fence_request
 for line in read_log():gmatch("[^\n]+") do
-  if line:match("centered on the overall goal") and line:match("Fence regression trigger") then
+  if line:match("centered on the overall work") and line:match("Fence regression trigger") then
     fence_request = line
   end
 end
