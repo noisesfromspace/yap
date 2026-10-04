@@ -24,11 +24,11 @@ var dangerousShellPatterns = []dangerousPattern{
 	{"remote content executed by shell", regexp.MustCompile(`(?i)\b(?:curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba)?sh\b`)},
 	{"remote content command substitution", regexp.MustCompile(`(?i)\$\([^)]*(curl|wget|fetch)\b`)},
 
-	// Recursive / forced deletion, and deletion targeting the root or home.
-	{"recursive or forced deletion", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b(?:[ \t]+(?:-[a-z]*[rf][a-z]*|--(?:recursive|force|no-preserve-root)))+`)},
-	{"deletion targeting root or home", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:/|~|\$HOME)(?:[ \t]|$)`)},
-	{"directory deletion", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rmdir\b`)},
-
+	// Recursive deletion is common for generated directories. Ask only when
+	// it targets a filesystem root, a home root, a top-level glob, or a
+	// system directory; exact project/temp paths and rm -f are routine.
+	{"recursive deletion of critical paths", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:-[a-z]*r[a-z]*|--recursive)(?:[ \t]+(?:-[a-z]+|--[a-z-]+))*(?:[ \t]+--)?[ \t]+["']?(?:/(?:[ \t"']|$)|/(?:\*|\.\*)(?:[ \t"']|$)|~/?(?:[ \t"']|$)|\$HOME/?(?:[ \t"']|$)|/(?:etc|usr|var|boot|root|home|bin|sbin|lib)(?:/|[ \t"']|$))`)}, {"deletion targeting root or home", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:/|~|\$HOME)(?:[ \t]|$)`)},
+	{"directory deletion targeting critical paths", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rmdir\b[ \t]+["']?(?:/(?:[ \t]|$)|/(?:etc|usr|var|boot|root|home|bin|sbin|lib)(?:/|[ \t]|$))`)},
 	// Raw disk / filesystem manipulation.
 	{"filesystem or disk manipulation", regexp.MustCompile(`(?i)\b(?:mkfs\.[a-z0-9]+|wipefs|fdisk|parted|sfdisk|blkdiscard)\b`)},
 	{"raw disk write", regexp.MustCompile(`(?i)\bdd\b[^;&|]*of=/dev/`)},
