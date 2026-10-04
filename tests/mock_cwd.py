@@ -14,7 +14,7 @@ if not msgs or msgs[0]["role"] != "system" or not msgs[0]["content"].startswith(
     sys.exit("missing # About Yap system message at top")
 
 about = msgs[0]["content"]
-for instruction in ("## Subagents", "roles_dir", "~/.yap/roles/<role>.md", "self-contained `task`", ":YapSessions", "The call blocks until the child finishes"):
+for instruction in ("## Subagents", "roles_dir", "~/.yap/roles/<role>.md", "self-contained `task`", "returns the child's answer and session path", "It blocks until the child finishes"):
     if instruction not in about:
         sys.exit("missing subagent instruction: " + instruction)
 
