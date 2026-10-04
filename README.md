@@ -101,7 +101,11 @@ shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 - `<leader>s` — toggle a scratch queue buffer: a fixed-height,
   file-backed jotter above the session (a quick queue of tasks for the
   agent; `:w` saves it next to the session as `<session>.queue` and an
-  unsaved queue prompts on exit)
+  unsaved queue prompts on exit). Inside it, `<C-s>` sends the whole
+  buffer (or the visual selection) to the chat and drains it. While the
+  agent is streaming, `<C-s>` steers instead: the current line (or the
+  selection) is injected at the next tool boundary as a `# @user` block,
+  left in the jotter so you can keep editing it until it lands.
 - `:YapClear [keep]` — slim the context: replace all but the last
   `keep` (default 2) tool result bodies with a pointer to the exact
   audit-log lines they were cleared from. write/edit tool headers are

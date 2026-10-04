@@ -29,6 +29,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
@@ -108,6 +109,15 @@ func serve(in io.Reader, out io.Writer) error {
 	defer func() { tools.SubagentReplies = nil }()
 	requests := make(chan []byte)
 	readErr := make(chan error, 1)
+
+	// Steering: a channel the currently-running turn polls for user
+	// messages injected mid-turn. Scoped to one turn at a time — a steer
+	// arriving while no turn is running is dropped, because the frontend
+	// only sends one while its buffer is streaming and degrades a missed
+	// steer into a follow-up turn itself.
+	var steerMu sync.Mutex
+	var steerCh chan string
+
 	go func() {
 		scanner := bufio.NewScanner(in)
 		scanner.Buffer(make([]byte, 4096), 16*1024*1024)
@@ -115,17 +125,36 @@ func serve(in io.Reader, out io.Writer) error {
 			line := append([]byte(nil), scanner.Bytes()...)
 			var reply struct {
 				Type string `json:"type"`
+				Text string `json:"text"`
 				tools.SubagentReply
 			}
-			if json.Unmarshal(line, &reply) == nil && reply.Type == "subagent_result" {
-				tools.SubagentReplies <- reply.SubagentReply
-			} else {
-				requests <- line
+			if json.Unmarshal(line, &reply) == nil {
+				switch reply.Type {
+				case "subagent_result":
+					tools.SubagentReplies <- reply.SubagentReply
+					continue
+				case "steer":
+					steerMu.Lock()
+					ch := steerCh
+					steerMu.Unlock()
+					if ch == nil {
+						fmt.Fprintln(os.Stderr, "yap: steer with no active turn")
+					} else {
+						select {
+						case ch <- reply.Text:
+						default:
+							fmt.Fprintln(os.Stderr, "yap: steer queue full")
+						}
+					}
+					continue
+				}
 			}
+			requests <- line
 		}
 		readErr <- scanner.Err()
 		close(requests)
 	}()
+
 	for line := range requests {
 		var req serveRequest
 		err := json.Unmarshal(line, &req)
@@ -133,7 +162,23 @@ func serve(in io.Reader, out io.Writer) error {
 			if req.Provider == "" || req.Model == "" {
 				err = fmt.Errorf("provider and model are required")
 			} else {
-				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out})
+				steerMu.Lock()
+				steerCh = make(chan string, 16)
+				ch := steerCh
+				steerMu.Unlock()
+				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out}, func() string {
+					select {
+					case s := <-ch:
+						return s
+					default:
+						return ""
+					}
+				})
+				steerMu.Lock()
+				if steerCh == ch {
+					steerCh = nil
+				}
+				steerMu.Unlock()
 			}
 		}
 		if err != nil {

@@ -261,10 +261,17 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read request from stdin: %w", err)
 	}
-	return runTurn(providerName, model, req, outw)
+	return runTurn(providerName, model, req, outw, func() string { return "" })
 }
 
-func runTurn(providerName, model string, req Request, outw io.Writer) error {
+// runTurn runs one agent loop. poll, when non-nil, is consulted before
+// each generation step after the first: it returns a pending steering
+// message ("") when none. A steer is written into the buffer as a
+// `# @user` block and appended to the native message history, so the model
+// sees it at the next tool boundary within the same turn — native tool
+// results stay native, unlike a stop-and-resend which flattens them to
+// transcript text.
+func runTurn(providerName, model string, req Request, outw io.Writer, poll func() string) error {
 	start := time.Now()
 	cfg, err := loadConfig()
 	if err != nil {
@@ -336,6 +343,22 @@ func runTurn(providerName, model string, req Request, outw io.Writer) error {
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {
+		// Steering: inject a queued user message at the next model boundary
+		// — after the previous round's tool batch, before the next
+		// generation. The heading block is streamed into the buffer and the
+		// text is appended to the native message history in the same turn.
+		if iter > 0 {
+			if steer := poll(); steer != "" {
+				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", steer)
+				out.Flush()
+				wrote, trail = true, 2
+				utils.EmitEvent(map[string]any{"type": "steer", "text": steer})
+				messages = append(messages, llm.Message{
+					Role:    llm.RoleUser,
+					Content: []llm.Part{{Type: llm.PartText, Text: steer}},
+				})
+			}
+		}
 		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 		if err != nil {
 			// Retry transient errors (429/5xx, network) only while the failed

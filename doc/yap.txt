@@ -163,7 +163,12 @@ below.
                         `:w` saves it; an unsaved queue prompts on exit.
                         Inside the queue, <C-s> sends the whole buffer —
                         or the visual selection — to the chat and removes
-                        it from the queue.
+                        it from the queue. When the agent is mid-turn,
+                        <C-s> STEERS instead: the current line (or the
+                        visual selection) is sent to the running turn and
+                        injected at its next tool boundary as a `# @user`
+                        block, without being removed from the jotter —
+                        re-<C-s> to replace it, edit it until it lands.
   <leader>t             Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -772,7 +777,12 @@ for queuing agent tasks. Unlike the autosaved session, the queue is
 saved manually — `:w` in the jotter writes it, and an unsaved queue
 triggers the normal modified-buffer prompt on exit. Pressing <C-s> in
 the queue sends its contents (or the active visual selection) to the
-chat as a `# @user` message and removes them from the queue. Opening a session
+chat as a `# @user` message and removes them from the queue. While the
+agent is streaming, the same <C-s> steers instead: the current line (or
+the visual selection) is handed to the running turn and injected at its
+next tool boundary as a `# @user` block — the draft stays in the jotter
+so you can keep shaping it (re-<C-s> to replace it), and a steer that
+arrives after the turn ends is sent as a follow-up turn. Opening a session
 file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|

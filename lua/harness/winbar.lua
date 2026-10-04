@@ -17,6 +17,7 @@ local live = state.live
 local errors = state.errors
 local awaiting = state.awaiting
 local last_turn = state.last_turn
+local steer = state.steer
 
 local SPINNER = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local spinner_tick = 0
@@ -277,6 +278,9 @@ local function render_winbar(buf)
   local function state_segment()
     if errors[buf] then
       return seg(" ✗ error ", "Error")
+    end
+    if steer[buf] then
+      return seg(" ⌁ steer ", "Needs")
     end
     return nil
   end

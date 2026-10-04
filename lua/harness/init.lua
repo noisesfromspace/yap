@@ -121,6 +121,7 @@ local live = state.live
 local errors = state.errors
 local last_turn = state.last_turn
 local awaiting = state.awaiting
+local steer = state.steer
 
 local start_subagent
 local subagent_done = {}
@@ -384,6 +385,9 @@ local function render_event(ev)
     return ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), "block"
   elseif ev.type == "tool_text_warning" then
     return ("%s unexecuted tool call: %s"):format(ts, ev.detail or "model emitted a tool call as text"), "block"
+  elseif ev.type == "steer" then
+    local text = (ev.text or ""):gsub("\n", " ")
+    return ("%s ⌁ steer: %s"):format(ts, text), "block"
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
     return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
@@ -585,6 +589,9 @@ local function handle_event(buf, json_line)
     append_event(buf, ev) -- full result; bash output already streamed above
   elseif ev.type == "retry" then
     append_event(buf, ev) -- a transient generation error was retried
+  elseif ev.type == "steer" then
+    steer[buf] = nil -- delivered: the text is already in the buffer as a # @user block
+    append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "tool_text_warning" then
     append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
   elseif ev.type == "turn_end" then
@@ -895,6 +902,21 @@ local function scratch_take(scratch)
   return text
 end
 
+--- Read the text to send from the scratch buffer WITHOUT removing it:
+--- the active visual selection, or the current line in normal mode. The
+--- scratch is a jotter; steering leaves the draft in place (latest wins —
+--- re-<C-s> to update), and the text is only drained when the agent is
+--- idle and it is sent as a normal message.
+local function scratch_read(scratch)
+  local mode = vim.api.nvim_get_mode().mode
+  if mode == "v" or mode == "V" or mode == "\22" then
+    local anchor, cursor = vim.fn.getpos("v"), vim.fn.getpos(".")
+    return vim.fn.getregion(anchor, cursor, { type = mode })
+  end
+  local lnum = vim.fn.line(".")
+  return vim.api.nvim_buf_get_lines(scratch, lnum - 1, lnum, false)
+end
+
 --- Write the queue buffer to its sibling file so the drained state survives
 --- reopening the session. Like session.save it goes through `:write!` so the
 --- buffer keeps owning the file (mtime/'modified' bookkeeping stay correct).
@@ -911,9 +933,12 @@ local function scratch_save(scratch)
 end
 
 --- Send the scratch queue — all of it, or the visual selection — into the
---- owning chat buffer as a `# @user` message, then submit it. The sent text
---- is removed from the queue by scratch_take, and the drained queue is saved
---- so already-sent tasks don't come back when the buffer is recreated.
+--- owning chat buffer as a `# @user` message, then submit it. When the
+--- owner is idle the sent text is drained (scratch_take) and the queue is
+--- saved, as before. When the owner is mid-turn, the same key STEERS: the
+--- selection (or the current line) is read but left in place, handed to the
+--- running turn, and injected at the next tool boundary — or followed up as
+--- a fresh turn if the turn ends first.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -921,10 +946,37 @@ function M.scratch_send(scratch)
     vim.notify("yap: scratch has no chat buffer", vim.log.levels.WARN)
     return
   end
+
   if M.is_running(owner) then
-    vim.notify("yap: send in flight, not queueing", vim.log.levels.WARN)
+    -- Steering: read the draft without draining it, so the user keeps
+    -- shaping it until it lands (or re-<C-s> to replace it).
+    local text = scratch_read(scratch)
+    local blank = true
+    for _, l in ipairs(text) do
+      if l:match("%S") then
+        blank = false
+        break
+      end
+    end
+    if blank then
+      vim.notify("yap: scratch is empty", vim.log.levels.WARN)
+      return
+    end
+    local msg = table.concat(text, "\n")
+    steer[owner] = msg
+    local proc = running[owner]
+    local ok = pcall(function()
+      proc:write(vim.json.encode({ type = "steer", text = msg }) .. "\n")
+    end)
+    if not ok then
+      steer[owner] = nil
+      vim.notify("yap: could not steer (backend gone)", vim.log.levels.WARN)
+      return
+    end
+    vim.notify("yap: steering — lands at the next tool boundary", vim.log.levels.INFO)
     return
   end
+
   local text = scratch_take(scratch)
   local blank = true
   for _, l in ipairs(text) do
@@ -1335,7 +1387,15 @@ function M.send(buf)
           end
         end
       end
+      -- A steering message that arrived after the turn's last poll point is
+      -- still pending: degrade it to a follow-up — fill the trailing
+      -- `# @user` prompt with it and start a new turn below.
+      local steer_text = steer[buf]
+      steer[buf] = nil
       document.append_block(buf, { "# @user", "" })
+      if steer_text then
+        document.append_message(buf, "user", vim.split(steer_text, "\n", { plain = true }))
+      end
       fold.after_append(buf, { "# @user", "" })
       follow_tail()
       awaiting[buf] = true
@@ -1357,6 +1417,18 @@ function M.send(buf)
       })
       if compact then
         M.compact_offer(buf)
+      end
+      if steer_text then
+        -- A pending steer wins over close_session (the user's later word
+        -- outranks the agent's). Re-send as a fresh turn once the buffer
+        -- is fully in its final state.
+        close_after_turn[buf] = nil
+        vim.schedule(function()
+          if not vim.api.nvim_buf_is_valid(buf) then
+            return
+          end
+          M.send(buf)
+        end)
       end
       -- close_session is a frontend side effect (like quickfix): the agent
       -- asked to end the session, so once the turn is fully done and the
