@@ -615,6 +615,8 @@ lives, as YAML frontmatter:
   ---
   provider: moonshot
   model: kimi-k3
+  created_at: 2025-09-29T19:22:33Z
+  updated_at: 2025-09-29T19:24:01Z
   models:
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro
@@ -625,9 +627,11 @@ lives, as YAML frontmatter:
 `provider`/`model` is the combo to resume with; `models` is the ordered
 history of every combo used in the session (most-recent-last); `subagents`
 is the ordered list of subagent session paths the session ran
-(most-recent-last). The
-frontmatter is the ONLY durable session state: yap writes it on :Yap
-and |:YapChangeModel|, reads it on open, and sends never touch it.
+(most-recent-last); `created_at` records the session's creation and
+`updated_at` its last write. The
+frontmatter is the ONLY durable session state: yap writes the model fields
+on :Yap and |:YapChangeModel|, stamps `updated_at` on every save, reads the
+block on open, and sends never rewrite it mid-turn.
 Token totals and cost are NOT stored here — the winbar accumulates
 them per-buffer (|yap-winbar|), and the durable session total is
 derived from the audit log's turn journals (|yap-audit|), not from
@@ -1152,11 +1156,13 @@ R13 No MCP. The author's tools are thin HTTP wrappers that are less code
 
 R14 The model state is durable YAML frontmatter; everything else is
     ephemeral.
-    The frontmatter holds `provider`/`model` (the combo to resume with)
-    and `models` (the ordered history of combos used). yap writes it
-    only on :Yap and |:YapChangeModel| — never during a send, so
-    R7's append-only rule holds — reads it on open, and surfaces it in
-    the |:YapSessions| picker. Token/cost totals
+    The frontmatter holds `provider`/`model` (the combo to resume with),
+    `models` (the ordered history of combos used), and `created_at`/
+    `updated_at` timestamps. yap writes the model fields only on :Yap and
+    |:YapChangeModel| — never during a send, so R7's append-only rule holds —
+    and stamps `updated_at` on every save (one line after the turn, not
+    per-reply metadata). It reads the block on open and surfaces it in the
+    |:YapSessions| picker. Token/cost totals
     are deliberately NOT
     frontmatter: they accumulate in per-buffer memory for the winbar
     and reset on reopen. The earlier frontmatter design got this wrong

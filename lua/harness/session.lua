@@ -33,6 +33,39 @@ end
 --- clears 'modified', so a clean buffer prompts nothing on exit; the
 --- `[+]` flag is the real signal for "typed but not yet saved".
 --- Writing without 'modified' is harmless.
+--- Stamp `updated_at` in the frontmatter to now, immediately before the
+--- buffer is written. This is the only place `updated_at` is set; every
+--- other frontmatter rewrite preserves it, so the field means "last write".
+--- Cheap: only the frontmatter block (capped at 200 lines) is re-read and
+--- rewritten, once per save — never on keystrokes or redraws. Legacy files
+--- without a block are skipped.
+local function stamp_updated_at(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
+  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
+    return
+  end
+  local e
+  for i = 2, #lines do
+    if lines[i]:match("^%-%-%-%s*$") then
+      e = i
+      break
+    end
+  end
+  if not e then
+    return
+  end
+  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  if not fm then
+    return
+  end
+  local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  if fm.updated_at == updated_at then
+    return -- same second: skip the rewrite so an unchanged block stays clean
+  end
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at)
+  vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+end
+
 function M.save(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -52,6 +85,7 @@ function M.save(buf)
     vim.b[buf].yap_path = path
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
+  stamp_updated_at(buf)
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
   vim.api.nvim_buf_call(buf, function()
     vim.cmd("silent noautocmd keepjumps write!")

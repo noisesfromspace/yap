@@ -13,6 +13,7 @@ assert(lines[1] == "---", "new buffer must start with frontmatter: " .. tostring
 local fm = frontmatter.parse(lines)
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
+assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
 local created = fm.created_at
 
@@ -105,12 +106,13 @@ assert(
   "open must not inject frontmatter into legacy files"
 )
 
--- 8. subagents list renders and parses back
-local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" })
+-- 8. subagents + updated_at render and parse back
+local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z")
 local subagents_fm = frontmatter.parse(subagents_block)
 assert(
   vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
   "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
 )
+assert(subagents_fm.updated_at == "2025-09-29T19:24:01Z", "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at))
 
 print("OK frontmatter")
