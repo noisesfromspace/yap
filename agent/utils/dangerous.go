@@ -12,9 +12,9 @@ import "regexp"
 // matching more.
 
 var dangerousShellPatterns = []*regexp.Regexp{
-	// Anything piped into a shell — the canonical injection payload — or a
-	// command substitution that fetches a URL.
-	regexp.MustCompile(`(?i)\|\s*(sudo\s+)?(ba)?sh\b`),
+	// Remote content piped directly into a shell, or a command substitution
+	// that fetches a URL.
+	regexp.MustCompile(`(?i)\b(?:curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba)?sh\b`),
 	regexp.MustCompile(`(?i)\$\([^)]*(curl|wget|fetch)\b`),
 
 	// Recursive / forced deletion, and deletion targeting the root or home.

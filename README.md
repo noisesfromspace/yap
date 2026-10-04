@@ -4,7 +4,8 @@
 edit, so deleting text is branching and editing a reply is rewriting history.
 
 Chat LLM APIs are stateless. Every request sends the full message array, so
-whoever holds the array holds the truth. In yap that's a text buffer: `# @system` / `# @user` / `# @assistant` headings delimit messages, deleting a
+whoever holds the array holds the truth. In yap that's a text buffer: `#
+@system` / `# @user` / `# @assistant` headings delimit messages, deleting a
 block is branching, editing a reply is rewriting history
 
 It hooks into Neovim by:

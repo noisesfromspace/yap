@@ -1245,8 +1245,8 @@ R15 Tools are compiled-in Go files, one per file in agent/tools/.
     deliberately unsandboxed — the author runs pi the same way and
     accepts the residual risk — but are no longer unconfirmed: a
     conservative denylist of irreversible / high-blast-radius
-    operations (piped-into-shell, rm -rf, mkfs/dd onto block devices,
-    sudo, git push --force / reset --hard / clean -f, chmod -R /
+    operations (remote content piped into a shell, rm -rf, mkfs/dd onto
+    block devices, sudo, git push --force / reset --hard / clean -f, chmod -R /
     chown -R, redirects onto system or secret paths, shutdown/reboot,
     fork bombs; for python, subprocess/os.system/... and
     shutil.rmtree) pauses the turn for an explicit human Run/Deny
