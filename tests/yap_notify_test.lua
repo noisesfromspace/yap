@@ -120,6 +120,26 @@ assert(waiting_items and #waiting_items == 1, "expected one waiting session, got
 assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
 assert(waiting_items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(waiting_items[1]))
 
+-- If the only waiting session is already current, explain that instead of
+-- claiming nothing is waiting.
+vim.api.nvim_set_current_buf(buf)
+local current_notice
+local orig_notify_waiting = vim.notify
+vim.notify = function(message)
+  current_notice = message
+end
+waiting_items = nil
+vim.ui.select = function(list)
+  waiting_items = list
+end
+yap.waiting()
+vim.ui.select = orig_select
+vim.notify = orig_notify_waiting
+assert(not waiting_items, "current waiting session should not appear in the picker")
+assert(current_notice == "yap: current session is already open and waiting for a reply",
+  "unexpected empty waiting message: " .. tostring(current_notice))
+vim.cmd("enew")
+
 -- A description replaces the filename fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 table.insert(first_lines, 1, "---")

@@ -2178,7 +2178,14 @@ function M.instances(state)
     end
   end
   if #items == 0 then
-    vim.notify(state == "waiting" and "yap: nothing waiting for a reply" or "yap: no open sessions", vim.log.levels.INFO)
+    local message = "yap: no open sessions"
+    if state == "waiting" then
+      message = "yap: nothing waiting for a reply"
+      if vim.b[current].yap and session_state(current) == "waiting" then
+        message = "yap: current session is already open and waiting for a reply"
+      end
+    end
+    vim.notify(message, vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
