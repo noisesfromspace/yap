@@ -6,7 +6,9 @@ yap.setup({ bin = ROOT .. "/yap" })
 -- produce an empty diff (no ui), so clear it to force the create case.
 os.remove("/tmp/ml-test.md")
 local buf = yap.new({ provider = "mock", model = "m1" })
-yap.send()
+-- Exercise the user-facing send mapping, not just the M.send() API.
+local send = vim.api.nvim_replace_termcodes("<C-s>", true, false, true)
+vim.api.nvim_feedkeys(send, "mtx", false)
 local ok = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):match("File written%.") ~= nil
 end, 100)
