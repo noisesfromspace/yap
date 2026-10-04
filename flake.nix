@@ -44,6 +44,91 @@
               ./agent
             ];
           };
+
+          # bubblewrap filesystem jail for the code-executing tools (bash,
+          # python, curl). Generates a wrapper named <name> that execs <tool>
+          # inside a user/mount namespace: the nix store is read-only, the home
+          # is writable except the secret dirs (shadowed by empty tmpfs,
+          # mirroring agent/utils/pathguard.go secretPaths), /etc is never
+          # mounted (so /etc/ssh and agenix secrets stay invisible), and only
+          # $PWD and /tmp are writable. Network is deliberately shared, like
+          # the pi-jailed precedent, so git/nix/curl keep working inside the
+          # tool; the filesystem is the security boundary here.
+          jailTool = name: tool:
+            pkgs.writeShellApplication {
+              inherit name;
+              runtimeInputs = [ pkgs.bubblewrap pkgs.coreutils ];
+              text = ''
+                set -euo pipefail
+
+                # Per-user fake passwd/group so the jail exposes no host
+                # accounts (root + the caller), generated at runtime like the
+                # pi-jailed wrapper.
+                jail_dir="''${XDG_CACHE_HOME:-''$HOME/.cache}/yap-jail"
+                mkdir -p "$jail_dir"
+                {
+                  printf 'root:x:0:0:System administrator:/root:/bin/false\n'
+                  printf '%s:x:%s:%s::%s:/bin/false\n' "$(id -un)" "$(id -u)" "$(id -g)" "$HOME"
+                } > "$jail_dir/passwd"
+                {
+                  printf 'root:x:0:\n'
+                  printf '%s:x:%s:\n' "$(id -gn)" "$(id -g)"
+                } > "$jail_dir/group"
+
+                cwd="$(pwd -P)"
+
+                ARGS=(
+                  # User + process isolation; network stays shared on purpose.
+                  --unshare-user --unshare-ipc --unshare-pid --unshare-uts --unshare-cgroup
+                  --new-session --die-with-parent
+                  --proc /proc --dev /dev
+
+                  # Read-only nix (store + profiles + daemon socket) so the
+                  # system's binaries stay usable, plus the system profile
+                  # (/run/current-system/sw/bin: git, rg, curl, nix, ...) and
+                  # the real host /tmp so the agent's temp scripts and scratch
+                  # survive across calls.
+                  --ro-bind /nix /nix
+                  --ro-bind-try /run/current-system /run/current-system
+                  --bind /tmp /tmp
+
+                  # Writable home with fake accounts; the secret dirs are
+                  # shadowed below. This differs from pi-jailed's empty tmpfs
+                  # home: yap tools need git config, ~/.config, ~/.yap, etc.
+                  --bind "$HOME" "$HOME"
+                  --ro-bind "$jail_dir/passwd" /etc/passwd
+                  --ro-bind "$jail_dir/group" /etc/group
+
+                  # The current working directory is the other writable path.
+                  --bind "$cwd" "$cwd"
+                )
+
+                # Shadow secret directories (mirrors agent/utils/pathguard.go).
+                for p in "$HOME/.ssh" "$HOME/.gnupg" "$HOME/.aws" "$HOME/.config/sops"; do
+                  if [ -d "$p" ]; then ARGS+=( --tmpfs "$p" ); fi
+                done
+
+                # Keep the ssh-agent socket reachable so git-over-ssh works.
+                if [ -n "''${SSH_AUTH_SOCK-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then
+                  ARGS+=( --bind "$SSH_AUTH_SOCK" "$SSH_AUTH_SOCK" )
+                fi
+
+                # Network + TLS plumbing, read-only; /etc itself is never
+                # mounted, so /etc/ssh and agenix secrets are invisible.
+                for p in /etc/resolv.conf /etc/hosts /etc/nsswitch.conf /etc/ssl /etc/localtime /etc/nix; do
+                  if [ -e "$p" ]; then ARGS+=( --ro-bind "$p" "$p" ); fi
+                done
+                if [ -e /run/systemd/resolve ]; then
+                  ARGS+=( --ro-bind /run/systemd/resolve /run/systemd/resolve )
+                fi
+
+                exec bwrap "''${ARGS[@]}" -- ${tool} "$@"
+              '';
+            };
+
+          jailBash = jailTool "yap-jail-bash" "${pkgs.bash}/bin/bash";
+          jailPython = jailTool "yap-jail-python" "${pkgs.python3}/bin/python3";
+          jailCurl = jailTool "yap-jail-curl" "${pkgs.curl}/bin/curl";
         in
         {
           # Go backend: provider client + agent loop, invoked by the harness.
@@ -71,8 +156,21 @@
               mkdir -p "$out/bin"
               makeWrapper "${agentBin}/bin/agent" "$out/bin/agent" \
                 --set-default PLAYWRIGHT_NODEJS_PATH "${pkgs.nodejs}/bin/node" \
-                --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium"
+                --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium" \
+                --set-default YAP_JAIL_BASH "$out/bin/yap-jail-bash" \
+                --set-default YAP_JAIL_PYTHON "$out/bin/yap-jail-python" \
+                --set-default YAP_JAIL_CURL "$out/bin/yap-jail-curl"
+              # Ship the jail wrappers alongside the agent; the wrapper sets
+              # YAP_JAIL_* above to these paths (see agent/utils/jail.go).
+              for j in "${jailBash}" "${jailPython}" "${jailCurl}"; do
+                ln -s "$j/bin/"* "$out/bin/"
+              done
             '';
+
+          # Standalone jail wrappers (for testing without a full agent build).
+          "yap-jail-bash" = jailBash;
+          "yap-jail-python" = jailPython;
+          "yap-jail-curl" = jailCurl;
 
           # Neovim plugin (the harness). Provides require("harness").
           harness = pkgs.vimUtils.buildVimPlugin {

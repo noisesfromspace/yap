@@ -53,7 +53,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
-	cmd := exec.Command("bash", "-c", a.Command)
+	cmd := exec.Command(utils.JailTool("YAP_JAIL_BASH", "bash"), "-c", a.Command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
 	if a.Cwd != "" {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {

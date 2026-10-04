@@ -186,7 +186,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 	// backstop (5s later) so curl's own "operation timed out" message wins.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "curl", args...)
+	cmd := exec.CommandContext(ctx, utils.JailTool("YAP_JAIL_CURL", "curl"), args...)
 	if a.Data != "" {
 		cmd.Stdin = strings.NewReader(a.Data)
 	}

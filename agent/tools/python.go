@@ -74,7 +74,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 			return "", "", err
 		}
 		defer os.Remove(scriptPath)
-		cmd = exec.Command("python3", scriptPath)
+		cmd = exec.Command(utils.JailTool("YAP_JAIL_PYTHON", "python3"), scriptPath)
 	} else {
 		// File: run the script in place. The path resolves like write's
 		// (relative to the Neovim cwd unless absolute), so
@@ -90,7 +90,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 		if st.IsDir() {
 			return "", "", fmt.Errorf("script path is a directory: %s", a.File)
 		}
-		cmd = exec.Command("python3", scriptPath)
+		cmd = exec.Command(utils.JailTool("YAP_JAIL_PYTHON", "python3"), scriptPath)
 		label = "python3 " + a.File
 		if data, err := os.ReadFile(scriptPath); err == nil {
 			scan = string(data)
