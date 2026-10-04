@@ -37,11 +37,11 @@ M.config = {
   -- (see the User YapTurnDone autocmd installed by setup()).
   notify_done = true,
   -- Keep treesitter's markdown syntax highlighting on yap buffers. It is
-  -- off by default: a chat buffer is rendered by touchup, and the
-  -- treesitter highlighter re-highlights the viewport on every scroll —
-  -- one of the larger per-redraw costs on a long session. touchup runs its
-  -- own queries over the treesitter parser, which stays loaded either way.
-  syntax_highlight = false,
+  -- on by default: the highlighter is incremental and measured to be
+  -- negligible (~0.001ms/scroll) — the per-redraw cost attributed to
+  -- "treesitter" in profiling was actually touchup re-rendering plus live
+  -- buffer churn, not the highlighter. Set false to drop syntax colors.
+  syntax_highlight = true,
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
   -- before the agent answers.
@@ -1476,15 +1476,10 @@ local function setup_buffer(buf)
   -- with :YapInstances.
   vim.bo[buf].buflisted = false
 
-  -- Chat buffers never need relative line numbers; recomputing them on
-  -- every redraw is one of the larger per-key costs on a long session.
-  vim.wo.relativenumber = false
-
-  -- Stop treesitter's syntax highlighter (not the parser). touchup runs
-  -- its own queries over the parser, and nvim-treesitter re-highlights the
-  -- viewport on every scroll — pure per-redraw cost (same rationale as the
-  -- LSP guard above). Deferred so the FileType autocommands that started it
-  -- have run. Set syntax_highlight = true to keep markdown syntax colors.
+  -- Stop treesitter's syntax highlighter (not the parser) when the user
+  -- opts out. touchup runs its own queries over the parser, which stays
+  -- loaded either way. Deferred so the FileType autocommands that started
+  -- the highlighter have run.
   if not M.config.syntax_highlight then
     vim.schedule(function()
       if not vim.api.nvim_buf_is_valid(buf) then
@@ -1495,6 +1490,19 @@ local function setup_buffer(buf)
         hl:destroy()
       end
     end)
+  end
+
+  -- Diff hunks are meaningless on a chat transcript, and mini.diff's
+  -- number-column rendering collides with 'relativenumber': the two
+  -- re-render the gutter together on every redraw (a ~20x cost on long
+  -- sessions — relativenumber alone is ~0.01ms, mini.diff alone ~0, but
+  -- combined ~0.24ms). Disable mini.diff here so relativenumber stays
+  -- cheap. The buffer-local minidiff_disable flag makes mini.diff's
+  -- BufEnter auto-enable refuse to re-attach.
+  local ok_md, MiniDiff = pcall(require, "mini.diff")
+  if ok_md and MiniDiff then
+    vim.b[buf].minidiff_disable = true
+    MiniDiff.disable(buf)
   end
 
   local keys = M.config.keymaps
