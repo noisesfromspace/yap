@@ -249,10 +249,6 @@
                   api_key_env = "MOONSHOT_API_KEY";
                 };
                 websearch.api_key_env = "EXA_API_KEY";
-                pricing.kimi-k3 = {
-                  input = 3.0;
-                  output = 15.0;
-                };
               };
               description = ''
                 Agent configuration, written to {file}`~/.config/yap.json`.
