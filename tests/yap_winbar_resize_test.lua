@@ -20,17 +20,17 @@ local function winbar_at(cols)
   return wb
 end
 
--- Wide: everything is present — model, both chips (tokens + cost), state.
+-- Wide: everything is present — model, both chips (tokens + cost). No
+-- state glyph: idle/awaiting are silent, only errors get one.
 local wb = winbar_at(80)
 assert(wb:match("mock/m1"), "wide winbar missing model: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs: " .. wb)
 assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
-assert(wb:match("○ idle"), "wide winbar missing state: " .. wb)
+assert(not wb:match("idle") and not wb:match("waiting"), "wide winbar has a state glyph: " .. wb)
 
--- Narrower: state glyph and model/fold go first; chips keep tokens + cost.
+-- Narrower: model/fold go first; chips keep tokens + cost.
 wb = winbar_at(40)
-assert(not wb:match("○ idle"), "40-col winbar kept the state glyph: " .. wb)
 assert(not wb:match("mock/m1"), "40-col winbar kept the model: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "40-col winbar missing tokens: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "40-col winbar missing costs: " .. wb)

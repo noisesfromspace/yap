@@ -140,11 +140,10 @@ end
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
 -- then the current session's title/model/fold view; usage on the right —
--- the three chips first, then the state glyph pinned to the far right edge
--- so it never moves as numbers grow. The bar is width-aware: as the window
--- narrows it drops the state glyph first (in-flight is the left spinner),
--- then the model/fold cluster, then the chip costs, then the chip tokens;
--- the prices and the island survive. Past that the bar clips.
+-- the three chips, then an error glyph only when something went wrong. The
+-- bar is width-aware: as the window narrows it drops the model/fold
+-- cluster, then the chip costs, then the chip tokens; the error glyph, the
+-- prices and the island survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -272,16 +271,14 @@ local function render_winbar(buf)
     return segs
   end
 
+  -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
+  -- are self-evident from the absence of the left spinner, so they stay
+  -- silent. The awaiting state still drives the OTHER-buffer rollup island.
   local function state_segment()
-    if running and running[buf] then
-      return nil -- in-flight is shown by the left spinner beacon, not here
-    elseif errors[buf] then
+    if errors[buf] then
       return seg(" ✗ error ", "Error")
-    elseif awaiting[buf] then
-      return seg(" ◉ waiting ", "Needs")
-    else
-      return seg(" ○ idle ", "Idle")
     end
+    return nil
   end
 
   local function render(left, mid, usage, state)
@@ -305,23 +302,21 @@ local function render_winbar(buf)
   end
 
   -- Degrade until the bar fits, dropping the least important parts first:
-  -- state glyph → model/fold → chip costs → chip tokens. Prices and the
-  -- island survive; past that the bar clips rather than hiding prices.
-  local desc_max, mode, show_mid, show_state = 40, "full", true, true
+  -- model/fold → chip costs → chip tokens. The error glyph and the prices
+  -- survive; past that the bar clips rather than hiding them.
+  local desc_max, mode, show_mid = 40, "full", true
   while true do
     local left = left_segments(desc_max)
     local mid = show_mid and mid_segments() or {}
     local usage = usage_segment(mode)
-    local state = show_state and state_segment() or nil
+    local state = state_segment()
     local total = width_of(left) + width_of(mid)
       + (usage and width_of(usage) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
       return render(left, mid, usage, state)
     end
-    if show_state then
-      show_state = false
-    elseif show_mid then
+    if show_mid then
       show_mid = false
     elseif mode == "full" then
       mode = "compact"

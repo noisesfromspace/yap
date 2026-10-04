@@ -1,7 +1,7 @@
 -- Turn-done notification: User YapTurnDone fires once per completed
 -- send with the turn payload; the default handler toasts only for a
--- buffer the user isn't looking at, and the winbar flips to the
--- "waiting" (needs you) state instead of idle.
+-- buffer the user isn't looking at. The winbar shows no idle/waiting
+-- glyph — only errors get one.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -25,9 +25,9 @@ end
 
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- A fresh chat has nothing to reply to yet: idle, not "waiting".
+-- A fresh chat has nothing to reply to yet: no state glyph.
 local buf = yap.new()
-assert(yap.winbar(buf):match("idle"), "fresh chat should be idle: " .. yap.winbar(buf))
+assert(not yap.winbar(buf):match("idle"), "fresh chat should show no idle: " .. yap.winbar(buf))
 
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hi" })
 yap.send()
@@ -43,16 +43,17 @@ assert(type(turn) == "table" and turn.model == "m1", "turn payload missing: " ..
 vim.wait(300)
 assert(#notified == 0, "notified while the buffer is current: " .. vim.inspect(notified))
 
--- The winbar now reports the herdr-style "needs you" state.
+-- The winbar shows no waiting glyph; the awaiting state only drives the
+-- OTHER-buffer rollup island.
 local bar = yap.winbar(buf)
-assert(bar:match("waiting") and bar:match("YapNeeds"), "winbar missing waiting state: " .. bar)
+assert(not bar:match("waiting"), "winbar should not show waiting: " .. bar)
 
 -- The global rollup: any other yap buffer's winbar counts how many
 -- sessions await the user's reply (the herdr-style overview).
 local buf2 = yap.new()
 local bar2 = yap.winbar(buf2)
 assert(bar2:match("◉1"), "rollup chip missing on the other buffer: " .. bar2)
-assert(bar2:match("idle"), "fresh second buffer should be idle: " .. bar2)
+assert(not bar2:match("idle"), "fresh second buffer should show no idle: " .. bar2)
 -- The rollup island sits before the session's model info.
 local island_at = assert(bar2:find("◉1", 1, true), "island missing: " .. bar2)
 local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2)

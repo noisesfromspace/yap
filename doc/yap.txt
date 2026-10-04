@@ -888,18 +888,16 @@ description (truncated to 40 display columns), provider/model combo, and
 the applied fold view (`Ⓕ1` agent output folded, `Ⓕ2` tools & thinking
 folded, `Ⓕ3` all open — the last view applied with <leader>1..3;
 manual |za| toggles don't update it). Right: three usage chips
-(|yap-winbar-numbers|), then the state glyph pinned to the far right edge:
+(|yap-winbar-numbers|). A state glyph appears on the far right only when
+something is wrong:
 
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
-  ◉ waiting A turn has completed and the agent awaits your next prompt
-            (the herdr-style "needs you" state).
-  ○ idle    Nothing running, nothing pending.
 
-While a request is in flight the right-hand glyph is absent — the left
-spinner beacon is the indicator.
+Idle and "awaiting your reply" show no glyph — the absence of the left
+spinner already tells you nothing is running.
 
-Example: `⠋ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 󰊚 35k/200k ◉ waiting`
+Example: `⠋ moonshot/kimi-k3 Ⓕ2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 󰊚 35k/200k`
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -928,12 +926,11 @@ they diverge.
 
 The bar is width-aware, so a narrow window never crowds out the parts
 that matter. It drops parts in this order as the window shrinks: the
-right-hand state glyph (in-flight is already the left spinner beacon),
-then the provider/model + fold-view cluster, then the chip costs, then
-the chip tokens (leaving just the two prices), and finally the session
-description, which truncates shorter. The left island (`▶N`/`◉N`) and
-the two prices are the last things standing, and the winbar re-lays
-itself out on `WinResized`.
+provider/model + fold-view cluster, then the chip costs, then the chip
+tokens (leaving just the two prices), and finally the session
+description, which truncates shorter. The error glyph, the left island
+(`▶N`/`◉N`) and the two prices are the last things standing, and the
+winbar re-lays itself out on `WinResized`.
 
 The `▶N` rollup counts OTHER yap buffers with an in-flight request; the
 `◉N` rollup counts OTHER yap buffers with a completed turn awaiting
@@ -1217,11 +1214,11 @@ R19 Turn completion is a first-class event.
     The default handler (installed
     by setup(), disabled with `notify_done = false`) calls vim.notify —
     only for a buffer the user isn't looking at, and never on the error
-    path, which already notifies (R9). The winbar gains a fourth state,
-    `◉ waiting`, set when the turn completes and cleared on send, plus a
-    `◉N` rollup counting the OTHER awaiting buffers: both are imperative
-    UI hints like `errors`/`yap_usage`, not conversation state (R1);
-    reopened sessions seed the rollup from their content on open. Why:
+    path, which already notifies (R9). A completed turn sets the
+    awaiting hint, which drives the `◉N` rollup counting the OTHER
+    awaiting buffers (the winbar itself shows no glyph for it): an
+    imperative UI hint like `errors`/`yap_usage`, not conversation state
+    (R1); reopened sessions seed the rollup from their content on open. Why:
     herdr's "working → blocked → idle" notification is
     a completion *event*, and an autocmd is the Neovim-native hook for
     it (noice/nf-notify, chaining a next send) instead of a hardcoded
