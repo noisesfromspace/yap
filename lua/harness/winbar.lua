@@ -167,7 +167,12 @@ local function render_winbar(buf)
   local function seg(text, group, island)
     return { text = text, group = group, island = island }
   end
+  local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
+  local inactive = win ~= vim.api.nvim_get_current_win()
   local function render_seg(s)
+    if s.group == "IslandCap" and inactive then
+      return winbar_hl(s.text, "IslandCapNC")
+    end
     if s.island then
       return island_hl(s.text, s.group)
     end
@@ -462,10 +467,12 @@ local function define_winbar_hl()
   end
   local bg = attr("NormalFloat", "bg") or attr("Visual", "bg") or attr("Normal", "bg")
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
+  local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
   -- Recompute theme-owned surfaces on ColorScheme: caps use the bar's
   -- background, while padding and both counts share one opaque pill.
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
+  vim.api.nvim_set_hl(0, "YapIslandCapNC", { fg = bg, bg = inactive_bg })
   vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })

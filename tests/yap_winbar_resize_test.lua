@@ -87,6 +87,7 @@ end
 for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   vim.api.nvim_set_hl(0, "NormalFloat", { bg = colors[1] })
   vim.api.nvim_set_hl(0, "WinBar", { bg = colors[2] })
+  vim.api.nvim_set_hl(0, "WinBarNC", { bg = 0x333333 })
   vim.api.nvim_exec_autocmds("ColorScheme", {})
   for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds" }) do
     assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
@@ -94,7 +95,23 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   end
   local cap = vim.api.nvim_get_hl(0, { name = "YapIslandCap", link = false })
   assert(cap.fg == colors[1] and cap.bg == colors[2], "rounded caps have square backgrounds")
+  local inactive_cap = vim.api.nvim_get_hl(0, { name = "YapIslandCapNC", link = false })
+  assert(inactive_cap.fg == colors[1] and inactive_cap.bg == 0x333333,
+    "inactive caps must match WinBarNC")
 end
+-- Opening a picker makes the session window inactive; only its cap surface changes.
+state.awaiting[waiting] = true
+local session_win = vim.api.nvim_get_current_win()
+local picker_buf = vim.api.nvim_create_buf(false, true)
+local picker_win = vim.api.nvim_open_win(picker_buf, true, {
+  relative = "editor", row = 1, col = 1, width = 20, height = 3, style = "minimal",
+})
+vim.g.statusline_winid = session_win
+assert(yap.winbar(target):find("%#YapIslandCapNC#", 1, true), "picker did not select inactive caps")
+vim.api.nvim_win_close(picker_win, true)
+assert(yap.winbar(target):find("%#YapIslandCap#", 1, true), "active caps not restored after picker")
+vim.g.statusline_winid = nil
+vim.api.nvim_buf_delete(picker_buf, { force = true })
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
