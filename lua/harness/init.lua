@@ -71,7 +71,7 @@ M.config = {
   -- `sessions` and `waiting` are global (installed by setup()).
   keymaps = {
     send = "<C-s>",
-    stop = "<leader>c",
+    stop = "<C-c>",
     change_model = "<leader>m",
     live = "<leader>l",
     scratch = "<leader>s",

@@ -175,7 +175,7 @@ are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams into the buffer;
                         normal successful sends don't show a toast.
-  <leader>c             Kill the in-flight request (see |:YapStop|).
+  <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch queue buffer: a

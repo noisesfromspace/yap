@@ -4,9 +4,9 @@ local yap = require("harness")
 yap.setup({ models = { "mock/m1" } })
 local buf = yap.new()
 
-local function has_map(desc)
+local function has_map(desc, lhs)
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
-    if m.desc == desc then
+    if m.desc == desc and (lhs == nil or m.lhs == lhs) then
       return true
     end
   end
@@ -14,5 +14,5 @@ local function has_map(desc)
 end
 
 assert(has_map("yap: change model"), "no <leader>m mapping in yap buffer")
-assert(has_map("yap: stop in-flight request"), "no <leader>c mapping in yap buffer")
+assert(has_map("yap: stop in-flight request", "<C-C>"), "stop mapping is not <C-c>")
 print("OK map")
