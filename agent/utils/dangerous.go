@@ -11,71 +11,90 @@ import "regexp"
 // cost one keypress; false negatives are the danger, so patterns err toward
 // matching more.
 
-var dangerousShellPatterns = []*regexp.Regexp{
-	// Remote content piped directly into a shell, or a command substitution
-	// that fetches a URL.
-	regexp.MustCompile(`(?i)\b(?:curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba)?sh\b`),
-	regexp.MustCompile(`(?i)\$\([^)]*(curl|wget|fetch)\b`),
-
-	// Recursive / forced deletion, and deletion targeting the root or home.
-	regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b(?:[ \t]+(?:-[a-z]*[rf][a-z]*|--(?:recursive|force|no-preserve-root)))+`),
-	regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:/|~|\$HOME)(?:[ \t]|$)`),
-	regexp.MustCompile(`(?i)\b(?:sudo\s+)?rmdir\b`),
-
-	// Raw disk / filesystem manipulation.
-	regexp.MustCompile(`(?i)\b(?:mkfs\.[a-z0-9]+|wipefs|fdisk|parted|sfdisk|blkdiscard)\b`),
-	regexp.MustCompile(`(?i)\bdd\b[^;&|]*of=/dev/`),
-
-	// System power control.
-	regexp.MustCompile(`(?i)\b(?:shutdown|reboot|halt|poweroff)\b`),
-	regexp.MustCompile(`(?i)\b(?:init\s+[06]|systemctl\s+(?:poweroff|reboot|halt))\b`),
-
-	// Privilege escalation.
-	regexp.MustCompile(`(?i)\bsudo\b`),
-
-	// Irreversible git history / remote rewrites.
-	regexp.MustCompile(`\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*|push\s+(?:-f\b|--force|--delete|--force-with-lease))`),
-
-	// Recursive ownership / permission changes.
-	regexp.MustCompile(`(?i)\b(?:sudo\s+)?chmod\b[ \t]+(?:-R|--recursive|777|a\+w|u?g?o?\+w)(?:[ \t]|$)`),
-	regexp.MustCompile(`(?i)\b(?:sudo\s+)?chown\b[ \t]+(?:-R|--recursive)(?:[ \t]|$)`),
-
-	// Redirection that overwrites a system or secret path.
-	regexp.MustCompile(`(?i)>>?\s*(?:/etc/|/usr/|/boot/|/var/|/root/|/bin/|/sbin/|/lib/)`),
-	regexp.MustCompile(`(?i)>>?\s*\S*(?:\.ssh|\.gnupg|\.aws|\.config/sops|agenix)\S*`),
-
-	// Classic fork bomb.
-	regexp.MustCompile(`:\(\)\s*\{`),
+// dangerousPattern names the category shown in the audit log when a pattern
+// triggers an approval dialog.
+type dangerousPattern struct {
+	name    string
+	pattern *regexp.Regexp
 }
 
-var dangerousPythonPatterns = []*regexp.Regexp{
+var dangerousShellPatterns = []dangerousPattern{
+	// Remote content piped directly into a shell, or a command substitution
+	// that fetches a URL.
+	{"remote content executed by shell", regexp.MustCompile(`(?i)\b(?:curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba)?sh\b`)},
+	{"remote content command substitution", regexp.MustCompile(`(?i)\$\([^)]*(curl|wget|fetch)\b`)},
+
+	// Recursive / forced deletion, and deletion targeting the root or home.
+	{"recursive or forced deletion", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b(?:[ \t]+(?:-[a-z]*[rf][a-z]*|--(?:recursive|force|no-preserve-root)))+`)},
+	{"deletion targeting root or home", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:/|~|\$HOME)(?:[ \t]|$)`)},
+	{"directory deletion", regexp.MustCompile(`(?i)\b(?:sudo\s+)?rmdir\b`)},
+
+	// Raw disk / filesystem manipulation.
+	{"filesystem or disk manipulation", regexp.MustCompile(`(?i)\b(?:mkfs\.[a-z0-9]+|wipefs|fdisk|parted|sfdisk|blkdiscard)\b`)},
+	{"raw disk write", regexp.MustCompile(`(?i)\bdd\b[^;&|]*of=/dev/`)},
+
+	// System power control.
+	{"system power control", regexp.MustCompile(`(?i)\b(?:shutdown|reboot|halt|poweroff)\b`)},
+	{"system power control", regexp.MustCompile(`(?i)\b(?:init\s+[06]|systemctl\s+(?:poweroff|reboot|halt))\b`)},
+
+	// Privilege escalation.
+	{"sudo", regexp.MustCompile(`(?i)\bsudo\b`)},
+
+	// Irreversible git history / remote rewrites.
+	{"irreversible git operation", regexp.MustCompile(`\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*|push\s+(?:-f\b|--force|--delete|--force-with-lease))`)},
+
+	// Recursive ownership / permission changes.
+	{"broad permission change", regexp.MustCompile(`(?i)\b(?:sudo\s+)?chmod\b[ \t]+(?:-R|--recursive|777|a\+w|u?g?o?\+w)(?:[ \t]|$)`)},
+	{"recursive ownership change", regexp.MustCompile(`(?i)\b(?:sudo\s+)?chown\b[ \t]+(?:-R|--recursive)(?:[ \t]|$)`)},
+
+	// Redirection that overwrites a system or secret path.
+	{"overwrite of system or secret path", regexp.MustCompile(`(?i)>>?\s*(?:/etc/|/usr/|/boot/|/var/|/root/|/bin/|/sbin/|/lib/)`)},
+	{"overwrite of secret path", regexp.MustCompile(`(?i)>>?\s*\S*(?:\.ssh|\.gnupg|\.aws|\.config/sops|agenix)\S*`)},
+
+	// Classic fork bomb.
+	{"fork bomb", regexp.MustCompile(`:\(\)\s*\{`)},
+}
+
+var dangerousPythonPatterns = []dangerousPattern{
 	// Actual shell / code execution calls; merely importing subprocess or
 	// naming an API should not interrupt ordinary scripts with an approval.
-	regexp.MustCompile(`\bsubprocess\s*\.\s*(?:run|Popen|call|check_call|check_output|getoutput|getstatusoutput)\s*\(`),
-	regexp.MustCompile(`\b(?:os\s*\.\s*(?:system|popen|exec\w*)|Popen)\s*\(`),
-	regexp.MustCompile(`\b(?:__import__|eval|exec)\s*\(`),
+	{"subprocess execution", regexp.MustCompile(`\bsubprocess\s*\.\s*(?:run|Popen|call|check_call|check_output|getoutput|getstatusoutput)\s*\(`)},
+	{"OS command execution", regexp.MustCompile(`\b(?:os\s*\.\s*(?:system|popen|exec\w*)|Popen)\s*\(`)},
+	{"dynamic code execution", regexp.MustCompile(`\b(?:__import__|eval|exec)\s*\(`)},
 	// Irreversible recursive deletion.
-	regexp.MustCompile(`\bshutil\s*\.\s*rmtree\s*\(`),
+	{"recursive deletion", regexp.MustCompile(`\bshutil\s*\.\s*rmtree\s*\(`)},
+}
+
+// DangerousCommandReason reports the first high-risk command category that
+// matches, or an empty string when the command does not require approval.
+func DangerousCommandReason(s string) string {
+	for _, p := range dangerousShellPatterns {
+		if p.pattern.MatchString(s) {
+			return p.name
+		}
+	}
+	return ""
 }
 
 // IsDangerousCommand reports whether a shell command matches the high-risk
 // denylist and should be confirmed by a human before it runs.
 func IsDangerousCommand(s string) bool {
-	for _, re := range dangerousShellPatterns {
-		if re.MatchString(s) {
-			return true
+	return DangerousCommandReason(s) != ""
+}
+
+// DangerousPythonReason reports the first high-risk Python category that
+// matches, or an empty string when the source does not require approval.
+func DangerousPythonReason(s string) string {
+	for _, p := range dangerousPythonPatterns {
+		if p.pattern.MatchString(s) {
+			return p.name
 		}
 	}
-	return false
+	return ""
 }
 
 // IsDangerousPython reports whether Python source matches the high-risk
 // denylist (arbitrary execution or irreversible recursive deletion).
 func IsDangerousPython(s string) bool {
-	for _, re := range dangerousPythonPatterns {
-		if re.MatchString(s) {
-			return true
-		}
-	}
-	return false
+	return DangerousPythonReason(s) != ""
 }

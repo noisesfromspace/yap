@@ -38,8 +38,8 @@ func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
-	if utils.IsDangerousCommand(a.Command) {
-		ok, err := utils.RequestApproval(a.Command)
+	if reason := utils.DangerousCommandReason(a.Command); reason != "" {
+		ok, err := utils.RequestApproval(a.Command, "bash", reason)
 		if err != nil {
 			return "", "", fmt.Errorf("command requires approval: %w", err)
 		}

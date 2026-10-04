@@ -878,8 +878,10 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
   output       {"type","name","data","ts"} — streamed bash/python output chunks
                (synthesized by the Lua side as it drains the temp log)
   tool_result  {"type","id","name","bytes","result","ts"} — full result
-  approval_request {"type","id","command","ts"} — a dangerous command paused
-               the turn for a human Run/Deny
+  approval_request {"type","id","tool","reason","command","ts"} — a
+               bash/python risk category or SSH remote-command execution
+               triggered a human Run/Deny dialog; reason names the matching
+               high-risk category so false-positive rules can be identified
   approval_result  {"type","id","approved","ts"} — the human's answer
                (synthesized by the Lua side)
   approval_timeout {"type","id","ts"} — no answer; denied

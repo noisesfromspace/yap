@@ -97,8 +97,8 @@ func runPython(a *pythonArgs) (string, string, error) {
 			scan = string(data)
 		}
 	}
-	if scan != "" && utils.IsDangerousPython(scan) {
-		ok, err := utils.RequestApproval(scan)
+	if reason := utils.DangerousPythonReason(scan); reason != "" {
+		ok, err := utils.RequestApproval(scan, "python", reason)
 		if err != nil {
 			return "", "", fmt.Errorf("python requires approval: %w", err)
 		}

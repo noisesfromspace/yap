@@ -117,7 +117,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if checkErr != nil {
 		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, checkErr)
 	}
-	ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command))
+	ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command), "ssh", "remote command execution")
 	if err != nil {
 		return "", fmt.Errorf("SSH command requires approval: %w", err)
 	}

@@ -443,7 +443,12 @@ local function render_event(ev)
     local text = (ev.text or ""):gsub("\n", " ")
     return ("%s ⌁ steer: %s"):format(ts, text), "block"
   elseif ev.type == "approval_request" then
-    return ("%s ⚠ approval requested: %s"):format(ts, (ev.command or ""):gsub("\n", " ")), "block"
+    local context = ev.tool or ""
+    if ev.reason and ev.reason ~= "" then
+      context = context ~= "" and (context .. ": " .. ev.reason) or ev.reason
+    end
+    local label = context ~= "" and (" (" .. context .. ")") or ""
+    return ("%s ⚠ approval requested%s: %s"):format(ts, label, (ev.command or ""):gsub("\n", " ")), "block"
   elseif ev.type == "approval_result" then
     return ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), "block"
   elseif ev.type == "approval_timeout" then

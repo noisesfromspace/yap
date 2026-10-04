@@ -26,16 +26,20 @@ var approvalSeq atomic.Uint64
 var approvalTimeout = 60 * time.Second
 
 // RequestApproval pauses the turn and asks the user to approve running
-// `command` (shown verbatim; the Lua side truncates for display). It returns
-// (true, nil) when approved, (false, nil) when denied, and an error when
-// there is no serve process to ask or the user never answers. Denial and
-// timeout are surfaced to the model as a tool error.
-func RequestApproval(command string) (bool, error) {
+// `command` (shown verbatim; the Lua side truncates for display). The tool
+// and reason are recorded with the request so audit history explains why
+// the dialog appeared. It returns (true, nil) when approved, (false, nil)
+// when denied, and an error when there is no serve process to ask or the
+// user never answers. Denial and timeout are surfaced to the model as a tool error.
+func RequestApproval(command, tool, reason string) (bool, error) {
 	if ApprovalReplies == nil {
 		return false, fmt.Errorf("approval requires yap serve")
 	}
 	id := fmt.Sprintf("approval-%d", approvalSeq.Add(1))
-	EmitEvent(map[string]any{"type": "approval_request", "id": id, "command": command})
+	EmitEvent(map[string]any{
+		"type": "approval_request", "id": id, "command": command,
+		"tool": tool, "reason": reason,
+	})
 	timer := time.NewTimer(approvalTimeout)
 	defer timer.Stop()
 	for {
