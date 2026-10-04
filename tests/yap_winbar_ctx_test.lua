@@ -57,9 +57,9 @@ local function graph_width(bar)
 end
 assert(graph_width(wide) > graph_width(narrow), "context graph did not expand with available width")
 assert(wide:match("YapGaugeMid"), "expanded graph lost its context-fill color")
--- The statusline's literal content stops three cells short of the window;
--- that reserved alignment space separates the stretched graph from the left.
+-- `%=` is an alignment operator, not literal content; the expanded graph
+-- should consume all available width rather than leave an artificial gap.
 local literals = wide:gsub("%%#.-#", ""):gsub("%%[%*=]", ""):gsub("%%%%", "%%")
-assert(vim.fn.strdisplaywidth(literals) == wide_cols - 3, "expanded graph consumed its left-side breathing gap")
+assert(vim.fn.strdisplaywidth(literals) == wide_cols, "expanded graph left winbar width unused")
 
 print("OK winbar_ctx")
