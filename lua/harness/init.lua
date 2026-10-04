@@ -1005,7 +1005,7 @@ end
 --- sibling `*.queue` file of the session — so `:write` saves it and an
 --- unsaved queue prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
-local SCRATCH_HEIGHT = 8
+local SCRATCH_HEIGHT = 5
 
 function M.scratch_toggle(buf)
   buf = buf or vim.api.nvim_get_current_buf()
