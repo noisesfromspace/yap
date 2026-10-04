@@ -13,16 +13,22 @@ local buf = yap.new({ provider = "mock", model = "m1" })
 -- No turn yet: the chip is absent.
 assert(not yap.winbar(buf):match("󰊚"), "context chip shown before first turn")
 
--- A completed turn shows absolute fill + the percentage.
+-- A completed turn shows absolute fill + the percentage and the gauge.
 state.last_turn[buf] = { prompt = 5600, completion = 200, context_window = 250000 }
 local wb = yap.winbar(buf)
 assert(wb:match("5.6k/250k"), "context fill numbers missing: " .. wb)
 assert(wb:match("2%%"), "context percentage missing: " .. wb)
+assert(wb:match("░") and wb:match("YapGaugeLow"), "context gauge missing/low: " .. wb)
 
--- A near-full window warns (amber), and the integer percentage reflects it.
+-- A mid-band fill (70–90%) turns the gauge amber.
+state.last_turn[buf] = { prompt = 200000, completion = 200, context_window = 250000 }
+wb = yap.winbar(buf)
+assert(wb:match("80%%") and wb:match("YapGaugeMid"), "mid context not amber: " .. wb)
+
+-- A near-full window turns the gauge red, and the integer percentage reflects it.
 state.last_turn[buf] = { prompt = 240000, completion = 200, context_window = 250000 }
 wb = yap.winbar(buf)
-assert(wb:match("96%%") and wb:match("YapNeeds"), "full context not flagged: " .. wb)
+assert(wb:match("96%%") and wb:match("YapGaugeHigh"), "full context not flagged: " .. wb)
 
 -- Sub-1% fills (big model, fresh session) keep a decimal instead of "0%".
 state.last_turn[buf] = { prompt = 5000, completion = 200, context_window = 1000000 }
