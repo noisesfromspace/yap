@@ -182,13 +182,13 @@ local function render_winbar(buf)
   end
 
   -- Mandatory left cluster (never dropped; the description shrinks). Build
-  -- logical items first, then use the same vertical separator everywhere.
-  -- This avoids component-specific leading/trailing spaces drifting apart.
+  -- logical items first, with breathing room between sections rather than
+  -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
   local function left_segments(desc_max, show_mid)
     local left, has_item = {}, false
     local function add_item(item)
       -- One left inset; separators belong to the layout, not the items.
-      left[#left + 1] = seg(has_item and " │ " or " ", "Idle")
+      left[#left + 1] = seg(has_item and "  " or " ", "Idle")
       for _, s in ipairs(item) do
         left[#left + 1] = s
       end
@@ -209,16 +209,18 @@ local function render_winbar(buf)
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
     if running_others_n > 0 or others > 0 then
-      local rollup = {}
+      local rollup = { seg("", "IslandCap"), seg(" ", nil, true) }
       if running_others_n > 0 then
         rollup[#rollup + 1] = seg("▶" .. running_others_n, "Busy", true)
       end
       if running_others_n > 0 and others > 0 then
-        rollup[#rollup + 1] = seg(" │ ", nil, true)
+        rollup[#rollup + 1] = seg("  ", nil, true)
       end
       if others > 0 then
         rollup[#rollup + 1] = seg("◉" .. others, "Needs", true)
       end
+      rollup[#rollup + 1] = seg(" ", nil, true)
+      rollup[#rollup + 1] = seg("", "IslandCap")
       add_item(rollup)
     end
 
@@ -229,8 +231,7 @@ local function render_winbar(buf)
 
     -- Droppable middle: provider/model and the applied fold view.
     if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model") })
-      add_item({ seg("Ⓕ" .. fold.level(), "Idle") })
+      add_item({ seg(provider .. "/" .. model, "Model"), seg(" Ⓕ" .. fold.level(), "Idle") })
     end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
@@ -459,11 +460,15 @@ local function define_winbar_hl()
       return hl[key]
     end
   end
-  local bg = attr("NormalFloat", "bg") or attr("Visual", "bg")
+  local bg = attr("NormalFloat", "bg") or attr("Visual", "bg") or attr("Normal", "bg")
+  local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  vim.api.nvim_set_hl(0, "YapIsland", { default = true, fg = fg, bg = bg })
-  vim.api.nvim_set_hl(0, "YapIslandBusy", { default = true, fg = attr("YapBusy", "fg"), bg = bg })
-  vim.api.nvim_set_hl(0, "YapIslandNeeds", { default = true, fg = attr("YapNeeds", "fg"), bg = bg })
+  -- Recompute theme-owned surfaces on ColorScheme: caps use the bar's
+  -- background, while padding and both counts share one opaque pill.
+  vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
+  vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
 end
 
 define_winbar_hl()

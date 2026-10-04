@@ -45,7 +45,7 @@ wb = winbar_at(12)
 assert(not wb:match("1.5k") and not wb:match("1.1k"), "tiny winbar kept tokens: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "tiny winbar missing prices: " .. wb)
 -- Check Neovim's rendered columns, not just highlight markup. Every
--- combination uses the same inset and vertical component boundaries.
+-- combination uses the same inset, pill padding and section spacing.
 local state = require("harness.state")
 local target = vim.api.nvim_create_buf(false, true)
 local other = vim.api.nvim_create_buf(false, true)
@@ -70,18 +70,30 @@ for mask = 0, 15 do
   local expected = {}
   if state.running[target] then expected[#expected + 1] = "※" end
   if state.running[other] and state.awaiting[waiting] then
-    expected[#expected + 1] = "▶1 │ ◉1"
+    expected[#expected + 1] = " ▶1  ◉1 "
   elseif state.running[other] then
-    expected[#expected + 1] = "▶1"
+    expected[#expected + 1] = " ▶1 "
   elseif state.awaiting[waiting] then
-    expected[#expected + 1] = "◉1"
+    expected[#expected + 1] = " ◉1 "
   end
   if titled then expected[#expected + 1] = "Session title" end
-  expected[#expected + 1] = "mock/m1"
-  expected[#expected + 1] = view
+  expected[#expected + 1] = "mock/m1 " .. view
   local actual = rendered_left()
-  assert(actual == " " .. table.concat(expected, " │ ") .. " ",
+  assert(actual == " " .. table.concat(expected, "  ") .. " ",
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
+end
+-- Theme changes must keep the entire pill on one background, with caps
+-- transitioning to the winbar rather than inheriting the count background.
+for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
+  vim.api.nvim_set_hl(0, "NormalFloat", { bg = colors[1] })
+  vim.api.nvim_set_hl(0, "WinBar", { bg = colors[2] })
+  vim.api.nvim_exec_autocmds("ColorScheme", {})
+  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds" }) do
+    assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
+      group .. " has a mismatched pill background")
+  end
+  local cap = vim.api.nvim_get_hl(0, { name = "YapIslandCap", link = false })
+  assert(cap.fg == colors[1] and cap.bg == colors[2], "rounded caps have square backgrounds")
 end
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 -- Dropping the model must also drop its separator, leaving no orphan divider.
