@@ -126,6 +126,14 @@ the current buffer unless otherwise noted.
                         configuration needed. The query result is cached
                         for the session; |:YapReload| refreshes it.
 
+                                                            *:YapFork*
+:YapFork [name]       Fork the current conversation into a new session in
+                        the same project's session directory, independent
+                        of |:pwd|. The fork becomes the active buffer; the
+                        original session file is left unchanged. Without a
+                        name, Yap generates one; otherwise `name.md` is used
+                        (or `.md` is appended).
+
                                                             *:YapSessions*
 :YapSessions [all]    Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project.
@@ -849,7 +857,9 @@ File operations are the session operations (pi equivalents, but manual):
                         (not copy it) to the new name; the scratch queue is
                         similarly moved when next toggled. Thus the original
                         file remains resumable, but its audit history/queue
-                        may no longer accompany it.
+                        may no longer accompany it. Prefer |:YapFork| to
+                        create a fork under Yap's session directory regardless
+                        of |:pwd|.
   delete a block + send Branch the conversation within the active session.
 
 AUDIT LOG                                                        *yap-audit*

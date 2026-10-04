@@ -112,6 +112,7 @@ notify. For command details and keymaps, see `:help yap-commands`.
 | `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill into the system prompt.            |
 | `:YapInsertHere [name]`            | `<leader>T` | Insert template/skill text at the cursor.                             |
 | `:YapSessions [all]`               |             | Resume a saved session in this project, or all projects.              |
+| `:YapFork [name]`                  |             | Fork the conversation into its project session directory.             |
 | `:YapInstances`                    | `<leader>r` | Pick any open chat; sessions needing attention come first.            |
 | `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply.                                      |
 | `:YapReload`                       |             | Reload Lua modules (development only).                                |

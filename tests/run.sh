@@ -101,7 +101,7 @@ for t in yap_fold_test yap_detailfold_test yap_fold_peek_test yap_fold_za_test y
          yap_streamfold_test yap_marker_test yap_model_test yap_map_test yap_keymap_test yap_clear_test \
          yap_live_open_test yap_uidiff_test yap_fencefold_test yap_fence_conformance_test yap_lsp_test \
          yap_template_test yap_frontmatter_test yap_adopt_test yap_textobj_test \
-         yap_nav_test yap_scratch_test yap_session_preview_test yap_winbar_resize_test yap_winbar_ctx_test yap_bd_test yap_open_test yap_help_test; do
+         yap_nav_test yap_scratch_test yap_session_preview_test yap_winbar_resize_test yap_winbar_ctx_test yap_bd_test yap_open_test yap_help_test yap_fork_test; do
   run "$t" 18132
 done
 

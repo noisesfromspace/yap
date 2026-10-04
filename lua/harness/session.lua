@@ -95,6 +95,30 @@ function M.save(buf)
   end
 end
 
+--- Fork the current session into its project's session directory.
+--- An optional name is a basename; `.md` is added when omitted.
+function M.fork(buf, name)
+  local dir = paths.session_dir(vim.b[buf].yap_project_cwd or vim.fn.getcwd())
+  local path
+  if name and name ~= "" then
+    if name:find("[/\\\\]") then
+      return nil, "fork name must not contain a path"
+    end
+    if not name:match("%.md$") then
+      name = name .. ".md"
+    end
+    path = dir .. "/" .. name
+    if vim.fn.filereadable(path) == 1 then
+      return nil, "session already exists: " .. path
+    end
+  else
+    path = paths.new_session_path(dir)
+  end
+  vim.api.nvim_buf_set_name(buf, path)
+  M.save(buf)
+  return path
+end
+
 local function trim_block(acc)
   while #acc > 0 and acc[1]:match("^%s*$") do
     table.remove(acc, 1)
