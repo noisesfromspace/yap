@@ -79,6 +79,7 @@ M.config = {
     insert_here = "<leader>T",
     sessions = "<leader>r",
     waiting = "<leader>w",
+    help = "g?",
 
     next_message = "]m",
     prev_message = "[m",
@@ -1635,6 +1636,77 @@ end
 -- ─── Buffers ───────────────────────────────────────────────────────────────
 
 -- Keymaps and buffer options shared by new and reopened session buffers.
+function M.show_keymaps(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local entries, seen = {}, {}
+  local modes = { "n", "i", "x", "o" }
+  local function collect(maps, mode)
+    for _, map in ipairs(maps) do
+      if map.desc and map.desc:match("^yap:") then
+        local key = mode .. "\0" .. map.lhs .. "\0" .. map.desc
+        if not seen[key] then
+          seen[key] = true
+          entries[#entries + 1] = {
+            lhs = map.lhs,
+            mode = mode,
+            desc = map.desc:sub(6),
+          }
+        end
+      end
+    end
+  end
+  for _, mode in ipairs(modes) do
+    collect(vim.api.nvim_buf_get_keymap(buf, mode), mode)
+    collect(vim.api.nvim_get_keymap(mode), mode)
+  end
+  table.sort(entries, function(a, b)
+    if a.lhs == b.lhs then
+      return a.mode < b.mode
+    end
+    return a.lhs < b.lhs
+  end)
+
+  local lines = {
+    "Yap shortcuts (current buffer)",
+    "Search with /, n and N; close with q or <Esc>.",
+    "",
+  }
+  for _, entry in ipairs(entries) do
+    lines[#lines + 1] = string.format("%-18s %-2s %s", entry.lhs, entry.mode, entry.desc)
+  end
+
+  local panel = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(panel, 0, -1, false, lines)
+  vim.bo[panel].modifiable = false
+  vim.bo[panel].bufhidden = "wipe"
+  local widest = 0
+  for _, line in ipairs(lines) do
+    widest = math.max(widest, vim.fn.strdisplaywidth(line))
+  end
+  local width = math.max(1, math.min(vim.o.columns - 4, math.max(40, math.min(90, widest))))
+  local height = math.max(1, math.min(#lines, vim.o.lines - 4))
+  local win = vim.api.nvim_open_win(panel, true, {
+    relative = "editor",
+    row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+    col = math.max(0, math.floor((vim.o.columns - width) / 2)),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " Yap shortcuts ",
+    title_pos = "center",
+  })
+  vim.wo[win].wrap = false
+  vim.wo[win].cursorline = true
+  vim.keymap.set("n", "q", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = panel, silent = true, desc = "Close Yap shortcuts" })
+  vim.keymap.set("n", "<Esc>", function()
+    vim.api.nvim_win_close(win, true)
+  end, { buffer = panel, silent = true, desc = "Close Yap shortcuts" })
+  return panel, win
+end
+
 local function setup_buffer(buf)
   -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
@@ -1719,6 +1791,9 @@ local function setup_buffer(buf)
   map("n", keys.insert_here, function()
     M.insert(nil, { at_cursor = true })
   end, "yap: insert template or skill at cursor")
+  map("n", keys.help, function()
+    M.show_keymaps(buf)
+  end, "yap: show shortcuts")
   require("harness.fold").setup_buffer(buf, keys)
   require("harness.textobj").setup_buffer(buf, keys)
 

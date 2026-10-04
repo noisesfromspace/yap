@@ -180,6 +180,8 @@ are shown below.
                         |:YapInstances|).
   <leader>w             List just the sessions awaiting a reply (see
                         |:YapWaiting|).
+  g?                    Show the current Yap shortcuts in a searchable
+                        floating window; use Neovim's `/`, `n` and `N`.
   <Tab>                 Toggle one fold: open it persistently, or
                         close it again.
   ]m  [m                Next / previous message heading.
@@ -280,7 +282,7 @@ gutter on every redraw.
 `keymaps` maps each action to its key sequence, so any of |yap-keymaps|
 can be rebound from `setup()`. The table keys are: `send`, `stop`,
 `change_model`, `live`, `scratch`, `insert`, `insert_here`, `sessions` (global),
-`waiting` (global), `next_message`/`prev_message`, `next_user`/`prev_user`,
+`waiting` (global), `help`, `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
 `toggle_fold`, `inner_message`, `around_message`, `inner_block`,
