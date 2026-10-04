@@ -34,12 +34,9 @@ local function heading(role, n)
   end
 end
 local user1, asst1 = heading("user", 1), heading("assistant", 1)
--- user setup: close a fold that defaults to open, type a prompt
-vim.cmd(user1 .. "foldclose")
-assert(vim.fn.foldclosed(user1) == user1, "precondition: user fold not closed")
--- role-dependent levels nest the assistant under its user prompt, so
--- closing the user fold reports the assistant as inside it
-assert(vim.fn.foldclosed(asst1) == user1, "assistant not nested in the closed user fold")
+-- user setup: open an assistant fold that defaults to folded, type a prompt
+vim.cmd(asst1 .. "foldopen")
+assert(vim.fn.foldclosed(asst1) == -1, "precondition: assistant fold not opened")
 local last_user = heading("user", 2)
 vim.api.nvim_buf_set_lines(buf, last_user, last_user + 1, false, { "follow up question" })
 local n_before = vim.api.nvim_buf_line_count(buf)
@@ -51,11 +48,10 @@ local ok = vim.wait(8000, function()
 end, 100)
 assert(ok, "turn did not complete cleanly")
 vim.wait(300)
--- 1. a send preserves manual fold state: the user's close of user1 is kept
--- (a send no longer snaps folds back to the view); the new assistant
--- stays folded while the old one stays nested under its closed user.
-assert(vim.fn.foldclosed(user1) == user1, "send discarded the user's close: " .. vim.fn.foldclosed(user1))
-assert(vim.fn.foldclosed(asst1) == user1, "assistant not nested in the closed user fold")
+-- 1. a send preserves manual fold state: the user's open of asst1 is kept
+-- (a send no longer snaps folds back to the view); the new assistant stays
+-- folded in view 1.
+assert(vim.fn.foldclosed(asst1) == -1, "send discarded the user's open: " .. vim.fn.foldclosed(asst1))
 local live = heading("assistant", 2) -- the reply that just streamed in
 assert(vim.fn.foldclosed(live) == live, "new assistant not folded in view 1")
 -- 2. every pre-send line is byte-identical (sends only append)
