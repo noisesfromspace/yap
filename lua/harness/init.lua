@@ -1209,42 +1209,47 @@ end
 local description_seq = {}
 
 -- Routine commit/close requests should not become the session's title when
--- an earlier user request explains what the work was actually about.
+-- an earlier user request explains what the work was actually about. Tool
+-- calls and results are assistant transcript text, not user intent, so never
+-- send them to the title model.
 local function title_messages(messages)
-  local latest, earlier_user
+  local user_indices = {}
   for i, message in ipairs(messages) do
     if message.role == "user" then
-      earlier_user, latest = latest or earlier_user, i
+      user_indices[#user_indices + 1] = i
     end
   end
-  if not latest or not earlier_user then
-    return messages, false, false
+  if #user_indices == 0 then
+    return {}, false, false
   end
 
+  local latest = user_indices[#user_indices]
+  local earlier_user = #user_indices > 1
   local text = messages[latest].content:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
   local lower = text:lower()
   local replacement
   local housekeeping_only = false
-  if lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$") then
+  if earlier_user and (lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$")) then
     replacement = nil
     housekeeping_only = true
-  else
+  elseif earlier_user then
     replacement = lower:match("^(.-)%s+commit and close[.!]?$")
-    if not replacement then
-      return messages, false, false
+    if replacement then
+      replacement = replacement:gsub("%s+$", "")
     end
-    replacement = replacement:gsub("%s+$", "")
   end
 
   local filtered = {}
-  for i, message in ipairs(messages) do
+  for _, i in ipairs(user_indices) do
     if i ~= latest then
-      filtered[#filtered + 1] = message
+      filtered[#filtered + 1] = messages[i]
     elseif replacement and replacement ~= "" then
-      filtered[#filtered + 1] = { role = message.role, content = replacement }
+      filtered[#filtered + 1] = { role = "user", content = replacement }
+    elseif not housekeeping_only then
+      filtered[#filtered + 1] = messages[i]
     end
   end
-  return filtered, true, housekeeping_only
+  return filtered, housekeeping_only or replacement ~= nil, housekeeping_only
 end
 
 local function current_description(buf)
@@ -1300,7 +1305,7 @@ Rules:
 - No "session", "conversation", "the user", "about"
 - Prefer "Subject: change" so titles stay distinct across sessions in the same project
 - Lead with the goal; only add the latest topic if the goal moved
-- Routine commit/close instructions are housekeeping, not the session goal; when mixed with a real request, title the real work
+- Never title from code, logs, or command output; do not use Markdown fences
 - Example: "Fold lag: cache per changedtick"
 
 Return only the title.]]
@@ -1336,7 +1341,7 @@ Return only the title.]]
         :gsub("%s+", " ")
         :gsub("^%s+", "")
         :gsub("%s+$", "")
-      if description == "" then
+      if description == "" or description:find("`", 1, true) then
         return
       end
       -- The prompts ask for a 2-6 word phrase, but a verbose model can

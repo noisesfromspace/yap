@@ -50,11 +50,12 @@ for l in read_log():gmatch("[^\n]+") do
   end
 end
 
--- The answer title sees the task and assistant work, but not the routine footer.
+-- The answer title sees the task requests, but excludes assistant transcript/tool output.
 assert(full and full:match("Fix the session picker label"), "answer request missing substantive task: " .. tostring(full))
-assert(full:match("described%.") and full:match("Implemented the picker label fix"), "answer request missing session work: " .. full)
+assert(not full:match("described%.") and not full:match("Implemented the picker label fix"),
+  "assistant content leaked into title input: " .. full)
 assert(not full:match("Commit changes from this session"), "routine commit footer leaked into title input: " .. full)
-assert(full:match("Routine commit/close instructions are housekeeping"), "answer title prompt lacks housekeeping guidance: " .. full)
+assert(full:match("Never title from code, logs, or command output"), "answer title prompt lacks output guidance: " .. full)
 
 -- The requests are logged before their replies complete. Wait for the
 -- asynchronous description callback to update the frontmatter.
@@ -121,5 +122,47 @@ for l in read_log():gmatch("[^\n]+") do
 end
 assert(tiny and tiny:match("Add a searchable session filter"), "tiny request missing new user request: " .. tostring(tiny))
 assert(not tiny:match("described%.") and not tiny:match("Fix the session picker label"), "tiny request included previous conversation: " .. tiny)
+
+-- A title request never sees assistant tool output, and a fenced model reply
+-- is rejected rather than persisted as the session description.
+local fence_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(fence_buf, -1, -1, false, {
+  "Fence regression trigger: improve the session title",
+  "# @assistant",
+  "Tool call: git",
+  "Arguments: {\"command\":\"status\"}",
+  "Tool result:",
+  "```",
+  "## main...rad/main [ahead 3]",
+  "M lua/harness/init.lua",
+  "```",
+  "# @user",
+  "Continue the title fix",
+})
+yap.send(fence_buf)
+ok = vim.wait(10000, function()
+  local text = table.concat(vim.api.nvim_buf_get_lines(fence_buf, 0, -1, false), "\n")
+  return text:find("described%.") ~= nil
+end, 100)
+assert(ok, "fence-regression turn did not complete")
+ok = vim.wait(10000, function()
+  for line in read_log():gmatch("[^\n]+") do
+    if line:match("centered on the overall goal") and line:match("Fence regression trigger") then
+      return true
+    end
+  end
+  return false
+end, 100)
+assert(ok, "fence-regression title request was not logged")
+local fence_request
+for line in read_log():gmatch("[^\n]+") do
+  if line:match("centered on the overall goal") and line:match("Fence regression trigger") then
+    fence_request = line
+  end
+end
+assert(fence_request and not fence_request:match("git status") and not fence_request:match("ahead 3"),
+  "assistant tool output leaked into title context: " .. tostring(fence_request))
+local fence_lines = vim.api.nvim_buf_get_lines(fence_buf, 0, 8, false)
+assert(not table.concat(fence_lines, "\n"):match("description:.*```"), "fenced title was persisted")
 
 print("OK describe")
