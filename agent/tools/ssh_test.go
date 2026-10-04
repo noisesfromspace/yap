@@ -3,19 +3,25 @@ package tools
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"boers.email/yap/agent/utils"
 )
 
 // The fake executable models OpenSSH's foreground master and mux commands;
 // these tests check ownership, reuse, options, and shutdown without hardware.
 func TestSSHControlMasterLifecycle(t *testing.T) {
 	dir := t.TempDir()
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	script := filepath.Join(dir, "ssh")
 	log := filepath.Join(dir, "calls")
-	source := `#!/bin/sh
-printf '%s\n' "$*" >> "$SSH_TEST_LOG"
+	source := `printf '%s\n' "$*" >> "$SSH_TEST_LOG"
 case " $* " in
  *" -O check "*) test -e "$SSH_TEST_SOCKET" ;;
  *" -O exit "*) rm -f "$SSH_TEST_SOCKET"; exit 0 ;;
@@ -23,7 +29,7 @@ case " $* " in
  *) echo remote-output ;;
 esac
 `
-	if err := os.WriteFile(script, []byte(source), 0700); err != nil {
+	if err := os.WriteFile(script, []byte("#!"+shell+"\n"+source), 0700); err != nil {
 		t.Fatal(err)
 	}
 	known := filepath.Join(dir, "known")
@@ -33,19 +39,34 @@ esac
 	prev, prevBinary := systemKnownHosts, sshBinary
 	systemKnownHosts, sshBinary = known, script
 	t.Cleanup(func() { CloseSSH(); systemKnownHosts, sshBinary = prev, prevBinary })
+	approvalIDs := make(chan string, 10)
+	oldWriter := utils.SetEventWriter(approvalIDWriter{ids: approvalIDs})
+	oldReplies := utils.ApprovalReplies
+	replies := make(chan utils.ApprovalReply)
+	utils.ApprovalReplies = replies
+	go func() {
+		for id := range approvalIDs {
+			replies <- utils.ApprovalReply{ID: id, Approved: true}
+		}
+	}()
+	t.Cleanup(func() {
+		utils.SetEventWriter(oldWriter)
+		close(approvalIDs)
+		utils.ApprovalReplies = oldReplies
+	})
 	t.Setenv("SSH_TEST_LOG", log)
 	// The fake uses the same socket name that startMaster computes.
 	a := &sshArgs{Host: "example.test", User: "tester", Command: "first", Timeout: 3}
 	// ssh-keygen -F requires a valid entry; use a dedicated fake for lookup.
 	keygen := filepath.Join(dir, "ssh-keygen")
-	if err := os.WriteFile(keygen, []byte("#!/bin/sh\ntest \"$2\" = example.test\n"), 0700); err != nil {
+	if err := os.WriteFile(keygen, []byte("#!"+shell+"\ntest \"$2\" = example.test\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	// For the fake master, precompute the socket from its arguments instead
 	// using a helper script that extracts the -S option.
 	source = strings.ReplaceAll(source, `"$SSH_TEST_SOCKET"`, `"$(printf '%s\n' "$*" | sed -n 's/.* -S \([^ ]*\).*/\1/p')"`)
-	if err := os.WriteFile(script, []byte(source), 0700); err != nil {
+	if err := os.WriteFile(script, []byte("#!"+shell+"\n"+source), 0700); err != nil {
 		t.Fatal(err)
 	}
 	for _, cmd := range []string{"first", "second"} {

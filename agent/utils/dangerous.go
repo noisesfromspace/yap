@@ -49,11 +49,13 @@ var dangerousShellPatterns = []*regexp.Regexp{
 }
 
 var dangerousPythonPatterns = []*regexp.Regexp{
-	// Arbitrary shell / code execution.
-	regexp.MustCompile(`\b(?:subprocess|Popen|os\.system|os\.popen|os\.exec)\b`),
+	// Actual shell / code execution calls; merely importing subprocess or
+	// naming an API should not interrupt ordinary scripts with an approval.
+	regexp.MustCompile(`\bsubprocess\s*\.\s*(?:run|Popen|call|check_call|check_output|getoutput|getstatusoutput)\s*\(`),
+	regexp.MustCompile(`\b(?:os\s*\.\s*(?:system|popen|exec\w*)|Popen)\s*\(`),
 	regexp.MustCompile(`\b(?:__import__|eval|exec)\s*\(`),
 	// Irreversible recursive deletion.
-	regexp.MustCompile(`\bshutil\.rmtree\b`),
+	regexp.MustCompile(`\bshutil\s*\.\s*rmtree\s*\(`),
 }
 
 // IsDangerousCommand reports whether a shell command matches the high-risk

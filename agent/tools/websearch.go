@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"boers.email/yap/agent/utils"
 )
 
 // Exa websearch tool — a port of pi's Exa search extension
@@ -43,6 +45,7 @@ type websearchArgs struct {
 	IncludeDomains []string `json:"includeDomains,omitempty" jsonschema:"description=restrict results to these domains"`
 	ExcludeDomains []string `json:"excludeDomains,omitempty" jsonschema:"description=exclude results from these domains"`
 	MaxAgeHours    *int     `json:"maxAgeHours,omitempty" jsonschema:"description=max age of cached content in hours (0=livecrawl; -1=cache only)"`
+	Safety         bool     `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on results before returning them; flagged content is annotated with a warning (costs one extra decision-model call, so use for untrusted content)"`
 }
 
 func init() {
@@ -175,5 +178,5 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 			}
 		}
 	}
-	return b.String(), "", nil
+	return utils.SafetyGuarded(decisionModel, a.Safety, b.String()), "", nil
 }

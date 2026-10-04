@@ -48,7 +48,7 @@ type sshMaster struct {
 }
 
 func init() {
-	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Only hosts in /etc/ssh/ssh_known_hosts are trusted. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
+	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Each command requires user approval. Only hosts in /etc/ssh/ssh_known_hosts are trusted. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
 		result, err := runSSH(a)
 		return result, "", err
 	})
@@ -100,31 +100,32 @@ func runSSH(a *sshArgs) (string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", fmt.Errorf("empty command")
 	}
-	if utils.IsDangerousCommand(a.Command) {
-		ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command))
-		if err != nil {
-			return "", fmt.Errorf("SSH command requires approval: %w", err)
-		}
-		if !ok {
-			return "", fmt.Errorf("SSH command rejected by user")
-		}
-	}
 	timeout := 120 * time.Second
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	checkCtx, checkCancel := context.WithTimeout(context.Background(), timeout)
 	// -F /dev/null makes OpenSSH check only the requested name. A known IP
 	// or an entry in the user's known_hosts cannot authorize a different name.
 	host := a.Host
 	if port != 22 {
 		host = fmt.Sprintf("[%s]:%d", host, port)
 	}
-	check := exec.CommandContext(ctx, "ssh-keygen", "-F", host, "-f", systemKnownHosts)
-	if err := check.Run(); err != nil {
-		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, err)
+	check := exec.CommandContext(checkCtx, "ssh-keygen", "-F", host, "-f", systemKnownHosts)
+	checkErr := check.Run()
+	checkCancel()
+	if checkErr != nil {
+		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, checkErr)
 	}
+	ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command))
+	if err != nil {
+		return "", fmt.Errorf("SSH command requires approval: %w", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("SSH command rejected by user")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	m := sshMasters.clients[key]
 	if m != nil && !masterAlive(ctx, m, a, name, port) {
 		stopMaster(m)
@@ -147,7 +148,7 @@ func runSSH(a *sshArgs) (string, error) {
 	cmd := exec.CommandContext(ctx, sshBinary, args...)
 	var output headBuffer
 	cmd.Stdout, cmd.Stderr = &output, &output
-	err := cmd.Run()
+	err = cmd.Run()
 	if ctx.Err() != nil {
 		stopMaster(m)
 		delete(sshMasters.clients, key)

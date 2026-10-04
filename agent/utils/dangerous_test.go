@@ -65,15 +65,15 @@ func TestIsDangerousCommand(t *testing.T) {
 
 func TestIsDangerousPython(t *testing.T) {
 	dangerous := []string{
-		"import subprocess",
 		"subprocess.run(['bash', '-c', x])",
+		"from subprocess import Popen; Popen(['bash', '-c', x])",
 		"os.system('rm -rf /')",
 		"os.popen('whoami')",
+		"os.execv('/bin/sh', args)",
 		"eval(user_input)",
 		"exec(code)",
 		"__import__('os')",
 		"shutil.rmtree('/home')",
-		"from subprocess import Popen",
 	}
 	for _, s := range dangerous {
 		if !IsDangerousPython(s) {
@@ -82,6 +82,8 @@ func TestIsDangerousPython(t *testing.T) {
 	}
 
 	benign := []string{
+		"import subprocess",
+		"from subprocess import Popen",
 		"print('hello')",
 		"import sys; sys.exit(3)",
 		"import json; json.loads(s)",

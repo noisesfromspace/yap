@@ -31,7 +31,8 @@ func init() {
 			"output is saved to a temp file. Non-interactive: stdin is /dev/null. Runs in its own "+
 			"process group, killed on timeout (default 120s). Use for multi-step computation, data "+
 			"transforms, and loops over many values; prefer a direct tool call for a single simple "+
-			"action.",
+			"action. Scripts that use shell execution, dynamic code execution, or recursive deletion "+
+			"require user confirmation.",
 		func(a *pythonArgs) (string, string, error) { return runPython(a) })
 }
 

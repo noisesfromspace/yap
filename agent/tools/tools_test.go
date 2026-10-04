@@ -22,6 +22,22 @@ func run(t *testing.T, tool, args string) (string, string, error) {
 	return tl.Run(json.RawMessage(args))
 }
 
+// approvalIDWriter replies to the ID actually emitted by RequestApproval,
+// avoiding assumptions about process-global approval sequence state.
+type approvalIDWriter struct{ ids chan string }
+
+func (w approvalIDWriter) Write(p []byte) (int, error) {
+	line, _ := strings.CutPrefix(string(p), "yap:event ")
+	var ev struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+	}
+	if json.Unmarshal([]byte(line), &ev) == nil && ev.Type == "approval_request" {
+		w.ids <- ev.ID
+	}
+	return len(p), nil
+}
+
 func TestBash(t *testing.T) {
 	// basic + exit code reported as text, not a tool error
 	r, _, err := run(t, "bash", `{"command":"echo hello; exit 3"}`)
@@ -114,19 +130,30 @@ func TestBashApprovalGate(t *testing.T) {
 	}
 
 	old := utils.ApprovalReplies
-	utils.ApprovalReplies = make(chan utils.ApprovalReply, 1)
-	defer func() { utils.ApprovalReplies = old }()
+	approvalIDs := make(chan string, 2)
+	oldWriter := utils.SetEventWriter(approvalIDWriter{ids: approvalIDs})
+	replies := make(chan utils.ApprovalReply)
+	utils.ApprovalReplies = replies
+	go func() {
+		for _, approved := range []bool{false, true} {
+			id := <-approvalIDs
+			replies <- utils.ApprovalReply{ID: id, Approved: approved}
+		}
+	}()
+	defer func() {
+		utils.SetEventWriter(oldWriter)
+		close(approvalIDs)
+		utils.ApprovalReplies = old
+	}()
 
 	target := filepath.Join(t.TempDir(), "nothing-here")
 
 	// Denied: the command never runs.
-	go func() { utils.ApprovalReplies <- utils.ApprovalReply{ID: "approval-1", Approved: false} }()
 	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("denied command: %v", err)
 	}
 
 	// Approved: the command runs.
-	go func() { utils.ApprovalReplies <- utils.ApprovalReply{ID: "approval-2", Approved: true} }()
 	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err != nil {
 		t.Fatalf("approved command: %v", err)
 	}

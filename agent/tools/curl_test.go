@@ -131,6 +131,14 @@ func TestCurlFlagDeny(t *testing.T) {
 
 	for _, flag := range []string{
 		"--unix-socket /var/run/docker.sock",
+		"--location",
+		"--location-trusted",
+		"-L",
+		"-Lk",
+		"--url http://169.254.169.254/",
+		"--next",
+		"--proxy http://127.0.0.1:8080",
+		"-x http://127.0.0.1:8080",
 		"--abstract-unix-socket yap",
 		"--config /tmp/c",
 		"-K /tmp/c",

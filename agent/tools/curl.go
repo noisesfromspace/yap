@@ -64,8 +64,10 @@ var (
 		"--unix-socket", "--abstract-unix-socket", "--config", "--output",
 		"--output-dir", "--remote-name", "--remote-name-all", "--dump-header",
 		"--trace", "--trace-ascii", "--resolve", "--connect-to", "--interface",
+		"--location", "--location-trusted", "--url", "--next", "--proxy", "--preproxy",
+		"--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--proto-redir",
 	}
-	curlDenyShort = []string{"-K", "-o", "-O", "-D"}
+	curlDenyShort = []string{"-K", "-o", "-O", "-D", "-L", "-x"}
 )
 
 func rejectCurlFlags(flags string) error {

@@ -27,7 +27,7 @@ type bashArgs struct {
 
 func init() {
 	Register("bash",
-		"Execute a bash command. Runs immediately with no sandbox or confirmation. Returns combined stdout/stderr and the exit code "+
+		"Execute a bash command. Runs immediately with no sandbox; high-risk commands require user confirmation. Returns combined stdout/stderr and the exit code "+
 			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
 			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
