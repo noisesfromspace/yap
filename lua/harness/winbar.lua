@@ -181,47 +181,53 @@ local function render_winbar(buf)
     return n
   end
 
-  -- Mandatory left cluster (never dropped; the description shrinks).
+  -- Mandatory left cluster (never dropped; the description shrinks). Build
+  -- logical items first, then put exactly one column between every item.
+  -- This avoids component-specific leading/trailing spaces drifting apart.
   local function left_segments(desc_max)
-    local left = {}
+    local left, has_item = {}, false
+    local function add_item(item)
+      -- The first space is the left inset; later spaces separate items.
+      left[#left + 1] = seg(" ", "Idle")
+      for _, s in ipairs(item) do
+        left[#left + 1] = s
+      end
+      has_item = true
+    end
+
     local spinner = running and running[buf]
     if spinner then
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
+      local text = frame[1]
       if l and os.time() - l.since >= 2 then
-        left[#left + 1] = seg(" " .. frame[1] .. " " .. l.name .. " " .. (os.time() - l.since) .. "s", frame[2])
-      else
-        left[#left + 1] = seg(" " .. frame[1], frame[2])
+        text = text .. " " .. l.name .. " " .. (os.time() - l.since) .. "s"
       end
+      add_item({ seg(text, frame[2]) })
     end
+
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
-    local has_rollup = running_others_n > 0 or others > 0
-    if has_rollup then
-      -- One column separates the rollup from the preceding item, or insets
-      -- it from the left edge when no local spinner is present.
-      left[#left + 1] = seg(" ", nil, true)
+    if running_others_n > 0 or others > 0 then
+      local rollup = {}
       if running_others_n > 0 then
-        left[#left + 1] = seg("▶" .. running_others_n, "Busy", true)
+        rollup[#rollup + 1] = seg("▶" .. running_others_n, "Busy", true)
       end
       if running_others_n > 0 and others > 0 then
-        left[#left + 1] = seg(" │ ", nil, true)
+        rollup[#rollup + 1] = seg(" │ ", nil, true)
       end
       if others > 0 then
-        left[#left + 1] = seg("◉" .. others, "Needs", true)
+        rollup[#rollup + 1] = seg("◉" .. others, "Needs", true)
       end
+      add_item(rollup)
     end
+
     local desc = winbar_description(buf, desc_max)
     if desc then
-      if spinner or has_rollup then
-        left[#left + 1] = seg(" ", nil, has_rollup)
-        left[#left + 1] = seg(desc, "Description")
-      else
-        left[#left + 1] = seg(" " .. desc, "Description")
-      end
-      left[#left + 1] = seg(" · ", "Idle")
-    elseif has_rollup then
-      left[#left + 1] = seg(" ", nil, true)
+      add_item({ seg(desc, "Description"), seg(" · ", "Idle") })
+    elseif has_item then
+      -- Keep the left cluster clear of the model when it has no title.
+      left[#left + 1] = seg(" ", "Idle")
     end
     return left
   end

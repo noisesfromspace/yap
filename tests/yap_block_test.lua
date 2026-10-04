@@ -21,18 +21,26 @@ end
 -- many OTHER sessions are running (the current buffer's own `▶` has no digit).
 local buf2 = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "Second" })
-assert(yap.winbar(buf2):match("▶1"), "running rollup missing on the other buffer: " .. yap.winbar(buf2))
-assert(yap.winbar(buf2):find("%#YapIsland# ", 1, true),
-  "rollup should have one column of left inset: " .. yap.winbar(buf2))
-assert(yap.winbar(buf2):find("%#YapIslandBusy#▶1%*%#YapIsland# %*%#YapModel#", 1, true),
-  "rollup should have one column of trailing spacing: " .. yap.winbar(buf2))
+local function left_text(buf)
+  local left = yap.winbar(buf):match("^(.-)%%=")
+  return left:gsub("%%#.-#", ""):gsub("%%%*", "")
+end
+local rollup_left = left_text(buf2)
+assert(rollup_left:match("^ ▶1 mock/m1 · Ⓕ%d+ $"), "rollup spacing is inconsistent: " .. rollup_left)
 local state = require("harness.state")
 state.running[buf2] = {}
-local with_both = yap.winbar(buf)
+local with_both = left_text(buf)
 state.running[buf2] = nil
-assert(with_both:find("%*%#YapIsland# %*%#YapIslandBusy#▶1", 1, true),
-  "local spinner and rollup should have one column between them: " .. with_both)
-assert(not yap.winbar(buf):match("▶%d"), "running rollup counts the current buffer: " .. yap.winbar(buf))
+assert(with_both:find(" ▶1 mock/m1", 1, true), "rollup missing after local spinner: " .. with_both)
+assert(not with_both:find("  ", 1, true), "left items should have exactly one column between them: " .. with_both)
+assert(not left_text(buf):find("▶%d"), "running rollup counts the current buffer: " .. left_text(buf))
+vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
+  "---", "provider: mock", "model: m1", "description: second session", "models:", "  - mock/m1", "---", "",
+})
+local titled_rollup = left_text(buf2)
+assert(titled_rollup:match("^ ▶1 second session · mock/m1"), "title gap differs from the rollup gap: " .. titled_rollup)
+assert(not titled_rollup:find("  ", 1, true), "titled left items should have one-column gaps: " .. titled_rollup)
+
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.
 yap.send()
