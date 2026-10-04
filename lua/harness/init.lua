@@ -1903,8 +1903,26 @@ local function adopt(buf, path)
   return buf
 end
 
+--- Focus an already-loaded buffer: jump to an existing window, otherwise
+--- show it in the current one (unlisted sessions have no other way back).
+local function focus_buf(buf)
+  local wins = vim.fn.win_findbuf(buf)
+  if wins[1] then
+    vim.api.nvim_set_current_win(wins[1])
+  else
+    vim.api.nvim_set_current_buf(buf)
+  end
+end
+
 --- Open a saved session file as a yap buffer.
 function M.open(path)
+  local buf = vim.fn.bufnr(vim.fn.fnamemodify(path, ":p"))
+  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].modified then
+    -- Reuse the in-memory buffer with its unsaved changes; `:edit` would
+    -- refuse to discard them (E37).
+    focus_buf(buf)
+    return adopt(buf, path)
+  end
   vim.cmd("edit " .. vim.fn.fnameescape(path))
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
@@ -1964,17 +1982,6 @@ function M.sessions(scope)
   require("harness.session").pick({ scope = scope }, function(path)
     M.open(path)
   end)
-end
-
---- Focus an already-loaded buffer: jump to an existing window, otherwise
---- show it in the current one (unlisted sessions have no other way back).
-local function focus_buf(buf)
-  local wins = vim.fn.win_findbuf(buf)
-  if wins[1] then
-    vim.api.nvim_set_current_win(wins[1])
-  else
-    vim.api.nvim_set_current_buf(buf)
-  end
 end
 
 --- Session label for the picker: description when present, filename as
