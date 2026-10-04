@@ -147,10 +147,10 @@ end
 -- ── fold-setup helpers ─────────────────────────────────────────────────────
 
 local function apply_folds(buf)
-  vim.wo.foldmethod = "expr"
-  vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
+  vim.wo.foldmethod = "manual"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
-  vim.wo.foldlevel = 99
+  vim.wo.foldlevel = 0
+  require("harness.fold").set_view_level(1) -- assistant output folded
 end
 
 local function clear_folds()
@@ -342,46 +342,56 @@ end
 hdr("A. fold engine (per-edit cost)")
 apply_folds(buf)
 
--- Cold build == the rebuild that fires after EVERY buffer edit (stream flush,
--- keystroke, etc.): changedtick bumps, the levels cache misses, full O(n) pass.
-add("fold.levels() rebuild (cold, per edit)", function()
+-- Cold build == the O(n) block-model parse that fires after EVERY buffer
+-- edit (stream flush, keystroke, etc.): changedtick bumps, cache misses.
+add("fold.parse() rebuild (cold, per edit)", function()
   api.nvim_buf_set_lines(buf, -1, -1, false, { "x" })
-  fold.levels(buf)
+  fold.parse(buf)
   api.nvim_buf_set_lines(buf, -2, -1, false, {})
-end, 10, "this runs on every stream flush / keystroke")
+end, 10, "this runs on every stream flush")
 
-add("fold.levels() cached (warm)", function()
-  fold.levels(buf)
+add("fold.parse() cached (warm)", function()
+  fold.parse(buf)
 end, 100)
 
-add("fold.expr() per line (foldexpr)", function()
-  for lnum = 1, 200 do
-    fold.expr(lnum)
-  end
-end, 50, "avg over 200 lines")
-
--- foldtext for each fold type
-local levels = fold.levels(buf)
+-- foldtext for each fold type, from the parsed block model
+local p = fold.parse(buf)
 local starts = { msg = nil, tool = nil, think = nil, big = nil }
-for lnum, lv in ipairs(levels) do
-  if lv:sub(1, 1) == ">" then
-    local first = vim.fn.getline(lnum)
-    if first:match("^<!%-%- yap:tool") and not starts.tool then
-      starts.tool = lnum
-    elseif first:match("^<!%-%-.*yap:thinking") and not starts.think then
-      starts.think = lnum
-    elseif first:match("^# @assistant") and not starts.msg then
-      starts.msg = lnum
-    end
-    if first:match('"id":"big"') then
-      starts.big = lnum
+for _, h in ipairs(p.headings) do
+  if h.role == "assistant" and not starts.msg then
+    starts.msg = h.line
+  end
+end
+for _, d in ipairs(p.details) do
+  if d.kind == "tool" and not starts.tool then
+    starts.tool = d.start
+  end
+  if d.kind == "thinking" and not starts.think then
+    starts.think = d.start
+  end
+  if vim.fn.getline(d.start):match('"id":"big"') and not starts.big then
+    starts.big = d.start
+  end
+end
+
+local function fold_end(lnum)
+  for _, d in ipairs(p.details) do
+    if d.start == lnum then
+      return d.finish or p.count
     end
   end
+  for i, h in ipairs(p.headings) do
+    if h.line == lnum then
+      local nxt = p.headings[i + 1]
+      return nxt and (nxt.line - 1) or p.count
+    end
+  end
+  return vim.api.nvim_buf_line_count(buf)
 end
 
 for name, lnum in pairs(starts) do
   if lnum then
-    local fend = vim.fn.foldclosedend(lnum)
+    local fend = fold_end(lnum)
     if fend > lnum then
       local n = name == "big" and 50 or 200
       add(string.format("fold.text() %s fold (%d lines)", name, fend - lnum + 1), function()
@@ -548,7 +558,7 @@ for _, size in ipairs(SIZES) do
   -- fold levels rebuild (per-edit)
   apply_folds(b2)
   local t2 = now()
-  fold.levels(b2)
+  fold.parse(b2)
   local build_ms = elapsed(t2)
 
   -- j-step with folds + touchup on (the real cursor-move cost)

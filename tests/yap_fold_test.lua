@@ -42,10 +42,10 @@ assert(vim.fn.foldclosed(14) == -1, "view 1 keeps last user open")
 assert(fold.level() == 1, "view 1 reports level 1")
 
 -- view 1 is deterministic: partial state gets overwritten
-vim.cmd("silent! 5foldclose") -- user closes a user fold
-assert(vim.fn.foldclosed(5) == 5, "precondition: user fold closed")
+vim.cmd("silent! 9foldopen") -- user opens an assistant fold
+assert(vim.fn.foldclosed(9) == -1, "precondition: assistant fold opened")
 fold.set_view_level(1)
-assert(vim.fn.foldclosed(5) == -1, "view 1 reopens user prompts")
+assert(vim.fn.foldclosed(9) == 9, "view 1 refolds the assistant")
 
 -- view 2: conversation open, but the system prompt stays folded
 fold.set_view_level(2)
