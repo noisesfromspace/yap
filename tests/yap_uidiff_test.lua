@@ -39,15 +39,17 @@ assert(asst, "no assistant message")
 assert(asst.content:match("Successfully wrote"), "result missing: " .. tostring(asst.content))
 assert(not asst.content:match("yap:ui") and not asst.content:match("%+a"), "ui leaked into result")
 
--- folds: the paired ui region is part of the one tool fold
+-- folds: the paired ui region is part of the one level-3 tool fold
 fold.setup_buffer(buf)
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
-local fc = vim.fn.foldclosed
-assert(fc(7) == 7, "opener not folded: " .. fc(7))
-assert(fc(9) == 7, "ui marker outside fold: " .. fc(9))
-assert(fc(10) == 7, "fence outside fold: " .. fc(10))
-assert(fc(16) == 7, "fence close outside fold: " .. fc(16))
-assert(fc(17) == 7, "/yap:ui outside fold: " .. fc(17))
-assert(fc(18) == 7, "/yap:tool outside fold: " .. fc(18))
-assert(fc(20) == -1, "answer should be unfolded: " .. fc(20))
+local function lvl(l)
+  return vim.fn.foldlevel(l)
+end
+assert(lvl(7) == 3, "opener level: " .. lvl(7))
+assert(lvl(9) == 3, "ui marker level: " .. lvl(9))
+assert(lvl(10) == 3, "fence level: " .. lvl(10))
+assert(lvl(16) == 3, "fence close level: " .. lvl(16))
+assert(lvl(17) == 3, "/yap:ui level: " .. lvl(17))
+assert(lvl(18) == 3, "/yap:tool level: " .. lvl(18))
+assert(lvl(20) == 2, "answer level: " .. lvl(20))
 print("OK uidiff")

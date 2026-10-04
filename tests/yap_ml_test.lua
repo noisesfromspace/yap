@@ -58,14 +58,16 @@ assert(asst.content:match("File written"), "answer after region lost: " .. asst.
 fold.setup_buffer(buf)
 local win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_buf(win, buf)
-local fc = vim.fn.foldclosed
-assert(fc(7) == 7, "opener not folded: " .. fc(7))
-assert(fc(10) == 7, "json interior outside fold: " .. fc(10))
-assert(fc(16) == 7, "--> closer outside fold: " .. fc(16))
-assert(fc(17) == 7, "result outside fold: " .. fc(17))
-assert(fc(18) == 7, "ui marker outside fold: " .. fc(18))
-assert(fc(23) == 7, "/yap:tool closer outside fold: " .. fc(23))
-assert(fc(25) == -1, "answer after region should be unfolded: " .. fc(25))
+local function lvl(l)
+  return vim.fn.foldlevel(l)
+end
+assert(lvl(7) == 3, "opener level: " .. lvl(7))
+assert(lvl(10) == 3, "json interior level: " .. lvl(10))
+assert(lvl(16) == 3, "--> closer level: " .. lvl(16))
+assert(lvl(17) == 3, "result level: " .. lvl(17))
+assert(lvl(18) == 3, "ui marker level: " .. lvl(18))
+assert(lvl(23) == 3, "/yap:tool closer level: " .. lvl(23))
+assert(lvl(25) == 2, "answer after region level: " .. lvl(25))
 
 -- view 2: assistant open, the whole tool region folded as one
 fold.set_view_level(2)

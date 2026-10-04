@@ -47,28 +47,27 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 })
 fold.setup_buffer(buf)
 
--- The whole tool region is ONE fold (header, result, ui, closer); a
--- thinking block is its own fold; message prose stays unfolded.
-local fc = vim.fn.foldclosed
+-- foldexpr: regions are level-3 folds inside the assistant block
 local opener = 11 -- <!-- yap:thinking
-assert(fc(opener) == opener, "thinking not folded: " .. fc(opener))
-assert(fc(12) == opener, "thinking content outside fold: " .. fc(12))
-assert(fc(14) == opener, "thinking closer outside fold: " .. fc(14))
-assert(fc(16) == -1, "answer text should stay unfolded: " .. fc(16))
+assert(vim.fn.foldlevel(opener) == 3, "thinking opener level: " .. vim.fn.foldlevel(opener))
+assert(vim.fn.foldlevel(12) == 3, "thinking content level: " .. vim.fn.foldlevel(12))
+assert(vim.fn.foldlevel(14) == 3, "thinking closer inside fold: " .. vim.fn.foldlevel(14))
+assert(vim.fn.foldlevel(16) == 2, "answer text stays level 2: " .. vim.fn.foldlevel(16))
+-- the WHOLE tool region is one fold: header, result and ui included
 local tool = 18
-assert(fc(tool) == tool, "tool not folded: " .. fc(tool))
-assert(fc(tool + 7) == tool, "blank inside region outside fold: " .. fc(tool + 7))
-assert(fc(tool + 8) == tool, "tool result outside fold: " .. fc(tool + 8))
+assert(vim.fn.foldlevel(tool) == 3, "tool opener level: " .. vim.fn.foldlevel(tool))
+assert(vim.fn.foldlevel(tool + 7) == 3, "blank inside region level: " .. vim.fn.foldlevel(tool + 7))
+assert(vim.fn.foldlevel(tool + 8) == 3, "tool result inside region fold: " .. vim.fn.foldlevel(tool + 8))
 local ui = 28
-assert(fc(ui) == tool, "ui opener outside region fold: " .. fc(ui))
-assert(fc(ui + 4) == tool, "/yap:tool closer outside fold: " .. fc(ui + 4))
-assert(fc(ui + 6) == -1, "text after region should be unfolded: " .. fc(ui + 6))
+assert(vim.fn.foldlevel(ui) == 3, "ui opener is region content: " .. vim.fn.foldlevel(ui))
+assert(vim.fn.foldlevel(ui + 4) == 3, "/yap:tool closer inside fold: " .. vim.fn.foldlevel(ui + 4))
+assert(vim.fn.foldlevel(ui + 6) == 2, "text after region stays level 2: " .. vim.fn.foldlevel(ui + 6))
 -- single-line header folds the same way
 local single = 36
-assert(fc(single) == single, "single-line tool not folded: " .. fc(single))
-assert(fc(single + 1) == single, "single-line result outside fold: " .. fc(single + 1))
-assert(fc(single + 2) == single, "single-line closer outside fold: " .. fc(single + 2))
-assert(fc(single + 3) == -1, "blank after region should be unfolded: " .. fc(single + 3))
+assert(vim.fn.foldlevel(single) == 3, "single-line header level: " .. vim.fn.foldlevel(single))
+assert(vim.fn.foldlevel(single + 1) == 3, "result after single-line header: " .. vim.fn.foldlevel(single + 1))
+assert(vim.fn.foldlevel(single + 2) == 3, "closer after single-line header: " .. vim.fn.foldlevel(single + 2))
+assert(vim.fn.foldlevel(single + 3) == 2, "blank after region level: " .. vim.fn.foldlevel(single + 3))
 
 -- default state (view 2): conversation open, display regions folded
 assert(vim.fn.foldclosed(1) == 1, "system block not folded by default")
@@ -113,7 +112,7 @@ assert(vim.fn.foldclosed(single) == single, "view 2 refolds single-line tool reg
 fold.set_view_level(1)
 assert(vim.fn.foldclosed(9) == 9, "view 1 folds last assistant")
 assert(vim.fn.foldclosed(5) == -1, "view 1 keeps user open")
-assert(vim.fn.foldclosed(opener) == 9, "thinking is inside the folded assistant block")
+assert(vim.fn.foldlevel(opener) == 3, "thinking stays level 3 under the folded block")
 
 -- fold state is STATIC between view keypresses: manually open a region
 -- with za, then type a new message — nothing may move

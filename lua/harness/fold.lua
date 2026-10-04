@@ -1,39 +1,31 @@
--- yap folding — flat manual folds over a structural block model.
---
--- The previous implementation used foldmethod=expr with a nested level
--- tree (user=1, assistant=2, tool/thinking/system=3). Nesting is what
--- breaks folding: Vim has no primitive that toggles ONE nested fold
--- (zo/zc/:foldclose act on "the innermost fold", so closing a level-3 tool
--- also closes its level-2 assistant), and an expr fold re-evaluates on
--- every edit, so a manual foldopen leaks into every fold that later
--- materializes at the same/lower level.
---
--- fruit.nvim and codecompanion.nvim solve this with MANUAL folds over
--- FLAT, non-overlapping ranges, rebuilt per view. Each of yap's three
--- views is a flat partition (nothing nests), so a fold is always exactly
--- one range and za/zo/:foldopen/:foldclose target it unambiguously:
---
---   view 1  system prompt + each whole assistant message folded
---   view 2  system prompt + each tool/thinking/error region folded
---   view 3  nothing folded
---
--- Manual folds are per-window and do not run a foldexpr on every edit, so
--- the per-keystroke/per-flush foldexpr re-evaluation cost disappears. The
--- block model is recomputed from the buffer on structural changes and the
--- fold set is reconciled incrementally: only folds whose range actually
--- moved (the streaming tail) are deleted/recreated.
+-- yap folding — ported from fruit.nvim's view.lua, adapted to yap's
+-- live markdown buffer: instead of re-rendering a JSONL session into a
+-- read-only view, folds sit directly on the `# @role` headings of the
+-- editable buffer. Streaming appends and edits recompute folds naturally.
 
 local M = {}
 
 local HEAD = "^# @(%a+)%s*$"
 
--- A tool region runs from `<!-- yap:tool` (single-line header, or a
--- multi-line header comment whose JSON ends at `-->`) to `<!-- /yap:tool`.
+-- Fold levels are role-dependent so the three views are pure 'foldlevel'
+-- (no manual foldclose: manual closes plus expr folds made Neovim
+-- re-evaluate every fold on each edit — the per-keystroke lag on large
+-- sessions):
+--   # @user        level 1
+--   # @assistant   level 2
+--   tool region    level 3 (one deeper than its message)
+--   thinking/error level 3 (same)
+--   # @system      level 3 (folded in views 1 and 2, open in view 3)
+-- Views use foldlevel 1/2/3: view 1 folds assistant output (including
+-- the newest reply), view 2 opens messages, view 3 opens all folds.
+-- Levels are kept monotonic (a tool is always exactly one deeper than
+-- its enclosing assistant) so Neovim's fold tree and za/zo work.
+-- regions and thinking/error are folds one level deeper than their
+-- enclosing message; single-line markers (`<!-- yap:usage … -->`) stay
+-- unfolded content.
 local TOOL_OPEN = "^<!%-%- yap:tool"
 local TOOL_CLOSE = "^<!%-%- /yap:tool"
--- Any other multi-line HTML comment (`<!-- yap:thinking`, `<!-- yap:error`,
--- legacy `<!-- yap:ui`) is a fold of its own and closes on a bare `-->`.
--- Single-line markers (`<!-- yap:usage … -->`) never match: they stay content.
+-- Multi-line comment opener (nothing but the word after `yap:`).
 local COMMENT_OPEN = "^<!%-%-.*yap:%a+%s*$"
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
@@ -51,6 +43,30 @@ M.views = {
 local function compact(s)
   return (s or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
 end
+
+-- ─── foldexpr / foldtext ───────────────────────────────────────────────────
+
+-- Fold levels are computed in ONE forward pass and cached per
+-- changedtick. foldexpr runs per displayed line, and the old
+-- implementation scanned UPWARD line by line for each call — O(region²)
+-- for a tall tool result (a 2000-line bash output made one fold
+-- recompute take ~450ms). A tiny state machine over the line types is
+-- O(n) total; the cache is rebuilt only when the buffer changes.
+--
+-- The state machine carries the numeric fold level plus the structural
+-- region. region is nil (pre-heading), "top" (message) or "tool" (inside
+-- a yap:tool region). cret is { region, lvl } — where a multi-line HTML
+-- comment returns after its `-->`: a thinking/error comment returns to
+-- "top", a legacy `<!-- yap:ui` subsection returns to "tool". A bare
+-- `-->` inside a tool region but OUTSIDE a comment closes the multi-line
+-- tool header; only `<!-- /yap:tool` ends a tool region.
+--
+-- fence is nil or { char, n } for an open fenced code block. Tool
+-- results are fenced, and their content is arbitrary (a bash `cat` of a
+-- yap session contains `# @user` lines): inside a fence EVERY line is
+-- literal — no heading, marker or `-->` interpretation — or the fold
+-- structure splits at fake headings inside the result.
+local cache = {} -- buf -> { tick, levels = { lnum -> levelstr } }
 
 -- fence_run: a fence opener/closer — <=3 spaces indent then a run of
 -- >=3 backticks or tildes. Returns (char, run, tail) or nil. Indent is
@@ -76,336 +92,83 @@ local function fence_run(line)
   return c, n, rest:sub(n + 1)
 end
 
--- ─── block model ───────────────────────────────────────────────────────────
-
--- One O(n) forward pass over the buffer produces the structural blocks the
--- three views fold. Fences and multi-line HTML comments are tracked so a
--- fake `# @user` inside a fenced tool result, or a `-->` inside a fence,
--- can't split the structure. This mirrors the old classify() state machine
--- but emits block ranges instead of per-line level strings.
---
---   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
---   details  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
---              finish is nil while a region is still open (streaming).
-local model_cache = {} -- buf -> { tick, parse }
-
-local function parse(buf)
-  local tick = vim.api.nvim_buf_get_changedtick(buf)
-  local cached = model_cache[buf]
-  if cached and cached.tick == tick then
-    return cached.parse
-  end
-
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local headings, details = {}, {}
-  local region, fence, comment = nil, nil, nil
-
-  for i, line in ipairs(lines) do
-    if fence then
-      local c, n, tail = fence_run(line)
-      if c == fence.char and n >= fence.n and tail:match("^%s*$") then
-        fence = nil
-      end
-    elseif comment then
-      -- Inside a multi-line HTML comment: raw text until a bare `-->`
-      -- (a ``` inside a comment is NOT a fence).
-      if line:match("^%-%->%s*$") then
-        if comment.detail then
-          comment.detail.finish = i
-        end
-        comment = nil
-      end
-    else
-      local c, n = fence_run(line)
-      if c then
-        fence = { char = c, n = n }
-      elseif line:match(HEAD) then
-        headings[#headings + 1] = { role = line:match(HEAD), line = i }
-        region = nil
-      elseif line:match(TOOL_OPEN) then
-        local d = { kind = "tool", start = i }
-        details[#details + 1] = d
-        region = "tool"
-      elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-        if region == "tool" then
-          -- A legacy yap:ui subsection inside a tool region is content of
-          -- the region fold, not a fold of its own.
-          comment = { kind = "tool_inner" }
-        else
-          local kind = line:match("yap:(%a+)") or "comment"
-          local d = { kind = kind, start = i }
-          details[#details + 1] = d
-          comment = { kind = kind, detail = d }
-        end
-      elseif line:match(TOOL_CLOSE) then
-        local d = details[#details]
-        if region == "tool" and d and d.kind == "tool" and not d.finish then
-          d.finish = i
-        end
-        region = nil
-      end
-      -- else: plain content line
+local function classify(line, region, fence, cret, lvl)
+  local cur = lvl and tostring(lvl) or "="
+  if fence then
+    -- Inside a fence: literal until a matching closer (same char, at
+    -- least as long, then only spaces).
+    local c, n, tail = fence_run(line)
+    if c == fence.char and n >= fence.n and tail:match("^%s*$") then
+      return cur, region, nil, cret, lvl
     end
+    return cur, region, fence, cret, lvl
   end
-
-  local p = { headings = headings, details = details, count = #lines }
-  model_cache[buf] = { tick = tick, parse = p }
-  return p
-end
-
--- ─── per-buffer state ──────────────────────────────────────────────────────
-
-local view = {} -- buf -> applied view level (1..3)
-local opened = {} -- buf -> { [fold_start] = true } — user-pinned folds
-local blocks = {} -- buf -> { {start, finish}, … } — last intended fold set
-local created = {} -- buf -> { [win] = { [fold_start] = finish } } — folds on screen
-
--- The flat, non-overlapping fold set for a view. finish for a block ends at
--- the next heading minus one, or at its closer, or at EOF while it streams.
-local function intended(buf, p)
-  local level = view[buf] or 2
-  local out = {}
-  if level == 1 then
-    -- system + each whole assistant message
-    for idx, h in ipairs(p.headings) do
-      if h.role == "system" or h.role == "assistant" then
-        local nxt = p.headings[idx + 1]
-        out[#out + 1] = { start = h.line, finish = nxt and (nxt.line - 1) or p.count }
-      end
+  if cret then
+    -- Inside a multi-line HTML comment: raw text until a bare `-->`
+    -- (a ``` inside a comment is NOT a fence). The closer is the fold's
+    -- last line; the state after it returns to the enclosing region.
+    if line:match("^%-%->%s*$") then
+      return cur, cret.region, nil, nil, cret.lvl
     end
-  elseif level == 2 then
-    -- system + each tool/thinking/error region
-    for idx, h in ipairs(p.headings) do
-      if h.role == "system" then
-        local nxt = p.headings[idx + 1]
-        out[#out + 1] = { start = h.line, finish = nxt and (nxt.line - 1) or p.count }
-        break
-      end
+    return cur, region, fence, cret, lvl
+  end
+  local c, n = fence_run(line)
+  if c then
+    return cur, region, { char = c, n = n }, cret, lvl
+  end
+  if line:match(HEAD) then
+    local role = line:match(HEAD)
+    local nlvl = role == "user" and 1 or (role == "assistant" and 2 or 3)
+    return ">" .. nlvl, "top", nil, cret, nlvl
+  elseif line:match(TOOL_OPEN) then
+    local nlvl = (lvl or 0) + 1
+    return ">" .. nlvl, "tool", nil, cret, nlvl -- both header forms start the region fold
+  elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
+    -- A comment opener inside a tool region (legacy yap:ui) is content
+    -- of the region fold, not a fold of its own.
+    if region == "tool" then
+      return cur, "tool", nil, { region = "tool", lvl = lvl }, lvl
     end
-    for _, d in ipairs(p.details) do
-      out[#out + 1] = { start = d.start, finish = d.finish or p.count }
-    end
-  end
-  return out
-end
-
-local function same_blocks(a, b)
-  if a == b then
-    return true
-  end
-  if not a or not b or #a ~= #b then
-    return false
-  end
-  for i = 1, #a do
-    if a[i].start ~= b[i].start or a[i].finish ~= b[i].finish then
-      return false
-    end
-  end
-  return true
-end
-
-local function block_at(buf, lnum)
-  local list = intended(buf, parse(buf))
-  for _, b in ipairs(list) do
-    if b.finish > b.start and lnum >= b.start and lnum <= b.finish then
-      return b
-    end
-  end
-  return nil
-end
-
--- ─── low-level fold ops (act on the current window) ────────────────────────
-
--- Manual folds are per-window, so every op below runs inside
--- nvim_win_call for the window being reconciled. A single-line range is
--- skipped: `:N,Nfold` does not create a closed fold, so an empty message
--- or a just-arrived opener (nothing to hide) stays unfolded.
-
-local function fold_create(start, finish)
-  vim.cmd(string.format("%d,%dfold", start, finish))
-end
-
-local function fold_open(start)
-  if vim.fn.foldlevel(start) > 0 then
-    vim.cmd(string.format("%dfoldopen", start))
-  end
-end
-
-local function fold_close(start)
-  if vim.fn.foldlevel(start) > 0 then
-    vim.cmd(string.format("%dfoldclose", start))
-  end
-end
-
-local function fold_delete(start)
-  if vim.fn.foldlevel(start) > 0 then
-    vim.api.nvim_win_set_cursor(0, { start, 0 })
-    vim.cmd("normal! zd")
-  end
-end
-
-local function with_view(fn)
-  local v = vim.fn.winsaveview()
-  fn()
-  vim.fn.winrestview(v)
-end
-
--- ─── reconcile ─────────────────────────────────────────────────────────────
-
---- Apply the intended fold set to one window. Only folds that changed are
---- touched: removed folds are deleted, new folds created (closed), and a
---- fold whose finish moved is recreated. Native za/zo on a fold whose range
---- did NOT move is left untouched (so it persists); a fold being recreated
---- closes again unless it is explicitly pinned (M.open/<Tab>/navigation).
-local function apply_window(win, buf, list, pins, full)
-  vim.api.nvim_win_call(win, function()
-    local v = vim.fn.winsaveview()
-    created[buf] = created[buf] or {}
-    local per_win = created[buf][win] or {}
-    if full then
-      vim.cmd("normal! zE")
-      per_win = {}
-    end
-
-    local by_start = {}
-    for _, b in ipairs(list) do
-      by_start[b.start] = b
-    end
-
-    -- 1. delete folds whose block vanished
-    for start in pairs(per_win) do
-      if not by_start[start] then
-        fold_delete(start)
-      end
-    end
-
-    -- 2. create new / recreate moved folds
-    local next_win = {}
-    for _, b in ipairs(list) do
-      local prev = per_win[b.start]
-      if prev == nil then
-        if b.finish > b.start then
-          fold_create(b.start, b.finish)
-        end
-        next_win[b.start] = b.finish
-      elseif prev ~= b.finish then
-        -- Recreate. We do NOT read foldclosed() here to preserve native
-        -- za/zo opens: after an edit Neovim lazily reports a closed fold's
-        -- state as open (fc=-1), so capture would mis-pin folds the user
-        -- never opened. Native za/zo on a fold whose range didn't move is
-        -- left untouched anyway; only explicit <Tab>/nav pins (opened table)
-        -- survive a recreate.
-        fold_delete(b.start)
-        if b.finish > b.start then
-          fold_create(b.start, b.finish)
-        end
-        next_win[b.start] = b.finish
-      else
-        next_win[b.start] = prev
-      end
-    end
-
-    -- 3. re-open user-pinned folds (idempotent: :Nfoldopen on an open fold
-    --    is a no-op)
-    for start in pairs(pins) do
-      if by_start[start] then
-        fold_open(start)
-      end
-    end
-
-    created[buf][win] = next_win
-    vim.fn.winrestview(v)
-  end)
-end
-
---- Reconcile every window showing `buf` to its view's fold set. `full` does
---- a from-scratch rebuild (view change); otherwise only changed folds are
---- touched and identical fold sets are a no-op.
-function M.reconcile(buf, full)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  local p = parse(buf)
-  local list = intended(buf, p)
-  if not full and same_blocks(list, blocks[buf]) then
-    return
-  end
-  blocks[buf] = list
-  local pins = opened[buf] or {}
-  opened[buf] = pins
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      apply_window(win, buf, list, pins, full)
-    end
-  end
-end
-
-function M.level()
-  return view[vim.api.nvim_get_current_buf()] or 3
-end
-
---- Set the view level and rebuild the fold set from scratch. This is an
---- explicit reset: it clears every user-pinned fold (a view keypress always
---- lands on the view's default state).
-function M.set_view_level(level)
-  local buf = vim.api.nvim_get_current_buf()
-  view[buf] = level
-  opened[buf] = {}
-  blocks[buf] = nil
-  M.reconcile(buf, true)
-end
-
---- Open a fold persistently (pin it). Non-exclusive: opening one fold leaves
---- previously opened folds alone. Used by <Tab> on a closed fold and by the
---- block-navigation keys.
-function M.open(lnum)
-  local buf = vim.api.nvim_get_current_buf()
-  local b = block_at(buf, lnum)
-  if not b then
-    return
-  end
-  opened[buf] = opened[buf] or {}
-  opened[buf][b.start] = true
-  with_view(function()
-    fold_open(b.start)
-  end)
-end
-
---- <Tab>: toggle the fold under `lnum`. Opening records it as user-opened;
---- closing forgets it. User opens persist across sends and streaming.
-function M.toggle(lnum)
-  local buf = vim.api.nvim_get_current_buf()
-  local b = block_at(buf, lnum)
-  if not b then
-    return
-  end
-  if vim.fn.foldlevel(b.start) > 0 and vim.fn.foldclosed(b.start) == -1 then
-    opened[buf] = opened[buf] or {}
-    opened[buf][b.start] = nil
-    with_view(function()
-      fold_close(b.start)
-    end)
+    local nlvl = (lvl or 0) + 1
+    return ">" .. nlvl, "top", nil, { region = "top", lvl = lvl }, nlvl
+  elseif line:match(TOOL_CLOSE) then
+    return cur, "top", nil, cret, (lvl or 1) - 1 -- closer is the region fold's last line
   else
-    M.open(lnum)
+    return cur, region, fence, cret, lvl
   end
 end
 
---- Called by the send/stream path after appending lines to a session buffer.
---- Re-parses the buffer and reconciles only the folds whose ranges changed.
-function M.after_append(buf, _)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return
+-- The fold-level string for every line, computed in one forward pass and
+-- cached per changedtick: ">N" on a fold opener, "N" inside one, "=" where
+-- there is no fold. M.expr is the per-line foldexpr entry point; M.levels
+-- is the whole array so callers (fold_start, reapply) can see the `>`
+-- markers without re-scanning.
+function M.levels(buf)
+  buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  local c = cache[buf]
+  if not c or c.tick ~= tick then
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local levels, region, fence, cret, lvl = {}, nil, nil, nil, nil
+    for i, line in ipairs(lines) do
+      local lv, nr, nf, nc, nl = classify(line, region, fence, cret, lvl)
+      levels[i], region, fence, cret, lvl = lv, nr, nf, nc, nl
+    end
+    c = { tick = tick, levels = levels }
+    cache[buf] = c
   end
-  M.reconcile(buf, false)
+  return c.levels
 end
 
--- ─── foldtext ──────────────────────────────────────────────────────────────
+function M.expr(lnum)
+  return M.levels()[lnum] or "="
+end
 
 -- Foldtext is re-evaluated for every visible closed fold on every screen
--- draw, and each evaluation crosses into VimL plus string formatting. The
--- text depends only on the buffer content, which changes only with the
--- changedtick, so cache the rendered string per fold start line: after the
--- first paint of a given tick, a redraw is a table lookup.
+-- draw, and each evaluation crosses into VimL (vim.fn.getline) plus string
+-- formatting. The text depends only on the buffer content, which changes only
+-- with the changedtick, so cache the rendered string per fold start line:
+-- after the first paint of a given tick, a redraw is a table lookup.
 local text_cache = {} -- buf -> { tick, by_start = { [foldstart] = { finish, text } } }
 
 function M.text(start, finish)
@@ -464,15 +227,258 @@ function M.text(start, finish)
   return text
 end
 
---- Drop a buffer's per-buffer state (BufWipeout). The tick checks already
---- invalidate on buffer-number reuse; this releases the strings sooner.
+--- Drop a buffer's foldtext cache (BufWipeout). The tick check already
+--- invalidates on buffer-number reuse; this just releases the strings sooner.
 function M.clear_text(buf)
   text_cache[buf] = nil
-  model_cache[buf] = nil
-  view[buf] = nil
-  opened[buf] = nil
-  blocks[buf] = nil
-  created[buf] = nil
+end
+
+-- ─── View levels ───────────────────────────────────────────────────────────
+
+-- The Ⓕ chip in the winbar: the last view APPLIED to the buffer
+-- (1 agent output folded, 2 tools & thinking folded, 3 all open). It
+-- used to be measured from foldclosed(), but that read as confusing —
+-- after <leader>3 the chip showed Ⓕ0. Trade-off: manual za toggles no
+-- longer update the chip.
+local applied = {}
+
+-- User-opened folds: folds the user opened and wants to KEEP open, whether
+-- via <Tab>, a block-navigation key, or native za/zo. Keyed by the fold's
+-- start line; sends only append, so a line number stays stable for the
+-- lifetime of a session (a user edit above it can shift it — the reconcile
+-- validates the line is still a fold opener and drops it otherwise).
+--
+-- IMPORTANT: this set is reconciled against Neovim WITHOUT zX. The old
+-- zX-per-append approach closed every fold and re-opened a handful, which
+-- collapsed the view (cursor/scrolling jumps) and flickered. Instead each
+-- structural append only touches folds that actually changed: it closes
+-- the folds the append newly created that leaked open (Neovim inherits a
+-- manual foldopen into same/lower-level folds), and re-opens user-opened
+-- folds.
+local opened = {}
+local prev_openers = {} -- opener lines present before the last reconcile; new folds are excluded from the za/zo capture
+
+--- The set of fold-opener line numbers in a levels array (the ">N" entries).
+local function openers(levels)
+  local set = {}
+  for lnum, lv in ipairs(levels) do
+    if lv:sub(1, 1) == ">" then
+      set[lnum] = true
+    end
+  end
+  return set
+end
+
+-- Open/close the fold whose OPENER is `lnum`. `:Nfoldopen`/`:Nfoldclose`
+-- act on "one level of folds in range", which is not the fold itself once
+-- folds nest: closing a level-3 tool inside an open level-2 assistant
+-- closes the assistant, and an unterminated trailing opener is left open.
+-- `zo`/`zc` instead target the innermost fold at the cursor, so move the
+-- cursor to the opener, toggle, and restore the view. Inside
+-- nvim_win_call this never disturbs the user's window or cursor; the
+-- callers only invoke these on the exact open/closed state (see guards),
+-- so zo/zc always act on the intended fold.
+local function fold_open(lnum)
+  local view = vim.fn.winsaveview()
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.cmd("normal! zo")
+  vim.fn.winrestview(view)
+end
+
+local function fold_close(lnum)
+  local view = vim.fn.winsaveview()
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  vim.cmd("normal! zc")
+  vim.fn.winrestview(view)
+end
+
+function M.level()
+  return applied[vim.api.nvim_get_current_buf()] or 3
+end
+
+-- The three views are pure 'foldlevel': role-dependent fold levels put
+-- user messages at 1, assistant at 2, tool/thinking/system at 3, so
+-- foldlevel 1 = view 1, 2 = view 2, 3 = view 3. No manual
+-- foldclose anywhere: manual closes combined with expr folds made Neovim
+-- re-evaluate every fold on each edit — hundreds of ms per keystroke on a
+-- large session. foldlevel alone keeps the same visuals. A real CHANGE of
+-- 'foldlevel' resets all manual za toggles to the level's state, so bump
+-- first to guarantee the change — a keypress always lands on the same
+-- state. A view keypress also clears every user-opened fold (it is an
+-- explicit reset).
+function M.set_view_level(level)
+  local buf = vim.api.nvim_get_current_buf()
+  applied[buf] = level
+  opened[buf] = {}
+  local target = ({ 1, 2, 3 })[level] or 3
+  vim.wo.foldlevel = 99 -- real change first: resets manual za toggles
+  vim.wo.foldlevel = target
+  prev_openers[buf] = openers(M.levels(buf))
+end
+
+--- The fold-start line of the fold containing `lnum` (open or closed).
+--- Levels aren't depth-monotonic (user 1, assistant 2, tool/system 3,
+--- and a `# @user` DROPS back to 1), so a simple upward scan for the
+--- nearest `>` marker is wrong after a child fold closes. Instead walk up
+--- tracking the minimum level seen: the innermost fold that still encloses
+--- `lnum` is the nearest opener whose level is <= that minimum.
+local function fold_start(buf, lnum)
+  local levels = M.levels(buf)
+  local min_level = math.huge
+  for i = lnum, 1, -1 do
+    local lv = levels[i] or "="
+    if lv == "=" then
+      break -- pre-heading: nothing encloses it
+    end
+    local opener = lv:match("^>(%d+)$")
+    if opener and tonumber(opener) <= min_level then
+      return i
+    end
+    local n = tonumber((lv:gsub("^>", "")))
+    if n and n < min_level then
+      min_level = n
+    end
+  end
+  return -1
+end
+
+--- Reconcile one window to the desired fold state after a structural
+--- append, WITHOUT zX (zX collapsed the whole view and flickered). Only
+--- the folds that actually changed are touched:
+---
+---   1. Capture native za/zo opens on pre-existing folds: a fold that is
+---      currently open beyond the view's foldlevel was opened by the user.
+---      A fold the user opened before but has since closed (zc/za) is dropped.
+---   2. New folds: set to the view default. This stops Neovim's
+---      manual-foldopen inheritance — a fold streamed in after the user
+---      opened a sibling arrives open, and is closed back here.
+---   3. Re-open the user-opened set (idempotent).
+---
+--- fold_open/fold_close save and restore the window view around a cursor
+--- jump + zo/zc, so reconciling during a stream never yanks the user's
+--- cursor or scroll position.
+local function reconcile_window(w, buf, levels, new_openers)
+  vim.api.nvim_win_call(w, function()
+    local foldlevel = vim.wo.foldlevel
+    local prev = prev_openers[buf] or {}
+    local o = opened[buf] or {}
+    -- 1. za/zo opens and closes on pre-existing folds.
+    for lnum, lv in ipairs(levels) do
+      if lv:sub(1, 1) == ">" then
+        local lvl = tonumber(lv:sub(2))
+        if lvl and prev[lnum] then
+          if vim.fn.foldclosed(lnum) == -1 then
+            if lvl > foldlevel then
+              o[lnum] = true
+            end
+          elseif o[lnum] then
+            o[lnum] = nil -- user closed a fold they had opened
+          end
+        end
+      end
+    end
+    opened[buf] = o
+    -- 2. New folds adopt the view's default (undo the inheritance leak).
+    for lnum in pairs(new_openers) do
+      local lv = levels[lnum]
+      local lvl = lv and tonumber(lv:sub(2))
+      if lvl then
+        if lvl <= foldlevel then
+          if vim.fn.foldclosed(lnum) ~= -1 then
+            fold_open(lnum)
+          end
+        elseif vim.fn.foldclosed(lnum) == -1 then
+          fold_close(lnum)
+        end
+      end
+    end
+    -- 3. Re-open the user-opened set.
+    local reopens = {}
+    for lnum in pairs(o) do
+      reopens[#reopens + 1] = lnum
+    end
+    table.sort(reopens)
+    for _, lnum in ipairs(reopens) do
+      local lv = levels[lnum]
+      if lv and lv:sub(1, 1) == ">" and vim.fn.foldclosed(lnum) ~= -1 then
+        fold_open(lnum)
+      end
+    end
+  end)
+end
+
+--- Open a fold persistently (pin it). Used by <Tab> on a closed fold and
+--- by the block-navigation keys. Non-exclusive: opening one fold leaves
+--- previously opened folds alone.
+function M.open(lnum)
+  local buf = vim.api.nvim_get_current_buf()
+  local start = vim.fn.foldclosed(lnum)
+  if start == -1 then
+    start = fold_start(buf, lnum)
+  end
+  if start == -1 then
+    return
+  end
+  opened[buf] = opened[buf] or {}
+  opened[buf][start] = true
+  if vim.fn.foldclosed(start) ~= -1 then
+    fold_open(start)
+  end
+end
+
+--- <Tab>: toggle the fold under `lnum`. Opening records it as user-opened;
+--- closing forgets it. User opens persist across sends and streaming.
+function M.toggle(lnum)
+  local buf = vim.api.nvim_get_current_buf()
+  local start = vim.fn.foldclosed(lnum)
+  if start == -1 then
+    start = fold_start(buf, lnum)
+  end
+  if start == -1 then
+    return
+  end
+  if vim.fn.foldclosed(lnum) == -1 then
+    local o = opened[buf] or {}
+    o[start] = nil
+    fold_close(start)
+  else
+    M.open(lnum)
+  end
+end
+
+--- Called by the send/stream path after appending `lines` to a session
+--- buffer (never by user edits). If the buffer gained a fold opener,
+--- reconcile the view in every window showing the buffer: close folds the
+--- append newly created that leaked open, and keep user-opened folds open.
+---
+--- New openers are detected from the BUFFER, not the appended lines:
+--- streamed thinking/tool headers arrive in arbitrary byte chunks, so the
+--- line that completes an opener often contains only the opener's tail
+--- (e.g. `<!-- yap:thinkin` + `g`). Scanning the appended lines would miss
+--- it, leave the fold leaked open (Neovim inherits a manual foldopen into
+--- same/lower-level folds), and let every later streamed fold stay open.
+--- Diffing the buffer's openers against the pre-append set is exact, and
+--- plain-text appends (no new opener) still change nothing.
+function M.after_append(buf, lines)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local levels = M.levels(buf)
+  local cur_openers = openers(levels)
+  local new_openers = {}
+  for lnum in pairs(cur_openers) do
+    new_openers[lnum] = true
+  end
+  for lnum in pairs(prev_openers[buf] or {}) do
+    new_openers[lnum] = nil
+  end
+  if next(new_openers) == nil then
+    return
+  end
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    reconcile_window(w, buf, levels, new_openers)
+  end
+  prev_openers[buf] = cur_openers
 end
 
 -- ─── Message navigation ────────────────────────────────────────────────────
@@ -550,9 +556,10 @@ end
 
 function M.setup_buffer(buf, keys)
   keys = keys or require("harness").config.keymaps
-  vim.wo.foldmethod = "manual"
-  vim.wo.foldlevel = 0 -- keep :fold closed; explicit foldopen overrides
+  vim.wo.foldmethod = "expr"
+  vim.wo.foldexpr = "v:lua.require'harness.fold'.expr(v:lnum)"
   vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
+  vim.wo.foldlevel = 99 -- expr folds start computable; default state applied below
   M.set_view_level(2) -- default: conversation open, tools & thinking folded
 
   local map = function(lhs, rhs, desc)
@@ -612,8 +619,7 @@ function M.setup_buffer(buf, keys)
 end
 
 -- Exposed for the shared Go/Lua fence conformance test (see
--- tests/fence_cases.json) and the perf profiler. Not part of the public API.
+-- tests/fence_cases.json). Not part of the plugin's public API.
 M.fence_run = fence_run
-M.parse = parse
 
 return M

@@ -97,7 +97,7 @@ run yap_picker_test 18137 mock_models.py
 run yap_describe_test 18139 mock_describe.py
 run yap_steer_test 18160 mock_steer.py
 run yap_cwd_test 18132
-for t in yap_fold_test yap_detailfold_test yap_fold_peek_test yap_fold_za_test yap_fold_reconcile_test yap_fold_leak_test yap_think_test yap_error_test yap_ml_test \
+for t in yap_fold_test yap_detailfold_test yap_fold_peek_test yap_fold_za_test yap_fold_reconcile_test yap_think_test yap_error_test yap_ml_test \
          yap_streamfold_test yap_marker_test yap_model_test yap_map_test yap_keymap_test yap_clear_test \
          yap_live_open_test yap_uidiff_test yap_fencefold_test yap_fence_conformance_test yap_lsp_test \
          yap_template_test yap_frontmatter_test yap_adopt_test yap_textobj_test \

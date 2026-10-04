@@ -8,14 +8,11 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "go", "", "# @ass
 fold.setup_buffer(buf)
 fold.set_view_level(2) -- message folds open, detail folds closed
 
--- simulate streaming: opener arrives first, close fires, region extends.
--- Manual folds don't auto-appear on edit, so each append drives the same
--- reconcile the real stream path runs (document.append_text + after_append).
+-- simulate streaming: opener arrives first, close fires, region extends
 local function append(l)
   local row = vim.api.nvim_buf_line_count(buf) - 1
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split("\n" .. l, "\n", { plain = true }))
-  fold.after_append(buf, { l })
 end
 append("<!-- yap:tool")
 append("{")
