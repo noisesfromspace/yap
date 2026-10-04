@@ -1001,8 +1001,8 @@ table in |yap-configuration|; set one to `""` to drop its glyph):
              has this session cost".
   󰊚 N/M · P% Context fill: the last turn's prompt size against the
              model's context window (both from the `turn_end` journal),
-             plus the fill percentage and a gauge that expands into spare
-             winbar width — the "how full is my context" answer, e.g.
+             plus the fill percentage and a fixed-width, eight-cell gauge —
+             the "how full is my context" answer, e.g.
              `35k/200k · 18% █▍░░░░░░`. The gauge fill is green below
              70%, amber from 70–90%, and red at 90% or more
              (`YapGaugeLow`/`Mid`/`High`; the dim track is
