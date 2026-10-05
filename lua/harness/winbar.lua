@@ -1,8 +1,7 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
 -- yap session buffer: busy beacon, global rollup island, session
--- description, provider/model + fold-view cluster, usage/cost chips and
--- the right-edge state glyph. The fold view sits just before the activity
--- indicator; usage/cost chips remain on the right. Also owns the spinner
+-- description, provider/model island, usage/cost chips and the right-edge
+-- state glyph. Usage/cost chips remain on the right. Also owns the spinner
 -- that keeps the bar redrawing while a turn streams; the spinner drains
 -- live tool output into the tail buffers through state.drain_tail (set by
 -- the send path).
@@ -12,7 +11,6 @@ local M = {}
 local state = require("harness.state")
 local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
-local fold = require("harness.fold")
 
 local running = state.running
 local live = state.live
@@ -154,9 +152,9 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- description on the left; centered provider/model and fold-view islands;
--- usage counters and context meter on the right, followed by an error glyph.
--- As the window narrows the center islands drop, then costs, then tokens;
+-- description on the left; a centered provider/model island; usage counters
+-- and context meter on the right, followed by an error glyph.
+-- As the window narrows the center island drops, then costs, then tokens;
 -- the error glyph, prices and context meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
@@ -344,15 +342,12 @@ local function render_winbar(buf)
     return segs
   end
 
-  -- Two adjacent islands centered independently of left and right content.
+  -- The model island is centered independently of left and right content.
   local function center_segments()
-    local icon = icons.fold
     return {
       seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
       seg(provider .. "/" .. model, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
-      seg(" ", "Idle"), seg("", "IslandCap"),
-      seg(" " .. (icon ~= "" and (icon .. " ") or "") .. fold.level() .. " ", "Count", true),
-      seg("", "IslandCap"), seg(" ", "Idle"),
+      seg(" ", "Idle"),
     }
   end
 

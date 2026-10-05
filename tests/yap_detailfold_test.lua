@@ -128,7 +128,8 @@ assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool 
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
--- The fold and model islands sit together in the center of the winbar.
+-- The model island sits alone in the center of the winbar; the fold view
+-- is no longer shown there.
 fold.set_view_level(2)
 local state = require("harness.state")
 state.last_turn[buf] = { prompt = 50, context_window = 100 }
@@ -141,8 +142,9 @@ local provider, model = require("harness.util").current_combo(buf)
 local combo = provider .. "/" .. model
 assert(not left:find(combo, 1, true) and not right:find(combo, 1, true), "model outside center: " .. bar)
 local rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_center:find(" " .. combo .. "   󰘖 2 ", 1, true),
-  "model and fold islands not adjacent in center: " .. rendered_center)
+assert(rendered_center:find(" " .. combo .. " ", 1, true),
+  "model island missing in center: " .. rendered_center)
+assert(not rendered_center:find("󰘖", 1, true), "fold island should be gone: " .. rendered_center)
 assert(right:find("50%%", 1, true), "winbar missing gauge: " .. right)
 -- With usage present in a narrow window, the center yields to the right.
 vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
@@ -151,19 +153,7 @@ assert(not bar:find("mock/m1", 1, true), "center should yield to usage: " .. bar
 right = assert(bar:match("%%=(.*)$"))
 assert(right:find("1.3k", 1, true) and right:find("50%%", 1, true), "right cluster lost metrics: " .. right)
 vim.b[buf].yap_usage = nil
-local icons = yap.config.icons
-icons.fold = "TEST"
-bar = yap.winbar(buf)
-center = assert(bar:match("%%=(.-)%%="), "winbar missing center cluster: " .. bar)
-rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_center:find(" TEST 2 ", 1, true), "fold icon config ignored: " .. rendered_center)
-icons.fold = ""
-bar = yap.winbar(buf)
-center = assert(bar:match("%%=(.-)%%="), "winbar missing center cluster: " .. bar)
-rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_center:find(" 2 ", 1, true), "empty fold icon should leave the level: " .. rendered_center)
-icons.fold = "󰘖"
 state.running[buf], state.live[buf] = nil, nil
 fold.set_view_level(3)
-assert(yap.winbar(buf):find("󰘖 3", 1, true), "winbar not updated to view 3: " .. yap.winbar(buf))
+assert(not yap.winbar(buf):find("󰘖", 1, true), "fold view leaked into winbar: " .. yap.winbar(buf))
 print("OK")

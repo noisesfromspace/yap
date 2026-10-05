@@ -77,7 +77,7 @@ local displayed = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = 
 assert(displayed:find(" 󰅐 1.3k · $0.002   ", 1, true), "counters and gauge should be adjacent islands: " .. displayed)
 assert(select(2, displayed:gsub("", "")) == 2 and select(2, displayed:gsub("", "")) == 2,
   "narrow layout should contain only counters and gauge islands: " .. displayed)
--- The right side keeps only usage and gauge; the center islands are
+-- The right side keeps only usage and gauge; the center island is
 -- exercised separately when there is sufficient room.
 assert(not bar:find("mock/m1", 1, true), "center should drop before the gauge clips: " .. bar)
 

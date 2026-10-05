@@ -287,9 +287,8 @@ keeps colors on.
 
 `icons` sets the leading glyph of each winbar usage chip (|yap-winbar|):
 `since` (this buffer, since open), `total` (the whole session's audit
-total), and `ctx` (context fill). `fold` sets the icon for the fold-view
-level in the right-hand island between usage totals and the gauge. Defaults are Nerd Font
-v3 glyphs; set any to `""` to drop its glyph on fonts without it.
+total), and `ctx` (context fill). Defaults are Nerd Font v3 glyphs; set
+any to `""` to drop its glyph on fonts without it.
 
 `relativenumber` is left alone: chat buffers keep whatever `'relativenumber'`
 setting the user has. The slowness that looked like relativenumber was
@@ -970,15 +969,11 @@ yap sessions: `▶N` (N other buffers streaming a reply) and `◉N` (N other
 buffers await you; jump to one with |:YapInstances|). The island appears only
 when at least one other session is running or waiting; it never counts the
 current buffer. After the island: the session description (truncated to 40
-columns). The provider/model and applied fold view are centered in two
-adjacent rounded islands (`󰘖 1` agent output folded, `󰘖 2` tools & thinking
-folded, `󰘖 3` all open — the last view applied with <leader>1..3; manual
-|za| toggles don't update it). On the right, usage totals and the context-fill
-meter occupy two rounded islands. All islands share the left rollup's surface
-and caps. The centered islands disappear when either side needs the space.
-The fold icon is configurable with `icons.fold` and may be set to `""` to
-show only the level. A state glyph appears on the far right only when
-something is wrong:
+columns). The provider/model is centered in a rounded island. On the right,
+usage totals and the context-fill meter occupy two rounded islands. All
+islands share the left rollup's surface and caps. The centered island
+disappears when either side needs the space. A state glyph appears on the
+far right only when something is wrong:
 
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
@@ -986,7 +981,7 @@ something is wrong:
 Idle shows no glyph. When a completed turn awaits your reply, a static ``
 (`cod-verified`) takes the spinner's place; errors do not show it.
 
-Example: `⣾ session title` ... ` moonshot/kimi-k3   󰘖 2 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
+Example: `⣾ session title` ... ` moonshot/kimi-k3 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -1017,7 +1012,7 @@ they diverge.
 
 The bar is width-aware, so a narrow window never crowds out the parts
 that matter. It drops parts in this order as the window shrinks: the
-provider/model + fold-view cluster, usage-chip costs, usage-chip tokens
+provider/model island, usage-chip costs, usage-chip tokens
 (leaving costs), then the costs and gauge percentage. The context graph
 remains a fixed eight-cell gauge; the session description truncates next.
 The error glyph and left island (`▶N`/`◉N`) remain, and the winbar re-lays

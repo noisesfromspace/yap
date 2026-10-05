@@ -20,7 +20,7 @@ local function winbar_at(cols)
   return wb
 end
 
--- Wide enough for both usage chips; the center islands drop if they would
+-- Wide enough for both usage chips; the center island drops if it would
 -- collide with the right-hand metrics.
 local wb = winbar_at(80)
 assert(not wb:match("mock/m1"), "model should yield to wide usage cluster: " .. wb)
@@ -30,20 +30,20 @@ assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs:
 assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
 assert(not wb:match("idle") and not wb:match("waiting"), "wide winbar has a state glyph: " .. wb)
 
--- With an empty right side, the model and fold occupy the physical center.
+-- With an empty right side, the model island occupies the physical center.
 local saved_usage, saved_total = vim.b[buf].yap_usage, vim.b[buf].yap_session_usage
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = nil, nil
 wb = winbar_at(78)
 assert(wb:find("%#YapIslandCursiveModel#", 1, true), "model is not cursive in its island: " .. wb)
-assert(select(2, wb:gsub("%%=", "")) == 2, "model/fold should occupy the center section: " .. wb)
+assert(select(2, wb:gsub("%%=", "")) == 2, "model should occupy the center section: " .. wb)
 local centered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = 78 }).str
-local model_start = assert(centered:find(" mock/m1   󰘖 2 ", 1, true), "center islands missing: " .. centered)
-local center_width = vim.fn.strdisplaywidth(" mock/m1   󰘖 2 ")
+local model_start = assert(centered:find(" mock/m1 ", 1, true), "center island missing: " .. centered)
+local center_width = vim.fn.strdisplaywidth(" mock/m1 ")
 assert(math.abs(model_start - 1 + center_width / 2 - 39) <= 1,
-  "model/fold cluster is not centered in 78 columns: " .. centered)
+  "model island is not centered in 78 columns: " .. centered)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Narrower: model/fold go first; chips keep tokens + cost.
+-- Narrower: the model island goes first; chips keep tokens + cost.
 wb = winbar_at(40)
 assert(not wb:match("mock/m1"), "40-col winbar kept the model: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "40-col winbar missing tokens: " .. wb)
@@ -97,11 +97,12 @@ for mask = 0, 15 do
   local center = bar:match("%%=(.-)%%=")
   if center then
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    assert(centered_text:find(" mock/m1   󰘖 2 ", 1, true),
-      "model island should be immediately before fold: " .. centered_text)
+    assert(centered_text:find(" mock/m1 ", 1, true),
+      "model island missing from center: " .. centered_text)
+    assert(not centered_text:find("󰘖", 1, true), "fold island leaked into center: " .. centered_text)
     assert(center:find("%#YapIslandCursiveModel#", 1, true)
-        and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 3,
-      "model, padding and fold must all use the island surface: " .. center)
+        and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
+      "model and padding must use the island surface: " .. center)
   else
     assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)
   end
@@ -127,8 +128,8 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   local bar = yap.winbar(target)
   local center = bar:match("%%=(.-)%%=")
   if center then
-    assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 4,
-      "center islands need active caps: " .. center)
+    assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 2,
+      "center island needs active caps: " .. center)
   end
   local right = assert(bar:match("%%=(.*)$"))
   assert(select(2, right:gsub("%%#YapIslandCap#", "")) >= 4,
@@ -149,7 +150,7 @@ vim.g.statusline_winid = session_win
 local inactive_bar = yap.winbar(target)
 local inactive_center = inactive_bar:match("%%=(.-)%%=")
 if inactive_center then
-  assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center islands need inactive caps: " .. inactive_center)
+  assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
 end
 local inactive_right = assert(inactive_bar:match("%%=(.*)$"))
 assert(inactive_right:find("%#YapIslandCapNC#", 1, true) and not inactive_right:find("%#YapIslandCap#", 1, true),

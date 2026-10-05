@@ -128,8 +128,8 @@ notify. For command details and keymaps, see `:help yap-commands`.
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. `<leader>s` opens the scratch queue; send from it to
 append queued text to the chat, or steer a running turn. The winbar shows the
-active session/model, usage, fold view, and whether a turn is running or
-awaiting your reply. `<leader>1` folds agent output, `<leader>2` folds tool
+active session/model, usage, and whether a turn is running or awaiting your
+reply. `<leader>1` folds agent output, `<leader>2` folds tool
 calls and thinking, and `<leader>3` unfolds everything. The `quickfix` tool can
 populate Neovim's quickfix list, and `close_session` closes a chat after its
 current turn while keeping it resumable from `:YapSessions`.
