@@ -15,6 +15,7 @@ local frontmatter = require("harness.frontmatter")
 local running = state.running
 local live = state.live
 local errors = state.errors
+local stopped = state.stopped
 local awaiting = state.awaiting
 local steer = state.steer
 
@@ -78,7 +79,7 @@ local function count_others(set, buf)
   local n = 0
   for b in pairs(set) do
     if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap
-      and not (set == awaiting and vim.b[b].yap_subagent_parent) then
+      and not (set == awaiting and (vim.b[b].yap_subagent_parent or errors[b] or stopped[b])) then
       n = n + 1
     end
   end
