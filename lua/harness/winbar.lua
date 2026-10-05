@@ -137,26 +137,26 @@ local function full_description(buf)
   return full
 end
 
+local function truncate_display(text, max)
+  if vim.fn.strdisplaywidth(text) <= max then
+    return text
+  end
+  local chars = math.min(vim.fn.strchars(text), math.max(1, max - 1))
+  local truncated = vim.fn.strcharpart(text, 0, chars)
+  while vim.fn.strdisplaywidth(truncated .. "…") > max and chars > 1 do
+    chars = chars - 1
+    truncated = vim.fn.strcharpart(text, 0, chars)
+  end
+  return truncated .. "…"
+end
+
 --- The session description for the winbar, truncated to `max` display
 --- columns so a long phrase cannot crowd out the right-hand usage/state
 --- chips. The full description is cached (see full_description); only the
 --- cheap width truncation runs per call.
 local function winbar_description(buf, max)
-  max = max or 40
   local d = full_description(buf)
-  if not d then
-    return nil
-  end
-  if vim.fn.strdisplaywidth(d) > max then
-    local chars = math.min(vim.fn.strchars(d), math.max(1, max - 1))
-    d = vim.fn.strcharpart(d, 0, chars)
-    while vim.fn.strdisplaywidth(d .. "…") > max and chars > 1 do
-      chars = chars - 1
-      d = vim.fn.strcharpart(d, 0, chars)
-    end
-    d = d .. "…"
-  end
-  return d
+  return d and truncate_display(d, max or 40) or nil
 end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
@@ -241,7 +241,7 @@ local function render_winbar(buf)
       add_item(rollup)
     end
 
-    local desc = winbar_description(buf, desc_max)
+    local desc = not inactive and winbar_description(buf, desc_max) or nil
     if desc then
       add_item({ seg(desc, "Description", false, true) })
     end
@@ -384,10 +384,17 @@ local function render_winbar(buf)
   end
 
   -- The model island is centered independently of left and right content.
+  -- Inactive sessions show their session identity instead of a model that is
+  -- only useful while that session is selected.
   local function center_segments()
+    local text = provider .. "/" .. model
+    if inactive then
+      local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
+      text = truncate_display(label, 40)
+    end
     return {
       seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
-      seg(provider .. "/" .. model, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
+      seg(text, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
       seg(" ", "Idle"),
     }
   end

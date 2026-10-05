@@ -181,20 +181,37 @@ state.last_turn[target] = { prompt = 23000, context_window = 250000 }
 local session_win = vim.api.nvim_get_current_win()
 local picker_buf = vim.api.nvim_create_buf(false, true)
 local picker_win = vim.api.nvim_open_win(picker_buf, true, {
-  relative = "editor", row = 1, col = 1, width = 20, height = 3, style = "minimal",
+  relative = "editor", row = 1, col = 0, width = vim.o.columns, height = 3, style = "minimal",
 })
 vim.g.statusline_winid = session_win
+vim.b[target].yap_path = "/tmp/inactive-session.md"
+vim.api.nvim_buf_set_lines(target, 0, -1, false, {
+  "---", "provider: mock", "model: m1", "description: Generated description", "---", "",
+})
+local saved_target_usage, saved_target_turn = vim.b[target].yap_usage, state.last_turn[target]
+local saved_running_target, saved_running_other, saved_waiting = state.running[target], state.running[other], state.awaiting[waiting]
+vim.b[target].yap_usage, state.last_turn[target] = nil, nil
+state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 local inactive_bar = yap.winbar(target)
 local inactive_center = inactive_bar:match("%%=(.-)%%=")
-if inactive_center then
-  assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
-end
+assert(inactive_center, "inactive session name should occupy the center island: " .. inactive_bar)
+assert(inactive_center:find("inactive%-session%.md"), "inactive session name missing from center: " .. inactive_center)
+assert(not inactive_center:find("mock/m1", 1, true), "inactive session shows model instead of name: " .. inactive_center)
+assert(not inactive_bar:find("Generated description", 1, true), "inactive session repeats its description: " .. inactive_bar)
+assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
+vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
+state.running[target], state.running[other], state.awaiting[waiting] = saved_running_target, saved_running_other, saved_waiting
+inactive_bar = yap.winbar(target)
 local inactive_right = assert(inactive_bar:match("%%=(.*)$"))
 assert(inactive_right:find("%#YapIslandCapNC#", 1, true) and not inactive_right:find("%#YapIslandCap#", 1, true),
   "right islands should use inactive caps in picker: " .. inactive_right)
 vim.api.nvim_win_close(picker_win, true)
 assert(yap.winbar(target):find("%#YapIslandCap#", 1, true), "active caps not restored after picker")
 vim.g.statusline_winid = nil
+vim.b[target].yap_path = nil
+vim.api.nvim_buf_set_lines(target, 0, -1, false, {
+  "---", "provider: mock", "model: m1", "description: Session title", "---", "",
+})
 vim.b[target].yap_usage = nil
 state.last_turn[target] = nil
 vim.api.nvim_buf_delete(picker_buf, { force = true })
