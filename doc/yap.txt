@@ -148,7 +148,7 @@ the current buffer unless otherwise noted.
                                                             *:YapInstances*
 :YapInstances         List every open yap session except the current one by
                         its file path and focus the picked one. Each line is
-                        annotated with its state — ` running`, `󰚌 error`, `󰭖 waiting`
+                        annotated with its state — ` running`, `󰚌 error`, `󱀒 waiting`
                         (a completed turn awaits your reply) or `󰝦 idle` —
                         waiting sessions sort last (use |:YapWaiting| to jump
                         straight to them). Yap buffers are unlisted — they
@@ -159,7 +159,7 @@ the current buffer unless otherwise noted.
 
                                                             *:YapWaiting*
 :YapWaiting           List only the open yap sessions awaiting a reply
-                        (state `󰭖 waiting`) and focus the picked one — the
+                        (state `󱀒 waiting`) and focus the picked one — the
                         "needs you" subset of |:YapInstances|.
 
                                                                *:YapReload*
@@ -1033,11 +1033,11 @@ that matter. It drops parts in this order as the window shrinks: the
 provider/model island, usage-chip costs, usage-chip tokens
 (leaving costs), then the costs and gauge percentage. The context graph
 remains a fixed eight-cell gauge; the session description truncates next.
-The error glyph and left island (`N`/`󰭖N`) remain, and the winbar re-lays
+The error glyph and left island (`N`/`󱀒N`) remain, and the winbar re-lays
 itself out on `WinResized`.
 
 The `N` rollup counts OTHER yap buffers with an in-flight request; the
-`󰭖N` rollup counts OTHER yap buffers with a completed turn awaiting
+`󱀒N` rollup counts OTHER yap buffers with a completed turn awaiting
 your reply. Live sessions enter it when a send finishes; a reopened
 session enters it when it ends on a `# @user` heading with assistant
 history above it. For a global segment independent of yap buffers, use
@@ -1324,7 +1324,7 @@ R19 Turn completion is a first-class event.
     by setup(), disabled with `notify_done = false`) calls vim.notify —
     only for a buffer the user isn't looking at, and never on the error
     path, which already notifies (R9). A completed turn sets the
-    awaiting hint, which drives the `󰭖N` rollup counting the OTHER
+    awaiting hint, which drives the `󱀒N` rollup counting the OTHER
     awaiting buffers (the winbar itself shows no glyph for it): an
     imperative UI hint like `errors`/`yap_usage`, not conversation state
     (R1); reopened sessions seed the rollup from their content on open. Why:
