@@ -179,15 +179,15 @@ are shown below.
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch buffer: a
-                        file-backed jotter with `# @notes`, `# @steer`,
-                        and `# @queue` sections. Notes are inert. While a
-                        turn runs, <C-s> submits # @steer; it remains there
-                        until delivered and can be edited or removed to
-                        revise/cancel it. While idle, <C-s> consumes the next
-                        non-empty line under # @queue and sends it. Remaining
-                        queue lines dispatch in order after each turn.
-                        Consumption reads and edits the live buffer, then
-                        saves the result to the sidecar file.
+                        file-backed jotter with independently foldable
+                        `# @notes`, `# @steer`, and `# @queue` sections.
+                        Notes are inert. While a turn runs, <C-s> submits
+                        # @steer; it remains there until delivered and can
+                        be revised/canceled. While idle, <C-s> consumes the
+                        next non-empty line under # @queue and sends it.
+                        Remaining queue lines dispatch in order after each
+                        turn. Consumption reads and edits the live buffer,
+                        then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -1337,8 +1337,9 @@ R20 Scratch sections are parsed from the live `*.queue` buffer, never
     message per non-empty line, consumed in order. Editing/removing a pending
     steer sends an update/cancellation to the running backend. Queue removal
     and delivered-steer removal are reflected in the buffer and saved to the
-    sidecar. Why: pending work is retractable, and the visible buffer—not a
-    stale disk snapshot—is the control surface.
+    sidecar. The three sections fold independently. Why: pending work is
+    retractable, and the visible buffer—not a stale disk snapshot—is the
+    control surface.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

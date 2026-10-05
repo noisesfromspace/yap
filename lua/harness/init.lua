@@ -1248,6 +1248,23 @@ function M.scratch_send(scratch)
 end
 
 
+local function scratch_heading(line)
+  return line:match("^# @notes%s*$") or line:match("^# @steer%s*$") or line:match("^# @queue%s*$")
+end
+
+function M.scratch_foldexpr(lnum)
+  local current = vim.fn.getline(lnum)
+  if scratch_heading(current) then
+    return ">1"
+  end
+  for row = lnum - 1, 1, -1 do
+    if scratch_heading(vim.fn.getline(row)) then
+      return "1"
+    end
+  end
+  return "0"
+end
+
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
 --- opened below the chat window. It is a real, file-backed buffer — a
 --- sibling `*.queue` file of the session — so `:write` saves it and an
@@ -1342,12 +1359,11 @@ function M.scratch_toggle(buf)
   end
   vim.wo.winfixheight = true
   vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
-  -- The split inherited the chat window's expr folds; a queue is a plain
-  -- jotter, so drop foldexpr/foldtext evaluation (arbitrary queued text
-  -- must never be interpreted as yap fold structure).
-  vim.wo.foldmethod = "manual"
-  vim.wo.foldexpr = ""
+  vim.wo.foldmethod = "expr"
+  vim.wo.foldexpr = "v:lua.require'harness'.scratch_foldexpr(v:lnum)"
   vim.wo.foldtext = ""
+  vim.wo.foldlevel = 99
+  vim.wo.foldenable = true
 end
 
 --- Record a backend error: notify, persist it in the winbar, and leave a

@@ -21,10 +21,22 @@ assert(
   "scratch window is not below the chat"
 )
 assert(vim.wo.winbar == "", "scratch window inherited the yap winbar")
-assert(vim.wo.foldmethod == "manual", "scratch window inherited the chat's expr folds")
+assert(vim.wo.foldmethod == "expr", "scratch sections are not foldable")
+assert(vim.wo.foldenable, "scratch folding is disabled")
 
-local initial = table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n")
-assert(initial:match("# @notes") and initial:match("# @steer") and initial:match("# @queue"), "scratch sections missing")
+-- Each control section has its own fold; closing one leaves the others open.
+vim.api.nvim_win_call(scratch_win, function()
+  assert(vim.fn.foldlevel(1) == 1, "notes heading has no fold")
+  assert(vim.fn.foldlevel(3) == 1, "steer heading has no fold")
+  assert(vim.fn.foldlevel(5) == 1, "queue heading has no fold")
+  vim.api.nvim_win_set_cursor(scratch_win, { 1, 0 })
+  vim.cmd("normal! zc")
+  assert(vim.fn.foldclosed(1) == 1, "notes section did not fold")
+  assert(vim.fn.foldclosed(3) == -1, "folding notes also closed steer")
+  assert(vim.fn.foldclosed(5) == -1, "folding notes also closed queue")
+  vim.cmd("normal! zo")
+end)
+
 
 -- the scratch buffer is a real file: :write saves the live control buffer
 local saved = { "# @notes", "a note", "", "# @steer", "", "# @queue", "task one", "task two" }
