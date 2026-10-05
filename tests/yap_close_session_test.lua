@@ -5,7 +5,14 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+
+-- The close_session tool should use the same fallback order as :bd.
+local waiting = yap.new()
+state.awaiting[waiting] = true
+local running = yap.new()
+state.running[running] = { kill = function() end }
 
 -- Replace the typing line under the LAST # @user heading.
 local function set_prompt(b, text)
@@ -18,6 +25,10 @@ local function set_prompt(b, text)
   end
 end
 
+local function current()
+  return vim.api.nvim_get_current_buf()
+end
+
 local buf = yap.new()
 set_prompt(buf, "when you are done, close the session")
 local path = vim.api.nvim_buf_get_name(buf)
@@ -27,9 +38,9 @@ yap.send()
 
 -- The buffer must be wiped only after the turn completes.
 local closed = vim.wait(30000, function()
-  return not vim.api.nvim_buf_is_valid(buf)
+  return not vim.api.nvim_buf_is_valid(buf) and current() == waiting
 end, 50)
-assert(closed, "buffer not closed after close_session turn")
+assert(closed, "buffer not closed onto the waiting session after close_session turn")
 
 -- The session file survives (saved, not deleted) and holds the streamed
 -- final answer plus the close_session tool block.

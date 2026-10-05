@@ -214,16 +214,20 @@ local function focus_forget(buf)
   end
 end
 
--- Landing spot after :bd/:bw/:close of the current session: the most
--- recently focused session awaiting a reply, otherwise the last non-session
--- (file) buffer accessed. Idle sessions are not a landing spot — the user
--- asked to go back to a waiting session, else to a real file.
+-- Landing spot after closing the current session: the most recently focused
+-- session awaiting a reply, otherwise a running session, otherwise the last
+-- non-session (file) buffer. Idle sessions are not a landing spot.
 local function focus_fallback(buf)
   local function open(b)
     return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b)
   end
   for _, b in ipairs(focus_mru) do
     if open(b) and vim.b[b].yap and awaiting[b] then
+      return b
+    end
+  end
+  for _, b in ipairs(focus_mru) do
+    if open(b) and vim.b[b].yap and running[b] then
       return b
     end
   end

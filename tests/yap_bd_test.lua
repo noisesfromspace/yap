@@ -1,6 +1,7 @@
 -- :bd on a yap session buffer lands on a session awaiting a reply when one
--- is open, otherwise on the last file accessed — never on the empty "No
--- Name" buffer Neovim's "deleting the last listed buffer" path produces.
+-- is open, otherwise on a running session, then the last file accessed —
+-- never on the empty "No Name" buffer Neovim's "deleting the last listed
+-- buffer" path produces.
 -- Session buffers are unlisted, so Neovim's own replacement-buffer search
 -- skips them.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -54,16 +55,31 @@ assert(
   "after :bd B2, expected waiting session A over the file, got " .. cur_name()
 )
 
--- An idle session is not a landing spot: go to the last file instead.
+-- A running session is preferred over a listed file when no session is
+-- awaiting a reply.
 state.awaiting[a] = nil -- A is now idle
-local filebuf2 = open_file()
+local running_session = yap.new()
+state.running[running_session] = { kill = function() end }
+open_file()
 local c = yap.new()
 vim.cmd("bd")
 assert(
   vim.wait(2000, function()
-    return current() == filebuf2
+    return current() == running_session
   end),
-  "after :bd C, expected the last file, got " .. cur_name()
+  "after :bd C, expected the running session, got " .. cur_name()
+)
+state.running[running_session] = nil
+
+-- An idle session is not a landing spot: go to the last file instead.
+local filebuf3 = open_file()
+local d = yap.new()
+vim.cmd("bd")
+assert(
+  vim.wait(2000, function()
+    return current() == filebuf3
+  end),
+  "after :bd D, expected the last file, got " .. cur_name()
 )
 
 -- An unloaded parent also closes its hidden child sessions.
