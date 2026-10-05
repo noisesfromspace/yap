@@ -66,4 +66,19 @@ assert(
   "after :bd C, expected the last file, got " .. cur_name()
 )
 
+-- An unloaded parent also closes its hidden child sessions.
+local parent = yap.new()
+local child = yap.new()
+vim.b[child].yap_subagent_parent = parent
+state.awaiting[child] = true
+vim.api.nvim_set_current_buf(parent)
+vim.cmd("bd")
+assert(
+  vim.wait(2000, function()
+    return not vim.api.nvim_buf_is_valid(child)
+  end),
+  "deleting a parent session should close its subagent buffer"
+)
+assert(state.running[child] == nil, "closed subagent should not keep a running request")
+
 print("OK bd")

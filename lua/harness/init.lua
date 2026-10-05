@@ -1686,6 +1686,22 @@ function M.send(buf)
   end
 end
 
+--- Stop and wipe every child session when its parent is unloaded.
+local function close_subagents(parent)
+  subagent_children[parent] = nil
+  for _, child in ipairs(vim.api.nvim_list_bufs()) do
+    if child ~= parent and vim.b[child].yap and vim.b[child].yap_subagent_parent == parent then
+      -- Closing a child must not send a late result into a parent being
+      -- closed; stop it before wiping its buffer.
+      subagent_done[child] = nil
+      M.stop(child)
+      if vim.api.nvim_buf_is_valid(child) then
+        pcall(vim.api.nvim_buf_delete, child, { force = true })
+      end
+    end
+  end
+end
+
 --- Kill the in-flight request for the current buffer.
 function M.stop(buf)
   buf = buf or vim.api.nvim_get_current_buf()
@@ -2358,6 +2374,10 @@ function M.setup(opts)
     group = adopt_group,
     callback = function(args)
       local buf = args.buf
+      if vim.b[buf].yap then
+        close_subagents(buf)
+        M.stop(buf)
+      end
       if vim.api.nvim_get_current_buf() ~= buf or not vim.b[buf].yap then
         return
       end
