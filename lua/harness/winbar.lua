@@ -364,10 +364,17 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, center, usage, state)
+  local function render(left, center, usage, state, left_width, right_width)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
+    end
+    -- `%=` centers the island between the two side clusters, not at the
+    -- window's midpoint, so an asymmetric pair (a fresh session has no
+    -- gauge yet) drifts off center. Pad the narrower side so both are
+    -- equal width and the island lands on the true midpoint.
+    if center and left_width < right_width then
+      parts[#parts + 1] = string.rep(" ", right_width - left_width)
     end
     parts[#parts + 1] = "%="
     if center then
@@ -375,6 +382,9 @@ local function render_winbar(buf)
         parts[#parts + 1] = render_seg(s, true)
       end
       parts[#parts + 1] = "%="
+      if right_width < left_width then
+        parts[#parts + 1] = string.rep(" ", left_width - right_width)
+      end
     end
     if usage then
       for _, s in ipairs(usage) do
@@ -395,13 +405,14 @@ local function render_winbar(buf)
     local center = show_mid and center_segments() or nil
     local usage = usage_segment(mode)
     local state = state_segment()
+    local left_width = width_of(left)
     local right_width = (usage and width_of(usage) or 0) + (state and width_of({ state }) or 0)
     local center_width = center and width_of(center) or 0
-    local total = width_of(left) + center_width + right_width
+    local total = left_width + center_width + right_width
     if total <= width and (not center or
-        (width_of(left) <= math.floor((width - center_width) / 2)
+        (left_width <= math.floor((width - center_width) / 2)
           and right_width <= math.floor((width - center_width) / 2))) then
-      return render(left, center, usage, state)
+      return render(left, center, usage, state, left_width, right_width)
     end
     if show_mid then
       show_mid = false
@@ -414,7 +425,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, nil, usage, state) -- smallest layout; let it clip
+      return render(left, nil, usage, state, left_width, right_width) -- smallest layout; let it clip
     end
   end
 end

@@ -43,6 +43,38 @@ assert(math.abs(model_start - 1 + center_width / 2 - 39) <= 1,
   "model island is not centered in 78 columns: " .. centered)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
+-- Centering must hold when the sides are asymmetric: `%=` centers between
+-- the two side clusters, not at the window midpoint, so a lone description
+-- (nothing on the right) or a gauge-heavy right side (done glyph left) would
+-- otherwise push the island off the true midpoint. A fresh session has no
+-- gauge yet; the first completed turn adds one.
+local winbar_state = require("harness.state")
+local function island_center(cols)
+  local wb = winbar_at(cols)
+  local rendered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = cols }).str
+  local start = rendered:find(" mock/m1 ", 1, true)
+  if not start then return nil end
+  local col = vim.fn.strdisplaywidth(rendered:sub(1, start - 1)) + 1
+  return col - 1 + vim.fn.strdisplaywidth(" mock/m1 ") / 2
+end
+vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = nil, nil
+local saved_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+-- Right-heavy: done glyph left, context gauge right.
+winbar_state.awaiting[buf] = true
+winbar_state.last_turn[buf] = { prompt = 120000, context_window = 250000 }
+local c = island_center(100)
+assert(c and math.abs(c - 50) <= 1, "gauge island off center: " .. tostring(c))
+winbar_state.awaiting[buf] = nil
+winbar_state.last_turn[buf] = nil
+-- Left-heavy: description left, nothing right.
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+  "---", "provider: mock", "model: m1", "description: A session title", "---", "",
+})
+c = island_center(100)
+assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. tostring(c))
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
+vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
+
 -- Narrower: the model island goes first; chips keep tokens + cost.
 wb = winbar_at(40)
 assert(not wb:match("mock/m1"), "40-col winbar kept the model: " .. wb)
