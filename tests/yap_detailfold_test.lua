@@ -128,7 +128,7 @@ assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool 
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
--- The fold view follows the model as a distinct item in the left cluster.
+-- The fold view is a separate right island between metrics and gauge.
 fold.set_view_level(2)
 local state = require("harness.state")
 state.last_turn[buf] = { prompt = 50, context_window = 100 }
@@ -139,22 +139,28 @@ local left, right = bar:match("^(.-)%%=(.*)$")
 local rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
 local provider, model = require("harness.util").current_combo(buf)
 local combo = provider .. "/" .. model
-local model_at = assert(rendered_left:find(combo, 1, true), "winbar missing model: " .. rendered_left)
-local fold_at = assert(rendered_left:find(combo .. "   󰘖 2", 1, true), "fold view not separated after model: " .. rendered_left)
-assert(fold_at == model_at, "fold view should follow the model: " .. rendered_left)
-assert(not right:find("󰘖", 1, true), "fold view remained in right cluster: " .. bar)
-assert(right:find("50%%", 1, true), "winbar missing context activity indicator: " .. bar)
+assert(rendered_left:find(combo, 1, true), "winbar missing model: " .. rendered_left)
+assert(not left:find("󰘖", 1, true), "fold view remained in left cluster: " .. bar)
+local rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_right:find(" 󰘖 2   50%", 1, true), "fold island should precede gauge: " .. rendered_right)
+vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
+bar = yap.winbar(buf)
+right = assert(bar:match("%%=(.*)$"))
+rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_right:find(" 󰅐 1.3k · $0.002   󰘖 2   50%", 1, true),
+  "fold island should sit between metrics and gauge: " .. rendered_right)
+vim.b[buf].yap_usage = nil
 local icons = yap.config.icons
 icons.fold = "TEST"
 bar = yap.winbar(buf)
-left = assert(bar:match("^(.-)%%="), "winbar missing left cluster: " .. bar)
-rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_left:find(combo .. "   TEST 2", 1, true), "fold icon config/spacing ignored: " .. rendered_left)
+right = assert(bar:match("%%=(.*)$"), "winbar missing right cluster: " .. bar)
+rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_right:find(" TEST 2 ", 1, true), "fold icon config ignored: " .. rendered_right)
 icons.fold = ""
 bar = yap.winbar(buf)
-left = assert(bar:match("^(.-)%%="), "winbar missing left cluster: " .. bar)
-rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_left:find(combo .. "   2", 1, true), "empty fold icon should leave the separated level: " .. rendered_left)
+right = assert(bar:match("%%=(.*)$"), "winbar missing right cluster: " .. bar)
+rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_right:find(" 2 ", 1, true), "empty fold icon should leave the level: " .. rendered_right)
 icons.fold = "󰘖"
 state.running[buf], state.live[buf] = nil, nil
 fold.set_view_level(3)

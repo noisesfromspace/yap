@@ -154,12 +154,11 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- then the current session's title/model/fold view; on the right, one
--- island for usage counters and another for the context meter, followed by
--- an error glyph only when something went wrong. The bar is width-aware:
--- as the window narrows it drops the model/fold cluster, then the chip
--- costs, then the chip tokens; the error glyph, prices and island survive.
--- Past that the bar clips.
+-- description and provider/model; on the right, separate rounded islands
+-- for the fold view, usage counters and context meter, followed by an error
+-- glyph only when something went wrong. The bar is width-aware: as the
+-- window narrows it drops the model/fold, then costs, then tokens; the
+-- error glyph, prices and context meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -241,12 +240,13 @@ local function render_winbar(buf)
       add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable middle: provider/model and the separated applied fold view.
+    -- Droppable model island: same rounded caps and surface as the rollup.
+    -- The fold view lives beside the right-hand metrics.
     if show_mid then
-      local icon = icons.fold
       add_item({
-        seg(provider .. "/" .. model, "Model", false, true),
-        seg("   " .. (icon ~= "" and (icon .. " ") or "") .. fold.level(), "Idle"),
+        seg("", "IslandCap"), seg(" ", nil, true),
+        seg(provider .. "/" .. model, "Model", true, true),
+        seg(" ", nil, true), seg("", "IslandCap"),
       })
     end
     if has_item then
@@ -289,10 +289,10 @@ local function render_winbar(buf)
     return parts
   end
 
-  -- Usage/cost cluster: since-open and all-time counters share one island;
-  -- the context meter has its own island, separated by winbar space.
-  -- As the bar narrows, tokens and costs drop before the context meter.
-  local function usage_segment(mode)
+  -- Usage counters, fold view and context meter each have their own island.
+  -- As the bar narrows, the fold drops with the model; tokens and costs drop
+  -- before the context meter.
+  local function usage_segment(mode, show_fold)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
@@ -323,12 +323,12 @@ local function render_winbar(buf)
     end
 
     local context = context_segment(mode ~= "gauge")
-    if #chips == 0 and not context then
+    if not show_fold and #chips == 0 and not context then
       return nil
     end
     local segs = {}
     local function pill(parts)
-      segs[#segs + 1] = seg(#segs == 0 and " " or "  ", "Idle")
+      segs[#segs + 1] = seg(" ", "Idle")
       segs[#segs + 1] = seg("", "IslandCap")
       for _, part in ipairs(parts) do
         segs[#segs + 1] = seg(part[1], part[2], true)
@@ -347,6 +347,10 @@ local function render_winbar(buf)
       end
       counters[#counters + 1] = { " ", "Count" }
       pill(counters)
+    end
+    if show_fold then
+      local icon = icons.fold
+      pill({ { " " .. (icon ~= "" and (icon .. " ") or "") .. fold.level() .. " ", "Count" } })
     end
     if context then
       pill(context)
@@ -391,7 +395,7 @@ local function render_winbar(buf)
   local desc_max, mode, show_mid = 40, "full", true
   while true do
     local left = left_segments(desc_max, show_mid)
-    local usage = usage_segment(mode)
+    local usage = usage_segment(mode, show_mid)
     local state = state_segment()
     local total = width_of(left)
       + (usage and width_of(usage) or 0)
@@ -533,6 +537,9 @@ local function define_winbar_hl()
   for _, group in ipairs({ "Model", "Description" }) do
     styled_hl("YapCursive" .. group, "Yap" .. group, true)
   end
+  local model_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveModel", link = false })
+  model_attrs.bg = bg
+  vim.api.nvim_set_hl(0, "YapIslandCursiveModel", model_attrs)
   styled_hl("YapUprightIdle", "YapModel", false)
   for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
     styled_hl("YapUpright" .. group, "Yap" .. group, false)

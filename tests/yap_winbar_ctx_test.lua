@@ -69,13 +69,20 @@ for _, group in ipairs({ "YapUprightIdle", "YapIslandUprightCount", "YapGaugeLab
 end
 state.last_turn[buf] = { prompt = 23000, context_window = 250000 }
 vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
-local bar = yap.winbar(buf)
+local bar = winbar_at(40)
 assert(bar:find("%#YapIslandUprightCount#", 1, true), "usage text missing island foreground: " .. bar)
 assert(bar:find("%#YapIslandUprightGaugeLabel#", 1, true), "gauge label missing island foreground: " .. bar)
 local right = assert(bar:match("%%=(.*)$"))
 local displayed = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(displayed:find(" 󰅐 1.3k · $0.002    ", 1, true), "counters and gauge should be separate islands: " .. displayed)
+assert(displayed:find(" 󰅐 1.3k · $0.002   ", 1, true), "counters and gauge should be adjacent islands: " .. displayed)
 assert(select(2, displayed:gsub("", "")) == 2 and select(2, displayed:gsub("", "")) == 2,
-  "right side should contain exactly two rounded islands: " .. displayed)
+  "narrow layout should contain only counters and gauge islands: " .. displayed)
+local wide = winbar_at(120)
+local wide_right = assert(wide:match("%%=(.*)$"))
+local wide_text = vim.api.nvim_eval_statusline(wide_right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(wide_text:find(" 󰅐 1.3k · $0.002   󰘖 2   9%", 1, true),
+  "wide layout should have metrics, fold, gauge islands with one space between: " .. wide_text)
+assert(select(2, wide_text:gsub("", "")) == 3 and select(2, wide_text:gsub("", "")) == 3,
+  "wide layout should contain three islands: " .. wide_text)
 
 print("OK winbar_ctx")

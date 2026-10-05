@@ -24,7 +24,7 @@ end
 -- state glyph: idle/awaiting are silent, only errors get one.
 local wb = winbar_at(80)
 assert(wb:match("mock/m1"), "wide winbar missing model: " .. wb)
-assert(wb:find("%#YapCursiveModel#", 1, true), "model is not cursive: " .. wb)
+assert(wb:find("%#YapIslandCursiveModel#", 1, true), "model is not cursive in its island: " .. wb)
 assert(wb:find("%#YapIslandUprightCount#", 1, true), "right usage is not upright in its island: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs: " .. wb)
@@ -57,7 +57,6 @@ for _, b in ipairs({ target, other, waiting }) do
 end
 vim.b[target].yap_provider = "mock"
 vim.b[target].yap_model = "m1"
-local fold_view = "   󰘖 " .. require("harness.fold").level()
 local function rendered_left()
   local left = assert(yap.winbar(target):match("^(.-)%%="))
   return vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
@@ -79,7 +78,7 @@ for mask = 0, 15 do
     expected[#expected + 1] = " ◉1 "
   end
   if titled then expected[#expected + 1] = "Session title" end
-  expected[#expected + 1] = "mock/m1" .. fold_view
+  expected[#expected + 1] = " mock/m1 "
   local actual = rendered_left()
   assert(actual == " " .. table.concat(expected, "  ") .. " ",
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
@@ -91,7 +90,7 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   vim.api.nvim_set_hl(0, "WinBar", { bg = colors[2] })
   vim.api.nvim_set_hl(0, "WinBarNC", { bg = 0x333333 })
   vim.api.nvim_exec_autocmds("ColorScheme", {})
-  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds", "YapIslandUprightCount", "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel", "YapIslandUprightGaugeLow" }) do
+  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds", "YapIslandCursiveModel", "YapIslandUprightCount", "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel", "YapIslandUprightGaugeLow" }) do
     assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
       group .. " has a mismatched pill background")
   end
@@ -103,9 +102,12 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   vim.b[target].yap_usage = { prompt = 1500, completion = 42, cost = 0.00342 }
   state.last_turn[target] = { prompt = 23000, context_window = 250000 }
   local bar = yap.winbar(target)
+  local left = assert(bar:match("^(.-)%%="))
+  assert(select(2, left:gsub("%%#YapIslandCap#", "")) >= 2,
+    "model island needs active caps: " .. left)
   local right = assert(bar:match("%%=(.*)$"))
   assert(select(2, right:gsub("%%#YapIslandCap#", "")) == 4,
-    "both right islands need active caps: " .. right)
+    "visible right islands need active caps: " .. right)
   vim.b[target].yap_usage = nil
   state.last_turn[target] = nil
 end
@@ -120,6 +122,8 @@ local picker_win = vim.api.nvim_open_win(picker_buf, true, {
 })
 vim.g.statusline_winid = session_win
 local inactive_bar = yap.winbar(target)
+local inactive_left = assert(inactive_bar:match("^(.-)%%="))
+assert(inactive_left:find("%#YapIslandCapNC#", 1, true), "model island needs inactive caps: " .. inactive_left)
 local inactive_right = assert(inactive_bar:match("%%=(.*)$"))
 assert(inactive_right:find("%#YapIslandCapNC#", 1, true) and not inactive_right:find("%#YapIslandCap#", 1, true),
   "right islands should use inactive caps in picker: " .. inactive_right)
@@ -136,6 +140,8 @@ vim.api.nvim_win_set_width(0, 12)
 assert(rendered_left() == " Session title ", "narrow title has a dangling separator: " .. rendered_left())
 assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
   "session title is not cursive: " .. yap.winbar(target))
+assert(not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),
+  "narrow title kept the model island: " .. yap.winbar(target))
 vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
@@ -157,4 +163,9 @@ for _, group in ipairs({
     group .. " should not be cursive")
 end
 
+assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).bg
+    == vim.api.nvim_get_hl(0, { name = "YapIsland", link = false }).bg,
+  "model island should share the rollup surface")
+assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
+  "model text should remain italic inside its island")
 print("OK winbar_resize")
