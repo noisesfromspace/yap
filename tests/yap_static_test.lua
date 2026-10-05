@@ -70,11 +70,17 @@ assert(not joined:match("yap:usage"), "usage marker left behind")
 local u = vim.b[buf].yap_usage
 assert(u and u.prompt == 1500 and u.completion == 42, "usage: " .. vim.inspect(u))
 assert(math.abs(u.cost - 0.00342) < 1e-9, "cost: " .. tostring(u.cost))
--- 5. winbar shows combo + usage + state
+-- 5. winbar shows combo + usage + state. The two full usage counters
+-- together are too wide for the centered model at the default 80 columns,
+-- so check the combo with the all-time total hidden (mirrors
+-- yap_winbar_resize_test).
+local saved_total = vim.b[buf].yap_session_usage
+vim.b[buf].yap_session_usage = nil
 local wb = yap.winbar(buf)
 assert(wb:match("mock/m1"), "winbar combo: " .. wb)
 assert(wb:match("1.5k"), "winbar tokens: " .. wb)
 assert(wb:match("%$0.00342"), "winbar cost: " .. wb)
+vim.b[buf].yap_session_usage = saved_total
 vim.b[buf].yap_usage = { prompt = 1200000, completion = 1000 }
 wb = yap.winbar(buf)
 assert(wb:match("1.2m"), "compact winbar tokens: " .. wb)

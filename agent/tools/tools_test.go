@@ -124,8 +124,9 @@ func TestBashToolStartEvent(t *testing.T) {
 
 func TestBashApprovalGate(t *testing.T) {
 	// No approval channel (yap send / unit tests): a dangerous command is
-	// denied rather than run silently.
-	if _, _, err := run(t, "bash", `{"command":"rm -rf /tmp/definitely-not-there"}`); err == nil || !strings.Contains(err.Error(), "requires approval") {
+	// denied rather than run silently. `rm -rf /` stays gated after the
+	// deletion narrowing (only root/home/system/glob targets are).
+	if _, _, err := run(t, "bash", `{"command":"rm -rf /"}`); err == nil || !strings.Contains(err.Error(), "requires approval") {
 		t.Fatalf("dangerous command without approval: %v", err)
 	}
 
@@ -146,16 +147,21 @@ func TestBashApprovalGate(t *testing.T) {
 		utils.ApprovalReplies = old
 	}()
 
-	target := filepath.Join(t.TempDir(), "nothing-here")
+	target := filepath.Join(t.TempDir(), "scratch")
 
 	// Denied: the command never runs.
-	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err == nil || !strings.Contains(err.Error(), "rejected") {
+	if _, _, err := run(t, "bash", `{"command":"rm -rf /"}`); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("denied command: %v", err)
 	}
 
-	// Approved: the command runs.
-	if _, _, err := run(t, "bash", `{"command":"rm -rf `+target+`"}`); err != nil {
+	// Approved: the command runs. `chmod a+w` is a broad permission change
+	// (still gated), but on a scratch file it is harmless; the write bit
+	// proves it actually executed.
+	if _, _, err := run(t, "bash", `{"command":"touch `+target+` && chmod a+w `+target+`"}`); err != nil {
 		t.Fatalf("approved command: %v", err)
+	}
+	if st, err := os.Stat(target); err != nil || st.Mode().Perm()&0o222 == 0 {
+		t.Fatalf("approved chmod did not take effect: mode=%v err=%v", st, err)
 	}
 }
 
