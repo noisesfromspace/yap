@@ -48,26 +48,25 @@ local header_ok = vim.wait(10000, function()
 end, 10)
 assert(header_ok, "tool header not visible mid-run")
 assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
-local sparkle_frames = { "※", "⁕", "⁜", "⁑" }
-local sparkle_colors = { "YapBusyTeal", "YapBusyBlue", "YapBusyViolet" }
-local has_colored_signal = false
-for _, frame in ipairs(sparkle_frames) do
-  for _, color in ipairs(sparkle_colors) do
-    local bar = yap.winbar()
-    if bar:find(frame, 1, true) and bar:find("%#" .. color .. "#", 1, true) then
-      has_colored_signal = true
-      break
-    end
-  end
-  if has_colored_signal then
+local spinner_frames = { "※", "⁕", "⁜", "⁑" }
+local has_theme_colored_icon = false
+for _, frame in ipairs(spinner_frames) do
+  local bar = yap.winbar()
+  if bar:find(frame, 1, true) and bar:find("%#YapBusyIcon#", 1, true) then
+    has_theme_colored_icon = true
     break
   end
 end
-assert(has_colored_signal, "winbar is missing the colored typographic spinner: " .. yap.winbar())
+assert(has_theme_colored_icon, "winbar is missing the theme-colored activity icon: " .. yap.winbar())
+assert(vim.api.nvim_get_hl(0, { name = "YapBusyText" }).link == "Normal",
+  "activity text should use the readable Normal highlight")
+assert(vim.api.nvim_get_hl(0, { name = "YapBusyIcon" }).link == "DiagnosticInfo",
+  "activity icon should keep its distinct theme accent")
 local mid_ok = vim.wait(10000, function()
-  return yap.winbar():match("bash") ~= nil
+  local bar = yap.winbar()
+  return bar:find("bash", 1, true) ~= nil and bar:find("%#YapBusyText#", 1, true) ~= nil
 end, 10)
-assert(mid_ok, "winbar did not show the tool name after 2s: " .. yap.winbar())
+assert(mid_ok, "winbar did not show readable, separately highlighted tool text after 2s: " .. yap.winbar())
 local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")

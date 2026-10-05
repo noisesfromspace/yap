@@ -1,9 +1,11 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
 -- yap session buffer: busy beacon, global rollup island, session
 -- description, provider/model + fold-view cluster, usage/cost chips and
--- the right-edge state glyph. Also owns the spinner that keeps the bar
--- redrawing while a turn streams; the spinner drains live tool output into
--- the tail buffers through state.drain_tail (set by the send path).
+-- the right-edge state glyph. The fold view sits just before the activity
+-- indicator; usage/cost chips remain on the right. Also owns the spinner
+-- that keeps the bar redrawing while a turn streams; the spinner drains
+-- live tool output into the tail buffers through state.drain_tail (set by
+-- the send path).
 
 local M = {}
 
@@ -18,14 +20,9 @@ local errors = state.errors
 local awaiting = state.awaiting
 local steer = state.steer
 
--- A compact, offbeat cycle of typographic marks. Teal, blue and violet
--- rotate independently to give the busy state a little extra life.
-local SPINNER = {
-  { "※", "BusyTeal" },
-  { "⁕", "BusyBlue" },
-  { "⁜", "BusyViolet" },
-  { "⁑", "BusyTeal" },
-}
+-- The spinner animates its shape; the icon uses a semantic theme color,
+-- while accompanying status text uses Normal's readable foreground/background.
+local SPINNER = { "※", "⁕", "⁜", "⁑" }
 local spinner_tick = 0
 local spinner_timer = nil
 
@@ -203,14 +200,18 @@ local function render_winbar(buf)
     end
 
     local spinner = running and running[buf]
+    if show_mid then
+      local icon = icons.fold
+      add_item({ seg((icon ~= "" and (icon .. " ") or " ") .. fold.level(), "Idle") })
+    end
     if spinner then
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
-      local text = frame[1]
+      local item = { seg(frame, "BusyIcon") }
       if l and os.time() - l.since >= 2 then
-        text = text .. " " .. l.name .. " " .. (os.time() - l.since) .. "s"
+        item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
       end
-      add_item({ seg(text, frame[2]) })
+      add_item(item)
     end
 
     local running_others_n = count_others(running, buf)
@@ -236,8 +237,8 @@ local function render_winbar(buf)
       add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable middle: provider/model. The applied fold view is in the
-    -- right-aligned cluster with usage and costs.
+    -- Droppable middle: provider/model. The applied fold view sits just
+    -- before the activity indicator in the left cluster.
     if show_mid then
       add_item({ seg(provider .. "/" .. model, "Model", false, true) })
     end
@@ -340,11 +341,6 @@ local function render_winbar(buf)
     return segs
   end
 
-  local function fold_segment()
-    local icon = icons.fold
-    return seg(" " .. (icon ~= "" and (icon .. " ") or "") .. fold.level(), "Idle")
-  end
-
   -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
   -- are self-evident from the absence of the left spinner, so they stay
   -- silent. The awaiting state still drives the OTHER-buffer rollup island.
@@ -358,7 +354,7 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, usage, fold_view, state)
+  local function render(left, usage, state)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
@@ -368,9 +364,6 @@ local function render_winbar(buf)
       for _, s in ipairs(usage) do
         parts[#parts + 1] = render_seg(s, true)
       end
-    end
-    if fold_view then
-      parts[#parts + 1] = render_seg(fold_view, true)
     end
     if state then
       parts[#parts + 1] = render_seg(state, true)
@@ -385,14 +378,12 @@ local function render_winbar(buf)
   while true do
     local left = left_segments(desc_max, show_mid)
     local usage = usage_segment(mode)
-    local fold_view = show_mid and fold_segment() or nil
     local state = state_segment()
     local total = width_of(left)
       + (usage and width_of(usage) or 0)
-      + (fold_view and width_of({ fold_view }) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
-      return render(left, usage, fold_view, state)
+      return render(left, usage, state)
     end
     if show_mid then
       show_mid = false
@@ -405,7 +396,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, usage, show_mid and fold_segment() or nil, state) -- smallest layout; let it clip
+      return render(left, usage, state) -- smallest layout; let it clip
     end
   end
 end
@@ -465,6 +456,8 @@ local function define_winbar_hl()
     Model = "Keyword",
     Description = "Title",
     Busy = "DiagnosticOk",
+    BusyIcon = "DiagnosticInfo",
+    BusyText = "Normal",
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
@@ -477,10 +470,6 @@ local function define_winbar_hl()
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
-  vim.api.nvim_set_hl(0, "YapBusyTeal", { default = true, fg = "#5fd7c7" })
-  vim.api.nvim_set_hl(0, "YapBusyBlue", { default = true, fg = "#7aa2f7" })
-  vim.api.nvim_set_hl(0, "YapBusyViolet", { default = true, fg = "#bb9af7" })
-
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the
   -- linked groups above so user `:hi YapBusy` overrides still win.
