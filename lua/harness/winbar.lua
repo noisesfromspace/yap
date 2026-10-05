@@ -154,10 +154,10 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- description and provider/model; on the right, separate rounded islands
--- for the fold view, usage counters and context meter, followed by an error
--- glyph only when something went wrong. The bar is width-aware: as the
--- window narrows it drops the model/fold, then costs, then tokens; the
+-- description on the left; on the right, separate rounded islands for
+-- usage counters, provider/model, fold view and context meter, followed by an
+-- error glyph only when something went wrong. The bar is width-aware: as
+-- the window narrows it drops model/fold, then costs, then tokens; the
 -- error glyph, prices and context meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
@@ -193,7 +193,7 @@ local function render_winbar(buf)
   -- Mandatory left cluster (never dropped; the description shrinks). Build
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
-  local function left_segments(desc_max, show_mid)
+  local function left_segments(desc_max)
     local left, has_item = {}, false
     local function add_item(item)
       -- One left inset; separators belong to the layout, not the items.
@@ -240,15 +240,6 @@ local function render_winbar(buf)
       add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable model island: same rounded caps and surface as the rollup.
-    -- The fold view lives beside the right-hand metrics.
-    if show_mid then
-      add_item({
-        seg("", "IslandCap"), seg(" ", nil, true),
-        seg(provider .. "/" .. model, "Model", true, true),
-        seg(" ", nil, true), seg("", "IslandCap"),
-      })
-    end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
     end
@@ -289,9 +280,9 @@ local function render_winbar(buf)
     return parts
   end
 
-  -- Usage counters, fold view and context meter each have their own island.
-  -- As the bar narrows, the fold drops with the model; tokens and costs drop
-  -- before the context meter.
+  -- Usage counters, provider/model, fold view and context meter each have
+  -- their own island. As the bar narrows, model/fold drop together; costs
+  -- and tokens drop before the context meter.
   local function usage_segment(mode, show_fold)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
@@ -331,7 +322,7 @@ local function render_winbar(buf)
       segs[#segs + 1] = seg(" ", "Idle")
       segs[#segs + 1] = seg("", "IslandCap")
       for _, part in ipairs(parts) do
-        segs[#segs + 1] = seg(part[1], part[2], true)
+        segs[#segs + 1] = seg(part[1], part[2], true, part[2] == "Model")
       end
       segs[#segs + 1] = seg("", "IslandCap")
     end
@@ -349,6 +340,7 @@ local function render_winbar(buf)
       pill(counters)
     end
     if show_fold then
+      pill({ { " ", "Count" }, { provider .. "/" .. model, "Model" }, { " ", "Count" } })
       local icon = icons.fold
       pill({ { " " .. (icon ~= "" and (icon .. " ") or "") .. fold.level() .. " ", "Count" } })
     end
@@ -394,7 +386,7 @@ local function render_winbar(buf)
   -- survive; past that the bar clips rather than hiding them.
   local desc_max, mode, show_mid = 40, "full", true
   while true do
-    local left = left_segments(desc_max, show_mid)
+    local left = left_segments(desc_max)
     local usage = usage_segment(mode, show_mid)
     local state = state_segment()
     local total = width_of(left)

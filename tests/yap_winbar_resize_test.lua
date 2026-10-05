@@ -78,10 +78,13 @@ for mask = 0, 15 do
     expected[#expected + 1] = " ◉1 "
   end
   if titled then expected[#expected + 1] = "Session title" end
-  expected[#expected + 1] = " mock/m1 "
   local actual = rendered_left()
-  assert(actual == " " .. table.concat(expected, "  ") .. " ",
+  assert(actual == (#expected > 0 and (" " .. table.concat(expected, "  ") .. " ") or ""),
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
+  local right = assert(yap.winbar(target):match("%%=(.*)$"))
+  local rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+  assert(rendered_right:find(" mock/m1   󰘖 2 ", 1, true),
+    "model island should be immediately before fold: " .. rendered_right)
 end
 -- Theme changes must keep the entire pill on one background, with caps
 -- transitioning to the winbar rather than inheriting the count background.

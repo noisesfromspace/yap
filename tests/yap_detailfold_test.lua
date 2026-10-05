@@ -128,7 +128,7 @@ assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool 
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
--- The fold view is a separate right island between metrics and gauge.
+-- The fold view is a separate right island, immediately after the model island.
 fold.set_view_level(2)
 local state = require("harness.state")
 state.last_turn[buf] = { prompt = 50, context_window = 100 }
@@ -139,16 +139,17 @@ local left, right = bar:match("^(.-)%%=(.*)$")
 local rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
 local provider, model = require("harness.util").current_combo(buf)
 local combo = provider .. "/" .. model
-assert(rendered_left:find(combo, 1, true), "winbar missing model: " .. rendered_left)
+assert(not left:find(combo, 1, true), "model should not remain in left cluster: " .. rendered_left)
 assert(not left:find("󰘖", 1, true), "fold view remained in left cluster: " .. bar)
 local rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_right:find(" 󰘖 2   50%", 1, true), "fold island should precede gauge: " .. rendered_right)
+assert(rendered_right:find(" " .. combo .. "   󰘖 2   50%", 1, true),
+  "model should sit immediately left of fold and gauge: " .. rendered_right)
 vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
 bar = yap.winbar(buf)
 right = assert(bar:match("%%=(.*)$"))
 rendered_right = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_right:find(" 󰅐 1.3k · $0.002   󰘖 2   50%", 1, true),
-  "fold island should sit between metrics and gauge: " .. rendered_right)
+assert(rendered_right:find(" 󰅐 1.3k · $0.002   " .. combo .. "   󰘖 2   50%", 1, true),
+  "model should sit between metrics and fold: " .. rendered_right)
 vim.b[buf].yap_usage = nil
 local icons = yap.config.icons
 icons.fold = "TEST"

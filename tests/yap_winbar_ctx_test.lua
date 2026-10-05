@@ -80,9 +80,9 @@ assert(select(2, displayed:gsub("", "")) == 2 and select(2, displayed:gsub("�
 local wide = winbar_at(120)
 local wide_right = assert(wide:match("%%=(.*)$"))
 local wide_text = vim.api.nvim_eval_statusline(wide_right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(wide_text:find(" 󰅐 1.3k · $0.002   󰘖 2   9%", 1, true),
-  "wide layout should have metrics, fold, gauge islands with one space between: " .. wide_text)
-assert(select(2, wide_text:gsub("", "")) == 3 and select(2, wide_text:gsub("", "")) == 3,
-  "wide layout should contain three islands: " .. wide_text)
+assert(wide_text:find(" 󰅐 1.3k · $0.002   mock/m1   󰘖 2   9%", 1, true),
+  "wide layout should have metrics, model, fold, gauge islands with one space between: " .. wide_text)
+assert(select(2, wide_text:gsub("", "")) == 4 and select(2, wide_text:gsub("", "")) == 4,
+  "wide layout should contain four islands: " .. wide_text)
 
 print("OK winbar_ctx")
