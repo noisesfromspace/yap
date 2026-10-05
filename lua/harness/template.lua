@@ -15,9 +15,14 @@ end
 
 --- `*.md` files in `dir`, sorted by name; empty when the dir is missing.
 local function list_md(dir)
+  dir = vim.fs.normalize(dir)
   local out = {}
-  for _, path in ipairs(vim.fn.glob(vim.fn.expand(dir) .. "/*.md", false, true)) do
-    out[#out + 1] = { path = path, name = vim.fn.fnamemodify(path, ":t:r") }
+  for name, type in vim.fs.dir(dir) do
+    -- glob("*.md") skips dotfiles; vim.fs.dir does not.
+    if type == "file" and name:sub(1, 1) ~= "." and name:match("%.md$") then
+      local path = vim.fs.joinpath(dir, name)
+      out[#out + 1] = { path = path, name = vim.fn.fnamemodify(path, ":t:r") }
+    end
   end
   table.sort(out, function(a, b)
     return a.name < b.name

@@ -7,8 +7,18 @@ local yap = require("harness")
 local session = require("harness.session")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- preview_lines extracts the first user block and the last assistant block,
--- headings excluded, surrounding blank lines trimmed.
+-- preview() returns a { buf = ... } table per the vim.ui.select() preview
+-- contract; the buffer is markdown so pickers syntax-highlight the excerpts.
+local function preview_text(result)
+  assert(type(result) == "table" and result.buf and vim.api.nvim_buf_is_valid(result.buf),
+    "preview must return a { buf = ... } table: " .. vim.inspect(result))
+  assert(vim.bo[result.buf].filetype == "markdown", "preview buffer must be markdown")
+  return vim.api.nvim_buf_get_lines(result.buf, 0, -1, false)
+end
+
+-- preview extracts the first user block and the last assistant block,
+-- headings excluded, surrounding blank lines trimmed, and renders them as
+-- markdown sections separated by a horizontal rule.
 local convo = {
   "# @system",
   "",
@@ -32,13 +42,15 @@ local convo = {
   "last answer line 1",
   "last answer line 2",
 }
-local preview = session.preview_lines(convo)
-assert(preview[1] == "Initial user message:", "unexpected preview: " .. vim.inspect(preview))
-assert(preview[2] == "first question" and preview[3] == "second line",
-  "first user message wrong: " .. vim.inspect(preview))
-assert(preview[#preview - 1] == "last answer line 1" and preview[#preview] == "last answer line 2",
-  "last agent answer wrong: " .. vim.inspect(preview))
-assert(session.preview_lines({})[1] == "(no messages yet)", "empty preview missing")
+local lines = preview_text(session.preview(convo))
+assert(lines[1] == "## First message", "unexpected preview: " .. vim.inspect(lines))
+assert(lines[3] == "first question" and lines[4] == "second line",
+  "first user message wrong: " .. vim.inspect(lines))
+assert(lines[6] == "---" and lines[8] == "## Last answer",
+  "separator / answer heading wrong: " .. vim.inspect(lines))
+assert(lines[10] == "last answer line 1" and lines[11] == "last answer line 2",
+  "last agent answer wrong: " .. vim.inspect(lines))
+assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty preview missing")
 
 -- :YapInstances previews another live buffer with the same excerpts.
 local buf = yap.new()
@@ -54,8 +66,8 @@ vim.ui.select = orig_select
 assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
   "expected only the other open session: " .. vim.inspect(captured and captured.items))
 assert(type(captured.opts.preview_item) == "function", "instances preview_item missing")
-local live_preview = captured.opts.preview_item(captured.items[1])
-assert(live_preview[1] == "Initial user message:" and live_preview[2] == "hello",
+local live_preview = preview_text(captured.opts.preview_item(captured.items[1]))
+assert(live_preview[1] == "## First message" and live_preview[3] == "hello",
   "instances preview wrong: " .. vim.inspect(live_preview))
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
 
@@ -79,6 +91,23 @@ assert(parent_item and not parent_item.text:find("\n", 1, true),
   "current parent with an open subagent should have its own picker row: " .. vim.inspect(parent_item))
 assert(child_item and child_item.text == "  ↳ scout: inspect this task",
   "subagent should have a separate indented row: " .. vim.inspect(child_item))
+
+-- Waiting subagents are available through their parent in :YapWaiting, not
+-- as a separate entry. The general session picker still lists them above.
+local state = require("harness.state")
+state.awaiting[buf] = true
+state.awaiting[child] = true
+local picker = yap.new()
+vim.api.nvim_set_current_buf(picker)
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.waiting()
+vim.ui.select = orig_select
+assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "waiting picker should show the parent but not its subagent: " .. vim.inspect(captured and captured.items))
+state.awaiting[buf], state.awaiting[child] = nil, nil
 
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
@@ -109,8 +138,8 @@ session.pick({ scope = "cwd" }, function() end)
 vim.ui.select = orig_select
 assert(captured and #captured.items == 1, "expected one saved session: " .. vim.inspect(captured and captured.items))
 assert(type(captured.opts.preview_item) == "function", "saved preview_item missing")
-local saved_preview = captured.opts.preview_item(captured.items[1])
-assert(saved_preview[1] == "Initial user message:" and saved_preview[2] == "history question",
+local saved_preview = preview_text(captured.opts.preview_item(captured.items[1]))
+assert(saved_preview[1] == "## First message" and saved_preview[3] == "history question",
   "saved preview wrong: " .. vim.inspect(saved_preview))
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
 

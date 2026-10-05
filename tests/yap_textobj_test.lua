@@ -122,4 +122,35 @@ do
   assert(got[1] == "# @user", "next message did not become first: " .. vim.inspect(got))
 end
 
+-- 5. A fenced read result containing `# @user` must not split the
+--    enclosing assistant message: `dam` drops the whole message.
+do
+  local buf = fresh({
+    "# @system", "",
+    "You are helpful.", "",
+    "# @user", "",
+    "Question.", "",
+    "# @assistant", "",
+    '<!-- yap:tool {"id":"c1","name":"read","arguments":{"path":"x.md"}} -->',
+    "```markdown",
+    "# @user",                -- fake heading, inside the fence
+    "content",
+    "```",
+    "<!-- /yap:tool -->",
+    "",
+    "The answer.",
+    "",
+    "# @user", "",
+  })
+  at(buf, 13, 0) -- on the fake `# @user` inside the fenced read result
+  vim.cmd.normal("dam")
+  local got = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  assert(not vim.tbl_contains(got, "<!-- yap:tool"), "assistant tool header not deleted: " .. vim.inspect(got))
+  assert(not vim.tbl_contains(got, "The answer."), "assistant body not deleted: " .. vim.inspect(got))
+  -- system and first user survive; the trailing `# @user` is now line 9.
+  assert(got[1] == "# @system", "system heading lost: " .. vim.inspect(got))
+  assert(got[5] == "# @user", "first user heading lost: " .. vim.inspect(got))
+  assert(got[9] == "# @user", "trailing user heading did not land at 9: " .. vim.inspect(got))
+end
+
 print("OK textobj")

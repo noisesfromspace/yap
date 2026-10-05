@@ -2,7 +2,8 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Records requests so the Lua test can assert title-generation context. A
-# marked title request gets a fenced response to exercise the output guard.
+# marked title request gets a fenced response to exercise the output guard, or
+# a colon title to exercise the YAML-safe sanitizer.
 LOG = "/tmp/yap-describe.log"
 
 
@@ -14,7 +15,13 @@ class H(BaseHTTPRequestHandler):
             f.write(json.dumps(messages) + "\n")
         is_title = any("Write a short session title" in m.get("content", "") for m in messages)
         has_fence_case = any("Fence regression trigger" in m.get("content", "") for m in messages)
-        answer = "``` [main deadbee] git status ```" if is_title and has_fence_case else "described."
+        has_colon_case = any("Colon regression trigger" in m.get("content", "") for m in messages)
+        if is_title and has_fence_case:
+            answer = "``` [main deadbee] git status ```"
+        elif is_title and has_colon_case:
+            answer = "Neovim 0.13: API migrations"
+        else:
+            answer = "described."
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()

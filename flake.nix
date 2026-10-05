@@ -302,6 +302,7 @@
             packages = [
               pkgs.go
               pkgs.neovim
+              (pkgs.python3.withPackages (p: [ p.msgpack ])) # attached-UI regression tests
               # Browser + runtime for the playwright tool (native Go client;
               # it shells out to the Node driver and drives nixpkgs chromium).
               pkgs.nodejs

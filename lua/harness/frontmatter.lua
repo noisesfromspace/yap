@@ -9,6 +9,7 @@
 --   tools: read,search,glob
 --   created_at: 2025-09-29T19:22:33Z
 --   updated_at: 2025-09-29T19:24:01Z
+--   turns: 14
 --   description: Fix session picker labels and summaries
 --   models:
 --     - moonshot/kimi-k3
@@ -20,9 +21,11 @@
 -- `provider`/`model` is the combo to resume with; `role`/`tools` mark a
 -- subagent session (its role name and the tools it may call); `created_at`
 -- records when the session was created; `updated_at` records its last
--- write (stamped on every save); `models` is the ordered history of
--- every combo actually used (most-recent-last); `subagents` is the ordered
--- list of subagent session paths this session ran (most-recent-last).
+-- write (stamped on every save); `turns` counts the completed replies
+-- (`# @assistant` blocks) — a session-depth summary for the picker, stamped
+-- on save with `updated_at`; `models` is the ordered history of every combo
+-- actually used (most-recent-last); `subagents` is the ordered list of
+-- subagent session paths this session ran (most-recent-last).
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
@@ -39,7 +42,7 @@ local function is_list_key(k)
 end
 
 --- Parse a frontmatter block from a Lua list of lines. Returns
---- { provider, model, created_at, updated_at, description, role,
+--- { provider, model, created_at, updated_at, turns, description, role,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...} }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited block does not
@@ -66,6 +69,8 @@ function M.parse(lines)
         fm.created_at = v
       elseif k == "updated_at" then
         fm.updated_at = v
+      elseif k == "turns" then
+        fm.turns = tonumber(v)
       elseif k == "description" then
         fm.description = v
       elseif k == "role" then
@@ -91,7 +96,7 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at)
+function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
   if role then lines[#lines + 1] = "role: " .. role end
   if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
@@ -100,6 +105,9 @@ function M.render(provider, model, models, created_at, description, role, tools,
   end
   if updated_at then
     lines[#lines + 1] = "updated_at: " .. updated_at
+  end
+  if turns ~= nil then
+    lines[#lines + 1] = "turns: " .. turns
   end
   if description and description ~= "" then
     lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")

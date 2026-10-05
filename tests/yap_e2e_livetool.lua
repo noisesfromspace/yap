@@ -50,24 +50,26 @@ assert(header_ok, "tool header not visible mid-run")
 assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
 local sparkle_frames = require("harness.winbar").spinner_frames
 local sparkle_colors = { "YapBusyTeal", "YapBusyBlue", "YapBusyViolet" }
-local has_colored_signal = false
+local has_colored_icon = false
 for _, frame in ipairs(sparkle_frames) do
   for _, color in ipairs(sparkle_colors) do
     local bar = yap.winbar()
-    if bar:find(frame, 1, true) and bar:find("%#" .. color .. "#", 1, true) then
-      has_colored_signal = true
-      break
-    end
+    if bar:find(frame, 1, true) and bar:find("%#" .. color .. "#", 1, true) then has_colored_icon = true; break end
   end
-  if has_colored_signal then
-    break
-  end
+  if has_colored_icon then break end
 end
-assert(has_colored_signal, "winbar is missing the colored typographic spinner: " .. yap.winbar())
+assert(has_colored_icon, "winbar is missing the rotating spinner color: " .. yap.winbar())
+for group, color in pairs({ YapBusyTeal = 0x5fd7c7, YapBusyBlue = 0x7aa2f7, YapBusyViolet = 0xbb9af7 }) do
+  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).fg == color,
+    group .. " should retain its distinct spinner color")
+end
+assert(vim.api.nvim_get_hl(0, { name = "YapBusyText" }).link == "YapCursiveModel",
+  "activity text should reuse the displayed model-name highlight")
 local mid_ok = vim.wait(10000, function()
-  return yap.winbar():match("bash") ~= nil
+  local bar = yap.winbar()
+  return bar:find("bash", 1, true) ~= nil and bar:find("%#YapBusyText#", 1, true) ~= nil
 end, 10)
-assert(mid_ok, "winbar did not show the tool name after 2s: " .. yap.winbar())
+assert(mid_ok, "winbar did not show readable, separately highlighted tool text after 2s: " .. yap.winbar())
 local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")
@@ -180,8 +182,11 @@ assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tai
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
 yap.stop()
--- M.stop() clears the winbar immediately; the exit callback (which runs
--- repair_stream_tail) lags behind — wait for the repair itself.
+assert(
+  vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf2),
+  "stop did not move the cursor to the new # @user prompt"
+)
+-- M.stop() closes the stream immediately; the process exit callback may lag behind.
 local repaired = vim.wait(5000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- /yap:tool %-%-%>") ~= nil
 end, 20)

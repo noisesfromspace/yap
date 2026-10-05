@@ -179,6 +179,15 @@ local subagent_children = {}
 -- has fully completed and the session file has been saved.
 local close_after_turn = {}
 
+-- Honor a close_session request by wiping the buffer. The turn has already
+-- been saved by whichever completion path reached this point.
+local function close_if_requested(buf)
+  if close_after_turn[buf] then
+    close_after_turn[buf] = nil
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
+
 -- Most-recently-focused buffers, front first. Session buffers are unlisted,
 -- so Neovim's :bd/:bw/:close skip them when choosing where to land after
 -- deleting the current buffer and drop the user on an empty "No Name"
@@ -235,6 +244,8 @@ local function yap_about()
 You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply — indent or fence it instead.
 
 Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the project (normally `/opt/code/yap`) rather than guessing.
+
+For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the `github` tool rather than curl, fetch, websearch, bash, or `gh`. Use other tools only if the `github` tool cannot perform the needed operation; never pass the GitHub token in tool arguments.
 
 ## Skills
 
@@ -295,7 +306,7 @@ local function sync_frontmatter(buf)
     table.insert(models, combo)
   end
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at)
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -318,7 +329,7 @@ local function record_subagent(parent, child_path)
     if p == child_path then return end
   end
   subagents[#subagents + 1] = child_path
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at)
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns)
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
 
@@ -397,7 +408,7 @@ local function audit_append(buf, ev)
     t.audit = paths.audit_path(buf)
     -- 0700: the audit log holds full tool args and results (potentially
     -- secrets); the directory must not be world-readable.
-    vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p", "0700")
+    vim.fs.mkdir(vim.fn.fnamemodify(t.audit, ":h"), { parents = true, mode = 448 }) -- 0o700
   end
   vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
 end
@@ -411,7 +422,7 @@ local function audit_follow(buf)
   end
   local want = paths.audit_path(buf)
   if want ~= t.audit and vim.fn.filereadable(want) == 0 then
-    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p", "0700")
+    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
     if os.rename(t.audit, want) then
       t.audit = want
     end
@@ -658,7 +669,7 @@ local function handle_event(buf, json_line)
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
-      pcall(os.remove, ev.log)
+      vim.npcall(os.remove, ev.log)
     end
   elseif ev.type == "subagent_request" then
     start_subagent(buf, ev)
@@ -1235,7 +1246,6 @@ local function report_error(buf, err)
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   document.append_block(buf, block)
-  fold.after_append(buf, block)
   vim.notify("yap: " .. err, vim.log.levels.ERROR)
 end
 
@@ -1355,6 +1365,7 @@ local function refresh_description(buf, kind, messages)
 Rules:
 - 2-5 words, a specific noun phrase, not a sentence
 - No leading "The user", no "how to", no trailing period
+- No colon in the title (it breaks the YAML frontmatter)
 - Example: "Add websearch tool", "Fix fold lag on streaming"
 
 Return only the title.]]
@@ -1379,10 +1390,11 @@ The input is the user's requests in order. The first request anchors the session
 Rules:
 - 2-6 words, a specific noun phrase, not a sentence, no trailing period
 - No "session", "conversation", "the user", "about"
-- Prefer "Subject: change" so titles stay distinct across sessions in the same project
+- Prefer "Subject – change" so titles stay distinct across sessions in the same project
+- No colon in the title — it breaks the YAML frontmatter
 - Routine commit/close instructions are housekeeping, not the session goal
 - Never title from code, logs, or command output; do not use Markdown fences
-- Example: "Fold lag: cache per changedtick"
+- Example: "Fold lag – cache per changedtick"
 
 Return only the title.]]
     local requests = {}
@@ -1428,6 +1440,7 @@ Return only the title.]]
         :gsub("%s+", " ")
         :gsub("^%s+", "")
         :gsub("%s+$", "")
+        :gsub(":%s+", " – ")
       if description == "" or description:find("`", 1, true) then
         return
       end
@@ -1446,7 +1459,7 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at)
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns)
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
@@ -1458,7 +1471,6 @@ end
 local function close_stream(buf)
   repair_stream_tail(buf)
   document.append_block(buf, { "# @user", "" })
-  fold.after_append(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
   if subagent_done[buf] then
@@ -1475,6 +1487,9 @@ function M.send(buf)
     vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
     return
   end
+  -- A close request is scoped to the turn that made it: a stale flag from
+  -- a previous errored or stopped turn must not close a later turn.
+  close_after_turn[buf] = nil
 
   local messages = document.parse_buffer(buf)
   -- The harness always prepends its own boilerplate, then the
@@ -1516,7 +1531,6 @@ function M.send(buf)
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
   document.append_block(buf, { "# @assistant", "" })
-  fold.after_append(buf, { "# @assistant", "" })
   follow_tail()
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
@@ -1530,28 +1544,31 @@ function M.send(buf)
     local stderr_chunks = {}
     local status, barrier
     -- Coalesce rapid per-token stdout flushes into one buffer edit per
-    -- ~STREAM_FLUSH_MS: every edit makes Neovim recompute expr folds for the
-    -- whole buffer (O(n)), so batching keeps a fast stream smooth on large
-    -- sessions instead of stalling once per token. This is a THROTTLE: the
-    -- timer starts on the first token of a batch and fires 30ms later, so
-    -- text is never delayed by more than one tick even under continuous
-    -- token flow (a debounce would freeze text until a silence gap).
+    -- ~STREAM_FLUSH_MS: block parsing is O(n) per edit, so batching keeps a
+    -- fast stream smooth on large sessions instead of stalling per token.
+    -- This is a THROTTLE: the timer starts on the first token of a batch.
+    -- Only incomplete structural prefixes wait for classification; ordinary
+    -- prose flushes every tick even under continuous token flow.
     local STREAM_FLUSH_MS = 30
     local pending = ""
     local flush_timer = nil
-    local function flush_pending()
+    local function flush_pending(final)
       if pending == "" then
         return
       end
       local data = pending
       pending = ""
+      if not final then data, pending = document.split_stream_tail(buf, data) end
+      if data == "" then return end
       sync_followers()
       document.append_text(buf, data)
-      fold.after_append(buf, vim.split(data, "\n", { plain = true }))
       follow_tail()
     end
-    local function on_flush_tick()
+    local function on_flush_tick(timer)
+      if flush_timer ~= timer then return end -- a final flush cancelled this tick
       flush_timer = nil
+      timer:stop()
+      timer:close()
       flush_pending()
     end
     -- uv timer callbacks run in a fast event context; schedule_wrap escapes
@@ -1563,16 +1580,16 @@ function M.send(buf)
         flush_timer:close()
         flush_timer = nil
       end
-      flush_pending()
+      flush_pending(true)
     end
     stream_flush[buf] = finish_flush
     local function append(data)
       if data == "" then return end
-      local was_empty = pending == ""
       pending = pending .. data
-      if was_empty then
-        flush_timer = vim.uv.new_timer()
-        flush_timer:start(STREAM_FLUSH_MS, 0, on_flush_tick_wrapped)
+      if not flush_timer then
+        local timer = vim.uv.new_timer()
+        flush_timer = timer
+        timer:start(STREAM_FLUSH_MS, 0, function() on_flush_tick_wrapped(timer) end)
       end
     end
     local function route_event(ev)
@@ -1592,7 +1609,7 @@ function M.send(buf)
       drain_tail(buf) -- final bytes; a killed tool never sent tool_end
       if l then
         live[buf] = nil
-        pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
+        vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
       winbar.spinner_stop_if_idle()
       repair_stream_tail(buf)
@@ -1601,6 +1618,7 @@ function M.send(buf)
         report_error(buf, err ~= "" and err or "backend exited")
         close_stream(buf)
         follow_tail()
+        close_if_requested(buf)
         return
       end
       consume_usage(buf)
@@ -1630,7 +1648,6 @@ function M.send(buf)
       if steer_text then
         document.append_message(buf, "user", vim.split(steer_text, "\n", { plain = true }))
       end
-      fold.after_append(buf, { "# @user", "" })
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)
@@ -1668,10 +1685,7 @@ function M.send(buf)
       -- asked to end the session, so once the turn is fully done and the
       -- session file is saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
-      if close_after_turn[buf] then
-        close_after_turn[buf] = nil
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end
+      close_if_requested(buf)
     end
     local handle
     local ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
@@ -1758,6 +1772,22 @@ function M.send(buf)
   end
 end
 
+--- Stop and wipe every child session when its parent is unloaded.
+local function close_subagents(parent)
+  subagent_children[parent] = nil
+  for _, child in ipairs(vim.api.nvim_list_bufs()) do
+    if child ~= parent and vim.b[child].yap and vim.b[child].yap_subagent_parent == parent then
+      -- Closing a child must not send a late result into a parent being
+      -- closed; stop it before wiping its buffer.
+      subagent_done[child] = nil
+      M.stop(child)
+      if vim.api.nvim_buf_is_valid(child) then
+        vim.npcall(vim.api.nvim_buf_delete, child, { force = true })
+      end
+    end
+  end
+end
+
 --- Kill the in-flight request for the current buffer.
 function M.stop(buf)
   buf = buf or vim.api.nvim_get_current_buf()
@@ -1772,7 +1802,7 @@ function M.stop(buf)
     winbar.spinner_stop_if_idle()
     drain_tail(buf)
     local l = live[buf]
-    if l then live[buf] = nil; pcall(os.remove, l.log) end
+    if l then live[buf] = nil; vim.npcall(os.remove, l.log) end
     local f = stream_flush[buf]
     if f then
       f()
@@ -1780,6 +1810,10 @@ function M.stop(buf)
     end
     repair_stream_tail(buf)
     close_stream(buf)
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_get_buf(win) == buf then
+      vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
+    end
   end
 end
 
@@ -1867,7 +1901,7 @@ local function setup_buffer(buf)
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-      pcall(client.stop, client)
+      vim.npcall(client.stop, client)
     end
   end
 
@@ -2289,7 +2323,9 @@ function M.instances(state)
   local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local include_current_parent = b == current and has_open_subagent(b)
-    if (b ~= current or include_current_parent) and vim.b[b].yap and (state == nil or session_state(b) == state) then
+    if (b ~= current or include_current_parent) and vim.b[b].yap
+      and not (state == "waiting" and vim.b[b].yap_subagent_parent)
+      and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
@@ -2330,7 +2366,7 @@ function M.instances(state)
       return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
     end,
     preview_item = function(item)
-      return require("harness.session").preview_lines(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
+      return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
     end,
   }, function(choice)
     if choice then
@@ -2418,20 +2454,8 @@ function M.setup(opts)
       focus_touch(args.buf)
     end,
   })
-  -- Manual folds are window-local. A session can keep streaming while
-  -- hidden, so its cached block model may be newer than the folds installed
-  -- in the window. Reconcile against that window's applied ranges on return.
-  vim.api.nvim_create_autocmd("BufWinEnter", {
-    group = adopt_group,
-    callback = function(args)
-      local buf = args.buf
-      vim.schedule(function()
-        if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap then
-          fold.reconcile(buf, false)
-        end
-      end)
-    end,
-  })
+  -- harness.fold owns synchronous window-entry reconciliation; scheduling
+  -- it here would expose an unfolded frame when a hidden stream is shown.
   -- Redirect :bd/:bw/:bdelete/:bunload of the current session buffer. The
   -- deletion itself fires BufUnload while curbuf is still the session; by
   -- the time a scheduled callback runs, Neovim has moved curbuf to another
@@ -2441,6 +2465,10 @@ function M.setup(opts)
     group = adopt_group,
     callback = function(args)
       local buf = args.buf
+      if vim.b[buf].yap then
+        close_subagents(buf)
+        M.stop(buf)
+      end
       if vim.api.nvim_get_current_buf() ~= buf or not vim.b[buf].yap then
         return
       end
@@ -2462,7 +2490,7 @@ function M.setup(opts)
           local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
           if #lines <= 1 and (#lines == 0 or lines[1] == "") then
             vim.api.nvim_set_current_buf(target)
-            pcall(vim.api.nvim_buf_delete, cur, { force = true })
+            vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
             return
           end
         end
@@ -2528,7 +2556,7 @@ function M.setup(opts)
       if vim.b[args.buf].yap and args.data and args.data.client_id then
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if client then
-          pcall(client.stop, client)
+          vim.npcall(client.stop, client)
         end
       end
     end,

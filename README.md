@@ -61,7 +61,14 @@ cannot be detected reliably in a terminal).
    ```
 
    Export the key before starting Neovim, e.g. `export MOONSHOT_API_KEY=…`.
-   Keep the key out of the config file.
+   Keep the key out of the config file. For GitHub reads, optionally add
+   `"github": {"api_key_env": "GITHUB_TOKEN"}` at the top level and export
+   `GITHUB_TOKEN` before starting Neovim. The `github` tool uses this
+   environment variable (default `GITHUB_TOKEN`) and provides read-only
+   search and read operations for code, repositories, issues, PRs, files,
+   and Projects v2. Without a GitHub token, public REST reads still work at
+   lower unauthenticated rate limits; private content and Projects v2 may
+   require a token. It never needs the token in tool arguments.
 3. Install this repository as a Neovim plugin (or add it with
    `vim.opt.rtp:append("/path/to/yap")`), then configure it in your Neovim
    config:
@@ -125,8 +132,8 @@ notify. For command details and keymaps, see `:help yap-commands`.
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. `<leader>s` opens the scratch queue; send from it to
 append queued text to the chat, or steer a running turn. The winbar shows the
-active session/model, usage, fold view, and whether a turn is running or
-awaiting your reply. `<leader>1` folds agent output, `<leader>2` folds tool
+active session/model, usage, and whether a turn is running or awaiting your
+reply. `<leader>1` folds agent output, `<leader>2` folds tool
 calls and thinking, and `<leader>3` unfolds everything. The `quickfix` tool can
 populate Neovim's quickfix list, and `close_session` closes a chat after its
 current turn while keeping it resumable from `:YapSessions`.

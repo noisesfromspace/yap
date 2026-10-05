@@ -5,6 +5,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local state = require("harness.state")
 
 -- Capture the event independently of the default handler.
 local fired, event_buf, turn
@@ -61,6 +62,16 @@ local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2
 assert(island_at < model_at, "island should precede model: " .. bar2)
 assert(not yap.winbar(buf):match(icons.waiting .. "%d"), "rollup counts the current buffer: " .. yap.winbar(buf))
 assert(yap.overview(buf2) == icons.waiting .. "1", "overview() wrong: " .. tostring(yap.overview(buf2)))
+
+-- A waiting subagent is not an independent item in the rollup; its parent
+-- remains the only session counted as needing a reply.
+local subagent = vim.api.nvim_create_buf(false, true)
+vim.b[subagent].yap = true
+vim.b[subagent].yap_subagent_parent = buf
+state.awaiting[subagent] = true
+assert(yap.overview(buf2) == icons.waiting .. "1", "waiting subagent was counted separately: " .. tostring(yap.overview(buf2)))
+state.awaiting[subagent] = nil
+vim.api.nvim_buf_delete(subagent, { force = true })
 
 -- Yap buffers are unlisted: they never appear in :ls or buffer pickers
 -- (MiniPick.buffers etc.); the pickers are the way back.

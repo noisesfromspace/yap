@@ -107,4 +107,77 @@ assert(seen["[c"] == "Previous thinking block", "[c mapping missing/wrong")
 assert(seen["]e"] == "Next error block", "]e mapping missing/wrong")
 assert(seen["[e"] == "Previous error block", "[e mapping missing/wrong")
 
+-- A fenced read result can contain `# @user` and (escaped) yap markers;
+-- message navigation must treat them as literal content, not structure.
+local buf2 = yap.new()
+fold.setup_buffer(buf2)
+vim.wo.foldlevel = 99
+vim.api.nvim_buf_set_lines(buf2, 0, -1, false, {
+  "# @system", "",          -- 1, 2
+  "# @user", "",            -- 3, 4
+  "# @assistant", "",       -- 5, 6
+  '<!-- yap:tool {"id":"c2","name":"read","arguments":{"path":"x.md"}} -->', -- 7
+  "```markdown",            -- 8
+  "# @user",                -- 9  fake heading, inside the fence
+  "\\<!-- yap:thinking",   -- 10 escaped marker, ]t must not land here
+  "```",                    -- 11
+  "<!-- /yap:tool -->",     -- 12
+  "",                       -- 13
+  "answer",                 -- 14
+  "",                       -- 15
+  "# @user", "",            -- 16, 17
+})
+
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+fold.next_message()
+assert(cursor() == 3, "next_message -> 3, got " .. cursor())
+fold.next_message()
+assert(cursor() == 5, "next_message -> 5, got " .. cursor())
+fold.next_message()
+assert(cursor() == 16, "next_message skips fake heading -> 16, got " .. cursor())
+fold.next_message()
+assert(cursor() == 16, "next_message past last stays put, got " .. cursor())
+fold.prev_message()
+assert(cursor() == 5, "prev_message skips fake heading -> 5, got " .. cursor())
+fold.prev_message()
+assert(cursor() == 3, "prev_message -> 3, got " .. cursor())
+
+-- ]t still hops to the real tool header, not the escaped marker inside it.
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+fold.next_tool()
+assert(cursor() == 7, "next_tool -> real header 7, got " .. cursor())
+fold.next_tool()
+assert(cursor() == 7, "next_tool past only block stays put, got " .. cursor())
+
+-- A thinking block can quote a tool/thinking marker verbatim inside its own
+-- fenced content; block navigation must treat it as literal, not a boundary.
+local buf3 = yap.new()
+fold.setup_buffer(buf3)
+vim.wo.foldlevel = 99
+vim.api.nvim_buf_set_lines(buf3, 0, -1, false, {
+  "# @system", "",                       -- 1, 2
+  "# @user", "",                         -- 3, 4
+  "# @assistant", "",                    -- 5, 6
+  "<!-- yap:thinking",                   -- 7  real thinking opener
+  "hmm",                                 -- 8
+  "```",                                 -- 9
+  '<!-- yap:tool {"id":"x"} -->',       -- 10 literal, inside fence+comment
+  "```",                                 -- 11
+  "-->",                                 -- 12
+  "",                                    -- 13
+  "answer",                              -- 14
+  "",                                    -- 15
+  "# @user", "",                         -- 16, 17
+})
+
+vim.api.nvim_win_set_cursor(0, { 17, 0 })
+fold.prev_tool()
+assert(cursor() == 7, "prev_tool skips marker inside thinking -> 7, got " .. cursor())
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+fold.next_tool()
+assert(cursor() == 7, "next_tool -> real thinking 7, got " .. cursor())
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+fold.next_think()
+assert(cursor() == 7, "next_think -> 7, got " .. cursor())
+
 print("OK nav")

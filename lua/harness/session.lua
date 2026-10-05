@@ -33,14 +33,18 @@ end
 --- clears 'modified', so a clean buffer prompts nothing on exit; the
 --- `[+]` flag is the real signal for "typed but not yet saved".
 --- Writing without 'modified' is harmless.
---- Stamp `updated_at` in the frontmatter to now, immediately before the
---- buffer is written. This is the only place `updated_at` is set; every
+--- Stamp `updated_at` and `turns` in the frontmatter immediately before
+--- the buffer is written. This is the only place `updated_at` is set; every
 --- other frontmatter rewrite preserves it, so the field means "last write".
---- Cheap: only the frontmatter block (capped at 200 lines) is re-read and
---- rewritten, once per save — never on keystrokes or redraws. Legacy files
---- without a block are skipped.
+--- `turns` (the count of `# @assistant` replies — completed turns, ignoring
+--- the trailing empty `# @user` prompt) is recomputed here too so the picker
+--- has an at-a-glance session depth without opening the file. One full-buffer
+--- read feeds both the frontmatter parse and the turn count; the write
+--- serializes the whole buffer anyway, so the extra scan is not new work.
+--- The rewrite is skipped when neither field changed. Legacy files without
+--- a block are skipped.
 local function stamp_updated_at(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return
   end
@@ -54,15 +58,21 @@ local function stamp_updated_at(buf)
   if not e then
     return
   end
-  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  local fm = frontmatter.parse(lines)
   if not fm then
     return
   end
-  local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-  if fm.updated_at == updated_at then
-    return -- same second: skip the rewrite so an unchanged block stays clean
+  local turns = 0
+  for i = e + 1, #lines do
+    if lines[i]:match("^# @assistant%s*$") then
+      turns = turns + 1
+    end
   end
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at)
+  local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  if fm.updated_at == updated_at and fm.turns == turns then
+    return -- unchanged: skip the rewrite so an untouched block stays clean
+  end
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at, turns)
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
 
@@ -80,10 +90,10 @@ function M.save(buf)
   end
   if not path then
     local dir = paths.session_dir(vim.fn.getcwd())
-    vim.fn.mkdir(dir, "p")
+    vim.fs.mkdir(dir, { parents = true })
     path = paths.new_session_path(dir)
     vim.b[buf].yap_path = path
-    pcall(vim.api.nvim_buf_set_name, buf, path)
+    vim.npcall(vim.api.nvim_buf_set_name, buf, path)
   end
   stamp_updated_at(buf)
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
@@ -167,28 +177,39 @@ local function last_block(lines, role)
   return trim_block(acc)
 end
 
---- Preview content for a session: the initial `# @user` message followed by
---- the last `# @assistant` answer. Shared by :YapInstances and :YapSessions
---- so both pickers preview the same two excerpts.
-function M.preview_lines(lines)
-  local preview = {}
+--- Markdown preview of a session: the initial `# @user` message followed by
+--- the last `# @assistant` answer, rendered in a scratch buffer with the
+--- `markdown` filetype so pickers show it with normal syntax highlighting
+--- instead of flat text. Shared by :YapInstances and :YapSessions so both
+--- pickers preview the same two excerpts. Returns the |vim.ui.select()|
+--- preview table `{ buf = ... }`.
+function M.preview(lines)
+  local content = {}
   local user = first_block(lines, "user")
   local assistant = last_block(lines, "assistant")
   if #user > 0 then
-    preview[#preview + 1] = "Initial user message:"
-    vim.list_extend(preview, user)
+    content[#content + 1] = "## First message"
+    content[#content + 1] = ""
+    vim.list_extend(content, user)
   end
   if #assistant > 0 then
-    if #preview > 0 then
-      preview[#preview + 1] = ""
+    if #content > 0 then
+      content[#content + 1] = ""
+      content[#content + 1] = "---"
     end
-    preview[#preview + 1] = "Last agent answer:"
-    vim.list_extend(preview, assistant)
+    content[#content + 1] = ""
+    content[#content + 1] = "## Last answer"
+    content[#content + 1] = ""
+    vim.list_extend(content, assistant)
   end
-  if #preview == 0 then
-    preview = { "(no messages yet)" }
+  if #content == 0 then
+    content = { "(no messages yet)" }
   end
-  return preview
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].filetype = "markdown"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
+  return { buf = buf, pos = { 1, 0 } }
 end
 
 --- The persisted directory name is a lossy cwd slug; this is deliberately a
@@ -215,14 +236,26 @@ end
 function M.list(scope)
   local dirs
   if scope == "all" then
-    dirs = vim.fn.glob(paths.sessions_root() .. "/*", false, true)
+    dirs = {}
+    for name, type in vim.fs.dir(paths.sessions_root()) do
+      if type == "directory" then
+        dirs[#dirs + 1] = vim.fs.joinpath(paths.sessions_root(), name)
+      end
+    end
   else
     dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
 
   local items = {}
   for _, dir in ipairs(dirs) do
-    for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
+    local md_files = {}
+    for name, type in vim.fs.dir(dir) do
+      -- glob("*.md") skips dotfiles; vim.fs.dir does not.
+      if type == "file" and name:sub(1, 1) ~= "." and name:match("%.md$") then
+        md_files[#md_files + 1] = vim.fs.joinpath(dir, name)
+      end
+    end
+    for _, path in ipairs(md_files) do
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
       -- Subagent sessions are real saved sessions, but they belong to their
@@ -243,6 +276,7 @@ function M.list(scope)
           text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
           model = model,
           models = (fm and #fm.models > 1) and fm.models or nil,
+          turns = fm and fm.turns,
         })
       end
     end
@@ -255,7 +289,7 @@ function M.list(scope)
 end
 
 local function preview_item(item)
-  return M.preview_lines(vim.fn.readfile(item.path))
+  return M.preview(vim.fn.readfile(item.path))
 end
 
 --- Pick a session; on_choice(path) is called with the selected file.
@@ -270,6 +304,9 @@ function M.pick(opts, on_choice)
     prompt = "Pick yap session (" .. (opts.scope == "all" and "all projects" or "cwd project") .. ")",
     kind = "yap_session",
     format_item = function(item)
+      if item.turns then
+        return item.text .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      end
       return item.text
     end,
     preview_item = preview_item,

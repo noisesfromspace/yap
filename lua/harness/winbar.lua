@@ -1,16 +1,16 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
 -- yap session buffer: busy beacon, global rollup island, session
--- description, provider/model + fold-view cluster, usage/cost chips and
--- the right-edge state glyph. Also owns the spinner that keeps the bar
--- redrawing while a turn streams; the spinner drains live tool output into
--- the tail buffers through state.drain_tail (set by the send path).
+-- description, provider/model island, usage/cost chips and the right-edge
+-- state glyph. Usage/cost chips remain on the right. Also owns the spinner
+-- that keeps the bar redrawing while a turn streams; the spinner drains
+-- live tool output into the tail buffers through state.drain_tail (set by
+-- the send path).
 
 local M = {}
 
 local state = require("harness.state")
 local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
-local fold = require("harness.fold")
 
 local running = state.running
 local live = state.live
@@ -57,8 +57,8 @@ end
 -- Island segments share one raised background (`YapIsland`); each chip
 -- keeps its own foreground via `YapIsland<Group>`. `%*` resets to the
 -- WinBar default, so every island piece re-applies its own highlight.
-local function island_hl(text, group)
-  return "%#YapIsland" .. (group or "") .. "#" .. esc(text) .. "%*"
+local function island_hl(text, group, style)
+  return "%#YapIsland" .. (style or "") .. (group or "") .. "#" .. esc(text) .. "%*"
 end
 
 -- Last backend error per buffer; shown in the winbar until the next send.
@@ -77,7 +77,8 @@ end
 local function count_others(set, buf)
   local n = 0
   for b in pairs(set) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap then
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap
+      and not (set == awaiting and vim.b[b].yap_subagent_parent) then
       n = n + 1
     end
   end
@@ -159,11 +160,10 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- then the current session's title/model/fold view; usage on the right —
--- the three chips, then an error glyph only when something went wrong. The
--- bar is width-aware: as the window narrows it drops the model/fold
--- cluster, then the chip costs, then the chip tokens; the error glyph, the
--- prices and the island survive. Past that the bar clips.
+-- description on the left; a centered provider/model island; usage counters
+-- and context meter on the right, followed by an error glyph.
+-- As the window narrows the center island drops, then costs, then tokens;
+-- the error glyph, prices and context meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -172,19 +172,20 @@ local function render_winbar(buf)
     width = 999 -- no window context: render the full bar
   end
 
-  local function seg(text, group, island)
-    return { text = text, group = group, island = island }
+  local function seg(text, group, island, cursive)
+    return { text = text, group = group, island = island, cursive = cursive }
   end
   local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
   local inactive = win ~= vim.api.nvim_get_current_win()
-  local function render_seg(s)
-    if s.group == "IslandCap" and inactive then
-      return winbar_hl(s.text, "IslandCapNC")
+  local function render_seg(s, upright)
+    if s.group == "IslandCap" then
+      return winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
     end
+    local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
     if s.island then
-      return island_hl(s.text, s.group)
+      return island_hl(s.text, s.group, style)
     end
-    return winbar_hl(s.text, s.group or "Idle")
+    return winbar_hl(s.text, (style or "") .. (s.group or "Idle"))
   end
   local function width_of(segs)
     local n = 0
@@ -197,7 +198,7 @@ local function render_winbar(buf)
   -- Mandatory left cluster (never dropped; the description shrinks). Build
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
-  local function left_segments(desc_max, show_mid)
+  local function left_segments(desc_max)
     local left, has_item = {}, false
     local function add_item(item)
       -- One left inset; separators belong to the layout, not the items.
@@ -212,10 +213,13 @@ local function render_winbar(buf)
     if spinner then
       local l = live and live[buf]
       local text = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
+      local item = { seg(text, spinner_color) }
       if l and os.time() - l.since >= 2 then
-        text = text .. " " .. l.name .. " " .. (os.time() - l.since) .. "s"
+        item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
       end
-      add_item({ seg(text, spinner_color) })
+      add_item(item)
+    elseif awaiting[buf] and not errors[buf] then
+      add_item({ seg("", "Done") })
     end
 
     local running_others_n = count_others(running, buf)
@@ -238,13 +242,9 @@ local function render_winbar(buf)
 
     local desc = winbar_description(buf, desc_max)
     if desc then
-      add_item({ seg(desc, "Description") })
+      add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable middle: provider/model and the applied fold view.
-    if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model"), seg(" " .. icons.fold .. fold.level(), "Idle") })
-    end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
     end
@@ -289,20 +289,23 @@ local function render_winbar(buf)
     local parts = {}
     if show_percent then
       local text = pct < 1 and string.format("%.1f%% ", pct) or string.format("%.0f%% ", pct)
-      parts[#parts + 1] = { text, "Idle" }
+      parts[#parts + 1] = { " ", "GaugeEmpty", true }
+      parts[#parts + 1] = { text, "GaugeLabel", true }
+    else
+      parts[#parts + 1] = { " ", "GaugeEmpty", true }
     end
     if fill ~= "" then
-      parts[#parts + 1] = { fill, color }
+      parts[#parts + 1] = { fill, color, true }
     end
     if track ~= "" then
-      parts[#parts + 1] = { track, "GaugeEmpty" }
+      parts[#parts + 1] = { track, "GaugeEmpty", true }
     end
+    parts[#parts + 1] = { " ", "GaugeEmpty", true }
     return parts
   end
 
-  -- Usage/cost cluster: since-open and all-time chips. As the bar narrows,
-  -- tokens and costs drop before the context meter; its percentage is dropped
-  -- last so the complete eight-cell gauge remains visible.
+  -- Usage counters and context meter stay right-aligned.
+  -- As the bar narrows, costs and tokens drop before the context meter.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
@@ -324,11 +327,6 @@ local function render_winbar(buf)
       chips[#chips + 1] = { { text, "Idle" } }
     end
 
-    local context = context_segment(mode ~= "gauge")
-    if context then
-      chips[#chips + 1] = context
-    end
-
     if mode == "prices" then
       if u and u.cost then
         chips[#chips + 1] = { { icons.since .. " " .. string.format("$%.4g", u.cost), "Idle" } }
@@ -338,18 +336,46 @@ local function render_winbar(buf)
       end
     end
 
-    if #chips == 0 then
+    local context = context_segment(mode ~= "gauge")
+    if #chips == 0 and not context then
       return nil
     end
     local segs = {}
-    for ci, chip in ipairs(chips) do
-      local prefix = ci == 1 and " " or " · "
-      for pi, part in ipairs(chip) do
-        segs[#segs + 1] = seg(pi == 1 and prefix .. part[1] or part[1], part[2])
+    local function pill(parts)
+      segs[#segs + 1] = seg(" ", "Idle")
+      segs[#segs + 1] = seg("", "IslandCap")
+      for _, part in ipairs(parts) do
+        segs[#segs + 1] = seg(part[1], part[2], true, part[2] == "Model")
       end
+      segs[#segs + 1] = seg("", "IslandCap")
     end
-    segs[#segs].text = segs[#segs].text .. " "
+    if #chips > 0 then
+      local counters = { { " ", "Count" } }
+      for ci, chip in ipairs(chips) do
+        if ci > 1 then
+          counters[#counters + 1] = { "  ", "Count" }
+        end
+        for _, part in ipairs(chip) do
+          counters[#counters + 1] = { part[1], "Count" }
+        end
+      end
+      counters[#counters + 1] = { " ", "Count" }
+      pill(counters)
+    end
+    if context then
+      pill(context)
+    end
+    segs[#segs + 1] = seg(" ", "Idle")
     return segs
+  end
+
+  -- The model island is centered independently of left and right content.
+  local function center_segments()
+    return {
+      seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
+      seg(provider .. "/" .. model, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
+      seg(" ", "Idle"),
+    }
   end
 
   -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
@@ -365,36 +391,55 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, usage, state)
+  local function render(left, center, usage, state, left_width, right_width)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
     end
+    -- `%=` centers the island between the two side clusters, not at the
+    -- window's midpoint, so an asymmetric pair (a fresh session has no
+    -- gauge yet) drifts off center. Pad the narrower side so both are
+    -- equal width and the island lands on the true midpoint.
+    if center and left_width < right_width then
+      parts[#parts + 1] = string.rep(" ", right_width - left_width)
+    end
     parts[#parts + 1] = "%="
+    if center then
+      for _, s in ipairs(center) do
+        parts[#parts + 1] = render_seg(s, true)
+      end
+      parts[#parts + 1] = "%="
+      if right_width < left_width then
+        parts[#parts + 1] = string.rep(" ", left_width - right_width)
+      end
+    end
     if usage then
       for _, s in ipairs(usage) do
-        parts[#parts + 1] = render_seg(s)
+        parts[#parts + 1] = render_seg(s, true)
       end
     end
     if state then
-      parts[#parts + 1] = render_seg(state)
+      parts[#parts + 1] = render_seg(state, true)
     end
     return table.concat(parts, "")
   end
 
-  -- Degrade until the bar fits, dropping the least important parts first:
-  -- model/fold → chip costs → chip tokens. The error glyph and the prices
-  -- survive; past that the bar clips rather than hiding them.
+  -- Preserve real centering: drop the middle when either edge cluster
+  -- would collide with it, then degrade the right side as before.
   local desc_max, mode, show_mid = 40, "full", true
   while true do
-    local left = left_segments(desc_max, show_mid)
+    local left = left_segments(desc_max)
+    local center = show_mid and center_segments() or nil
     local usage = usage_segment(mode)
     local state = state_segment()
-    local total = width_of(left)
-      + (usage and width_of(usage) or 0)
-      + (state and width_of({ state }) or 0)
-    if total <= width then
-      return render(left, usage, state)
+    local left_width = width_of(left)
+    local right_width = (usage and width_of(usage) or 0) + (state and width_of({ state }) or 0)
+    local center_width = center and width_of(center) or 0
+    local total = left_width + center_width + right_width
+    if total <= width and (not center or
+        (left_width <= math.floor((width - center_width) / 2)
+          and right_width <= math.floor((width - center_width) / 2))) then
+      return render(left, center, usage, state, left_width, right_width)
     end
     if show_mid then
       show_mid = false
@@ -407,7 +452,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, usage, state) -- smallest layout; let it clip
+      return render(left, nil, usage, state, left_width, right_width) -- smallest layout; let it clip
     end
   end
 end
@@ -470,10 +515,13 @@ local function define_winbar_hl()
     Model = "Keyword",
     Description = "Title",
     Busy = "DiagnosticOk",
+    BusyText = "YapCursiveModel",
+    Done = "DiagnosticOk",
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
     GaugeEmpty = "NonText",
+    GaugeLabel = "Keyword",
     GaugeLow = "DiagnosticOk",
     GaugeMid = "DiagnosticWarn",
     GaugeHigh = "DiagnosticError",
@@ -484,7 +532,6 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapBusyTeal", { default = true, fg = "#5fd7c7" })
   vim.api.nvim_set_hl(0, "YapBusyBlue", { default = true, fg = "#7aa2f7" })
   vim.api.nvim_set_hl(0, "YapBusyViolet", { default = true, fg = "#bb9af7" })
-
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the
   -- linked groups above so user `:hi YapBusy` overrides still win.
@@ -498,13 +545,49 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
+  -- The context meter is a raised pill, distinct from the surrounding bar.
+  -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
+  for _, gauge in ipairs({
+    { "GaugeEmpty", "NonText" },
+    { "GaugeLabel", "Keyword" },
+    { "GaugeLow", "DiagnosticOk" },
+    { "GaugeMid", "DiagnosticWarn" },
+    { "GaugeHigh", "DiagnosticError" },
+  }) do
+    vim.api.nvim_set_hl(0, "Yap" .. gauge[1], {
+      fg = gauge[1] == "GaugeLabel" and attr("YapModel", "fg") or attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
+      bg = bg,
+    })
+  end
   -- Recompute theme-owned surfaces on ColorScheme: caps use the bar's
   -- background, while padding and both counts share one opaque pill.
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
   vim.api.nvim_set_hl(0, "YapIslandCapNC", { fg = bg, bg = inactive_bg })
   vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
+  -- Winbar text styles are aliases so theme colors and other attributes
+  -- stay intact while the session title/model are italic and right-side
+  -- items explicitly reset italics from linked theme groups.
+  local function styled_hl(name, source, italic)
+    local attrs = vim.api.nvim_get_hl(0, { name = source, link = false })
+    attrs.italic = italic
+    vim.api.nvim_set_hl(0, name, attrs)
+  end
+  for _, group in ipairs({ "Model", "Description" }) do
+    styled_hl("YapCursive" .. group, "Yap" .. group, true)
+  end
+  local model_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveModel", link = false })
+  model_attrs.bg = bg
+  vim.api.nvim_set_hl(0, "YapIslandCursiveModel", model_attrs)
+  styled_hl("YapUprightIdle", "YapModel", false)
+  for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+    styled_hl("YapUpright" .. group, "Yap" .. group, false)
+  end
+  for _, group in ipairs({ "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+    styled_hl("YapIslandUpright" .. group, "Yap" .. group, false)
+  end
 end
 
 define_winbar_hl()
