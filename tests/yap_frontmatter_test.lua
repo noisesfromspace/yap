@@ -106,14 +106,15 @@ assert(
   "open must not inject frontmatter into legacy files"
 )
 
--- 8. subagents + updated_at render and parse back
-local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z")
+-- 8. subagents + updated_at + turns render and parse back
+local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z", 14)
 local subagents_fm = frontmatter.parse(subagents_block)
 assert(
   vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
   "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
 )
 assert(subagents_fm.updated_at == "2025-09-29T19:24:01Z", "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at))
+assert(subagents_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(subagents_fm.turns))
 
 -- 9. a :file-renamed session keeps its chosen name over the description
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"
@@ -125,5 +126,27 @@ assert(
   session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker.md",
   "named session label should keep the cwd prefix: " .. session.label(named_path, "Generated description", "/opt/code/yap")
 )
+
+-- 10. save stamps a turn count from the `# @user` headings
+local buf4 = yap.new({ provider = "zeta", model = "m1" })
+local body4 = vim.api.nvim_buf_get_lines(buf4, 0, -1, false)
+vim.list_extend(body4, {
+  "",
+  "# @user",
+  "",
+  "first question",
+  "",
+  "# @assistant",
+  "",
+  "answer",
+  "",
+  "# @user",
+  "",
+  "second question",
+})
+vim.api.nvim_buf_set_lines(buf4, 0, -1, false, body4)
+session.save(buf4)
+local saved4 = frontmatter.parse(vim.fn.readfile(vim.b[buf4].yap_path))
+assert(saved4.turns == 1, "save did not count completed replies: " .. vim.inspect(saved4))
 
 print("OK frontmatter")

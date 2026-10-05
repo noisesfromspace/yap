@@ -33,14 +33,18 @@ end
 --- clears 'modified', so a clean buffer prompts nothing on exit; the
 --- `[+]` flag is the real signal for "typed but not yet saved".
 --- Writing without 'modified' is harmless.
---- Stamp `updated_at` in the frontmatter to now, immediately before the
---- buffer is written. This is the only place `updated_at` is set; every
+--- Stamp `updated_at` and `turns` in the frontmatter immediately before
+--- the buffer is written. This is the only place `updated_at` is set; every
 --- other frontmatter rewrite preserves it, so the field means "last write".
---- Cheap: only the frontmatter block (capped at 200 lines) is re-read and
---- rewritten, once per save — never on keystrokes or redraws. Legacy files
---- without a block are skipped.
+--- `turns` (the count of `# @assistant` replies — completed turns, ignoring
+--- the trailing empty `# @user` prompt) is recomputed here too so the picker
+--- has an at-a-glance session depth without opening the file. One full-buffer
+--- read feeds both the frontmatter parse and the turn count; the write
+--- serializes the whole buffer anyway, so the extra scan is not new work.
+--- The rewrite is skipped when neither field changed. Legacy files without
+--- a block are skipped.
 local function stamp_updated_at(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return
   end
@@ -54,15 +58,21 @@ local function stamp_updated_at(buf)
   if not e then
     return
   end
-  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  local fm = frontmatter.parse(lines)
   if not fm then
     return
   end
-  local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-  if fm.updated_at == updated_at then
-    return -- same second: skip the rewrite so an unchanged block stays clean
+  local turns = 0
+  for i = e + 1, #lines do
+    if lines[i]:match("^# @assistant%s*$") then
+      turns = turns + 1
+    end
   end
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at)
+  local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  if fm.updated_at == updated_at and fm.turns == turns then
+    return -- unchanged: skip the rewrite so an untouched block stays clean
+  end
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at, turns)
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
 
@@ -266,6 +276,7 @@ function M.list(scope)
           text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
           model = model,
           models = (fm and #fm.models > 1) and fm.models or nil,
+          turns = fm and fm.turns,
         })
       end
     end
@@ -293,6 +304,9 @@ function M.pick(opts, on_choice)
     prompt = "Pick yap session (" .. (opts.scope == "all" and "all projects" or "cwd project") .. ")",
     kind = "yap_session",
     format_item = function(item)
+      if item.turns then
+        return item.text .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      end
       return item.text
     end,
     preview_item = preview_item,
