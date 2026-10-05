@@ -57,6 +57,7 @@ for _, b in ipairs({ target, other, waiting }) do
 end
 vim.b[target].yap_provider = "mock"
 vim.b[target].yap_model = "m1"
+local fold_view = "   󰘖 " .. require("harness.fold").level()
 local function rendered_left()
   local left = assert(yap.winbar(target):match("^(.-)%%="))
   return vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
@@ -78,7 +79,7 @@ for mask = 0, 15 do
     expected[#expected + 1] = " ◉1 "
   end
   if titled then expected[#expected + 1] = "Session title" end
-  expected[#expected + 1] = "mock/m1"
+  expected[#expected + 1] = "mock/m1" .. fold_view
   local actual = rendered_left()
   assert(actual == " " .. table.concat(expected, "  ") .. " ",
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)

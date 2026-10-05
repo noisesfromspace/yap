@@ -200,10 +200,6 @@ local function render_winbar(buf)
     end
 
     local spinner = running and running[buf]
-    if show_mid then
-      local icon = icons.fold
-      add_item({ seg((icon ~= "" and (icon .. " ") or " ") .. fold.level(), "Idle") })
-    end
     if spinner then
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
@@ -237,10 +233,13 @@ local function render_winbar(buf)
       add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable middle: provider/model. The applied fold view sits just
-    -- before the activity indicator in the left cluster.
+    -- Droppable middle: provider/model and the separated applied fold view.
     if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model", false, true) })
+      local icon = icons.fold
+      add_item({
+        seg(provider .. "/" .. model, "Model", false, true),
+        seg("   " .. (icon ~= "" and (icon .. " ") or "") .. fold.level(), "Idle"),
+      })
     end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")

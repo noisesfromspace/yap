@@ -128,7 +128,7 @@ assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool 
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
--- The fold view sits to the left of the activity indicator in the left cluster.
+-- The fold view follows the model as a distinct item in the left cluster.
 fold.set_view_level(2)
 local state = require("harness.state")
 state.last_turn[buf] = { prompt = 50, context_window = 100 }
@@ -136,21 +136,25 @@ state.running[buf] = {}
 state.live[buf] = { since = os.time() - 3, name = "bash" }
 local bar = yap.winbar(buf)
 local left, right = bar:match("^(.-)%%=(.*)$")
-assert(left and right and left:find("󰘖 2", 1, true), "fold view missing from left cluster: " .. bar)
+local rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+local provider, model = require("harness.util").current_combo(buf)
+local combo = provider .. "/" .. model
+local model_at = assert(rendered_left:find(combo, 1, true), "winbar missing model: " .. rendered_left)
+local fold_at = assert(rendered_left:find(combo .. "   󰘖 2", 1, true), "fold view not separated after model: " .. rendered_left)
+assert(fold_at == model_at, "fold view should follow the model: " .. rendered_left)
 assert(not right:find("󰘖", 1, true), "fold view remained in right cluster: " .. bar)
-local fold_at = assert(left:find("󰘖 2", 1, true), "winbar missing fold level: " .. bar)
-local activity_at = assert(left:find("%#YapBusyIcon#", 1, true), "winbar missing activity indicator: " .. bar)
-assert(fold_at < activity_at, "fold view should be left of the activity indicator: " .. bar)
 assert(right:find("50%%", 1, true), "winbar missing context activity indicator: " .. bar)
 local icons = yap.config.icons
 icons.fold = "TEST"
 bar = yap.winbar(buf)
 left = assert(bar:match("^(.-)%%="), "winbar missing left cluster: " .. bar)
-fold_at = assert(left:find("TEST 2", 1, true), "fold icon config ignored: " .. bar)
-activity_at = assert(left:find("%#YapBusyIcon#", 1, true), "winbar missing activity indicator: " .. bar)
-assert(fold_at < activity_at, "configured fold should stay left of activity indicator: " .. bar)
+rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_left:find(combo .. "   TEST 2", 1, true), "fold icon config/spacing ignored: " .. rendered_left)
 icons.fold = ""
-assert(yap.winbar(buf):find(" 2", 1, true), "empty fold icon should leave the level: " .. yap.winbar(buf))
+bar = yap.winbar(buf)
+left = assert(bar:match("^(.-)%%="), "winbar missing left cluster: " .. bar)
+rendered_left = vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered_left:find(combo .. "   2", 1, true), "empty fold icon should leave the separated level: " .. rendered_left)
 icons.fold = "󰘖"
 state.running[buf], state.live[buf] = nil, nil
 fold.set_view_level(3)

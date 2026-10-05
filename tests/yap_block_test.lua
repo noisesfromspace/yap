@@ -26,20 +26,20 @@ local function left_text(buf)
   return left:gsub("%%#.-#", ""):gsub("%%%*", "")
 end
 local rollup_left = left_text(buf2)
-assert(rollup_left:match("^  ▶1   mock/m1 $"), "rollup spacing is inconsistent: " .. rollup_left)
+assert(rollup_left:match("^  ▶1   mock/m1   󰘖 2 $"), "rollup/model-fold spacing is inconsistent: " .. rollup_left)
 local state = require("harness.state")
 state.running[buf2] = {}
 local with_both = left_text(buf)
 state.running[buf2] = nil
-assert(with_both:find("   ▶1   mock/m1", 1, true), "rollup missing after local spinner: " .. with_both)
-assert(not with_both:find("   ", 1, true), "left sections should have two-column gaps: " .. with_both)
+assert(with_both:find("   ▶1   mock/m1   󰘖 2", 1, true), "rollup missing after local spinner: " .. with_both)
+assert(not with_both:find("    ", 1, true), "left sections have excessive spacing: " .. with_both)
 assert(not left_text(buf):find("▶%d"), "running rollup counts the current buffer: " .. left_text(buf))
 vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
   "---", "provider: mock", "model: m1", "description: second session", "models:", "  - mock/m1", "---", "",
 })
 local titled_rollup = left_text(buf2)
-assert(titled_rollup:match("^  ▶1   second session  mock/m1"), "title gap differs from the rollup gap: " .. titled_rollup)
-assert(not titled_rollup:find("   ", 1, true), "titled left sections should have two-column gaps: " .. titled_rollup)
+assert(titled_rollup:match("^  ▶1   second session  mock/m1   󰘖 2"), "title/model/fold spacing differs from the rollup gap: " .. titled_rollup)
+assert(not titled_rollup:find("    ", 1, true), "titled left sections have excessive spacing: " .. titled_rollup)
 
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.

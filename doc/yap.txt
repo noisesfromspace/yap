@@ -963,19 +963,20 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: the applied fold view (`󰘖 1`
-agent output folded, `󰘖 2` tools & thinking folded, `󰘖 3` all open — the last
-view applied with <leader>1..3; manual |za| toggles don't update it), then an
-animated activity spinner while the buffer itself is streaming — once a tool
-has run for 2s its name and elapsed time join it (`⣾ bash 12s`) — then a raised
-rollup island for ALL OTHER yap sessions: `▶N` (N other buffers streaming a
-reply) and `◉N` (N other buffers await you; jump to one with |:YapInstances|).
-The island appears only when at least one other session is running or waiting;
-it never counts the current buffer. After the island: the session description
-(truncated to 40 display columns), then provider/model. The fold icon is
-configurable with `icons.fold` and may be set to `""` to show only the level.
-Right: the usage chips and context-fill meter. A state glyph appears on the far
-right only when something is wrong:
+The winbar is the session dashboard. Left: an animated activity spinner while
+the buffer itself is streaming — once a tool has run for 2s its name and
+elapsed time join it (`⣾ bash 12s`) — then a raised rollup island for ALL OTHER
+yap sessions: `▶N` (N other buffers streaming a reply) and `◉N` (N other
+buffers await you; jump to one with |:YapInstances|). The island appears only
+when at least one other session is running or waiting; it never counts the
+current buffer. After the island: the session description (truncated to 40
+display columns), then provider/model, followed by the applied fold view
+(`󰘖 1` agent output folded, `󰘖 2` tools & thinking folded, `󰘖 3` all open —
+the last view applied with <leader>1..3; manual |za| toggles don't update it),
+visually separated from the model by extra space. The fold icon is configurable
+with `icons.fold` and may be set to `""` to show only the level. Right: the
+usage chips and context-fill meter. A state glyph appears on the far right only
+when something is wrong:
 
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
@@ -983,7 +984,7 @@ right only when something is wrong:
 Idle and "awaiting your reply" show no glyph — the absence of the left
 spinner already tells you nothing is running.
 
-Example: `󰘖 2 ⣾ moonshot/kimi-k3` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 9% █▍░░░░░░`
+Example: `⣾ moonshot/kimi-k3   󰘖 2` ... `󰅐 1.5k · $0.0034 · 󰆼 12k · $0.51 · 9% █▍░░░░░░`
 
 Reading the numbers                                    *yap-winbar-numbers*
 
