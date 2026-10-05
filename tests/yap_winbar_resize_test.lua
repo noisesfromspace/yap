@@ -24,6 +24,8 @@ end
 -- state glyph: idle/awaiting are silent, only errors get one.
 local wb = winbar_at(80)
 assert(wb:match("mock/m1"), "wide winbar missing model: " .. wb)
+assert(wb:find("%#YapCursiveModel#", 1, true), "model is not cursive: " .. wb)
+assert(wb:find("%#YapUprightIdle#", 1, true), "right usage is not upright: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs: " .. wb)
 assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
@@ -117,8 +119,27 @@ state.running[target], state.running[other], state.awaiting[waiting] = nil, nil,
 vim.cmd("vsplit")
 vim.api.nvim_win_set_width(0, 12)
 assert(rendered_left() == " Session title ", "narrow title has a dangling separator: " .. rendered_left())
+assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
+  "session title is not cursive: " .. yap.winbar(target))
 vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
 end
+-- The session title/model are cursive; right-side status groups explicitly
+-- suppress italics inherited from their linked theme groups.
+for _, group in ipairs({ "YapCursiveModel", "YapCursiveDescription" }) do
+  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).italic,
+    group .. " should be cursive")
+end
+for _, group in ipairs({
+  "YapUprightIdle", "YapUprightError", "YapUprightNeeds",
+  "YapUprightGaugeEmpty", "YapUprightGaugeLabel", "YapUprightGaugeLow",
+  "YapUprightGaugeMid", "YapUprightGaugeHigh",
+  "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel",
+  "YapIslandUprightGaugeLow", "YapIslandUprightGaugeMid", "YapIslandUprightGaugeHigh",
+}) do
+  assert(not vim.api.nvim_get_hl(0, { name = group, link = false }).italic,
+    group .. " should not be cursive")
+end
+
 print("OK winbar_resize")

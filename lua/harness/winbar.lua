@@ -49,8 +49,8 @@ end
 -- Island segments share one raised background (`YapIsland`); each chip
 -- keeps its own foreground via `YapIsland<Group>`. `%*` resets to the
 -- WinBar default, so every island piece re-applies its own highlight.
-local function island_hl(text, group)
-  return "%#YapIsland" .. (group or "") .. "#" .. esc(text) .. "%*"
+local function island_hl(text, group, style)
+  return "%#YapIsland" .. (style or "") .. (group or "") .. "#" .. esc(text) .. "%*"
 end
 
 -- Last backend error per buffer; shown in the winbar until the next send.
@@ -164,19 +164,20 @@ local function render_winbar(buf)
     width = 999 -- no window context: render the full bar
   end
 
-  local function seg(text, group, island)
-    return { text = text, group = group, island = island }
+  local function seg(text, group, island, cursive)
+    return { text = text, group = group, island = island, cursive = cursive }
   end
   local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
   local inactive = win ~= vim.api.nvim_get_current_win()
-  local function render_seg(s)
+  local function render_seg(s, upright)
     if s.group == "IslandCap" and inactive then
       return winbar_hl(s.text, "IslandCapNC")
     end
+    local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
     if s.island then
-      return island_hl(s.text, s.group)
+      return island_hl(s.text, s.group, style)
     end
-    return winbar_hl(s.text, s.group or "Idle")
+    return winbar_hl(s.text, (style or "") .. (s.group or "Idle"))
   end
   local function width_of(segs)
     local n = 0
@@ -231,12 +232,12 @@ local function render_winbar(buf)
 
     local desc = winbar_description(buf, desc_max)
     if desc then
-      add_item({ seg(desc, "Description") })
+      add_item({ seg(desc, "Description", false, true) })
     end
 
     -- Droppable middle: provider/model and the applied fold view.
     if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model"), seg(" Ⓕ" .. fold.level(), "Idle") })
+      add_item({ seg(provider .. "/" .. model, "Model", false, true), seg(" Ⓕ" .. fold.level(), "Idle") })
     end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
@@ -358,11 +359,11 @@ local function render_winbar(buf)
     parts[#parts + 1] = "%="
     if usage then
       for _, s in ipairs(usage) do
-        parts[#parts + 1] = render_seg(s)
+        parts[#parts + 1] = render_seg(s, true)
       end
     end
     if state then
-      parts[#parts + 1] = render_seg(state)
+      parts[#parts + 1] = render_seg(state, true)
     end
     return table.concat(parts, "")
   end
@@ -502,6 +503,23 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
+  -- Winbar text styles are aliases so theme colors and other attributes
+  -- stay intact while the session title/model are italic and right-side
+  -- items explicitly reset italics from linked theme groups.
+  local function styled_hl(name, source, italic)
+    local attrs = vim.api.nvim_get_hl(0, { name = source, link = false })
+    attrs.italic = italic
+    vim.api.nvim_set_hl(0, name, attrs)
+  end
+  for _, group in ipairs({ "Model", "Description" }) do
+    styled_hl("YapCursive" .. group, "Yap" .. group, true)
+  end
+  for _, group in ipairs({ "Idle", "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+    styled_hl("YapUpright" .. group, "Yap" .. group, false)
+  end
+  for _, group in ipairs({ "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+    styled_hl("YapIslandUpright" .. group, "Yap" .. group, false)
+  end
 end
 
 define_winbar_hl()
