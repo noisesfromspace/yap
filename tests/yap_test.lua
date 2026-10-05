@@ -47,6 +47,9 @@ items = session.list("cwd")
 assert(#items == 1, "expected named session, got " .. #items)
 assert(items[1].text == "named-session.md", "named session should show its filename: " .. items[1].text)
 print("listed: " .. items[1].text)
+local renamed = session.list("renamed")
+assert(#renamed == 1 and renamed[1].text == "named-session.md",
+  "renamed scope should list the :file-named session: " .. vim.inspect(renamed))
 
 -- 4. reopen and parse back
 vim.cmd("bwipeout!")

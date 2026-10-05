@@ -230,7 +230,7 @@ function M.label(path, description, project_cwd)
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
---- List saved sessions. scope = "cwd" (default) or "all".
+--- List saved sessions. scope = "cwd" (default), "all", or "renamed"
 --- Items: { path, mtime, text, model, models? } sorted newest first;
 --- `model`/`models` come from the session frontmatter.
 function M.list(scope)
@@ -245,6 +245,9 @@ function M.list(scope)
   else
     dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
+  -- "renamed" narrows the history to sessions named with :file (a custom
+  -- filename), as opposed to description-labelled auto-generated names.
+  local renamed_only = scope == "renamed"
 
   local items = {}
   for _, dir in ipairs(dirs) do
@@ -268,7 +271,7 @@ function M.list(scope)
       -- auto-generated filename. They stay visible as open sessions via
       -- :YapInstances, which falls back to the filename.
       local unnamed = description == "" and paths.is_default_name(path)
-      if not subagent and not unnamed then
+      if not subagent and not unnamed and (not renamed_only or not paths.is_default_name(path)) then
         local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
         table.insert(items, {
           path = path,
@@ -295,13 +298,16 @@ end
 --- Pick a session; on_choice(path) is called with the selected file.
 function M.pick(opts, on_choice)
   opts = opts or {}
-  local items = M.list(opts.scope == "all" and "all" or "cwd")
+  local scope = opts.scope or "cwd"
+  local items = M.list(scope)
   if #items == 0 then
-    vim.notify("yap: no saved sessions", vim.log.levels.INFO)
+    local msg = scope == "renamed" and "yap: no renamed sessions" or "yap: no saved sessions"
+    vim.notify(msg, vim.log.levels.INFO)
     return
   end
+  local scope_label = scope == "all" and "all projects" or scope == "renamed" and "renamed, cwd project" or "cwd project"
   vim.ui.select(items, {
-    prompt = "Pick yap session (" .. (opts.scope == "all" and "all projects" or "cwd project") .. ")",
+    prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",
     format_item = function(item)
       if item.turns then

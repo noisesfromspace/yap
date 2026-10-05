@@ -90,6 +90,8 @@ M.config = {
     insert_here = "<leader>T",
     sessions = "<leader>r",
     waiting = "<leader>w",
+    history = "<leader>y",
+    history_renamed = "<leader>R",
     help = "g?",
 
     next_message = "]m",
@@ -2402,10 +2404,10 @@ function M.setup(opts)
   paths.dirs.sessions_dir = M.config.sessions_dir
   paths.dirs.audit_dir = M.config.audit_dir
 
-  -- <leader>r and <leader>w are global: they list sessions across every
-  -- buffer, so they must work from any file, not just inside a chat. The
-  -- other keymaps act on the current buffer and stay buffer-local in
-  -- setup_buffer.
+  -- <leader>r, <leader>w, <leader>y and <leader>R are global: they list
+  -- sessions across every buffer, so they must work from any file, not
+  -- just inside a chat. The other keymaps act on the current buffer and
+  -- stay buffer-local in setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.instances()
@@ -2415,6 +2417,16 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymaps.waiting, function()
       M.waiting()
     end, { silent = true, desc = "yap: waiting sessions" })
+  end
+  if M.config.keymaps.history ~= "" then
+    vim.keymap.set("n", M.config.keymaps.history, function()
+      M.sessions()
+    end, { silent = true, desc = "yap: history" })
+  end
+  if M.config.keymaps.history_renamed ~= "" then
+    vim.keymap.set("n", M.config.keymaps.history_renamed, function()
+      M.sessions("renamed")
+    end, { silent = true, desc = "yap: renamed history" })
   end
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file

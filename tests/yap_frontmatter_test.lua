@@ -91,6 +91,9 @@ assert(
   "all-project label should show decoded cwd: " .. all_items[1].text
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
+local renamed_items = session.list("renamed")
+assert(#renamed_items == 0,
+  "description-labelled auto-named session should not appear in renamed scope: " .. vim.inspect(renamed_items))
 
 -- 7. a legacy file without frontmatter keeps the config default and is
 --    left untouched (open must not inject a dirtying edit)
