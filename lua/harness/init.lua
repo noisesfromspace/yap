@@ -1724,6 +1724,10 @@ function M.stop(buf)
     end
     repair_stream_tail(buf)
     close_stream(buf)
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_get_buf(win) == buf then
+      vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
+    end
   end
 end
 

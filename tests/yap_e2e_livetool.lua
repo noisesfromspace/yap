@@ -183,8 +183,11 @@ assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tai
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
 yap.stop()
--- M.stop() clears the winbar immediately; the exit callback (which runs
--- repair_stream_tail) lags behind — wait for the repair itself.
+assert(
+  vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf2),
+  "stop did not move the cursor to the new # @user prompt"
+)
+-- M.stop() closes the stream immediately; the process exit callback may lag behind.
 local repaired = vim.wait(5000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- /yap:tool %-%-%>") ~= nil
 end, 20)
