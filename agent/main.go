@@ -34,8 +34,7 @@ import (
 )
 
 func main() {
-	defer tools.CloseSSH()
-	defer tools.ClosePlaywright()
+	defer tools.CloseAll()
 	// :YapStop terminates the persistent backend. Kill tracked local
 	// tool process groups as well; one handler serves every turn.
 	sig := make(chan os.Signal, 1)
@@ -43,8 +42,7 @@ func main() {
 	go func() {
 		<-sig
 		utils.KillAll()
-		tools.CloseSSH()
-		tools.ClosePlaywright()
+		tools.CloseAll()
 		fmt.Fprintln(os.Stderr, "interrupted")
 		os.Exit(1)
 	}()
@@ -64,15 +62,13 @@ func main() {
 			os.Exit(2)
 		}
 		if err := send(*provider, *model, os.Stdin, os.Stdout); err != nil {
-			tools.CloseSSH()
-			tools.ClosePlaywright()
+			tools.CloseAll()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
 	case "serve":
 		if err := serve(os.Stdin, os.Stdout); err != nil {
-			tools.CloseSSH()
-			tools.ClosePlaywright()
+			tools.CloseAll()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

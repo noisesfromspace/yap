@@ -34,6 +34,7 @@ type Tool struct {
 	Description string
 	Schema      json.RawMessage // generated from the tool's Args struct
 	run         func(args json.RawMessage) (result, ui string, err error)
+	close       func()
 }
 
 var registry = map[string]*Tool{}
@@ -45,8 +46,9 @@ func (t *Tool) Run(args json.RawMessage) (result, ui string, err error) {
 
 // Register adds a tool; called from each tool file's init(). T is the
 // tool's argument struct: json tags name the parameters (omitempty =
-// optional), jsonschema tags carry descriptions.
-func Register[T any](name, description string, run func(args *T) (result, ui string, err error)) {
+// optional), jsonschema tags carry descriptions. Stateful tools may pass a
+// cleanup function, which is called on backend shutdown.
+func Register[T any](name, description string, run func(args *T) (result, ui string, err error), cleanup ...func()) {
 	r := &jsonschema.Reflector{ExpandedStruct: true} // inline, no $ref/$defs: providers accept plain schemas
 	s := r.Reflect(new(T))
 	s.Version = "" // omit $schema; providers do not need it
@@ -87,6 +89,9 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		Schema:      schemaJSON,
 		run:         validated,
 	}
+	if len(cleanup) > 0 {
+		registry[name].close = cleanup[0]
+	}
 }
 
 // Get returns a tool by name.
@@ -107,4 +112,13 @@ func All() []*Tool {
 		out = append(out, registry[n])
 	}
 	return out
+}
+
+// CloseAll releases resources held by registered tools before backend exit.
+func CloseAll() {
+	for _, t := range All() {
+		if t.close != nil {
+			t.close()
+		}
+	}
 }

@@ -51,7 +51,7 @@ func init() {
 	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Each command requires user approval. Only hosts in /etc/ssh/ssh_known_hosts are trusted. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
 		result, err := runSSH(a)
 		return result, "", err
-	})
+	}, CloseSSH)
 }
 
 // Do not load ~/.ssh/config: aliases, ProxyCommand, HostKeyAlias, and
@@ -252,7 +252,7 @@ func removeSSHDirIfEmpty() {
 	}
 }
 
-// CloseSSH is called on normal backend exit and on :YapStop/SIGTERM.
+// CloseSSH releases all master connections on backend exit and on :YapStop/SIGTERM.
 func CloseSSH() {
 	sshMasters.Lock()
 	defer sshMasters.Unlock()

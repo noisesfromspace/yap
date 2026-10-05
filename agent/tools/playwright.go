@@ -44,7 +44,7 @@ func init() {
 			"url | title | go-back | go-forward | reload | eval <js> | screenshot | close. "+
 			"After navigation and interactions the tool returns the page snapshot with [ref=..] handles; act on them by ref. "+
 			"To hand control to the human (logins, Cloudflare/Turnstile, captcha), set handover=true; the window opens for manual use, then resume with command snapshot.",
-		func(a *playwrightArgs) (string, string, error) { return runPW(a) })
+		func(a *playwrightArgs) (string, string, error) { return runPW(a) }, ClosePlaywright)
 }
 
 type pwState struct {
