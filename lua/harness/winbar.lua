@@ -377,7 +377,7 @@ local function render_winbar(buf)
     parts[#parts + 1] = "%="
     if center then
       for _, s in ipairs(center) do
-        parts[#parts + 1] = render_seg(s)
+        parts[#parts + 1] = render_seg(s, true)
       end
       parts[#parts + 1] = "%="
     end

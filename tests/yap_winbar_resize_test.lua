@@ -99,6 +99,9 @@ for mask = 0, 15 do
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
     assert(centered_text:find(" mock/m1   󰘖 2 ", 1, true),
       "model island should be immediately before fold: " .. centered_text)
+    assert(center:find("%#YapIslandCursiveModel#", 1, true)
+        and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 3,
+      "model, padding and fold must all use the island surface: " .. center)
   else
     assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)
   end
