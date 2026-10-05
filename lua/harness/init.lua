@@ -56,6 +56,7 @@ M.config = {
   icons = {
     since = "󰅐", -- nf-md-clock_outline
     total = "󰆼", -- nf-md-database
+    fold = "󰘖", -- nf-md-unfold_more_horizontal
   },
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title

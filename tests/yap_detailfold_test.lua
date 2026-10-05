@@ -128,11 +128,18 @@ assert(vim.fn.foldclosed(single) == single, "typing opened the single-line tool 
 fold.set_view_level(2)
 assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 
--- winbar shows the applied view next to the model name
+-- The fold view is shown in the right-aligned cluster with a configurable icon.
 fold.set_view_level(2)
 local bar = yap.winbar(buf)
-assert(bar:find("Ⓕ2", 1, true), "winbar missing fold level: " .. bar)
-assert(bar:find("in", 1, true) == nil, "winbar unexpectedly shows usage: " .. bar)
+local left, right = bar:match("^(.-)%%=(.*)$")
+assert(left and right and not left:find("Ⓕ", 1, true), "fold view remained in left cluster: " .. bar)
+assert(right:find("󰘖 2", 1, true), "winbar missing right-aligned fold level: " .. bar)
+local icons = yap.config.icons
+icons.fold = "TEST"
+assert(yap.winbar(buf):find("TEST 2", 1, true), "fold icon config ignored: " .. yap.winbar(buf))
+icons.fold = ""
+assert(yap.winbar(buf):find(" 2", 1, true), "empty fold icon should leave the level: " .. yap.winbar(buf))
+icons.fold = "󰘖"
 fold.set_view_level(3)
-assert(yap.winbar(buf):find("Ⓕ3", 1, true), "winbar not updated to view 3: " .. yap.winbar(buf))
+assert(yap.winbar(buf):find("󰘖 3", 1, true), "winbar not updated to view 3: " .. yap.winbar(buf))
 print("OK")

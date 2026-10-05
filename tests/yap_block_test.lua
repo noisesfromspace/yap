@@ -26,7 +26,7 @@ local function left_text(buf)
   return left:gsub("%%#.-#", ""):gsub("%%%*", "")
 end
 local rollup_left = left_text(buf2)
-assert(rollup_left:match("^  ▶1   mock/m1 Ⓕ%d+ $"), "rollup spacing is inconsistent: " .. rollup_left)
+assert(rollup_left:match("^  ▶1   mock/m1 $"), "rollup spacing is inconsistent: " .. rollup_left)
 local state = require("harness.state")
 state.running[buf2] = {}
 local with_both = left_text(buf)

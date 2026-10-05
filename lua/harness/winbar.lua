@@ -236,9 +236,10 @@ local function render_winbar(buf)
       add_item({ seg(desc, "Description", false, true) })
     end
 
-    -- Droppable middle: provider/model and the applied fold view.
+    -- Droppable middle: provider/model. The applied fold view is in the
+    -- right-aligned cluster with usage and costs.
     if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model", false, true), seg(" Ⓕ" .. fold.level(), "Idle") })
+      add_item({ seg(provider .. "/" .. model, "Model", false, true) })
     end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
@@ -339,6 +340,11 @@ local function render_winbar(buf)
     return segs
   end
 
+  local function fold_segment()
+    local icon = icons.fold
+    return seg(" " .. (icon ~= "" and (icon .. " ") or "") .. fold.level(), "Idle")
+  end
+
   -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
   -- are self-evident from the absence of the left spinner, so they stay
   -- silent. The awaiting state still drives the OTHER-buffer rollup island.
@@ -352,7 +358,7 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, usage, state)
+  local function render(left, usage, fold_view, state)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
@@ -362,6 +368,9 @@ local function render_winbar(buf)
       for _, s in ipairs(usage) do
         parts[#parts + 1] = render_seg(s, true)
       end
+    end
+    if fold_view then
+      parts[#parts + 1] = render_seg(fold_view, true)
     end
     if state then
       parts[#parts + 1] = render_seg(state, true)
@@ -376,12 +385,14 @@ local function render_winbar(buf)
   while true do
     local left = left_segments(desc_max, show_mid)
     local usage = usage_segment(mode)
+    local fold_view = show_mid and fold_segment() or nil
     local state = state_segment()
     local total = width_of(left)
       + (usage and width_of(usage) or 0)
+      + (fold_view and width_of({ fold_view }) or 0)
       + (state and width_of({ state }) or 0)
     if total <= width then
-      return render(left, usage, state)
+      return render(left, usage, fold_view, state)
     end
     if show_mid then
       show_mid = false
@@ -394,7 +405,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, usage, state) -- smallest layout; let it clip
+      return render(left, usage, show_mid and fold_segment() or nil, state) -- smallest layout; let it clip
     end
   end
 end
