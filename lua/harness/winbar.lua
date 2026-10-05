@@ -456,6 +456,7 @@ local function define_winbar_hl()
     Description = "Title",
     Busy = "DiagnosticOk",
     BusyIcon = "DiagnosticInfo",
+    BusyText = "YapModel",
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
@@ -481,11 +482,6 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  vim.api.nvim_set_hl(0, "YapBusyText", {
-    fg = attr("Normal", "fg") or fg,
-    bg = bar_bg,
-    bold = true,
-  })
   -- The context meter is a raised pill, distinct from the surrounding bar.
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({
