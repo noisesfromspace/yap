@@ -58,8 +58,12 @@ for _, frame in ipairs(spinner_frames) do
   end
 end
 assert(has_theme_colored_icon, "winbar is missing the theme-colored activity icon: " .. yap.winbar())
-assert(vim.api.nvim_get_hl(0, { name = "YapBusyText" }).link == "Normal",
-  "activity text should use the readable Normal highlight")
+local activity_text = vim.api.nvim_get_hl(0, { name = "YapBusyText", link = false })
+assert(activity_text.fg == vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg,
+  "activity text should use Normal's brighter foreground")
+assert(activity_text.bg == vim.api.nvim_get_hl(0, { name = "WinBar", link = false }).bg,
+  "activity text should retain the WinBar background")
+assert(activity_text.bold, "activity text should be bold for additional contrast")
 assert(vim.api.nvim_get_hl(0, { name = "YapBusyIcon" }).link == "DiagnosticInfo",
   "activity icon should keep its distinct theme accent")
 local mid_ok = vim.wait(10000, function()
