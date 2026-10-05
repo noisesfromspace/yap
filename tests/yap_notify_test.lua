@@ -26,7 +26,7 @@ end
 
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
-assert(icons.waiting == "󱀒", "default waiting icon changed")
+assert(icons.waiting == "󰫁", "default waiting icon changed")
 
 -- A fresh chat has nothing to reply to yet: no state glyph.
 local buf = yap.new()
