@@ -57,7 +57,14 @@ overwrite the undohistory. This flexability gives it power.
    ```
 
    Export the key before starting Neovim, e.g. `export MOONSHOT_API_KEY=…`.
-   Keep the key out of the config file.
+   Keep the key out of the config file. For GitHub reads, optionally add
+   `"github": {"api_key_env": "GITHUB_TOKEN"}` at the top level and export
+   `GITHUB_TOKEN` before starting Neovim. The `github` tool uses this
+   environment variable (default `GITHUB_TOKEN`) and provides read-only
+   search and read operations for code, repositories, issues, PRs, files,
+   and Projects v2. Without a GitHub token, public REST reads still work at
+   lower unauthenticated rate limits; private content and Projects v2 may
+   require a token. It never needs the token in tool arguments.
 3. Install this repository as a Neovim plugin (or add it with
    `vim.opt.rtp:append("/path/to/yap")`), then configure it in your Neovim
    config:

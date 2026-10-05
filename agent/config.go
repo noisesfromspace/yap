@@ -21,6 +21,11 @@ type Websearch struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
+// GitHub names the environment variable containing the GitHub read token.
+type GitHub struct {
+	APIKeyEnv string `json:"api_key_env"`
+}
+
 // Decision configures the decision-model backend used by the jev tool.
 // It is Jev-specific today; agent/decision.Model is the plug point for
 // other decision backends. Zero values fall back to OpenRouter's
@@ -34,6 +39,7 @@ type Decision struct {
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
 	Websearch Websearch           `json:"websearch"`
+	GitHub    GitHub              `json:"github"`
 	Decision  Decision            `json:"decision"`
 	// Optional per-model pricing in USD per 1M tokens; used to compute the
 	// cost field in the yap:usage marker.

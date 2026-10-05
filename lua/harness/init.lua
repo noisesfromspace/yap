@@ -196,6 +196,8 @@ You are running inside Yap, an agent harness for Neovim. The conversation is an 
 
 Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the project (normally `/opt/code/yap`) rather than guessing.
 
+For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the `github` tool rather than curl, fetch, websearch, bash, or `gh`. Use other tools only if the `github` tool cannot perform the needed operation; never pass the GitHub token in tool arguments.
+
 ## Skills
 
 Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system block names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
