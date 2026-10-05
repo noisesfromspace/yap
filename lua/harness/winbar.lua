@@ -456,7 +456,7 @@ local function define_winbar_hl()
     Description = "Title",
     Busy = "DiagnosticOk",
     BusyIcon = "DiagnosticInfo",
-    BusyText = "YapModel",
+    BusyText = "YapCursiveModel",
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
