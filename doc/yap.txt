@@ -983,8 +983,8 @@ glyph appears on the far right only when something is wrong:
   ✗ error   The last send failed (vim.notify fired too); cleared on the
             next send.
 
-Idle and "awaiting your reply" show no glyph — the absence of the left
-spinner already tells you nothing is running.
+Idle shows no glyph. When a completed turn awaits your reply, a static ``
+(`cod-verified`) takes the spinner's place; errors do not show it.
 
 Example: `⣾ moonshot/kimi-k3   󰘖 2` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51    9% █▍░░░░░░ `
 

@@ -208,6 +208,8 @@ local function render_winbar(buf)
       if l and os.time() - l.since >= 2 then
         item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
       end
+    elseif awaiting[buf] and not errors[buf] then
+      add_item({ seg("", "Done") })
       add_item(item)
     end
 
@@ -465,6 +467,7 @@ local function define_winbar_hl()
     Busy = "DiagnosticOk",
     BusyIcon = "DiagnosticInfo",
     BusyText = "YapCursiveModel",
+    Done = "DiagnosticOk",
     Idle = "Comment",
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
