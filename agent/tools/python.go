@@ -47,7 +47,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 	if hasCode && hasFile {
 		return "", "", fmt.Errorf("provide either code or file, not both")
 	}
-	timeout := bashDefaultTimeout
+	timeout := utils.ToolDefaultTimeout
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
@@ -114,7 +114,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 		}
 		cmd.Dir = a.Cwd
 	}
-	text, err := runStreamed("python", label, cmd, timeout)
+	text, err := utils.RunStreamed("python", label, cmd, timeout)
 	if err != nil {
 		return "", "", err
 	}
