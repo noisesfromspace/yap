@@ -139,6 +139,15 @@ local subagent_children = {}
 -- has fully completed and the session file has been saved.
 local close_after_turn = {}
 
+-- Honor a close_session request by wiping the buffer. The turn has already
+-- been saved by whichever completion path reached this point.
+local function close_if_requested(buf)
+  if close_after_turn[buf] then
+    close_after_turn[buf] = nil
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end
+end
+
 -- Most-recently-focused buffers, front first. Session buffers are unlisted,
 -- so Neovim's :bd/:bw/:close skip them when choosing where to land after
 -- deleting the current buffer and drop the user on an empty "No Name"
@@ -1404,6 +1413,9 @@ function M.send(buf)
     vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
     return
   end
+  -- A close request is scoped to the turn that made it: a stale flag from
+  -- a previous errored or stopped turn must not close a later turn.
+  close_after_turn[buf] = nil
 
   local messages = document.parse_buffer(buf)
   -- The harness always prepends its own boilerplate, then the
@@ -1532,6 +1544,7 @@ function M.send(buf)
         report_error(buf, err ~= "" and err or "backend exited")
         close_stream(buf)
         follow_tail()
+        close_if_requested(buf)
         return
       end
       consume_usage(buf)
@@ -1598,10 +1611,7 @@ function M.send(buf)
       -- asked to end the session, so once the turn is fully done and the
       -- session file is saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
-      if close_after_turn[buf] then
-        close_after_turn[buf] = nil
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end
+      close_if_requested(buf)
     end
     local handle
     local ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
