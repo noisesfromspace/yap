@@ -1293,6 +1293,7 @@ local function refresh_description(buf, kind, messages)
 Rules:
 - 2-5 words, a specific noun phrase, not a sentence
 - No leading "The user", no "how to", no trailing period
+- No colon in the title (it breaks the YAML frontmatter)
 - Example: "Add websearch tool", "Fix fold lag on streaming"
 
 Return only the title.]]
@@ -1317,10 +1318,11 @@ The input is the user's requests in order. The first request anchors the session
 Rules:
 - 2-6 words, a specific noun phrase, not a sentence, no trailing period
 - No "session", "conversation", "the user", "about"
-- Prefer "Subject: change" so titles stay distinct across sessions in the same project
+- Prefer "Subject – change" so titles stay distinct across sessions in the same project
+- No colon in the title — it breaks the YAML frontmatter
 - Routine commit/close instructions are housekeeping, not the session goal
 - Never title from code, logs, or command output; do not use Markdown fences
-- Example: "Fold lag: cache per changedtick"
+- Example: "Fold lag – cache per changedtick"
 
 Return only the title.]]
     local requests = {}
@@ -1366,6 +1368,7 @@ Return only the title.]]
         :gsub("%s+", " ")
         :gsub("^%s+", "")
         :gsub("%s+$", "")
+        :gsub(":%s+", " – ")
       if description == "" or description:find("`", 1, true) then
         return
       end

@@ -67,6 +67,8 @@ assert(not full:match("described%.") and not full:match("Implemented the picker 
   "assistant content leaked into title input: " .. full)
 assert(not full:match("Commit changes from this session"), "routine commit footer leaked into title input: " .. full)
 assert(full:match("first request anchors the session's main goal"), "overall title prompt does not anchor the first request: " .. full)
+assert(not full:match("Subject: change"), "answer title prompt still requests the colon pattern: " .. full)
+assert(full:match("No colon"), "answer title prompt missing colon guard: " .. full)
 
 -- The requests are logged before their replies complete. Wait for the
 -- asynchronous description callback to update the frontmatter.
@@ -142,5 +144,21 @@ assert(fence_request and not fence_request:match("git status") and not fence_req
   "assistant tool output leaked into title context: " .. tostring(fence_request))
 local fence_lines = vim.api.nvim_buf_get_lines(fence_buf, 0, 8, false)
 assert(not table.concat(fence_lines, "\n"):match("description:.*```"), "fenced title was persisted")
+
+-- A title echoing the "Subject: change" pattern is sanitized before it is
+-- written to the YAML frontmatter: a colon followed by a space breaks YAML,
+-- so the separator is rewritten to an en dash.
+local colon_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(colon_buf, -1, -1, false, { "Colon regression trigger" })
+yap.send(colon_buf)
+ok = vim.wait(10000, function()
+  local text = table.concat(vim.api.nvim_buf_get_lines(colon_buf, 0, 8, false), "\n")
+  return text:match("description: Neovim") ~= nil
+end, 100)
+assert(ok, "colon-regression turn did not finish")
+local colon_fm = table.concat(vim.api.nvim_buf_get_lines(colon_buf, 0, 8, false), "\n")
+assert(colon_fm:match("description: Neovim 0%.13 %– API migrations"),
+  "colon title not sanitized: " .. colon_fm)
+assert(not colon_fm:match("0%.13: API"), "unsanitized colon reached frontmatter: " .. colon_fm)
 
 print("OK describe")
