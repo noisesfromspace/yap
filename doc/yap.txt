@@ -22,15 +22,15 @@ markdown buffer. A small Go binary (`yap`) is only a provider client: it
 reads the message array on stdin and streams the reply to stdout. There is
 no TUI, and no hidden conversation state anywhere.
 
-The idea is stolen from gptel (Emacs): chat LLM APIs are stateless — every
-request sends the full message array, so whoever holds the array holds the
-truth, and that can be a text buffer. Consequences:
+The idea is stolen from gptel (Emacs): chat LLM APIs are stateless: every
+request sends the full message array, so the whole conversation is the only
+state, and a text buffer can hold it. Consequences:
 
 - Deleting a block removes it from the conversation: that is branching.
 - Editing an assistant reply changes what the model "said".
 - Writing your own `# @assistant` block steers the model (prefill).
 - Yanking, undo, folds and rendering are just Neovim. `:undotree` is a
-  free branch navigator.
+  branch navigator.
 
 ==============================================================================
 2. COMMANDS                                                  *yap-commands*
