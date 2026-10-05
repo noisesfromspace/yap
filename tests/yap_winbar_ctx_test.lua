@@ -40,12 +40,20 @@ for _, case in ipairs({
     assert(not wb:match("23k/250k"), "raw context sizes shown: " .. wb)
     assert(graph_width(wb) == 8, "context graph width changed at " .. width .. " cols: " .. wb)
     assert(wb:match(case.hl), "wrong context graph band at " .. case.pct .. ": " .. wb)
+    assert(wb:find("%#YapGaugeLabel#", 1, true) or not wb:match("%d+%%"),
+      "context percentage should use the gauge surface: " .. wb)
     if width > 12 then
       assert(wb:match(case.pct), "context percentage missing: " .. wb)
     else
       assert(not wb:match("%d+%%"), "narrow layout should drop the percentage: " .. wb)
     end
   end
+end
+
+for _, group in ipairs({ "YapGaugeEmpty", "YapGaugeLabel", "YapGaugeLow", "YapGaugeMid", "YapGaugeHigh" }) do
+  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg
+      == vim.api.nvim_get_hl(0, { name = "NormalFloat", link = false }).bg,
+    group .. " should share the distinct gauge background")
 end
 
 print("OK winbar_ctx")

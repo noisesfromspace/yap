@@ -263,14 +263,18 @@ local function render_winbar(buf)
     local parts = {}
     if show_percent then
       local text = pct < 1 and string.format("%.1f%% ", pct) or string.format("%.0f%% ", pct)
-      parts[#parts + 1] = { text, "Idle" }
+      parts[#parts + 1] = { " ", "GaugeEmpty", true }
+      parts[#parts + 1] = { text, "GaugeLabel", true }
+    else
+      parts[#parts + 1] = { " ", "GaugeEmpty", true }
     end
     if fill ~= "" then
-      parts[#parts + 1] = { fill, color }
+      parts[#parts + 1] = { fill, color, true }
     end
     if track ~= "" then
-      parts[#parts + 1] = { track, "GaugeEmpty" }
+      parts[#parts + 1] = { track, "GaugeEmpty", true }
     end
+    parts[#parts + 1] = { " ", "GaugeEmpty", true }
     return parts
   end
 
@@ -318,8 +322,15 @@ local function render_winbar(buf)
     local segs = {}
     for ci, chip in ipairs(chips) do
       local prefix = ci == 1 and " " or " · "
-      for pi, part in ipairs(chip) do
-        segs[#segs + 1] = seg(pi == 1 and prefix .. part[1] or part[1], part[2])
+      if chip[1][3] then
+        segs[#segs + 1] = seg(prefix, "Idle")
+        for _, part in ipairs(chip) do
+          segs[#segs + 1] = seg(part[1], part[2])
+        end
+      else
+        for pi, part in ipairs(chip) do
+          segs[#segs + 1] = seg(pi == 1 and prefix .. part[1] or part[1], part[2])
+        end
       end
     end
     segs[#segs].text = segs[#segs].text .. " "
@@ -445,6 +456,7 @@ local function define_winbar_hl()
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
     GaugeEmpty = "NonText",
+    GaugeLabel = "Comment",
     GaugeLow = "DiagnosticOk",
     GaugeMid = "DiagnosticWarn",
     GaugeHigh = "DiagnosticError",
@@ -469,6 +481,20 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
+  -- The context meter is a raised pill, distinct from the surrounding bar.
+  -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
+  for _, gauge in ipairs({
+    { "GaugeEmpty", "NonText" },
+    { "GaugeLabel", "Comment" },
+    { "GaugeLow", "DiagnosticOk" },
+    { "GaugeMid", "DiagnosticWarn" },
+    { "GaugeHigh", "DiagnosticError" },
+  }) do
+    vim.api.nvim_set_hl(0, "Yap" .. gauge[1], {
+      fg = attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
+      bg = bg,
+    })
+  end
   -- Recompute theme-owned surfaces on ColorScheme: caps use the bar's
   -- background, while padding and both counts share one opaque pill.
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
