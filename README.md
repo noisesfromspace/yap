@@ -30,6 +30,10 @@ This isn't the most stable approach. Removing things or incoming text could put
 the session in unexpected states. Making edits while the buffer is running will
 overwrite the undohistory. This flexability gives it power.
 
+A Nerd Font is used by default for the winbar and picker glyphs; set
+`nerd_font = false` in setup for a plain-Unicode fallback (font support
+cannot be detected reliably in a terminal).
+
 ## First run
 
 1. From the repository root, build the backend and make sure `yap` is on

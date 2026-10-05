@@ -17,14 +17,12 @@ local function winbar_at(cols)
 end
 
 local function graph_width(bar)
-  local _, full = bar:gsub("█", "")
-  local _, empty = bar:gsub("░", "")
-  local partial = 0
-  for _, glyph in ipairs({ "▏", "▎", "▍", "▌", "▋", "▊", "▉" }) do
+  local width = 0
+  for _, glyph in ipairs({ "", "", "", "", "", "" }) do
     local _, count = bar:gsub(glyph, "")
-    partial = partial + count
+    width = width + count
   end
-  return full + empty + partial
+  return width
 end
 
 for _, case in ipairs({
@@ -39,6 +37,9 @@ for _, case in ipairs({
     assert(not wb:find("󰊚", 1, true), "context glyph shown: " .. wb)
     assert(not wb:match("23k/250k"), "raw context sizes shown: " .. wb)
     assert(graph_width(wb) == 8, "context graph width changed at " .. width .. " cols: " .. wb)
+    local rounded_full = math.floor(case.prompt / case.context_window * 8 + 0.5) == 8
+    assert(wb:find("", 1, true) and wb:find(rounded_full and "" or "", 1, true),
+      "rounded meter ends missing: " .. wb)
     assert(wb:match(case.hl), "wrong context graph band at " .. case.pct .. ": " .. wb)
     if width > 12 then
       assert(wb:match(case.pct), "context percentage missing: " .. wb)
