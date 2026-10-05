@@ -1088,7 +1088,8 @@ end
 local function close_drawer_window(buf)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
-      if #vim.api.nvim_list_wins() > 1 then
+      local tab = vim.api.nvim_win_get_tabpage(win)
+      if #vim.api.nvim_tabpage_list_wins(tab) > 1 then
         vim.api.nvim_win_close(win, true)
       else
         -- Neovim cannot close the last window; replace its view while keeping
