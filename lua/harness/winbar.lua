@@ -149,11 +149,12 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- then the current session's title/model/fold view; usage on the right —
--- the three chips, then an error glyph only when something went wrong. The
--- bar is width-aware: as the window narrows it drops the model/fold
--- cluster, then the chip costs, then the chip tokens; the error glyph, the
--- prices and the island survive. Past that the bar clips.
+-- then the current session's title/model/fold view; on the right, one
+-- island for usage counters and another for the context meter, followed by
+-- an error glyph only when something went wrong. The bar is width-aware:
+-- as the window narrows it drops the model/fold cluster, then the chip
+-- costs, then the chip tokens; the error glyph, prices and island survive.
+-- Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -168,8 +169,8 @@ local function render_winbar(buf)
   local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
   local inactive = win ~= vim.api.nvim_get_current_win()
   local function render_seg(s, upright)
-    if s.group == "IslandCap" and inactive then
-      return winbar_hl(s.text, "IslandCapNC")
+    if s.group == "IslandCap" then
+      return winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
     end
     local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
     if s.island then
@@ -281,9 +282,9 @@ local function render_winbar(buf)
     return parts
   end
 
-  -- Usage/cost cluster: since-open and all-time chips. As the bar narrows,
-  -- tokens and costs drop before the context meter; its percentage is dropped
-  -- last so the complete eight-cell gauge remains visible.
+  -- Usage/cost cluster: since-open and all-time counters share one island;
+  -- the context meter has its own island, separated by winbar space.
+  -- As the bar narrows, tokens and costs drop before the context meter.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
@@ -305,11 +306,6 @@ local function render_winbar(buf)
       chips[#chips + 1] = { { text, "Idle" } }
     end
 
-    local context = context_segment(mode ~= "gauge")
-    if context then
-      chips[#chips + 1] = context
-    end
-
     if mode == "prices" then
       if u and u.cost then
         chips[#chips + 1] = { { icons.since .. " " .. string.format("$%.4g", u.cost), "Idle" } }
@@ -319,24 +315,36 @@ local function render_winbar(buf)
       end
     end
 
-    if #chips == 0 then
+    local context = context_segment(mode ~= "gauge")
+    if #chips == 0 and not context then
       return nil
     end
     local segs = {}
-    for ci, chip in ipairs(chips) do
-      local prefix = ci == 1 and " " or " · "
-      if chip[1][3] then
-        segs[#segs + 1] = seg(prefix, "Idle")
-        for _, part in ipairs(chip) do
-          segs[#segs + 1] = seg(part[1], part[2])
+    local function pill(parts)
+      segs[#segs + 1] = seg(#segs == 0 and " " or "  ", "Idle")
+      segs[#segs + 1] = seg("", "IslandCap")
+      for _, part in ipairs(parts) do
+        segs[#segs + 1] = seg(part[1], part[2], true)
+      end
+      segs[#segs + 1] = seg("", "IslandCap")
+    end
+    if #chips > 0 then
+      local counters = { { " ", "Count" } }
+      for ci, chip in ipairs(chips) do
+        if ci > 1 then
+          counters[#counters + 1] = { "  ", "Count" }
         end
-      else
-        for pi, part in ipairs(chip) do
-          segs[#segs + 1] = seg(pi == 1 and prefix .. part[1] or part[1], part[2])
+        for _, part in ipairs(chip) do
+          counters[#counters + 1] = { part[1], "Count" }
         end
       end
+      counters[#counters + 1] = { " ", "Count" }
+      pill(counters)
     end
-    segs[#segs].text = segs[#segs].text .. " "
+    if context then
+      pill(context)
+    end
+    segs[#segs + 1] = seg(" ", "Idle")
     return segs
   end
 
@@ -461,7 +469,7 @@ local function define_winbar_hl()
     Error = "DiagnosticError",
     Needs = "DiagnosticWarn",
     GaugeEmpty = "NonText",
-    GaugeLabel = "Comment",
+    GaugeLabel = "Keyword",
     GaugeLow = "DiagnosticOk",
     GaugeMid = "DiagnosticWarn",
     GaugeHigh = "DiagnosticError",
@@ -486,13 +494,13 @@ local function define_winbar_hl()
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({
     { "GaugeEmpty", "NonText" },
-    { "GaugeLabel", "Comment" },
+    { "GaugeLabel", "Keyword" },
     { "GaugeLow", "DiagnosticOk" },
     { "GaugeMid", "DiagnosticWarn" },
     { "GaugeHigh", "DiagnosticError" },
   }) do
     vim.api.nvim_set_hl(0, "Yap" .. gauge[1], {
-      fg = attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
+      fg = gauge[1] == "GaugeLabel" and attr("YapModel", "fg") or attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
       bg = bg,
     })
   end
@@ -501,6 +509,7 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
   vim.api.nvim_set_hl(0, "YapIslandCapNC", { fg = bg, bg = inactive_bg })
   vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes
@@ -514,7 +523,8 @@ local function define_winbar_hl()
   for _, group in ipairs({ "Model", "Description" }) do
     styled_hl("YapCursive" .. group, "Yap" .. group, true)
   end
-  for _, group in ipairs({ "Idle", "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+  styled_hl("YapUprightIdle", "YapModel", false)
+  for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
     styled_hl("YapUpright" .. group, "Yap" .. group, false)
   end
   for _, group in ipairs({ "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
