@@ -129,6 +129,32 @@ local function models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
+-- The last provider/model picked via :YapChangeModel, persisted so new
+-- buffers reuse it without a rebuild of the (often Nix-managed) setup()
+-- defaults. setup() reads it once; change_model() rewrites it.
+local default_combo = nil
+
+local function default_combo_path()
+  return vim.fn.stdpath("cache") .. "/yap/default"
+end
+
+local function read_default_combo()
+  local path = default_combo_path()
+  if vim.fn.filereadable(path) == 1 then
+    local lines = vim.fn.readfile(path)
+    if #lines == 1 and lines[1]:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+      return lines[1]
+    end
+  end
+  return nil
+end
+
+local function write_default_combo(combo)
+  local path = default_combo_path()
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ combo }, path)
+end
+
 local function refresh_models()
   if models_refreshing then return end
   models_refreshing = true
@@ -2228,8 +2254,12 @@ function M.new(opts)
     vim.b[buf].yap_path = opts.path
     vim.api.nvim_buf_set_name(buf, opts.path)
   end
-  vim.b[buf].yap_provider = opts.provider or M.config.provider
-  vim.b[buf].yap_model = opts.model or M.config.model
+  local provider, model = M.config.provider, M.config.model
+  if default_combo then
+    provider, model = default_combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  end
+  vim.b[buf].yap_provider = opts.provider or provider
+  vim.b[buf].yap_model = opts.model or model
   vim.b[buf].yap_project_cwd = vim.fs.normalize(vim.fn.getcwd())
 
   local lines = { "# @system", "" }
@@ -2456,6 +2486,8 @@ function M.change_model(combo)
   end
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
+  default_combo = combo
+  write_default_combo(combo)
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
 end
 
@@ -2643,6 +2675,7 @@ function M.setup(opts)
     })
   end
   M.config = vim.tbl_deep_extend("force", M.config, opts)
+  default_combo = read_default_combo()
   if not M.config.models or #M.config.models == 0 then
     local path = models_cache_path()
     if vim.fn.filereadable(path) == 1 then

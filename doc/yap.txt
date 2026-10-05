@@ -125,6 +125,10 @@ the current buffer unless otherwise noted.
                         config.json (GET /models) — no duplicate model
                         configuration needed. The query result is cached
                         for the session; |:YapReload| refreshes it.
+                        The picked combo is also persisted as the default
+                        for new buffers (in `$XDG_CACHE_HOME/yap/default`),
+                        so changing models does not require editing the
+                        (often Nix-managed) setup() defaults.
 
                                                             *:YapFork*
 :YapFork [name]       Fork the current conversation into a new session in
@@ -706,8 +710,9 @@ pure per-redraw cost on a large session. setup_buffer marks each buffer and
 an LspAttach guard in setup() stops any markdown client from attaching.
 
 The active combo comes from the frontmatter on open, then from per-buffer
-vars set by |:YapChangeModel|, falling back to setup() defaults. The
-buffer holds the model state (R1) but NOT token/cost totals: those
+vars set by |:YapChangeModel|, falling back to the persisted default (the
+last combo picked via |:YapChangeModel|) and finally to setup() defaults.
+The buffer holds the model state (R1) but NOT token/cost totals: those
 accumulate in memory for the lifetime of the buffer, and reopening a
 session starts them from zero.
 
