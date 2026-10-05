@@ -48,20 +48,22 @@ local header_ok = vim.wait(10000, function()
 end, 10)
 assert(header_ok, "tool header not visible mid-run")
 assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
-local spinner_frames = { "※", "⁕", "⁜", "⁑" }
-local has_theme_colored_icon = false
-for _, frame in ipairs(spinner_frames) do
-  local bar = yap.winbar()
-  if bar:find(frame, 1, true) and bar:find("%#YapBusyIcon#", 1, true) then
-    has_theme_colored_icon = true
+local spinner_frames = { ["※"] = "YapBusyTeal", ["⁕"] = "YapBusyBlue", ["⁜"] = "YapBusyViolet", ["⁑"] = "YapBusyTeal" }
+local bar = yap.winbar()
+local has_colored_icon = false
+for frame, group in pairs(spinner_frames) do
+  if bar:find("%#" .. group .. "#" .. frame, 1, true) then
+    has_colored_icon = true
     break
   end
 end
-assert(has_theme_colored_icon, "winbar is missing the theme-colored activity icon: " .. yap.winbar())
+assert(has_colored_icon, "winbar is missing the rotating spinner color: " .. bar)
+for group, color in pairs({ YapBusyTeal = 0x5fd7c7, YapBusyBlue = 0x7aa2f7, YapBusyViolet = 0xbb9af7 }) do
+  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).fg == color,
+    group .. " should retain its distinct spinner color")
+end
 assert(vim.api.nvim_get_hl(0, { name = "YapBusyText" }).link == "YapCursiveModel",
   "activity text should reuse the displayed model-name highlight")
-assert(vim.api.nvim_get_hl(0, { name = "YapBusyIcon" }).link == "DiagnosticInfo",
-  "activity icon should keep its distinct theme accent")
 local mid_ok = vim.wait(10000, function()
   local bar = yap.winbar()
   return bar:find("bash", 1, true) ~= nil and bar:find("%#YapBusyText#", 1, true) ~= nil

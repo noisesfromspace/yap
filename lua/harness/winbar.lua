@@ -20,9 +20,14 @@ local errors = state.errors
 local awaiting = state.awaiting
 local steer = state.steer
 
--- The spinner animates its shape; the icon uses a semantic theme color,
--- while accompanying status text uses Normal's readable foreground/background.
-local SPINNER = { "※", "⁕", "⁜", "⁑" }
+-- A compact cycle of typographic marks. Teal, blue and violet rotate
+-- with the shape; the accompanying tool text keeps its own highlight.
+local SPINNER = {
+  { "※", "BusyTeal" },
+  { "⁕", "BusyBlue" },
+  { "⁜", "BusyViolet" },
+  { "⁑", "BusyTeal" },
+}
 local spinner_tick = 0
 local spinner_timer = nil
 
@@ -204,13 +209,13 @@ local function render_winbar(buf)
     if spinner then
       local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
-      local item = { seg(frame, "BusyIcon") }
+      local item = { seg(frame[1], frame[2]) }
       if l and os.time() - l.since >= 2 then
         item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
       end
+      add_item(item)
     elseif awaiting[buf] and not errors[buf] then
       add_item({ seg("", "Done") })
-      add_item(item)
     end
 
     local running_others_n = count_others(running, buf)
@@ -465,7 +470,6 @@ local function define_winbar_hl()
     Model = "Keyword",
     Description = "Title",
     Busy = "DiagnosticOk",
-    BusyIcon = "DiagnosticInfo",
     BusyText = "YapCursiveModel",
     Done = "DiagnosticOk",
     Idle = "Comment",
@@ -480,6 +484,9 @@ local function define_winbar_hl()
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
+  vim.api.nvim_set_hl(0, "YapBusyTeal", { default = true, fg = "#5fd7c7" })
+  vim.api.nvim_set_hl(0, "YapBusyBlue", { default = true, fg = "#7aa2f7" })
+  vim.api.nvim_set_hl(0, "YapBusyViolet", { default = true, fg = "#bb9af7" })
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the
   -- linked groups above so user `:hi YapBusy` overrides still win.
