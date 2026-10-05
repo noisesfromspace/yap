@@ -14,6 +14,11 @@ assert(scratch ~= buf, "scratch is the chat buffer")
 assert(vim.bo[scratch].buftype == "", "scratch buffer is not file-backed")
 assert(vim.bo[scratch].buflisted == false, "scratch buffer should be unlisted")
 assert(vim.api.nvim_buf_get_name(scratch):match("%.queue$") ~= nil, "scratch buffer is not a .queue file")
+local queue_file = vim.api.nvim_buf_get_name(scratch)
+assert(vim.fn.filereadable(queue_file) == 1, "new queue file was not saved automatically")
+local initial = { "# @notes", "", "# @steer", "", "# @queue" }
+assert(table.concat(vim.fn.readfile(queue_file), "\n") == table.concat(initial, "\n"), "new queue file has unexpected initial content")
+assert(not vim.bo[scratch].modified, "automatically saved queue buffer is still modified")
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
 assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
 assert(
@@ -43,7 +48,6 @@ local saved = { "# @notes", "a note", "", "# @steer", "", "# @queue", "task one"
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, saved)
 local ok = pcall(vim.cmd, "write")
 assert(ok, "scratch buffer rejected :write")
-local queue_file = vim.api.nvim_buf_get_name(scratch)
 assert(vim.fn.filereadable(queue_file) == 1, "queue file not written: " .. queue_file)
 assert(table.concat(vim.fn.readfile(queue_file), "\n") == table.concat(saved, "\n"), "queue file content mismatch")
 

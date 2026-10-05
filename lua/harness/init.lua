@@ -308,6 +308,7 @@ end
 local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
 local fold = require("harness.fold")
+local tail = require("harness.tail")
 
 --- End line (0-based, exclusive) of the frontmatter block, or nil when
 --- the buffer has none. Only the model state lives there (see
@@ -561,91 +562,6 @@ local function seed_session_usage(buf)
   vim.b[buf].yap_session_usage = su
 end
 
---- Render one audit event as tail-buffer text. Returns (text, kind)
---- where kind is "block" (blank-line separated) or "stream" (appended
---- verbatim — streamed bash output chunks), or nil to render nothing.
-local function render_event(ev)
-  local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
-  if ev.type == "tool_start" then
-    return "$ " .. (ev.command or ev.name or "tool"), "block"
-  elseif ev.type == "output" then
-    return ev.data or "", "stream"
-  elseif ev.type == "tool_call" then
-    -- bash/python render their own `$ command` header from tool_start; the
-    -- full arguments are still in the audit log as this event.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local target = ""
-    local ok, a = pcall(vim.json.decode, ev.args or "")
-    if ok and type(a) == "table" then
-      target = a.path or a.url or a.command or ""
-    end
-    return ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), "block"
-  elseif ev.type == "tool_result" then
-    -- bash/python output already streamed via output events; don't duplicate it.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local lines = {}
-    if ev.result and ev.result ~= "" then
-      vim.list_extend(lines, vim.split(ev.result:gsub("\n$", ""), "\n", { plain = true }))
-    end
-    table.insert(lines, ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"))
-    return table.concat(lines, "\n"), "block"
-  elseif ev.type == "retry" then
-    return ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), "block"
-  elseif ev.type == "tool_text_warning" then
-    return ("%s unexecuted tool call: %s"):format(ts, ev.detail or "model emitted a tool call as text"), "block"
-  elseif ev.type == "steer" then
-    local text = (ev.text or ""):gsub("\n", " ")
-    return ("%s ⌁ steer: %s"):format(ts, text), "block"
-  elseif ev.type == "approval_request" then
-    local context = ev.tool or ""
-    if ev.reason and ev.reason ~= "" then
-      context = context ~= "" and (context .. ": " .. ev.reason) or ev.reason
-    end
-    local label = context ~= "" and (" (" .. context .. ")") or ""
-    return ("%s %s approval requested%s: %s"):format(ts, M.config.icons.approval, label, (ev.command or ""):gsub("\n", " ")), "block"
-  elseif ev.type == "approval_result" then
-    return ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), "block"
-  elseif ev.type == "approval_timeout" then
-    return ("%s approval timed out (denied)"):format(ts), "block"
-  elseif ev.type == "turn_end" then
-    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
-    return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
-      ts,
-      ev.model or "?",
-      ev.prompt or 0,
-      ev.completion or 0,
-      cost,
-      (ev.ms or 0) / 1000
-    ),
-      "block"
-  end
-end
-
---- Rebuild the tail text from a list of audit events (stream chunks
---- append verbatim; block events join with one blank line).
-local function render_events(events)
-  local parts, has = {}, false
-  for _, ev in ipairs(events) do
-    local text, kind = render_event(ev)
-    if text then
-      if kind == "stream" then
-        parts[#parts + 1] = text
-      else
-        if has then
-          parts[#parts + 1] = "\n"
-        end
-        parts[#parts + 1] = text .. "\n"
-      end
-      has = true
-    end
-  end
-  return table.concat(parts)
-end
-
 --- Find a buffer by name, or create one (unlisted) with that name.
 --- Reuse comes first: naming a fresh buffer identically to a leftover
 --- would E95 (the chat buffer may have been wiped and reopened). Returns
@@ -667,10 +583,10 @@ local function ensure_tail(buf)
     return t
   end
   local name = paths.tail_buf_name(buf)
-  local tail = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
-  vim.bo[tail].bufhidden = "hide"
+  local tbuf = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
+  vim.bo[tbuf].bufhidden = "hide"
 
-  t = { bufnr = tail, offset = 0, has_content = false }
+  t = { bufnr = tbuf, offset = 0, has_content = false }
   tails[buf] = t
 
   -- Replay the audit log so the live view survives restarts.
@@ -686,9 +602,7 @@ local function ensure_tail(buf)
       end
     end
   end
-  local lines = vim.split(render_events(events), "\n", { plain = true })
-  vim.api.nvim_buf_set_lines(tail, 0, -1, false, lines)
-  t.has_content = #lines > 1 or lines[1] ~= ""
+  t.has_content = tail.rebuild(tbuf, events)
   return t
 end
 
@@ -696,19 +610,8 @@ end
 local function append_event(buf, ev)
   local t = ensure_tail(buf)
   audit_append(buf, ev)
-  local text, kind = render_event(ev)
-  if not text then
-    return
-  end
-  if kind == "stream" then
-    document.append_text(t.bufnr, text)
-  else
-    document.append_text(t.bufnr, (t.has_content and "\n" or "") .. text .. "\n")
-  end
-  t.has_content = true
-  for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
-    vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
-  end
+  tail.append(t, ev)
+  tail.scroll(t.bufnr)
 end
 
 --- Cap the raw tool output streamed into the live tail (and audit log)
@@ -859,6 +762,10 @@ local function handle_event(buf, json_line)
     end
     vim.b[buf].yap_session_usage = su
     append_event(buf, ev)
+    local t = tails[buf]
+    if t then
+      tail.fold(t.bufnr)
+    end
   end
 end
 
@@ -1161,6 +1068,7 @@ function M.live(buf)
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
+  tail.fold(t.bufnr)
 end
 
 --- The queue file is a sibling of the session file, sharing its basename
@@ -1459,6 +1367,7 @@ function M.scratch_toggle(buf)
         M.scratch_send(scratch)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch selection" })
     end
+    scratch_save(scratch)
   else
     vim.b[scratch].yap_owner = buf
   end

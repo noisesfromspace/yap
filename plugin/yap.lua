@@ -19,6 +19,10 @@ vim.api.nvim_create_user_command("YapLive", function()
   require("harness").live()
 end, { desc = "Open the session's live tool-output view" })
 
+vim.api.nvim_create_user_command("YapAudit", function()
+  require("harness.audit").view()
+end, { desc = "Browse the session's audit log (raw list + readable record)" })
+
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
 end, {
