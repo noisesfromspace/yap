@@ -154,11 +154,10 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s), then a global-session island,
--- description on the left; on the right, separate rounded islands for
--- usage counters, provider/model, fold view and context meter, followed by an
--- error glyph only when something went wrong. The bar is width-aware: as
--- the window narrows it drops model/fold, then costs, then tokens; the
--- error glyph, prices and context meter survive. Past that the bar clips.
+-- description on the left; centered provider/model and fold-view islands;
+-- usage counters and context meter on the right, followed by an error glyph.
+-- As the window narrows the center islands drop, then costs, then tokens;
+-- the error glyph, prices and context meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -280,10 +279,9 @@ local function render_winbar(buf)
     return parts
   end
 
-  -- Usage counters, provider/model, fold view and context meter each have
-  -- their own island. As the bar narrows, model/fold drop together; costs
-  -- and tokens drop before the context meter.
-  local function usage_segment(mode, show_fold)
+  -- Usage counters and context meter stay right-aligned.
+  -- As the bar narrows, costs and tokens drop before the context meter.
+  local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
     local u = vim.b[buf].yap_usage
     local s = vim.b[buf].yap_session_usage
@@ -314,7 +312,7 @@ local function render_winbar(buf)
     end
 
     local context = context_segment(mode ~= "gauge")
-    if not show_fold and #chips == 0 and not context then
+    if #chips == 0 and not context then
       return nil
     end
     local segs = {}
@@ -339,16 +337,23 @@ local function render_winbar(buf)
       counters[#counters + 1] = { " ", "Count" }
       pill(counters)
     end
-    if show_fold then
-      pill({ { " ", "Count" }, { provider .. "/" .. model, "Model" }, { " ", "Count" } })
-      local icon = icons.fold
-      pill({ { " " .. (icon ~= "" and (icon .. " ") or "") .. fold.level() .. " ", "Count" } })
-    end
     if context then
       pill(context)
     end
     segs[#segs + 1] = seg(" ", "Idle")
     return segs
+  end
+
+  -- Two adjacent islands centered independently of left and right content.
+  local function center_segments()
+    local icon = icons.fold
+    return {
+      seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
+      seg(provider .. "/" .. model, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
+      seg(" ", "Idle"), seg("", "IslandCap"),
+      seg(" " .. (icon ~= "" and (icon .. " ") or "") .. fold.level() .. " ", "Count", true),
+      seg("", "IslandCap"), seg(" ", "Idle"),
+    }
   end
 
   -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
@@ -364,12 +369,18 @@ local function render_winbar(buf)
     return nil
   end
 
-  local function render(left, usage, state)
+  local function render(left, center, usage, state)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
     end
     parts[#parts + 1] = "%="
+    if center then
+      for _, s in ipairs(center) do
+        parts[#parts + 1] = render_seg(s)
+      end
+      parts[#parts + 1] = "%="
+    end
     if usage then
       for _, s in ipairs(usage) do
         parts[#parts + 1] = render_seg(s, true)
@@ -381,19 +392,21 @@ local function render_winbar(buf)
     return table.concat(parts, "")
   end
 
-  -- Degrade until the bar fits, dropping the least important parts first:
-  -- model/fold → chip costs → chip tokens. The error glyph and the prices
-  -- survive; past that the bar clips rather than hiding them.
+  -- Preserve real centering: drop the middle when either edge cluster
+  -- would collide with it, then degrade the right side as before.
   local desc_max, mode, show_mid = 40, "full", true
   while true do
     local left = left_segments(desc_max)
-    local usage = usage_segment(mode, show_mid)
+    local center = show_mid and center_segments() or nil
+    local usage = usage_segment(mode)
     local state = state_segment()
-    local total = width_of(left)
-      + (usage and width_of(usage) or 0)
-      + (state and width_of({ state }) or 0)
-    if total <= width then
-      return render(left, usage, state)
+    local right_width = (usage and width_of(usage) or 0) + (state and width_of({ state }) or 0)
+    local center_width = center and width_of(center) or 0
+    local total = width_of(left) + center_width + right_width
+    if total <= width and (not center or
+        (width_of(left) <= math.floor((width - center_width) / 2)
+          and right_width <= math.floor((width - center_width) / 2))) then
+      return render(left, center, usage, state)
     end
     if show_mid then
       show_mid = false
@@ -406,7 +419,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, usage, state) -- smallest layout; let it clip
+      return render(left, nil, usage, state) -- smallest layout; let it clip
     end
   end
 end

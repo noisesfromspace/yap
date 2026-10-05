@@ -970,14 +970,14 @@ yap sessions: `▶N` (N other buffers streaming a reply) and `◉N` (N other
 buffers await you; jump to one with |:YapInstances|). The island appears only
 when at least one other session is running or waiting; it never counts the
 current buffer. After the island: the session description (truncated to 40
-columns). On the right: usage totals, provider/model in its own island, the
-applied fold view
-(`󰘖 1` agent output folded, `󰘖 2` tools & thinking folded, `󰘖 3` all open —
-the last view applied with <leader>1..3; manual |za| toggles don't update it),
-and context-fill meter in four rounded islands, using the same
-background and caps as the left rollup island. One winbar space separates
-each island. The fold icon is configurable with `icons.fold` and may be set to
-`""` to show only the level. A state glyph appears on the far right only when
+columns). The provider/model and applied fold view are centered in two
+adjacent rounded islands (`󰘖 1` agent output folded, `󰘖 2` tools & thinking
+folded, `󰘖 3` all open — the last view applied with <leader>1..3; manual
+|za| toggles don't update it). On the right, usage totals and the context-fill
+meter occupy two rounded islands. All islands share the left rollup's surface
+and caps. The centered islands disappear when either side needs the space.
+The fold icon is configurable with `icons.fold` and may be set to `""` to
+show only the level. A state glyph appears on the far right only when
 something is wrong:
 
   ✗ error   The last send failed (vim.notify fired too); cleared on the
@@ -986,13 +986,13 @@ something is wrong:
 Idle shows no glyph. When a completed turn awaits your reply, a static ``
 (`cod-verified`) takes the spinner's place; errors do not show it.
 
-Example: `⣾ session title` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   moonshot/kimi-k3   󰘖 2   9% █▍░░░░░░ `
+Example: `⣾ session title` ... ` moonshot/kimi-k3   󰘖 2 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
 
 Reading the numbers                                    *yap-winbar-numbers*
 
-The right side puts the two usage counters, provider/model, fold view and
-context-fill gauge into four islands with the same rounded caps as the left
-session rollup. Each counter starts with a config icon (the `icons` table in
+The right side puts the two usage counters and context-fill gauge in two
+islands with the same rounded caps as the left session rollup. Each counter
+starts with a config icon (the `icons` table in
 |yap-configuration|; set one to `""` to drop its glyph). The gauge is fixed
 at eight cells and colored green below 70%, amber from 70–90%, and red at
 90% or more:
