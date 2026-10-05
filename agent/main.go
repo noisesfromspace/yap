@@ -119,8 +119,11 @@ func serve(in io.Reader, out io.Writer) error {
 	// arriving while no turn is running is dropped, because the frontend
 	// only sends one while its buffer is streaming and degrades a missed
 	// steer into a follow-up turn itself.
+	type steerUpdate struct {
+		text string
+	}
 	var steerMu sync.Mutex
-	var steerCh chan string
+	var steerCh chan steerUpdate
 
 	go func() {
 		scanner := bufio.NewScanner(in)
@@ -145,17 +148,23 @@ func serve(in io.Reader, out io.Writer) error {
 					json.Unmarshal(line, &ar)
 					utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}
 					continue
-				case "steer":
+				case "steer", "unsteer":
 					steerMu.Lock()
 					ch := steerCh
 					steerMu.Unlock()
-					if ch == nil {
-						fmt.Fprintln(os.Stderr, "yap: steer with no active turn")
-					} else {
+					if ch != nil {
+						text := reply.Text
+						if reply.Type == "unsteer" {
+							text = ""
+						}
 						select {
-						case ch <- reply.Text:
+						case ch <- steerUpdate{text: text}:
 						default:
-							fmt.Fprintln(os.Stderr, "yap: steer queue full")
+							select {
+							case <-ch:
+							default:
+							}
+							ch <- steerUpdate{text: text}
 						}
 					}
 					continue
@@ -175,15 +184,25 @@ func serve(in io.Reader, out io.Writer) error {
 				err = fmt.Errorf("provider and model are required")
 			} else {
 				steerMu.Lock()
-				steerCh = make(chan string, 16)
+				steerCh = make(chan steerUpdate, 1)
 				ch := steerCh
 				steerMu.Unlock()
+				pending := ""
+				hasPending := false
 				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out}, func() string {
-					select {
-					case s := <-ch:
-						return s
-					default:
-						return ""
+					for {
+						select {
+						case update := <-ch:
+							pending = update.text
+							hasPending = pending != ""
+						default:
+							if hasPending {
+								text := pending
+								pending, hasPending = "", false
+								return text
+							}
+							return ""
+						}
 					}
 				})
 				steerMu.Lock()

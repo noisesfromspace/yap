@@ -178,17 +178,16 @@ are shown below.
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
-  <leader>s             Toggle the session's scratch queue buffer: a
-                        fixed-height, file-backed jotter below the chat.
-                        `:w` saves it; an unsaved queue prompts on exit.
-                        Inside the queue, <C-s> sends the whole buffer —
-                        or the visual selection — to the chat and removes
-                        it from the queue. When the agent is mid-turn,
-                        <C-s> STEERS instead: the current line (or the
-                        visual selection) is sent to the running turn and
-                        injected at its next tool boundary as a `# @user`
-                        block, without being removed from the jotter —
-                        re-<C-s> to replace it, edit it until it lands.
+  <leader>s             Toggle the session's scratch buffer: a
+                        file-backed jotter with `# @notes`, `# @steer`,
+                        and `# @queue` sections. Notes are inert. While a
+                        turn runs, <C-s> submits # @steer; it remains there
+                        until delivered and can be edited or removed to
+                        revise/cancel it. While idle, <C-s> consumes the next
+                        non-empty line under # @queue and sends it. Remaining
+                        queue lines dispatch in order after each turn.
+                        Consumption reads and edits the live buffer, then
+                        saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
@@ -837,19 +836,17 @@ reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 The audit log (<session>.jsonl) is written in the audit dir
 (|yap-audit|) as the session runs and follows the session name across
-|:file| renames. The scratch queue is the same kind of sibling:
-~/.yap/sessions/<cwd-slug>/<session>.queue, a plain file-backed buffer
-for queuing agent tasks. Unlike the autosaved session, the queue is
-saved manually — `:w` in the jotter writes it, and an unsaved queue
-triggers the normal modified-buffer prompt on exit. Pressing <C-s> in
-the queue sends its contents (or the active visual selection) to the
-chat as a `# @user` message and removes them from the queue. While the
-agent is streaming, the same <C-s> steers instead: the current line (or
-the visual selection) is handed to the running turn and injected at its
-next tool boundary as a `# @user` block — the draft stays in the jotter
-so you can keep shaping it (re-<C-s> to replace it), and a steer that
-arrives after the turn ends is sent as a follow-up turn. Opening a session
-file directly — plain |:edit| or
+|:file| renames. The scratch buffer is the same kind of sibling:
+~/.yap/sessions/<cwd-slug>/<session>.queue, a file-backed control buffer
+with `# @notes`, `# @steer`, and `# @queue` sections. Sending always reads
+and edits its current in-memory contents, never a disk snapshot. Existing
+plain queue files are migrated under `# @queue`. Queue entries are one
+non-empty line each; the next entry is removed when dispatched and remaining
+entries run in order after a turn. A pending steer is the full body of
+`# @steer`, remains visible until delivered, and can be revised or canceled
+by editing/removing that body. If a steer misses the last tool boundary, it
+is consumed when dispatched as a follow-up turn. `# @notes` is never sent.
+Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
 resume.
@@ -1332,6 +1329,16 @@ R19 Turn completion is a first-class event.
     a completion *event*, and an autocmd is the Neovim-native hook for
     it (noice/nf-notify, chaining a next send) instead of a hardcoded
     side effect.
+
+R20 Scratch sections are parsed from the live `*.queue` buffer, never
+    re-read from the saved file during dispatch. `# @notes` is inert;
+    `# @steer` is a replaceable pending message that remains in the buffer
+    until delivery (or follow-up dispatch), and `# @queue` contains one
+    message per non-empty line, consumed in order. Editing/removing a pending
+    steer sends an update/cancellation to the running backend. Queue removal
+    and delivered-steer removal are reflected in the buffer and saved to the
+    sidecar. Why: pending work is retractable, and the visible buffer—not a
+    stale disk snapshot—is the control surface.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

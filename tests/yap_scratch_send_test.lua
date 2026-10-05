@@ -4,76 +4,43 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
 local buf = yap.new()
-local chat_win = vim.api.nvim_get_current_win()
 
--- helper: wait for the in-flight turn to finish (mock_slow streams ~2.4s)
-local function wait_turn(b)
-  local ok = vim.wait(10000, function()
-    local l = vim.api.nvim_buf_get_lines(b, 0, -1, false)
-    return l[#l - 1] == "# @user" and not yap.is_running(b)
-  end, 100)
-  assert(ok, "send did not complete")
-  vim.wait(200) -- let the trailing event handlers settle
+local function lines(b)
+  return vim.api.nvim_buf_get_lines(b, 0, -1, false)
 end
 
-local function chat_text(b)
-  return table.concat(vim.api.nvim_buf_get_lines(b, 0, -1, false), "\n")
+local function text(b)
+  return table.concat(lines(b), "\n")
 end
 
--- 1. normal mode: <C-s> sends the whole queue and empties it
+-- A queued send consumes the first live-buffer entry. A deliberately stale
+-- file snapshot must not influence the message that is dispatched.
 yap.scratch_toggle()
-local scratch_win = vim.api.nvim_get_current_win()
 local scratch = vim.api.nvim_get_current_buf()
-vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "task one", "task two" })
+vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
+  "# @notes", "remember this", "", "# @steer", "", "# @queue", "stale disk task",
+})
+vim.cmd("write")
+vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
+  "# @notes", "remember this", "", "# @steer", "", "# @queue", "task one", "task two",
+})
 yap.scratch_send(scratch)
-assert(
-  table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n") == "",
-  "normal-mode send did not clear the queue"
-)
--- sending drains the queue, so the .queue file is saved empty: reopened
--- sessions must not resurrect already-sent tasks.
-local queue_file = vim.api.nvim_buf_get_name(scratch)
-assert(vim.fn.filereadable(queue_file) == 1, "queue file not written after send")
-assert(
-  table.concat(vim.fn.readfile(queue_file), "\n") == "",
-  "queue file not drained after send"
-)
-wait_turn(buf)
-assert(chat_text(buf):match("task one") and chat_text(buf):match("task two"), "queued tasks missing from chat")
+local current = text(scratch)
+assert(current:match("task two") and not current:match("task one"), "dispatch did not consume the first live queue entry:\n" .. current)
 
--- 2. visual line-wise: only the selected lines leave the queue
-vim.api.nvim_set_current_win(scratch_win)
-vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "line alpha", "line beta", "line gamma" })
-vim.api.nvim_win_set_cursor(scratch_win, { 1, 0 })
-vim.cmd("normal! V")
-vim.api.nvim_win_set_cursor(scratch_win, { 2, 0 })
-assert(vim.api.nvim_get_mode().mode == "V", "expected line-wise visual, got " .. vim.api.nvim_get_mode().mode)
-yap.scratch_send(scratch)
-assert(
-  table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n") == "line gamma",
-  "visual send removed the wrong lines: " .. vim.inspect(vim.api.nvim_buf_get_lines(scratch, 0, -1, false))
-)
-assert(
-  table.concat(vim.fn.readfile(queue_file), "\n") == "line gamma",
-  "queue file not saved after visual send"
-)
-wait_turn(buf)
-assert(chat_text(buf):match("line alpha") and chat_text(buf):match("line beta"), "visual selection missing from chat")
-
--- 3. visual char-wise: exactly the selected characters leave the queue
-vim.api.nvim_set_current_win(scratch_win)
-vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "abcdef", "ghijkl" })
-vim.api.nvim_win_set_cursor(scratch_win, { 1, 2 })
-vim.cmd("normal! v")
-vim.api.nvim_win_set_cursor(scratch_win, { 2, 3 })
-assert(vim.api.nvim_get_mode().mode == "v", "expected char-wise visual, got " .. vim.api.nvim_get_mode().mode)
-yap.scratch_send(scratch)
-assert(
-  table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n") == "ab\nkl",
-  "char-wise send removed the wrong text: " .. vim.inspect(vim.api.nvim_buf_get_lines(scratch, 0, -1, false))
-)
-wait_turn(buf)
-assert(chat_text(buf):match("cdef"), "char-wise selection missing from chat")
-assert(chat_text(buf):match("ghij"), "char-wise selection missing from chat")
+-- The remaining queue item is dispatched automatically after the first turn.
+local done = vim.wait(15000, function()
+  local chat = text(buf)
+  local assistants = 0
+  for _ in chat:gmatch("# @assistant") do assistants = assistants + 1 end
+  return not yap.is_running(buf) and assistants >= 2 and chat:match("task two") ~= nil
+end, 100)
+assert(done, "queued items did not run in order:\n" .. text(buf))
+local chat = text(buf)
+assert(chat:match("task one") and chat:match("task two"), "live queue entries missing from chat:\n" .. chat)
+assert(not chat:match("stale disk task"), "dispatch read stale saved file contents")
+local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), "\n")
+assert(not saved:match("task one") and not saved:match("task two"), "consumed queue entries reappeared in saved file")
+assert(saved:match("# @notes") and saved:match("# @queue"), "scratch section structure was not saved")
 
 print("OK scratch_send")

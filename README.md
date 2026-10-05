@@ -130,10 +130,14 @@ notify. For command details and keymaps, see `:help yap-commands`.
 | `:YapReload`                       |             | Reload Lua modules (development only).                                |
 
 Templates and skills live in `~/.config/yap/templates/` and
-`~/.config/yap/skills/`. `<leader>s` opens the scratch queue; send from it to
-append queued text to the chat, or steer a running turn. The winbar shows the
-active session/model, usage, and whether a turn is running or awaiting your
-reply. `<leader>1` folds agent output, `<leader>2` folds tool
+`~/.config/yap/skills/`. `<leader>s` opens the scratch buffer, organized into
+`# @notes`, `# @steer`, and `# @queue` sections. Notes are inert; `<C-s>` while
+a turn runs submits the steer section, which remains editable/removable until
+delivery; `<C-s>` while idle consumes the next non-empty queue line and sends
+it, and remaining queue lines dispatch in order after each turn. Changes are
+read from the live scratch buffer and consumed entries are removed there. The
+winbar shows the active session/model, usage, and whether a turn is running or
+awaiting your reply. `<leader>1` folds agent output, `<leader>2` folds tool
 calls and thinking, and `<leader>3` unfolds everything. The `quickfix` tool can
 populate Neovim's quickfix list, and `close_session` closes a chat after its
 current turn while keeping it resumable from `:YapSessions`.
