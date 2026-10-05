@@ -2297,7 +2297,7 @@ function M.instances(state)
       return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
     end,
     preview_item = function(item)
-      return require("harness.session").preview_lines(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
+      return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
     end,
   }, function(choice)
     if choice then

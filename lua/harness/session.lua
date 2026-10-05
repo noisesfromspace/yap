@@ -167,28 +167,39 @@ local function last_block(lines, role)
   return trim_block(acc)
 end
 
---- Preview content for a session: the initial `# @user` message followed by
---- the last `# @assistant` answer. Shared by :YapInstances and :YapSessions
---- so both pickers preview the same two excerpts.
-function M.preview_lines(lines)
-  local preview = {}
+--- Markdown preview of a session: the initial `# @user` message followed by
+--- the last `# @assistant` answer, rendered in a scratch buffer with the
+--- `markdown` filetype so pickers show it with normal syntax highlighting
+--- instead of flat text. Shared by :YapInstances and :YapSessions so both
+--- pickers preview the same two excerpts. Returns the |vim.ui.select()|
+--- preview table `{ buf = ... }`.
+function M.preview(lines)
+  local content = {}
   local user = first_block(lines, "user")
   local assistant = last_block(lines, "assistant")
   if #user > 0 then
-    preview[#preview + 1] = "Initial user message:"
-    vim.list_extend(preview, user)
+    content[#content + 1] = "## First message"
+    content[#content + 1] = ""
+    vim.list_extend(content, user)
   end
   if #assistant > 0 then
-    if #preview > 0 then
-      preview[#preview + 1] = ""
+    if #content > 0 then
+      content[#content + 1] = ""
+      content[#content + 1] = "---"
     end
-    preview[#preview + 1] = "Last agent answer:"
-    vim.list_extend(preview, assistant)
+    content[#content + 1] = ""
+    content[#content + 1] = "## Last answer"
+    content[#content + 1] = ""
+    vim.list_extend(content, assistant)
   end
-  if #preview == 0 then
-    preview = { "(no messages yet)" }
+  if #content == 0 then
+    content = { "(no messages yet)" }
   end
-  return preview
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].filetype = "markdown"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
+  return { buf = buf, pos = { 1, 0 } }
 end
 
 --- The persisted directory name is a lossy cwd slug; this is deliberately a
@@ -255,7 +266,7 @@ function M.list(scope)
 end
 
 local function preview_item(item)
-  return M.preview_lines(vim.fn.readfile(item.path))
+  return M.preview(vim.fn.readfile(item.path))
 end
 
 --- Pick a session; on_choice(path) is called with the selected file.
