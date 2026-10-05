@@ -368,7 +368,7 @@ local function audit_append(buf, ev)
     t.audit = paths.audit_path(buf)
     -- 0700: the audit log holds full tool args and results (potentially
     -- secrets); the directory must not be world-readable.
-    vim.fn.mkdir(vim.fn.fnamemodify(t.audit, ":h"), "p", "0700")
+    vim.fs.mkdir(vim.fn.fnamemodify(t.audit, ":h"), { parents = true, mode = 448 }) -- 0o700
   end
   vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
 end
@@ -382,7 +382,7 @@ local function audit_follow(buf)
   end
   local want = paths.audit_path(buf)
   if want ~= t.audit and vim.fn.filereadable(want) == 0 then
-    vim.fn.mkdir(vim.fn.fnamemodify(want, ":h"), "p", "0700")
+    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
     if os.rename(t.audit, want) then
       t.audit = want
     end
@@ -629,7 +629,7 @@ local function handle_event(buf, json_line)
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
-      pcall(os.remove, ev.log)
+      vim.npcall(os.remove, ev.log)
     end
   elseif ev.type == "subagent_request" then
     start_subagent(buf, ev)
@@ -1535,7 +1535,7 @@ function M.send(buf)
       drain_tail(buf) -- final bytes; a killed tool never sent tool_end
       if l then
         live[buf] = nil
-        pcall(os.remove, l.log) -- a killed tool leaves a temp log behind
+        vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
       winbar.spinner_stop_if_idle()
       repair_stream_tail(buf)
@@ -1708,7 +1708,7 @@ local function close_subagents(parent)
       subagent_done[child] = nil
       M.stop(child)
       if vim.api.nvim_buf_is_valid(child) then
-        pcall(vim.api.nvim_buf_delete, child, { force = true })
+        vim.npcall(vim.api.nvim_buf_delete, child, { force = true })
       end
     end
   end
@@ -1728,7 +1728,7 @@ function M.stop(buf)
     winbar.spinner_stop_if_idle()
     drain_tail(buf)
     local l = live[buf]
-    if l then live[buf] = nil; pcall(os.remove, l.log) end
+    if l then live[buf] = nil; vim.npcall(os.remove, l.log) end
     local f = stream_flush[buf]
     if f then
       f()
@@ -1827,7 +1827,7 @@ local function setup_buffer(buf)
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-      pcall(client.stop, client)
+      vim.npcall(client.stop, client)
     end
   end
 
@@ -2405,7 +2405,7 @@ function M.setup(opts)
           local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
           if #lines <= 1 and (#lines == 0 or lines[1] == "") then
             vim.api.nvim_set_current_buf(target)
-            pcall(vim.api.nvim_buf_delete, cur, { force = true })
+            vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
             return
           end
         end
@@ -2471,7 +2471,7 @@ function M.setup(opts)
       if vim.b[args.buf].yap and args.data and args.data.client_id then
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if client then
-          pcall(client.stop, client)
+          vim.npcall(client.stop, client)
         end
       end
     end,

@@ -14,7 +14,7 @@ vim.b[buf].yap_session_usage = { prompt = 999, completion = 99, cost = 0.51 }
 -- then close back to the original.
 local function winbar_at(cols)
   vim.cmd("vsplit")
-  vim.api.nvim_win_set_width(0, cols)
+  vim.api.nvim_win_resize(0, cols, -1)
   local wb = yap.winbar(buf)
   vim.cmd("close")
   return wb
@@ -163,7 +163,7 @@ vim.api.nvim_buf_delete(picker_buf, { force = true })
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
-vim.api.nvim_win_set_width(0, 12)
+vim.api.nvim_win_resize(0, 12, -1)
 assert(rendered_left() == " Session title ", "narrow title has a dangling separator: " .. rendered_left())
 assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
   "session title is not cursive: " .. yap.winbar(target))

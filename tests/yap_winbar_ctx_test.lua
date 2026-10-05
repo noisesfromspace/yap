@@ -10,7 +10,7 @@ local buf = yap.new({ provider = "mock", model = "m1" })
 state.last_turn[buf] = { prompt = 23000, completion = 200, context_window = 250000 }
 local function winbar_at(cols)
   vim.cmd("vsplit")
-  vim.api.nvim_win_set_width(0, cols)
+  vim.api.nvim_win_resize(0, cols, -1)
   local bar = yap.winbar(buf)
   vim.cmd("close")
   return bar

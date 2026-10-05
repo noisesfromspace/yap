@@ -423,7 +423,7 @@ vim.api.nvim_create_autocmd("BufWipeout", {
 vim.api.nvim_create_autocmd("WinClosed", {
   group = group,
   callback = function(args)
-    for _, s in pairs(sessions) do s.windows[tonumber(args.match)] = nil end
+    for _, s in pairs(sessions) do s.windows[args.win] = nil end
   end,
 })
 

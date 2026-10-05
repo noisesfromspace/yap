@@ -80,10 +80,10 @@ function M.save(buf)
   end
   if not path then
     local dir = paths.session_dir(vim.fn.getcwd())
-    vim.fn.mkdir(dir, "p")
+    vim.fs.mkdir(dir, { parents = true })
     path = paths.new_session_path(dir)
     vim.b[buf].yap_path = path
-    pcall(vim.api.nvim_buf_set_name, buf, path)
+    vim.npcall(vim.api.nvim_buf_set_name, buf, path)
   end
   stamp_updated_at(buf)
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
@@ -226,14 +226,26 @@ end
 function M.list(scope)
   local dirs
   if scope == "all" then
-    dirs = vim.fn.glob(paths.sessions_root() .. "/*", false, true)
+    dirs = {}
+    for name, type in vim.fs.dir(paths.sessions_root()) do
+      if type == "directory" then
+        dirs[#dirs + 1] = vim.fs.joinpath(paths.sessions_root(), name)
+      end
+    end
   else
     dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
 
   local items = {}
   for _, dir in ipairs(dirs) do
-    for _, path in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
+    local md_files = {}
+    for name, type in vim.fs.dir(dir) do
+      -- glob("*.md") skips dotfiles; vim.fs.dir does not.
+      if type == "file" and name:sub(1, 1) ~= "." and name:match("%.md$") then
+        md_files[#md_files + 1] = vim.fs.joinpath(dir, name)
+      end
+    end
+    for _, path in ipairs(md_files) do
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
       -- Subagent sessions are real saved sessions, but they belong to their
