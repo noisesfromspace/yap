@@ -156,13 +156,12 @@ the current buffer unless otherwise noted.
                         its file path and focus the picked one. Each line is
                         annotated with its state — ` running`, `󰐊 stopped`,
                         `󰚌 error`, `󰫁 waiting` (a completed turn awaits your
-                        reply) or `󰝦 idle` —
-                        waiting sessions sort last (use |:YapWaiting| to jump
-                        straight to them). Yap buffers are unlisted — they
-                        never appear in |:ls| or buffer pickers (MiniPick.buffers and friends),
-                        and a session's tail buffer is never listed at all
-                        (open it in the session with |:YapLive|). This is
-                        how you move between sessions.
+                        reply) or `󰝦 idle` — waiting sessions sort last (use
+                        |:YapWaiting| to jump straight to them). Yap buffers are
+                        unlisted — they never appear in |:ls| or buffer pickers
+                        (MiniPick.buffers and friends), and a session's tail
+                        buffer is never listed at all (open it in the session
+                        with |:YapLive|). This is how you move between sessions.
 
                                                             *:YapWaiting*
 :YapWaiting           List only the open yap sessions awaiting a reply
@@ -198,6 +197,9 @@ are shown below.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
+  <leader>i (n)        Pick a file under the current |:pwd| and insert an
+                        `@path` reference at the cursor. Also mapped in the
+                        scratch queue.
   <leader>r             List every open session with its status (see
                         |:YapInstances|).
   <leader>w             List just the sessions awaiting a reply (see
@@ -313,7 +315,7 @@ gutter on every redraw.
 
 `keymaps` maps each action to its key sequence, so any of |yap-keymaps|
 can be rebound from `setup()`. The table keys are: `send`, `stop`,
-`change_model`, `live`, `scratch`, `insert`, `insert_here`, `sessions` (global),
+`change_model`, `live`, `scratch`, `insert`, `insert_here`, `insert_file`, `sessions` (global),
 `waiting` (global), `help`, `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,

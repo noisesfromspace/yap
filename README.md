@@ -5,8 +5,7 @@ edit, so deleting text is branching and editing a reply is rewriting history.
 
 Chat LLM APIs are stateless. Every request sends the full message array, so
 whoever holds the array holds the truth. In yap that's a text buffer: `#
-@system` / `# @user` / `# @assistant` headings delimit messages, deleting a
-block is branching, editing a reply is rewriting history
+@system` / `# @user` / `# @assistant` headings delimit messages.
 
 It hooks into Neovim by:
 
@@ -31,8 +30,7 @@ the session in unexpected states. Making edits while the buffer is running will
 overwrite the undohistory. This flexability gives it power.
 
 A Nerd Font is used by default for the winbar and picker glyphs; set
-`nerd_font = false` in setup for a plain-Unicode fallback (font support
-cannot be detected reliably in a terminal).
+`nerd_font = false` in setup for a plain-Unicode fallback.
 
 ## First run
 
@@ -77,29 +75,6 @@ cannot be detected reliably in a terminal).
    require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
    ```
 4. In Neovim, run `:Yap`, enter a prompt, and press `<C-s>`.
-
-## Development (Nix)
-
-Run from the repo root:
-
-```sh
-nix develop
-```
-
-This builds the backend into `.dev/bin/yap` and puts it on PATH, plus `go` and
-`neovim`. Three launchers start a clean dev Neovim (`-u NONE -i NONE`) with
-only this plugin loaded from the working tree:
-
-```sh
-yap-nvim                 # clean: yap only
-yap-nvim-treesitter      # + markdown treesitter syntax highlighting
-yap-nvim-touchup         # + the touchup.nvim renderer
-yap-nvim-render-markdown # + the render-markdown.nvim renderer
-```
-
-`yap-nvim-touchup` loads touchup from `$TOUCHUP_ROOT` (default
-`/opt/code/touchup.nvim`; override to point at another checkout). Re-enter the
-shell (or `go build -o .dev/bin/yap ./agent`) after editing the agent.
 
 ## Commands at a glance
 
