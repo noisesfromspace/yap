@@ -2238,7 +2238,9 @@ function M.instances(state)
   local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local include_current_parent = b == current and has_open_subagent(b)
-    if (b ~= current or include_current_parent) and vim.b[b].yap and (state == nil or session_state(b) == state) then
+    if (b ~= current or include_current_parent) and vim.b[b].yap
+      and not (state == "waiting" and vim.b[b].yap_subagent_parent)
+      and (state == nil or session_state(b) == state) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),

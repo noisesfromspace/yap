@@ -80,6 +80,23 @@ assert(parent_item and not parent_item.text:find("\n", 1, true),
 assert(child_item and child_item.text == "  ↳ scout: inspect this task",
   "subagent should have a separate indented row: " .. vim.inspect(child_item))
 
+-- Waiting subagents are available through their parent in :YapWaiting, not
+-- as a separate entry. The general session picker still lists them above.
+local state = require("harness.state")
+state.awaiting[buf] = true
+state.awaiting[child] = true
+local picker = yap.new()
+vim.api.nvim_set_current_buf(picker)
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.waiting()
+vim.ui.select = orig_select
+assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "waiting picker should show the parent but not its subagent: " .. vim.inspect(captured and captured.items))
+state.awaiting[buf], state.awaiting[child] = nil, nil
+
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
 vim.api.nvim_buf_set_lines(saved, 0, -1, false, {
