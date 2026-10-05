@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local fold = require("harness.fold")
+local icons = require("harness").config.icons
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -131,8 +132,8 @@ assert(vim.fn.foldclosed(tool) == tool, "reapplied view 2 does not refold")
 -- winbar shows the applied view next to the model name
 fold.set_view_level(2)
 local bar = yap.winbar(buf)
-assert(bar:find("Ⓕ2", 1, true), "winbar missing fold level: " .. bar)
+assert(bar:find(icons.fold .. "2", 1, true), "winbar missing fold level: " .. bar)
 assert(bar:find("in", 1, true) == nil, "winbar unexpectedly shows usage: " .. bar)
 fold.set_view_level(3)
-assert(yap.winbar(buf):find("Ⓕ3", 1, true), "winbar not updated to view 3: " .. yap.winbar(buf))
+assert(yap.winbar(buf):find(icons.fold .. "3", 1, true), "winbar not updated to view 3: " .. yap.winbar(buf))
 print("OK")

@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local icons = require("harness").config.icons
 
 -- 1. parse excludes error regions (and thinking)
 local buf = yap.new()
@@ -65,7 +66,7 @@ for _, item in ipairs(pick_items or {}) do
   end
 end
 assert(found_error, "error session missing from session picker")
-assert(found_error.status == "✗ error", "error status missing: " .. vim.inspect(found_error))
+assert(found_error.status == icons.error .. " error", "error status missing: " .. vim.inspect(found_error))
 -- next parse excludes the error
 local msgs2 = yap.parse_buffer(buf2)
 for _, m in ipairs(msgs2) do

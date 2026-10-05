@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
+local icons = require("harness").config.icons
 
 -- buffer ends ON the user's text (normalize trimmed trailing blanks)
 local buf = yap.new({ provider = "mock", model = "m1" })
@@ -18,7 +19,7 @@ for i = 2, #lines do
   end
 end
 -- While the first session streams, a second buffer's winbar rolls up how
--- many OTHER sessions are running (the current buffer's own `▶` has no digit).
+-- many OTHER sessions are running (the current buffer's own `󰐰` has no digit).
 local buf2 = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "Second" })
 local function left_text(buf)
@@ -26,19 +27,19 @@ local function left_text(buf)
   return left:gsub("%%#.-#", ""):gsub("%%%*", "")
 end
 local rollup_left = left_text(buf2)
-assert(rollup_left:match("^  ▶1   mock/m1 Ⓕ%d+ $"), "rollup spacing is inconsistent: " .. rollup_left)
+assert(rollup_left:match("^ " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  mock/m1 " .. icons.fold .. "%d+ $"), "rollup spacing is inconsistent: " .. rollup_left)
 local state = require("harness.state")
 state.running[buf2] = {}
 local with_both = left_text(buf)
 state.running[buf2] = nil
-assert(with_both:find("   ▶1   mock/m1", 1, true), "rollup missing after local spinner: " .. with_both)
+assert(with_both:find("  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  mock/m1", 1, true), "rollup missing after local spinner: " .. with_both)
 assert(not with_both:find("   ", 1, true), "left sections should have two-column gaps: " .. with_both)
-assert(not left_text(buf):find("▶%d"), "running rollup counts the current buffer: " .. left_text(buf))
+assert(not left_text(buf):find(icons.running .. "%d"), "running rollup counts the current buffer: " .. left_text(buf))
 vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
   "---", "provider: mock", "model: m1", "description: second session", "models:", "  - mock/m1", "---", "",
 })
 local titled_rollup = left_text(buf2)
-assert(titled_rollup:match("^  ▶1   second session  mock/m1"), "title gap differs from the rollup gap: " .. titled_rollup)
+assert(titled_rollup:match("^ " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  second session  mock/m1"), "title gap differs from the rollup gap: " .. titled_rollup)
 assert(not titled_rollup:find("   ", 1, true), "titled left sections should have two-column gaps: " .. titled_rollup)
 
 -- A new session must still be able to send while the first streams: each

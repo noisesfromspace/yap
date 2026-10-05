@@ -18,16 +18,24 @@ local errors = state.errors
 local awaiting = state.awaiting
 local steer = state.steer
 
--- A compact, offbeat cycle of typographic marks. Teal, blue and violet
--- rotate independently to give the busy state a little extra life.
-local SPINNER = {
-  { "※", "BusyTeal" },
-  { "⁕", "BusyBlue" },
-  { "⁜", "BusyViolet" },
-  { "⁑", "BusyTeal" },
-}
-local spinner_tick = 0
+-- Irregular, randomly sampled star shapes instead of a rotating arc.
+-- The old typographic sparkle pool stays available without a Nerd Font.
+local SPINNER_FRAMES = { "󰫢", "󰫥", "󰙴", "󰫣", "󰫤", "󰫊", "󱝁", "󰃠", "󰫉" }
+local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
+local SPINNER_COLORS = { "BusyTeal", "BusyBlue", "BusyViolet" }
+M.spinner_frames = SPINNER_FRAMES -- exported for tests: a random shimmer is hard to assert
+local spinner_glyph = SPINNER_FRAMES[1]
+local plain_spinner_glyph = PLAIN_SPINNER_FRAMES[1]
+local spinner_color = SPINNER_COLORS[1]
 local spinner_timer = nil
+
+-- Local LCG so the shimmer never reseeds the global math.random other
+-- plugins rely on; seeded from the monotonic clock at load.
+local rng_state = math.floor(vim.uv.hrtime() % 2 ^ 31) + 1
+local function pick(t)
+  rng_state = (rng_state * 1664525 + 1013904223) % 2 ^ 32
+  return t[rng_state % #t + 1]
+end
 
 -- Context meter: a fixed-width, eight-cell bar. Keeping its width
 -- independent of the window layout avoids redraw/reflow surprises.
@@ -202,30 +210,29 @@ local function render_winbar(buf)
 
     local spinner = running and running[buf]
     if spinner then
-      local frame = SPINNER[(spinner_tick % #SPINNER) + 1]
       local l = live and live[buf]
-      local text = frame[1]
+      local text = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
       if l and os.time() - l.since >= 2 then
         text = text .. " " .. l.name .. " " .. (os.time() - l.since) .. "s"
       end
-      add_item({ seg(text, frame[2]) })
+      add_item({ seg(text, spinner_color) })
     end
 
     local running_others_n = count_others(running, buf)
     local others = count_others(awaiting, buf)
     if running_others_n > 0 or others > 0 then
-      local rollup = { seg("", "IslandCap"), seg(" ", nil, true) }
+      local rollup = { seg(icons.cap_l, "IslandCap"), seg(" ", nil, true) }
       if running_others_n > 0 then
-        rollup[#rollup + 1] = seg("▶" .. running_others_n, "Busy", true)
+        rollup[#rollup + 1] = seg(icons.running .. running_others_n, "Busy", true)
       end
       if running_others_n > 0 and others > 0 then
         rollup[#rollup + 1] = seg("  ", nil, true)
       end
       if others > 0 then
-        rollup[#rollup + 1] = seg("◉" .. others, "Needs", true)
+        rollup[#rollup + 1] = seg(icons.waiting .. others, "Needs", true)
       end
       rollup[#rollup + 1] = seg(" ", nil, true)
-      rollup[#rollup + 1] = seg("", "IslandCap")
+      rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
       add_item(rollup)
     end
 
@@ -236,7 +243,7 @@ local function render_winbar(buf)
 
     -- Droppable middle: provider/model and the applied fold view.
     if show_mid then
-      add_item({ seg(provider .. "/" .. model, "Model"), seg(" Ⓕ" .. fold.level(), "Idle") })
+      add_item({ seg(provider .. "/" .. model, "Model"), seg(" " .. icons.fold .. fold.level(), "Idle") })
     end
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
@@ -254,11 +261,30 @@ local function render_winbar(buf)
     end
 
     local pct = math.min(t.prompt / ctx * 100, 100)
-    local eighths = math.floor(pct / 100 * GAUGE_W * 8 + 0.5)
-    local full = math.floor(eighths / 8)
-    local tail = eighths % 8
-    local fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
-    local track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
+    local fill, track
+    if require("harness").config.nerd_font then
+      -- Nerd Font's progress cells have rounded ends but no fractional cell.
+      local cells = math.floor(pct / 100 * GAUGE_W + 0.5)
+      fill = ""
+      track = ""
+      local glyph = {
+        left = { "", "" }, mid = { "", "" }, right = { "", "" },
+      }
+      for i = 1, GAUGE_W do
+        local edge = i == 1 and "left" or (i == GAUGE_W and "right" or "mid")
+        if i <= cells then
+          fill = fill .. glyph[edge][2]
+        else
+          track = track .. glyph[edge][1]
+        end
+      end
+    else
+      local eighths = math.floor(pct / 100 * GAUGE_W * 8 + 0.5)
+      local full = math.floor(eighths / 8)
+      local tail = eighths % 8
+      fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
+      track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
+    end
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
     local parts = {}
     if show_percent then
@@ -331,10 +357,10 @@ local function render_winbar(buf)
   -- silent. The awaiting state still drives the OTHER-buffer rollup island.
   local function state_segment()
     if errors[buf] then
-      return seg(" ✗ error ", "Error")
+      return seg(" " .. icons.error .. " error ", "Error")
     end
     if steer[buf] then
-      return seg(" ⌁ steer ", "Needs")
+      return seg(" " .. icons.steer .. " steer ", "Needs")
     end
     return nil
   end
@@ -400,13 +426,14 @@ function M.clear_desc(buf)
   desc_cache[buf] = nil
 end
 
---- The herdr-style rollup for a statusline/tabline: `◉N` when N OTHER
---- yap buffers await the user's reply, "" otherwise. The winbar shows
---- the same chip, so this is the reusable segment for global visibility.
+--- The herdr-style rollup for a statusline/tabline: `<waiting icon>N` when
+--- N OTHER yap buffers await the user's reply, "" otherwise. The winbar
+--- shows the same chip, so this is the reusable segment for global
+--- visibility.
 function M.overview(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   local n = count_others(awaiting, buf)
-  return n > 0 and ("◉" .. n) or ""
+  return n > 0 and (require("harness").config.icons.waiting .. n) or ""
 end
 
 function M.spinner_stop_if_idle()
@@ -426,7 +453,9 @@ function M.spinner_start()
     0,
     180,
     vim.schedule_wrap(function()
-      spinner_tick = spinner_tick + 1
+      spinner_glyph = pick(SPINNER_FRAMES)
+      plain_spinner_glyph = pick(PLAIN_SPINNER_FRAMES)
+      spinner_color = pick(SPINNER_COLORS)
       for b in pairs(running) do
         state.drain_tail(b) -- pull new tool output into the tail buffers
       end

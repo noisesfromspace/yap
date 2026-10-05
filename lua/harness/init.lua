@@ -49,13 +49,25 @@ M.config = {
   -- "treesitter" in profiling was actually touchup re-rendering plus live
   -- buffer churn, not the highlighter. Set false to drop syntax colors.
   syntax_highlight = true,
-  -- Leading glyphs for the two winbar usage chips (see doc/yap.txt
-  -- |yap-winbar|): "since" the buffer opened and "total" over the
-  -- session's whole life (audit log). Nerd Font glyphs by default; set
-  -- either to "" to drop the glyph on fonts that lack it.
+  -- Terminal glyph availability cannot be detected reliably; set false to use
+  -- plain Unicode status glyphs, the original spinner and block gauge.
+  nerd_font = true,
+  -- UI glyphs for the winbar and session picker (see doc/yap.txt
+  -- |yap-winbar|). Defaults are Nerd Font v3 glyphs; the plain-unicode
+  -- fallback preset for unpatched fonts is under |yap-configuration|.
+  -- Set any to "" to drop its glyph.
   icons = {
-    since = "󰅐", -- nf-md-clock_outline
-    total = "󰆼", -- nf-md-database
+    since = "󰅐",   -- nf-md-clock_outline (since-open token/cost chip)
+    total = "󰆼",   -- nf-md-database   (all-time token/cost chip)
+    running = "", -- nf-cod-play (rollup: other sessions streaming)
+    error = "󰚌",   -- nf-md-skull (winbar error state)
+    waiting = "󰭖", -- nf-md-account_clock (rollup: other sessions awaiting you)
+    idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
+    steer = "󰇐",   -- nf-md-directions (winbar steer state)
+    approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
+    fold = "",    -- nf-oct-fold      (fold-view chip)
+    cap_l = "",   -- nf-ple-lower_right_triangle (island left cap)
+    cap_r = "",   -- nf-ple-lower_left_triangle  (island right cap)
   },
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
@@ -105,12 +117,41 @@ M.config = {
   },
 }
 
--- Cached output of `yap models` ("provider/model" lines) so
--- <leader>m / :YapChangeModel doesn't re-query every provider on each
--- press — that's one GET /models per provider in config.json, sequential,
--- each with a 10s timeout. Refreshed by :YapReload (module state is
--- dropped); model lists rarely change between sessions.
+-- Keep the last successful discovery on disk. A refresh starts in the
+-- background during setup; the picker uses the cached list immediately.
 local models_cache = nil
+local models_waiters = {}
+local models_refreshing = false
+
+local function models_cache_path()
+  return vim.fn.stdpath("cache") .. "/yap/models"
+end
+
+local function refresh_models()
+  if models_refreshing then return end
+  models_refreshing = true
+  vim.system({ M.config.bin, "models" }, { text = true }, function(res)
+    vim.schedule(function()
+      models_refreshing = false
+      local combos = {}
+      if res.code == 0 then
+        for line in (res.stdout or ""):gmatch("[^\n]+") do
+          table.insert(combos, line)
+        end
+      end
+      if #combos > 0 then
+        models_cache = combos
+        local path = models_cache_path()
+        vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+        vim.fn.writefile(combos, path)
+      end
+      for _, waiter in ipairs(models_waiters) do
+        waiter(models_cache, res.stderr)
+      end
+      models_waiters = {}
+    end)
+  end)
+end
 
 local state = require("harness.state")
 local util = require("harness.util")
@@ -447,7 +488,7 @@ local function render_event(ev)
       context = context ~= "" and (context .. ": " .. ev.reason) or ev.reason
     end
     local label = context ~= "" and (" (" .. context .. ")") or ""
-    return ("%s ⚠ approval requested%s: %s"):format(ts, label, (ev.command or ""):gsub("\n", " ")), "block"
+    return ("%s %s approval requested%s: %s"):format(ts, M.config.icons.approval, label, (ev.command or ""):gsub("\n", " ")), "block"
   elseif ev.type == "approval_result" then
     return ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), "block"
   elseif ev.type == "approval_timeout" then
@@ -2104,21 +2145,15 @@ function M.change_model(combo)
       pick(models_cache)
       return
     end
-    vim.system({ M.config.bin, "models" }, { text = true }, function(res)
-      vim.schedule(function()
-        local combos = {}
-        for line in (res.stdout or ""):gmatch("[^\n]+") do
-          table.insert(combos, line)
-        end
-        if #combos == 0 then
-          local err = (res.stderr or ""):gsub("%s+$", "")
-          vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
-          return
-        end
-        models_cache = combos
+    table.insert(models_waiters, function(combos, stderr)
+      if not combos then
+        local err = (stderr or ""):gsub("%s+$", "")
+        vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+      else
         pick(combos)
-      end)
+      end
     end)
+    refresh_models()
     return
   end
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
@@ -2178,10 +2213,11 @@ local function session_state(buf)
 end
 
 --- Status word + glyph for the session picker, mirroring the winbar state
---- chips so both views agree. The picker is static, so a filled circle
+--- chips so both views agree. The picker is static, so a fixed glyph
 --- stands in for the winbar's animated spinner.
 local function session_status(buf)
-  local glyph = { running = "▶", error = "✗", waiting = "◉", idle = "○" }
+  local ic = M.config.icons
+  local glyph = { running = ic.running, error = ic.error, waiting = ic.waiting, idle = ic.idle }
   local state = session_state(buf)
   return glyph[state] .. " " .. state
 end
@@ -2278,7 +2314,23 @@ function M.waiting()
 end
 
 function M.setup(opts)
-  M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  opts = opts or {}
+  if opts.nerd_font == false then
+    M.config.icons = vim.tbl_extend("force", M.config.icons, {
+      since = "", total = "", running = "▶", error = "✗", waiting = "◉",
+      idle = "○", steer = "⌁", approval = "⚠", fold = "Ⓕ",
+      cap_l = "[", cap_r = "]",
+    })
+  end
+  M.config = vim.tbl_deep_extend("force", M.config, opts)
+  if not M.config.models or #M.config.models == 0 then
+    local path = models_cache_path()
+    if vim.fn.filereadable(path) == 1 then
+      local cached = vim.fn.readfile(path)
+      if #cached > 0 then models_cache = cached end
+    end
+    refresh_models()
+  end
   -- Propagate the (possibly overridden) data roots to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
   paths.dirs.audit_dir = M.config.audit_dir

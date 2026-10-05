@@ -24,6 +24,7 @@ vim.notify = function(msg, level, opts)
 end
 
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+local icons = require("harness").config.icons
 
 -- A fresh chat has nothing to reply to yet: no state glyph.
 local buf = yap.new()
@@ -52,14 +53,14 @@ assert(not bar:match("waiting"), "winbar should not show waiting: " .. bar)
 -- sessions await the user's reply (the herdr-style overview).
 local buf2 = yap.new()
 local bar2 = yap.winbar(buf2)
-assert(bar2:match("◉1"), "rollup chip missing on the other buffer: " .. bar2)
+assert(bar2:match(icons.waiting .. "1"), "rollup chip missing on the other buffer: " .. bar2)
 assert(not bar2:match("idle"), "fresh second buffer should show no idle: " .. bar2)
 -- The rollup island sits before the session's model info.
-local island_at = assert(bar2:find("◉1", 1, true), "island missing: " .. bar2)
+local island_at = assert(bar2:find(icons.waiting .. "1", 1, true), "island missing: " .. bar2)
 local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2)
 assert(island_at < model_at, "island should precede model: " .. bar2)
-assert(not yap.winbar(buf):match("◉%d"), "rollup counts the current buffer: " .. yap.winbar(buf))
-assert(yap.overview(buf2) == "◉1", "overview() wrong: " .. tostring(yap.overview(buf2)))
+assert(not yap.winbar(buf):match(icons.waiting .. "%d"), "rollup counts the current buffer: " .. yap.winbar(buf))
+assert(yap.overview(buf2) == icons.waiting .. "1", "overview() wrong: " .. tostring(yap.overview(buf2)))
 
 -- Yap buffers are unlisted: they never appear in :ls or buffer pickers
 -- (MiniPick.buffers etc.); the pickers are the way back.
@@ -103,11 +104,11 @@ yap.instances()
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
 assert(items[1].buf == buf2, "idle session should sort before waiting sessions")
-assert(items[1].status == "○ idle", "idle status missing: " .. vim.inspect(items[1]))
+assert(items[1].status == icons.idle .. " idle", "idle status missing: " .. vim.inspect(items[1]))
 assert(items[2].buf == buf, "waiting session should sort last")
-assert(items[2].status == "◉ waiting", "waiting status missing: " .. vim.inspect(items[2]))
+assert(items[2].status == icons.waiting .. " waiting", "waiting status missing: " .. vim.inspect(items[2]))
 assert(items[2].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[2].text)
-assert(fmt(items[2]):match("◉ waiting$"), "status not rendered: " .. fmt(items[2]))
+assert(fmt(items[2]):match(icons.waiting .. " waiting$"), "status not rendered: " .. fmt(items[2]))
 
 -- :YapWaiting / <leader>w list just the sessions awaiting a reply.
 local waiting_items
@@ -118,7 +119,7 @@ yap.waiting()
 vim.ui.select = orig_select
 assert(waiting_items and #waiting_items == 1, "expected one waiting session, got " .. vim.inspect(waiting_items))
 assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
-assert(waiting_items[1].status == "◉ waiting", "waiting status missing: " .. vim.inspect(waiting_items[1]))
+assert(waiting_items[1].status == icons.waiting .. " waiting", "waiting status missing: " .. vim.inspect(waiting_items[1]))
 
 -- If the only waiting session is already current, explain that instead of
 -- claiming nothing is waiting.

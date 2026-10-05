@@ -48,7 +48,7 @@ local header_ok = vim.wait(10000, function()
 end, 10)
 assert(header_ok, "tool header not visible mid-run")
 assert(not yap.winbar():match("bash"), "winbar shows the tool name before 2s: " .. yap.winbar())
-local sparkle_frames = { "※", "⁕", "⁜", "⁑" }
+local sparkle_frames = require("harness.winbar").spinner_frames
 local sparkle_colors = { "YapBusyTeal", "YapBusyBlue", "YapBusyViolet" }
 local has_colored_signal = false
 for _, frame in ipairs(sparkle_frames) do

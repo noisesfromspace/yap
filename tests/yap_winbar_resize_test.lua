@@ -2,6 +2,8 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+local icons = require("harness").config.icons
+local spinner_frames = require("harness.winbar").spinner_frames
 
 local buf = yap.new({ provider = "mock", model = "m1" })
 -- Simulate a completed session without a network round-trip: usage lives
@@ -55,7 +57,7 @@ for _, b in ipairs({ target, other, waiting }) do
 end
 vim.b[target].yap_provider = "mock"
 vim.b[target].yap_model = "m1"
-local view = "Ⓕ" .. require("harness.fold").level()
+local view = icons.fold .. require("harness.fold").level()
 local function rendered_left()
   local left = assert(yap.winbar(target):match("^(.-)%%="))
   return vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
@@ -68,17 +70,20 @@ for mask = 0, 15 do
   vim.api.nvim_buf_set_lines(target, 0, -1, false,
     titled and { "---", "description: Session title", "---", "" } or { "" })
   local expected = {}
-  if state.running[target] then expected[#expected + 1] = "※" end
+  if state.running[target] then expected[#expected + 1] = "@" end
   if state.running[other] and state.awaiting[waiting] then
-    expected[#expected + 1] = " ▶1  ◉1 "
+    expected[#expected + 1] = icons.cap_l .. " " .. icons.running .. "1  " .. icons.waiting .. "1 " .. icons.cap_r
   elseif state.running[other] then
-    expected[#expected + 1] = " ▶1 "
+    expected[#expected + 1] = icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r
   elseif state.awaiting[waiting] then
-    expected[#expected + 1] = " ◉1 "
+    expected[#expected + 1] = icons.cap_l .. " " .. icons.waiting .. "1 " .. icons.cap_r
   end
   if titled then expected[#expected + 1] = "Session title" end
   expected[#expected + 1] = "mock/m1 " .. view
   local actual = rendered_left()
+  for _, g in ipairs(spinner_frames) do
+    actual = actual:gsub(vim.pesc(g), "@")
+  end
   assert(actual == " " .. table.concat(expected, "  ") .. " ",
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
 end
