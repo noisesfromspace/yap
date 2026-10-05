@@ -15,8 +15,7 @@
 
 local M = {}
 
-local HEAD = "^# @(%a+)%s*$"
-local VIM_HEAD = [[^# @\a\+]] -- Vim-regex twin for vim.fn.search()
+local fold = require("harness.fold")
 
 -- Marker regions. A tool block is `<!-- yap:tool` … `<!-- /yap:tool`; any
 -- other multi-line `<!-- yap:<word>` comment (thinking, error, legacy ui)
@@ -30,17 +29,18 @@ local COMMENT_CLOSE = "^%-%->%s*$"
 -- ─── Range finders ─────────────────────────────────────────────────────────
 
 --- Heading line (1-based) of the message containing `lnum`, or nil when
---- `lnum` sits before the first `# @role` heading.
+--- `lnum` sits before the first `# @role` heading. Headings come from the
+--- structural parse folding uses, so a `# @user` line inside a fenced tool
+--- result can never be mistaken for a message boundary.
 local function message_heading(lnum)
-  if vim.fn.getline(lnum):match(HEAD) then
-    return lnum
-  end
-  local orig = vim.fn.getpos(".")
-  vim.fn.cursor(lnum, 1)
-  local heading = vim.fn.search(VIM_HEAD, "bnW")
-  vim.fn.setpos(".", orig)
-  if heading == 0 then
-    return nil
+  local buf = vim.api.nvim_get_current_buf()
+  local heading
+  for _, h in ipairs(fold.parse(buf).headings) do
+    if h.line <= lnum then
+      heading = h.line
+    else
+      break
+    end
   end
   return heading
 end
@@ -51,14 +51,14 @@ local function message_range(lnum)
   if not heading then
     return nil
   end
-  local orig = vim.fn.getpos(".")
-  vim.fn.cursor(heading + 1, 1)
-  local nxt = vim.fn.search(VIM_HEAD, "nW")
-  vim.fn.setpos(".", orig)
-  if nxt == 0 then
-    nxt = vim.fn.line("$") + 1
+  local nxt
+  for _, h in ipairs(fold.parse(vim.api.nvim_get_current_buf()).headings) do
+    if h.line > heading then
+      nxt = h.line
+      break
+    end
   end
-  return heading, nxt
+  return heading, nxt or (vim.fn.line("$") + 1)
 end
 
 --- Innermost block region containing `lnum`, or nil. Scans forward from the

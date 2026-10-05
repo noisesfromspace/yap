@@ -502,73 +502,127 @@ end
 
 -- ─── Message navigation ────────────────────────────────────────────────────
 
-local function jump(pattern, backwards)
-  return vim.fn.search(pattern, backwards and "bW" or "W")
+-- Message navigation uses the structural heading list (the same parse
+-- folding projects), not vim.fn.search: a `# @user` line inside a fenced
+-- tool result is literal content, not a message boundary, and a raw regex
+-- search cannot see the fence.
+local function message_jump(role, backwards)
+  local buf = vim.api.nvim_get_current_buf()
+  local cur = vim.api.nvim_win_get_cursor(0)[1]
+  local target
+  local headings = parse(buf).headings
+  if backwards then
+    for i = #headings, 1, -1 do
+      local h = headings[i]
+      if h.line < cur and (not role or h.role == role) then
+        target = h.line
+        break
+      end
+    end
+  else
+    for _, h in ipairs(headings) do
+      if h.line > cur and (not role or h.role == role) then
+        target = h.line
+        break
+      end
+    end
+  end
+  if target then
+    vim.api.nvim_win_set_cursor(0, { target, 0 })
+    return target
+  end
+  return 0
 end
 
--- Vim-regex equivalents of HEAD for search() (Lua patterns don't apply).
--- No trailing anchor: in Vim regex \s also matches EOL, spilling the
--- match onto the next line.
-local VIM_HEAD = [[^# @\a\+]]
-local VIM_USER = [[^# @user]]
-local VIM_ASSISTANT = [[^# @assistant]]
-
 function M.next_message()
-  return jump(VIM_HEAD, false)
+  return message_jump(nil, false)
 end
 
 function M.prev_message()
-  return jump(VIM_HEAD, true)
+  return message_jump(nil, true)
 end
 
 function M.next_user_message()
-  return jump(VIM_USER, false)
+  return message_jump("user", false)
 end
 
 function M.prev_user_message()
-  return jump(VIM_USER, true)
+  return message_jump("user", true)
 end
 
 function M.next_assistant_message()
-  return jump(VIM_ASSISTANT, false)
+  return message_jump("assistant", false)
 end
 
 function M.prev_assistant_message()
-  return jump(VIM_ASSISTANT, true)
+  return message_jump("assistant", true)
 end
 
 -- Block-region navigation: the three display blocks worth hopping between
--- when reviewing a long reply. Vim-regex twins of the Lua patterns above
--- (Lua patterns don't apply to vim.fn.search).
-local VIM_THINK = [[^<!-- yap:thinking]]
-local VIM_ERROR = [[^<!-- yap:error]]
+-- when reviewing a long reply. Like message navigation, this uses the
+-- fence- and comment-aware parse folding projects, not vim.fn.search: a
+-- `<!-- yap:tool` line inside a fenced result, or inside a thinking block's
+-- content (a model reasoning about a tool call quotes the marker verbatim),
+-- is literal text, not a boundary, and a raw line search lands on it.
+-- These also serve as x/o motions (v]t, d]c), so they move the cursor
+-- directly; Neovim records the operator/visual range from that movement.
+local function jump_block(kinds, backwards)
+  local buf = vim.api.nvim_get_current_buf()
+  local cur = vim.api.nvim_win_get_cursor(0)[1]
+  local target
+  local details = parse(buf).details
+  if backwards then
+    for i = #details, 1, -1 do
+      local d = details[i]
+      if kinds[d.kind] and d.start < cur then
+        target = d.start
+        break
+      end
+    end
+  else
+    for _, d in ipairs(details) do
+      if kinds[d.kind] and d.start > cur then
+        target = d.start
+        break
+      end
+    end
+  end
+  if target then
+    vim.api.nvim_win_set_cursor(0, { target, 0 })
+    return target
+  end
+  return 0
+end
+
 -- `]t`/`[t` hop between tool calls and thinking: both are machine blocks
 -- worth reviewing, and a tool call is usually preceded by thinking. `]c`
 -- remains thinking-only.
-local VIM_TOOL_OR_THINK = [[^<!-- yap:\(tool\|thinking\)]]
+local TOOL_OR_THINK = { tool = true, thinking = true }
+local THINK_ONLY = { thinking = true }
+local ERROR_ONLY = { error = true }
 
 function M.next_tool()
-  return jump(VIM_TOOL_OR_THINK, false)
+  return jump_block(TOOL_OR_THINK, false)
 end
 
 function M.prev_tool()
-  return jump(VIM_TOOL_OR_THINK, true)
+  return jump_block(TOOL_OR_THINK, true)
 end
 
 function M.next_think()
-  return jump(VIM_THINK, false)
+  return jump_block(THINK_ONLY, false)
 end
 
 function M.prev_think()
-  return jump(VIM_THINK, true)
+  return jump_block(THINK_ONLY, true)
 end
 
 function M.next_error()
-  return jump(VIM_ERROR, false)
+  return jump_block(ERROR_ONLY, false)
 end
 
 function M.prev_error()
-  return jump(VIM_ERROR, true)
+  return jump_block(ERROR_ONLY, true)
 end
 
 -- ─── Buffer setup ──────────────────────────────────────────────────────────

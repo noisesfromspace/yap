@@ -936,6 +936,12 @@ folds). The parser respects fenced code and multiline comments.
 and open a block without closing earlier blocks. Native za/zo/zc,
 zA/zO/zC and zR/zM/zr/zm update the same state; closing a previously
 opened block is just as persistent as opening it. ]m/]u/]a only navigate.
+Message navigation and the message text objects follow the same structural
+parse as folding, so a `# @user` line inside a fenced tool result is
+literal content, never a message boundary. Block navigation (]t/[t, ]c/[c,
+]e/[e) does the same: a `<!-- yap:tool` or `<!-- yap:thinking` line inside a
+fenced result, or quoted verbatim inside another block's content (a model
+reasoning about a tool call), is literal text and never a jump target.
 
 A view supplies defaults; your choices override them for individual
 blocks. An open block stays open while its own contents grow, and new
