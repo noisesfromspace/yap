@@ -326,6 +326,28 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 	modelImpl := p.Model(model)
 	var totPrompt, totCompletion int
+	lastPrompt := 0
+	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
+		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
+		input, output := 0.0, 0.0
+		havePricing := false
+		if prices, ok := cfg.Pricing[model]; ok {
+			input, output = prices.Input, prices.Output
+			havePricing = true
+		}
+		if info, ok := pricing.Lookup(providerName, model); ok {
+			if !havePricing {
+				input, output = info.Input, info.Output
+			}
+			if info.ContextWindow > 0 {
+				m["context_window"] = info.ContextWindow
+			}
+		}
+		if havePricing || input > 0 || output > 0 {
+			m["cost"] = float64(prompt)/1e6*input + float64(completion)/1e6*output
+		}
+		return m
+	}
 
 	// Block spacing (R7): blocks never start with newlines and
 	// self-terminate with exactly one blank line; pad() bridges the
@@ -388,6 +410,12 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
+		lastPrompt = t.prompt
+		if t.prompt+t.completion > 0 {
+			m := usagePayload(totPrompt, totCompletion, lastPrompt)
+			m["type"] = "usage"
+			utils.EmitEvent(m)
+		}
 		if t.outWrote {
 			wrote, trail = true, t.outTrail
 		}
@@ -487,27 +515,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	if totPrompt+totCompletion > 0 {
 		// Reported as a parse-excluded marker; the Lua side folds it into
 		// the session totals and removes the line.
-		m := map[string]any{"prompt": totPrompt, "completion": totCompletion}
-		// Cost: explicit config pricing wins; the committed catalog
-		// (agent/pricing) is the fallback. A miss on both tracks tokens
-		// only. The catalog also supplies context-window metadata in turn_end.
-		input, output := 0.0, 0.0
-		havePricing := false
-		if p, ok := cfg.Pricing[model]; ok {
-			input, output = p.Input, p.Output
-			havePricing = true
-		}
-		if info, ok := pricing.Lookup(providerName, model); ok {
-			if !havePricing {
-				input, output = info.Input, info.Output
-			}
-			if info.ContextWindow > 0 {
-				m["context_window"] = info.ContextWindow
-			}
-		}
-		if havePricing || input > 0 || output > 0 {
-			m["cost"] = float64(totPrompt)/1e6*input + float64(totCompletion)/1e6*output
-		}
+		m := usagePayload(totPrompt, totCompletion, lastPrompt)
 		b := render.MarshalCommentJSON(m, "")
 		pad()
 		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)

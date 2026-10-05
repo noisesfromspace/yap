@@ -740,7 +740,11 @@ local function handle_event(buf, json_line)
     append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "tool_text_warning" then
     append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
+  elseif ev.type == "usage" then
+    state.live_usage[buf] = ev
+    vim.cmd.redrawstatus()
   elseif ev.type == "turn_end" then
+    state.live_usage[buf] = nil
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     -- Fold this turn into the session's all-time totals (seeded from the
     -- audit log on open; this keeps the in-memory copy in step with it).
@@ -1647,6 +1651,7 @@ function M.send(buf)
   local provider, model = util.current_combo(buf)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
+  state.live_usage[buf] = nil
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
@@ -2575,6 +2580,7 @@ function M.setup(opts)
       -- Release the per-buffer UI state so the winbar's rollup and cache
       -- don't iterate/retain entries for buffers that are gone.
       live[args.buf] = nil
+      state.live_usage[args.buf] = nil
       errors[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil

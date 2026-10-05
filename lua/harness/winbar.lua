@@ -254,13 +254,14 @@ local function render_winbar(buf)
   -- Fixed-width context meter: percentage plus an eight-cell bar. In the
   -- narrowest layout, the percentage is dropped but the complete bar stays.
   local function context_segment(show_percent)
-    local t = state.last_turn[buf]
+    local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
-    if not ctx or ctx <= 0 or not t.prompt or t.prompt <= 0 then
+    local prompt = t and tonumber(t.context_prompt or t.prompt) or nil
+    if not ctx or ctx <= 0 or not prompt or prompt <= 0 then
       return nil
     end
 
-    local pct = math.min(t.prompt / ctx * 100, 100)
+    local pct = math.min(prompt / ctx * 100, 100)
     local fill, track
     if require("harness").config.nerd_font then
       -- Nerd Font's progress cells have rounded ends but no fractional cell.
@@ -308,8 +309,20 @@ local function render_winbar(buf)
   -- As the bar narrows, costs and tokens drop before the context meter.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
-    local u = vim.b[buf].yap_usage
-    local s = vim.b[buf].yap_session_usage
+    local live = state.live_usage[buf]
+    local function include_live(base)
+      if not live then
+        return base
+      end
+      base = base or { prompt = 0, completion = 0 }
+      return {
+        prompt = base.prompt + (live.prompt or 0),
+        completion = base.completion + (live.completion or 0),
+        cost = (base.cost or 0) + (live.cost or 0),
+      }
+    end
+    local u = include_live(vim.b[buf].yap_usage)
+    local s = include_live(vim.b[buf].yap_session_usage)
 
     if (mode == "full" or mode == "compact") and u and (u.prompt > 0 or u.completion > 0) then
       local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)

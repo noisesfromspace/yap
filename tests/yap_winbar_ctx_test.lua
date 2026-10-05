@@ -16,6 +16,14 @@ local function winbar_at(cols)
   return bar
 end
 
+state.live_usage[buf] = {
+  prompt = 1500, completion = 42, context_prompt = 1500, context_window = 250000, cost = 0.00342,
+}
+local live_bar = winbar_at(80)
+assert(live_bar:match("1.5k") and live_bar:match("%$0.00342"), "live usage missing from winbar: " .. live_bar)
+assert(live_bar:match("0.6%%"), "live context gauge did not update: " .. live_bar)
+state.live_usage[buf] = nil
+
 local function graph_width(bar)
   local width = 0
   for _, glyph in ipairs({ "", "", "", "", "", "" }) do
