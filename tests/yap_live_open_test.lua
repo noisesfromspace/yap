@@ -21,4 +21,16 @@ yap.live()
 assert(#vim.fn.win_findbuf(tail) == 0, "live from chat did not toggle visible tail closed")
 -- the chat buffer is untouched and still parseable
 assert(#yap.parse_buffer(buf) == 1, "chat buffer changed")
+
+-- The tail is a drawer too: full-width under a vertical split, and closing
+-- it from the chat refocuses the chat window.
+vim.cmd("vsplit")
+vim.api.nvim_set_current_win(chat_win)
+yap.live()
+assert(vim.api.nvim_get_current_buf() == tail, "tail did not reopen beside the vertical split")
+assert(vim.api.nvim_win_get_width(0) == vim.o.columns, "tail drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns)
+vim.api.nvim_set_current_win(chat_win)
+yap.live()
+assert(#vim.fn.win_findbuf(tail) == 0, "tail did not close from the vertical split")
+assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing tail did not refocus the chat")
 print("OK live-open")

@@ -61,4 +61,19 @@ local reloaded = vim.api.nvim_get_current_buf()
 assert(reloaded ~= scratch, "scratch did not recreate from disk")
 assert(vim.api.nvim_buf_get_lines(reloaded, 0, 1, false)[1] == "task one", "queue not reloaded from disk")
 
+-- A drawer is anchored full-width below the chat even when the chat is one
+-- pane of a vertical split (a bare belowright split would carve a
+-- half-width jotter out of the pane), and closing it refocuses the chat.
+vim.api.nvim_set_current_win(chat_win)
+yap.scratch_toggle() -- close
+vim.cmd("vsplit")
+vim.api.nvim_set_current_win(chat_win)
+yap.scratch_toggle()
+assert(vim.api.nvim_get_current_buf() == reloaded, "scratch did not reopen beside the vertical split")
+assert(vim.api.nvim_win_get_width(0) == vim.o.columns, "scratch drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns)
+vim.api.nvim_set_current_win(chat_win)
+yap.scratch_toggle()
+assert(#vim.fn.win_findbuf(reloaded) == 0, "scratch did not close from the vertical split")
+assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing scratch did not refocus the chat")
+
 print("OK scratch")

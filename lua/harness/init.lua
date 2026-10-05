@@ -936,6 +936,51 @@ function M.compact_delete(buf)
   require("harness.session").save(buf)
 end
 
+-- The chat window each open drawer is anchored to, so closing the drawer
+-- returns the cursor to the window it was toggled from (never stranded on
+-- a dead window or jumped to an unrelated one).
+local drawer_anchor = {} -- drawer bufnr -> owner window id
+
+--- Open or close a fixed-height drawer below the chat window. This is the
+--- ONE toggle pattern for the audit-log tail and the scratch queue: a
+--- single persistent buffer, never duplicated, always a full-width bottom
+--- split, and closed back to the window it was toggled from. Anchoring the
+--- split to a window showing `owner` is what keeps the drawer full-width
+--- when the chat shares a vertical split — a bare `belowright split` would
+--- carve a half-width jotter out of the current pane.
+local function toggle_drawer(owner, bufnr, height)
+  local wins = vim.fn.win_findbuf(bufnr)
+  if #wins > 0 then
+    for _, win in ipairs(wins) do
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+    end
+    local anchor = drawer_anchor[bufnr]
+    if anchor and vim.api.nvim_win_is_valid(anchor) then
+      vim.api.nvim_set_current_win(anchor)
+    end
+    drawer_anchor[bufnr] = nil
+    return false
+  end
+
+  local owner_wins = vim.fn.win_findbuf(owner)
+  local cur = vim.api.nvim_get_current_win()
+  local anchor
+  if vim.tbl_contains(owner_wins, cur) then
+    anchor = cur -- stay where the user toggled from
+  elseif #owner_wins > 0 and vim.api.nvim_win_is_valid(owner_wins[1]) then
+    anchor = owner_wins[1]
+  end
+  if anchor and vim.api.nvim_win_is_valid(anchor) then
+    vim.api.nvim_set_current_win(anchor)
+  end
+  vim.cmd("botright " .. height .. "split")
+  vim.api.nvim_win_set_buf(0, bufnr)
+  drawer_anchor[bufnr] = anchor
+  return true
+end
+
 --- Open the session's tail buffer (:YapLive): one persistent rendering
 --- of the audit log, not a new terminal per call. Opens even before any
 --- tool has run (an empty tail that fills as tools execute).
@@ -943,21 +988,14 @@ function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for chat, t in pairs(tails) do
     if t.bufnr == buf then
-      local wins = vim.fn.win_findbuf(buf)
-      if #wins > 0 then
-        vim.api.nvim_win_close(wins[1], false)
-      end
+      toggle_drawer(chat, buf, 12)
       return
     end
   end
   local t = ensure_tail(buf)
-  local wins = vim.fn.win_findbuf(t.bufnr)
-  if #wins > 0 then
-    vim.api.nvim_win_close(wins[1], false)
+  if not toggle_drawer(buf, t.bufnr, 12) then
     return
   end
-  vim.cmd("botright 12split")
-  vim.api.nvim_win_set_buf(0, t.bufnr)
   if M.config.keymaps.live ~= "" then
     vim.keymap.set("n", M.config.keymaps.live, function()
       M.live(t.bufnr)
@@ -1151,7 +1189,7 @@ function M.scratch_toggle(buf)
     vim.b[scratch].yap_owner = buf
     if M.config.keymaps.scratch ~= "" then
       vim.keymap.set("n", M.config.keymaps.scratch, function()
-        vim.api.nvim_win_close(0, false)
+        M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
     end
     if M.config.keymaps.send ~= "" then
@@ -1172,18 +1210,11 @@ function M.scratch_toggle(buf)
 
   queue_follow(buf, scratch) -- session renamed? drag the queue file along
 
-  -- Toggle: if the queue is already on screen, close it instead of opening
-  -- a second window onto the same buffer (leftover reuse was doing that).
-  local wins = vim.fn.win_findbuf(scratch)
-  if #wins > 0 then
-    for _, win in ipairs(wins) do
-      vim.api.nvim_win_close(win, false)
-    end
+  -- Toggle: a visible queue closes back to the chat; an invisible one opens
+  -- full-width below it (see toggle_drawer).
+  if not toggle_drawer(buf, scratch, SCRATCH_HEIGHT) then
     return
   end
-
-  vim.cmd("belowright " .. SCRATCH_HEIGHT .. "split")
-  vim.api.nvim_win_set_buf(0, scratch)
   vim.wo.winfixheight = true
   vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
   -- The split inherited the chat window's expr folds; a queue is a plain
