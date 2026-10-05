@@ -155,9 +155,12 @@ function M.append_text(buf, text)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  local fold = require("harness.fold")
+  fold.before_change(buf)
   local row = vim.api.nvim_buf_line_count(buf) - 1
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
+  fold.after_append(buf)
 end
 
 --- Windows whose cursor sits on the last line of `buf`: the user is
@@ -250,7 +253,10 @@ function M.append_block(buf, block)
   end
   local lines = vim.deepcopy(block)
   table.insert(lines, 1, "")
+  local fold = require("harness.fold")
+  fold.before_change(buf)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
+  fold.after_append(buf)
 end
 
 --- The role of the buffer's last message heading (`# @user`, ...), or nil
@@ -326,7 +332,41 @@ function M.append_message(buf, role, lines)
   for _, l in ipairs(lines) do
     out[#out + 1] = l
   end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, out)
+  -- Replace only the differing span. Rewriting unchanged history would
+  -- invalidate its fold anchors (and any other plugin's extmarks).
+  local first, last, tail = 0, #all, #out
+  while first < last and first < tail and all[first + 1] == out[first + 1] do
+    first = first + 1
+  end
+  while last > first and tail > first and all[last] == out[tail] do
+    last, tail = last - 1, tail - 1
+  end
+  local fold = require("harness.fold")
+  fold.before_change(buf)
+  vim.api.nvim_buf_set_lines(buf, first, last, false, vim.list_slice(out, first + 1, tail))
+  fold.after_append(buf)
+end
+
+-- Hold an incomplete structural line until it can be classified. A pipe can
+-- split even the first bytes of a marker; painting those as prose and folding
+-- them a frame later causes a flash. Non-structural prose still streams.
+-- The caller owns the returned remainder and flushes it verbatim at EOF.
+function M.split_stream_tail(buf, text)
+  local newline = text:match(".*()\n") or 0
+  local tail = text:sub(newline + 1)
+  if newline == 0 then
+    tail = (vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] or "") .. tail
+  end
+  if tail == "" then return text, "" end
+  for _, prefix in ipairs({ "# @", "<!-- yap:", "<!-- /yap:" }) do
+    if prefix:sub(1, #tail) == tail or tail:sub(1, #prefix) == prefix then
+      -- A complete single-line comment is already safely classifiable.
+      if tail:sub(-3) ~= "-->" then
+        return text:sub(1, newline), text:sub(newline + 1)
+      end
+    end
+  end
+  return text, ""
 end
 
 return M

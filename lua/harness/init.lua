@@ -1163,7 +1163,6 @@ local function report_error(buf, err)
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   document.append_block(buf, block)
-  fold.after_append(buf, block)
   vim.notify("yap: " .. err, vim.log.levels.ERROR)
 end
 
@@ -1386,7 +1385,6 @@ end
 local function close_stream(buf)
   repair_stream_tail(buf)
   document.append_block(buf, { "# @user", "" })
-  fold.after_append(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
   if subagent_done[buf] then
@@ -1444,7 +1442,6 @@ function M.send(buf)
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
   document.append_block(buf, { "# @assistant", "" })
-  fold.after_append(buf, { "# @assistant", "" })
   follow_tail()
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
@@ -1458,28 +1455,31 @@ function M.send(buf)
     local stderr_chunks = {}
     local status, barrier
     -- Coalesce rapid per-token stdout flushes into one buffer edit per
-    -- ~STREAM_FLUSH_MS: every edit makes Neovim recompute expr folds for the
-    -- whole buffer (O(n)), so batching keeps a fast stream smooth on large
-    -- sessions instead of stalling once per token. This is a THROTTLE: the
-    -- timer starts on the first token of a batch and fires 30ms later, so
-    -- text is never delayed by more than one tick even under continuous
-    -- token flow (a debounce would freeze text until a silence gap).
+    -- ~STREAM_FLUSH_MS: block parsing is O(n) per edit, so batching keeps a
+    -- fast stream smooth on large sessions instead of stalling per token.
+    -- This is a THROTTLE: the timer starts on the first token of a batch.
+    -- Only incomplete structural prefixes wait for classification; ordinary
+    -- prose flushes every tick even under continuous token flow.
     local STREAM_FLUSH_MS = 30
     local pending = ""
     local flush_timer = nil
-    local function flush_pending()
+    local function flush_pending(final)
       if pending == "" then
         return
       end
       local data = pending
       pending = ""
+      if not final then data, pending = document.split_stream_tail(buf, data) end
+      if data == "" then return end
       sync_followers()
       document.append_text(buf, data)
-      fold.after_append(buf, vim.split(data, "\n", { plain = true }))
       follow_tail()
     end
-    local function on_flush_tick()
+    local function on_flush_tick(timer)
+      if flush_timer ~= timer then return end -- a final flush cancelled this tick
       flush_timer = nil
+      timer:stop()
+      timer:close()
       flush_pending()
     end
     -- uv timer callbacks run in a fast event context; schedule_wrap escapes
@@ -1491,16 +1491,16 @@ function M.send(buf)
         flush_timer:close()
         flush_timer = nil
       end
-      flush_pending()
+      flush_pending(true)
     end
     stream_flush[buf] = finish_flush
     local function append(data)
       if data == "" then return end
-      local was_empty = pending == ""
       pending = pending .. data
-      if was_empty then
-        flush_timer = vim.uv.new_timer()
-        flush_timer:start(STREAM_FLUSH_MS, 0, on_flush_tick_wrapped)
+      if not flush_timer then
+        local timer = vim.uv.new_timer()
+        flush_timer = timer
+        timer:start(STREAM_FLUSH_MS, 0, function() on_flush_tick_wrapped(timer) end)
       end
     end
     local function route_event(ev)
@@ -1558,7 +1558,6 @@ function M.send(buf)
       if steer_text then
         document.append_message(buf, "user", vim.split(steer_text, "\n", { plain = true }))
       end
-      fold.after_append(buf, { "# @user", "" })
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)
@@ -2353,20 +2352,8 @@ function M.setup(opts)
       focus_touch(args.buf)
     end,
   })
-  -- Manual folds are window-local. A session can keep streaming while
-  -- hidden, so its cached block model may be newer than the folds installed
-  -- in the window. Reconcile against that window's applied ranges on return.
-  vim.api.nvim_create_autocmd("BufWinEnter", {
-    group = adopt_group,
-    callback = function(args)
-      local buf = args.buf
-      vim.schedule(function()
-        if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap then
-          fold.reconcile(buf, false)
-        end
-      end)
-    end,
-  })
+  -- harness.fold owns synchronous window-entry reconciliation; scheduling
+  -- it here would expose an unfolded frame when a hidden stream is shown.
   -- Redirect :bd/:bw/:bdelete/:bunload of the current session buffer. The
   -- deletion itself fires BufUnload while curbuf is still the session; by
   -- the time a scheduled callback runs, Neovim has moved curbuf to another

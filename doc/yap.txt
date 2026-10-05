@@ -923,40 +923,39 @@ The system prompt is reference material: it stays folded in views 1 and
 2 and opens with everything else in view 3 (or earlier with za).
 
 The applied view shows in the winbar (`Ⓕ1`-`Ⓕ3`), see |yap-winbar|.
-View 2 is applied once when a session buffer is opened. yap parses the
-session into flat, non-overlapping manual fold ranges: view 1 folds the
-system prompt and assistant messages, view 2 folds the system prompt and
-detail regions, and view 3 removes all folds. Flat folds avoid the
-nested-fold toggle ambiguity and expr-fold state leakage that could make
-unrelated folds open after edits. The parser tracks fenced code and
-multi-line comments so transcript-like tool output cannot split folds.
+View 2 is the initial default. Each window owns its selected view and
+open/closed choices. View 1 folds assistant messages and the system prompt;
+view 2 folds details and the system prompt; view 3 removes all folds.
+Opening an assistant in view 1 reveals its entire contents (no nested
+folds). The parser respects fenced code and multiline comments.
 
-Above the view, <Tab> and the block-navigation keys DRILL: <Tab> opens
-the fold under the cursor persistently (pins it) or closes it again;
-]t/[t, ]c/[c and ]e/[e jump to the next block AND open it. Opening is
-non-exclusive — opening one fold leaves previously opened folds alone.
-]m/]u/]a move at message granularity without opening anything.
+<Tab> toggles the block under the cursor. ]t/[t, ]c/[c and ]e/[e jump to
+and open a block without closing earlier blocks. Native za/zo/zc,
+zA/zO/zC and zR/zM/zr/zm update the same state; closing a previously
+opened block is just as persistent as opening it. ]m/]u/]a only navigate.
 
-An open fold STAYS open: it is tracked by its fold-start line, not a
-transient peek — whether it was opened with <Tab>, a navigation key, or
-plain za/zo. When the conversation structure advances — a new `# @role`
-heading, tool, thinking or error opener streams into the buffer — yap
-reconciles only what changed, WITHOUT clearing Neovim's manual fold
-state. The old zX-per-append approach closed every fold and re-opened a
-handful, which collapsed the view (cursor/scroll jumps) and flickered;
-instead each structural append only (1) closes folds the append newly
-created that leaked open — Neovim inherits a manual foldopen into
-same-or-deeper folds, so "open one tool" used to make every later tool
-arrive open — and (2) re-opens the user-opened folds. Plain-text appends
-change nothing, so streaming prose never touches folds, and the cursor
-and scroll position stay exactly where the user left them. Typing (user
-edits) likewise changes nothing.
+A view supplies defaults; your choices override them for individual
+blocks. An open block stays open while its own contents grow, and new
+blocks follow the view, not the state of their neighbours. Block identity
+uses moving extmark anchors rather than line numbers, so inserting lines
+above a block cannot transfer its choice to another block. Deletion
+invalidates the identity; undo restores it along with its previous choice.
 
-A view keypress (<leader>1..3) is an explicit reset: it clears every
-user-opened fold. Folds are keyed by line number, so they survive sends
-and streaming (sends only append); an edit that shifts a fold's line
-drops it. A send does NOT snap folds back to the view — manual opens and
-closes persist until you change the view.
+Text and fold updates run together before yielding during streaming.
+Incomplete structural prefixes wait until they can be classified instead
+of flashing as unfolded prose. Even a one-line opener can be folded.
+Unchanged historical ranges are left alone; moved/deleted ranges are
+rebuilt while restoring intent and the reading position. Ordinary edits
+and undo also trigger reconciliation. Following the stream tail is separate
+from folding: windows parked elsewhere are not dragged along.
+
+Switching away and returning to a hidden session preserves this window's
+choices; new hidden output still follows its view. Folds are installed
+synchronously on return, before the first redraw. A new split starts at the
+last selected view's defaults, with independent choices. A view keypress
+(<leader>1..3) explicitly resets this window's choices, not other splits.
+Choices last while the buffer is loaded; explicitly unloading/reloading
+or reopening a session from disk starts from defaults.
 
 Navigation keymaps jump between headings, see |yap-keymaps|.
 
@@ -1153,28 +1152,19 @@ R9  Errors surface three ways: vim.notify (transient), winbar error state
     (record). Spawn failures of the binary are caught and reported the
     same way.
 
-R10 View levels: <leader>1 folds all agent output (only user prompts
-    stay open), <leader>2 folds tool calls and thinking only, <leader>3
-    unfolds everything; the system prompt stays folded in views 1 and 2
-    and opens in view 3. View 1 leaves the newest reply folded too;
-    auto-opening it caused a brief open/close flicker as the reply
-    completed. yap builds flat, non-overlapping manual fold ranges rather
-    than nested expr folds: nesting made toggles ambiguous, and expr-fold
-    recalculation after edits could leak open state into unrelated folds.
-    The parser tracks fences and multiline comments; view 2 is applied
-    ONLY when a session buffer is opened. <Tab>, the block-navigation
-    keys and plain za/zo drill by opening a fold (non-exclusive): the open
-    is keyed by its fold-start line and survives sends/streaming. On a
-    structural append (heading, tool, thinking, error), the send path
-    reconciles only changed fold ranges without clearing Neovim's manual
-    fold state. A new fold streams in closed in views 1/2; unchanged folds
-    retain their state. If a session streams while hidden, its window-local
-    folds are reconciled when it is shown again. Plain-text appends do not
-    rebuild folds, and the cursor/scroll stay put. A view keypress clears
-    all yap-tracked opens.
-    Typing (user edits) still changes nothing. A send does not reset the
-    view; the winbar Ⓕ chip shows the last APPLIED view, not measured
-    fold state (measuring made <leader>3 read Ⓕ0).
+R10 Folding is a projection of anchored structural blocks. Each window
+    owns its view (initially 2) and open/closed choices. View 1 folds system
+    and assistant messages, including the newest; view 2 folds system and
+    detail regions; view 3 removes folds. Explicit view keys reset this
+    window only. Native commands and Tab share state. New blocks follow
+    defaults, not neighbours; growing blocks retain the user's choice.
+    Identity survives position changes and undo through extmarks. Streaming
+    updates text and fold ranges synchronously before yielding; incomplete
+    marker prefixes are buffered until classifiable. Hidden sessions are
+    reconciled synchronously on window entry. Unchanged ranges are not
+    recreated. Arbitrary edits/undo reconcile too. Cursor/scroll restoration
+    is distinct from the explicit follow-tail behavior. The winbar displays
+    the applied view, not the number of currently open folds.
 
 R11 Streaming appends at the end of the buffer, fully async (gptel-style:
     the buffer stays editable while a reply streams in). Editing above the
