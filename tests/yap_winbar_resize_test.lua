@@ -128,7 +128,8 @@ for mask = 0, 15 do
   for _, g in ipairs(spinner_frames) do
     actual = actual:gsub(vim.pesc(g), "@")
   end
-  assert(actual == (#expected > 0 and (" " .. table.concat(expected, "  ") .. " ") or ""),
+  local expected_str = #expected == 0 and "" or (" " .. table.concat(expected, "  ") .. " ")
+  assert(actual == expected_str,
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
   local bar = yap.winbar(target)
   local center = bar:match("%%=(.-)%%=")

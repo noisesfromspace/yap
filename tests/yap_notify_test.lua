@@ -115,11 +115,14 @@ yap.instances()
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
 assert(items[1].buf == buf2, "idle session should sort before waiting sessions")
-assert(items[1].status == icons.idle .. " idle", "idle status missing: " .. vim.inspect(items[1]))
+assert(items[1].state == "idle", "idle state missing: " .. vim.inspect(items[1]))
+assert(items[1].model == "m1", "idle model missing: " .. vim.inspect(items[1]))
 assert(items[2].buf == buf, "waiting session should sort last")
-assert(items[2].status == icons.waiting .. " waiting", "waiting status missing: " .. vim.inspect(items[2]))
+assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(items[2]))
 assert(items[2].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[2].text)
-assert(fmt(items[2]):match(icons.waiting .. " waiting$"), "status not rendered: " .. fmt(items[2]))
+local rendered = fmt(items[2])
+assert(rendered:find(icons.waiting .. " m1", 1, true), "glyph + model not rendered: " .. rendered)
+assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
 -- :YapWaiting / <leader>w list just the sessions awaiting a reply.
 local waiting_items
@@ -130,7 +133,8 @@ yap.waiting()
 vim.ui.select = orig_select
 assert(waiting_items and #waiting_items == 1, "expected one waiting session, got " .. vim.inspect(waiting_items))
 assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
-assert(waiting_items[1].status == icons.waiting .. " waiting", "waiting status missing: " .. vim.inspect(waiting_items[1]))
+assert(waiting_items[1].state == "waiting", "waiting state missing: " .. vim.inspect(waiting_items[1]))
+assert(waiting_items[1].model == "m1", "waiting model missing: " .. vim.inspect(waiting_items[1]))
 
 -- If the only waiting session is already current, explain that instead of
 -- claiming nothing is waiting.

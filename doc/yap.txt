@@ -297,9 +297,9 @@ keeps colors on.
 (|yap-winbar|). Keys: `since` (since-open token/cost chip), `total`
 (all-time token/cost chip), `running` (rollup: other sessions streaming),
 `error` (winbar error state), `waiting` (rollup: other sessions awaiting
-you), `idle` (picker idle state), `steer` (winbar steer state), `fold`
-(fold-view chip), `approval` (approval request in the audit display), and
-the island's rounded caps `cap_l`/`cap_r`. Defaults are Nerd Font v3
+you), `idle` (picker idle state), `steer` (winbar steer state), `approval`
+(approval request in the audit display), and the island's rounded caps
+`cap_l`/`cap_r`. Defaults are Nerd Font v3
 glyphs. `nerd_font = false` selects plain-Unicode icons, the typographic
 spinner, and the block-element context gauge; explicit `icons` overrides
 still take precedence. There is no reliable terminal font detection.
@@ -987,18 +987,19 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: an animated star shimmer (Nerd Font,
-or typographic sparkle with `nerd_font = false`) while the buffer itself is streaming — once a tool has run for 2s its name and
-elapsed time join it (`󰫢 bash 12s`) — then a raised rollup island for ALL OTHER
-yap sessions: `▶N` (N other buffers streaming a reply) and `◉N` (N other
-buffers await you; jump to one with |:YapInstances|). The island appears only
-when at least one other session is running or waiting; it never counts the
-current buffer. After the island: the session description (truncated to 40
-columns). The provider/model is centered in a rounded island. On the right,
-usage totals and the context-fill meter occupy two rounded islands. All
-islands share the left rollup's surface and caps. The centered island
-disappears when either side needs the space. A state glyph appears on the
-far right only when something is wrong:
+The winbar is the session dashboard. Left: an animated spinner beacon while
+the buffer itself is streaming — a random constellation of Nerd Font
+star shapes and colors (or typographic sparkle marks with
+`nerd_font = false`). Once a tool has run for 2s its name and elapsed
+time join the shimmer (`󰫢 bash 12s`) — then a raised rollup island
+for ALL OTHER yap sessions: `N` (N other buffers streaming a reply) and
+`󰭖N` (N other buffers await you; jump to one with |:YapInstances|). The
+island appears only when at least one other session is running or waiting;
+it never counts the current buffer. After the island: the session
+description (truncated to 40 display columns). A provider/model island sits
+centered in the middle of the bar. Right: two usage chips and a
+context-fill meter (|yap-winbar-numbers|). A state glyph appears on the far
+right only when something is wrong:
 
   󰚌 error   The last send failed (vim.notify fired too); cleared on the
             next send.

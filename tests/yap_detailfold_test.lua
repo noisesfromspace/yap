@@ -2,7 +2,6 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local fold = require("harness.fold")
-local icons = require("harness").config.icons
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {

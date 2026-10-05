@@ -5,7 +5,7 @@ local yap = require("harness")
 yap.setup({ nerd_font = false, provider = "mock", model = "m1", icons = { steer = "→" } })
 local icons = yap.config.icons
 assert(icons.running == "▶" and icons.error == "✗" and icons.waiting == "◉")
-assert(icons.idle == "○" and icons.approval == "⚠" and icons.fold == "Ⓕ")
+assert(icons.idle == "○" and icons.approval == "⚠")
 assert(icons.since == "" and icons.total == "" and icons.steer == "→")
 local state = require("harness.state")
 local buf, other = yap.new(), vim.api.nvim_create_buf(false, true)

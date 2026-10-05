@@ -65,7 +65,6 @@ M.config = {
     idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
     steer = "󰇐",   -- nf-md-directions (winbar steer state)
     approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
-    fold = "",    -- nf-oct-fold      (fold-view chip)
     cap_l = "",   -- nf-ple-lower_right_triangle (island left cap)
     cap_r = "",   -- nf-ple-lower_left_triangle  (island right cap)
   },
@@ -2279,16 +2278,6 @@ local function session_state(buf)
   return "idle"
 end
 
---- Status word + glyph for the session picker, mirroring the winbar state
---- chips so both views agree. The picker is static, so a fixed glyph
---- stands in for the winbar's animated spinner.
-local function session_status(buf)
-  local ic = M.config.icons
-  local glyph = { running = ic.running, error = ic.error, waiting = ic.waiting, idle = ic.idle }
-  local state = session_state(buf)
-  return glyph[state] .. " " .. state
-end
-
 --- Sort waiting sessions last; their dedicated :YapWaiting / <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
@@ -2331,7 +2320,8 @@ function M.instances(state)
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
-        status = session_status(b),
+        state = session_state(b),
+        model = vim.b[b].yap_model,
         group_parent = (vim.b[b].yap_subagent_parent and vim.api.nvim_buf_is_valid(vim.b[b].yap_subagent_parent))
           and vim.b[b].yap_subagent_parent or b,
       }
@@ -2358,14 +2348,19 @@ function M.instances(state)
     end
     return a.text < b.text
   end)
+  -- Left cell: state glyph + model (bare name, no provider). The glyph
+  -- already encodes the state, so the model earns the word's old slot.
+  local glyph = { running = M.config.icons.running, error = M.config.icons.error,
+    waiting = M.config.icons.waiting, idle = M.config.icons.idle }
   local width = 0
   for _, item in ipairs(items) do
-    width = math.max(width, vim.fn.strdisplaywidth(item.text))
+    item.left = glyph[item.state] .. " " .. (item.model or item.state)
+    width = math.max(width, vim.fn.strdisplaywidth(item.left))
   end
   vim.ui.select(items, {
     prompt = state == "waiting" and "yap waiting" or "yap sessions",
     format_item = function(item)
-      return item.text .. string.rep(" ", width - vim.fn.strdisplaywidth(item.text) + 2) .. item.status
+      return item.left .. string.rep(" ", width - vim.fn.strdisplaywidth(item.left) + 2) .. item.text
     end,
     preview_item = function(item)
       return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
@@ -2387,7 +2382,7 @@ function M.setup(opts)
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
       since = "", total = "", running = "▶", error = "✗", waiting = "◉",
-      idle = "○", steer = "⌁", approval = "⚠", fold = "Ⓕ",
+      idle = "○", steer = "⌁", approval = "⚠",
       cap_l = "[", cap_r = "]",
     })
   end
