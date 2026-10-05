@@ -12,19 +12,27 @@ yap.setup({ bin = "test-yap", provider = "setup", model = "m0" })
 local buf = yap.new()
 assert(vim.b[buf].yap_provider == "setup" and vim.b[buf].yap_model == "m0", "falls back to setup defaults")
 
--- Picking a model persists it as the default for NEW buffers.
-yap.change_model("openai/gpt-6-luna")
+-- Changing the CURRENT buffer's model does not touch the global default.
+yap.change_model("zeta/m9")
+assert(vim.b[buf].yap_provider == "zeta" and vim.b[buf].yap_model == "m9", "change_model did not update the buffer")
 local buf2 = yap.new()
-assert(vim.b[buf2].yap_provider == "openai" and vim.b[buf2].yap_model == "gpt-6-luna", "picked combo becomes the default")
+assert(vim.b[buf2].yap_provider == "setup" and vim.b[buf2].yap_model == "m0", "change_model leaked into the default")
+
+-- Setting the DEFAULT model persists it for NEW buffers without touching
+-- the current buffer.
+yap.change_default_model("openai/gpt-6-luna")
+assert(vim.b[buf].yap_provider == "zeta" and vim.b[buf].yap_model == "m9", "change_default_model clobbered the current buffer")
+local buf3 = yap.new()
+assert(vim.b[buf3].yap_provider == "openai" and vim.b[buf3].yap_model == "gpt-6-luna", "picked combo becomes the default")
 
 -- A fresh setup() re-reads the persisted file, so the default survives
 -- even though the setup() provider/model differ.
 yap.setup({ bin = "test-yap", provider = "setup", model = "m0" })
-local buf3 = yap.new()
-assert(vim.b[buf3].yap_provider == "openai" and vim.b[buf3].yap_model == "gpt-6-luna", "persisted default survives re-setup")
+local buf4 = yap.new()
+assert(vim.b[buf4].yap_provider == "openai" and vim.b[buf4].yap_model == "gpt-6-luna", "persisted default survives re-setup")
 
 -- Explicit opts still win over the persisted default.
-local buf4 = yap.new({ provider = "deepseek", model = "v4" })
-assert(vim.b[buf4].yap_provider == "deepseek" and vim.b[buf4].yap_model == "v4", "explicit opts override the persisted default")
+local buf5 = yap.new({ provider = "deepseek", model = "v4" })
+assert(vim.b[buf5].yap_provider == "deepseek" and vim.b[buf5].yap_model == "v4", "explicit opts override the persisted default")
 
 print("OK default model")

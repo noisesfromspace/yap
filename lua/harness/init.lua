@@ -85,6 +85,7 @@ M.config = {
     send = "<C-s>",
     stop = "<C-c>",
     change_model = "<leader>m",
+    change_default_model = "<leader>M",
     live = "<leader>l",
     scratch = "<leader>s",
     insert = "<C-t>",
@@ -129,9 +130,10 @@ local function models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
--- The last provider/model picked via :YapChangeModel, persisted so new
--- buffers reuse it without a rebuild of the (often Nix-managed) setup()
--- defaults. setup() reads it once; change_model() rewrites it.
+-- The last default provider/model picked via :YapChangeDefaultModel,
+-- persisted so new buffers reuse it without a rebuild of the (often
+-- Nix-managed) setup() defaults. setup() reads it once;
+-- change_default_model() rewrites it.
 local default_combo = nil
 
 local function default_combo_path()
@@ -2446,39 +2448,48 @@ function M.open(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
+--- Open the provider/model picker and call `cb` with the chosen
+--- "provider/model" combo (nothing on dismiss). Reuses setup()'s `models`
+--- list when configured, otherwise `yap models` (cached, refreshed async).
+local function pick_model_combo(cb)
+  local function pick(items)
+    vim.ui.select(items, { prompt = "yap model" }, function(choice)
+      if choice then
+        cb(choice)
+      end
+    end)
+  end
+  if M.config.models and #M.config.models > 0 then
+    pick(M.config.models)
+    return
+  end
+  if models_cache then
+    pick(models_cache)
+    return
+  end
+  table.insert(models_waiters, function(combos, stderr)
+    if not combos then
+      local err = (stderr or ""):gsub("%s+$", "")
+      vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+    else
+      pick(combos)
+    end
+  end)
+  refresh_models()
+end
+
 --- Change the provider/model combo for the current buffer.
 --- With an argument: "provider/model". Without: pick from setup()'s
 --- models list, or — when that isn't configured — from `yap models`,
 --- which queries every provider in config.json (GET /models).
 function M.change_model(combo)
-  local buf = vim.api.nvim_get_current_buf()
   if not combo then
-    local function pick(items)
-      vim.ui.select(items, { prompt = "yap model" }, function(choice)
-        if choice then
-          M.change_model(choice)
-        end
-      end)
-    end
-    if M.config.models and #M.config.models > 0 then
-      pick(M.config.models)
-      return
-    end
-    if models_cache then
-      pick(models_cache)
-      return
-    end
-    table.insert(models_waiters, function(combos, stderr)
-      if not combos then
-        local err = (stderr or ""):gsub("%s+$", "")
-        vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
-      else
-        pick(combos)
-      end
+    pick_model_combo(function(choice)
+      M.change_model(choice)
     end)
-    refresh_models()
     return
   end
+  local buf = vim.api.nvim_get_current_buf()
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   if not provider then
     vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
@@ -2486,9 +2497,27 @@ function M.change_model(combo)
   end
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
+  sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
+end
+
+--- Change the default provider/model for NEW buffers, persisted to
+--- `$XDG_CACHE_HOME/yap/default`. Does not touch the current buffer.
+--- With an argument: "provider/model". Without: pick from the same list
+--- as :YapChangeModel.
+function M.change_default_model(combo)
+  if not combo then
+    pick_model_combo(function(choice)
+      M.change_default_model(choice)
+    end)
+    return
+  end
+  if not combo:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+    vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
+    return
+  end
   default_combo = combo
   write_default_combo(combo)
-  sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
+  vim.notify("yap: default model set to " .. combo, vim.log.levels.INFO)
 end
 
 --- Session label for the picker: description when present, filename as
@@ -2688,10 +2717,10 @@ function M.setup(opts)
   paths.dirs.sessions_dir = M.config.sessions_dir
   paths.dirs.audit_dir = M.config.audit_dir
 
-  -- <leader>r and <leader>w are global: they list sessions across every
-  -- buffer, so they must work from any file, not just inside a chat. The
-  -- other keymaps act on the current buffer and stay buffer-local in
-  -- setup_buffer.
+  -- <leader>r, <leader>w and <leader>M are global: they list sessions
+  -- across every buffer or change the default model, so they must work
+  -- from any file, not just inside a chat. The other keymaps act on the
+  -- current buffer and stay buffer-local in setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.instances()
@@ -2701,6 +2730,11 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymaps.waiting, function()
       M.waiting()
     end, { silent = true, desc = "yap: waiting sessions" })
+  end
+  if M.config.keymaps.change_default_model ~= "" then
+    vim.keymap.set("n", M.config.keymaps.change_default_model, function()
+      M.change_default_model()
+    end, { silent = true, desc = "yap: change default model" })
   end
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file

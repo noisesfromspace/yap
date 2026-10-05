@@ -62,6 +62,16 @@ end, {
   desc = "Change the provider/model combo for the current buffer (no arg: pick from configured models)",
 })
 
+vim.api.nvim_create_user_command("YapChangeDefaultModel", function(cmd)
+  require("harness").change_default_model(cmd.fargs[1])
+end, {
+  nargs = "?",
+  complete = function()
+    return require("harness").config.models or {}
+  end,
+  desc = "Change the default provider/model combo for new buffers (no arg: pick from configured models)",
+})
+
 vim.api.nvim_create_user_command("YapReload", function()
   local old_config = require("harness").config
   for k in pairs(package.loaded) do

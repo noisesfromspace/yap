@@ -125,9 +125,16 @@ the current buffer unless otherwise noted.
                         config.json (GET /models) — no duplicate model
                         configuration needed. The query result is cached
                         for the session; |:YapReload| refreshes it.
-                        The picked combo is also persisted as the default
-                        for new buffers (in `$XDG_CACHE_HOME/yap/default`),
-                        so changing models does not require editing the
+
+                                                      *:YapChangeDefaultModel*
+:YapChangeDefaultModel {provider/model}
+                        Change the default provider/model combo for NEW
+                        buffers, persisted to `$XDG_CACHE_HOME/yap/default`.
+                        Does not touch the current buffer. Without an
+                        argument, picks from the same list as
+                        |:YapChangeModel|. New buffers use this default
+                        before setup()'s `provider`/`model`, so changing
+                        the default model does not require editing the
                         (often Nix-managed) setup() defaults.
 
                                                             *:YapFork*
@@ -178,15 +185,17 @@ the current buffer unless otherwise noted.
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r and <leader>w, which are global
-(they list sessions across buffers, so they work from any file). Every
-binding is a `keymaps` config key (see |yap-configuration|); the defaults
-are shown below.
+Set only in yap buffers, except <leader>r, <leader>w and <leader>M, which
+are global (they list sessions across buffers, or change the default
+model, so they work from any file). Every binding is a `keymaps` config
+key (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams into the buffer;
                         normal successful sends don't show a toast.
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
+  <leader>M             Change the default model for new buffers
+                        (picker, see |:YapChangeDefaultModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch buffer: a
                         file-backed jotter with independently foldable
@@ -320,7 +329,7 @@ gutter on every redraw.
 
 `keymaps` maps each action to its key sequence, so any of |yap-keymaps|
 can be rebound from `setup()`. The table keys are: `send`, `stop`,
-`change_model`, `live`, `scratch`, `insert`, `insert_here`, `insert_file`, `sessions` (global),
+`change_model`, `change_default_model` (global), `live`, `scratch`, `insert`, `insert_here`, `insert_file`, `sessions` (global),
 `waiting` (global), `help`, `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
@@ -711,7 +720,8 @@ an LspAttach guard in setup() stops any markdown client from attaching.
 
 The active combo comes from the frontmatter on open, then from per-buffer
 vars set by |:YapChangeModel|, falling back to the persisted default (the
-last combo picked via |:YapChangeModel|) and finally to setup() defaults.
+last default set via |:YapChangeDefaultModel|) and finally to setup()
+defaults.
 The buffer holds the model state (R1) but NOT token/cost totals: those
 accumulate in memory for the lifetime of the buffer, and reopening a
 session starts them from zero.
