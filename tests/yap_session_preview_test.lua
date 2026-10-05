@@ -143,4 +143,28 @@ assert(saved_preview[1] == "## First message" and saved_preview[3] == "history q
   "saved preview wrong: " .. vim.inspect(saved_preview))
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
 
+-- The history picker annotates saved sessions that are open with their live
+-- state, including a manually stopped turn.
+local state = require("harness.state")
+local icons = yap.config.icons
+local function history_status(expected)
+  captured = nil
+  vim.ui.select = function(items, opts)
+    captured = { items = items, opts = opts }
+  end
+  yap.history()
+  vim.ui.select = orig_select
+  assert(captured and #captured.items == 1, "expected saved history row: " .. vim.inspect(captured))
+  local rendered = captured.opts.format_item(captured.items[1])
+  assert(rendered:find(expected, 1, true), "history row missing " .. expected .. ": " .. rendered)
+end
+state.running[saved] = {}
+history_status(icons.running .. " running")
+state.running[saved] = nil
+state.awaiting[saved] = true
+history_status(icons.waiting .. " waiting")
+state.stopped[saved] = true
+history_status(icons.stopped .. " stopped")
+state.awaiting[saved], state.stopped[saved] = nil, nil
+
 print("OK session_preview")

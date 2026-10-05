@@ -4,7 +4,7 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ nerd_font = false, provider = "mock", model = "m1", icons = { steer = "→" } })
 local icons = yap.config.icons
-assert(icons.running == "▶" and icons.error == "✗" and icons.waiting == "◉")
+assert(icons.running == "▶" and icons.stopped == "■" and icons.error == "✗" and icons.waiting == "◉")
 assert(icons.idle == "○" and icons.approval == "⚠" and icons.fold == "Ⓕ")
 assert(icons.since == "" and icons.total == "" and icons.steer == "→")
 local state = require("harness.state")

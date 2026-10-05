@@ -145,11 +145,18 @@ the current buffer unless otherwise noted.
                         sessions stay listed by filename via
                         |:YapInstances|.
 
+                                                            *:YapHistory*
+:YapHistory [all]      Pick a saved session from history, with live state icons
+                        for sessions that are currently open. Default scope
+                        is the current project; "all" lists every project.
+                        The picker otherwise behaves like |:YapSessions|.
+
                                                             *:YapInstances*
 :YapInstances         List every open yap session except the current one by
                         its file path and focus the picked one. Each line is
-                        annotated with its state — ` running`, `󰚌 error`, `󱀒 waiting`
-                        (a completed turn awaits your reply) or `󰝦 idle` —
+                        annotated with its state — ` running`, `󰐊 stopped`,
+                        `󰚌 error`, `󱀒 waiting` (a completed turn awaits your
+                        reply) or `󰝦 idle` —
                         waiting sessions sort last (use |:YapWaiting| to jump
                         straight to them). Yap buffers are unlisted — they
                         never appear in |:ls| or buffer pickers (MiniPick.buffers and friends),

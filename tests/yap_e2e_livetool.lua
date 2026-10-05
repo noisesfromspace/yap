@@ -7,6 +7,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
 -- The persistent tail buffer of a chat buffer (yap://<basename>-tail).
@@ -182,6 +183,7 @@ assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tai
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
 yap.stop()
+assert(state.stopped[buf2], "manual stop state not recorded")
 assert(
   vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf2),
   "stop did not move the cursor to the new # @user prompt"

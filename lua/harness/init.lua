@@ -60,6 +60,7 @@ M.config = {
     since = "󰅐",   -- nf-md-clock_outline (since-open token/cost chip)
     total = "󰆼",   -- nf-md-database   (all-time token/cost chip)
     running = "", -- nf-cod-play (rollup: other sessions streaming)
+    stopped = "󰐊", -- nf-md-stop-circle (a manually stopped turn)
     error = "󰚌",   -- nf-md-skull (winbar error state)
     waiting = "󱀒", -- waiting (rollup: other sessions awaiting you)
     idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
@@ -165,6 +166,7 @@ M.overview = winbar.overview
 -- orchestration code reading like the pre-split module. The winbar reads
 -- the same tables directly.
 local running = state.running
+local stopped = state.stopped
 local live = state.live
 local errors = state.errors
 local last_turn = state.last_turn
@@ -1644,6 +1646,7 @@ function M.send(buf)
   refresh_description(buf, "user", messages)
 
   errors[buf] = nil
+  stopped[buf] = nil
   awaiting[buf] = nil
   -- provider/model come from the buffer vars (set by :Yap /
   -- :YapChangeModel), falling back to config; sync them so the winbar
@@ -1941,6 +1944,7 @@ function M.stop(buf)
   if child then M.stop(child) end
   local handle = running[buf]
   if handle then
+    stopped[buf] = true
     handle:kill(15) -- the exit callback closes the interrupted turn
     servers[buf] = nil
     running[buf] = nil
@@ -2376,12 +2380,6 @@ function M.change_model(combo)
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
 end
 
---- Pick a saved session and open it. scope: "cwd" (default) or "all".
-function M.sessions(scope)
-  require("harness.session").pick({ scope = scope }, function(path)
-    M.open(path)
-  end)
-end
 
 --- Session label for the picker: description when present, filename as
 --- fallback, prefixed with the project cwd.
@@ -2416,6 +2414,8 @@ local function session_state(buf)
     return "running"
   elseif errors[buf] then
     return "error"
+  elseif stopped[buf] then
+    return "stopped"
   elseif awaiting[buf] then
     return "waiting"
   end
@@ -2427,9 +2427,37 @@ end
 --- stands in for the winbar's animated spinner.
 local function session_status(buf)
   local ic = M.config.icons
-  local glyph = { running = ic.running, error = ic.error, waiting = ic.waiting, idle = ic.idle }
+  local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, idle = ic.idle }
   local state = session_state(buf)
   return glyph[state] .. " " .. state
+end
+
+--- Find an open buffer for a saved session and return its live picker status.
+local function saved_session_status(path)
+  local normalized = vim.fs.normalize(path)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[buf].yap then
+      local name = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
+      if name ~= "" and vim.fs.normalize(name) == normalized then
+        local status = session_state(buf)
+        if status ~= "idle" then
+          return session_status(buf)
+        end
+      end
+    end
+  end
+end
+
+--- Pick a saved session and open it. scope: "cwd" (default) or "all".
+function M.sessions(scope)
+  require("harness.session").pick({ scope = scope, status = saved_session_status }, function(path)
+    M.open(path)
+  end)
+end
+
+--- Alias for the saved-session history picker.
+function M.history(scope)
+  M.sessions(scope)
 end
 
 --- Sort waiting sessions last; their dedicated :YapWaiting / <leader>w picker
@@ -2439,10 +2467,12 @@ local function session_rank(buf)
     return 1
   elseif running and running[buf] then
     return 2
+  elseif stopped[buf] then
+    return 3
   elseif awaiting[buf] then
-    return 4
+    return 5
   end
-  return 3
+  return 4
 end
 
 --- Every open yap chat buffer except the current one, annotated with its live
@@ -2529,7 +2559,7 @@ function M.setup(opts)
   opts = opts or {}
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
-      since = "", total = "", running = "▶", error = "✗", waiting = "◉",
+      since = "", total = "", running = "▶", stopped = "■", error = "✗", waiting = "◉",
       idle = "○", steer = "⌁", approval = "⚠", fold = "Ⓕ",
       cap_l = "[", cap_r = "]",
     })
@@ -2584,6 +2614,7 @@ function M.setup(opts)
       errors[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil
+      stopped[args.buf] = nil
       description_seq[args.buf] = nil
       description_started[args.buf] = nil
       winbar.clear_desc(args.buf)

@@ -97,6 +97,16 @@ end, {
   desc = "Pick a saved yap session to resume (:YapSessions all for every project)",
 })
 
+vim.api.nvim_create_user_command("YapHistory", function(cmd)
+  require("harness").history(cmd.fargs[1])
+end, {
+  nargs = "?",
+  complete = function()
+    return { "all" }
+  end,
+  desc = "Pick a saved yap session from history",
+})
+
 vim.api.nvim_create_user_command("YapInstances", function()
   require("harness").instances()
 end, { desc = "List open yap sessions with status and jump to the picked one" })
