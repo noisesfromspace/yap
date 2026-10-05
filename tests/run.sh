@@ -19,7 +19,11 @@ cd "$ROOT" || exit 1
 CGO_ENABLED=0 go build -o yap ./agent || exit 1
 CGO_ENABLED=0 go test ./... || exit 1
 export PATH="$ROOT:$PATH"
-python3 tests/yap_fold_ui_test.py || exit 1
+# yap_fold_ui_test drives an attached Neovim over msgpack RPC, which the
+# ambient python may lack, so pull an interpreter that has it from nix.
+# `nix shell` is non-pure here, so the 0.13 nvim already on PATH stays
+# available for `nvim --embed`.
+nix shell --impure --expr '(builtins.getFlake "nixpkgs").legacyPackages.${builtins.currentSystem}.python3.withPackages (ps: [ ps.msgpack ])' -c python3 tests/yap_fold_ui_test.py || exit 1
 
 # Parallel test runner: start all Lua headless tests in background and fail fast
 mkdir -p "$ROOT/tests/logs"
@@ -156,8 +160,7 @@ wait_all() {
 wait_all
 
 # yap_compact_test is timing-sensitive (a multi-turn stream with an 8s
-# budget) and starves on the shared single-threaded mock when run in
-# parallel, so run it alone after the batch.
+# budget) and runs alone after the batch so its timing stays deterministic.
 run yap_compact_test 18132 mock_slow.py
 wait_all
 

@@ -1,5 +1,5 @@
 import json, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -17,4 +17,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-HTTPServer(("127.0.0.1", 18132), H).serve_forever()
+# Threading: many tests share this mock in the parallel batch; a
+# single-threaded HTTPServer serializes the 2.4s streams and starves
+# multi-turn tests past their waits.
+ThreadingHTTPServer(("127.0.0.1", 18132), H).serve_forever()
