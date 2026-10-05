@@ -1895,17 +1895,14 @@ function M.send(buf)
       if steer_text then
         -- A pending steer wins over close_session (the user's later word
         -- outranks the agent's). Re-send as a fresh turn once the buffer
-        -- is fully in its final state.
+        -- is fully in its final state. Queued work never auto-dispatches:
+        -- each entry waits for an explicit <C-s>.
         close_after_turn[buf] = nil
         vim.schedule(function()
           if not vim.api.nvim_buf_is_valid(buf) then
             return
           end
           M.send(buf)
-        end)
-      else
-        vim.schedule(function()
-          scratch_dispatch_next(buf)
         end)
       end
       -- close_session is a frontend side effect (like quickfix): the agent

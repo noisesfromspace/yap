@@ -28,17 +28,25 @@ yap.scratch_send(scratch)
 local current = text(scratch)
 assert(current:match("task two") and not current:match("task one"), "dispatch did not consume the first live queue entry:\n" .. current)
 
--- The remaining queue item is dispatched automatically after the first turn.
+-- After the first turn, the remaining queue item is NOT dispatched
+-- automatically: it stays queued until an explicit <C-s>.
 local done = vim.wait(15000, function()
-  local chat = text(buf)
-  local assistants = 0
-  for _ in chat:gmatch("# @assistant") do assistants = assistants + 1 end
-  return not yap.is_running(buf) and assistants >= 2 and chat:match("task two") ~= nil
+  return not yap.is_running(buf) and text(buf):match("# @assistant") ~= nil
 end, 100)
-assert(done, "queued items did not run in order:\n" .. text(buf))
+assert(done, "first queued item did not run:\n" .. text(buf))
 local chat = text(buf)
-assert(chat:match("task one") and chat:match("task two"), "live queue entries missing from chat:\n" .. chat)
-assert(not chat:match("stale disk task"), "dispatch read stale saved file contents")
+assert(chat:match("task one") and not chat:match("task two"), "queue auto-dispatched the second item:\n" .. chat)
+assert(text(scratch):match("task two"), "remaining queue entry was consumed prematurely")
+
+-- A second <C-s> dispatches the remaining entry.
+yap.scratch_send(scratch)
+local done2 = vim.wait(15000, function()
+  return not yap.is_running(buf) and text(buf):match("task two") ~= nil
+end, 100)
+assert(done2, "second queued item did not run:\n" .. text(buf))
+local chat2 = text(buf)
+assert(chat2:match("task one") and chat2:match("task two"), "live queue entries missing from chat:\n" .. chat2)
+assert(not chat2:match("stale disk task"), "dispatch read stale saved file contents")
 local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), "\n")
 assert(not saved:match("task one") and not saved:match("task two"), "consumed queue entries reappeared in saved file")
 assert(saved:match("# @notes") and saved:match("# @queue"), "scratch section structure was not saved")

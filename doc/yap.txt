@@ -191,8 +191,9 @@ are shown below.
                         # @steer; it remains there until delivered and can
                         be revised/canceled. While idle, <C-s> consumes the
                         next non-empty line under # @queue and sends it.
-                        Remaining queue lines dispatch in order after each
-                        turn. Consumption reads and edits the live buffer,
+                        Each queued line is dispatched only on <C-s>; queued
+                        work never auto-dispatches after a turn. Consumption
+                        reads and edits the live buffer,
                         then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
@@ -850,8 +851,8 @@ The audit log (<session>.jsonl) is written in the audit dir
 with `# @notes`, `# @steer`, and `# @queue` sections. Sending always reads
 and edits its current in-memory contents, never a disk snapshot. Existing
 plain queue files are migrated under `# @queue`. Queue entries are one
-non-empty line each; the next entry is removed when dispatched and remaining
-entries run in order after a turn. A pending steer is the full body of
+non-empty line each; the next entry is removed when dispatched and each
+remaining entry waits for its own <C-s>. A pending steer is the full body of
 `# @steer`, remains visible until delivered, and can be revised or canceled
 by editing/removing that body. If a steer misses the last tool boundary, it
 is consumed when dispatched as a follow-up turn. `# @notes` is never sent.
