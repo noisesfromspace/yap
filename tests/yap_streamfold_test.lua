@@ -43,3 +43,50 @@ for i, l in ipairs(ln) do
   end
 end
 print("OK simulation")
+
+-- Regression: a closer followed by a blank line (the real `-->\n\n` /
+-- `<!-- /yap:tool -->\n\n` stream) splits the fold's final line; Neovim
+-- shrinks the native fold by one line, leaving the closer outside its fold
+-- until a later forced rebuild snapped it back. The closer must stay inside
+-- the fold on every append, checked via the real document.append_text path.
+do
+  local document = require("harness.document")
+  local buf2 = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf2)
+  vim.api.nvim_buf_set_lines(buf2, 0, -1, false, {
+    "# @system", "", "sys", "",
+    "# @user", "", "go", "",
+    "# @assistant", "",
+  })
+  fold.setup_buffer(buf2)
+  fold.set_view_level(2)
+
+  document.append_text(buf2, "<!-- yap:thinking\n")
+  document.append_text(buf2, "let me think\n")
+  document.append_text(buf2, "about this\n")
+
+  local opener2
+  for i, l in ipairs(vim.api.nvim_buf_get_lines(buf2, 0, -1, false)) do
+    if l:match("^<!%-%- yap:thinking") then
+      opener2 = i
+      break
+    end
+  end
+  assert(opener2 and vim.fn.foldclosed(opener2) == opener2, "thinking not folded")
+
+  document.append_text(buf2, "-->\n\n")
+  local closer2
+  for i, l in ipairs(vim.api.nvim_buf_get_lines(buf2, 0, -1, false)) do
+    if l:match("^%-%->%s*$") then
+      closer2 = i
+    end
+  end
+  assert(closer2, "no closer line found")
+  assert(vim.fn.foldclosedend(opener2) == closer2,
+    "closer fell out of the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2)
+
+  document.append_text(buf2, "Answer text.\n")
+  assert(vim.fn.foldclosedend(opener2) == closer2,
+    "prose append shrank the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2)
+  print("OK stream drift")
+end

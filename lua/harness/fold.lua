@@ -299,7 +299,13 @@ local function apply(buf, win, w, list)
     end
     for id, old in pairs(w.installed) do
       local b = wanted[id]
-      if not b or b.start ~= old.start or b.finish ~= old.finish then
+      -- A stream append can split a fold's final line; Neovim then shrinks
+      -- the native fold by one line while the model and our bookkeeping are
+      -- unchanged. foldlevel reflects the fold RANGE (open or closed), so a
+      -- finish line that is no longer inside any fold means the installed
+      -- range has drifted and must be recreated.
+      if not b or b.start ~= old.start or b.finish ~= old.finish
+        or vim.fn.foldlevel(b.finish) < 1 then
         if vim.fn.foldlevel(old.start) > 0 then
           vim.api.nvim_win_set_cursor(0, { old.start, 0 })
           vim.cmd("normal! zd")
