@@ -2626,6 +2626,11 @@ function M.setup(opts)
       if errors[data.buf] then
         return
       end
+      -- The session is being closed by a tool call, so there is no waiting
+      -- session to announce when this turn finishes.
+      if close_after_turn[data.buf] then
+        return
+      end
       -- When the chat is current, the stream is right in front of you.
       if vim.api.nvim_get_current_buf() == data.buf then
         return

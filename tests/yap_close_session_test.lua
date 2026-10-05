@@ -34,13 +34,22 @@ set_prompt(buf, "when you are done, close the session")
 local path = vim.api.nvim_buf_get_name(buf)
 assert(path ~= "" and vim.fn.filereadable(path) == 1, "session file missing up front")
 
+local notifications = {}
+local old_notify = vim.notify
+vim.notify = function(message)
+  notifications[#notifications + 1] = message
+end
+
 yap.send()
+vim.cmd("enew") -- completion happens in the background; close_session should still stay quiet
 
 -- The buffer must be wiped only after the turn completes.
 local closed = vim.wait(30000, function()
   return not vim.api.nvim_buf_is_valid(buf) and current() == waiting
 end, 50)
+vim.notify = old_notify
 assert(closed, "buffer not closed onto the waiting session after close_session turn")
+assert(#notifications == 0, "close_session turn should not notify: " .. vim.inspect(notifications))
 
 -- The session file survives (saved, not deleted) and holds the streamed
 -- final answer plus the close_session tool block.
