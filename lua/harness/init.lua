@@ -992,6 +992,32 @@ local function toggle_drawer(owner, bufnr, height)
   return true
 end
 
+local function close_drawer_window(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      if #vim.api.nvim_list_wins() > 1 then
+        vim.api.nvim_win_close(win, true)
+      else
+        -- Neovim cannot close the last window; replace its view while keeping
+        -- the file-backed drawer buffer available to reopen later.
+        vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
+      end
+    end
+  end
+  drawer_anchor[buf] = nil
+end
+
+local function close_session_drawers(buf)
+  local scratch = vim.b[buf].yap_scratch
+  if scratch and vim.api.nvim_buf_is_valid(scratch) then
+    close_drawer_window(scratch)
+  end
+  local tail = tails[buf]
+  if tail and vim.api.nvim_buf_is_valid(tail.bufnr) then
+    close_drawer_window(tail.bufnr)
+  end
+end
+
 --- Open the session's tail buffer (:YapLive): one persistent rendering
 --- of the audit log, not a new terminal per call. Opens even before any
 --- tool has run (an empty tail that fills as tools execute).
@@ -2443,6 +2469,22 @@ function M.setup(opts)
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
       focus_forget(args.buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWinLeave", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if not vim.b[buf].yap then
+        return
+      end
+      -- Let window/buffer transitions settle; focusing a drawer alone must
+      -- not close it while the chat remains displayed in another window.
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) == 0 then
+          close_session_drawers(buf)
+        end
+      end)
     end,
   })
   -- Record focus order so :bd/:bw/:close on a session can land on a
