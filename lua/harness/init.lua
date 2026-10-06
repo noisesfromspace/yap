@@ -3421,7 +3421,7 @@ function M.setup(opts)
         return
       end
       local title = live_session_label(data.buf)
-      local msg = ("yap: %s — reply ready"):format(title)
+      local msg = ("yap: %s %s"):format(title, M.config.icons.waiting)
       vim.notify(msg, vim.log.levels.INFO, { title = "yap" })
     end,
   })

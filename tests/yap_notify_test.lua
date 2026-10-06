@@ -144,7 +144,7 @@ vim.api.nvim_exec_autocmds("User", {
 })
 vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
-assert(notified2[1].msg:find("— reply ready", 1, true), "unexpected message: " .. notified2[1].msg)
+assert(notified2[1].msg:sub(-#icons.waiting) == icons.waiting, "unexpected message: " .. notified2[1].msg)
 assert(
   notified2[1].msg:find(vim.fn.fnamemodify(vim.b[buf].yap_path, ":t"), 1, true),
   "completion toast must identify the conversation: " .. notified2[1].msg
@@ -178,7 +178,7 @@ vim.api.nvim_exec_autocmds("User", {
   data = { buf = child_for_notice, turn = { model = "m1" } },
 })
 assert(
-  #notified2 == 2 and notified2[2].msg:find("reply ready", 1, true),
+  #notified2 == 2 and notified2[2].msg:sub(-#icons.waiting) == icons.waiting,
   "a direct child follow-up should notify when hidden: " .. vim.inspect(notified2)
 )
 vim.notify = orig_notify
