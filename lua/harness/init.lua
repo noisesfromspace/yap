@@ -204,6 +204,7 @@ local awaiting = state.awaiting
 local steer = state.steer
 
 local start_subagent
+local adopt
 local subagent_done = {}
 local subagent_children = {}
 -- close_session is a request-scoped frontend side effect (like quickfix):
@@ -289,7 +290,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. M.confi
 
 ## Subagents
 
-- `subagent` takes a `role` (from `roles_dir`, default `~/.yap/roles/<role>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. A bare model name inherits the parent's provider/model.
+- `subagent` takes a `role` (from `roles_dir`, default `~/.yap/roles/<role>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `role`); this appends a user turn to the same child, preserving its system prompt and history. A bare model name inherits the parent's provider/model.
 ]]
 end
 
@@ -2273,6 +2274,28 @@ local ALLOWED_TOOLS = { "ls", "read", "search", "glob", "fetch", "bash", "python
 -- set (minus recursive `subagent`) via its `tools:` header.
 local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "git", "websearch", "quickfix", "jev" }
 
+local function subagent_result(parent, child, child_path, reply)
+  return function(success)
+    subagent_children[parent] = nil
+    local result = "error: " .. (errors[child] or "subagent stopped without a result")
+    if success then
+      -- Only final prose, not the child's tool history, belongs in the parent.
+      local text, in_comment = {}, false
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
+        if line == "# @assistant" then text, in_comment = {}, false
+        elseif line:match("^<!%-%- /yap:tool") then text = {}
+        elseif line:match("^<!%-%- yap:") then in_comment = not line:match("%-%->$")
+        elseif in_comment then
+          if line == "-->" then in_comment = false end
+        elseif line ~= "# @user" then text[#text + 1] = line end
+      end
+      result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+      if result == "" then result = "error: subagent returned no final answer" end
+    end
+    reply("Session: [" .. child_path .. "](" .. child_path .. ")\n" .. result)
+  end
+end
+
 start_subagent = function(parent, ev)
   local function reply(text)
     local process = servers[parent]
@@ -2280,7 +2303,40 @@ start_subagent = function(parent, ev)
       process:write(vim.json.encode({ type = "subagent_result", id = ev.id, result = text }) .. "\n")
     end
   end
-  if type(ev.role) ~= "string" or not ev.role:match("^[%w_-]+$") or type(ev.task) ~= "string" then
+  if type(ev.task) ~= "string" or ev.task:match("^%s*$") then
+    reply("error: invalid subagent request")
+    return
+  end
+  if ev.session and ev.session ~= "" then
+    local parent_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
+    local child_path = vim.fs.normalize(ev.session)
+    local owned = false
+    for _, path in ipairs(parent_fm and parent_fm.subagents or {}) do
+      if vim.fs.normalize(path) == child_path then owned = true; break end
+    end
+    if not owned or vim.fn.filereadable(child_path) == 0 then
+      reply("error: subagent session not found in parent's subagents list")
+      return
+    end
+    local child_fm = frontmatter.parse(vim.fn.readfile(child_path))
+    if not child_fm or not child_fm.role or (ev.role and ev.role ~= "" and ev.role ~= child_fm.role) then
+      reply("error: subagent role mismatch")
+      return
+    end
+    local child = vim.fn.bufadd(child_path)
+    vim.fn.bufload(child)
+    if not vim.b[child].yap then adopt(child, child_path) end
+    if running[child] then reply("error: subagent session is already running"); return end
+    document.append_message(child, "user", vim.split(ev.task, "\n", { plain = true }))
+    vim.b[child].yap_subagent_parent = parent
+    vim.b[child].yap_subagent_task = ev.task
+    require("harness.session").save(child)
+    subagent_children[parent] = child
+    subagent_done[child] = subagent_result(parent, child, child_path, reply)
+    M.send(child)
+    return
+  end
+  if type(ev.role) ~= "string" or not ev.role:match("^[%w_-]+$") then
     reply("error: invalid subagent request")
     return
   end
@@ -2337,25 +2393,7 @@ start_subagent = function(parent, ev)
   require("harness.session").save(child)
   subagent_children[parent] = child
   record_subagent(parent, child_path)
-  subagent_done[child] = function(success)
-    subagent_children[parent] = nil
-    local result = "error: " .. (errors[child] or "subagent stopped without a result")
-    if success then
-      -- Only final prose, not the child's tool history, belongs in the parent.
-      local text, in_comment = {}, false
-      for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
-        if line == "# @assistant" then text, in_comment = {}, false
-        elseif line:match("^<!%-%- /yap:tool") then text = {}
-        elseif line:match("^<!%-%- yap:") then in_comment = not line:match("%-%->$")
-        elseif in_comment then
-          if line == "-->" then in_comment = false end
-        elseif line ~= "# @user" then text[#text + 1] = line end
-      end
-      result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-      if result == "" then result = "error: subagent returned no final answer" end
-    end
-    reply("Session: [" .. child_path .. "](" .. child_path .. ")\n" .. result)
-  end
+  subagent_done[child] = subagent_result(parent, child, child_path, reply)
   M.send(child)
 end
 
@@ -2364,7 +2402,7 @@ end
 --- keymapped, audit view attached, model combo resumed from
 --- frontmatter. Shared by :YapSessions resume and by directly opening
 --- a file under ~/.yap/sessions/.
-local function adopt(buf, path)
+adopt = function(buf, path)
   if vim.b[buf].yap then
     return buf
   end

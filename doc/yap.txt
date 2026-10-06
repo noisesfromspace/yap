@@ -561,7 +561,11 @@ comma-separated `tools`; the body is its system prompt. It creates a normal
 Yap session named `<parent-stem>-<six-hex>.md` in the same project directory.
 The parent tool call waits for the child's turn to finish, then receives its
 final answer and session path; open the child from the parent's frontmatter
-`subagents` list or, while it is open, via |:YapInstances|. Bare Pi
+`subagents` list or, while it is open, via |:YapInstances|. To follow up,
+call `subagent` with `session` set to the returned path and `task` set to the
+question; omit `role`. This appends a `# @user` turn to that child, retaining
+its role-file system prompt and conversation history. Only sessions in the
+parent's `subagents` list can be continued. Bare Pi
 role model names cannot identify a Yap provider, so they inherit the parent's
 provider/model; use an explicit `provider/model` to override it. Pi tool names
 `grep`, `find`, `webfetch` map to Yap's `search`, `glob`, `fetch`. Unsupported

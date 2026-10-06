@@ -17,9 +17,14 @@ for line in sys.stdin:
     prompt = req["messages"][-1]["content"]
     if prompt.startswith("delegate"):
         role = "browser" if "unsupported" in prompt else "scout"
-        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","role":role,"task":"fail" if "failure" in prompt else "succeed"}), file=sys.stderr, flush=True)
+        session = prompt.split("session=", 1)[1].split()[0] if "session=" in prompt else ""
+        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","role":"" if session else role,"session":session,"task":"follow up" if session else ("fail" if "failure" in prompt else "succeed")}), file=sys.stderr, flush=True)
         response = json.loads(sys.stdin.readline())
         print('\n' + response['result'] + '\n', flush=True)
+    elif "follow up" in prompt:
+        assert "Scout role" in str(req["messages"]), "system prompt lost on follow-up"
+        assert "succeed" in str(req["messages"]), "first question lost on follow-up"
+        print('\nfollow-up answered\n', flush=True)
     elif "fail" in prompt:
         print('\n<!-- yap:error\nchild model failed\n-->\n', flush=True)
     else:
@@ -50,6 +55,15 @@ assert(table.concat(fm.tools, ",") == "read,search", "role aliases not normalize
 local parent_fm = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
 assert(parent_fm and parent_fm.subagents and #parent_fm.subagents == 1, "parent frontmatter did not record the subagent")
 assert(parent_fm.subagents[1] == child_path, "parent frontmatter subagent path mismatch")
+local followup = delegate("delegate session=" .. child_path)
+assert(followup:find("follow-up answered", 1, true), followup)
+local child_text = table.concat(vim.fn.readfile(child_path), "\n")
+assert(child_text:find("# @user\n\nfollow up", 1, true), "follow-up not appended as user message")
+assert(child_text:find("# @system\n\nScout role", 1, true), "child system prompt changed")
+local after = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
+assert(#after.subagents == 1, "follow-up created another child session")
+local unknown = delegate("delegate session=" .. home .. "/other.md")
+assert(unknown:find("error: subagent session not found", 1, true), unknown)
 local failure = delegate("delegate failure")
 assert(failure:find("error: child model failed", 1, true), failure)
 local unsupported = delegate("delegate unsupported")
