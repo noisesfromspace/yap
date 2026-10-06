@@ -20,9 +20,9 @@ local awaiting = state.awaiting
 local steer = state.steer
 local sessions = state.sessions
 
--- Irregular, randomly sampled flame glyphs (the Ember flicker).
+-- Irregular, randomly sampled star shapes instead of a rotating arc.
 -- The old typographic sparkle pool stays available without a Nerd Font.
-local SPINNER_FRAMES = { "", "", "", "" }
+local SPINNER_FRAMES = { "󰫢", "󰫥", "󰙴", "󰫣", "󰫤", "󰫊", "󱝁", "󰃠", "󰫉" }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 -- Busy color: a continuous smoothstep tween around the Ember triad
 -- (amber → coral → rose). Fixed synthetic hues, never derived from the
