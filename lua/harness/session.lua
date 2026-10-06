@@ -5,8 +5,9 @@
 -- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. Pickers identify sessions by their
 -- chosen name (a :file rename) or generated description; unnamed sessions
--- (no description, still on the auto-generated filename) are hidden, while
--- open sessions stay visible in :YapInstances via the filename fallback.
+-- (no description, still on the auto-generated filename) are hidden unless
+-- they have subagents; open sessions stay visible in :YapInstances via the
+-- filename fallback. Saved subagents appear beneath their parent in history.
 
 local M = {}
 
@@ -231,7 +232,7 @@ function M.label(path, description, project_cwd)
 end
 
 --- List saved sessions. scope = "cwd" (default), "all", or "renamed"
---- Items: { path, mtime, text, model, models? } sorted newest first;
+--- Items: { path, mtime, text, model, models? } sorted by parent recency;
 --- `model`/`models` come from the session frontmatter.
 function M.list(scope)
   local dirs
@@ -249,46 +250,73 @@ function M.list(scope)
   -- filename), as opposed to description-labelled auto-generated names.
   local renamed_only = scope == "renamed"
 
-  local items = {}
+  local items, children, parents = {}, {}, {}
   for _, dir in ipairs(dirs) do
-    local md_files = {}
     for name, type in vim.fs.dir(dir) do
       -- glob("*.md") skips dotfiles; vim.fs.dir does not.
       if type == "file" and name:sub(1, 1) ~= "." and name:match("%.md$") then
-        md_files[#md_files + 1] = vim.fs.joinpath(dir, name)
-      end
-    end
-    for _, path in ipairs(md_files) do
-      local lines = vim.fn.readfile(path, "", 200)
-      local fm = frontmatter.parse(lines)
-      -- Subagent sessions are real saved sessions, but they belong to their
-      -- parent: hide them from the session history. While open they appear
-      -- in :YapInstances; once closed, the parent's frontmatter `subagents`
-      -- list is the only index of them.
-      local subagent = fm and fm.role ~= nil
-      local description = fm and fm.description or ""
-      -- Hide unnamed sessions: no generated description and still on the
-      -- auto-generated filename. They stay visible as open sessions via
-      -- :YapInstances, which falls back to the filename.
-      local unnamed = description == "" and paths.is_default_name(path)
-      if not subagent and not unnamed and (not renamed_only or not paths.is_default_name(path)) then
-        local model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil
-        table.insert(items, {
+        local path = vim.fs.joinpath(dir, name)
+        local lines = vim.fn.readfile(path, "", 200)
+        local fm = frontmatter.parse(lines)
+        local description = fm and fm.description or ""
+        local item = {
           path = path,
           mtime = vim.fn.getftime(path),
           text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
-          model = model,
-          models = (fm and #fm.models > 1) and fm.models or nil,
+          model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
+          models = fm and #fm.models > 1 and fm.models or nil,
           turns = fm and fm.turns,
-        })
+        }
+        if fm and fm.role then
+          local task
+          for i, line in ipairs(lines) do
+            if line == "# @user" then
+              for j = i + 1, #lines do
+                if lines[j]:match("^# @%a+") then break end
+                if lines[j]:match("%S") then task = lines[j]:gsub("^%s+", ""):gsub("%s+$", ""); break end
+              end
+              break
+            end
+          end
+          item.text = "↳ " .. fm.role .. " · " .. (description ~= "" and description or task or name)
+          children[path] = item
+        elseif (not paths.is_default_name(path) or description ~= "" or (fm and #fm.subagents > 0))
+            and (not renamed_only or not paths.is_default_name(path)) then
+          items[#items + 1] = item
+        end
+        if fm then
+          for _, child_path in ipairs(fm.subagents) do parents[vim.fs.normalize(child_path)] = path end
+        end
       end
     end
   end
 
-  table.sort(items, function(a, b)
-    return a.mtime > b.mtime
-  end)
-  return items
+  table.sort(items, function(a, b) return a.mtime > b.mtime end)
+  local result = {}
+  for _, item in ipairs(items) do
+    result[#result + 1] = item
+    local owned = {}
+    for path, child in pairs(children) do
+      if parents[vim.fs.normalize(path)] == item.path then owned[#owned + 1] = child end
+    end
+    table.sort(owned, function(a, b) return a.mtime > b.mtime end)
+    for _, child in ipairs(owned) do
+      child.text = "  " .. child.text
+      result[#result + 1] = child
+      children[child.path] = nil
+    end
+  end
+  -- Preserve discoverability if a parent was deleted or is hidden by scope.
+  if not renamed_only then
+    local orphans = {}
+    for _, child in pairs(children) do orphans[#orphans + 1] = child end
+    table.sort(orphans, function(a, b) return a.mtime > b.mtime end)
+    for _, child in ipairs(orphans) do
+      if scope == "all" then child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text end
+      result[#result + 1] = child
+    end
+  end
+  return result
 end
 
 local function preview_item(item)

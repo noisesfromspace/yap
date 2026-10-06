@@ -357,9 +357,8 @@ local function sync_frontmatter(buf)
 end
 
 --- Append a subagent session path to the parent's frontmatter `subagents`
---- list. The parent frontmatter is the index of every subagent it ran, and
---- the only way back to a closed child (subagent sessions are hidden from
---- :YapSessions — see harness.session).
+--- list. It records ownership for tool follow-ups; saved children also appear
+--- in the session history picker.
 local function record_subagent(parent, child_path)
   local e = frontmatter_end(parent)
   if not e then return end
@@ -2549,14 +2548,7 @@ local function live_session_label(buf)
   local parent = vim.b[buf].yap_subagent_parent
   if parent and vim.api.nvim_buf_is_valid(parent) and vim.b[parent].yap then
     local task = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if vim.fn.strdisplaywidth(task) > 72 then
-      local chars = vim.fn.strchars(task)
-      while chars > 1 and vim.fn.strdisplaywidth(vim.fn.strcharpart(task, 0, chars) .. "…") > 72 do
-        chars = chars - 1
-      end
-      task = vim.fn.strcharpart(task, 0, chars) .. "…"
-    end
-    return "  ↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. ": " .. task
+    return "↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. " · " .. (task ~= "" and task or label)
   end
   if fm and fm.role then
     label = label .. "  [subagent: " .. fm.role .. "]"
@@ -2635,9 +2627,9 @@ end
 --- state and sorted with waiting sessions last. An optional `state` narrows
 --- the list: a state name ("running", "error", "waiting", "stopped" or
 --- "idle"), a set of them (a table keyed by state name), or nil for all. The
---- "needs you" set (<leader>w) is `{ waiting = true, stopped = true }`; its
---- subagent rows are hidden because they are reached through their parent. A
---- current parent remains visible while it has an open subagent. Audit views are
+--- "needs you" includes ordinary waiting/stopped parents, but only stopped
+--- or errored children: a finished child need not be replied to. A current
+--- parent remains visible while it has an open subagent. Audit views are
 --- never here — use :YapLive / <leader>l.
 local function has_open_subagent(parent)
   local child = subagent_children[parent]
@@ -2662,19 +2654,27 @@ function M.instances(state)
   local needs_you = states ~= nil and states.waiting == true and states.stopped == true
   local items = {}
   local current = vim.api.nvim_get_current_buf()
+  local attention_child = {}
+  if needs_you then
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      local parent = vim.b[b].yap_subagent_parent
+      if parent and vim.b[b].yap and (stopped[b] or errors[b]) then attention_child[parent] = true end
+    end
+  end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    local parent = vim.b[b].yap_subagent_parent
     local include_current_parent = b == current and has_open_subagent(b)
+    local child_needs_you = parent and (stopped[b] or errors[b])
     if (b ~= current or include_current_parent) and vim.b[b].yap
-      and not (needs_you and vim.b[b].yap_subagent_parent)
-      and (states == nil or states[session_state(b)]) then
+      and (not needs_you or not parent or child_needs_you)
+      and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b]))) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
-        path = vim.b[b].yap_project_cwd,
+        path = parent and "" or vim.b[b].yap_project_cwd,
         state = session_state(b),
         model = vim.b[b].yap_model,
-        group_parent = (vim.b[b].yap_subagent_parent and vim.api.nvim_buf_is_valid(vim.b[b].yap_subagent_parent))
-          and vim.b[b].yap_subagent_parent or b,
+        group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
       }
     end
   end
@@ -2690,14 +2690,15 @@ function M.instances(state)
     return
   end
   table.sort(items, function(a, b)
-    local ra, rb = session_rank(a.buf), session_rank(b.buf)
-    if ra ~= rb then
-      return ra < rb
+    if a.group_parent == b.group_parent then
+      if a.buf ~= b.buf and (a.buf == a.group_parent or b.buf == b.group_parent) then
+        return a.buf == a.group_parent
+      end
+      return a.text < b.text
     end
-    if a.group_parent == b.group_parent and a.buf ~= b.buf then
-      return a.buf == a.group_parent
-    end
-    return a.text < b.text
+    local ra, rb = session_rank(a.group_parent), session_rank(b.group_parent)
+    if ra ~= rb then return ra < rb end
+    return live_session_label(a.group_parent) < live_session_label(b.group_parent)
   end)
   -- Row order: project cwd, state glyph, title, then the bare model name
   -- (no provider) in parentheses. The glyph already encodes the state, so
@@ -2707,7 +2708,8 @@ function M.instances(state)
   vim.ui.select(items, {
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
-      return (item.path or "") .. " " .. glyph[item.state] .. " " .. item.text
+      local prefix = item.path ~= "" and (item.path .. " ") or " "
+      return prefix .. glyph[item.state] .. " " .. item.text
         .. " (" .. (item.model or item.state) .. ")"
     end,
     preview_item = function(item)

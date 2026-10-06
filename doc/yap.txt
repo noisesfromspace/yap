@@ -152,12 +152,11 @@ the current buffer unless otherwise noted.
                         |:file| (a custom filename), ignoring
                         description-labelled auto-generated names.
                         Sessions still on their auto-generated filename
-                        (no description yet) are hidden; name one with
-                        |:file| or let the first reply label it. Subagent
-                        sessions are hidden too — reach a closed one via
-                        its parent's frontmatter `subagents` list. Open
-                        sessions stay listed by filename via
-                        |:YapInstances|.
+                        (no description yet) are hidden unless they have
+                        subagents; name one with |:file| or let the first
+                        reply label it. Saved subagents appear beneath their
+                        parent and can be opened for direct follow-up. Open
+                        sessions stay listed via |:YapInstances|.
 
                                                             *:YapHistory*
 :YapHistory [all]      Pick a saved session from history, with live state icons
@@ -175,8 +174,10 @@ the current buffer unless otherwise noted.
                         the session's title (description, or filename as
                         fallback), then the model name in parentheses (bare
                         name, no provider), or the state word while a buffer
-                        has no model yet. Waiting sessions sort last (use
-                        |:YapWaiting| to jump straight to them). Yap
+                        has no model yet. Waiting parent groups sort last
+                        (use |:YapWaiting| to jump straight to them); open
+                        subagents sit beneath their parent with their own
+                        state. Yap
                         buffers are unlisted — they never appear in |:ls| or
                         buffer pickers
                         (MiniPick.buffers and friends), and a session's audit
@@ -184,10 +185,11 @@ the current buffer unless otherwise noted.
                         with |:YapLive|). This is how you move between sessions.
 
                                                             *:YapWaiting*
-:YapWaiting           List only the open yap sessions awaiting a reply
-                        (state `󰫁 waiting`) or manually stopped (state
-                        `󰓛 stopped`) and focus the picked one — the "needs
-                        you" subset of |:YapInstances|.
+:YapWaiting           List open parent sessions awaiting a reply or manually
+                        stopped, plus children whose turns stopped or failed,
+                        and focus the picked conversation. Completed children
+                        are omitted: they can still be reached via
+                        |:YapInstances| or |:YapSessions|.
 
                                                                *:YapReload*
 :YapReload            Reload the Lua modules (development).
@@ -561,11 +563,13 @@ tool delegates to a role defined in
 comma-separated `tools`; the body is its system prompt. It creates a normal
 Yap session named `<parent-stem>-<six-hex>.md` in the same project directory.
 The parent tool call waits for the child's turn to finish, then receives its
-final answer and session path; open the child from the parent's frontmatter
-`subagents` list or, while it is open, via |:YapInstances|. To follow up,
-call `subagent` with `session` set to the returned path and `task` set to the
-question; omit `role`. This appends a `# @user` turn to that child, retaining
-its role-file system prompt and conversation history. Only sessions in the
+final answer and session path. Open and saved pickers show selectable child
+rows; opening one lets you inspect it and ask a follow-up directly. The
+parent's frontmatter `subagents` list also links it for tool follow-up. To
+follow up through the parent, call `subagent` with `session` set to the
+returned path and `task` set to the question; omit `role`. This appends a
+`# @user` turn to that child, retaining its role-file system prompt and
+conversation history. Only sessions in the
 parent's `subagents` list can be continued. Bare Pi
 role model names cannot identify a Yap provider, so they inherit the parent's
 provider/model; use an explicit `provider/model` to override it. Pi tool names

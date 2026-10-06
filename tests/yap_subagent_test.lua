@@ -15,7 +15,7 @@ local found = false
 for _, item in ipairs(require("harness.session").list("cwd")) do
   if item.path == child_path then found = true end
 end
-assert(not found, "subagent child must be hidden from the session history")
+assert(found, "saved subagent should be discoverable in session history")
 yap.open(child_path)
 assert(vim.b[vim.api.nvim_get_current_buf()].yap, "child not reopenable")
 assert(vim.b[vim.api.nvim_get_current_buf()].yap_tools[1] == "read", "role permissions lost on reopen")
