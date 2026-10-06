@@ -6,16 +6,13 @@
 
 local M = {}
 
-local HEAD = "^# @(%a+)%s*$"
-
--- A tool region runs from `<!-- yap:tool` (single-line header, or a
--- multi-line header comment whose JSON ends at `-->`) to `<!-- /yap:tool`.
-local TOOL_OPEN = "^<!%-%- yap:tool"
-local TOOL_CLOSE = "^<!%-%- /yap:tool"
--- Any other multi-line HTML comment (`<!-- yap:thinking`, `<!-- yap:error`,
--- legacy `<!-- yap:ui`) is a fold of its own and closes on a bare `-->`.
--- Single-line markers (`<!-- yap:usage … -->`) never match: they stay content.
-local COMMENT_OPEN = "^<!%-%-.*yap:%a+%s*$"
+local structure = require("harness.structure")
+local HEAD = structure.HEAD
+local TOOL_OPEN = structure.TOOL_OPEN
+local TOOL_CLOSE = structure.TOOL_CLOSE
+local COMMENT_OPEN = structure.COMMENT_OPEN
+local parse = structure.parse
+local fence_run = structure.fence_run
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
 -- folded in views 1 and 2, open in view 3):
@@ -33,32 +30,6 @@ local function compact(s)
   return (s or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
--- fence_run: a fence opener/closer — <=3 spaces indent then a run of
--- >=3 backticks or tildes. Returns (char, run, tail) or nil. Indent is
--- spaces only (CommonMark: a tab advances to the next tab stop, so a
--- tab-indented fence is indented beyond 3 and is not a fence).
-local function fence_run(line)
-  local ws = line:match("^ *")
-  if #ws > 3 then
-    return nil
-  end
-  local rest = line:sub(#ws + 1)
-  local c = rest:sub(1, 1)
-  if c ~= "`" and c ~= "~" then
-    return nil
-  end
-  local n = 0
-  while rest:sub(n + 1, n + 1) == c do
-    n = n + 1
-  end
-  if n < 3 then
-    return nil
-  end
-  return c, n, rest:sub(n + 1)
-end
-
--- ─── block model ───────────────────────────────────────────────────────────
-
 -- One O(n) forward pass over the buffer produces the structural blocks the
 -- three views fold. Fences and multi-line HTML comments are tracked so a
 -- fake `# @user` inside a fenced tool result, or a `-->` inside a fence,
@@ -68,80 +39,8 @@ end
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
 --   details  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
-local model_cache = {} -- buf -> { tick, parse }
 
-local function parse(buf)
-  local tick = vim.api.nvim_buf_get_changedtick(buf)
-  local cached = model_cache[buf]
-  if cached and cached.tick == tick then
-    return cached.parse
-  end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local headings, details = {}, {}
-  local region, fence, comment = nil, nil, nil
-  local tool
-  local function end_tool(finish)
-    if tool and not tool.finish then tool.finish = finish end
-    tool = nil
-  end
-
-  for i, line in ipairs(lines) do
-    if fence then
-      local c, n, tail = fence_run(line)
-      if c == fence.char and n >= fence.n and tail:match("^%s*$") then
-        fence = nil
-      end
-    elseif comment then
-      -- Inside a multi-line HTML comment: raw text until a bare `-->`
-      -- (a ``` inside a comment is NOT a fence).
-      if line:match("^%-%->%s*$") then
-        if comment.detail then
-          comment.detail.finish = i
-        end
-        comment = nil
-      end
-    else
-      local c, n = fence_run(line)
-      if c then
-        fence = { char = c, n = n }
-      elseif line:match(HEAD) then
-        end_tool(i - 1)
-        headings[#headings + 1] = { role = line:match(HEAD), line = i }
-        region = nil
-      elseif line:match(TOOL_OPEN) then
-        end_tool(i - 1)
-        local d = { kind = "tool", start = i }
-        details[#details + 1] = d
-        tool, region = d, "tool"
-        -- Pretty JSON headers are comments too: fence/heading-looking
-        -- argument lines must not change the surrounding block structure.
-        if not line:find("-->", 1, true) then
-          comment = { kind = "tool_inner" }
-        end
-      elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-        if region == "tool" then
-          -- A legacy yap:ui subsection inside a tool region is content of
-          -- the region fold, not a fold of its own.
-          comment = { kind = "tool_inner" }
-        else
-          local kind = line:match("yap:(%a+)") or "comment"
-          local d = { kind = kind, start = i }
-          details[#details + 1] = d
-          comment = { kind = kind, detail = d }
-        end
-      elseif line:match(TOOL_CLOSE) then
-        end_tool(i)
-        region = nil
-      end
-      -- else: plain content line
-    end
-  end
-
-  local p = { headings = headings, details = details, count = #lines }
-  model_cache[buf] = { tick = tick, parse = p }
-  return p
-end
 
 -- ─── identity, intent and projection ───────────────────────────────────────
 
@@ -197,8 +96,8 @@ local function state(buf)
         end)
       end
     end,
-    on_reload = function()
-      model_cache[buf] = nil
+  on_reload = function()
+      structure.clear(buf)
       for _, w in pairs(s.windows) do w.rebuild = true end
       vim.schedule(function()
         if sessions[buf] == s then M.reconcile(buf) end
@@ -208,7 +107,7 @@ local function state(buf)
       -- An explicit unload discards native folds/extmarks; reinitialize on
       -- load. Merely hiding a session does not detach or discard any state.
       s.detached = true
-      model_cache[buf] = nil
+      structure.clear(buf)
     end,
   })
   return s
@@ -502,7 +401,7 @@ end
 --- invalidate on buffer-number reuse; this releases the strings sooner.
 function M.clear_text(buf)
   text_cache[buf] = nil
-  model_cache[buf] = nil
+  structure.clear(buf)
   sessions[buf] = nil
 end
 
