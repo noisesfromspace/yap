@@ -1441,16 +1441,6 @@ scratch_section_text = function(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
 end
 
-local function scratch_take_queue(scratch)
-  local body = scratch_section_lines(scratch, "queue")
-  if #body == 0 then
-    return nil
-  end
-  local item = table.concat(body, "\n")
-  scratch_set_section(scratch, "queue", {})
-  return item
-end
-
 --- Write the live scratch buffer after a consumed item is removed.
 scratch_save = function(scratch)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
@@ -1520,10 +1510,12 @@ local function scratch_dispatch_queue(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return false
   end
-  local item = scratch_take_queue(scratch)
-  if not item then
+  local section = scratch_section_text(scratch, "queue") ~= "" and "queue" or "steer"
+  local item = scratch_section_text(scratch, section)
+  if item == "" then
     return false
   end
+  scratch_set_section(scratch, section, {})
   scratch_save(scratch)
   document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
   M.send(owner)
@@ -1531,9 +1523,8 @@ local function scratch_dispatch_queue(owner)
 end
 
 --- <C-s> dispatches by state: while running it submits the # @steer body;
---- while idle it sends the whole # @queue body as one message. Notes are
---- an inert backlog: keep work there, move one item into # @queue (or
---- # @steer) when it's ready to go.
+--- while idle it sends the whole # @queue body as one message, falling back
+--- to # @steer when the queue is empty. Notes remain an inert backlog.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -1553,7 +1544,7 @@ function M.scratch_send(scratch)
   end
 
   if not scratch_dispatch_queue(owner) then
-    vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
+    vim.notify("yap: # @queue and # @steer are empty", vim.log.levels.WARN)
   end
 end
 
