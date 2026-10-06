@@ -60,7 +60,7 @@ M.config = {
     since = "󰅐",   -- nf-md-clock_outline (since-open token/cost chip)
     total = "󰆼",   -- nf-md-database   (all-time token/cost chip)
     running = "", -- nf-cod-play (rollup: other sessions streaming)
-    stopped = "󰐊", -- nf-md-stop-circle (a manually stopped turn)
+    stopped = "󰓛", -- nf-md-stop (a manually stopped turn)
     error = "󰚌",   -- nf-md-skull (winbar error state)
     waiting = "󰫁", -- waiting (rollup: other sessions awaiting you)
     idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
@@ -2613,7 +2613,7 @@ function M.setup(opts)
   opts = opts or {}
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
-      since = "", total = "", running = "▶", stopped = "■", error = "✗", waiting = "◉",
+      since = "", total = "", running = "▶", stopped = "⏹", error = "✗", waiting = "◉",
       idle = "○", steer = "⌁", approval = "⚠",
       cap_l = "[", cap_r = "]",
     })
