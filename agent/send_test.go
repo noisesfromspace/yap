@@ -290,6 +290,35 @@ func TestUsageCostFromCatalog(t *testing.T) {
 	}
 }
 
+// TestContextPromptIncludesCachedTokens: the context-fill gauge's
+// context_prompt must reflect the full prompt the model saw (including cached
+// input), while prompt keeps its normalized non-cached value so token counts
+// and cost are unaffected. OpenAI-compatible providers report cached input via
+// prompt_tokens_details.cached_tokens.
+func TestContextPromptIncludesCachedTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sse(w,
+			`{"choices":[{"delta":{"content":"ok"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":100,"prompt_tokens_details":{"cached_tokens":800}}}`,
+		)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `"context_prompt":1000`) {
+		t.Fatalf("context_prompt should carry the full prompt (1000), not the non-cached count:\n%s", s)
+	}
+	if !strings.Contains(s, `"prompt":200`) {
+		t.Fatalf("prompt should stay normalized to non-cached tokens (200):\n%s", s)
+	}
+}
+
 func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

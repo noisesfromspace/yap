@@ -73,6 +73,7 @@ type turn struct {
 	calls              []llm.ToolCall
 	finishReason       string
 	prompt, completion int
+	cacheRead          int
 	// Buffer-write state at return, for block spacing in the agent loop.
 	outWrote bool // anything was written (false: cursor still on the empty line)
 	outTrail int  // trailing newlines of everything written
@@ -166,6 +167,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	t.calls = res.ToolCalls
 	t.prompt = res.Usage.PromptTokens
 	t.completion = res.Usage.CompletionTokens
+	t.cacheRead = res.Usage.CacheReadTokens
 	t.responseMessages = res.ResponseMessages
 
 	if t.text != "" {
@@ -365,6 +367,17 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	modelImpl := p.Model(model)
 	var totPrompt, totCompletion int
 	lastPrompt := 0
+	// contextPromptTokens is the full size of the prompt the model saw on a
+	// step, including cached input. The SDK normalizes InputTokens to exclude
+	// cache reads for most providers, but the context-fill gauge needs the
+	// full window occupancy. Anthropic is the exception: its InputTokens
+	// already includes cache reads.
+	contextPromptTokens := func(t *turn) int {
+		if providerName == "anthropic" {
+			return t.prompt
+		}
+		return t.prompt + t.cacheRead
+	}
 	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
 		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
 		input, output := 0.0, 0.0
@@ -448,7 +461,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
-		lastPrompt = t.prompt
+		lastPrompt = contextPromptTokens(t)
 		if t.prompt+t.completion > 0 {
 			m := usagePayload(totPrompt, totCompletion, lastPrompt)
 			m["type"] = "usage"

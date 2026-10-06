@@ -257,7 +257,11 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 		r.Text = res.Text
 		r.ToolCalls = toLLMToolCalls(res.ToolCalls)
 		r.FinishReason = string(res.FinishReason)
-		r.Usage = llm.Usage{PromptTokens: res.TotalUsage.InputTokens, CompletionTokens: res.TotalUsage.OutputTokens}
+		r.Usage = llm.Usage{
+			PromptTokens:     res.TotalUsage.InputTokens,
+			CompletionTokens: res.TotalUsage.OutputTokens,
+			CacheReadTokens:  res.TotalUsage.CacheReadTokens,
+		}
 		r.ResponseMessages = toLLMMessages(res.ResponseMessages)
 		stream.SetResult(r)
 	}()

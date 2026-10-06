@@ -949,8 +949,8 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
   retry        {"type","attempt","delay_ms","error","ts"} — a transient
                generation error (429/5xx/network) was retried before the
                step emitted any output
-  turn_end     {"type","model","prompt","completion","cost",?,
-               "context_window",?,"ms","ts"} — one per completed send
+  turn_end     {"type","model","prompt","completion","context_prompt",?,
+               "cost",?,"context_window",?,"ms","ts"} — one per completed send
 
 The tail buffer (|:YapLive|) is the human-readable rendering of these
 events and is rebuilt from the file on reopen. Structural lines are
@@ -1070,12 +1070,13 @@ at eight cells and colored green below 70%, amber from 70–90%, and red at
              file, summed from every `turn_end` journal entry in the
              audit log (|yap-audit|). Survives restarts; answers "what
              has this session cost".
-  P% █▍░░░░░░  Context fill: the last turn's prompt as a percentage of
-             the model's context window. In the narrowest layout, the
-             percentage is dropped but the full eight-cell bar remains.
-             Nerd Font mode uses rounded progress cells (``–``,
-             rounded to the nearest cell); plain mode uses fractional
-             block elements. The dim track uses `YapGaugeEmpty`.
+  P% █▍░░░░░░  Context fill: the last turn's full prompt (including
+             cached input) as a percentage of the model's context
+             window. In the narrowest layout, the percentage is dropped
+             but the full eight-cell bar remains. Nerd Font mode uses
+             rounded progress cells (``–``, rounded to the nearest
+             cell); plain mode uses fractional block elements. The dim
+             track uses `YapGaugeEmpty`.
 Suffixes are compact: `k` = thousands, `m` = millions (`1.5k` = 1,500
 tokens). Costs are USD, computed as `in × input price + out × output
 price` (USD per 1M tokens) — your `pricing` overrides first, then the
@@ -1133,8 +1134,9 @@ segment independent of yap buffers, use
             retry        {"type","attempt","delay_ms","error"} — a
                          transient generation error (429/5xx/network)
                          was retried before any output was emitted
-            turn_end     {"type","model","prompt","completion","cost",?,
-                         "context_window",?,"ms"} — one per completed send
+            turn_end     {"type","model","prompt","completion",
+                         "context_prompt",?,"cost",?,"context_window",?,"ms"}
+                         — one per completed send
           The Lua side also synthesizes `output` events (streamed
           bash/python output chunks) as it drains the temp log, so the audit log
           carries live output, not just the final result.

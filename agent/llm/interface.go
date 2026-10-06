@@ -62,6 +62,13 @@ type Tool struct {
 type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
+	// CacheReadTokens is the portion of PromptTokens served from the
+	// provider's prompt cache. It is kept separate because some providers
+	// (OpenAI, OpenAI-compatible, Google) already subtract it from
+	// PromptTokens while others (Anthropic) leave it included; the agent
+	// reconstructs the full prompt size for the context-fill gauge from
+	// these two fields.
+	CacheReadTokens int
 }
 
 type EventType string
