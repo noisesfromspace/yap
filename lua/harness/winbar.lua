@@ -27,20 +27,22 @@ local function pick(t)
 end
 
 -- Mood ring: the busy beacon is a Font Awesome face that escalates with how
--- long the current tool has been grinding. Each bucket holds a small pool of
+-- long the current tool has been grinding. Each bucket holds a pool of
 -- single-cell PUA faces (monochrome, so the Ember tint still applies); the
 -- tick picks randomly within the bucket so the face shimmers instead of
--- sitting frozen. Codepoints are the nf-fa-face_* family from Nerd Font.
+-- sitting frozen. The full nf-fa-face_* solid family is used; the outline
+-- triad (face_smile/frown/meh) is omitted so one pool never mixes filled
+-- and hollow faces.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
 local NF_MOOD_RING = {
-  { up_to = 2,         faces = { nf(0xEE4B), nf(0xEE49) } }, -- grin-beam, grin
-  { up_to = 6,         faces = { nf(0xEE49), nf(0xEE80) } }, -- grin, smile-beam
-  { up_to = 12,        faces = { nf(0xEE89), nf(0xEE6E) } }, -- surprise, rolling-eyes
-  { up_to = 25,        faces = { nf(0xEE6E), nf(0xEE48), nf(0xEE8F) } }, -- rolling-eyes, grimace, tired
-  { up_to = 60,        faces = { nf(0xEE48), nf(0xEE8F) } }, -- grimace, tired
-  { up_to = math.huge, faces = { nf(0xEE8F), nf(0xEE30), nf(0xEE7C) } }, -- tired, dizzy, sad-tear
+  { up_to = 2,         faces = { nf(0xEDA9), nf(0xEE80), nf(0xEE49), nf(0xEE4B), nf(0xEE4E), nf(0xEE50), nf(0xEE62), nf(0xEE63), nf(0xEE64), nf(0xEE65) } }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink
+  { up_to = 6,         faces = { nf(0xEE4A), nf(0xEE55), nf(0xEE4D), nf(0xEE52), nf(0xEE54), nf(0xEE53), nf(0xEE5F), nf(0xEE60), nf(0xEE61), nf(0xEE51), nf(0xEE4F) } }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
+  { up_to = 12,        faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
+  { up_to = 25,        faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
+  { up_to = 60,        faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
+  { up_to = math.huge, faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 -- Busy color: one of the Ember triad (amber / coral / rose), picked
