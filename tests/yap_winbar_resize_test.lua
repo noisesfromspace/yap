@@ -232,6 +232,44 @@ state.last_turn[target] = nil
 vim.api.nvim_buf_delete(picker_buf, { force = true })
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 state.sessions[other], state.sessions[waiting] = nil, nil
+-- Two yap sessions side by side: the %! winbar of the inactive window must
+-- resolve to that window's own buffer (via g:statusline_winid), not the
+-- current window's buffer. nvim_eval_statusline sets g:statusline_winid to
+-- the drawn window but leaves the current buffer untouched, so a fallback to
+-- nvim_get_current_buf() would leak the active session's identity and usage.
+local left_buf = vim.api.nvim_create_buf(false, true)
+local right_buf = vim.api.nvim_create_buf(false, true)
+for _, b in ipairs({ left_buf, right_buf }) do
+  vim.b[b].yap = true
+  vim.b[b].yap_provider = "mock"
+end
+vim.b[left_buf].yap_model = "m1"
+vim.b[right_buf].yap_model = "m2"
+vim.b[left_buf].yap_path = "/tmp/left-session.md"
+vim.b[right_buf].yap_path = "/tmp/right-session.md"
+vim.b[left_buf].yap_usage = { prompt = 1100, completion = 10, cost = 0.01 }
+vim.b[right_buf].yap_usage = { prompt = 2200, completion = 20, cost = 0.02 }
+vim.api.nvim_win_set_buf(0, left_buf)
+vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
+local left_win = vim.api.nvim_get_current_win()
+vim.cmd("vsplit")
+vim.api.nvim_win_set_buf(0, right_buf)
+vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
+-- Widen the inactive window so its center island and usage render; the
+-- active window shrinks to a sliver, which is fine — only the inactive
+-- window's own rendering is under test.
+vim.api.nvim_win_set_width(left_win, 100)
+local inactive_bar = vim.api.nvim_eval_statusline(
+  vim.wo[left_win].winbar, { winid = left_win, use_winbar = true, maxwidth = 200 }).str
+assert(inactive_bar:find("left-session.md", 1, true), "inactive winbar shows its own session name: " .. inactive_bar)
+assert(not inactive_bar:find("right-session.md", 1, true), "inactive winbar leaks the active session name: " .. inactive_bar)
+assert(inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)
+assert(not inactive_bar:find("2.2k", 1, true), "inactive winbar leaks the active session usage: " .. inactive_bar)
+assert(not inactive_bar:find("mock/m2", 1, true), "inactive winbar leaks the active session model: " .. inactive_bar)
+vim.cmd("close")
+vim.api.nvim_win_set_buf(0, buf)
+vim.api.nvim_buf_delete(left_buf, { force = true })
+vim.api.nvim_buf_delete(right_buf, { force = true })
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
 vim.api.nvim_win_resize(0, 12, -1)

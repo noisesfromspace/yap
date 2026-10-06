@@ -182,7 +182,9 @@ end
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
-  local ok_w, width = pcall(vim.api.nvim_win_get_width, 0)
+  local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
+  local inactive = win ~= vim.api.nvim_get_current_win()
+  local ok_w, width = pcall(vim.api.nvim_win_get_width, win)
   if not ok_w or not width or width <= 0 then
     width = 999 -- no window context: render the full bar
   end
@@ -190,8 +192,6 @@ local function render_winbar(buf)
   local function seg(text, group, island, cursive)
     return { text = text, group = group, island = island, cursive = cursive }
   end
-  local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
-  local inactive = win ~= vim.api.nvim_get_current_win()
   local function render_seg(s, upright)
     if s.group == "IslandCap" then
       return winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
@@ -504,7 +504,18 @@ end
 --- this function, so it always reflects current buffer state on redraw —
 --- no imperative refresh calls anywhere.
 function M.winbar(buf)
-  buf = buf or tonumber(vim.g.actual_curbuf) or vim.api.nvim_get_current_buf()
+  if buf == nil then
+    -- The %! expression is evaluated in the current window/buffer context,
+    -- even when drawing another window's bar; g:actual_curbuf is only set for
+    -- %{} items. g:statusline_winid is the only thing that identifies the
+    -- window being drawn, so resolve the buffer from it — falling back to the
+    -- current buffer for direct (non-statusline) calls.
+    local win = tonumber(vim.g.statusline_winid)
+    if win and vim.api.nvim_win_is_valid(win) then
+      buf = vim.api.nvim_win_get_buf(win)
+    end
+  end
+  buf = buf or vim.api.nvim_get_current_buf()
   return render_winbar(buf)
 end
 
