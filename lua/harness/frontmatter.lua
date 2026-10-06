@@ -15,6 +15,10 @@
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
+--   subagent_parent: /home/martijn/.yap/sessions/.../parent.md
+--   forked_from: /home/martijn/.yap/sessions/.../source.md
+--   forks:
+--     - /home/martijn/.yap/sessions/.../branch.md
 --   subagents:
 --     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
 --   ---
@@ -29,7 +33,9 @@
 -- (`# @assistant` blocks) — a session-depth summary for the picker, stamped
 -- on save with `updated_at`; `models` is the ordered history of every combo
 -- actually used (most-recent-last); `subagents` is the ordered list of
--- subagent session paths this session ran (most-recent-last).
+-- subagent session paths this session ran (most-recent-last). `subagent_parent`
+-- points back to the owner; `forked_from` and `forks` link copied sessions
+-- in both directions.
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
@@ -42,12 +48,13 @@
 local M = {}
 
 local function is_list_key(k)
-  return k == "models" or k == "subagents"
+  return k == "models" or k == "subagents" or k == "forks"
 end
 
 --- Parse a frontmatter block from a Lua list of lines. Returns
 --- { provider, model, cwd, created_at, updated_at, turns, description, role,
----   tools = {name,...}, models = {combo,...}, subagents = {path,...} }
+---   tools = {name,...}, models = {combo,...}, subagents = {path,...},
+---   forks = {path,...}, forked_from = path?, subagent_parent = path? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited block does not
 --- break resuming.
@@ -55,7 +62,7 @@ function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {}, subagents = {} }
+  local fm = { models = {}, subagents = {}, forks = {} }
   local list_key = nil
   for i = 2, #lines do
     local line = lines[i]
@@ -75,6 +82,10 @@ function M.parse(lines)
         fm.created_at = v
       elseif k == "updated_at" then
         fm.updated_at = v
+      elseif k == "subagent_parent" then
+        fm.subagent_parent = v
+      elseif k == "forked_from" then
+        fm.forked_from = v
       elseif k == "turns" then
         fm.turns = tonumber(v)
       elseif k == "description" then
@@ -91,8 +102,10 @@ function M.parse(lines)
       if item and item ~= "" then
         if list_key == "models" then
           fm.models[#fm.models + 1] = item
-        else
+        elseif list_key == "subagents" then
           fm.subagents[#fm.subagents + 1] = item
+        else
+          fm.forks[#fm.forks + 1] = item
         end
       end
     end
@@ -102,9 +115,11 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns, cwd)
+function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns, cwd, forked_from, forks, subagent_parent)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
   if cwd and cwd ~= "" then lines[#lines + 1] = "cwd: " .. cwd end
+  if forked_from then lines[#lines + 1] = "forked_from: " .. forked_from end
+  if subagent_parent then lines[#lines + 1] = "subagent_parent: " .. subagent_parent end
   if role then lines[#lines + 1] = "role: " .. role end
   if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
   if created_at then
@@ -128,6 +143,12 @@ function M.render(provider, model, models, created_at, description, role, tools,
   if subagents and #subagents > 0 then
     lines[#lines + 1] = "subagents:"
     for _, p in ipairs(subagents) do
+      lines[#lines + 1] = "  - " .. p
+    end
+  end
+  if forks and #forks > 0 then
+    lines[#lines + 1] = "forks:"
+    for _, p in ipairs(forks) do
       lines[#lines + 1] = "  - " .. p
     end
   end

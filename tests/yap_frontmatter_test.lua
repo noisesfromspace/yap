@@ -128,6 +128,8 @@ assert(
 )
 assert(subagents_fm.updated_at == "2025-09-29T19:24:01Z", "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at))
 assert(subagents_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(subagents_fm.turns))
+local links = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, {}, nil, 0, "/tmp/project", "/tmp/source.md", { "/tmp/fork.md" }, "/tmp/parent.md"))
+assert(links.forked_from == "/tmp/source.md" and links.subagent_parent == "/tmp/parent.md" and links.forks[1] == "/tmp/fork.md", "links not roundtripped")
 
 -- 9. a :file-renamed session keeps its chosen name over the description
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"

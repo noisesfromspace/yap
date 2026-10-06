@@ -347,7 +347,7 @@ local function sync_frontmatter(buf)
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local cwd = (fm and fm.cwd) or vim.b[buf].yap_project_cwd
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns, cwd)
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns, cwd, fm and fm.forked_from, fm and fm.forks, fm and fm.subagent_parent)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -369,7 +369,7 @@ local function record_subagent(parent, child_path)
     if p == child_path then return end
   end
   subagents[#subagents + 1] = child_path
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns, fm.cwd)
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns, fm.cwd, fm.forked_from, fm.forks, fm.subagent_parent)
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
 
@@ -1669,7 +1669,7 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.cwd)
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.cwd, fm.forked_from, fm.forks, fm.subagent_parent)
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
@@ -2396,6 +2396,9 @@ start_subagent = function(parent, ev)
   document.append_text(child, ev.task)
   vim.b[child].yap_subagent_parent = parent
   vim.b[child].yap_subagent_task = ev.task
+  local child_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(child, 0, -1, false))
+  local ending = frontmatter_end(child)
+  vim.api.nvim_buf_set_lines(child, 0, ending, false, frontmatter.render(child_fm.provider, child_fm.model, child_fm.models, child_fm.created_at, child_fm.description, child_fm.role, child_fm.tools, child_fm.subagents, child_fm.updated_at, child_fm.turns, child_fm.cwd, child_fm.forked_from, child_fm.forks, parent_path))
   require("harness.session").save(child)
   subagent_children[parent] = child
   record_subagent(parent, child_path)
@@ -2455,6 +2458,26 @@ local function focus_buf(buf)
   else
     switch_buf(buf)
   end
+end
+
+--- Fork the in-memory transcript into an independent managed session. Keep
+--- the source buffer (and any running process) attached to its original path.
+--- bufload adopts the new file; switching buffers instead of :edit also works
+--- when the source has unsaved edits (ordinary :edit would raise E37).
+function M.fork(name)
+  local source = vim.api.nvim_get_current_buf()
+  if not vim.b[source].yap then
+    return nil, ":YapFork only works in a yap session"
+  end
+  local path, err = require("harness.session").fork(source, name, running[source] ~= nil)
+  if not path then return nil, err end
+  if not running[source] then require("harness.session").save(source) end
+  local buf = vim.fn.bufadd(path)
+  vim.fn.bufload(buf)
+  focus_buf(buf)
+  adopt(buf, path)
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+  return path
 end
 
 --- Open a saved session file as a yap buffer.

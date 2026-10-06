@@ -91,7 +91,7 @@ still notify.
 | `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill.                  |
 | `:YapInsertHere [name]`            | `<leader>T` | Insert template/skill text at the cursor.            |
 | `:YapSessions [all]`               |             | Resume a saved session.                              |
-| `:YapFork [name]`                  |             | Fork the conversation into a new session.            |
+| `:YapFork [name]`                  |             | Copy the conversation to an independent buffer; edit it to branch. |
 | `:YapInstances`                    | `<leader>r` | Pick another open chat.                              |
 | `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply (or stopped).        |
 | `:YapReload`                       |             | Reload Lua modules (development only).               |

@@ -83,18 +83,13 @@ vim.api.nvim_create_user_command("YapReload", function()
 end, { desc = "Reload the yap Lua module (development)" })
 
 vim.api.nvim_create_user_command("YapFork", function(cmd)
-  local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].yap then
-    vim.notify("yap: :YapFork only works in a yap session", vim.log.levels.WARN)
-    return
-  end
-  local path, err = require("harness.session").fork(buf, cmd.args)
+  local path, err = require("harness").fork(cmd.args)
   if not path then
     vim.notify("yap: " .. err, vim.log.levels.WARN)
   end
 end, {
   nargs = "?",
-  desc = "Fork this conversation into a new session file",
+  desc = "Copy this conversation into a new independent session and open it",
 })
 
 vim.api.nvim_create_user_command("YapSessions", function(cmd)
