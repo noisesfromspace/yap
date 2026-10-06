@@ -26,19 +26,16 @@ local function pick(t)
   return t[rng_state % #t + 1]
 end
 
--- Mood ring: the busy beacon is a Font Awesome face that escalates with how
--- long the current tool has been grinding. Each bucket holds a pool of
--- single-cell PUA faces (monochrome, so the Ember tint still applies); the
--- tick picks randomly within the bucket so the face shimmers instead of
--- sitting frozen. The full nf-fa-face_* solid family is used; the outline
--- triad (face_smile/frown/meh) is omitted so one pool never mixes filled
--- and hollow faces.
+-- Mood ring: the busy beacon wanders in little emotional arcs, independent
+-- of task duration. Each arc leaves the middle for a random extreme, pauses,
+-- then returns; faces shimmer within the current pool on every spinner tick.
+-- The pools use solid single-cell Font Awesome faces so the Ember tint still
+-- applies (the hollow smile/frown/meh triad is deliberately omitted).
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
 local NF_MOOD_RING = {
   {
-    up_to = 2,
     faces = {
       nf(0xEDA9),
       nf(0xEE80),
@@ -53,7 +50,6 @@ local NF_MOOD_RING = {
     },
   }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink
   {
-    up_to = 6,
     faces = {
       nf(0xEE4A),
       nf(0xEE55),
@@ -68,10 +64,10 @@ local NF_MOOD_RING = {
       nf(0xEE4F),
     },
   }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
-  { up_to = 12, faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
-  { up_to = 25, faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
-  { up_to = 60, faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
-  { up_to = math.huge, faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
+  { faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
+  { faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
+  { faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
+  { faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 -- Busy color: a continuous smoothstep tween around the Ember triad
@@ -114,22 +110,39 @@ end
 local plain_spinner_glyph = PLAIN_SPINNER_FRAMES[1]
 local spinner_timer = nil
 
--- The tick advances a counter rather than storing a glyph: render_winbar
--- re-picks the face when this counter (or the mood bucket) changes, so the
--- face shimmers at tick cadence instead of on every redraw.
+-- Mood changes on the spinner tick, never on redraw or tool elapsed time.
+-- Seven ticks per step (~1.3s); longer rests in the middle, short dramatic
+-- pauses at either extreme. A new run starts in the middle again.
 local spin_tick = 0
-local mood_cache = { tick = -1, bucket = -1, glyph = nil }
+local MOOD_CENTER = 3
+local mood_bucket = MOOD_CENTER
+local mood_target = nil
+local mood_next_tick = 0
+local mood_cache = { tick = -1, glyph = nil }
 
-local function mood_glyph(elapsed)
-  local bucket = 1
-  for i, b in ipairs(NF_MOOD_RING) do
-    if elapsed < b.up_to then
-      bucket = i
-      break
-    end
+local function advance_mood()
+  if spin_tick < mood_next_tick then
+    return
   end
-  if mood_cache.tick ~= spin_tick or mood_cache.bucket ~= bucket then
-    mood_cache = { tick = spin_tick, bucket = bucket, glyph = pick(NF_MOOD_RING[bucket].faces) }
+  if not mood_target then
+    mood_target = pick({ 1, #NF_MOOD_RING })
+  end
+  if mood_bucket ~= mood_target then
+    mood_bucket = mood_bucket + (mood_bucket < mood_target and 1 or -1)
+    mood_next_tick = spin_tick + 7
+    if mood_bucket == mood_target then
+      mood_target = MOOD_CENTER
+      mood_next_tick = spin_tick + pick({ 5, 8, 11 })
+    end
+  else
+    mood_target = nil
+    mood_next_tick = spin_tick + pick({ 15, 23, 31 })
+  end
+end
+
+local function mood_glyph()
+  if mood_cache.tick ~= spin_tick then
+    mood_cache = { tick = spin_tick, glyph = pick(NF_MOOD_RING[mood_bucket].faces) }
   end
   return mood_cache.glyph
 end
@@ -340,9 +353,7 @@ local function render_winbar(buf)
     local icon, icon_group = nil, nil
     local spinner = running and running[buf]
     if not inactive and spinner then
-      local l = live and live[buf]
-      local elapsed = l and (os.time() - l.since) or 0
-      icon = require("harness").config.nerd_font and mood_glyph(elapsed) or plain_spinner_glyph
+      icon = require("harness").config.nerd_font and mood_glyph() or plain_spinner_glyph
       icon_group = "BusySpin"
     elseif not spinner then
       if errors[buf] then
@@ -716,12 +727,17 @@ function M.spinner_start()
   if spinner_timer then
     return
   end
+  mood_bucket = MOOD_CENTER
+  mood_target = nil
+  mood_next_tick = spin_tick + pick({ 15, 23, 31 })
+  mood_cache.tick = -1
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,
     180,
     vim.schedule_wrap(function()
       spin_tick = spin_tick + 1
+      advance_mood()
       plain_spinner_glyph = pick(PLAIN_SPINNER_FRAMES)
       local c = busy_color()
       vim.api.nvim_set_hl(0, "YapBusySpin", { fg = c })
