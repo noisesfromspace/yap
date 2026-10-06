@@ -181,20 +181,58 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 // Nothing in the harness emits either as live output, so a match means an
 // intended call never ran. Detection is advisory: a false positive only
 // surfaces a warning — it never blocks or rewrites the answer.
+//
+// A call that is merely *described* (documentation, examples, code blocks)
+// must not match: only text outside fenced code blocks is inspected, and an
+// XML match needs structural evidence of a real invocation — a tag carrying
+// a tool or parameter name — not a bare mention of `<invoke>`/`<parameter>`.
 var (
 	flattenedToolCallRe = regexp.MustCompile(`(?m)^Tool call:\s*(\S+)\s*$`)
-	xmlToolCallRe       = regexp.MustCompile(`(?i)</?(invoke|parameter)\b`)
+	xmlToolCallRe       = regexp.MustCompile(`(?i)<\s*(?:antml:)?(?:invoke|parameter)\b[^>]*\bname\s*=`)
 )
+
+// stripFences removes fenced code blocks (``` and ~~~) so a quoted example
+// of the tool-call syntax is not mistaken for a live call. A model that
+// really wants to run a tool emits the XML bare, never fenced.
+func stripFences(text string) string {
+	var out []byte
+	inFence := false
+	fence := ""
+	for len(text) > 0 {
+		i := strings.IndexByte(text, '\n')
+		var line, rest string
+		if i < 0 {
+			line, rest = text, ""
+		} else {
+			line, rest = text[:i], text[i+1:]
+		}
+		trimmed := strings.TrimLeft(line, " \t")
+		if !inFence {
+			if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+				inFence = true
+				fence = trimmed[:3]
+			} else {
+				out = append(out, line...)
+				out = append(out, '\n')
+			}
+		} else if strings.HasPrefix(trimmed, fence) {
+			inFence = false
+		}
+		text = rest
+	}
+	return string(out)
+}
 
 // detectTextToolCall reports whether the assistant text looks like an
 // unexecuted tool call and, when it does, a short label for the message.
 // The flattened tool name is sanitized so it cannot close the error marker
 // comment early.
 func detectTextToolCall(text string) (string, bool) {
-	if m := flattenedToolCallRe.FindStringSubmatch(text); m != nil {
+	body := stripFences(text)
+	if m := flattenedToolCallRe.FindStringSubmatch(body); m != nil {
 		return "text tool call (" + strings.ReplaceAll(m[1], "-->", "-- >") + ")", true
 	}
-	if xmlToolCallRe.MatchString(text) {
+	if xmlToolCallRe.MatchString(body) {
 		return "XML <invoke> tool call", true
 	}
 	return "", false

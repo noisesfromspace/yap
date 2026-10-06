@@ -548,6 +548,10 @@ func TestDetectTextToolCall(t *testing.T) {
 		{"<invoke name=\"bash\"><parameter name=\"command\">x</parameter></invoke>", true},
 		{"plain prose with no call", false},
 		{"Tool call: nothing to see here", false},
+		// Explaining or quoting the syntax must not trigger detection.
+		{"the <invoke> and <parameter> tags are XML", false},
+		{"```xml\n<invoke name=\"bash\"><parameter name=\"command\">x</parameter></invoke>\n```", false},
+		{"~~~\nTool call: bash\nArguments: {\"command\":\"x\"}\n~~~", false},
 	}
 	for _, c := range cases {
 		if _, got := detectTextToolCall(c.text); got != c.want {
