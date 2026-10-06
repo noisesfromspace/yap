@@ -18,9 +18,9 @@ CONTENTS                                                     *yap-contents*
 1. INTRODUCTION                                          *yap-introduction*
 
 yap is an LLM chat plugin where the conversation lives in a plain editable
-markdown buffer. A small Go binary (`yap`) is only a provider client: it
-reads the message array on stdin and streams the reply to stdout. There is
-no TUI, and no hidden conversation state anywhere.
+markdown buffer. A small Go binary (`yap`) handles provider requests and the
+agent/tool loop: it reads the message array on stdin and streams the reply
+to stdout. There is no TUI, and no hidden conversation state between turns.
 
 The idea is stolen from gptel (Emacs): chat LLM APIs are stateless: every
 request sends the full message array, so the whole conversation is the only
@@ -170,7 +170,7 @@ the current buffer unless otherwise noted.
                         its file path and focus the picked one. Each line
                         reads `{project cwd} {state glyph} {title} ({model})`:
                         the project directory first, then a state glyph
-                        (`` running, `󰐊` stopped, `󰚌` error, `󰫁` waiting — a
+                        (`` running, `󰓛` stopped, `󰚌` error, `󰫁` waiting — a
                         completed turn awaits your reply — or `󰝦` idle), then
                         the session's title (description, or filename as
                         fallback), then the model name in parentheses (bare
@@ -259,7 +259,7 @@ are shown below.
                         including markers. `dit` clears a block, `dat`
                         removes it entirely.
 
-  View 1 is the default for opened session buffers; the system prompt
+  View 2 is the default for opened session buffers; the system prompt
   stays folded in views 1 and 2. See |yap-folding|.
 
 ==============================================================================
@@ -553,8 +553,9 @@ result (sent to the model) and optionally a ui payload (display-only
 yap:ui section,
 see |yap-tool-block|). The binary runs the whole agent loop in one
 process, bounded at 300 iterations per send. Built-ins: ls, read, fetch,
-bash, python, curl, git, write, edit, search, glob, websearch, quickfix, ssh,
-jev, close_session. The `subagent` tool delegates to a role defined in
+bash, python, curl, git, write, edit, search, glob, websearch, github,
+playwright, quickfix, ssh, jev, close_session, subagent. The `subagent`
+tool delegates to a role defined in
 `~/.yap/roles/<name>.md` (or the directory set by `roles_dir` in
 `require('harness').setup()`). Roles use YAML frontmatter: `name`, `model`, optional
 comma-separated `tools`; the body is its system prompt. It creates a normal
@@ -919,10 +920,10 @@ document a fragment and the parse bounded.
 
 A session is just the buffer's markdown written to a file — the buffer IS
 the serialization, there is no other format. Files live under
-~/.yap/sessions/<cwd-slug>/ and are autosaved after every completed reply.
-The file is created when the buffer is opened, so a fresh session is
-file-backed from the start and can be named with |:file| before the first
-reply; every autosave goes through |:write|, so the buffer owns its file:
+~/.yap/sessions/<cwd-slug>/ and are saved after every turn exit, including
+backend errors and stops. The file is created when the buffer is opened,
+so a fresh session is file-backed from the start and can be named with
+|:file| before the first reply; every save goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 The audit log (<session>.jsonl) is written in the audit dir
 (|yap-audit|) as the session runs and follows the session name across
@@ -1262,8 +1263,8 @@ R7  Exactly one blank line between message blocks, enforced LOCALLY at
 
 R8  Sessions are plain markdown files; file operations are the session
     operations. The file is created at buffer creation so a fresh chat is
-    file-backed (and nameable via :file) before the first reply. Autosave
-    only after a COMPLETED reply (never on error). Autosaves go through
+    file-backed (and nameable via :file) before the first reply. Saves
+    follow every turn exit, including errors and :YapStop, and go through
     :write! (not writefile()): the buffer owns the file, so mtime
     bookkeeping, :w, and E13 all behave normally. Every stream exit,
     including backend errors and :YapStop, repairs any dangling streamed
@@ -1353,9 +1354,10 @@ R14 The model state is durable YAML frontmatter; everything else is
 R15 Tools are compiled-in Go files, one per file in agent/tools/.
     Each file self-registers via init(); adding a tool = adding a file
     and recompiling. Not config files (the author wants tool code, not
-    opaque declarations), not subprocesses (recompiling is accepted and
-    the binary stays self-contained). bash, python and ssh are
-    deliberately unsandboxed — the author runs pi the same way and
+    opaque declarations), not external executable tool plugins: the tool
+    interface is compiled in, although individual tools may spawn
+    subprocesses. bash, python and ssh are deliberately unsandboxed — the
+    author runs pi the same way and
     accepts the residual risk — but are no longer unconfirmed: a
     conservative denylist of irreversible / high-blast-radius
     operations (remote content piped into a shell, rm -rf, mkfs/dd onto
