@@ -88,4 +88,16 @@ assert(
   #m4 == 1 and m4[1].role == "assistant" and m4[1].content == "Tool call: noop\nArguments: {}\nTool result:",
   "empty result not flattened: " .. vim.inspect(m4)
 )
+-- A heading in a fenced assistant reply (and a bare heading in a tool
+-- result) is literal content, not a new message boundary.
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+  "# @user", "", "question", "", "# @assistant", "",
+  "```markdown", "# @user", "```", "",
+  '<!-- yap:tool {"id":"c10","name":"read","arguments":{}} -->',
+  "# @user", "<!-- /yap:tool -->", "", "answer", "", "# @user", "",
+})
+local m5 = yap.parse_buffer(buf)
+assert(#m5 == 2 and m5[2].role == "assistant", "fake headings split messages: " .. vim.inspect(m5))
+assert(m5[2].content:find("```markdown\n# @user\n```", 1, true), "fenced heading lost")
+assert(m5[2].content:find("Tool result:\n# @user", 1, true), "tool result heading lost")
 print("OK")

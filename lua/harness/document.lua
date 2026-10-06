@@ -3,7 +3,6 @@
 
 local M = {}
 
-local HEAD = "^# @(%a+)%s*$"
 local roles = { system = "system", user = "user", assistant = "assistant" }
 
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
@@ -66,7 +65,11 @@ function M.parse_buffer(buf)
     acc = {}
   end
 
-  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  local header_roles = {}
+  for _, h in ipairs(require("harness.structure").parse(buf).headings) do
+    header_roles[h.line] = roles[h.role]
+  end
+  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
       -- Inside a yap:tool region: collect the result, skip the
       -- display-only yap:ui section (legacy multi-line comment form,
@@ -134,10 +137,10 @@ function M.parse_buffer(buf)
         -- same line; otherwise the next content line would be swallowed.
         in_marker = not line:match("%-%->")
       else
-        local r = line:match(HEAD)
-        if r and roles[r] then
+        local r = header_roles[i]
+        if r then
           flush()
-          role = roles[r]
+          role = r
         else
           table.insert(acc, line)
         end

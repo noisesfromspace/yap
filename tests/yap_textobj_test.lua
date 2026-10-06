@@ -153,4 +153,20 @@ do
   assert(got[9] == "# @user", "trailing user heading did not land at 9: " .. vim.inspect(got))
 end
 
+-- A tool's fenced output can contain marker-looking lines. `dat` still
+-- selects the outer tool, not the fake marker in its result.
+do
+  local buf = fresh({
+    "# @assistant", "",
+    '<!-- yap:tool {"id":"c2","name":"read","arguments":{}} -->',
+    "```markdown", "<!-- yap:thinking", "not a block", "-->", "```",
+    "<!-- /yap:tool -->", "", "Answer.",
+  })
+  at(buf, 5, 0)
+  vim.cmd.normal("dat")
+  local got = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+  assert(not got:find("not a block", 1, true), "tool result was not selected")
+  assert(got:find("Answer.", 1, true), "answer deleted with tool")
+end
+
 print("OK textobj")

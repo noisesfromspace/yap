@@ -17,15 +17,6 @@ local M = {}
 
 local fold = require("harness.fold")
 
--- Marker regions. A tool block is `<!-- yap:tool` … `<!-- /yap:tool`; any
--- other multi-line `<!-- yap:<word>` comment (thinking, error, legacy ui)
--- closes on a bare `-->`. Single-line markers (`<!-- yap:usage … -->`) never
--- match COMMENT_OPEN, so they stay content.
-local TOOL_OPEN = "^<!%-%- yap:tool"
-local TOOL_CLOSE = "^<!%-%- /yap:tool"
-local COMMENT_OPEN = "^<!%-%-%s*yap:%a+%s*$"
-local COMMENT_CLOSE = "^%-%->%s*$"
-
 -- ─── Range finders ─────────────────────────────────────────────────────────
 
 --- Heading line (1-based) of the message containing `lnum`, or nil when
@@ -61,39 +52,12 @@ local function message_range(lnum)
   return heading, nxt or (vim.fn.line("$") + 1)
 end
 
---- Innermost block region containing `lnum`, or nil. Scans forward from the
---- enclosing message heading (blocks only exist inside messages and never
---- nest), so a fake heading inside a fenced tool result can't be mistaken
---- for a block boundary.
+-- The same cached scan used for folding and navigation recognizes block
+-- boundaries and ignores marker-looking lines inside fenced tool results.
 local function block_range(lnum)
-  local heading = message_heading(lnum)
-  if not heading then
-    return nil
-  end
-  local total = vim.fn.line("$")
-  local tool_open, comment_open = nil, nil
-  for i = heading, total do
-    local line = vim.fn.getline(i)
-    if tool_open then
-      if line:match(TOOL_CLOSE) then
-        if lnum >= tool_open and lnum <= i then
-          return { open = tool_open, close = i }
-        end
-        tool_open = nil
-      end
-    elseif comment_open then
-      if line:match(COMMENT_CLOSE) then
-        if lnum >= comment_open and lnum <= i then
-          return { open = comment_open, close = i }
-        end
-        comment_open = nil
-      end
-    else
-      if line:match(TOOL_OPEN) then
-        tool_open = i
-      elseif line:match(COMMENT_OPEN) then
-        comment_open = i
-      end
+  for _, detail in ipairs(fold.parse(vim.api.nvim_get_current_buf()).details) do
+    if detail.finish and detail.start <= lnum and lnum <= detail.finish then
+      return { open = detail.start, close = detail.finish }
     end
   end
   return nil

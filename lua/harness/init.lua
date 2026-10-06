@@ -668,7 +668,24 @@ local function drain_audit(buf)
   end
 end
 
-state.drain_audit = drain_audit
+-- Poll tool logs independently of the visual spinner. Direct drains on
+-- tool_end and process exit still capture the final bytes before cleanup.
+local audit_poll_timer
+local function audit_poll_stop_if_idle()
+  if audit_poll_timer and not next(running) then
+    audit_poll_timer:stop()
+    audit_poll_timer:close()
+    audit_poll_timer = nil
+  end
+end
+local function audit_poll_start()
+  if audit_poll_timer then return end
+  audit_poll_timer = vim.uv.new_timer()
+  audit_poll_timer:start(0, 180, vim.schedule_wrap(function()
+    for b in pairs(running) do drain_audit(b) end
+    audit_poll_stop_if_idle()
+  end))
+end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
 local scratch_section_text, scratch_set_section, scratch_save
@@ -1727,6 +1744,7 @@ function M.send(buf)
   -- buffer is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear.
   winbar.spinner_start()
+  audit_poll_start()
 
   local process = servers[buf]
   if not process then
@@ -1803,6 +1821,7 @@ function M.send(buf)
         vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
       winbar.spinner_stop_if_idle()
+      audit_poll_stop_if_idle()
       repair_stream_tail(buf)
       if not result.ok then
         local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
@@ -1952,6 +1971,7 @@ function M.send(buf)
     end))
     if not ok then
       winbar.spinner_stop_if_idle()
+      audit_poll_stop_if_idle()
       stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
@@ -1999,6 +2019,7 @@ function M.stop(buf)
     servers[buf] = nil
     running[buf] = nil
     winbar.spinner_stop_if_idle()
+    audit_poll_stop_if_idle()
     drain_audit(buf)
     local l = live[buf]
     if l then live[buf] = nil; vim.npcall(os.remove, l.log) end

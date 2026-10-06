@@ -1,10 +1,8 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
 -- yap session buffer: busy beacon (or the buffer's own state icon), global
 -- rollup island, session description, provider/model island and usage/cost
--- chips. Usage/cost chips remain on the right. Also owns the spinner
--- that keeps the bar redrawing while a turn streams; the spinner drains
--- live tool output into the audit view buffers through state.drain_audit (set by
--- the send path).
+-- chips. Usage/cost chips remain on the right. The spinner only redraws the
+-- display while the turn is running; the audit poll owns live tool output.
 
 local M = {}
 
@@ -636,9 +634,6 @@ function M.spinner_start()
       spinner_glyph = pick(SPINNER_FRAMES)
       plain_spinner_glyph = pick(PLAIN_SPINNER_FRAMES)
       vim.api.nvim_set_hl(0, "YapBusySpin", { fg = spin_color() })
-      for b in pairs(running) do
-        state.drain_audit(b) -- pull new tool output into the audit view buffers
-      end
       vim.cmd.redrawstatus() -- re-evaluates the winbar expression
       M.spinner_stop_if_idle()
     end)

@@ -79,10 +79,12 @@ local function parse(buf)
       if c then
         fence = { char = c, n = n }
       elseif line:match(HEAD) then
+        -- A heading ends an unfinished tool region; document.lua still
+        -- treats headings inside well-formed tool results as result text.
         end_tool(i - 1)
         headings[#headings + 1] = { role = line:match(HEAD), line = i }
         region = nil
-      elseif line:match(TOOL_OPEN) then
+      elseif line:match(TOOL_OPEN) and region ~= "tool" then
         end_tool(i - 1)
         local d = { kind = "tool", start = i }
         details[#details + 1] = d
