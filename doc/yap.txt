@@ -744,6 +744,7 @@ lives, as YAML frontmatter:
   ---
   provider: moonshot
   model: kimi-k3
+  cwd: /opt/code/yap
   created_at: 2025-09-29T19:22:33Z
   updated_at: 2025-09-29T19:24:01Z
   turns: 14
@@ -754,7 +755,10 @@ lives, as YAML frontmatter:
     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
   ---
 
-`provider`/`model` is the combo to resume with; `models` is the ordered
+`provider`/`model` is the combo to resume with; `cwd` is the exact
+working directory the session was created in (the `~/.yap/sessions`
+directory slug is lossy, so this is the only exact record of where a
+session ran); `models` is the ordered
 history of every combo used in the session (most-recent-last); `subagents`
 is the ordered list of subagent session paths the session ran
 (most-recent-last); `created_at` records the session's creation and
@@ -1327,7 +1331,9 @@ R13 No MCP. The author's tools are thin HTTP wrappers that are less code
 R14 The model state is durable YAML frontmatter; everything else is
     ephemeral.
     The frontmatter holds `provider`/`model` (the combo to resume with),
-    `models` (the ordered history of combos used), `created_at`/
+    `cwd` (the exact working directory the session was created in — the
+    session dir slug is lossy), `models` (the ordered history of combos
+    used), `created_at`/
     `updated_at` timestamps, and `turns` (the count of completed replies,
     stamped on save for the picker). yap writes the model fields only on
     :Yap and |:YapChangeModel| — never during a send, so R7's append-only

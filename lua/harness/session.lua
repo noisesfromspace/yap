@@ -72,7 +72,7 @@ local function stamp_updated_at(buf)
   if fm.updated_at == updated_at and fm.turns == turns then
     return -- unchanged: skip the rewrite so an untouched block stays clean
   end
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at, turns)
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at, turns, fm.cwd)
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
 

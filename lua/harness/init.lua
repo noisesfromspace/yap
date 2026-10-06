@@ -343,7 +343,10 @@ local function sync_frontmatter(buf)
     table.insert(models, combo)
   end
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns)
+  -- The exact cwd is recorded once, when the session is created; later
+  -- rewrites preserve it (the session dir slug alone is lossy).
+  local cwd = (fm and fm.cwd) or vim.b[buf].yap_project_cwd
+  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns, cwd)
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -366,7 +369,7 @@ local function record_subagent(parent, child_path)
     if p == child_path then return end
   end
   subagents[#subagents + 1] = child_path
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns)
+  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns, fm.cwd)
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
 
@@ -1645,7 +1648,7 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns)
+      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.cwd)
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)

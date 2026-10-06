@@ -5,6 +5,7 @@
 --   ---
 --   provider: moonshot
 --   model: kimi-k3
+--   cwd: /opt/code/yap
 --   role: reviewer
 --   tools: read,search,glob
 --   created_at: 2025-09-29T19:22:33Z
@@ -18,7 +19,10 @@
 --     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
 --   ---
 --
--- `provider`/`model` is the combo to resume with; `role`/`tools` mark a
+-- `provider`/`model` is the combo to resume with; `cwd` is the exact
+-- working directory the session was created in (the directory slug is
+-- lossy, so this is the only exact record of where a session ran);
+-- `role`/`tools` mark a
 -- subagent session (its role name and the tools it may call); `created_at`
 -- records when the session was created; `updated_at` records its last
 -- write (stamped on every save); `turns` counts the completed replies
@@ -42,7 +46,7 @@ local function is_list_key(k)
 end
 
 --- Parse a frontmatter block from a Lua list of lines. Returns
---- { provider, model, created_at, updated_at, turns, description, role,
+--- { provider, model, cwd, created_at, updated_at, turns, description, role,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...} }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited block does not
@@ -65,6 +69,8 @@ function M.parse(lines)
         fm.provider = v
       elseif k == "model" then
         fm.model = v
+      elseif k == "cwd" then
+        fm.cwd = v
       elseif k == "created_at" then
         fm.created_at = v
       elseif k == "updated_at" then
@@ -96,8 +102,9 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns)
+function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns, cwd)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
+  if cwd and cwd ~= "" then lines[#lines + 1] = "cwd: " .. cwd end
   if role then lines[#lines + 1] = "role: " .. role end
   if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
   if created_at then

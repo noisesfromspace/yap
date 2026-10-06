@@ -14,6 +14,10 @@ local fm = frontmatter.parse(lines)
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
+assert(
+  fm.cwd == vim.fs.normalize(vim.fn.getcwd()),
+  "cwd not recorded: " .. vim.inspect(fm.cwd)
+)
 assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
 local created = fm.created_at
 
@@ -40,6 +44,10 @@ lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
 assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim.inspect(fm))
 assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
+assert(
+  fm.cwd == vim.fs.normalize(vim.fn.getcwd()),
+  "cwd not preserved across a rewrite: " .. vim.inspect(fm.cwd)
+)
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 local bar = yap.winbar(buf)
@@ -67,6 +75,10 @@ assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "duplicate combo: "
 session.save(buf)
 local path = vim.b[buf].yap_path
 assert(path and vim.fn.filereadable(path) == 1, "session not saved")
+assert(
+  frontmatter.parse(vim.fn.readfile(path)).cwd == vim.fs.normalize(vim.fn.getcwd()),
+  "cwd not written to the session file"
+)
 vim.cmd("bwipeout!")
 yap.open(path)
 local buf2 = vim.api.nvim_get_current_buf()
@@ -107,8 +119,9 @@ assert(
 )
 
 -- 8. subagents + updated_at + turns render and parse back
-local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z", 14)
+local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z", 14, "/tmp/project")
 local subagents_fm = frontmatter.parse(subagents_block)
+assert(subagents_fm.cwd == "/tmp/project", "cwd not roundtripped: " .. vim.inspect(subagents_fm.cwd))
 assert(
   vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
   "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
