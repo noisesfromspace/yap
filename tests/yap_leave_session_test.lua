@@ -48,4 +48,18 @@ assert(vim.wait(1000, function()
 end), "drawers in separate tabs stayed open after leaving the session")
 assert(vim.api.nvim_tabpage_is_valid(drawer_tab), "drawer tab was unexpectedly closed")
 assert(vim.api.nvim_buf_is_valid(scratch), "last-window drawer buffer was wiped")
+
+-- A floating window counts in tabpage_list_wins, but cannot keep the tab
+-- alive if its only ordinary window is the drawer (E444 on close).
+vim.api.nvim_win_set_buf(0, scratch)
+local float_buf = vim.api.nvim_create_buf(false, true)
+local float = vim.api.nvim_open_win(float_buf, false, {
+  relative = "editor", row = 1, col = 1, width = 20, height = 2, style = "minimal",
+})
+vim.api.nvim_win_set_buf(session_win, session)
+vim.api.nvim_win_set_buf(session_win, other)
+assert(vim.wait(1000, function() return #vim.fn.win_findbuf(scratch) == 0 end),
+  "last ordinary drawer window stayed open alongside a float")
+assert(vim.api.nvim_win_is_valid(float) and vim.api.nvim_tabpage_is_valid(drawer_tab),
+  "closing the drawer also closed the floating window or tab")
 print("OK leave-session drawers")

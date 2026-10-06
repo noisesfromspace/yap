@@ -1079,12 +1079,19 @@ end
 local function close_drawer_window(buf)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
+      -- tabpage_list_wins includes floating windows, but Neovim cannot
+      -- close the last ordinary window of a tab (E444), even with floats.
       local tab = vim.api.nvim_win_get_tabpage(win)
-      if #vim.api.nvim_tabpage_list_wins(tab) > 1 then
+      local normal = 0
+      for _, other in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+        if vim.api.nvim_win_get_config(other).relative == "" then
+          normal = normal + 1
+        end
+      end
+      if normal > 1 then
         vim.api.nvim_win_close(win, true)
       else
-        -- Neovim cannot close the last window; replace its view while keeping
-        -- the file-backed drawer buffer available to reopen later.
+        -- Keep the drawer buffer available to reopen later.
         vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
       end
     end
