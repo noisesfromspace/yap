@@ -37,11 +37,40 @@ local function nf(cp)
   return vim.fn.nr2char(cp)
 end
 local NF_MOOD_RING = {
-  { up_to = 2,         faces = { nf(0xEDA9), nf(0xEE80), nf(0xEE49), nf(0xEE4B), nf(0xEE4E), nf(0xEE50), nf(0xEE62), nf(0xEE63), nf(0xEE64), nf(0xEE65) } }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink
-  { up_to = 6,         faces = { nf(0xEE4A), nf(0xEE55), nf(0xEE4D), nf(0xEE52), nf(0xEE54), nf(0xEE53), nf(0xEE5F), nf(0xEE60), nf(0xEE61), nf(0xEE51), nf(0xEE4F) } }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
-  { up_to = 12,        faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
-  { up_to = 25,        faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
-  { up_to = 60,        faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
+  {
+    up_to = 2,
+    faces = {
+      nf(0xEDA9),
+      nf(0xEE80),
+      nf(0xEE49),
+      nf(0xEE4B),
+      nf(0xEE4E),
+      nf(0xEE50),
+      nf(0xEE62),
+      nf(0xEE63),
+      nf(0xEE64),
+      nf(0xEE65),
+    },
+  }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink
+  {
+    up_to = 6,
+    faces = {
+      nf(0xEE4A),
+      nf(0xEE55),
+      nf(0xEE4D),
+      nf(0xEE52),
+      nf(0xEE54),
+      nf(0xEE53),
+      nf(0xEE5F),
+      nf(0xEE60),
+      nf(0xEE61),
+      nf(0xEE51),
+      nf(0xEE4F),
+    },
+  }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
+  { up_to = 12, faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
+  { up_to = 25, faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
+  { up_to = 60, faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
   { up_to = math.huge, faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
@@ -56,10 +85,12 @@ local BUSY_RGB = {
 
 local function busy_color()
   local c = pick(BUSY_RGB)
-  return string.format("#%02x%02x%02x",
+  return string.format(
+    "#%02x%02x%02x",
     math.floor(c[1] * 255 + 0.5),
     math.floor(c[2] * 255 + 0.5),
-    math.floor(c[3] * 255 + 0.5))
+    math.floor(c[3] * 255 + 0.5)
+  )
 end
 
 M.spinner_frames = {} -- exported for tests: every face the beacon can show
@@ -133,8 +164,7 @@ end
 local function other_session_counts(buf)
   local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0 }
   for b in pairs(sessions) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap
-      and not vim.b[b].yap_subagent_parent then
+    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap and not vim.b[b].yap_subagent_parent then
       if running[b] then
         counts.running = counts.running + 1
       elseif errors[b] then
@@ -415,7 +445,9 @@ local function render_winbar(buf)
       fill = ""
       track = ""
       local glyph = {
-        left = { "", "" }, mid = { "", "" }, right = { "", "" },
+        left = { "", "" },
+        mid = { "", "" },
+        right = { "", "" },
       }
       for i = 1, GAUGE_W do
         local edge = i == 1 and "left" or (i == GAUGE_W and "right" or "mid")
@@ -471,8 +503,7 @@ local function render_winbar(buf)
     local s = include_live(vim.b[buf].yap_session_usage)
     -- When both counters represent the same token total, the since-open
     -- chip adds no information; keep the session's all-time chip only.
-    if u and s and (s.prompt + s.completion) > 0
-        and (u.prompt + u.completion) == (s.prompt + s.completion) then
+    if u and s and (s.prompt + s.completion) > 0 and (u.prompt + u.completion) == (s.prompt + s.completion) then
       u = nil
     end
 
@@ -544,8 +575,12 @@ local function render_winbar(buf)
       text = truncate_display(label, 40)
     end
     return {
-      seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
-      seg(text, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
+      seg(" ", "Idle"),
+      seg("", "IslandCap"),
+      seg(" ", "Count", true),
+      seg(text, "Model", true, true),
+      seg(" ", "Count", true),
+      seg("", "IslandCap"),
       seg(" ", "Idle"),
     }
   end
@@ -594,9 +629,16 @@ local function render_winbar(buf)
     local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
     local total = left_width + center_width + right_width
-    if total <= width and (not center or
-        (left_width <= math.floor((width - center_width) / 2)
-          and right_width <= math.floor((width - center_width) / 2))) then
+    if
+      total <= width
+      and (
+        not center
+        or (
+          left_width <= math.floor((width - center_width) / 2)
+          and right_width <= math.floor((width - center_width) / 2)
+        )
+      )
+    then
       return render(left, center, usage, left_width, right_width)
     end
     if show_mid then

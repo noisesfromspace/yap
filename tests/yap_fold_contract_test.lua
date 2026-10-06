@@ -43,12 +43,20 @@ for _, view in ipairs({ 1, 2 }) do
   for _, use_tab in ipairs({ false, true }) do
     b = make({ "# @user", "q", view == 1 and "# @assistant" or tool("live") }, view)
     assert(fn.foldclosed(3) == 3, "single-line opener flashed open")
-    if use_tab then fold.toggle(3) else native(3, "zo") end
+    if use_tab then
+      fold.toggle(3)
+    else
+      native(3, "zo")
+    end
     for _, chunk in ipairs({ "\nfirst", " more", "\nsecond", "\nthird" }) do
       append(b, chunk)
       assert(fn.foldclosed(3) == -1, "growing open fold reclosed")
     end
-    if use_tab then fold.toggle(3) else native(3, "zc") end
+    if use_tab then
+      fold.toggle(3)
+    else
+      native(3, "zc")
+    end
     append(b, "\nfourth")
     assert(fn.foldclosed(3) == 3, "growing closed fold reopened")
   end
@@ -83,7 +91,12 @@ assert(fn.foldclosed(4) == 4, "redo resurrected deleted pin")
 -- Ordinary edits reconcile without a stream callback.
 b = make({ "# @assistant", "prose", "" })
 api.nvim_buf_set_lines(b, -1, -1, false, { tool("typed"), "output", closed })
-assert(vim.wait(100, function() return fn.foldclosed(4) == 4 end), "user edits did not reconcile")
+assert(
+  vim.wait(100, function()
+    return fn.foldclosed(4) == 4
+  end),
+  "user edits did not reconcile"
+)
 
 -- Returning is synchronous and retains choices while defaults govern new
 -- hidden output. No wait() before inspecting the returning window.
@@ -138,7 +151,9 @@ for _, part in ipairs({ "<", "!-- ya", "p:thinking", "\n", "thought", "\n-->\n",
   ready, pending = document.split_stream_tail(b, pending .. part)
   rendered = rendered .. ready
   append(b, ready)
-  if part == "p:thinking" then assert(rendered == "", "partial opener was exposed") end
+  if part == "p:thinking" then
+    assert(rendered == "", "partial opener was exposed")
+  end
 end
 assert(pending == "" and rendered == "<!-- yap:thinking\nthought\n-->\nregular prose", "stream text changed")
 local ready, held = document.split_stream_tail(b, "\n#")
@@ -158,7 +173,21 @@ assert(fn.foldclosed(3) == 3, "unloaded session no longer reconciles")
 
 -- Malformed tools stop at the next message instead of overlapping it; system
 -- examples do not create detail folds nested inside the system fold.
-b = make({ "# @system", "<!-- yap:thinking", "example", "-->", "# @assistant", tool("broken"), "output", "# @user", "q", "# @assistant", tool("next"), "r", closed })
+b = make({
+  "# @system",
+  "<!-- yap:thinking",
+  "example",
+  "-->",
+  "# @assistant",
+  tool("broken"),
+  "output",
+  "# @user",
+  "q",
+  "# @assistant",
+  tool("next"),
+  "r",
+  closed,
+})
 assert(fn.foldlevel(2) == 1, "system detail created nesting")
 assert(fn.foldclosedend(6) == 7, "unfinished tool swallowed next message")
 assert(fn.foldclosed(11) == 11 and fn.foldlevel(11) == 1, "detail ranges overlapped")
@@ -169,6 +198,8 @@ api.nvim_win_set_cursor(0, { 2, 0 })
 local before = fn.winsaveview()
 append(b, "<!-- yap:thinking\nmore\n")
 local after = fn.winsaveview()
-assert(before.lnum == after.lnum and before.col == after.col and before.topline == after.topline,
-  "stream changed reading position")
+assert(
+  before.lnum == after.lnum and before.col == after.col and before.topline == after.topline,
+  "stream changed reading position"
+)
 print("OK fold_contract")

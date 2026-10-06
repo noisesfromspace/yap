@@ -30,6 +30,9 @@ local path = vim.b[buf].yap_path
 vim.cmd("bwipeout!")
 local reopened = yap.open(path)
 local su2 = vim.b[reopened].yap_session_usage
-assert(su2 and su2.cost and math.abs(su2.cost - u.cost) < 1e-9, "reopen did not seed session usage: " .. vim.inspect(su2))
+assert(
+  su2 and su2.cost and math.abs(su2.cost - u.cost) < 1e-9,
+  "reopen did not seed session usage: " .. vim.inspect(su2)
+)
 assert(yap.winbar(reopened):match("󰆼"), "reopened winbar missing session cost: " .. yap.winbar(reopened))
 print("OK session_usage")

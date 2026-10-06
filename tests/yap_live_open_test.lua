@@ -29,7 +29,10 @@ vim.cmd("vsplit")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 assert(vim.api.nvim_get_current_buf() == audit, "audit view did not reopen beside the vertical split")
-assert(vim.api.nvim_win_get_width(0) == vim.o.columns, "audit view drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns)
+assert(
+  vim.api.nvim_win_get_width(0) == vim.o.columns,
+  "audit view drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns
+)
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 assert(#vim.fn.win_findbuf(audit) == 0, "audit view did not close from the vertical split")

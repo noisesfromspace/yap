@@ -286,8 +286,10 @@ function M.insert(name, opts)
     return
   end
   if #entries == 0 then
-    vim.notify("yap: no templates or skills in " .. config().templates_dir .. " or " .. config().skills_dir,
-      vim.log.levels.INFO)
+    vim.notify(
+      "yap: no templates or skills in " .. config().templates_dir .. " or " .. config().skills_dir,
+      vim.log.levels.INFO
+    )
     return
   end
   local items = {}

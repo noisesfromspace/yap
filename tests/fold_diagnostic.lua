@@ -14,11 +14,19 @@ local active = true
 local started = vim.uv.hrtime()
 local function record(line)
   events[#events + 1] = string.format("+%.0fms %s", (vim.uv.hrtime() - started) / 1e6, line)
-  if #events > 300 then table.remove(events, 1) end
+  if #events > 300 then
+    table.remove(events, 1)
+  end
 end
 local function sample(source)
-  if not active or not api.nvim_buf_is_valid(buf) or not api.nvim_win_is_valid(win)
-    or api.nvim_win_get_buf(win) ~= buf then return end
+  if
+    not active
+    or not api.nvim_buf_is_valid(buf)
+    or not api.nvim_win_is_valid(win)
+    or api.nvim_win_get_buf(win) ~= buf
+  then
+    return
+  end
   samples = samples + 1
   api.nvim_win_call(win, function()
     local tick = api.nvim_buf_get_changedtick(buf)
@@ -52,12 +60,25 @@ local function sample(source)
         local finish = vim.fn.foldclosedend(row)
         local level = vim.fn.foldlevel(row)
         local want = expected[row]
-        parts[#parts + 1] = string.format("%d:%d-%d/L%d%s%s", row, closed, finish, level,
-          want and ("/expected=" .. want) or "", want and closed == row and finish ~= want and " MISMATCH" or "")
+        parts[#parts + 1] = string.format(
+          "%d:%d-%d/L%d%s%s",
+          row,
+          closed,
+          finish,
+          level,
+          want and ("/expected=" .. want) or "",
+          want and closed == row and finish ~= want and " MISMATCH" or ""
+        )
       end
     end
-    local signature = string.format("tick=%d cursor=%d method=%s enabled=%s %s", tick, cursor,
-      vim.wo.foldmethod, tostring(vim.wo.foldenable), table.concat(parts, " "))
+    local signature = string.format(
+      "tick=%d cursor=%d method=%s enabled=%s %s",
+      tick,
+      cursor,
+      vim.wo.foldmethod,
+      tostring(vim.wo.foldenable),
+      table.concat(parts, " ")
+    )
     if signature ~= last then
       record(string.format("%s %s", source, signature))
       last = signature
@@ -67,8 +88,12 @@ end
 local function report()
   local lines = {
     "Fold diagnostic (buffer number " .. buf .. ", window " .. win .. ")",
-    string.format("Samples: %d; buffer edits observed: %d; retained state changes: %d (last 300)",
-      samples, edits, #events),
+    string.format(
+      "Samples: %d; buffer edits observed: %d; retained state changes: %d (last 300)",
+      samples,
+      edits,
+      #events
+    ),
     "Notation row:closed-start-closed-end/Lfoldlevel/expected-model-end; -1 means not closed.",
     "MISMATCH means a CLOSED Yap fold ends at a different row than its parsed region.",
     "Polling and scheduled callbacks cannot observe transitions entirely within one redraw/event-loop turn.",
@@ -78,16 +103,18 @@ local function report()
   }
   if api.nvim_win_is_valid(win) and api.nvim_win_get_buf(win) == buf then
     api.nvim_win_call(win, function()
-      for _, command in ipairs({ "verbose setlocal foldmethod? foldexpr? foldtext? foldlevel? foldenable?",
-        "verbose nmap za", "verbose nmap <Tab>" }) do
+      for _, command in ipairs({
+        "verbose setlocal foldmethod? foldexpr? foldtext? foldlevel? foldenable?",
+        "verbose nmap za",
+        "verbose nmap <Tab>",
+      }) do
         local ok, result = pcall(api.nvim_exec2, command, { output = true })
         lines[#lines + 1] = command
         vim.list_extend(lines, vim.split(ok and result.output or tostring(result), "\n", { plain = true }))
       end
       local ufo = package.loaded.ufo
       local ok, attached = ufo and pcall(ufo.hasAttached, buf)
-      lines[#lines + 1] = "ufo loaded=" .. tostring(ufo ~= nil)
-        .. " attached=" .. tostring(ok and attached or false)
+      lines[#lines + 1] = "ufo loaded=" .. tostring(ufo ~= nil) .. " attached=" .. tostring(ok and attached or false)
     end)
   else
     lines[#lines + 1] = "Original window no longer shows the buffer."
@@ -104,7 +131,9 @@ local function report()
   vim.bo[out].bufhidden = "wipe"
 end
 local function stop()
-  if not active then return end
+  if not active then
+    return
+  end
   sample("stop")
   active = false
   timer:stop()
@@ -118,7 +147,9 @@ _G.yap_fold_diagnostic = { stop = stop }
 api.nvim_buf_attach(buf, false, {
   on_lines = function()
     edits = edits + 1
-    vim.schedule(function() sample("edit") end)
+    vim.schedule(function()
+      sample("edit")
+    end)
   end,
   on_detach = function()
     if active then
@@ -128,7 +159,13 @@ api.nvim_buf_attach(buf, false, {
     end
   end,
 })
-timer:start(0, 100, vim.schedule_wrap(function() sample("poll") end))
+timer:start(
+  0,
+  100,
+  vim.schedule_wrap(function()
+    sample("poll")
+  end)
+)
 api.nvim_create_user_command("FoldDiagStop", stop, {})
 api.nvim_create_user_command("FoldDiagReport", report, {})
 print("Fold diagnostic started for buffer " .. buf .. "; run :FoldDiagStop after the flicker.")

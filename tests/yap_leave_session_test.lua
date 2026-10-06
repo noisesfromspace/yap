@@ -14,7 +14,9 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "unsent task" })
 vim.cmd("botright 8split")
 local scratch_win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_buf(scratch_win, scratch)
-vim.api.nvim_buf_call(scratch, function() vim.cmd("write") end)
+vim.api.nvim_buf_call(scratch, function()
+  vim.cmd("write")
+end)
 local queue_path = vim.api.nvim_buf_get_name(scratch)
 
 vim.api.nvim_set_current_win(session_win)
@@ -26,9 +28,12 @@ assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live audit view did 
 -- drawer windows close, but their buffers and the queued work remain intact.
 local other = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_win_set_buf(session_win, other)
-assert(vim.wait(1000, function()
-  return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
-end), "scratch/live drawers stayed open after leaving the session")
+assert(
+  vim.wait(1000, function()
+    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
+  end),
+  "scratch/live drawers stayed open after leaving the session"
+)
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped")
 assert(vim.api.nvim_buf_is_valid(audit), "audit view buffer was wiped")
 assert(vim.fn.filereadable(queue_path) == 1, "scratch queue file was removed")
@@ -43,9 +48,12 @@ vim.cmd("tabnew")
 local drawer_tab = vim.api.nvim_get_current_tabpage()
 vim.api.nvim_win_set_buf(0, scratch)
 vim.api.nvim_win_set_buf(session_win, other)
-assert(vim.wait(1000, function()
-  return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
-end), "drawers in separate tabs stayed open after leaving the session")
+assert(
+  vim.wait(1000, function()
+    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
+  end),
+  "drawers in separate tabs stayed open after leaving the session"
+)
 assert(vim.api.nvim_tabpage_is_valid(drawer_tab), "drawer tab was unexpectedly closed")
 assert(vim.api.nvim_buf_is_valid(scratch), "last-window drawer buffer was wiped")
 
@@ -54,12 +62,23 @@ assert(vim.api.nvim_buf_is_valid(scratch), "last-window drawer buffer was wiped"
 vim.api.nvim_win_set_buf(0, scratch)
 local float_buf = vim.api.nvim_create_buf(false, true)
 local float = vim.api.nvim_open_win(float_buf, false, {
-  relative = "editor", row = 1, col = 1, width = 20, height = 2, style = "minimal",
+  relative = "editor",
+  row = 1,
+  col = 1,
+  width = 20,
+  height = 2,
+  style = "minimal",
 })
 vim.api.nvim_win_set_buf(session_win, session)
 vim.api.nvim_win_set_buf(session_win, other)
-assert(vim.wait(1000, function() return #vim.fn.win_findbuf(scratch) == 0 end),
-  "last ordinary drawer window stayed open alongside a float")
-assert(vim.api.nvim_win_is_valid(float) and vim.api.nvim_tabpage_is_valid(drawer_tab),
-  "closing the drawer also closed the floating window or tab")
+assert(
+  vim.wait(1000, function()
+    return #vim.fn.win_findbuf(scratch) == 0
+  end),
+  "last ordinary drawer window stayed open alongside a float"
+)
+assert(
+  vim.api.nvim_win_is_valid(float) and vim.api.nvim_tabpage_is_valid(drawer_tab),
+  "closing the drawer also closed the floating window or tab"
+)
 print("OK leave-session drawers")

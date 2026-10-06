@@ -13,20 +13,38 @@ local paths = require("harness.path")
 local function add(buf, id, reason)
   local log = paths.audit_path(buf)
   vim.fn.mkdir(vim.fn.fnamemodify(log, ":h"), "p")
-  vim.fn.writefile({ vim.json.encode({
-    type = "alert_advice", id = id, name = "bash", reason = reason,
-    p_alert = 0.42, severity = 1.3, ts = "2026-01-01T12:00:00",
-  }), vim.json.encode({
-    type = "turn_end", ts = "2026-01-01T12:00:01", prompt = 1, completion = 1,
-  }) }, log, "a")
+  vim.fn.writefile({
+    vim.json.encode({
+      type = "alert_advice",
+      id = id,
+      name = "bash",
+      reason = reason,
+      p_alert = 0.42,
+      severity = 1.3,
+      ts = "2026-01-01T12:00:00",
+    }),
+    vim.json.encode({
+      type = "turn_end",
+      ts = "2026-01-01T12:00:01",
+      prompt = 1,
+      completion = 1,
+    }),
+  }, log, "a")
 end
 add(first, "first-id", "first warning")
 add(first, "first-id", "later warning") -- ids can repeat across turns
 local log = paths.audit_path(first)
-vim.fn.writefile({ vim.json.encode({
-  type = "approval_request", id = "approval-1", tool = "bash", reason = "possible data loss",
-  command = '{"command":"rm -rf important"}', ts = "2026-01-02T12:00:00",
-}), vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = "2026-01-02T12:00:01" }) }, log, "a")
+vim.fn.writefile({
+  vim.json.encode({
+    type = "approval_request",
+    id = "approval-1",
+    tool = "bash",
+    reason = "possible data loss",
+    command = '{"command":"rm -rf important"}',
+    ts = "2026-01-02T12:00:00",
+  }),
+  vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = "2026-01-02T12:00:01" }),
+}, log, "a")
 add(second, "second-id", "second warning")
 -- Rebuild audit buffers from the persisted JSONL, as on a fresh Neovim.
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -42,7 +60,10 @@ local old_select = vim.ui.select
 vim.ui.select = function(items, opts, cb)
   labels = vim.tbl_map(opts.format_item, items)
   for _, item in ipairs(items) do
-    if item.event.type == "approval_request" then selected = item; break end
+    if item.event.type == "approval_request" then
+      selected = item
+      break
+    end
   end
   cb(selected)
 end
@@ -53,9 +74,18 @@ assert(table.concat(labels, "\n"):find("approval requested", 1, true), "approval
 assert(table.concat(labels, "\n"):find(vim.fn.fnamemodify(path1, ":t"), 1, true), "first session unidentified")
 assert(table.concat(labels, "\n"):find(vim.fn.fnamemodify(path2, ":t"), 1, true), "second session unidentified")
 local audit = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(audit):find(vim.fn.fnamemodify(path1, ":t") .. "-audit", 1, true), "wrong session opened")
+assert(
+  vim.api.nvim_buf_get_name(audit):find(vim.fn.fnamemodify(path1, ":t") .. "-audit", 1, true),
+  "wrong session opened"
+)
 local line = vim.api.nvim_win_get_cursor(0)[1]
-assert(vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("possible data loss", 1, true), "not on chosen approval")
-assert(vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("rm -rf important", 1, true), "full blocked command not shown")
+assert(
+  vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("possible data loss", 1, true),
+  "not on chosen approval"
+)
+assert(
+  vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("rm -rf important", 1, true),
+  "full blocked command not shown"
+)
 assert(vim.fn.foldclosed(line) == -1, "approval is still folded")
 print("OK alerts")

@@ -19,7 +19,14 @@ assert(has_map("yap: stop in-flight request", "<C-C>"), "stop mapping is not <C-
 -- Picker variants and infrequent operations are Lua/keymap only; the
 -- discoverable entry points remain Ex commands.
 vim.cmd("runtime plugin/yap.lua")
-for _, name in ipairs({ "YapInsertHere", "YapHistory", "YapInstances", "YapWaiting", "YapChangeDefaultModel", "YapReload" }) do
+for _, name in ipairs({
+  "YapInsertHere",
+  "YapHistory",
+  "YapInstances",
+  "YapWaiting",
+  "YapChangeDefaultModel",
+  "YapReload",
+}) do
   assert(vim.fn.exists(":" .. name) == 0, name .. " should not be an Ex command")
 end
 for _, name in ipairs({ "YapInsert", "YapSessions", "YapAlerts", "YapApproval", "YapChangeModel" }) do

@@ -50,6 +50,9 @@ assert(queued, "file reference was not inserted in queue")
 assert(listed and vim.tbl_contains(listed, "src/example.lua"), "queue picker did not search current :pwd")
 
 assert(has_mapping(scratch, "n", "yap: insert file reference"), "queue buffer has no normal-mode file picker shortcut")
-assert(not has_mapping(scratch, "i", "yap: insert file reference"), "queue buffer has an insert-mode file picker shortcut")
+assert(
+  not has_mapping(scratch, "i", "yap: insert file reference"),
+  "queue buffer has an insert-mode file picker shortcut"
+)
 vim.ui.select = original_select
 print("OK file picker")

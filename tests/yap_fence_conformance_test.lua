@@ -17,10 +17,7 @@ assert(#cases > 0, "fence conformance fixture is empty")
 for _, c in ipairs(cases) do
   local char, run, tail = fold.fence_run(c.line)
   if c["null"] then
-    assert(
-      char == nil,
-      string.format("fence_run(%q) = (%q, %s, %q), want no fence", c.line, char, tostring(run), tail)
-    )
+    assert(char == nil, string.format("fence_run(%q) = (%q, %s, %q), want no fence", c.line, char, tostring(run), tail))
   else
     local got = char ~= nil and char or "<nil>"
     assert(

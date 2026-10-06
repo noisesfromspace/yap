@@ -55,7 +55,9 @@ local function parse(buf)
   local region, fence, comment = nil, nil, nil
   local tool
   local function end_tool(finish)
-    if tool and not tool.finish then tool.finish = finish end
+    if tool and not tool.finish then
+      tool.finish = finish
+    end
     tool = nil
   end
 

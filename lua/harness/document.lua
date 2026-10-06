@@ -360,7 +360,9 @@ function M.split_stream_tail(buf, text)
   if newline == 0 then
     tail = (vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] or "") .. tail
   end
-  if tail == "" then return text, "" end
+  if tail == "" then
+    return text, ""
+  end
   for _, prefix in ipairs({ "# @", "<!-- yap:", "<!-- /yap:" }) do
     if prefix:sub(1, #tail) == tail or tail:sub(1, #prefix) == prefix then
       -- A complete single-line comment is already safely classifiable.

@@ -118,10 +118,12 @@ fold.after_append(buf, { "streamed text", "" })
 assert(vim.fn.foldclosed(9) == -1, "text stream closed Tab-opened reply")
 local current
 for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-  if line == "# @assistant" then current = i end
+  if line == "# @assistant" then
+    current = i
+  end
 end
 assert(vim.fn.foldclosed(current) == current, "text stream opened current reply")
-require("harness.document").append_text(buf, '<!-- yap:thinking\nmore\n-->\n')
+require("harness.document").append_text(buf, "<!-- yap:thinking\nmore\n-->\n")
 fold.after_append(buf, { "<!-- yap:thinking", "more", "-->" })
 assert(vim.fn.foldclosed(9) == -1, "thinking stream closed Tab-opened reply")
 assert(vim.fn.foldclosed(current) == current, "thinking stream opened current reply")

@@ -25,11 +25,20 @@ end
 do
   local buf = yap.new()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+    "# @assistant",
+    "",
     '<!-- yap:tool {"id":"t1","name":"bash","arguments":{}} -->',
-    "result", "<!-- /yap:tool -->", "",
+    "result",
+    "<!-- /yap:tool -->",
+    "",
   })
   fold.setup_buffer(buf)
   fold.set_view_level(2)
@@ -54,11 +63,20 @@ end
 do
   local buf = yap.new()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+    "# @assistant",
+    "",
     '<!-- yap:tool {"id":"t1","name":"bash","arguments":{}} -->',
-    "result one", "<!-- /yap:tool -->", "",
+    "result one",
+    "<!-- /yap:tool -->",
+    "",
   })
   fold.setup_buffer(buf)
   fold.set_view_level(2)
@@ -72,7 +90,9 @@ do
   local enter_count = 0
   vim.api.nvim_create_autocmd("BufWinEnter", {
     buffer = buf,
-    callback = function() enter_count = enter_count + 1 end,
+    callback = function()
+      enter_count = enter_count + 1
+    end,
   })
   local path = vim.api.nvim_buf_get_name(buf)
   local other = vim.api.nvim_create_buf(false, true)
@@ -86,12 +106,19 @@ do
   -- folds while retaining t1's explicit open.
   assert(yap.open(path) == buf, "return did not focus the existing session")
   assert(enter_count == 1, "BufWinEnter did not fire on return: " .. enter_count)
-  local reconciled = vim.wait(100, function() return vim.fn.foldclosed(t2) == t2 end)
+  local reconciled = vim.wait(100, function()
+    return vim.fn.foldclosed(t2) == t2
+  end)
   assert(reconciled, "BufWinEnter did not reconcile the streamed tool fold")
   assert(vim.fn.foldclosed(t1) == -1, "return closed the user-opened fold")
-  assert(vim.fn.foldclosed(t2) == t2,
+  assert(
+    vim.fn.foldclosed(t2) == t2,
     ("return left streamed tool open: closed=%d level=%d end=%d"):format(
-      vim.fn.foldclosed(t2), vim.fn.foldlevel(t2), vim.fn.foldclosedend(t2)))
+      vim.fn.foldclosed(t2),
+      vim.fn.foldlevel(t2),
+      vim.fn.foldclosedend(t2)
+    )
+  )
   print("OK hidden-session folds reconcile on return")
   print("OK za-open survives streamed tool")
 end

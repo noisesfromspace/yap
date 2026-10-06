@@ -113,19 +113,23 @@ local buf2 = yap.new()
 fold.setup_buffer(buf2)
 vim.wo.foldlevel = 99
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, {
-  "# @system", "",          -- 1, 2
-  "# @user", "",            -- 3, 4
-  "# @assistant", "",       -- 5, 6
+  "# @system",
+  "", -- 1, 2
+  "# @user",
+  "", -- 3, 4
+  "# @assistant",
+  "", -- 5, 6
   '<!-- yap:tool {"id":"c2","name":"read","arguments":{"path":"x.md"}} -->', -- 7
-  "```markdown",            -- 8
-  "# @user",                -- 9  fake heading, inside the fence
-  "\\<!-- yap:thinking",   -- 10 escaped marker, ]t must not land here
-  "```",                    -- 11
-  "<!-- /yap:tool -->",     -- 12
-  "",                       -- 13
-  "answer",                 -- 14
-  "",                       -- 15
-  "# @user", "",            -- 16, 17
+  "```markdown", -- 8
+  "# @user", -- 9  fake heading, inside the fence
+  "\\<!-- yap:thinking", -- 10 escaped marker, ]t must not land here
+  "```", -- 11
+  "<!-- /yap:tool -->", -- 12
+  "", -- 13
+  "answer", -- 14
+  "", -- 15
+  "# @user",
+  "", -- 16, 17
 })
 
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
@@ -155,19 +159,23 @@ local buf3 = yap.new()
 fold.setup_buffer(buf3)
 vim.wo.foldlevel = 99
 vim.api.nvim_buf_set_lines(buf3, 0, -1, false, {
-  "# @system", "",                       -- 1, 2
-  "# @user", "",                         -- 3, 4
-  "# @assistant", "",                    -- 5, 6
-  "<!-- yap:thinking",                   -- 7  real thinking opener
-  "hmm",                                 -- 8
-  "```",                                 -- 9
-  '<!-- yap:tool {"id":"x"} -->',       -- 10 literal, inside fence+comment
-  "```",                                 -- 11
-  "-->",                                 -- 12
-  "",                                    -- 13
-  "answer",                              -- 14
-  "",                                    -- 15
-  "# @user", "",                         -- 16, 17
+  "# @system",
+  "", -- 1, 2
+  "# @user",
+  "", -- 3, 4
+  "# @assistant",
+  "", -- 5, 6
+  "<!-- yap:thinking", -- 7  real thinking opener
+  "hmm", -- 8
+  "```", -- 9
+  '<!-- yap:tool {"id":"x"} -->', -- 10 literal, inside fence+comment
+  "```", -- 11
+  "-->", -- 12
+  "", -- 13
+  "answer", -- 14
+  "", -- 15
+  "# @user",
+  "", -- 16, 17
 })
 
 vim.api.nvim_win_set_cursor(0, { 17, 0 })

@@ -63,10 +63,15 @@ assert(not tiny:match("Commit changes from this session"), "instant title used t
 
 -- The answer title sees the task requests, but excludes assistant transcript/tool output.
 assert(full and full:match("Fix the session picker label"), "overall title missing initial request: " .. tostring(full))
-assert(not full:match("described%.") and not full:match("Implemented the picker label fix"),
-  "assistant content leaked into title input: " .. full)
+assert(
+  not full:match("described%.") and not full:match("Implemented the picker label fix"),
+  "assistant content leaked into title input: " .. full
+)
 assert(not full:match("Commit changes from this session"), "routine commit footer leaked into title input: " .. full)
-assert(full:match("first request anchors the session's main goal"), "overall title prompt does not anchor the first request: " .. full)
+assert(
+  full:match("first request anchors the session's main goal"),
+  "overall title prompt does not anchor the first request: " .. full
+)
 assert(not full:match("Subject: change"), "answer title prompt still requests the colon pattern: " .. full)
 assert(full:match("No colon"), "answer title prompt missing colon guard: " .. full)
 
@@ -76,8 +81,8 @@ ok = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
 end, 50)
 local lines = vim.api.nvim_buf_get_lines(buf, 0, 8, false)
-assert(ok and
-  table.concat(lines, "\n"):match("description: described%."),
+assert(
+  ok and table.concat(lines, "\n"):match("description: described%."),
   "description not written to frontmatter: " .. table.concat(lines, "\n")
 )
 
@@ -100,8 +105,14 @@ for l in read_log():gmatch("[^\n]+") do
     tiny = l
   end
 end
-assert(tiny and tiny:match("Add a searchable session filter"), "tiny request missing new user request: " .. tostring(tiny))
-assert(not tiny:match("described%.") and not tiny:match("Fix the session picker label"), "tiny request included previous conversation: " .. tiny)
+assert(
+  tiny and tiny:match("Add a searchable session filter"),
+  "tiny request missing new user request: " .. tostring(tiny)
+)
+assert(
+  not tiny:match("described%.") and not tiny:match("Fix the session picker label"),
+  "tiny request included previous conversation: " .. tiny
+)
 
 -- A title request never sees assistant tool output, and a fenced model reply
 -- is rejected rather than persisted as the session description.
@@ -110,7 +121,7 @@ vim.api.nvim_buf_set_lines(fence_buf, -1, -1, false, {
   "Fence regression trigger: improve the session title",
   "# @assistant",
   "Tool call: git",
-  "Arguments: {\"command\":\"status\"}",
+  'Arguments: {"command":"status"}',
   "Tool result:",
   "```",
   "## main...rad/main [ahead 3]",
@@ -140,8 +151,10 @@ for line in read_log():gmatch("[^\n]+") do
     fence_request = line
   end
 end
-assert(fence_request and not fence_request:match("git status") and not fence_request:match("ahead 3"),
-  "assistant tool output leaked into title context: " .. tostring(fence_request))
+assert(
+  fence_request and not fence_request:match("git status") and not fence_request:match("ahead 3"),
+  "assistant tool output leaked into title context: " .. tostring(fence_request)
+)
 local fence_lines = vim.api.nvim_buf_get_lines(fence_buf, 0, 8, false)
 assert(not table.concat(fence_lines, "\n"):match("description:.*```"), "fenced title was persisted")
 
@@ -157,8 +170,7 @@ ok = vim.wait(10000, function()
 end, 100)
 assert(ok, "colon-regression turn did not finish")
 local colon_fm = table.concat(vim.api.nvim_buf_get_lines(colon_buf, 0, 8, false), "\n")
-assert(colon_fm:match("description: Neovim 0%.13 %– API migrations"),
-  "colon title not sanitized: " .. colon_fm)
+assert(colon_fm:match("description: Neovim 0%.13 %– API migrations"), "colon title not sanitized: " .. colon_fm)
 assert(not colon_fm:match("0%.13: API"), "unsanitized colon reached frontmatter: " .. colon_fm)
 
 print("OK describe")

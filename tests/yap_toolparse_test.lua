@@ -91,10 +91,24 @@ assert(
 -- A heading in a fenced assistant reply (and a bare heading in a tool
 -- result) is literal content, not a new message boundary.
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @user", "", "question", "", "# @assistant", "",
-  "```markdown", "# @user", "```", "",
+  "# @user",
+  "",
+  "question",
+  "",
+  "# @assistant",
+  "",
+  "```markdown",
+  "# @user",
+  "```",
+  "",
   '<!-- yap:tool {"id":"c10","name":"read","arguments":{}} -->',
-  "# @user", "<!-- /yap:tool -->", "", "answer", "", "# @user", "",
+  "# @user",
+  "<!-- /yap:tool -->",
+  "",
+  "answer",
+  "",
+  "# @user",
+  "",
 })
 local m5 = yap.parse_buffer(buf)
 assert(#m5 == 2 and m5[2].role == "assistant", "fake headings split messages: " .. vim.inspect(m5))

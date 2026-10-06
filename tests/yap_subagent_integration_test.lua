@@ -5,10 +5,18 @@ local home = vim.fn.tempname()
 vim.fn.mkdir(home .. "/.yap/roles", "p")
 vim.env.HOME = home
 assert(vim.fn.expand("~") == home, "test HOME not isolated")
-vim.fn.writefile({ "---", "name: scout", "model: pi-only-model", "tools: read, grep", "---", "Scout role" }, home .. "/.yap/roles/scout.md")
-vim.fn.writefile({ "---", "name: browser", "tools: browser_launch", "---", "Browser role" }, home .. "/.yap/roles/browser.md")
+vim.fn.writefile(
+  { "---", "name: scout", "model: pi-only-model", "tools: read, grep", "---", "Scout role" },
+  home .. "/.yap/roles/scout.md"
+)
+vim.fn.writefile(
+  { "---", "name: browser", "tools: browser_launch", "---", "Browser role" },
+  home .. "/.yap/roles/browser.md"
+)
 local script = home .. "/backend"
-vim.fn.writefile(vim.split([=[#!/usr/bin/env python3
+vim.fn.writefile(
+  vim.split(
+    [=[#!/usr/bin/env python3
 import json, sys
 for line in sys.stdin:
     req = json.loads(line)
@@ -31,16 +39,33 @@ for line in sys.stdin:
         print('\nchild finished\n', flush=True)
     print('\x1eyap:turn_end {"ok":true}', flush=True)
     print('yap:event {"type":"turn_complete"}', file=sys.stderr, flush=True)
-]=], "\n", { plain = true }), script)
+]=],
+    "\n",
+    { plain = true }
+  ),
+  script
+)
 vim.fn.setfperm(script, "rwx------")
 local yap = require("harness")
-yap.setup({ bin = script, provider = "mock", model = "working", description_model = "", description_answer_model = "", roles_dir = home .. "/.yap/roles" })
+yap.setup({
+  bin = script,
+  provider = "mock",
+  model = "working",
+  description_model = "",
+  description_answer_model = "",
+  roles_dir = home .. "/.yap/roles",
+})
 local parent = yap.new()
 local function delegate(task)
   local lines = vim.api.nvim_buf_get_lines(parent, 0, -1, false)
   vim.api.nvim_buf_set_lines(parent, #lines - 1, #lines, false, { task })
   yap.send(parent)
-  assert(vim.wait(5000, function() return not yap.is_running(parent) end, 10), "parent did not unblock")
+  assert(
+    vim.wait(5000, function()
+      return not yap.is_running(parent)
+    end, 10),
+    "parent did not unblock"
+  )
   return table.concat(vim.api.nvim_buf_get_lines(parent, 0, -1, false), "\n")
 end
 local success = delegate("delegate success")
@@ -54,7 +79,10 @@ assert(fm.provider == "mock" and fm.model == "working", "bare Pi model did not i
 assert(table.concat(fm.tools, ",") == "read,search", "role aliases not normalized")
 assert(fm.subagent_parent == vim.b[parent].yap_path, "child parent path missing")
 local parent_fm = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
-assert(parent_fm and parent_fm.subagents and #parent_fm.subagents == 1, "parent frontmatter did not record the subagent")
+assert(
+  parent_fm and parent_fm.subagents and #parent_fm.subagents == 1,
+  "parent frontmatter did not record the subagent"
+)
 assert(parent_fm.subagents[1] == child_path, "parent frontmatter subagent path mismatch")
 local followup = delegate("delegate session=" .. child_path)
 assert(followup:find("follow-up answered", 1, true), followup)

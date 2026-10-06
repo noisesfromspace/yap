@@ -18,16 +18,31 @@ end
 yap.scratch_toggle()
 local scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes", "remember this", "", "# @steer", "", "# @queue", "stale disk task",
+  "# @notes",
+  "remember this",
+  "",
+  "# @steer",
+  "",
+  "# @queue",
+  "stale disk task",
 })
 vim.cmd("write")
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes", "remember this", "", "# @steer", "", "# @queue", "task one", "task two",
+  "# @notes",
+  "remember this",
+  "",
+  "# @steer",
+  "",
+  "# @queue",
+  "task one",
+  "task two",
 })
 yap.scratch_send(scratch)
 local current = text(scratch)
-assert(current:match("# @queue") and not current:match("task one") and not current:match("task two"),
-  "dispatch did not consume the whole queue body:\n" .. current)
+assert(
+  current:match("# @queue") and not current:match("task one") and not current:match("task two"),
+  "dispatch did not consume the whole queue body:\n" .. current
+)
 
 -- The whole body arrives as a single turn; the queue is already empty, so
 -- nothing is left to auto-dispatch afterward.
@@ -42,8 +57,10 @@ assert(not chat:match("stale disk task"), "dispatch read stale saved file conten
 -- A second <C-s> with an empty queue starts nothing.
 yap.scratch_send(scratch)
 assert(not yap.is_running(buf), "empty queue dispatched a turn")
-assert(text(scratch):match("# @queue") and not text(scratch):match("task"),
-  "empty queue lost its heading:\n" .. text(scratch))
+assert(
+  text(scratch):match("# @queue") and not text(scratch):match("task"),
+  "empty queue lost its heading:\n" .. text(scratch)
+)
 
 local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), "\n")
 assert(not saved:match("task one") and not saved:match("task two"), "consumed queue reappeared in saved file")

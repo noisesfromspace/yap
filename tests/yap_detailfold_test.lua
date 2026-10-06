@@ -142,8 +142,7 @@ local provider, model = require("harness.util").current_combo(buf)
 local combo = provider .. "/" .. model
 assert(not left:find(combo, 1, true) and not right:find(combo, 1, true), "model outside center: " .. bar)
 local rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_center:find(" " .. combo .. " ", 1, true),
-  "model island missing in center: " .. rendered_center)
+assert(rendered_center:find(" " .. combo .. " ", 1, true), "model island missing in center: " .. rendered_center)
 assert(not rendered_center:find("󰘖", 1, true), "fold island should be gone: " .. rendered_center)
 assert(right:find("50%%", 1, true), "winbar missing gauge: " .. right)
 -- With usage present in a narrow window, the center yields to the right.

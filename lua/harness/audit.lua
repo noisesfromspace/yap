@@ -82,11 +82,28 @@ local function render_event(ev)
     lines[#lines + 1] = { text = ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"), hl = HL.meta }
     return lines, "block"
   elseif ev.type == "alert_advice" then
-    return { { text = ("%s ⚠ alert [%s] %s: %s (P=%.2f, severity=%.2f)"):format(
-      ts, flat(ev.id), flat(ev.name), flat(ev.reason), tonumber(ev.p_alert) or 0, tonumber(ev.severity) or 0
-    ), hl = HL.warn } }, "block"
+    return {
+      {
+        text = ("%s ⚠ alert [%s] %s: %s (P=%.2f, severity=%.2f)"):format(
+          ts,
+          flat(ev.id),
+          flat(ev.name),
+          flat(ev.reason),
+          tonumber(ev.p_alert) or 0,
+          tonumber(ev.severity) or 0
+        ),
+        hl = HL.warn,
+      },
+    },
+      "block"
   elseif ev.type == "retry" then
-    return { { text = ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)), hl = HL.warn } }, "block"
+    return {
+      {
+        text = ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)),
+        hl = HL.warn,
+      },
+    },
+      "block"
   elseif ev.type == "tool_text_warning" then
     local detail = flat(ev.detail)
     if detail == "" then
@@ -103,18 +120,36 @@ local function render_event(ev)
       context = context ~= "" and (context .. ": " .. reason) or reason
     end
     local label = context ~= "" and (" (" .. context .. ")") or ""
-    return { { text = ("%s %s approval requested [%s]%s: %s"):format(ts, require("harness").config.icons.approval, flat(ev.id), label, flat(ev.command)), hl = HL.warn } }, "block"
+    return {
+      {
+        text = ("%s %s approval requested [%s]%s: %s"):format(
+          ts,
+          require("harness").config.icons.approval,
+          flat(ev.id),
+          label,
+          flat(ev.command)
+        ),
+        hl = HL.warn,
+      },
+    },
+      "block"
   elseif ev.type == "approval_result" then
     return { { text = ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), hl = HL.warn } }, "block"
   elseif ev.type == "approval_timeout" then
     return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "block"
   elseif ev.type == "turn_end" then
-    return { { text = ("# %s turn: %d in · %d out · %.1fs"):format(
-      ts,
-      ev.prompt or 0,
-      ev.completion or 0,
-      (ev.ms or 0) / 1000
-    ), hl = HL.turn } }, "block"
+    return {
+      {
+        text = ("# %s turn: %d in · %d out · %.1fs"):format(
+          ts,
+          ev.prompt or 0,
+          ev.completion or 0,
+          (ev.ms or 0) / 1000
+        ),
+        hl = HL.turn,
+      },
+    },
+      "block"
   end
 end
 

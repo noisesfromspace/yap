@@ -48,9 +48,16 @@ end
 -- ── view 2: za-opened tool survives a streamed tool, new tool stays folded ─
 do
   local buf = buf_with({
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+    "# @assistant",
+    "",
     '<!-- yap:tool {"id":"t1","name":"bash","arguments":{}} -->',
     "result one",
     "<!-- /yap:tool -->",
@@ -71,9 +78,16 @@ end
 -- ── view 2: za-opened system prompt survives a streamed tool ─────────────
 do
   local buf = buf_with({
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+    "# @assistant",
+    "",
   })
   fold.set_view_level(2)
   assert(vim.fn.foldclosed(1) == 1, "precondition: system folded in view 2")
@@ -87,9 +101,16 @@ end
 -- ── view 2: za-opened thinking block survives a streamed tool ────────────
 do
   local buf = buf_with({
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+    "# @assistant",
+    "",
     "<!-- yap:thinking",
     "hmm",
     "-->",
@@ -108,8 +129,14 @@ end
 -- ── system prompt: folded in views 1 and 2, open in view 3 ───────────────
 do
   local buf = buf_with({
-    "# @system", "", "sys", "",
-    "# @user", "", "Q", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
   })
   fold.set_view_level(1)
   assert(vim.fn.foldclosed(1) == 1, "system folded in view 1")
@@ -123,10 +150,22 @@ end
 -- ── view 1: za-opened old assistant survives a new reply ─────────────────
 do
   local buf = buf_with({
-    "# @system", "", "sys", "",
-    "# @user", "", "Q1", "",
-    "# @assistant", "", "A1", "", -- old assistant (will za-open)
-    "# @user", "", "Q2", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q1",
+    "",
+    "# @assistant",
+    "",
+    "A1",
+    "", -- old assistant (will za-open)
+    "# @user",
+    "",
+    "Q2",
+    "",
   })
   -- The new reply streams in; view 1 keeps all assistant messages folded.
   vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @assistant", "", "A2", "" })

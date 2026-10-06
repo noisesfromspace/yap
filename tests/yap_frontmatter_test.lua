@@ -14,10 +14,7 @@ local fm = frontmatter.parse(lines)
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
-assert(
-  fm.cwd == vim.fs.normalize(vim.fn.getcwd()),
-  "cwd not recorded: " .. vim.inspect(fm.cwd)
-)
+assert(fm.cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.cwd))
 assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
 local created = fm.created_at
 
@@ -44,10 +41,7 @@ lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
 assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim.inspect(fm))
 assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
-assert(
-  fm.cwd == vim.fs.normalize(vim.fn.getcwd()),
-  "cwd not preserved across a rewrite: " .. vim.inspect(fm.cwd)
-)
+assert(fm.cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not preserved across a rewrite: " .. vim.inspect(fm.cwd))
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 local bar = yap.winbar(buf)
@@ -101,8 +95,10 @@ assert(
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 local renamed_items = session.list("renamed")
-assert(#renamed_items == 0,
-  "description-labelled auto-named session should not appear in renamed scope: " .. vim.inspect(renamed_items))
+assert(
+  #renamed_items == 0,
+  "description-labelled auto-named session should not appear in renamed scope: " .. vim.inspect(renamed_items)
+)
 
 -- 7. a legacy file without frontmatter keeps the config default and is
 --    left untouched (open must not inject a dirtying edit)
@@ -119,17 +115,54 @@ assert(
 )
 
 -- 8. subagents + updated_at + turns render and parse back
-local subagents_block = frontmatter.render("zeta", "m1", { "zeta/m1" }, created, nil, nil, nil, { "/tmp/a.md", "/tmp/b.md" }, "2025-09-29T19:24:01Z", 14, "/tmp/project")
+local subagents_block = frontmatter.render(
+  "zeta",
+  "m1",
+  { "zeta/m1" },
+  created,
+  nil,
+  nil,
+  nil,
+  { "/tmp/a.md", "/tmp/b.md" },
+  "2025-09-29T19:24:01Z",
+  14,
+  "/tmp/project"
+)
 local subagents_fm = frontmatter.parse(subagents_block)
 assert(subagents_fm.cwd == "/tmp/project", "cwd not roundtripped: " .. vim.inspect(subagents_fm.cwd))
 assert(
   vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
   "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
 )
-assert(subagents_fm.updated_at == "2025-09-29T19:24:01Z", "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at))
+assert(
+  subagents_fm.updated_at == "2025-09-29T19:24:01Z",
+  "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at)
+)
 assert(subagents_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(subagents_fm.turns))
-local links = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, {}, nil, 0, "/tmp/project", "/tmp/source.md", { "/tmp/fork.md" }, "/tmp/parent.md"))
-assert(links.forked_from == "/tmp/source.md" and links.subagent_parent == "/tmp/parent.md" and links.forks[1] == "/tmp/fork.md", "links not roundtripped")
+local links = frontmatter.parse(
+  frontmatter.render(
+    "zeta",
+    "m1",
+    {},
+    created,
+    nil,
+    nil,
+    nil,
+    {},
+    nil,
+    0,
+    "/tmp/project",
+    "/tmp/source.md",
+    { "/tmp/fork.md" },
+    "/tmp/parent.md"
+  )
+)
+assert(
+  links.forked_from == "/tmp/source.md"
+    and links.subagent_parent == "/tmp/parent.md"
+    and links.forks[1] == "/tmp/fork.md",
+  "links not roundtripped"
+)
 
 -- 9. a :file-renamed session keeps its chosen name over the description
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"
@@ -139,7 +172,8 @@ assert(
 )
 assert(
   session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker.md",
-  "named session label should keep the cwd prefix: " .. session.label(named_path, "Generated description", "/opt/code/yap")
+  "named session label should keep the cwd prefix: "
+    .. session.label(named_path, "Generated description", "/opt/code/yap")
 )
 
 -- 10. save stamps a turn count from the `# @user` headings

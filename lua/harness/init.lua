@@ -57,17 +57,17 @@ M.config = {
   -- fallback preset for unpatched fonts is under |yap-configuration|.
   -- Set any to "" to drop its glyph.
   icons = {
-    since = "󰅐",   -- nf-md-clock_outline (since-open token/cost chip)
-    total = "󰆼",   -- nf-md-database   (all-time token/cost chip)
+    since = "󰅐", -- nf-md-clock_outline (since-open token/cost chip)
+    total = "󰆼", -- nf-md-database   (all-time token/cost chip)
     running = "", -- nf-cod-play (rollup: other sessions streaming)
     stopped = "󰓛", -- nf-md-stop (a manually stopped turn)
-    error = "󰚌",   -- nf-md-skull (winbar error state)
+    error = "󰚌", -- nf-md-skull (winbar error state)
     waiting = "󰫁", -- waiting (rollup: other sessions awaiting you)
-    idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
-    steer = "󰇐",   -- nf-md-directions (winbar steer state)
+    idle = "󰝦", -- nf-md-circle_outline (picker idle state)
+    steer = "󰇐", -- nf-md-directions (winbar steer state)
     approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
-    cap_l = "",   -- nf-ple-lower_right_triangle (island left cap)
-    cap_r = "",   -- nf-ple-lower_left_triangle  (island right cap)
+    cap_l = "", -- nf-ple-lower_right_triangle (island left cap)
+    cap_r = "", -- nf-ple-lower_left_triangle  (island right cap)
   },
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
@@ -159,7 +159,9 @@ local function write_default_combo(combo)
 end
 
 local function refresh_models()
-  if models_refreshing then return end
+  if models_refreshing then
+    return
+  end
   models_refreshing = true
   vim.system({ M.config.bin, "models" }, { text = true }, function(res)
     vim.schedule(function()
@@ -347,7 +349,22 @@ local function sync_frontmatter(buf)
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local cwd = (fm and fm.cwd) or vim.b[buf].yap_project_cwd
-  local block = frontmatter.render(provider, model, models, created_at, fm and fm.description, fm and fm.role or vim.b[buf].yap_role, fm and fm.tools or vim.b[buf].yap_tools, fm and fm.subagents, fm and fm.updated_at, fm and fm.turns, cwd, fm and fm.forked_from, fm and fm.forks, fm and fm.subagent_parent)
+  local block = frontmatter.render(
+    provider,
+    model,
+    models,
+    created_at,
+    fm and fm.description,
+    fm and fm.role or vim.b[buf].yap_role,
+    fm and fm.tools or vim.b[buf].yap_tools,
+    fm and fm.subagents,
+    fm and fm.updated_at,
+    fm and fm.turns,
+    cwd,
+    fm and fm.forked_from,
+    fm and fm.forks,
+    fm and fm.subagent_parent
+  )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -361,15 +378,36 @@ end
 --- in the session history picker.
 local function record_subagent(parent, child_path)
   local e = frontmatter_end(parent)
-  if not e then return end
+  if not e then
+    return
+  end
   local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false))
-  if not fm then return end
+  if not fm then
+    return
+  end
   local subagents = fm.subagents or {}
   for _, p in ipairs(subagents) do
-    if p == child_path then return end
+    if p == child_path then
+      return
+    end
   end
   subagents[#subagents + 1] = child_path
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, subagents, fm.updated_at, fm.turns, fm.cwd, fm.forked_from, fm.forks, fm.subagent_parent)
+  local block = frontmatter.render(
+    fm.provider,
+    fm.model,
+    fm.models,
+    fm.created_at,
+    fm.description,
+    fm.role,
+    fm.tools,
+    subagents,
+    fm.updated_at,
+    fm.turns,
+    fm.cwd,
+    fm.forked_from,
+    fm.forks,
+    fm.subagent_parent
+  )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
 
@@ -664,7 +702,15 @@ local function drain_audit(buf)
     append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
   elseif room <= 0 and stat.size > 0 and not l.truncated then
     l.truncated = true
-    append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(LIVE_OUTPUT_CAP, stat.size - LIVE_OUTPUT_CAP) })
+    append_event(buf, {
+      type = "output",
+      name = l.name,
+      ts = os.date("%Y-%m-%dT%H:%M:%S"),
+      data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(
+        LIVE_OUTPUT_CAP,
+        stat.size - LIVE_OUTPUT_CAP
+      ),
+    })
   end
 end
 
@@ -679,12 +725,20 @@ local function audit_poll_stop_if_idle()
   end
 end
 local function audit_poll_start()
-  if audit_poll_timer then return end
+  if audit_poll_timer then
+    return
+  end
   audit_poll_timer = vim.uv.new_timer()
-  audit_poll_timer:start(0, 180, vim.schedule_wrap(function()
-    for b in pairs(running) do drain_audit(b) end
-    audit_poll_stop_if_idle()
-  end))
+  audit_poll_timer:start(
+    0,
+    180,
+    vim.schedule_wrap(function()
+      for b in pairs(running) do
+        drain_audit(b)
+      end
+      audit_poll_stop_if_idle()
+    end)
+  )
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
@@ -695,10 +749,14 @@ local inspect_approval
 
 local function answer_approval(buf, approved)
   local ev = pending_approvals[buf]
-  if not ev then return end
+  if not ev then
+    return
+  end
   pending_approvals[buf] = nil
   local process = servers[buf]
-  if not process then return end -- backend stopped or timed out; never approve a stale call
+  if not process then
+    return
+  end -- backend stopped or timed out; never approve a stale call
   process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
   append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
 end
@@ -726,7 +784,9 @@ local function handle_event(buf, json_line)
     start_subagent(buf, ev)
   elseif ev.type == "subagent_timeout" then
     local child = subagent_children[buf]
-    if child then M.stop(child) end
+    if child then
+      M.stop(child)
+    end
   elseif ev.type == "approval_request" then
     append_event(buf, ev)
     local command = ev.command or ""
@@ -737,12 +797,21 @@ local function handle_event(buf, json_line)
     pending_approvals[buf] = ev
     local choice = vim.fn.confirm(
       ("yap: approve %s in %s?\nReason: %s\n\n%s\n\nInspect opens the conversation and full audit; answer within 60s using :YapApproval."):format(
-        ev.tool or "tool", live_session_label(buf), ev.reason or "review call", detail),
-      "&Run\n&Deny\n&Inspect", 2, "Warning"
+        ev.tool or "tool",
+        live_session_label(buf),
+        ev.reason or "review call",
+        detail
+      ),
+      "&Run\n&Deny\n&Inspect",
+      2,
+      "Warning"
     )
     if choice == 3 then
       inspect_approval(buf, ev)
-      vim.notify("yap: call paused; review the audit, then :YapApproval (timeout denies after 60s)", vim.log.levels.WARN)
+      vim.notify(
+        "yap: call paused; review the audit, then :YapApproval (timeout denies after 60s)",
+        vim.log.levels.WARN
+      )
     else
       answer_approval(buf, choice == 1)
     end
@@ -754,11 +823,15 @@ local function handle_event(buf, json_line)
     append_event(buf, ev)
     vim.notify(
       ("yap: %s (%s) — %s %s (P=%.2f, severity=%.2f)\n:YapAlerts"):format(
-        live_session_label(buf), vim.fn.fnamemodify(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf), ":t"),
-        ev.name or "tool", ev.reason or "flagged",
-        tonumber(ev.p_alert) or 0, tonumber(ev.severity) or 0
+        live_session_label(buf),
+        vim.fn.fnamemodify(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf), ":t"),
+        ev.name or "tool",
+        ev.reason or "flagged",
+        tonumber(ev.p_alert) or 0,
+        tonumber(ev.severity) or 0
       ),
-      vim.log.levels.WARN, { title = "yap alert" }
+      vim.log.levels.WARN,
+      { title = "yap alert" }
     )
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
@@ -793,8 +866,7 @@ local function handle_event(buf, json_line)
     if steer[buf] == ev.text then
       steer[buf] = nil -- delivered: remove only the matching live draft
       local scratch = vim.b[buf].yap_scratch
-      if scratch and vim.api.nvim_buf_is_valid(scratch)
-          and scratch_section_text(scratch, "steer") == ev.text then
+      if scratch and vim.api.nvim_buf_is_valid(scratch) and scratch_section_text(scratch, "steer") == ev.text then
         scratch_set_section(scratch, "steer", {})
         scratch_save(scratch)
       end
@@ -1192,7 +1264,10 @@ function M.approval()
   local buf = pending_approvals[current] and current or nil
   if not buf then
     for chat, t in pairs(audits) do
-      if t.bufnr == current and pending_approvals[chat] then buf = chat; break end
+      if t.bufnr == current and pending_approvals[chat] then
+        buf = chat
+        break
+      end
     end
   end
   if not buf then
@@ -1209,8 +1284,17 @@ function M.approval()
     return
   end
   local ev = pending_approvals[buf]
-  local choice = vim.fn.confirm(("yap: approve %s in %s?\nReason: %s\n\n%s"):format(
-    ev.tool or "tool", live_session_label(buf), ev.reason or "review call", ev.command or ""), "&Run\n&Deny", 2, "Warning")
+  local choice = vim.fn.confirm(
+    ("yap: approve %s in %s?\nReason: %s\n\n%s"):format(
+      ev.tool or "tool",
+      live_session_label(buf),
+      ev.reason or "review call",
+      ev.command or ""
+    ),
+    "&Run\n&Deny",
+    2,
+    "Warning"
+  )
   answer_approval(buf, choice == 1)
 end
 
@@ -1233,7 +1317,9 @@ function M.alerts()
       end
     end
   end
-  table.sort(items, function(a, b) return (a.event.ts or "") > (b.event.ts or "") end)
+  table.sort(items, function(a, b)
+    return (a.event.ts or "") > (b.event.ts or "")
+  end)
   if #items == 0 then
     vim.notify("yap: no alerts or approval requests for this project", vim.log.levels.INFO)
     return
@@ -1242,11 +1328,18 @@ function M.alerts()
     prompt = "yap alerts (newest first)",
     format_item = function(item)
       local ev = item.event
-      return ("%s  %s  %s %s: %s"):format(ev.ts or "?", vim.fn.fnamemodify(item.path, ":t"),
-        ev.type == "approval_request" and "approval requested" or "advisory", ev.tool or ev.name or "tool", ev.reason or "review call")
+      return ("%s  %s  %s %s: %s"):format(
+        ev.ts or "?",
+        vim.fn.fnamemodify(item.path, ":t"),
+        ev.type == "approval_request" and "approval requested" or "advisory",
+        ev.tool or ev.name or "tool",
+        ev.reason or "review call"
+      )
     end,
   }, function(item)
-    if not item then return end
+    if not item then
+      return
+    end
     local path = item.path
     local buf = vim.fn.bufnr(path)
     if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
@@ -1314,8 +1407,12 @@ local function scratch_section_lines(scratch, name)
   for i = heading + 1, finish do
     body[#body + 1] = lines[i]
   end
-  while #body > 0 and body[1]:match("^%s*$") do table.remove(body, 1) end
-  while #body > 0 and body[#body]:match("^%s*$") do table.remove(body) end
+  while #body > 0 and body[1]:match("^%s*$") do
+    table.remove(body, 1)
+  end
+  while #body > 0 and body[#body]:match("^%s*$") do
+    table.remove(body)
+  end
   return body
 end
 
@@ -1447,7 +1544,6 @@ function M.scratch_send(scratch)
   end
 end
 
-
 local function scratch_heading(line)
   return line:match("^# @notes%s*$") or line:match("^# @steer%s*$") or line:match("^# @queue%s*$")
 end
@@ -1493,7 +1589,9 @@ function M.scratch_toggle(buf)
     local found = {}
     for _, line in ipairs(lines) do
       local role = line:match("^# @([%a]+)%s*$")
-      if role then found[role] = true end
+      if role then
+        found[role] = true
+      end
     end
     if not found.notes and not found.steer and not found.queue then
       local legacy = (#lines == 1 and lines[1] == "") and {} or lines
@@ -1800,7 +1898,22 @@ Return only the title.]]
       if not fm then
         return
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, description, fm.role, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.cwd, fm.forked_from, fm.forks, fm.subagent_parent)
+      local block = frontmatter.render(
+        fm.provider,
+        fm.model,
+        fm.models,
+        fm.created_at,
+        description,
+        fm.role,
+        fm.tools,
+        fm.subagents,
+        fm.updated_at,
+        fm.turns,
+        fm.cwd,
+        fm.forked_from,
+        fm.forks,
+        fm.subagent_parent
+      )
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
@@ -1902,14 +2015,20 @@ function M.send(buf)
       end
       local data = pending
       pending = ""
-      if not final then data, pending = document.split_stream_tail(buf, data) end
-      if data == "" then return end
+      if not final then
+        data, pending = document.split_stream_tail(buf, data)
+      end
+      if data == "" then
+        return
+      end
       sync_followers()
       document.append_text(buf, data)
       follow_tail()
     end
     local function on_flush_tick(timer)
-      if flush_timer ~= timer then return end -- a final flush cancelled this tick
+      if flush_timer ~= timer then
+        return
+      end -- a final flush cancelled this tick
       flush_timer = nil
       timer:stop()
       timer:close()
@@ -1928,12 +2047,16 @@ function M.send(buf)
     end
     stream_flush[buf] = finish_flush
     local function append(data)
-      if data == "" then return end
+      if data == "" then
+        return
+      end
       pending = pending .. data
       if not flush_timer then
         local timer = vim.uv.new_timer()
         flush_timer = timer
-        timer:start(STREAM_FLUSH_MS, 0, function() on_flush_tick_wrapped(timer) end)
+        timer:start(STREAM_FLUSH_MS, 0, function()
+          on_flush_tick_wrapped(timer)
+        end)
       end
     end
     local function route_event(ev)
@@ -1993,8 +2116,12 @@ function M.send(buf)
       local steer_text = steer[buf]
       steer[buf] = nil
       local scratch = vim.b[buf].yap_scratch
-      if steer_text and scratch and vim.api.nvim_buf_is_valid(scratch)
-          and scratch_section_text(scratch, "steer") == steer_text then
+      if
+        steer_text
+        and scratch
+        and vim.api.nvim_buf_is_valid(scratch)
+        and scratch_section_text(scratch, "steer") == steer_text
+      then
         scratch_set_section(scratch, "steer", {})
         scratch_save(scratch)
       end
@@ -2043,71 +2170,98 @@ function M.send(buf)
       close_if_requested(buf)
     end
     local handle
-    local ok, started = pcall(vim.system, { M.config.bin, "serve" }, {
-      stdin = true,
-      text = true,
-      stdout = vim.schedule_wrap(function(_, data)
-        if not data or servers[buf] ~= handle then return end
-        partial = partial .. data
-        while partial ~= "" do
-          if partial:sub(1, 1) == "\30" then
-            local i = partial:find("\n", 1, true)
-            if not i then break end
-            local line = partial:sub(2, i - 1)
-            partial = partial:sub(i + 1)
-            local status_line = line:match("^yap:turn_end (.+)$")
-            local parsed, result = pcall(vim.json.decode, status_line or "")
-            if status_line and parsed and type(result) == "table" and type(result.ok) == "boolean" then
-              status = result
-              if running[buf] and barrier then complete(result) end
+    local ok, started = pcall(
+      vim.system,
+      { M.config.bin, "serve" },
+      {
+        stdin = true,
+        text = true,
+        stdout = vim.schedule_wrap(function(_, data)
+          if not data or servers[buf] ~= handle then
+            return
+          end
+          partial = partial .. data
+          while partial ~= "" do
+            if partial:sub(1, 1) == "\30" then
+              local i = partial:find("\n", 1, true)
+              if not i then
+                break
+              end
+              local line = partial:sub(2, i - 1)
+              partial = partial:sub(i + 1)
+              local status_line = line:match("^yap:turn_end (.+)$")
+              local parsed, result = pcall(vim.json.decode, status_line or "")
+              if status_line and parsed and type(result) == "table" and type(result.ok) == "boolean" then
+                status = result
+                if running[buf] and barrier then
+                  complete(result)
+                end
+              else
+                append("?" .. line .. "\n")
+              end
             else
-              append("?" .. line .. "\n")
-            end
-          else
-            local i = partial:find("\30", 1, true)
-            if i then
-              append(partial:sub(1, i - 1))
-              partial = partial:sub(i)
-            else
-              append(partial)
-              partial = ""
+              local i = partial:find("\30", 1, true)
+              if i then
+                append(partial:sub(1, i - 1))
+                partial = partial:sub(i)
+              else
+                append(partial)
+                partial = ""
+              end
             end
           end
-        end
-      end),
-      stderr = vim.schedule_wrap(function(_, data)
-        if not data or servers[buf] ~= handle then return end
-        stderr_partial = stderr_partial .. data
-        while true do
-          local i = stderr_partial:find("\n", 1, true)
-          if not i then break end
-          local line = stderr_partial:sub(1, i - 1)
-          stderr_partial = stderr_partial:sub(i + 1)
-          local ev = line:match("^yap:event (.+)$")
-          if ev then
-            local parsed, event = pcall(vim.json.decode, ev)
-            if parsed and event.type == "turn_complete" then
-              barrier = true
-              if running[buf] and status then complete(status) end
-            else
-              route_event(ev)
-            end
-          else
-            table.insert(stderr_chunks, line)
+        end),
+        stderr = vim.schedule_wrap(function(_, data)
+          if not data or servers[buf] ~= handle then
+            return
           end
+          stderr_partial = stderr_partial .. data
+          while true do
+            local i = stderr_partial:find("\n", 1, true)
+            if not i then
+              break
+            end
+            local line = stderr_partial:sub(1, i - 1)
+            stderr_partial = stderr_partial:sub(i + 1)
+            local ev = line:match("^yap:event (.+)$")
+            if ev then
+              local parsed, event = pcall(vim.json.decode, ev)
+              if parsed and event.type == "turn_complete" then
+                barrier = true
+                if running[buf] and status then
+                  complete(status)
+                end
+              else
+                route_event(ev)
+              end
+            else
+              table.insert(stderr_chunks, line)
+            end
+          end
+        end),
+      },
+      vim.schedule_wrap(function(result)
+        if servers[buf] ~= handle then
+          return
         end
-      end),
-    }, vim.schedule_wrap(function(result)
-      if servers[buf] ~= handle then return end
-      servers[buf] = nil
-      pending_approvals[buf] = nil
-      if partial ~= "" then append(partial); partial = "" end
-      if stderr_partial ~= "" then table.insert(stderr_chunks, stderr_partial) end
-      if running[buf] then
-        complete({ ok = false, error = table.concat(stderr_chunks, "\n"):gsub("%s+$", "") ~= ""
-          and table.concat(stderr_chunks, "\n") or ("exit " .. result.code) })
-      end
-    end))
+        servers[buf] = nil
+        pending_approvals[buf] = nil
+        if partial ~= "" then
+          append(partial)
+          partial = ""
+        end
+        if stderr_partial ~= "" then
+          table.insert(stderr_chunks, stderr_partial)
+        end
+        if running[buf] then
+          complete({
+            ok = false,
+            error = table.concat(stderr_chunks, "\n"):gsub("%s+$", "") ~= "" and table.concat(stderr_chunks, "\n")
+              or ("exit " .. result.code),
+          })
+        end
+      end)
+    )
     if not ok then
       winbar.spinner_stop_if_idle()
       audit_poll_stop_if_idle()
@@ -2122,8 +2276,15 @@ function M.send(buf)
   end
 
   running[buf] = process
-  local payload = vim.json.encode({ provider = provider, model = model, messages = messages, tools = vim.b[buf].yap_tools }) .. "\n"
-  local ok, err = pcall(function() process:write(payload) end)
+  local payload = vim.json.encode({
+    provider = provider,
+    model = model,
+    messages = messages,
+    tools = vim.b[buf].yap_tools,
+  }) .. "\n"
+  local ok, err = pcall(function()
+    process:write(payload)
+  end)
   if not ok then
     process:kill(15)
   end
@@ -2150,7 +2311,9 @@ function M.stop(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   local child = subagent_children[buf]
   subagent_children[buf] = nil
-  if child then M.stop(child) end
+  if child then
+    M.stop(child)
+  end
   local handle = running[buf]
   if handle then
     stopped[buf] = true
@@ -2161,7 +2324,10 @@ function M.stop(buf)
     audit_poll_stop_if_idle()
     drain_audit(buf)
     local l = live[buf]
-    if l then live[buf] = nil; vim.npcall(os.remove, l.log) end
+    if l then
+      live[buf] = nil
+      vim.npcall(os.remove, l.log)
+    end
     local f = stream_flush[buf]
     if f then
       f()
@@ -2356,9 +2522,15 @@ function M.new(opts)
   local previous = vim.api.nvim_win_get_buf(win)
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
-  if opts.system then vim.b[buf].yap_system = opts.system end
-  if opts.role then vim.b[buf].yap_role = opts.role end
-  if opts.tools then vim.b[buf].yap_tools = opts.tools end
+  if opts.system then
+    vim.b[buf].yap_system = opts.system
+  end
+  if opts.role then
+    vim.b[buf].yap_role = opts.role
+  end
+  if opts.tools then
+    vim.b[buf].yap_tools = opts.tools
+  end
   if opts.path then
     vim.b[buf].yap_path = opts.path
     vim.api.nvim_buf_set_name(buf, opts.path)
@@ -2395,7 +2567,9 @@ function M.new(opts)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
-  if opts.hidden then vim.api.nvim_win_set_buf(win, previous) end
+  if opts.hidden then
+    vim.api.nvim_win_set_buf(win, previous)
+  end
 
   return buf
 end
@@ -2404,7 +2578,23 @@ end
 -- waits in Go; a reply line to its serve process releases that tool call.
 -- The tools a subagent role may request; role files also use the aliases
 -- below (grep/find/webfetch) which are mapped onto these canonical names.
-local ALLOWED_TOOLS = { "ls", "read", "search", "glob", "fetch", "bash", "python", "curl", "git", "write", "edit", "websearch", "quickfix", "ssh", "jev" }
+local ALLOWED_TOOLS = {
+  "ls",
+  "read",
+  "search",
+  "glob",
+  "fetch",
+  "bash",
+  "python",
+  "curl",
+  "git",
+  "write",
+  "edit",
+  "websearch",
+  "quickfix",
+  "ssh",
+  "jev",
+}
 
 -- A role with no `tools:` header gets this read-only set: a subagent is one
 -- prompt-injection hop removed from the user's attention, so it must opt into
@@ -2420,15 +2610,24 @@ local function subagent_result(parent, child, child_path, reply)
       -- Only final prose, not the child's tool history, belongs in the parent.
       local text, in_comment = {}, false
       for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
-        if line == "# @assistant" then text, in_comment = {}, false
-        elseif line:match("^<!%-%- /yap:tool") then text = {}
-        elseif line:match("^<!%-%- yap:") then in_comment = not line:match("%-%->$")
+        if line == "# @assistant" then
+          text, in_comment = {}, false
+        elseif line:match("^<!%-%- /yap:tool") then
+          text = {}
+        elseif line:match("^<!%-%- yap:") then
+          in_comment = not line:match("%-%->$")
         elseif in_comment then
-          if line == "-->" then in_comment = false end
-        elseif line ~= "# @user" then text[#text + 1] = line end
+          if line == "-->" then
+            in_comment = false
+          end
+        elseif line ~= "# @user" then
+          text[#text + 1] = line
+        end
       end
       result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-      if result == "" then result = "error: subagent returned no final answer" end
+      if result == "" then
+        result = "error: subagent returned no final answer"
+      end
     end
     reply("Session: [" .. child_path .. "](" .. child_path .. ")\n" .. result)
   end
@@ -2450,7 +2649,10 @@ start_subagent = function(parent, ev)
     local child_path = vim.fs.normalize(ev.session)
     local owned = false
     for _, path in ipairs(parent_fm and parent_fm.subagents or {}) do
-      if vim.fs.normalize(path) == child_path then owned = true; break end
+      if vim.fs.normalize(path) == child_path then
+        owned = true
+        break
+      end
     end
     if not owned or vim.fn.filereadable(child_path) == 0 then
       reply("error: subagent session not found in parent's subagents list")
@@ -2463,8 +2665,13 @@ start_subagent = function(parent, ev)
     end
     local child = vim.fn.bufadd(child_path)
     vim.fn.bufload(child)
-    if not vim.b[child].yap then adopt(child, child_path) end
-    if running[child] then reply("error: subagent session is already running"); return end
+    if not vim.b[child].yap then
+      adopt(child, child_path)
+    end
+    if running[child] then
+      reply("error: subagent session is already running")
+      return
+    end
     document.append_message(child, "user", vim.split(ev.task, "\n", { plain = true }))
     vim.b[child].yap_subagent_parent = parent
     vim.b[child].yap_subagent_task = ev.task
@@ -2486,18 +2693,28 @@ start_subagent = function(parent, ev)
   end
   local header, closing = {}, nil
   for i = 2, #lines do
-    if lines[i] == "---" then closing = i; break end
+    if lines[i] == "---" then
+      closing = i
+      break
+    end
     local key, value = lines[i]:match("^(%w+):%s*(.-)%s*$")
-    if key then header[key] = value end
+    if key then
+      header[key] = value
+    end
   end
-  if not closing then reply("error: invalid role " .. role_file); return end
+  if not closing then
+    reply("error: invalid role " .. role_file)
+    return
+  end
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
   local provider, model = util.current_combo(parent)
   -- Pi roles commonly use bare model names; Yap cannot infer their provider.
   -- Only a provider/model pair overrides the known-working parent combo.
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
-    if p then provider, model = p, m end
+    if p then
+      provider, model = p, m
+    end
   end
   local allowed = vim.deepcopy(DEFAULT_SUBAGENT_TOOLS)
   if header.tools and header.tools ~= "" then
@@ -2523,14 +2740,46 @@ start_subagent = function(parent, ev)
     local random = vim.uv.random(3)
     child_path = stem .. "-" .. string.format("%02x%02x%02x", random:byte(1, 3)) .. ".md"
   until vim.fn.filereadable(child_path) == 0
-  local ok, child = pcall(M.new, { path = child_path, system = body, role = ev.role, provider = provider, model = model, tools = allowed, hidden = true })
-  if not ok then reply("error: cannot create subagent: " .. tostring(child)); return end
+  local ok, child = pcall(M.new, {
+    path = child_path,
+    system = body,
+    role = ev.role,
+    provider = provider,
+    model = model,
+    tools = allowed,
+    hidden = true,
+  })
+  if not ok then
+    reply("error: cannot create subagent: " .. tostring(child))
+    return
+  end
   document.append_text(child, ev.task)
   vim.b[child].yap_subagent_parent = parent
   vim.b[child].yap_subagent_task = ev.task
   local child_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(child, 0, -1, false))
   local ending = frontmatter_end(child)
-  vim.api.nvim_buf_set_lines(child, 0, ending, false, frontmatter.render(child_fm.provider, child_fm.model, child_fm.models, child_fm.created_at, child_fm.description, child_fm.role, child_fm.tools, child_fm.subagents, child_fm.updated_at, child_fm.turns, child_fm.cwd, child_fm.forked_from, child_fm.forks, parent_path))
+  vim.api.nvim_buf_set_lines(
+    child,
+    0,
+    ending,
+    false,
+    frontmatter.render(
+      child_fm.provider,
+      child_fm.model,
+      child_fm.models,
+      child_fm.created_at,
+      child_fm.description,
+      child_fm.role,
+      child_fm.tools,
+      child_fm.subagents,
+      child_fm.updated_at,
+      child_fm.turns,
+      child_fm.cwd,
+      child_fm.forked_from,
+      child_fm.forks,
+      parent_path
+    )
+  )
   require("harness.session").save(child)
   subagent_children[parent] = child
   record_subagent(parent, child_path)
@@ -2559,8 +2808,12 @@ adopt = function(buf, path)
       vim.b[buf].yap_provider = fm.provider
       vim.b[buf].yap_model = fm.model
     end
-    if fm and fm.tools then vim.b[buf].yap_tools = fm.tools end
-    if fm and fm.role then vim.b[buf].yap_role = fm.role end
+    if fm and fm.tools then
+      vim.b[buf].yap_tools = fm.tools
+    end
+    if fm and fm.role then
+      vim.b[buf].yap_role = fm.role
+    end
   end
   -- A reopened session that ended on `# @user` awaits the next reply;
   -- seed the overview hint so it counts before its first send here.
@@ -2602,8 +2855,12 @@ function M.fork(name)
     return nil, ":YapFork only works in a yap session"
   end
   local path, err = require("harness.session").fork(source, name, running[source] ~= nil)
-  if not path then return nil, err end
-  if not running[source] then require("harness.session").save(source) end
+  if not path then
+    return nil, err
+  end
+  if not running[source] then
+    require("harness.session").save(source)
+  end
   local buf = vim.fn.bufadd(path)
   vim.fn.bufload(buf)
   focus_buf(buf)
@@ -2647,7 +2904,10 @@ local function pick_model_combo(cb)
   table.insert(models_waiters, function(combos, stderr)
     if not combos then
       local err = (stderr or ""):gsub("%s+$", "")
-      vim.notify("yap: model picker unavailable (no models returned)" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+      vim.notify(
+        "yap: model picker unavailable (no models returned)" .. (err ~= "" and (": " .. err) or ""),
+        vim.log.levels.WARN
+      )
     else
       pick(combos)
     end
@@ -2820,16 +3080,21 @@ function M.instances(state)
   if needs_you then
     for _, b in ipairs(vim.api.nvim_list_bufs()) do
       local parent = vim.b[b].yap_subagent_parent
-      if parent and vim.b[b].yap and (stopped[b] or errors[b]) then attention_child[parent] = true end
+      if parent and vim.b[b].yap and (stopped[b] or errors[b]) then
+        attention_child[parent] = true
+      end
     end
   end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local parent = vim.b[b].yap_subagent_parent
     local include_current_parent = b == current and has_open_subagent(b)
     local child_needs_you = parent and (stopped[b] or errors[b])
-    if (b ~= current or include_current_parent) and vim.b[b].yap
+    if
+      (b ~= current or include_current_parent)
+      and vim.b[b].yap
       and (not needs_you or not parent or child_needs_you)
-      and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b]))) then
+      and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
+    then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
@@ -2860,20 +3125,26 @@ function M.instances(state)
       return a.text < b.text
     end
     local ra, rb = session_rank(a.group_parent), session_rank(b.group_parent)
-    if ra ~= rb then return ra < rb end
+    if ra ~= rb then
+      return ra < rb
+    end
     return live_session_label(a.group_parent) < live_session_label(b.group_parent)
   end)
   -- Row order: project cwd, state glyph, title, then the bare model name
   -- (no provider) in parentheses. The glyph already encodes the state, so
   -- the model name earns the word that used to follow it.
-  local glyph = { running = M.config.icons.running, stopped = M.config.icons.stopped, error = M.config.icons.error,
-    waiting = M.config.icons.waiting, idle = M.config.icons.idle }
+  local glyph = {
+    running = M.config.icons.running,
+    stopped = M.config.icons.stopped,
+    error = M.config.icons.error,
+    waiting = M.config.icons.waiting,
+    idle = M.config.icons.idle,
+  }
   vim.ui.select(items, {
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
       local prefix = item.path ~= "" and (item.path .. " ") or " "
-      return prefix .. glyph[item.state] .. " " .. item.text
-        .. " (" .. (item.model or item.state) .. ")"
+      return prefix .. glyph[item.state] .. " " .. item.text .. " (" .. (item.model or item.state) .. ")"
     end,
     preview_item = function(item)
       return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
@@ -2895,9 +3166,17 @@ function M.setup(opts)
   opts = opts or {}
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
-      since = "", total = "", running = "▶", stopped = "⏹", error = "✗", waiting = "◉",
-      idle = "○", steer = "⌁", approval = "⚠",
-      cap_l = "[", cap_r = "]",
+      since = "",
+      total = "",
+      running = "▶",
+      stopped = "⏹",
+      error = "✗",
+      waiting = "◉",
+      idle = "○",
+      steer = "⌁",
+      approval = "⚠",
+      cap_l = "[",
+      cap_r = "]",
     })
   end
   M.config = vim.tbl_deep_extend("force", M.config, opts)
@@ -2906,7 +3185,9 @@ function M.setup(opts)
     local path = models_cache_path()
     if vim.fn.filereadable(path) == 1 then
       local cached = vim.fn.readfile(path)
-      if #cached > 0 then models_cache = cached end
+      if #cached > 0 then
+        models_cache = cached
+      end
     end
     refresh_models()
   end
@@ -2956,7 +3237,9 @@ function M.setup(opts)
     group = adopt_group,
     callback = function(args)
       local process = servers[args.buf]
-      if process then process:kill(15) end
+      if process then
+        process:kill(15)
+      end
       servers[args.buf] = nil
       running[args.buf] = nil
       -- Release the per-buffer UI state so the winbar's rollup and cache
@@ -3047,7 +3330,9 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = adopt_group,
     callback = function()
-      for _, process in pairs(servers) do process:kill(15) end
+      for _, process in pairs(servers) do
+        process:kill(15)
+      end
     end,
   })
   local function is_session_path(buf)

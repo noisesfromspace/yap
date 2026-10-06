@@ -6,31 +6,48 @@ local document = require("harness.document")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @system", "", "sys", "",
-  "# @user", "", "Q1", "",
-  "# @assistant", "",
+  "# @system",
+  "",
+  "sys",
+  "",
+  "# @user",
+  "",
+  "Q1",
+  "",
+  "# @assistant",
+  "",
   '<!-- yap:tool {"id":"t1","name":"bash","arguments":{}} -->',
   "result t1",
   "<!-- /yap:tool -->",
-  "A1 answer", "",
-  "# @user", "", "Q2", "",
-  "# @assistant", "",
+  "A1 answer",
+  "",
+  "# @user",
+  "",
+  "Q2",
+  "",
+  "# @assistant",
+  "",
   '<!-- yap:tool {"id":"t2","name":"bash","arguments":{}} -->',
   "result t2",
   "<!-- /yap:tool -->",
-  "A2 answer", "",
+  "A2 answer",
+  "",
 })
 
 local function headings(role)
   local t = {}
   for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if l == "# @" .. role then t[#t + 1] = i end
+    if l == "# @" .. role then
+      t[#t + 1] = i
+    end
   end
   return t
 end
 local function tool_line(id)
   for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if l:match('"' .. id .. '"') then return i end
+    if l:match('"' .. id .. '"') then
+      return i
+    end
   end
 end
 
@@ -46,7 +63,9 @@ vim.api.nvim_win_set_cursor(0, { t1, 0 })
 vim.cmd("normal! za")
 assert(vim.fn.foldclosed(t1) == -1, "za did not open t1")
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, {
-  '<!-- yap:tool {"id":"t3","name":"bash","arguments":{}} -->', "result t3", "<!-- /yap:tool -->",
+  '<!-- yap:tool {"id":"t3","name":"bash","arguments":{}} -->',
+  "result t3",
+  "<!-- /yap:tool -->",
 })
 fold.after_append(buf, { '<!-- yap:tool {"id":"t3","name":"bash","arguments":{}} -->' })
 local t3 = tool_line("t3")

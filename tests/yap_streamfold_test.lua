@@ -54,9 +54,16 @@ do
   local buf2 = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf2)
   vim.api.nvim_buf_set_lines(buf2, 0, -1, false, {
-    "# @system", "", "sys", "",
-    "# @user", "", "go", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "go",
+    "",
+    "# @assistant",
+    "",
   })
   fold.setup_buffer(buf2)
   fold.set_view_level(2)
@@ -82,11 +89,15 @@ do
     end
   end
   assert(closer2, "no closer line found")
-  assert(vim.fn.foldclosedend(opener2) == closer2,
-    "closer fell out of the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2)
+  assert(
+    vim.fn.foldclosedend(opener2) == closer2,
+    "closer fell out of the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2
+  )
 
   document.append_text(buf2, "Answer text.\n")
-  assert(vim.fn.foldclosedend(opener2) == closer2,
-    "prose append shrank the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2)
+  assert(
+    vim.fn.foldclosedend(opener2) == closer2,
+    "prose append shrank the fold: " .. vim.fn.foldclosedend(opener2) .. " != " .. closer2
+  )
   print("OK stream drift")
 end

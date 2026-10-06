@@ -13,7 +13,9 @@ local lines = vim.fn.readfile(child_path)
 assert(table.concat(lines, "\n"):find("Scout role", 1, true), "role prompt not saved")
 local found = false
 for _, item in ipairs(require("harness.session").list("cwd")) do
-  if item.path == child_path then found = true end
+  if item.path == child_path then
+    found = true
+  end
 end
 assert(found, "saved subagent should be discoverable in session history")
 yap.open(child_path)

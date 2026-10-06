@@ -40,8 +40,6 @@ end
 --   details  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
 
-
-
 -- ─── identity, intent and projection ───────────────────────────────────────
 
 local anchors = vim.api.nvim_create_namespace("yap.fold.blocks")
@@ -50,7 +48,9 @@ local group = vim.api.nvim_create_augroup("YapFolds", { clear = true })
 
 local function position(buf, id)
   local mark = vim.api.nvim_buf_get_extmark_by_id(buf, anchors, id, { details = true })
-  if #mark == 0 or mark[3].invalid then return nil end
+  if #mark == 0 or mark[3].invalid then
+    return nil
+  end
   return mark[1] + 1
 end
 
@@ -59,9 +59,13 @@ end
 -- With manual folds there is no foldexpr/lazy recomputation to confuse this
 -- observation. on_lines sees both native ranges and extmarks AFTER shifting.
 local function capture(buf, win, w)
-  if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then return end
+  if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then
+    return
+  end
   vim.api.nvim_win_call(win, function()
-    if not vim.wo.foldenable then return end
+    if not vim.wo.foldenable then
+      return
+    end
     for id in pairs(w.installed) do
       local row = position(buf, id)
       if row and vim.fn.foldlevel(row) > 0 then
@@ -76,12 +80,16 @@ end
 
 local function state(buf)
   local s = sessions[buf]
-  if s then return s end
+  if s then
+    return s
+  end
   s = { records = {}, windows = {}, default_view = 2 }
   sessions[buf] = s
   vim.api.nvim_buf_attach(buf, false, {
     on_lines = function()
-      for win, w in pairs(s.windows) do capture(buf, win, w) end
+      for win, w in pairs(s.windows) do
+        capture(buf, win, w)
+      end
       -- Arbitrary user edits/undo need reconciliation as well as streaming.
       -- Stream writes call after_append synchronously, before yielding;
       -- this coalesced callback is the fallback for other buffer mutations.
@@ -89,18 +97,25 @@ local function state(buf)
         s.scheduled = true
         vim.schedule(function()
           s.scheduled = false
-          if sessions[buf] == s and vim.api.nvim_buf_is_valid(buf)
-            and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf) then
+          if
+            sessions[buf] == s
+            and vim.api.nvim_buf_is_valid(buf)
+            and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf)
+          then
             M.reconcile(buf)
           end
         end)
       end
     end,
-  on_reload = function()
+    on_reload = function()
       structure.clear(buf)
-      for _, w in pairs(s.windows) do w.rebuild = true end
+      for _, w in pairs(s.windows) do
+        w.rebuild = true
+      end
       vim.schedule(function()
-        if sessions[buf] == s then M.reconcile(buf) end
+        if sessions[buf] == s then
+          M.reconcile(buf)
+        end
       end)
     end,
     on_detach = function()
@@ -123,7 +138,9 @@ end
 -- A deleted anchor is retained for undo, but never matched while invalid.
 -- Copies at the same line get new identities; a pin cannot transfer to them.
 local function identify(buf, s, p)
-  if s.tick == vim.api.nvim_buf_get_changedtick(buf) then return s.blocks end
+  if s.tick == vim.api.nvim_buf_get_changedtick(buf) then
+    return s.blocks
+  end
   local at = {}
   for id, kind in pairs(s.records) do
     local row = position(buf, id)
@@ -137,9 +154,12 @@ local function identify(buf, s, p)
     local id = at[start] and at[start][kind]
     if not id then
       id = vim.api.nvim_buf_set_extmark(buf, anchors, start - 1, 0, {
-        end_row = start - 1, end_col = 1,
-        right_gravity = true, end_right_gravity = false,
-        invalidate = true, undo_restore = true,
+        end_row = start - 1,
+        end_col = 1,
+        right_gravity = true,
+        end_right_gravity = false,
+        invalidate = true,
+        undo_restore = true,
       })
       s.records[id] = kind
     end
@@ -151,7 +171,9 @@ local function identify(buf, s, p)
   for _, d in ipairs(p.details) do
     add("detail:" .. d.kind, d.start, d.finish or p.count)
   end
-  table.sort(all, function(a, b) return a.start < b.start end)
+  table.sort(all, function(a, b)
+    return a.start < b.start
+  end)
   s.blocks, s.tick = all, vim.api.nvim_buf_get_changedtick(buf)
   return all
 end
@@ -182,17 +204,24 @@ local function apply(buf, win, w, list)
     local saved = vim.fn.winsaveview()
     options()
     local wanted = {}
-    for _, b in ipairs(list) do wanted[b.id] = b end
+    for _, b in ipairs(list) do
+      wanted[b.id] = b
+    end
     -- Native folds shift on edits. Old numeric coordinates cannot be used
     -- to delete them; rebuild on movement/deletion using anchored intent.
     local rebuild = w.rebuild
     for id, old in pairs(w.installed) do
-      if position(buf, id) ~= old.start or vim.fn.foldlevel(old.start) ~= 1 then rebuild = true; break end
+      if position(buf, id) ~= old.start or vim.fn.foldlevel(old.start) ~= 1 then
+        rebuild = true
+        break
+      end
     end
     if rebuild then
       -- Surviving native opens/closes may have changed since the last edit.
       -- New windows and explicit view resets deliberately have no old set.
-      if not w.reset and not w.restore then capture(buf, win, w) end
+      if not w.reset and not w.restore then
+        capture(buf, win, w)
+      end
       vim.cmd("normal! zE")
       w.installed = {}
     end
@@ -203,8 +232,7 @@ local function apply(buf, win, w, list)
       -- unchanged. foldlevel reflects the fold RANGE (open or closed), so a
       -- finish line that is no longer inside any fold means the installed
       -- range has drifted and must be recreated.
-      if not b or b.start ~= old.start or b.finish ~= old.finish
-        or vim.fn.foldlevel(b.finish) < 1 then
+      if not b or b.start ~= old.start or b.finish ~= old.finish or vim.fn.foldlevel(b.finish) < 1 then
         if vim.fn.foldlevel(old.start) > 0 then
           vim.api.nvim_win_set_cursor(0, { old.start, 0 })
           vim.cmd("normal! zd")
@@ -225,12 +253,16 @@ local function apply(buf, win, w, list)
 end
 
 function M.reconcile(buf, full)
-  if not vim.api.nvim_buf_is_valid(buf) then return end
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
   local s = state(buf)
   local all = identify(buf, s, parse(buf))
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     local w = window(s, win)
-    if full then w.rebuild = true end
+    if full then
+      w.rebuild = true
+    end
     apply(buf, win, w, intended(all, w.view))
   end
   s.projected_tick = vim.api.nvim_buf_get_changedtick(buf)
@@ -238,7 +270,9 @@ end
 
 function M.level()
   local s = sessions[vim.api.nvim_get_current_buf()]
-  if not s then return 2 end
+  if not s then
+    return 2
+  end
   local w = s.windows[vim.api.nvim_get_current_win()]
   return w and w.view or s.default_view
 end
@@ -271,8 +305,12 @@ local function act(lnum, action)
   end
 end
 
-function M.open(lnum) act(lnum, "open") end
-function M.toggle(lnum) act(lnum, "toggle") end
+function M.open(lnum)
+  act(lnum, "open")
+end
+function M.toggle(lnum)
+  act(lnum, "toggle")
+end
 
 -- Capture before a stream edit: Neovim may remove a one-line manual fold
 -- when that line is split. After the edit it is too late to recover its
@@ -280,7 +318,9 @@ function M.toggle(lnum) act(lnum, "toggle") end
 function M.before_change(buf)
   local s = sessions[buf]
   if s then
-    for win, w in pairs(s.windows) do capture(buf, win, w) end
+    for win, w in pairs(s.windows) do
+      capture(buf, win, w)
+    end
   end
 end
 
@@ -288,7 +328,9 @@ end
 -- scheduled on_lines fallback subsequently sees identical ranges (a no-op).
 function M.after_append(buf, _)
   local s = sessions[buf]
-  if s and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf) then M.reconcile(buf) end
+  if s and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf) then
+    M.reconcile(buf)
+  end
 end
 
 -- Session return must be synchronous: deferring it permits one unfolded
@@ -299,7 +341,9 @@ vim.api.nvim_create_autocmd("BufWinLeave", {
   callback = function(args)
     local s = sessions[args.buf]
     local win = vim.api.nvim_get_current_win()
-    if s and s.windows[win] then capture(args.buf, win, s.windows[win]) end
+    if s and s.windows[win] then
+      capture(args.buf, win, s.windows[win])
+    end
   end,
 })
 vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
@@ -323,12 +367,16 @@ vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
 })
 vim.api.nvim_create_autocmd("BufWipeout", {
   group = group,
-  callback = function(args) M.clear_text(args.buf) end,
+  callback = function(args)
+    M.clear_text(args.buf)
+  end,
 })
 vim.api.nvim_create_autocmd("WinClosed", {
   group = group,
   callback = function(args)
-    for _, s in pairs(sessions) do s.windows[args.win] = nil end
+    for _, s in pairs(sessions) do
+      s.windows[args.win] = nil
+    end
   end,
 })
 

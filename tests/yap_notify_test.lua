@@ -71,7 +71,10 @@ vim.b[subagent].yap = true
 state.sessions[subagent] = true
 vim.b[subagent].yap_subagent_parent = buf
 state.awaiting[subagent] = true
-assert(yap.overview(buf2) == icons.waiting .. "1", "waiting subagent was counted separately: " .. tostring(yap.overview(buf2)))
+assert(
+  yap.overview(buf2) == icons.waiting .. "1",
+  "waiting subagent was counted separately: " .. tostring(yap.overview(buf2))
+)
 state.awaiting[subagent] = nil
 vim.api.nvim_buf_delete(subagent, { force = true })
 
@@ -84,14 +87,32 @@ vim.b[stopped].yap = true
 state.sessions[stopped] = true
 state.awaiting[stopped] = true
 state.stopped[stopped] = true
-assert(yap.overview(buf2) == icons.waiting .. "1", "stopped session counted as waiting: " .. tostring(yap.overview(buf2)))
-assert(yap.winbar(buf2):find(icons.stopped .. "1", 1, true), "stopped session missing from the rollup: " .. yap.winbar(buf2))
-assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "stopped session counted as waiting in the rollup: " .. yap.winbar(buf2))
+assert(
+  yap.overview(buf2) == icons.waiting .. "1",
+  "stopped session counted as waiting: " .. tostring(yap.overview(buf2))
+)
+assert(
+  yap.winbar(buf2):find(icons.stopped .. "1", 1, true),
+  "stopped session missing from the rollup: " .. yap.winbar(buf2)
+)
+assert(
+  not yap.winbar(buf2):match(icons.waiting .. "2"),
+  "stopped session counted as waiting in the rollup: " .. yap.winbar(buf2)
+)
 state.stopped[stopped] = nil
 state.errors[stopped] = "boom"
-assert(yap.overview(buf2) == icons.waiting .. "1", "errored session counted as waiting: " .. tostring(yap.overview(buf2)))
-assert(yap.winbar(buf2):find(icons.error .. "1", 1, true), "errored session missing from the rollup: " .. yap.winbar(buf2))
-assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "errored session counted as waiting in the rollup: " .. yap.winbar(buf2))
+assert(
+  yap.overview(buf2) == icons.waiting .. "1",
+  "errored session counted as waiting: " .. tostring(yap.overview(buf2))
+)
+assert(
+  yap.winbar(buf2):find(icons.error .. "1", 1, true),
+  "errored session missing from the rollup: " .. yap.winbar(buf2)
+)
+assert(
+  not yap.winbar(buf2):match(icons.waiting .. "2"),
+  "errored session counted as waiting in the rollup: " .. yap.winbar(buf2)
+)
 state.awaiting[stopped] = nil
 state.errors[stopped] = nil
 vim.api.nvim_buf_delete(stopped, { force = true })
@@ -124,8 +145,10 @@ vim.api.nvim_exec_autocmds("User", {
 vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
 assert(notified2[1].msg:find("— reply ready", 1, true), "unexpected message: " .. notified2[1].msg)
-assert(notified2[1].msg:find(vim.fn.fnamemodify(vim.b[buf].yap_path, ":t"), 1, true),
-  "completion toast must identify the conversation: " .. notified2[1].msg)
+assert(
+  notified2[1].msg:find(vim.fn.fnamemodify(vim.b[buf].yap_path, ":t"), 1, true),
+  "completion toast must identify the conversation: " .. notified2[1].msg
+)
 assert(not notified2[1].msg:find("$", 1, true), "usage belongs in the winbar, not a toast")
 
 -- A visible conversation already shows the finished turn, even when it is
@@ -137,19 +160,27 @@ local child_for_notice = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(child_for_notice, 0, -1, false, { "---", "role: scout", "---" })
 vim.b[child_for_notice].yap_subagent_parent = buf
 state.running[buf] = {} -- delegated turn: the parent will report this result
-vim.notify = function(msg) notified2[#notified2 + 1] = { msg = msg } end
+vim.notify = function(msg)
+  notified2[#notified2 + 1] = { msg = msg }
+end
 for _, target in ipairs({ buf, child_for_notice }) do
   vim.api.nvim_exec_autocmds("User", {
-    pattern = "YapTurnDone", modeline = false, data = { buf = target, turn = { model = "m1" } },
+    pattern = "YapTurnDone",
+    modeline = false,
+    data = { buf = target, turn = { model = "m1" } },
   })
 end
 assert(#notified2 == 1, "visible turn or delegated child produced a redundant toast: " .. vim.inspect(notified2))
 state.running[buf] = nil
 vim.api.nvim_exec_autocmds("User", {
-  pattern = "YapTurnDone", modeline = false, data = { buf = child_for_notice, turn = { model = "m1" } },
+  pattern = "YapTurnDone",
+  modeline = false,
+  data = { buf = child_for_notice, turn = { model = "m1" } },
 })
-assert(#notified2 == 2 and notified2[2].msg:find("reply ready", 1, true),
-  "a direct child follow-up should notify when hidden: " .. vim.inspect(notified2))
+assert(
+  #notified2 == 2 and notified2[2].msg:find("reply ready", 1, true),
+  "a direct child follow-up should notify when hidden: " .. vim.inspect(notified2)
+)
 vim.notify = orig_notify
 vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
@@ -206,8 +237,10 @@ yap.waiting()
 vim.ui.select = orig_select
 vim.notify = orig_notify_waiting
 assert(not waiting_items, "current waiting session should not appear in the picker")
-assert(current_notice == "yap: this conversation is already open and waiting for your reply",
-  "unexpected empty waiting message: " .. tostring(current_notice))
+assert(
+  current_notice == "yap: this conversation is already open and waiting for your reply",
+  "unexpected empty waiting message: " .. tostring(current_notice)
+)
 vim.cmd("enew")
 
 -- A description replaces the filename fallback in the picker label.

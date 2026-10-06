@@ -115,13 +115,38 @@ end
 
 --- Render the frontmatter block for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(provider, model, models, created_at, description, role, tools, subagents, updated_at, turns, cwd, forked_from, forks, subagent_parent)
+function M.render(
+  provider,
+  model,
+  models,
+  created_at,
+  description,
+  role,
+  tools,
+  subagents,
+  updated_at,
+  turns,
+  cwd,
+  forked_from,
+  forks,
+  subagent_parent
+)
   local lines = { "---", "provider: " .. provider, "model: " .. model }
-  if cwd and cwd ~= "" then lines[#lines + 1] = "cwd: " .. cwd end
-  if forked_from then lines[#lines + 1] = "forked_from: " .. forked_from end
-  if subagent_parent then lines[#lines + 1] = "subagent_parent: " .. subagent_parent end
-  if role then lines[#lines + 1] = "role: " .. role end
-  if tools then lines[#lines + 1] = "tools: " .. table.concat(tools, ",") end
+  if cwd and cwd ~= "" then
+    lines[#lines + 1] = "cwd: " .. cwd
+  end
+  if forked_from then
+    lines[#lines + 1] = "forked_from: " .. forked_from
+  end
+  if subagent_parent then
+    lines[#lines + 1] = "subagent_parent: " .. subagent_parent
+  end
+  if role then
+    lines[#lines + 1] = "role: " .. role
+  end
+  if tools then
+    lines[#lines + 1] = "tools: " .. table.concat(tools, ",")
+  end
   if created_at then
     lines[#lines + 1] = "created_at: " .. created_at
   end

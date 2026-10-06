@@ -12,8 +12,10 @@ assert(left():find("%#YapIdle#" .. icons.idle, 1, true), "fresh chat needs an id
 state.awaiting[buf] = true
 assert(left():find("%#YapNeeds#" .. icons.waiting, 1, true), "waiting chat needs a waiting icon")
 state.running[buf] = {}
-assert(not left():find(icons.waiting, 1, true) and left():find("%#YapBusy", 1, true),
-  "spinner should replace the waiting icon while generating")
+assert(
+  not left():find(icons.waiting, 1, true) and left():find("%#YapBusy", 1, true),
+  "spinner should replace the waiting icon while generating"
+)
 state.running[buf] = nil
 state.errors[buf] = "failed"
 assert(left():find("%#YapError#" .. icons.error, 1, true), "a failed turn needs an error icon")

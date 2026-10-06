@@ -88,9 +88,9 @@ still notify.
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
-| Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
 | `:YapSessions [all]`                      |             | Resume a saved session.                                            |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
+| Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
 | Lua: `instances()`                        | `<leader>r` | Pick another open chat.                                            |
 | Lua: `waiting()`                          | `<leader>w` | Pick a chat awaiting your reply (or stopped).                      |
 | Lua: `history()`                          | `<leader>y` | Pick a saved chat with live status.                                |

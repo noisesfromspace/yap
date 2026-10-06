@@ -25,18 +25,28 @@ vim.wait(400)
 yap.scratch_toggle()
 local scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
+  "# @notes",
+  "",
+  "# @steer",
+  "also check the tests",
+  "",
+  "# @queue",
 })
 vim.api.nvim_win_set_cursor(0, { 4, 0 })
 local notify = vim.notify
 local steer_notices = {}
-vim.notify = function(msg) steer_notices[#steer_notices + 1] = msg end
+vim.notify = function(msg)
+  steer_notices[#steer_notices + 1] = msg
+end
 yap.scratch_send(scratch)
 vim.notify = notify
 assert(#steer_notices == 0, "steering is visible in scratch; no confirmation toast: " .. vim.inspect(steer_notices))
 
 -- Steering stays pending in the live section until the backend confirms it.
-assert(table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n"):match("# @steer\nalso check the tests"), "steer disappeared before delivery")
+assert(
+  table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n"):match("# @steer\nalso check the tests"),
+  "steer disappeared before delivery"
+)
 
 -- The turn completes with the steer injected mid-turn.
 local ok2 = vim.wait(15000, function()
@@ -113,7 +123,12 @@ vim.wait(400)
 yap.scratch_toggle(buf3)
 local scratch3 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch3, 0, -1, false, {
-  "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
+  "# @notes",
+  "",
+  "# @steer",
+  "also check the tests",
+  "",
+  "# @queue",
 })
 yap.scratch_send(scratch3)
 vim.api.nvim_buf_set_lines(scratch3, 3, 4, false, {})
@@ -124,6 +139,9 @@ local ok6 = vim.wait(15000, function()
 end, 100)
 assert(ok6, "canceled steer was still injected:\n" .. chat_text(buf3))
 assert(not chat_text(buf3):match("# @user\nalso check the tests"), "canceled steer remains in transcript")
-assert(not table.concat(vim.api.nvim_buf_get_lines(scratch3, 0, -1, false), "\n"):match("also check the tests"), "retracted steer remained in scratch")
+assert(
+  not table.concat(vim.api.nvim_buf_get_lines(scratch3, 0, -1, false), "\n"):match("also check the tests"),
+  "retracted steer remained in scratch"
+)
 
 print("OK template steer and cancellation")

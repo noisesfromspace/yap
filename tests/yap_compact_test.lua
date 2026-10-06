@@ -149,7 +149,10 @@ do
   end
   yap.compact()
   yap.send = original_send
-  assert(sent_text and sent_text:match("Do not use the colon character anywhere in the summary"), "compact output constraint missing: " .. tostring(sent_text))
+  assert(
+    sent_text and sent_text:match("Do not use the colon character anywhere in the summary"),
+    "compact output constraint missing: " .. tostring(sent_text)
+  )
   assert(sent_text:match("Avoid YAML/frontmatter delimiters"), "frontmatter-safe constraint missing")
 end
 

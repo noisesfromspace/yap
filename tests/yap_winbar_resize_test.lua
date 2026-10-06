@@ -41,8 +41,10 @@ assert(select(2, wb:gsub("%%=", "")) == 2, "model should occupy the center secti
 local centered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = 78 }).str
 local model_start = assert(centered:find(" mock/m1 ", 1, true), "center island missing: " .. centered)
 local center_width = vim.fn.strdisplaywidth(" mock/m1 ")
-assert(math.abs(vim.fn.strdisplaywidth(centered:sub(1, model_start - 1)) + center_width / 2 - 39) <= 1,
-  "model island is not centered in 78 columns: " .. centered)
+assert(
+  math.abs(vim.fn.strdisplaywidth(centered:sub(1, model_start - 1)) + center_width / 2 - 39) <= 1,
+  "model island is not centered in 78 columns: " .. centered
+)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
 -- Centering must hold when the sides are asymmetric: `%=` centers between
@@ -55,7 +57,9 @@ local function island_center(cols)
   local wb = winbar_at(cols)
   local rendered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = cols }).str
   local start = rendered:find(" mock/m1 ", 1, true)
-  if not start then return nil end
+  if not start then
+    return nil
+  end
   local col = vim.fn.strdisplaywidth(rendered:sub(1, start - 1)) + 1
   return col - 1 + vim.fn.strdisplaywidth(" mock/m1 ") / 2
 end
@@ -70,7 +74,12 @@ winbar_state.awaiting[buf] = nil
 winbar_state.last_turn[buf] = nil
 -- Left-heavy: description left, nothing right.
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "---", "provider: mock", "model: m1", "description: A session title", "---", "",
+  "---",
+  "provider: mock",
+  "model: m1",
+  "description: A session title",
+  "---",
+  "",
 })
 c = island_center(100)
 assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. tostring(c))
@@ -106,8 +115,10 @@ end
 vim.b[buf].yap_usage = { prompt = 1000, completion = 42, cost = 0.51 }
 vim.b[buf].yap_session_usage = { prompt = 1000, completion = 43, cost = 0.51 }
 wb = winbar_at(80)
-assert(wb:find(icons.since, 1, true) and wb:find(icons.total, 1, true),
-  "different raw token totals were merged: " .. wb)
+assert(
+  wb:find(icons.since, 1, true) and wb:find(icons.total, 1, true),
+  "different raw token totals were merged: " .. wb
+)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
 -- Check Neovim's rendered columns, not just highlight markup. Every
@@ -132,7 +143,9 @@ end
 local function expected_rollup(running_n, waiting_n, stopped_n, error_n, idle_n)
   local chips = {}
   local function add(icon, n)
-    if n > 0 then chips[#chips + 1] = icon .. n end
+    if n > 0 then
+      chips[#chips + 1] = icon .. n
+    end
   end
   add(icons.running, running_n)
   add(icons.waiting, waiting_n)
@@ -146,8 +159,13 @@ for mask = 0, 15 do
   state.running[other] = math.floor(mask / 2) % 2 == 1 and {} or nil
   state.awaiting[waiting] = math.floor(mask / 4) % 2 == 1 and true or nil
   local titled = mask >= 8
-  vim.api.nvim_buf_set_lines(target, 0, -1, false,
-    titled and { "---", "description: Session title", "---", "" } or { "" })
+  vim.api.nvim_buf_set_lines(
+    target,
+    0,
+    -1,
+    false,
+    titled and { "---", "description: Session title", "---", "" } or { "" }
+  )
   local other_running = state.running[other] and 1 or 0
   local waiting_n = state.awaiting[waiting] and 1 or 0
   local idle_n = (state.running[other] and 0 or 1) + (state.awaiting[waiting] and 0 or 1)
@@ -155,24 +173,25 @@ for mask = 0, 15 do
     state.running[target] and "@" or icons.idle,
     expected_rollup(other_running, waiting_n, 0, 0, idle_n),
   }
-  if titled then expected[#expected + 1] = "Session title" end
+  if titled then
+    expected[#expected + 1] = "Session title"
+  end
   local actual = rendered_left()
   for _, g in ipairs(spinner_frames) do
     actual = actual:gsub(vim.pesc(g), "@")
   end
   local expected_str = table.concat(expected, "  ") .. " "
-  assert(actual == expected_str,
-    "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
+  assert(actual == expected_str, "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
   local bar = yap.winbar(target)
   local center = bar:match("%%=(.-)%%=")
   if center then
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    assert(centered_text:find(" mock/m1 ", 1, true),
-      "model island missing from center: " .. centered_text)
+    assert(centered_text:find(" mock/m1 ", 1, true), "model island missing from center: " .. centered_text)
     assert(not centered_text:find("󰘖", 1, true), "fold island leaked into center: " .. centered_text)
-    assert(center:find("%#YapIslandCursiveModel#", 1, true)
-        and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
-      "model and padding must use the island surface: " .. center)
+    assert(
+      center:find("%#YapIslandCursiveModel#", 1, true) and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
+      "model and padding must use the island surface: " .. center
+    )
   else
     assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)
   end
@@ -184,26 +203,36 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   vim.api.nvim_set_hl(0, "WinBar", { bg = colors[2] })
   vim.api.nvim_set_hl(0, "WinBarNC", { bg = 0x333333 })
   vim.api.nvim_exec_autocmds("ColorScheme", {})
-  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds", "YapIslandError", "YapIslandIdle", "YapIslandCursiveModel", "YapIslandUprightCount", "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel", "YapIslandUprightGaugeLow" }) do
-    assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
-      group .. " has a mismatched pill background")
+  for _, group in ipairs({
+    "YapIsland",
+    "YapIslandBusy",
+    "YapIslandNeeds",
+    "YapIslandError",
+    "YapIslandIdle",
+    "YapIslandCursiveModel",
+    "YapIslandUprightCount",
+    "YapIslandUprightGaugeEmpty",
+    "YapIslandUprightGaugeLabel",
+    "YapIslandUprightGaugeLow",
+  }) do
+    assert(
+      vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
+      group .. " has a mismatched pill background"
+    )
   end
   local cap = vim.api.nvim_get_hl(0, { name = "YapIslandCap", link = false })
   assert(cap.fg == colors[1] and cap.bg == colors[2], "rounded caps have square backgrounds")
   local inactive_cap = vim.api.nvim_get_hl(0, { name = "YapIslandCapNC", link = false })
-  assert(inactive_cap.fg == colors[1] and inactive_cap.bg == 0x333333,
-    "inactive caps must match WinBarNC")
+  assert(inactive_cap.fg == colors[1] and inactive_cap.bg == 0x333333, "inactive caps must match WinBarNC")
   vim.b[target].yap_usage = { prompt = 1500, completion = 42, cost = 0.00342 }
   state.last_turn[target] = { prompt = 23000, context_window = 250000 }
   local bar = yap.winbar(target)
   local center = bar:match("%%=(.-)%%=")
   if center then
-    assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 2,
-      "center island needs active caps: " .. center)
+    assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 2, "center island needs active caps: " .. center)
   end
   local right = assert(bar:match("%%=(.*)$"))
-  assert(select(2, right:gsub("%%#YapIslandCap#", "")) >= 4,
-    "visible right islands need active caps: " .. right)
+  assert(select(2, right:gsub("%%#YapIslandCap#", "")) >= 4, "visible right islands need active caps: " .. right)
   vim.b[target].yap_usage = nil
   state.last_turn[target] = nil
 end
@@ -214,52 +243,82 @@ state.last_turn[target] = { prompt = 23000, context_window = 250000 }
 local session_win = vim.api.nvim_get_current_win()
 local picker_buf = vim.api.nvim_create_buf(false, true)
 local picker_win = vim.api.nvim_open_win(picker_buf, true, {
-  relative = "editor", row = 1, col = 0, width = vim.o.columns, height = 3, style = "minimal",
+  relative = "editor",
+  row = 1,
+  col = 0,
+  width = vim.o.columns,
+  height = 3,
+  style = "minimal",
 })
 vim.g.statusline_winid = session_win
 vim.b[target].yap_path = "/tmp/inactive-session.md"
 vim.api.nvim_buf_set_lines(target, 0, -1, false, {
-  "---", "provider: mock", "model: m1", "description: Generated description", "---", "",
+  "---",
+  "provider: mock",
+  "model: m1",
+  "description: Generated description",
+  "---",
+  "",
 })
 local saved_target_usage, saved_target_turn = vim.b[target].yap_usage, state.last_turn[target]
-local saved_running_target, saved_running_other, saved_waiting = state.running[target], state.running[other], state.awaiting[waiting]
+local saved_running_target, saved_running_other, saved_waiting =
+  state.running[target], state.running[other], state.awaiting[waiting]
 vim.b[target].yap_usage, state.last_turn[target] = nil, nil
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
 local inactive_bar = yap.winbar(target)
 local inactive_center = inactive_bar:match("%%=(.-)%%=")
 assert(inactive_center, "inactive session name should occupy the center island: " .. inactive_bar)
 assert(inactive_center:find("inactive%-session%.md"), "inactive session name missing from center: " .. inactive_center)
-assert(not inactive_center:find("mock/m1", 1, true), "inactive session shows model instead of name: " .. inactive_center)
-assert(not inactive_bar:find("Generated description", 1, true), "inactive session repeats its description: " .. inactive_bar)
+assert(
+  not inactive_center:find("mock/m1", 1, true),
+  "inactive session shows model instead of name: " .. inactive_center
+)
+assert(
+  not inactive_bar:find("Generated description", 1, true),
+  "inactive session repeats its description: " .. inactive_bar
+)
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
 -- An inactive session keeps its leftmost state icon (idle/waiting/error/
 -- stopped) so attention states are visible from another window, but drops
 -- the busy beacon: a generating session needs no attention.
 local inactive_left = inactive_bar:match("^(.-)%%=")
-assert(inactive_left:find("%#YapIdle#" .. icons.idle, 1, true) == 1,
-  "inactive idle session should keep its idle icon leftmost: " .. inactive_bar)
+assert(
+  inactive_left:find("%#YapIdle#" .. icons.idle, 1, true) == 1,
+  "inactive idle session should keep its idle icon leftmost: " .. inactive_bar
+)
 -- The rollup island is the ACTIVE session's dashboard of other sessions,
 -- not this window's own signal, so an inactive window must not show it.
-assert(not inactive_left:find(icons.cap_l, 1, true) and not inactive_left:find(icons.idle .. "2", 1, true),
-  "inactive session should hide the other-session rollup island: " .. inactive_left)
+assert(
+  not inactive_left:find(icons.cap_l, 1, true) and not inactive_left:find(icons.idle .. "2", 1, true),
+  "inactive session should hide the other-session rollup island: " .. inactive_left
+)
 state.awaiting[target] = true
-assert(yap.winbar(target):find("%#YapNeeds#" .. icons.waiting, 1, true) == 1,
-  "inactive waiting session should keep its waiting icon leftmost")
+assert(
+  yap.winbar(target):find("%#YapNeeds#" .. icons.waiting, 1, true) == 1,
+  "inactive waiting session should keep its waiting icon leftmost"
+)
 state.awaiting[target] = nil
 state.errors[target] = "boom"
-assert(yap.winbar(target):find("%#YapError#" .. icons.error, 1, true) == 1,
-  "inactive errored session should keep its error icon leftmost")
+assert(
+  yap.winbar(target):find("%#YapError#" .. icons.error, 1, true) == 1,
+  "inactive errored session should keep its error icon leftmost"
+)
 state.errors[target] = nil
 state.stopped[target] = true
-assert(yap.winbar(target):find("%#YapNeeds#" .. icons.stopped, 1, true) == 1,
-  "inactive stopped session should keep its stopped icon leftmost")
+assert(
+  yap.winbar(target):find("%#YapNeeds#" .. icons.stopped, 1, true) == 1,
+  "inactive stopped session should keep its stopped icon leftmost"
+)
 state.stopped[target] = nil
 state.running[target] = {}
-assert(not yap.winbar(target):find("%#YapBusySpin#", 1, true),
-  "inactive generating session should drop the busy beacon")
+assert(
+  not yap.winbar(target):find("%#YapBusySpin#", 1, true),
+  "inactive generating session should drop the busy beacon"
+)
 state.running[target] = nil
 vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
-state.running[target], state.running[other], state.awaiting[waiting] = saved_running_target, saved_running_other, saved_waiting
+state.running[target], state.running[other], state.awaiting[waiting] =
+  saved_running_target, saved_running_other, saved_waiting
 inactive_bar = yap.winbar(target)
 local inactive_right = assert(inactive_bar:match(".*%%=(.*)$"))
 assert(not inactive_right:find("%S"), "inactive winbar keeps usage/gauge on the right: " .. inactive_bar)
@@ -268,7 +327,12 @@ assert(yap.winbar(target):find("%#YapIslandCap#", 1, true), "active caps not res
 vim.g.statusline_winid = nil
 vim.b[target].yap_path = nil
 vim.api.nvim_buf_set_lines(target, 0, -1, false, {
-  "---", "provider: mock", "model: m1", "description: Session title", "---", "",
+  "---",
+  "provider: mock",
+  "model: m1",
+  "description: Session title",
+  "---",
+  "",
 })
 vim.b[target].yap_usage = nil
 state.last_turn[target] = nil
@@ -302,10 +366,13 @@ vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
 -- active window shrinks to a sliver, which is fine — only the inactive
 -- window's own rendering is under test.
 vim.api.nvim_win_set_width(left_win, 100)
-local inactive_bar = vim.api.nvim_eval_statusline(
-  vim.wo[left_win].winbar, { winid = left_win, use_winbar = true, maxwidth = 200 }).str
+local inactive_bar =
+  vim.api.nvim_eval_statusline(vim.wo[left_win].winbar, { winid = left_win, use_winbar = true, maxwidth = 200 }).str
 assert(inactive_bar:find("left-session.md", 1, true), "inactive winbar shows its own session name: " .. inactive_bar)
-assert(not inactive_bar:find("right-session.md", 1, true), "inactive winbar leaks the active session name: " .. inactive_bar)
+assert(
+  not inactive_bar:find("right-session.md", 1, true),
+  "inactive winbar leaks the active session name: " .. inactive_bar
+)
 assert(not inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)
 assert(not inactive_bar:find("2.2k", 1, true), "inactive winbar leaks the active session usage: " .. inactive_bar)
 assert(not inactive_bar:find("mock/m2", 1, true), "inactive winbar leaks the active session model: " .. inactive_bar)
@@ -316,11 +383,18 @@ vim.api.nvim_buf_delete(right_buf, { force = true })
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
 vim.api.nvim_win_resize(0, 12, -1)
-assert(rendered_left() == icons.idle .. "  Session title ", "narrow title has a dangling separator: " .. rendered_left())
-assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
-  "session title is not cursive: " .. yap.winbar(target))
-assert(not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),
-  "narrow title kept the model island: " .. yap.winbar(target))
+assert(
+  rendered_left() == icons.idle .. "  Session title ",
+  "narrow title has a dangling separator: " .. rendered_left()
+)
+assert(
+  yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
+  "session title is not cursive: " .. yap.winbar(target)
+)
+assert(
+  not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),
+  "narrow title kept the model island: " .. yap.winbar(target)
+)
 vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
@@ -328,25 +402,35 @@ end
 -- The session title/model are cursive; right-side status groups explicitly
 -- suppress italics inherited from their linked theme groups.
 for _, group in ipairs({ "YapCursiveModel", "YapCursiveDescription" }) do
-  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).italic,
-    group .. " should be cursive")
+  assert(vim.api.nvim_get_hl(0, { name = group, link = false }).italic, group .. " should be cursive")
 end
 for _, group in ipairs({
-  "YapUprightIdle", "YapUprightError", "YapUprightNeeds",
-  "YapUprightGaugeEmpty", "YapUprightGaugeLabel", "YapUprightGaugeLow",
-  "YapUprightGaugeMid", "YapUprightGaugeHigh",
-  "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel",
-  "YapIslandUprightGaugeLow", "YapIslandUprightGaugeMid", "YapIslandUprightGaugeHigh",
+  "YapUprightIdle",
+  "YapUprightError",
+  "YapUprightNeeds",
+  "YapUprightGaugeEmpty",
+  "YapUprightGaugeLabel",
+  "YapUprightGaugeLow",
+  "YapUprightGaugeMid",
+  "YapUprightGaugeHigh",
+  "YapIslandUprightGaugeEmpty",
+  "YapIslandUprightGaugeLabel",
+  "YapIslandUprightGaugeLow",
+  "YapIslandUprightGaugeMid",
+  "YapIslandUprightGaugeHigh",
 }) do
-  assert(not vim.api.nvim_get_hl(0, { name = group, link = false }).italic,
-    group .. " should not be cursive")
+  assert(not vim.api.nvim_get_hl(0, { name = group, link = false }).italic, group .. " should not be cursive")
 end
 
-assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).bg
+assert(
+  vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).bg
     == vim.api.nvim_get_hl(0, { name = "YapIsland", link = false }).bg,
-  "model island should share the rollup surface")
-assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
-  "model text should remain italic inside its island")
+  "model island should share the rollup surface"
+)
+assert(
+  vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
+  "model text should remain italic inside its island"
+)
 -- Gutter alignment: the state icon centers in the line-number gutter and the
 -- rollup island's left cap overhangs the text edge only when the gutter is
 -- more than 3 columns wide.
@@ -367,24 +451,21 @@ do
     return vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
   end
   local function cap_overhang_cols()
-    local rendered = vim.api.nvim_eval_statusline(yap.winbar(g_target),
-      { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    local at = assert(rendered:find(icons.cap_l, 1, true),
-      "rollup cap missing: " .. rendered)
+    local rendered =
+      vim.api.nvim_eval_statusline(yap.winbar(g_target), { winid = 0, use_winbar = true, maxwidth = 200 }).str
+    local at = assert(rendered:find(icons.cap_l, 1, true), "rollup cap missing: " .. rendered)
     return vim.fn.strdisplaywidth(rendered:sub(1, at - 1))
   end
 
   -- Gutter wider than 3 columns: the cap overhangs one cell into the gutter.
   vim.wo.numberwidth = 4
   assert(textoff() == 4, "expected a 4-column gutter")
-  assert(cap_overhang_cols() == textoff() - 1,
-    "icon not centered / island cap not overhanging the gutter")
+  assert(cap_overhang_cols() == textoff() - 1, "icon not centered / island cap not overhanging the gutter")
 
   -- Gutter of exactly 3 columns: the cap stays flush at the text edge.
   vim.wo.numberwidth = 3
   assert(textoff() == 3, "expected a 3-column gutter")
-  assert(cap_overhang_cols() == textoff(),
-    "island cap should not overhang a 3-column gutter")
+  assert(cap_overhang_cols() == textoff(), "island cap should not overhang a 3-column gutter")
 
   vim.wo.number = false
   state.awaiting[g_other] = nil

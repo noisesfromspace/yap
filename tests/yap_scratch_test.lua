@@ -17,7 +17,10 @@ assert(vim.api.nvim_buf_get_name(scratch):match("%.queue$") ~= nil, "scratch buf
 local queue_file = vim.api.nvim_buf_get_name(scratch)
 assert(vim.fn.filereadable(queue_file) == 1, "new queue file was not saved automatically")
 local initial = { "# @notes", "", "# @steer", "", "# @queue" }
-assert(table.concat(vim.fn.readfile(queue_file), "\n") == table.concat(initial, "\n"), "new queue file has unexpected initial content")
+assert(
+  table.concat(vim.fn.readfile(queue_file), "\n") == table.concat(initial, "\n"),
+  "new queue file has unexpected initial content"
+)
 assert(not vim.bo[scratch].modified, "automatically saved queue buffer is still modified")
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
 assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
@@ -41,7 +44,6 @@ vim.api.nvim_win_call(scratch_win, function()
   assert(vim.fn.foldclosed(5) == -1, "folding notes also closed queue")
   vim.cmd("normal! zo")
 end)
-
 
 -- the scratch buffer is a real file: :write saves the live control buffer
 local saved = { "# @notes", "a note", "", "# @steer", "", "# @queue", "task one", "task two" }
@@ -84,7 +86,10 @@ vim.cmd("vsplit")
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 assert(vim.api.nvim_get_current_buf() == reloaded, "scratch did not reopen beside the vertical split")
-assert(vim.api.nvim_win_get_width(0) == vim.o.columns, "scratch drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns)
+assert(
+  vim.api.nvim_win_get_width(0) == vim.o.columns,
+  "scratch drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns
+)
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(reloaded) == 0, "scratch did not close from the vertical split")

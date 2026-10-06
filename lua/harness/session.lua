@@ -73,7 +73,22 @@ local function stamp_updated_at(buf)
   if fm.updated_at == updated_at and fm.turns == turns then
     return -- unchanged: skip the rewrite so an untouched block stays clean
   end
-  local block = frontmatter.render(fm.provider, fm.model, fm.models, fm.created_at, fm.description, fm.role, fm.tools, fm.subagents, updated_at, turns, fm.cwd, fm.forked_from, fm.forks, fm.subagent_parent)
+  local block = frontmatter.render(
+    fm.provider,
+    fm.model,
+    fm.models,
+    fm.created_at,
+    fm.description,
+    fm.role,
+    fm.tools,
+    fm.subagents,
+    updated_at,
+    turns,
+    fm.cwd,
+    fm.forked_from,
+    fm.forks,
+    fm.subagent_parent
+  )
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
 
@@ -137,13 +152,18 @@ function M.fork(buf, name, running)
     -- current user/assistant pair and leave a fresh prompt.
     local current_assistant
     for i = #lines, 1, -1 do
-      if lines[i] == "# @assistant" then current_assistant = i; break end
+      if lines[i] == "# @assistant" then
+        current_assistant = i
+        break
+      end
     end
     if current_assistant then
       for i = current_assistant - 1, 1, -1 do
         if lines[i] == "# @user" then
           lines = vim.list_slice(lines, 1, i - 1)
-          while lines[#lines] == "" do table.remove(lines) end
+          while lines[#lines] == "" do
+            table.remove(lines)
+          end
           vim.list_extend(lines, { "", "# @user", "" })
           break
         end
@@ -154,15 +174,35 @@ function M.fork(buf, name, running)
   if fm then
     local ending
     for i = 2, #lines do
-      if lines[i]:match("^%-%-%-%s*$") then ending = i; break end
+      if lines[i]:match("^%-%-%-%s*$") then
+        ending = i
+        break
+      end
     end
     if ending then
       local created = os.date("!%Y-%m-%dT%H:%M:%SZ")
       local turns = 0
       for i = ending + 1, #lines do
-        if lines[i] == "# @assistant" then turns = turns + 1 end
+        if lines[i] == "# @assistant" then
+          turns = turns + 1
+        end
       end
-      local block = frontmatter.render(fm.provider, fm.model, fm.models, created, fm.description, fm.role, fm.tools, fm.subagents, created, turns, fm.cwd, vim.b[buf].yap_path, {}, nil)
+      local block = frontmatter.render(
+        fm.provider,
+        fm.model,
+        fm.models,
+        created,
+        fm.description,
+        fm.role,
+        fm.tools,
+        fm.subagents,
+        created,
+        turns,
+        fm.cwd,
+        vim.b[buf].yap_path,
+        {},
+        nil
+      )
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block
     end
@@ -186,7 +226,9 @@ function M.fork(buf, name, running)
       for _, line in ipairs(vim.fn.readfile(audit)) do
         events[#events + 1] = line
         local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" and ev.type == "turn_end" then last_turn = #events end
+        if ok and type(ev) == "table" and ev.type == "turn_end" then
+          last_turn = #events
+        end
       end
       copied, copy_err = pcall(vim.fn.writefile, vim.list_slice(events, 1, last_turn), dest)
     else
@@ -205,9 +247,27 @@ function M.fork(buf, name, running)
     forks[#forks + 1] = path
     local ending
     for i = 2, #source_lines do
-      if source_lines[i]:match("^%-%-%-%s*$") then ending = i; break end
+      if source_lines[i]:match("^%-%-%-%s*$") then
+        ending = i
+        break
+      end
     end
-    local block = frontmatter.render(source_fm.provider, source_fm.model, source_fm.models, source_fm.created_at, source_fm.description, source_fm.role, source_fm.tools, source_fm.subagents, source_fm.updated_at, source_fm.turns, source_fm.cwd, source_fm.forked_from, forks, source_fm.subagent_parent)
+    local block = frontmatter.render(
+      source_fm.provider,
+      source_fm.model,
+      source_fm.models,
+      source_fm.created_at,
+      source_fm.description,
+      source_fm.role,
+      source_fm.tools,
+      source_fm.subagents,
+      source_fm.updated_at,
+      source_fm.turns,
+      source_fm.cwd,
+      source_fm.forked_from,
+      forks,
+      source_fm.subagent_parent
+    )
     vim.api.nvim_buf_set_lines(buf, 0, ending, false, block)
   end
   return path
@@ -309,8 +369,7 @@ end
 function M.label(path, description, project_cwd)
   local filename = path and path ~= "" and vim.fn.fnamemodify(path, ":t") or nil
   local named = filename ~= nil and not paths.is_default_name(path)
-  local identity = named and filename
-    or (description and description ~= "" and description or filename or "session")
+  local identity = named and filename or (description and description ~= "" and description or filename or "session")
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
@@ -355,34 +414,52 @@ function M.list(scope)
           for i, line in ipairs(lines) do
             if line == "# @user" then
               for j = i + 1, #lines do
-                if lines[j]:match("^# @%a+") then break end
-                if lines[j]:match("%S") then task = lines[j]:gsub("^%s+", ""):gsub("%s+$", ""); break end
+                if lines[j]:match("^# @%a+") then
+                  break
+                end
+                if lines[j]:match("%S") then
+                  task = lines[j]:gsub("^%s+", ""):gsub("%s+$", "")
+                  break
+                end
               end
               break
             end
           end
           item.text = "↳ " .. fm.role .. " · " .. (description ~= "" and description or task or name)
           children[path] = item
-        elseif (not paths.is_default_name(path) or description ~= "" or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0)))
-            and (not renamed_only or not paths.is_default_name(path)) then
+        elseif
+          (
+            not paths.is_default_name(path)
+            or description ~= ""
+            or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
+          ) and (not renamed_only or not paths.is_default_name(path))
+        then
           items[#items + 1] = item
         end
         if fm then
-          for _, child_path in ipairs(fm.subagents) do parents[vim.fs.normalize(child_path)] = path end
+          for _, child_path in ipairs(fm.subagents) do
+            parents[vim.fs.normalize(child_path)] = path
+          end
         end
       end
     end
   end
 
-  table.sort(items, function(a, b) return a.mtime > b.mtime end)
+  table.sort(items, function(a, b)
+    return a.mtime > b.mtime
+  end)
   local result = {}
   for _, item in ipairs(items) do
     result[#result + 1] = item
     local owned = {}
     for path, child in pairs(children) do
-      if parents[vim.fs.normalize(path)] == item.path then owned[#owned + 1] = child end
+      if parents[vim.fs.normalize(path)] == item.path then
+        owned[#owned + 1] = child
+      end
     end
-    table.sort(owned, function(a, b) return a.mtime > b.mtime end)
+    table.sort(owned, function(a, b)
+      return a.mtime > b.mtime
+    end)
     for _, child in ipairs(owned) do
       child.text = "  " .. child.text
       result[#result + 1] = child
@@ -392,10 +469,16 @@ function M.list(scope)
   -- Preserve discoverability if a parent was deleted or is hidden by scope.
   if not renamed_only then
     local orphans = {}
-    for _, child in pairs(children) do orphans[#orphans + 1] = child end
-    table.sort(orphans, function(a, b) return a.mtime > b.mtime end)
+    for _, child in pairs(children) do
+      orphans[#orphans + 1] = child
+    end
+    table.sort(orphans, function(a, b)
+      return a.mtime > b.mtime
+    end)
     for _, child in ipairs(orphans) do
-      if scope == "all" then child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text end
+      if scope == "all" then
+        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
+      end
       result[#result + 1] = child
     end
   end
@@ -412,11 +495,14 @@ function M.pick(opts, on_choice)
   local scope = opts.scope or "cwd"
   local items = M.list(scope)
   if #items == 0 then
-    local msg = scope == "renamed" and "yap: no renamed conversations in this project" or "yap: no saved conversations in this scope"
+    local msg = scope == "renamed" and "yap: no renamed conversations in this project"
+      or "yap: no saved conversations in this scope"
     vim.notify(msg, vim.log.levels.INFO)
     return
   end
-  local scope_label = scope == "all" and "all projects" or scope == "renamed" and "renamed, cwd project" or "cwd project"
+  local scope_label = scope == "all" and "all projects"
+    or scope == "renamed" and "renamed, cwd project"
+    or "cwd project"
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",

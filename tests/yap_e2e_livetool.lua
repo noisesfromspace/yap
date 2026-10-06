@@ -53,7 +53,10 @@ local sparkle_frames = require("harness.winbar").spinner_frames
 local has_colored_icon = false
 for _, frame in ipairs(sparkle_frames) do
   local bar = yap.winbar()
-  if bar:find(frame, 1, true) and bar:find("%#YapBusySpin#", 1, true) then has_colored_icon = true; break end
+  if bar:find(frame, 1, true) and bar:find("%#YapBusySpin#", 1, true) then
+    has_colored_icon = true
+    break
+  end
 end
 assert(has_colored_icon, "winbar is missing the spinner color: " .. yap.winbar())
 local spin_hl = vim.api.nvim_get_hl(0, { name = "YapBusySpin", link = false })
@@ -111,7 +114,10 @@ assert(not yap.winbar():match("bash"), "winbar still shows the tool after comple
 -- of an untruncated run is deleted), with a $ command header
 local audit_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
 assert(audit_text:match("^%$ printf"), "no command header in audit view: " .. audit_text)
-assert(audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"), "audit view incomplete: " .. audit_text)
+assert(
+  audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"),
+  "audit view incomplete: " .. audit_text
+)
 
 -- the audit log records the streamed output as JSON output events
 local audit_file = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
@@ -173,7 +179,10 @@ assert(started, "tool header not present before stop")
 local tb2 = audit_buf(buf2)
 assert(tb2, "no audit view buffer for the second session")
 yap.live()
-assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-audit$"), ":YapLive did not open the audit view")
+assert(
+  vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-audit$"),
+  ":YapLive did not open the audit view"
+)
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "audit view window not at the bottom")
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer

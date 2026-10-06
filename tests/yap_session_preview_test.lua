@@ -10,8 +10,10 @@ yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 -- preview() returns a { buf = ... } table per the vim.ui.select() preview
 -- contract; the buffer is markdown so pickers syntax-highlight the excerpts.
 local function preview_text(result)
-  assert(type(result) == "table" and result.buf and vim.api.nvim_buf_is_valid(result.buf),
-    "preview must return a { buf = ... } table: " .. vim.inspect(result))
+  assert(
+    type(result) == "table" and result.buf and vim.api.nvim_buf_is_valid(result.buf),
+    "preview must return a { buf = ... } table: " .. vim.inspect(result)
+  )
   assert(vim.bo[result.buf].filetype == "markdown", "preview buffer must be markdown")
   return vim.api.nvim_buf_get_lines(result.buf, 0, -1, false)
 end
@@ -44,12 +46,12 @@ local convo = {
 }
 local lines = preview_text(session.preview(convo))
 assert(lines[1] == "## First message", "unexpected preview: " .. vim.inspect(lines))
-assert(lines[3] == "first question" and lines[4] == "second line",
-  "first user message wrong: " .. vim.inspect(lines))
-assert(lines[6] == "---" and lines[8] == "## Last answer",
-  "separator / answer heading wrong: " .. vim.inspect(lines))
-assert(lines[10] == "last answer line 1" and lines[11] == "last answer line 2",
-  "last agent answer wrong: " .. vim.inspect(lines))
+assert(lines[3] == "first question" and lines[4] == "second line", "first user message wrong: " .. vim.inspect(lines))
+assert(lines[6] == "---" and lines[8] == "## Last answer", "separator / answer heading wrong: " .. vim.inspect(lines))
+assert(
+  lines[10] == "last answer line 1" and lines[11] == "last answer line 2",
+  "last agent answer wrong: " .. vim.inspect(lines)
+)
 assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty preview missing")
 
 -- The open-session picker previews another live buffer with the same excerpts.
@@ -63,12 +65,16 @@ vim.ui.select = function(items, opts)
 end
 yap.instances()
 vim.ui.select = orig_select
-assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "expected only the other open session: " .. vim.inspect(captured and captured.items))
+assert(
+  captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "expected only the other open session: " .. vim.inspect(captured and captured.items)
+)
 assert(type(captured.opts.preview_item) == "function", "instances preview_item missing")
 local live_preview = preview_text(captured.opts.preview_item(captured.items[1]))
-assert(live_preview[1] == "## First message" and live_preview[3] == "hello",
-  "instances preview wrong: " .. vim.inspect(live_preview))
+assert(
+  live_preview[1] == "## First message" and live_preview[3] == "hello",
+  "instances preview wrong: " .. vim.inspect(live_preview)
+)
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
 
 -- Open child sessions are a separate picker row, indented beneath their parent.
@@ -84,36 +90,60 @@ yap.instances()
 vim.ui.select = orig_select
 local parent_item, child_item
 for _, item in ipairs(captured.items) do
-  if item.buf == buf then parent_item = item end
-  if item.buf == child then child_item = item end
+  if item.buf == buf then
+    parent_item = item
+  end
+  if item.buf == child then
+    child_item = item
+  end
 end
-assert(parent_item and not parent_item.text:find("\n", 1, true),
-  "current parent with an open subagent should have its own picker row: " .. vim.inspect(parent_item))
-assert(child_item and child_item.text == "↳ scout · inspect this task",
-  "subagent should have a compact label: " .. vim.inspect(child_item))
+assert(
+  parent_item and not parent_item.text:find("\n", 1, true),
+  "current parent with an open subagent should have its own picker row: " .. vim.inspect(parent_item)
+)
+assert(
+  child_item and child_item.text == "↳ scout · inspect this task",
+  "subagent should have a compact label: " .. vim.inspect(child_item)
+)
 local parent_position, child_position
 for i, item in ipairs(captured.items) do
-  if item.buf == buf then parent_position = i end
-  if item.buf == child then child_position = i end
+  if item.buf == buf then
+    parent_position = i
+  end
+  if item.buf == child then
+    child_position = i
+  end
 end
-assert(parent_position and child_position == parent_position + 1,
-  "child should stay directly below its parent: " .. vim.inspect(captured.items))
+assert(
+  parent_position and child_position == parent_position + 1,
+  "child should stay directly below its parent: " .. vim.inspect(captured.items)
+)
 local rendered_child = captured.opts.format_item(child_item)
-assert(rendered_child:find("↳ scout · inspect this task", 1, true)
-  and not rendered_child:find(vim.fn.getcwd(), 1, true), "child row wastes space: " .. rendered_child)
+assert(
+  rendered_child:find("↳ scout · inspect this task", 1, true) and not rendered_child:find(vim.fn.getcwd(), 1, true),
+  "child row wastes space: " .. rendered_child
+)
 local state = require("harness.state")
 state.running[child] = {}
 captured = nil
-vim.ui.select = function(items, opts) captured = { items = items, opts = opts } end
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
 yap.instances()
 vim.ui.select = orig_select
 parent_position, child_position = nil, nil
 for i, item in ipairs(captured.items) do
-  if item.buf == buf then parent_position = i end
-  if item.buf == child then child_position = i end
+  if item.buf == buf then
+    parent_position = i
+  end
+  if item.buf == child then
+    child_position = i
+  end
 end
-assert(parent_position and child_position == parent_position + 1,
-  "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items))
+assert(
+  parent_position and child_position == parent_position + 1,
+  "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
+)
 state.running[child] = nil
 
 -- Completed children do not need attention; stopped or errored ones do.
@@ -127,15 +157,21 @@ vim.ui.select = function(items, opts)
 end
 yap.waiting()
 vim.ui.select = orig_select
-assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "waiting picker should show the parent but not its completed subagent: " .. vim.inspect(captured and captured.items))
+assert(
+  captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "waiting picker should show the parent but not its completed subagent: " .. vim.inspect(captured and captured.items)
+)
 state.stopped[child] = true
 captured = nil
-vim.ui.select = function(items, opts) captured = { items = items, opts = opts } end
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
 yap.waiting()
 vim.ui.select = orig_select
-assert(captured and #captured.items == 2 and captured.items[1].buf == buf and captured.items[2].buf == child,
-  "stopped child needs attention beneath its parent: " .. vim.inspect(captured and captured.items))
+assert(
+  captured and #captured.items == 2 and captured.items[1].buf == buf and captured.items[2].buf == child,
+  "stopped child needs attention beneath its parent: " .. vim.inspect(captured and captured.items)
+)
 state.stopped[child] = nil
 state.awaiting[buf], state.awaiting[child] = nil, nil
 
@@ -148,8 +184,10 @@ vim.ui.select = function(items, opts)
 end
 yap.waiting()
 vim.ui.select = orig_select
-assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "waiting picker should list a stopped session: " .. vim.inspect(captured and captured.items))
+assert(
+  captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "waiting picker should list a stopped session: " .. vim.inspect(captured and captured.items)
+)
 assert(captured.items[1].state == "stopped", "stopped state missing: " .. vim.inspect(captured.items[1]))
 state.stopped[buf] = nil
 
@@ -176,7 +214,8 @@ assert(path and vim.fn.filereadable(path) == 1, "session not saved")
 local saved_child = yap.new({ role = "scout", system = "Scout role", hidden = true })
 local saved_child_path = vim.b[saved_child].yap_path
 local child_lines = vim.api.nvim_buf_get_lines(saved_child, 0, -1, false)
-child_lines[#child_lines + 1] = "Investigate a very long title that must stay searchable and never be artificially truncated"
+child_lines[#child_lines + 1] =
+  "Investigate a very long title that must stay searchable and never be artificially truncated"
 vim.api.nvim_buf_set_lines(saved_child, 0, -1, false, child_lines)
 session.save(saved_child)
 vim.api.nvim_buf_set_lines(saved, 4, 4, false, { "subagents:", "  - " .. saved_child_path })
@@ -186,24 +225,40 @@ captured = nil
 vim.ui.select = function(items, opts, on_choice)
   captured = { items = items, opts = opts, on_choice = on_choice }
 end
-session.pick({ scope = "cwd" }, function(selected) assert(selected == saved_child_path, "saved child selection failed") end)
+session.pick({ scope = "cwd" }, function(selected)
+  assert(selected == saved_child_path, "saved child selection failed")
+end)
 vim.ui.select = orig_select
 assert(captured, "expected saved sessions")
 local saved_index, saved_child_index
 for i, item in ipairs(captured.items) do
-  if item.path == path then saved_index = i end
-  if item.path == saved_child_path then saved_child_index = i end
+  if item.path == path then
+    saved_index = i
+  end
+  if item.path == saved_child_path then
+    saved_child_index = i
+  end
 end
-assert(saved_index and saved_child_index == saved_index + 1,
-  "saved child should be selectable directly beneath its parent: " .. vim.inspect(captured.items))
+assert(
+  saved_index and saved_child_index == saved_index + 1,
+  "saved child should be selectable directly beneath its parent: " .. vim.inspect(captured.items)
+)
 captured.on_choice(captured.items[saved_child_index])
 local child_label = captured.opts.format_item(captured.items[saved_child_index])
-assert(child_label:find("↳ scout · Investigate a very long title that must stay searchable and never be artificially truncated", 1, true),
-  "saved child title was cut off: " .. child_label)
+assert(
+  child_label:find(
+    "↳ scout · Investigate a very long title that must stay searchable and never be artificially truncated",
+    1,
+    true
+  ),
+  "saved child title was cut off: " .. child_label
+)
 assert(type(captured.opts.preview_item) == "function", "saved preview_item missing")
 local saved_preview = preview_text(captured.opts.preview_item(captured.items[saved_index]))
-assert(saved_preview[1] == "## First message" and saved_preview[3] == "history question",
-  "saved preview wrong: " .. vim.inspect(saved_preview))
+assert(
+  saved_preview[1] == "## First message" and saved_preview[3] == "history question",
+  "saved preview wrong: " .. vim.inspect(saved_preview)
+)
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
 
 -- The history picker annotates saved sessions that are open with their live
@@ -219,7 +274,9 @@ local function history_status(expected)
   vim.ui.select = orig_select
   local item
   for _, candidate in ipairs(captured and captured.items or {}) do
-    if candidate.path == path then item = candidate end
+    if candidate.path == path then
+      item = candidate
+    end
   end
   assert(item, "expected saved history row: " .. vim.inspect(captured))
   local rendered = captured.opts.format_item(item)

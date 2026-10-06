@@ -28,7 +28,10 @@ fold.setup_buffer(buf)
 local structure = require("harness.structure")
 local p_fold = fold.parse(buf)
 local p_struct = structure.parse(buf)
-assert(p_fold.count == p_struct.count and #p_fold.headings == #p_struct.headings and #p_fold.details == #p_struct.details, "shared parser outputs match")
+assert(
+  p_fold.count == p_struct.count and #p_fold.headings == #p_struct.headings and #p_fold.details == #p_struct.details,
+  "shared parser outputs match"
+)
 
 -- default state is view 2: conversation open, system prompt folded
 assert(vim.fn.foldclosed(1) == 1, "system should be folded by default")

@@ -126,21 +126,27 @@ end
 --    enclosing assistant message: `dam` drops the whole message.
 do
   local buf = fresh({
-    "# @system", "",
-    "You are helpful.", "",
-    "# @user", "",
-    "Question.", "",
-    "# @assistant", "",
+    "# @system",
+    "",
+    "You are helpful.",
+    "",
+    "# @user",
+    "",
+    "Question.",
+    "",
+    "# @assistant",
+    "",
     '<!-- yap:tool {"id":"c1","name":"read","arguments":{"path":"x.md"}} -->',
     "```markdown",
-    "# @user",                -- fake heading, inside the fence
+    "# @user", -- fake heading, inside the fence
     "content",
     "```",
     "<!-- /yap:tool -->",
     "",
     "The answer.",
     "",
-    "# @user", "",
+    "# @user",
+    "",
   })
   at(buf, 13, 0) -- on the fake `# @user` inside the fenced read result
   vim.cmd.normal("dam")
@@ -157,10 +163,17 @@ end
 -- selects the outer tool, not the fake marker in its result.
 do
   local buf = fresh({
-    "# @assistant", "",
+    "# @assistant",
+    "",
     '<!-- yap:tool {"id":"c2","name":"read","arguments":{}} -->',
-    "```markdown", "<!-- yap:thinking", "not a block", "-->", "```",
-    "<!-- /yap:tool -->", "", "Answer.",
+    "```markdown",
+    "<!-- yap:thinking",
+    "not a block",
+    "-->",
+    "```",
+    "<!-- /yap:tool -->",
+    "",
+    "Answer.",
   })
   at(buf, 5, 0)
   vim.cmd.normal("dat")

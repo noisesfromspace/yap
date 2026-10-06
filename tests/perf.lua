@@ -95,8 +95,7 @@ local function build_session(nlines)
   local tool_id = 0
   local function tool(result_lines)
     tool_id = tool_id + 1
-    lines[#lines + 1] =
-      '<!-- yap:tool {"id":"call_' .. tool_id .. '","name":"bash","arguments":{"command":"make"}} -->'
+    lines[#lines + 1] = '<!-- yap:tool {"id":"call_' .. tool_id .. '","name":"bash","arguments":{"command":"make"}} -->'
     lines[#lines + 1] = "Successfully ran command."
     for i = 1, result_lines do
       lines[#lines + 1] = "output line " .. i
@@ -214,20 +213,92 @@ local function make_onwin_sim(buf, win)
     local top, last = 0, WIN_H
     local vis = visible_trees(itrees, last)
     return {
-      { "parser:parse()", function() parser:parse() end },
-      { "bullets", function() stub_extmarks(function() bullets.render(ns, buf, config.bullets.icons, top, last, root) end) end },
-      { "codeblocks", function() stub_extmarks(function() codeblocks.render(ns, buf, top, last, root) end) end },
+      {
+        "parser:parse()",
+        function()
+          parser:parse()
+        end,
+      },
+      {
+        "bullets",
+        function()
+          stub_extmarks(function()
+            bullets.render(ns, buf, config.bullets.icons, top, last, root)
+          end)
+        end,
+      },
+      {
+        "codeblocks",
+        function()
+          stub_extmarks(function()
+            codeblocks.render(ns, buf, top, last, root)
+          end)
+        end,
+      },
       {
         "commentblocks (bg+status)",
-        function() stub_extmarks(function() commentblocks.render(ns, buf, top, last, config.comment_blocks.enabled, config.yap.enabled) end) end,
+        function()
+          stub_extmarks(function()
+            commentblocks.render(ns, buf, top, last, config.comment_blocks.enabled, config.yap.enabled)
+          end)
+        end,
       },
-      { "yap headings", function() stub_extmarks(function() yapmod.render(ns, buf, top, last, root) end) end },
-      { "checkboxes", function() stub_extmarks(function() checkboxes.render(ns, buf, config.checkboxes.icons, top, last, root) end) end },
-      { "quotes", function() stub_extmarks(function() quotes.render(ns, buf, top, last, root) end) end },
-      { "admonitions", function() stub_extmarks(function() admonitions.render(ns, buf, top, last, root) end) end },
-      { "markdown_inline:parse()", function() if inline then inline:parse() end end },
-      { "links", function() stub_extmarks(function() links.render(ns, buf, top, last, vis, root) end) end },
-      { "markers", function() stub_extmarks(function() markers.render(ns, buf, top, last, vis, root) end) end },
+      {
+        "yap headings",
+        function()
+          stub_extmarks(function()
+            yapmod.render(ns, buf, top, last, root)
+          end)
+        end,
+      },
+      {
+        "checkboxes",
+        function()
+          stub_extmarks(function()
+            checkboxes.render(ns, buf, config.checkboxes.icons, top, last, root)
+          end)
+        end,
+      },
+      {
+        "quotes",
+        function()
+          stub_extmarks(function()
+            quotes.render(ns, buf, top, last, root)
+          end)
+        end,
+      },
+      {
+        "admonitions",
+        function()
+          stub_extmarks(function()
+            admonitions.render(ns, buf, top, last, root)
+          end)
+        end,
+      },
+      {
+        "markdown_inline:parse()",
+        function()
+          if inline then
+            inline:parse()
+          end
+        end,
+      },
+      {
+        "links",
+        function()
+          stub_extmarks(function()
+            links.render(ns, buf, top, last, vis, root)
+          end)
+        end,
+      },
+      {
+        "markers",
+        function()
+          stub_extmarks(function()
+            markers.render(ns, buf, top, last, vis, root)
+          end)
+        end,
+      },
     }
   end
 
@@ -534,7 +605,16 @@ apply_folds(buf)
 fold.set_view_level(1)
 
 hdr("E. scaling (key metrics by buffer size)")
-print(string.format("  %-8s %-16s %-16s %-16s %-16s", "size", "levels rebuild", "cold parse", "parse+append", "j-step+redraw"))
+print(
+  string.format(
+    "  %-8s %-16s %-16s %-16s %-16s",
+    "size",
+    "levels rebuild",
+    "cold parse",
+    "parse+append",
+    "j-step+redraw"
+  )
+)
 for _, size in ipairs(SIZES) do
   local ls = build_session(size)
   local b2 = api.nvim_create_buf(false, true)
