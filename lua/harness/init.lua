@@ -2347,6 +2347,16 @@ local function adopt(buf, path)
   return buf
 end
 
+--- Switch the current window's buffer, briefly clearing `winfixbuf` so a
+--- window fixed to its buffer can still be redirected (E1513).
+local function switch_buf(buf)
+  local win = vim.api.nvim_get_current_win()
+  local fixed = vim.wo[win].winfixbuf
+  vim.wo[win].winfixbuf = false
+  vim.api.nvim_set_current_buf(buf)
+  vim.wo[win].winfixbuf = fixed
+end
+
 --- Focus an already-loaded buffer: jump to an existing window, otherwise
 --- show it in the current one (unlisted sessions have no other way back).
 local function focus_buf(buf)
@@ -2354,7 +2364,7 @@ local function focus_buf(buf)
   if wins[1] then
     vim.api.nvim_set_current_win(wins[1])
   else
-    vim.api.nvim_set_current_buf(buf)
+    switch_buf(buf)
   end
 end
 
@@ -2777,12 +2787,12 @@ function M.setup(opts)
         if vim.api.nvim_buf_get_name(cur) == "" and not vim.bo[cur].modified then
           local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
           if #lines <= 1 and (#lines == 0 or lines[1] == "") then
-            vim.api.nvim_set_current_buf(target)
+            switch_buf(target)
             vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
             return
           end
         end
-        vim.api.nvim_set_current_buf(target)
+        switch_buf(target)
       end)
     end,
   })
