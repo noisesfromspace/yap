@@ -29,8 +29,9 @@ link(HL.warn, "WarningMsg")
 -- Namespace for the live view's per-line highlights.
 local ns = vim.api.nvim_create_namespace("yap.audit.hl")
 
--- A turn journal line (the live view's section header): `# <ts> turn <model>: …`.
-local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn "
+-- A turn journal line (the live view's section header):
+-- `# <ts> turn: <in> in · <out> out · <s>s`.
+local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn:"
 
 --- Flatten embedded newlines in a free-text field so a single audit field
 --- can never inject a new buffer line (nvim_buf_set_lines rejects strings
@@ -104,17 +105,10 @@ local function render_event(ev)
   elseif ev.type == "approval_timeout" then
     return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "block"
   elseif ev.type == "turn_end" then
-    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
-    local model = flat(ev.model)
-    if model == "" then
-      model = "?"
-    end
-    return { { text = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
+    return { { text = ("# %s turn: %d in · %d out · %.1fs"):format(
       ts,
-      model,
       ev.prompt or 0,
       ev.completion or 0,
-      cost,
       (ev.ms or 0) / 1000
     ), hl = HL.turn } }, "block"
   end

@@ -19,7 +19,7 @@ local audit = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live did not open the audit view")
 local header
 for i, l in ipairs(vim.api.nvim_buf_get_lines(audit, 0, -1, false)) do
-  if l:match("^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn ") then
+  if l:match("^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn:") then
     header = i
     break
   end
