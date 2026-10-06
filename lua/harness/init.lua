@@ -1073,6 +1073,16 @@ function M.live(buf)
       vim.cmd("normal! za")
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle turn fold" })
   end
+  if M.config.keymaps.view_1 ~= "" then
+    vim.keymap.set("n", M.config.keymaps.view_1, function()
+      audit.fold_all(t.bufnr)
+    end, { buffer = t.bufnr, silent = true, desc = "yap: fold all turns" })
+  end
+  if M.config.keymaps.view_2 ~= "" then
+    vim.keymap.set("n", M.config.keymaps.view_2, function()
+      audit.unfold_all(t.bufnr)
+    end, { buffer = t.bufnr, silent = true, desc = "yap: unfold all turns" })
+  end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
   audit.fold(t.bufnr)
 end

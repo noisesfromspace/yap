@@ -206,7 +206,7 @@ end
 --- turn collapses to a summary line. The open turn after the last header stays
 --- expanded so live output remains visible. Manual folds, applied from a
 --- window showing the buffer; a hidden view folds the next time it is shown.
-function M.fold(buf)
+function M.fold(buf, force)
   local wins = vim.fn.win_findbuf(buf)
   if #wins == 0 then
     return
@@ -224,11 +224,14 @@ function M.fold(buf)
         return
       end
       -- Remember which completed turns the user left open so a <Tab>-opened
-      -- turn survives the re-fold below on the next turn_end.
+      -- turn survives the re-fold below on the next turn_end. `force` (the
+      -- <leader>1 fold-everything view key) ignores that and closes all.
       local open = {}
-      for _, finish in ipairs(headers) do
-        if vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
-          open[finish] = true
+      if not force then
+        for _, finish in ipairs(headers) do
+          if vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
+            open[finish] = true
+          end
         end
       end
       vim.wo.foldmethod = "manual"
@@ -244,6 +247,28 @@ function M.fold(buf)
         end
         prev = finish
       end
+    end)
+  end
+end
+
+--- <leader>1: fold everything — collapse every completed turn, closing any
+--- the user had left open. Same projection as M.fold but unconditional.
+function M.fold_all(buf)
+  M.fold(buf, true)
+end
+
+--- <leader>2: unfold everything — open every turn fold.
+function M.unfold_all(buf)
+  local wins = vim.fn.win_findbuf(buf)
+  for _, win in ipairs(wins) do
+    vim.api.nvim_win_call(win, function()
+      if vim.api.nvim_win_get_buf(win) ~= buf then
+        return
+      end
+      vim.wo.foldmethod = "manual"
+      vim.wo.foldminlines = 0
+      vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
+      vim.cmd("normal! zR")
     end)
   end
 end

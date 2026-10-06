@@ -44,4 +44,20 @@ vim.api.nvim_feedkeys(tab, "mtx", false)
 assert(vim.fn.foldclosed(header) == -1, "<Tab> did not open the turn: " .. vim.fn.foldclosed(header))
 vim.api.nvim_feedkeys(tab, "mtx", false)
 assert(vim.fn.foldclosed(header) ~= -1, "<Tab> did not close the turn")
+
+-- ─── <leader>1 folds everything, <leader>2 unfolds everything ─────────────
+assert(vim.fn.maparg("<leader>1", "n", false, true).buffer == 1, "audit view has no buffer-local fold-all")
+assert(vim.fn.maparg("<leader>2", "n", false, true).buffer == 1, "audit view has no buffer-local unfold-all")
+local leader = vim.g.mapleader
+if leader == nil or leader == "" then
+  leader = "\\"
+end
+local feed = function(keys)
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "mtx", false)
+end
+vim.api.nvim_win_set_cursor(0, { header, 0 })
+feed(leader .. "2")
+assert(vim.fn.foldclosed(header) == -1, "<leader>2 did not unfold the turn")
+feed(leader .. "1")
+assert(vim.fn.foldclosed(header) ~= -1, "<leader>1 did not fold the turn")
 print("OK audit-view")

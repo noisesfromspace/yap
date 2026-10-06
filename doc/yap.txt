@@ -948,8 +948,10 @@ and returned text stays in the default color so it reads as plain text.
 Each completed turn folds back to its header line — a table of
 contents — while the open turn after the last header stays expanded so
 live output remains visible. `<Tab>` toggles a folded turn open or
-closed. The view only follows new output when it is already near the
-bottom, so scrolling up to read is never yanked back down. |:YapClear|
+closed; `<leader>1` folds every completed turn and `<leader>2` unfolds
+them all (these reuse the `view_1`/`view_2` config keys). The view only
+follows new output when it is already near the bottom, so scrolling up
+to read is never yanked back down. |:YapClear|
 placeholders correlate a region's tool-call id with its
 tool_call..tool_result line range, so a cleared body points back to
 exactly what it replaced.
