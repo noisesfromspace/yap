@@ -221,13 +221,13 @@ are shown below.
   <leader>s             Toggle the session's scratch buffer: a
                         file-backed jotter with independently foldable
                         `# @notes`, `# @steer`, and `# @queue` sections.
-                        Notes are inert. While a turn runs, <C-s> submits
-                        # @steer; it remains there until delivered and can
-                        be revised/canceled. While idle, <C-s> consumes the
-                        next non-empty line under # @queue and sends it.
-                        Each queued line is dispatched only on <C-s>; queued
-                        work never auto-dispatches after a turn. Consumption
-                        reads and edits the live buffer,
+                        Notes are an inert backlog. While a turn runs,
+                        <C-s> submits # @steer; it remains there until
+                        delivered and can be revised/canceled. While idle,
+                        <C-s> sends the whole # @queue body as one message
+                        and clears it. Queued work never auto-dispatches
+                        after a turn; it waits for an explicit <C-s>.
+                        Consumption reads and edits the live buffer,
                         then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
@@ -891,12 +891,13 @@ The audit log (<session>.jsonl) is written in the audit dir
 ~/.yap/sessions/<cwd-slug>/<session>.queue, a file-backed control buffer
 with `# @notes`, `# @steer`, and `# @queue` sections. Sending always reads
 and edits its current in-memory contents, never a disk snapshot. Existing
-plain queue files are migrated under `# @queue`. Queue entries are one
-non-empty line each; the next entry is removed when dispatched and each
-remaining entry waits for its own <C-s>. A pending steer is the full body of
-`# @steer`, remains visible until delivered, and can be revised or canceled
-by editing/removing that body. If a steer misses the last tool boundary, it
-is consumed when dispatched as a follow-up turn. `# @notes` is never sent.
+plain queue files are migrated under `# @queue`. The whole `# @queue` body
+is one message: it is sent and cleared by <C-s>. A pending steer is the full
+body of `# @steer`, remains visible until delivered, and can be revised or
+canceled by editing/removing that body. If a steer misses the last tool
+boundary, it is consumed when dispatched as a follow-up turn. `# @notes` is
+never sent — use it as a backlog and move one item into `# @queue` (or
+`# @steer`) when ready.
 Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
@@ -1386,15 +1387,15 @@ R19 Turn completion is a first-class event.
     side effect.
 
 R20 Scratch sections are parsed from the live `*.queue` buffer, never
-    re-read from the saved file during dispatch. `# @notes` is inert;
-    `# @steer` is a replaceable pending message that remains in the buffer
-    until delivery (or follow-up dispatch), and `# @queue` contains one
-    message per non-empty line, consumed in order. Editing/removing a pending
-    steer sends an update/cancellation to the running backend. Queue removal
-    and delivered-steer removal are reflected in the buffer and saved to the
-    sidecar. The three sections fold independently. Why: pending work is
-    retractable, and the visible buffer—not a stale disk snapshot—is the
-    control surface.
+    re-read from the saved file during dispatch. `# @notes` is an inert
+    backlog; `# @steer` is a replaceable pending message that remains in the
+    buffer until delivery (or follow-up dispatch), and the whole `# @queue`
+    body is one message, sent and cleared on <C-s>. Editing/removing a
+    pending steer sends an update/cancellation to the running backend. Queue
+    removal and delivered-steer removal are reflected in the buffer and
+    saved to the sidecar. The three sections fold independently. Why: pending
+    work is retractable, and the visible buffer—not a stale disk snapshot—is
+    the control surface.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

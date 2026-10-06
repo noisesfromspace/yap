@@ -1094,7 +1094,7 @@ local function queue_follow(buf, scratch)
 end
 
 --- Scratch sections are explicit so notes never become an accidental prompt.
---- Queue entries are one non-empty line each; a steer is one multiline body.
+--- The queue body is one message; a steer is one multiline body.
 local function scratch_section(scratch, name)
   local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
   local heading
@@ -1144,19 +1144,14 @@ scratch_section_text = function(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
 end
 
-local function scratch_take_queue_item(scratch)
-  local heading, finish, lines = scratch_section(scratch, "queue")
-  if not heading then
+local function scratch_take_queue(scratch)
+  local body = scratch_section_lines(scratch, "queue")
+  if #body == 0 then
     return nil
   end
-  for i = heading + 1, finish do
-    if lines[i]:match("%S") then
-      local item = lines[i]:gsub("^%s+", ""):gsub("%s+$", "")
-      vim.api.nvim_buf_set_lines(scratch, i - 1, i, false, {})
-      return item
-    end
-  end
-  return nil
+  local item = table.concat(body, "\n")
+  scratch_set_section(scratch, "queue", {})
+  return item
 end
 
 --- Write the live scratch buffer after a consumed item is removed.
@@ -1221,7 +1216,7 @@ local function sync_scratch_steer(owner, scratch)
   end
 end
 
-local function scratch_dispatch_next(owner)
+local function scratch_dispatch_queue(owner)
   if not vim.api.nvim_buf_is_valid(owner) or M.is_running(owner) then
     return false
   end
@@ -1229,7 +1224,7 @@ local function scratch_dispatch_next(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return false
   end
-  local item = scratch_take_queue_item(scratch)
+  local item = scratch_take_queue(scratch)
   if not item then
     return false
   end
@@ -1240,7 +1235,9 @@ local function scratch_dispatch_next(owner)
 end
 
 --- <C-s> dispatches by state: while running it submits the # @steer body;
---- while idle it consumes the next one-line # @queue item. Notes are inert.
+--- while idle it sends the whole # @queue body as one message. Notes are
+--- an inert backlog: keep work there, move one item into # @queue (or
+--- # @steer) when it's ready to go.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -1259,7 +1256,7 @@ function M.scratch_send(scratch)
     return
   end
 
-  if not scratch_dispatch_next(owner) then
+  if not scratch_dispatch_queue(owner) then
     vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
   end
 end
