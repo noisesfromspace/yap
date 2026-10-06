@@ -427,6 +427,10 @@ function M.list(scope)
           end
           item.text = "↳ " .. fm.role .. " · " .. (description ~= "" and description or task or name)
           children[path] = item
+        elseif fm and fm.forked_from then
+          item.text = "↳ fork · " .. M.label(path, description)
+          children[path] = item
+          parents[vim.fs.normalize(path)] = vim.fs.normalize(fm.forked_from)
         elseif
           (
             not paths.is_default_name(path)
@@ -448,12 +452,19 @@ function M.list(scope)
   table.sort(items, function(a, b)
     return a.mtime > b.mtime
   end)
-  local result = {}
-  for _, item in ipairs(items) do
+  local result, shown = {}, {}
+  local function add(item, depth)
+    if shown[item.path] then
+      return
+    end
+    shown[item.path] = true
+    if depth > 0 then
+      item.text = string.rep("  ", depth) .. item.text
+    end
     result[#result + 1] = item
     local owned = {}
     for path, child in pairs(children) do
-      if parents[vim.fs.normalize(path)] == item.path then
+      if parents[vim.fs.normalize(path)] == vim.fs.normalize(item.path) then
         owned[#owned + 1] = child
       end
     end
@@ -461,25 +472,30 @@ function M.list(scope)
       return a.mtime > b.mtime
     end)
     for _, child in ipairs(owned) do
-      child.text = "  " .. child.text
-      result[#result + 1] = child
-      children[child.path] = nil
+      add(child, depth + 1)
     end
+  end
+  for _, item in ipairs(items) do
+    add(item, 0)
   end
   -- Preserve discoverability if a parent was deleted or is hidden by scope.
   if not renamed_only then
     local orphans = {}
     for _, child in pairs(children) do
-      orphans[#orphans + 1] = child
+      if not shown[child.path] then
+        orphans[#orphans + 1] = child
+      end
     end
     table.sort(orphans, function(a, b)
       return a.mtime > b.mtime
     end)
     for _, child in ipairs(orphans) do
-      if scope == "all" then
-        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
+      if not shown[child.path] then
+        if scope == "all" then
+          child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
+        end
+        add(child, 0)
       end
-      result[#result + 1] = child
     end
   end
   return result

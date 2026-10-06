@@ -2863,6 +2863,9 @@ function M.fork(name)
   vim.fn.bufload(buf)
   focus_buf(buf)
   adopt(buf, path)
+  -- bufload may have adopted the fork while the source was still current;
+  -- winbar is window/buffer-local, so set it on the now-visible fork too.
+  vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
   return path
 end
@@ -2956,9 +2959,8 @@ function M.change_default_model(combo)
 end
 
 --- Session title for the picker: description when present, filename as
---- fallback. Subagents are indented under their parent; a frontmatter role
---- marks a saved subagent. The project cwd is rendered separately by
---- |M.instances| so it can lead the row.
+--- fallback. Subagents and forks are indented under their parent when it
+--- is open. The project cwd is rendered separately by |M.instances|.
 live_session_label = function(buf)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
@@ -2972,6 +2974,9 @@ live_session_label = function(buf)
   end
   if fm and fm.role then
     label = label .. "  [subagent: " .. fm.role .. "]"
+  end
+  if fm and fm.forked_from then
+    return "↳ fork · " .. label
   end
   return label
 end
@@ -3051,14 +3056,22 @@ end
 --- or errored children: a finished child need not be replied to. A current
 --- parent remains visible while it has an open subagent. Audit views are
 --- never here — use :YapLive / <leader>l.
-local function has_open_subagent(parent)
+local function has_open_child(parent)
   local child = subagent_children[parent]
   if child and vim.api.nvim_buf_is_valid(child) then
     return true
   end
+  local path = vim.fs.normalize(vim.b[parent].yap_path or vim.api.nvim_buf_get_name(parent))
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if buf ~= parent and vim.b[buf].yap and vim.b[buf].yap_subagent_parent == parent then
-      return true
+    if buf ~= parent and vim.b[buf].yap then
+      if vim.b[buf].yap_subagent_parent == parent then
+        return true
+      end
+      local e = frontmatter_end(buf)
+      local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
+      if fm and fm.forked_from and vim.fs.normalize(fm.forked_from) == path then
+        return true
+      end
     end
   end
   return false
@@ -3074,6 +3087,12 @@ function M.instances(state)
   local needs_you = states ~= nil and states.waiting == true and states.stopped == true
   local items = {}
   local current = vim.api.nvim_get_current_buf()
+  local open_paths = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[b].yap then
+      open_paths[vim.fs.normalize(vim.b[b].yap_path or vim.api.nvim_buf_get_name(b))] = b
+    end
+  end
   local attention_child = {}
   if needs_you then
     for _, b in ipairs(vim.api.nvim_list_bufs()) do
@@ -3084,13 +3103,17 @@ function M.instances(state)
     end
   end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    local parent = vim.b[b].yap_subagent_parent
-    local include_current_parent = b == current and has_open_subagent(b)
-    local child_needs_you = parent and (stopped[b] or errors[b])
+    local subagent_parent = vim.b[b].yap_subagent_parent
+    local e = vim.b[b].yap and frontmatter_end(b)
+    local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
+    local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
+    local parent = subagent_parent or fork_parent
+    local include_current_parent = b == current and has_open_child(b)
+    local child_needs_you = subagent_parent and (stopped[b] or errors[b])
     if
       (b ~= current or include_current_parent)
       and vim.b[b].yap
-      and (not needs_you or not parent or child_needs_you)
+      and (not needs_you or not subagent_parent or child_needs_you)
       and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
     then
       items[#items + 1] = {
@@ -3100,6 +3123,7 @@ function M.instances(state)
         state = session_state(b),
         model = vim.b[b].yap_model,
         group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
+        parent = parent,
       }
     end
   end
@@ -3115,19 +3139,46 @@ function M.instances(state)
     end
     return
   end
-  table.sort(items, function(a, b)
-    if a.group_parent == b.group_parent then
-      if a.buf ~= b.buf and (a.buf == a.group_parent or b.buf == b.group_parent) then
-        return a.buf == a.group_parent
-      end
-      return a.text < b.text
+  -- Sort roots by state; keep each child directly below its parent.
+  local by_buf, children = {}, {}
+  for _, item in ipairs(items) do
+    by_buf[item.buf] = item
+  end
+  local roots = {}
+  for _, item in ipairs(items) do
+    if item.parent and by_buf[item.parent] then
+      local siblings = children[item.parent] or {}
+      siblings[#siblings + 1] = item
+      children[item.parent] = siblings
+    else
+      roots[#roots + 1] = item
     end
-    local ra, rb = session_rank(a.group_parent), session_rank(b.group_parent)
+  end
+  table.sort(roots, function(a, b)
+    local ra, rb = session_rank(a.buf), session_rank(b.buf)
     if ra ~= rb then
       return ra < rb
     end
-    return live_session_label(a.group_parent) < live_session_label(b.group_parent)
+    return a.text < b.text
   end)
+  local ordered = {}
+  local function add(item, depth)
+    if depth > 1 then
+      item.text = string.rep("  ", depth - 1) .. item.text
+    end
+    ordered[#ordered + 1] = item
+    local siblings = children[item.buf] or {}
+    table.sort(siblings, function(a, b)
+      return a.text < b.text
+    end)
+    for _, child in ipairs(siblings) do
+      add(child, depth + 1)
+    end
+  end
+  for _, item in ipairs(roots) do
+    add(item, 0)
+  end
+  items = ordered
   -- Row order: project cwd, state glyph, title, then the bare model name
   -- (no provider) in parentheses. The glyph already encodes the state, so
   -- the model name earns the word that used to follow it.

@@ -36,7 +36,38 @@ assert(
 )
 assert(vim.deep_equal(frontmatter.parse(vim.fn.readfile(original)).forks, { fork }), "source fork link missing")
 assert(frontmatter.parse(vim.fn.readfile(fork)).forked_from == original, "fork parent link missing")
+local saved_items = require("harness.session").list("cwd")
+local source_index, fork_index
+for i, item in ipairs(saved_items) do
+  if item.path == original then
+    source_index = i
+  elseif item.path == fork then
+    fork_index = i
+  end
+end
+assert(source_index and fork_index == source_index + 1, "saved fork not beneath source: " .. vim.inspect(saved_items))
+assert(saved_items[fork_index].text == "  ↳ fork · forked.md", "saved fork label wrong")
+local captured
+local select = vim.ui.select
+vim.ui.select = function(items)
+  captured = items
+end
+vim.api.nvim_set_current_buf(original_buf)
+yap.instances()
+vim.ui.select = select
+local live_source, live_fork
+for i, item in ipairs(captured) do
+  if item.buf == original_buf then
+    live_source = i
+  elseif item.buf == fork_buf then
+    live_fork = i
+  end
+end
+assert(live_source and live_fork == live_source + 1, "open fork not beneath source: " .. vim.inspect(captured))
+assert(captured[live_fork].text == "↳ fork · forked.md", "open fork label wrong")
+vim.api.nvim_set_current_buf(fork_buf)
 assert(vim.b[fork_buf].yap and vim.b[fork_buf].yap_model == vim.b[original_buf].yap_model, "fork not adopted")
+assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "fork window has no yap winbar")
 assert(frontmatter.parse(vim.fn.readfile(fork)).created_at, "fork frontmatter missing")
 
 local fork_audit = paths.audit_path(fork_buf)
@@ -61,6 +92,18 @@ assert(
   "unexpected generated fork name: " .. generated
 )
 assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == fork, "nested fork parent missing")
+local nested_items = require("harness.session").list("cwd")
+local nested_parent, nested_child
+for i, item in ipairs(nested_items) do
+  if item.path == fork then
+    nested_parent = i
+  elseif item.path == generated then
+    nested_child = i
+  end
+end
+assert(nested_parent and nested_child == nested_parent + 1, "nested saved fork not beneath parent")
+assert(nested_items[nested_child].text:find("    ↳ fork · ", 1, true) == 1, "nested fork indentation wrong")
+assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "nested fork window has no yap winbar")
 local visible = false
 for _, item in ipairs(require("harness.session").list("cwd")) do
   if item.path == generated then
