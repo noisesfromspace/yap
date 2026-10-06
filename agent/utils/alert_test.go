@@ -4,31 +4,31 @@ import (
 	"context"
 	"testing"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 // fakeModel returns canned answers so the gate's decision mapping is tested
 // without a network round-trip.
 type fakeModel struct {
-	answers map[string]decision.Answer
+	answers map[string]decide.Answer
 	err     error
 }
 
-func (f fakeModel) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
+func (f fakeModel) Decide(_ context.Context, req decide.Request) (decide.Response, error) {
 	if f.err != nil {
-		return decision.Response{}, f.err
+		return decide.Response{}, f.err
 	}
-	return decision.Response{Answers: f.answers}, nil
+	return decide.Response{Answers: f.answers}, nil
 }
 
-func fakeAnswer(p, conf, sev float64) map[string]decision.Answer {
-	return map[string]decision.Answer{
-		"harmful":  {Name: "harmful", Type: decision.Noul, Noul: p, Confidence: conf},
-		"severity": {Name: "severity", Type: decision.Score, Score: sev},
+func fakeAnswer(p, conf, sev float64) map[string]decide.Answer {
+	return map[string]decide.Answer{
+		"harmful":  {Name: "harmful", Type: decide.Noul, Noul: p, Confidence: conf},
+		"severity": {Name: "severity", Type: decide.Score, Score: sev},
 	}
 }
 
-func gate(t *testing.T, dm decision.Model, tier Tier, hardReason string) Decision {
+func gate(t *testing.T, dm decide.Model, tier Tier, hardReason string) Decision {
 	t.Helper()
 	return ShouldAlert(context.Background(), dm, DefaultAlertConfig, tier, hardReason, "state")
 }

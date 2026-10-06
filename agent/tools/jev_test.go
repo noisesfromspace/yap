@@ -5,16 +5,16 @@ import (
 	"strings"
 	"testing"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 type fakeDecision struct {
-	resp decision.Response
+	resp decide.Response
 	err  error
-	req  decision.Request
+	req  decide.Request
 }
 
-func (f *fakeDecision) Decide(_ context.Context, req decision.Request) (decision.Response, error) {
+func (f *fakeDecision) Decide(_ context.Context, req decide.Request) (decide.Response, error) {
 	f.req = req
 	return f.resp, f.err
 }
@@ -23,15 +23,15 @@ func TestJev(t *testing.T) {
 	old := decisionModel
 	defer func() { decisionModel = old }()
 
-	f := &fakeDecision{resp: decision.Response{
+	f := &fakeDecision{resp: decide.Response{
 		Model: "typesafe/jev-1.13-20260917",
-		Answers: map[string]decision.Answer{
+		Answers: map[string]decide.Answer{
 			"team": {
-				Name: "team", Type: decision.Choice, Choice: "payments", Confidence: 0.67,
+				Name: "team", Type: decide.Choice, Choice: "payments", Confidence: 0.67,
 				Probabilities: map[string]float64{"account": 0, "frontend": 0.22, "payments": 0.78},
 			},
-			"is_bug": {Name: "is_bug", Type: decision.Noul, Noul: 0.96},
-			"urgency": {Name: "urgency", Type: decision.Score, Score: 1.99, Confidence: 0.99,
+			"is_bug": {Name: "is_bug", Type: decide.Noul, Noul: 0.96},
+			"urgency": {Name: "urgency", Type: decide.Score, Score: 1.99, Confidence: 0.99,
 				Legend: map[string]string{"0": "Can wait", "1": "This week", "2": "Blocking"}},
 		},
 	}}
@@ -61,17 +61,17 @@ func TestJev(t *testing.T) {
 		}
 	}
 
-	// the tool converts args to the decision.Request surface
+	// the tool converts args to the decide.Request surface
 	if f.req.State != "checkout page blank after Pay" {
 		t.Fatalf("state: %#v", f.req.State)
 	}
 	if len(f.req.Questions) != 3 {
 		t.Fatalf("questions: %d", len(f.req.Questions))
 	}
-	if q := f.req.Questions[0]; q.Name != "is_bug" || q.Type != decision.Noul {
+	if q := f.req.Questions[0]; q.Name != "is_bug" || q.Type != decide.Noul {
 		t.Fatalf("question 0: %+v", q)
 	}
-	if q := f.req.Questions[2]; q.Type != decision.Score {
+	if q := f.req.Questions[2]; q.Type != decide.Score {
 		t.Fatalf("question 2: %+v", q)
 	}
 	if crit, ok := f.req.Questions[2].Criteria.([]any); !ok || len(crit) != 3 {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 // The alert gate is the pre-execution decision for a single tool call:
@@ -87,7 +87,7 @@ const (
 // It never fails: a decision-model outage fail-closes to a non-blocking
 // warning (OutcomeAdvise) so a down backend warns loudly instead of either
 // bricking the tool or running silently.
-func ShouldAlert(ctx context.Context, dm decision.Model, cfg AlertConfig, tier Tier, hardReason string, state any) Decision {
+func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tier, hardReason string, state any) Decision {
 	d := Decision{Outcome: OutcomeRun}
 	if tier == TierSilent {
 		return d
@@ -107,18 +107,18 @@ func ShouldAlert(ctx context.Context, dm decision.Model, cfg AlertConfig, tier T
 		return d
 	}
 
-	resp, err := dm.Decide(ctx, decision.Request{
+	resp, err := dm.Decide(ctx, decide.Request{
 		State: state,
-		Questions: []decision.Question{
+		Questions: []decide.Question{
 			{
 				Name:         "harmful",
-				Type:         decision.Noul,
+				Type:         decide.Noul,
 				Instructions: "Could running this tool call without asking the user first cause meaningful harm (data loss, credential theft or exfiltration, or an irreversible or expensive change)?",
 				Criteria:     map[string]string{"true": "potentially harmful", "false": "benign or low-stakes"},
 			},
 			{
 				Name:         "severity",
-				Type:         decision.Score,
+				Type:         decide.Score,
 				Instructions: "What is the worst plausible harm if this tool call runs unapproved?",
 				Criteria:     []string{"benign", "reversible or inconvenient", "destructive or data loss", "credential theft or exfiltration"},
 			},
@@ -131,13 +131,13 @@ func ShouldAlert(ctx context.Context, dm decision.Model, cfg AlertConfig, tier T
 	}
 
 	harm, ok := resp.Answers["harmful"]
-	if !ok || harm.Type != decision.Noul {
+	if !ok || harm.Type != decide.Noul {
 		d.Outcome = OutcomeAdvise
 		d.Reason = "alert check returned no answer"
 		return d
 	}
 	sev, ok := resp.Answers["severity"]
-	if !ok || sev.Type != decision.Score {
+	if !ok || sev.Type != decide.Score {
 		d.Outcome = OutcomeAdvise
 		d.Reason = "alert check returned no severity answer"
 		return d
@@ -146,13 +146,13 @@ func ShouldAlert(ctx context.Context, dm decision.Model, cfg AlertConfig, tier T
 	d.Confidence = harm.Confidence
 	d.Severity = sev.Score
 
-	d.Outcome, d.Reason = decide(harm.Noul, harm.Confidence, sev, cfg)
+	d.Outcome, d.Reason = decideOutcome(harm.Noul, harm.Confidence, sev, cfg)
 	return d
 }
 
-// decide maps the calibrated answer to a layered outcome. Precedence is
+// decideOutcome maps the calibrated answer to a layered outcome. Precedence is
 // top-down; the first matching case wins.
-func decide(p, conf float64, severity decision.Answer, cfg AlertConfig) (Outcome, string) {
+func decideOutcome(p, conf float64, severity decide.Answer, cfg AlertConfig) (Outcome, string) {
 	sev := severity.Score
 	nums := fmt.Sprintf("P(harmful)=%.2f severity=%.2f", p, sev)
 

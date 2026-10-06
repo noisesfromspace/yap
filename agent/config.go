@@ -27,7 +27,7 @@ type GitHub struct {
 }
 
 // Decision configures the decision-model backend used by the jev tool and
-// the alert gate. It is Jev-specific today; agent/decision.Model is the plug
+// the alert gate. It is Jev-specific today; agent/decide.Model is the plug
 // point for other decision backends. Zero values fall back to OpenRouter's
 // Decisions API, OPENROUTER_API_KEY, and the pinned Jev release.
 type Decision struct {

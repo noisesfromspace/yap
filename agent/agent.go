@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"boers.email/yap/agent/decision"
-	"boers.email/yap/agent/decision/jev"
+	"boers.email/yap/agent/decide"
+	"boers.email/yap/agent/decide/jev"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
-	"boers.email/yap/agent/pricing"
+	"boers.email/yap/agent/price"
 	"boers.email/yap/agent/render"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
@@ -284,7 +284,7 @@ var providerFactory = func(name string, prov Provider) (llm.Provider, error) {
 // decisionModel builds the backend for the jev tool from config, defaulting
 // to Jev via OpenRouter's Decisions API. OPENROUTER_API_KEY authenticates
 // both the chat and decisions surfaces.
-func decisionModel(cfg *Config) decision.Model {
+func decisionModel(cfg *Config) decide.Model {
 	env := cfg.Decision.APIKeyEnv
 	if env == "" {
 		env = "OPENROUTER_API_KEY"
@@ -469,7 +469,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			input, output = prices.Input, prices.Output
 			havePricing = true
 		}
-		if info, ok := pricing.Lookup(providerName, model); ok {
+		if info, ok := price.Lookup(providerName, model); ok {
 			if !havePricing {
 				input, output = info.Input, info.Output
 			}

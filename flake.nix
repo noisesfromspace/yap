@@ -257,7 +257,7 @@
                 Keys are `providers` (name → base_url + api_key_env),
                 `websearch` (api_key_env for the Exa search tool) and
                 `pricing` (model → USD per 1M tokens, an override for the
-                committed catalog in agent/pricing). API keys themselves are
+                committed catalog in agent/price). API keys themselves are
                 referenced by environment variable name in `api_key_env`.
               '';
             };

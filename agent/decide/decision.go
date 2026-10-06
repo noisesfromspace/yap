@@ -1,9 +1,9 @@
-// Package decision defines Yap's decision-model surface: typed, calibrated
+// Package decide defines Yap's decision-model surface: typed, calibrated
 // answers (probabilities) to structured questions about a state. The jev
-// tool speaks these types; only implementations (e.g. agent/decision/jev)
+// tool speaks these types; only implementations (e.g. agent/decide/jev)
 // know a wire protocol. Keeping this boundary means a decision backend can
 // be swapped without touching the tool or the agent loop.
-package decision
+package decide
 
 import "context"
 

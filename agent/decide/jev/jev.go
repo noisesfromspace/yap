@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 	DefaultModel = "typesafe/jev-1.13"
 )
 
-// Config builds a Jev-backed decision.Model. Zero values fall back to
+// Config builds a Jev-backed decide.Model. Zero values fall back to
 // OpenRouter's Decisions endpoint and the pinned Jev release.
 type Config struct {
 	BaseURL string
@@ -41,8 +41,8 @@ type client struct {
 	http    *http.Client
 }
 
-// New returns a decision.Model backed by Jev via the OpenRouter Decisions API.
-func New(cfg Config) decision.Model {
+// New returns a decide.Model backed by Jev via the OpenRouter Decisions API.
+func New(cfg Config) decide.Model {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = DefaultBaseURL
 	}
@@ -64,15 +64,15 @@ type questionJSON struct {
 	Criteria     json.RawMessage `json:"criteria"`
 }
 
-func (c *client) Decide(ctx context.Context, req decision.Request) (decision.Response, error) {
+func (c *client) Decide(ctx context.Context, req decide.Request) (decide.Response, error) {
 	if len(req.Questions) == 0 {
-		return decision.Response{}, fmt.Errorf("jev: at least one question is required")
+		return decide.Response{}, fmt.Errorf("jev: at least one question is required")
 	}
 	questions := make(map[string]questionJSON, len(req.Questions))
 	for _, q := range req.Questions {
 		crit, err := json.Marshal(q.Criteria)
 		if err != nil {
-			return decision.Response{}, fmt.Errorf("jev: question %q: criteria: %w", q.Name, err)
+			return decide.Response{}, fmt.Errorf("jev: question %q: criteria: %w", q.Name, err)
 		}
 		questions[q.Name] = questionJSON{
 			Type:         string(q.Type),
@@ -86,12 +86,12 @@ func (c *client) Decide(ctx context.Context, req decision.Request) (decision.Res
 		"questions": questions,
 	})
 	if err != nil {
-		return decision.Response{}, fmt.Errorf("jev: marshal request: %w", err)
+		return decide.Response{}, fmt.Errorf("jev: marshal request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewReader(body))
 	if err != nil {
-		return decision.Response{}, fmt.Errorf("jev: build request: %w", err)
+		return decide.Response{}, fmt.Errorf("jev: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -100,12 +100,12 @@ func (c *client) Decide(ctx context.Context, req decision.Request) (decision.Res
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return decision.Response{}, fmt.Errorf("jev: %w", err)
+		return decide.Response{}, fmt.Errorf("jev: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return decision.Response{}, decodeError(resp)
+		return decide.Response{}, decodeError(resp)
 	}
 
 	var wire struct {
@@ -113,17 +113,17 @@ func (c *client) Decide(ctx context.Context, req decision.Request) (decision.Res
 		Answers map[string]answerJSON `json:"answers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
-		return decision.Response{}, fmt.Errorf("jev: decode response: %w", err)
+		return decide.Response{}, fmt.Errorf("jev: decode response: %w", err)
 	}
 
-	out := decision.Response{
-		Answers: make(map[string]decision.Answer, len(wire.Answers)),
+	out := decide.Response{
+		Answers: make(map[string]decide.Answer, len(wire.Answers)),
 		Model:   wire.Model,
 	}
 	for name, a := range wire.Answers {
 		ans, err := a.toAnswer(name)
 		if err != nil {
-			return decision.Response{}, err
+			return decide.Response{}, err
 		}
 		out.Answers[name] = ans
 	}
@@ -140,10 +140,10 @@ type answerJSON struct {
 	Legend        map[string]string  `json:"legend"`
 }
 
-func (a answerJSON) toAnswer(name string) (decision.Answer, error) {
-	ans := decision.Answer{
+func (a answerJSON) toAnswer(name string) (decide.Answer, error) {
+	ans := decide.Answer{
 		Name:          name,
-		Type:          decision.QuestionType(a.Type),
+		Type:          decide.QuestionType(a.Type),
 		Probabilities: a.Probabilities,
 		Legend:        a.Legend,
 	}

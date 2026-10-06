@@ -530,7 +530,7 @@ Config and runtime data:
                         `pricing` (USD per 1M tokens) overrides the
                         committed catalog for a model; most models are
                         priced automatically from the embedded catalog
-                        (agent/pricing), so `pricing` is only needed for
+                        (agent/price), so `pricing` is only needed for
                         models the catalog misses or for a provider whose
                         price differs from the catalog. `decision`
                         configures the decision-model backend behind the
@@ -603,7 +603,7 @@ default) for typed, calibrated answers — P(yes) for noul questions, a
 winner + confidence + probabilities for choice, a weighted position for
 score — about a state the caller supplies. It is a decision primitive,
 not a chat model, and returns probabilities rather than prose. The
-backend is the agent/decision.Model interface, so other decision models
+backend is the agent/decide.Model interface, so other decision models
 with the same typed surface can be swapped in; `decision.*` in
 ~/.config/yap.json sets base_url, api_key_env, and model.
 curl shells out to the system curl binary: method, headers, user-agent,

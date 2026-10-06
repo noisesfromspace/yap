@@ -8,21 +8,21 @@ import (
 	"sort"
 	"strings"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 // The jev tool is the agent's calibrated-decision primitive. It is NOT
-// wired to Jev directly: it calls the decision.Model installed by the
+// wired to Jev directly: it calls the decide.Model installed by the
 // agent loop (SetDecisionModel). The default backend is Jev via
-// OpenRouter's Decisions API (agent/decision/jev), but any decision.Model
+// OpenRouter's Decisions API (agent/decide/jev), but any decide.Model
 // with the same typed surface can be swapped in without touching this file.
 
 // decisionModel is the backend the jev tool calls; set once per turn by
 // the agent loop before the model can call tools.
-var decisionModel decision.Model
+var decisionModel decide.Model
 
 // SetDecisionModel installs the decision backend for the jev tool.
-func SetDecisionModel(m decision.Model) {
+func SetDecisionModel(m decide.Model) {
 	decisionModel = m
 }
 
@@ -55,7 +55,7 @@ func runJev(a *jevArgs) (string, string, error) {
 		return "", "", fmt.Errorf("at least one question is required")
 	}
 
-	req := decision.Request{}
+	req := decide.Request{}
 	if err := unmarshalState(a.State, &req.State); err != nil {
 		return "", "", err
 	}
@@ -64,9 +64,9 @@ func runJev(a *jevArgs) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
-		req.Questions = append(req.Questions, decision.Question{
+		req.Questions = append(req.Questions, decide.Question{
 			Name:         q.Name,
-			Type:         decision.QuestionType(q.Type),
+			Type:         decide.QuestionType(q.Type),
 			Instructions: q.Instructions,
 			Criteria:     crit,
 		})
@@ -95,12 +95,12 @@ func unmarshalCriteria(q jevQuestionArg) (any, error) {
 	if err := json.Unmarshal(q.Criteria, &crit); err != nil {
 		return nil, fmt.Errorf("question %q: criteria: %w", q.Name, err)
 	}
-	switch decision.QuestionType(q.Type) {
-	case decision.Noul, decision.Choice:
+	switch decide.QuestionType(q.Type) {
+	case decide.Noul, decide.Choice:
 		if _, ok := crit.(map[string]any); !ok {
 			return nil, fmt.Errorf("question %q: %s criteria must be an object mapping options to descriptions", q.Name, q.Type)
 		}
-	case decision.Score:
+	case decide.Score:
 		if _, ok := crit.([]any); !ok {
 			return nil, fmt.Errorf("question %q: score criteria must be an array of ordered level labels", q.Name)
 		}
@@ -110,7 +110,7 @@ func unmarshalCriteria(q jevQuestionArg) (any, error) {
 	return crit, nil
 }
 
-func formatDecisions(resp decision.Response) string {
+func formatDecisions(resp decide.Response) string {
 	var b strings.Builder
 	if resp.Model != "" {
 		fmt.Fprintf(&b, "## Decisions (%s)\n", resp.Model)
@@ -125,13 +125,13 @@ func formatDecisions(resp decision.Response) string {
 	for _, n := range names {
 		a := resp.Answers[n]
 		switch a.Type {
-		case decision.Noul:
+		case decide.Noul:
 			fmt.Fprintf(&b, "- **%s** (noul): P(yes) = %.3f\n", n, a.Noul)
-		case decision.Choice:
+		case decide.Choice:
 			fmt.Fprintf(&b, "- **%s** (choice): %s", n, a.Choice)
 			writeMeta(&b, confPart(a), probPart(a.Probabilities))
 			b.WriteString("\n")
-		case decision.Score:
+		case decide.Score:
 			fmt.Fprintf(&b, "- **%s** (score): %.3f", n, a.Score)
 			writeMeta(&b, confPart(a), legendPart(a.Legend))
 			b.WriteString("\n")
@@ -154,7 +154,7 @@ func writeMeta(b *strings.Builder, parts ...string) {
 	}
 }
 
-func confPart(a decision.Answer) string {
+func confPart(a decide.Answer) string {
 	if a.Confidence <= 0 {
 		return ""
 	}

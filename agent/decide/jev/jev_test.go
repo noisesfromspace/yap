@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 func TestDecide(t *testing.T) {
@@ -33,12 +33,12 @@ func TestDecide(t *testing.T) {
 	defer srv.Close()
 
 	m := New(Config{BaseURL: srv.URL, APIKey: "sekret", Model: "typesafe/jev-1.13"})
-	resp, err := m.Decide(context.Background(), decision.Request{
+	resp, err := m.Decide(context.Background(), decide.Request{
 		State: map[string]any{"ticket": "blank checkout"},
-		Questions: []decision.Question{
-			{Name: "is_bug", Type: decision.Noul, Instructions: "Is this a bug?", Criteria: map[string]string{"true": "broken", "false": "feature"}},
-			{Name: "team", Type: decision.Choice, Instructions: "Which team?", Criteria: map[string]string{"payments": "checkout"}},
-			{Name: "urgency", Type: decision.Score, Instructions: "How urgent?", Criteria: []string{"Can wait", "This week", "Blocking"}},
+		Questions: []decide.Question{
+			{Name: "is_bug", Type: decide.Noul, Instructions: "Is this a bug?", Criteria: map[string]string{"true": "broken", "false": "feature"}},
+			{Name: "team", Type: decide.Choice, Instructions: "Which team?", Criteria: map[string]string{"payments": "checkout"}},
+			{Name: "urgency", Type: decide.Score, Instructions: "How urgent?", Criteria: []string{"Can wait", "This week", "Blocking"}},
 		},
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestDecide(t *testing.T) {
 	if resp.Model != "typesafe/jev-1.13-20260917" {
 		t.Fatalf("resp model: %q", resp.Model)
 	}
-	if a := resp.Answers["is_bug"]; a.Type != decision.Noul || a.Noul != 0.96 {
+	if a := resp.Answers["is_bug"]; a.Type != decide.Noul || a.Noul != 0.96 {
 		t.Fatalf("noul answer: %+v", a)
 	}
 	if a := resp.Answers["team"]; a.Choice != "payments" || a.Probabilities["payments"] != 0.78 {
@@ -85,9 +85,9 @@ func TestDecideError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), decision.Request{
+	_, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), decide.Request{
 		State:     "x",
-		Questions: []decision.Question{{Name: "q", Type: decision.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},
+		Questions: []decide.Question{{Name: "q", Type: decide.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "state too large") {
 		t.Fatalf("error: %v", err)
@@ -106,9 +106,9 @@ func TestDecideDefaults(t *testing.T) {
 	defer srv.Close()
 
 	m := New(Config{BaseURL: srv.URL})
-	if _, err := m.Decide(context.Background(), decision.Request{
+	if _, err := m.Decide(context.Background(), decide.Request{
 		State:     "x",
-		Questions: []decision.Question{{Name: "q", Type: decision.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},
+		Questions: []decide.Question{{Name: "q", Type: decide.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},
 	}); err != nil {
 		t.Fatalf("decide: %v", err)
 	}

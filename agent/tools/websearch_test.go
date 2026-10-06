@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"boers.email/yap/agent/decision"
+	"boers.email/yap/agent/decide"
 )
 
 func TestWebsearch(t *testing.T) {
@@ -65,8 +65,8 @@ func TestWebsearchSafety(t *testing.T) {
 
 	oldURL, oldModel := websearchURL, decisionModel
 	websearchURL = srv.URL
-	decisionModel = &fakeDecision{resp: decision.Response{Answers: map[string]decision.Answer{
-		"injection": {Name: "injection", Type: decision.Noul, Noul: 0.91},
+	decisionModel = &fakeDecision{resp: decide.Response{Answers: map[string]decide.Answer{
+		"injection": {Name: "injection", Type: decide.Noul, Noul: 0.91},
 	}}}
 	defer func() { websearchURL, decisionModel = oldURL, oldModel }()
 	t.Setenv(websearchAPIKeyEnv, "test-key")

@@ -1,4 +1,4 @@
-// Package pricing bundles a committed per-model catalog so cost and
+// Package price bundles a committed per-model catalog so cost and
 // context-window display work without per-model entries in
 // ~/.config/yap.json. Prices are USD per 1M tokens (matching the config's
 // `pricing` block); `context` is the model's context window in tokens.
@@ -8,8 +8,8 @@
 // to chat models with a numeric per-token price. It is committed so normal
 // builds and runs stay offline; refresh it with:
 //
-//	go generate ./agent/pricing
-package pricing
+//	go generate ./agent/price
+package price
 
 import (
 	_ "embed"

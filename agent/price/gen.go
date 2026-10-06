@@ -1,8 +1,8 @@
 //go:build ignore
 
-// Regenerates agent/pricing/pricing.json from LiteLLM's community-maintained
-// model_prices_and_context_window.json. Run via `go generate ./agent/pricing`
-// (or directly: `go run agent/pricing/gen.go`).
+// Regenerates agent/price/pricing.json from LiteLLM's community-maintained
+// model_prices_and_context_window.json. Run via `go generate ./agent/price`
+// (or directly: `go run agent/price/gen.go`).
 //
 // Kept out of normal builds with the ignore tag; it needs network access,
 // which the shipped binary must never require.
