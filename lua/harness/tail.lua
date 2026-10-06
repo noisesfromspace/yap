@@ -32,6 +32,15 @@ local ns = vim.api.nvim_create_namespace("yap.tail.hl")
 -- A turn journal line (the tail's section header): `# <ts> turn <model>: …`.
 local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn "
 
+--- Flatten embedded newlines in a free-text field so a single audit field
+--- can never inject a new buffer line (nvim_buf_set_lines rejects strings
+--- containing '\n'). Multi-line tool output already arrives split via
+--- `output`/`tool_result` events; this only guards the one-line annotations
+--- built from model/tool-provided text (bash commands, retry errors, …).
+local function flat(s)
+  return (s or ""):gsub("[\r\n]+", " ")
+end
+
 --- Render one audit event as tail-buffer lines. Returns (lines, kind)
 --- where each line is { text = string, hl = highlight group|nil } and
 --- kind is "block" (blank-line separated) or "stream" (appended verbatim —
@@ -39,7 +48,7 @@ local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn "
 local function render_event(ev)
   local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" then
-    return { { text = "$ " .. (ev.command or ev.name or "tool"), hl = HL.command } }, "block"
+    return { { text = "$ " .. flat(ev.command or ev.name or "tool"), hl = HL.command } }, "block"
   elseif ev.type == "output" then
     local out = {}
     for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
@@ -55,7 +64,7 @@ local function render_event(ev)
     local target = ""
     local ok, a = pcall(vim.json.decode, ev.args or "")
     if ok and type(a) == "table" then
-      target = a.path or a.url or a.command or ""
+      target = flat(a.path or a.url or a.command or "")
     end
     return { { text = ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), hl = HL.tool } }, "block"
   elseif ev.type == "tool_result" then
@@ -72,28 +81,37 @@ local function render_event(ev)
     lines[#lines + 1] = { text = ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"), hl = HL.meta }
     return lines, "block"
   elseif ev.type == "retry" then
-    return { { text = ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), hl = HL.warn } }, "block"
+    return { { text = ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)), hl = HL.warn } }, "block"
   elseif ev.type == "tool_text_warning" then
-    return { { text = ("%s unexecuted tool call: %s"):format(ts, ev.detail or "model emitted a tool call as text"), hl = HL.warn } }, "block"
+    local detail = flat(ev.detail)
+    if detail == "" then
+      detail = "model emitted a tool call as text"
+    end
+    return { { text = ("%s unexecuted tool call: %s"):format(ts, detail), hl = HL.warn } }, "block"
   elseif ev.type == "steer" then
-    local text = (ev.text or ""):gsub("\n", " ")
+    local text = flat(ev.text)
     return { { text = ("%s ⌁ steer: %s"):format(ts, text), hl = HL.warn } }, "block"
   elseif ev.type == "approval_request" then
-    local context = ev.tool or ""
-    if ev.reason and ev.reason ~= "" then
-      context = context ~= "" and (context .. ": " .. ev.reason) or ev.reason
+    local tool, reason = flat(ev.tool), flat(ev.reason)
+    local context = tool
+    if reason ~= "" then
+      context = context ~= "" and (context .. ": " .. reason) or reason
     end
     local label = context ~= "" and (" (" .. context .. ")") or ""
-    return { { text = ("%s %s approval requested%s: %s"):format(ts, require("harness").config.icons.approval, label, (ev.command or ""):gsub("\n", " ")), hl = HL.warn } }, "block"
+    return { { text = ("%s %s approval requested%s: %s"):format(ts, require("harness").config.icons.approval, label, flat(ev.command)), hl = HL.warn } }, "block"
   elseif ev.type == "approval_result" then
     return { { text = ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), hl = HL.warn } }, "block"
   elseif ev.type == "approval_timeout" then
     return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "block"
   elseif ev.type == "turn_end" then
     local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
+    local model = flat(ev.model)
+    if model == "" then
+      model = "?"
+    end
     return { { text = ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
       ts,
-      ev.model or "?",
+      model,
       ev.prompt or 0,
       ev.completion or 0,
       cost,
