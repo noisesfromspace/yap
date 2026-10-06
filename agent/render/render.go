@@ -152,10 +152,10 @@ func EmitToolHeader(out *bufio.Writer, call llm.ToolCall) {
 	// write/edit carry their full content in the arguments; the header
 	// keeps only the shape — the yap:ui diff shows the change and the
 	// audit log has the full arguments (R12).
-	argsJSON := string(call.Input)
+	argsJSON := utils.Scrub(string(call.Input))
 	args, ok := utils.SlimArgs(call.Name, argsJSON)
 	if !ok {
-		if err := json.Unmarshal(call.Input, &args); err != nil {
+		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 			args = argsJSON // malformed/truncated JSON: keep raw
 		}
 	}
@@ -189,6 +189,7 @@ func EmitToolResult(out *bufio.Writer, result, ui string) {
 		out.WriteString(fence + "\n")
 	}
 	if ui != "" {
+		ui = utils.Scrub(ui)
 		// The ui diff used to live INSIDE a `<!-- yap:ui … -->` comment,
 		// where treesitter never parses a fence — a comment is one leaf
 		// html_block node, so a ```diff inside it got no highlighting.

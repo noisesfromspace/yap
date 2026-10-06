@@ -42,6 +42,17 @@ func TestScrub(t *testing.T) {
 		t.Fatalf("assignment spaced: %q", got)
 	}
 
+	// JSON, shell assignments, short and punctuated secrets are redacted.
+	for _, c := range []struct{ in, want string }{
+		{`{"password":"short!"}`, `{"password":"[REDACTED]"}`},
+		{`API_KEY='a:b!c@d'`, `API_KEY='[REDACTED]'`},
+		{`Authorization: Bearer abc12345`, `Authorization: [REDACTED]`},
+	} {
+		if got := Scrub(c.in); got != c.want {
+			t.Errorf("Scrub(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
 	// benign content is untouched
 	const benign = "func main() { println(\"hello world\") }\nAKIA is a prefix but not a key\n"
 	if Scrub(benign) != benign {

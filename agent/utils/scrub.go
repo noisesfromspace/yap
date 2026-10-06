@@ -23,14 +23,13 @@ var scrubWhole = []*regexp.Regexp{
 	regexp.MustCompile(`AGE-SECRET-KEY-1[A-Z0-9]{40,}`),
 	// AWS access key IDs (the secret key is entropy-only and not matched).
 	regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
-	// Bearer tokens.
-	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9_\-\.]{16,}`),
+	// Bearer tokens (including shorter opaque tokens).
+	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9_\-\.~+/=]{8,}`),
 }
 
-// scrubAssign matches `name=value` / `name: value` for common secret names
-// with a reasonably long value; only the value is dropped.
+// scrubAssign matches named secret assignments, including JSON string values.
 // Groups: 1 = key name, 2 = operator + optional opening quote, 3 = value.
-var scrubAssign = regexp.MustCompile(`(?i)\b(api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd|authorization)(\s*[:=]\s*["']?)([A-Za-z0-9_\-\./+=]{16,})`)
+var scrubAssign = regexp.MustCompile(`(?i)\b(api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;}{]+)`)
 
 // Scrub redacts obvious secrets from s.
 func Scrub(s string) string {

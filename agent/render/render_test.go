@@ -56,6 +56,20 @@ func TestMarshalCommentJSONStyleTag(t *testing.T) {
 	}
 }
 
+func TestEmitToolHeaderAndUIDoNotExposeSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	out := bufio.NewWriter(&buf)
+	EmitToolHeader(out, llm.ToolCall{
+		ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"echo password=short!"}`),
+	})
+	EmitToolResult(out, "ok", "-password=short!\n+password=new!\n")
+	out.Flush()
+	got := buf.String()
+	if strings.Contains(got, "short!") || strings.Contains(got, "new!") || !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("secret exposed in session: %s", got)
+	}
+}
+
 func TestEmitToolHeaderNoHTMLEscaping(t *testing.T) {
 	var buf bytes.Buffer
 	out := bufio.NewWriter(&buf)

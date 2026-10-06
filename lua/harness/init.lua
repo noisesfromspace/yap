@@ -586,6 +586,7 @@ local function ensure_audit(buf)
   local name = paths.audit_buf_name(buf)
   local tbuf = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.bo[tbuf].bufhidden = "hide"
+  vim.bo[tbuf].modifiable = false
 
   t = { bufnr = tbuf, offset = 0, has_content = false }
   audits[buf] = t
@@ -603,7 +604,9 @@ local function ensure_audit(buf)
       end
     end
   end
+  vim.bo[tbuf].modifiable = true
   t.has_content = audit.rebuild(tbuf, events)
+  vim.bo[tbuf].modifiable = false
   return t
 end
 
@@ -611,7 +614,9 @@ end
 local function append_event(buf, ev)
   local t = ensure_audit(buf)
   audit_append(buf, ev)
+  vim.bo[t.bufnr].modifiable = true
   audit.append(t, ev)
+  vim.bo[t.bufnr].modifiable = false
   audit.scroll(t.bufnr)
 end
 
