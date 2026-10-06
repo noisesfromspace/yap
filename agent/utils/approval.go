@@ -23,7 +23,7 @@ type ApprovalReply struct {
 var approvalSeq atomic.Uint64
 
 // approvalTimeout is how long a turn waits for the human before denying.
-var approvalTimeout = 60 * time.Second
+var approvalTimeout = 5 * time.Minute
 
 // RequestApproval pauses the turn and asks the user to approve running
 // `command` (shown verbatim; the Lua side truncates for display). The tool

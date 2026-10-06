@@ -796,7 +796,7 @@ local function handle_event(buf, json_line)
     local detail = ok_args and vim.inspect(args) or command
     pending_approvals[buf] = ev
     local choice = vim.fn.confirm(
-      ("yap: approve %s in %s?\nReason: %s\n\n%s\n\nInspect opens the conversation and full audit; answer within 60s using :YapApproval."):format(
+      ("yap: approve %s in %s?\nReason: %s\n\n%s\n\nInspect shows the call in its conversation and audit; use :YapApproval to return (5 minute timeout)."):format(
         ev.tool or "tool",
         live_session_label(buf),
         ev.reason or "review call",
@@ -808,10 +808,7 @@ local function handle_event(buf, json_line)
     )
     if choice == 3 then
       inspect_approval(buf, ev)
-      vim.notify(
-        "yap: call paused; review the audit, then :YapApproval (timeout denies after 60s)",
-        vim.log.levels.WARN
-      )
+      vim.notify("yap: call paused; :YapApproval to Run, Deny or Inspect again (5 minute timeout)", vim.log.levels.WARN)
     else
       answer_approval(buf, choice == 1)
     end
@@ -1148,7 +1145,7 @@ local function toggle_drawer(owner, bufnr, height)
   return true
 end
 
-local function close_drawer_window(buf)
+local function close_drawer_window(buf, owner)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       -- tabpage_list_wins includes floating windows, but Neovim cannot
@@ -1162,6 +1159,10 @@ local function close_drawer_window(buf)
       end
       if normal > 1 then
         vim.api.nvim_win_close(win, true)
+      elseif pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
+        -- Inspect + :only while focused on the audit: keep the review
+        -- visible, not an empty replacement buffer. :YapApproval still
+        -- works from this window even when the chat is hidden.
       else
         -- Keep the drawer buffer available to reopen later.
         vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
@@ -1174,11 +1175,11 @@ end
 local function close_session_drawers(buf)
   local scratch = vim.b[buf].yap_scratch
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    close_drawer_window(scratch)
+    close_drawer_window(scratch, buf)
   end
   local audit_view = audits[buf]
   if audit_view and vim.api.nvim_buf_is_valid(audit_view.bufnr) then
-    close_drawer_window(audit_view.bufnr)
+    close_drawer_window(audit_view.bufnr, buf)
   end
 end
 
@@ -1248,13 +1249,50 @@ end
 
 inspect_approval = function(buf, ev)
   local ordinal = 0
+  local tool_id
   for _, line in ipairs(vim.fn.readfile(paths.audit_path(buf))) do
     local ok, entry = pcall(vim.json.decode, line)
-    if ok and type(entry) == "table" and (entry.type == "alert_advice" or entry.type == "approval_request") then
-      ordinal = ordinal + 1
+    if ok and type(entry) == "table" then
+      if entry.type == "tool_call" then
+        tool_id = entry.id
+      elseif entry.type == "alert_advice" or entry.type == "approval_request" then
+        ordinal = ordinal + 1
+      end
     end
   end
   show_audit_event(buf, ordinal)
+  -- The chat is the primary view: land on the triggering tool call, with
+  -- its audit entry still visible in the drawer below. :only now keeps the
+  -- conversation instead of leaving the user in an orphaned audit window.
+  -- The stderr approval event can arrive before the stdout tool header has
+  -- been appended. Follow it briefly without stealing focus if the user
+  -- switches windows while it is still in flight.
+  local wins = vim.fn.win_findbuf(buf)
+  local win = wins[1]
+  if win then
+    vim.api.nvim_set_current_win(win)
+  end
+  local function focus_call(attempt)
+    if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    for n = #lines, 1, -1 do
+      if tool_id and lines[n]:find(tool_id, 1, true) and lines[n]:find('"id"', 1, true) then
+        vim.api.nvim_win_call(win, function()
+          vim.cmd(("%dfoldopen!"):format(n))
+          vim.api.nvim_win_set_cursor(win, { n, 0 })
+        end)
+        return
+      end
+    end
+    if attempt < 20 and pending_approvals[buf] == ev then
+      vim.defer_fn(function()
+        focus_call(attempt + 1)
+      end, 50)
+    end
+  end
+  focus_call(1)
 end
 
 --- After inspecting a paused approval, explicitly answer it. The backend
@@ -1291,11 +1329,15 @@ function M.approval()
       ev.reason or "review call",
       ev.command or ""
     ),
-    "&Run\n&Deny",
+    "&Run\n&Deny\n&Inspect",
     2,
     "Warning"
   )
-  answer_approval(buf, choice == 1)
+  if choice == 3 then
+    inspect_approval(buf, ev)
+  else
+    answer_approval(buf, choice == 1)
+  end
 end
 
 --- Review advisories and blocked calls for this project, including sessions

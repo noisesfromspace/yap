@@ -97,9 +97,10 @@ still notify.
 | Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new chats.                              |
 
 Lua entries above are functions on `require('harness')`, not Ex commands.
-When a call needs approval, choose **Inspect** to open its conversation
-and full audit without approving it, then use `:YapApproval` to answer
-within 60 seconds (otherwise the call is denied).
+When a call needs approval, choose **Inspect** to see the triggering tool
+call in its conversation, with the audit entry alongside it. You can
+`:only` the chat or audit; use `:YapApproval` from either view to Run, Deny,
+or Inspect again. Unanswered calls are denied after five minutes.
 
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. The scratch buffer (`<leader>s`) holds notes,

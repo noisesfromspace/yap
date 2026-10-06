@@ -78,10 +78,13 @@ the current buffer unless otherwise noted.
                         :YapLive. Includes closed sessions; newest first.
 
                                                             *:YapApproval*
-:YapApproval          After choosing Inspect in a Run/Deny dialog, review
-                        the conversation and full audit, then use this to
-                        answer Run/Deny. Dismissal denies; the backend also
-                        denies automatically after 60 seconds.
+:YapApproval          After choosing Inspect in a Run/Deny dialog, use this
+                        from the conversation or audit to Run, Deny, or
+                        Inspect again. Inspect focuses the triggering tool
+                        call in the conversation with the full audit entry
+                        alongside it. `:only` keeps the focused view; you can
+                        reopen the paired view by inspecting again. Dismissal
+                        denies; the backend also denies after five minutes.
 
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
@@ -725,9 +728,11 @@ maps the calibrated answer to a layered outcome:
           credential exfiltration or a severity mean >= 2.5; destructive
           calls at even odds or low confidence; high P(harmful)).
           Run/Deny shows the reason and full call arguments, defaults to
-          Deny, and never runs on timeout. Inspect opens the conversation
-          and full audit at the blocked request without answering it; use
-          |:YapApproval| within 60 seconds to decide.
+          Deny, and never runs on timeout. Inspect focuses the triggering
+          call in the conversation with its audit entry beside it without
+          answering; |:YapApproval| can repeat Inspect or Run/Deny within
+          five minutes. `:only` from either view does not replace the audit
+          with an empty buffer.
   advise  run, but log the call and show a non-blocking warning (suspicious
           or model-uncertain calls). The toast names the session and points
           to |:YapAlerts| for review.
