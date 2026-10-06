@@ -21,20 +21,10 @@ assert(
   "approval did not prompt: " .. table.concat(vim.api.nvim_buf_get_lines(chat, 0, -1, false), "\n")
 )
 assert(prompts[1]:find("Inspect", 1, true) and prompts[1]:find("rm -rf /", 1, true), "dialog lacks context")
-assert(vim.api.nvim_get_current_buf() == chat, "Inspect should focus the triggering conversation")
-assert(
-  vim.wait(1500, function()
-    local n = vim.api.nvim_win_get_cursor(0)[1]
-    return (vim.api.nvim_buf_get_lines(chat, n - 1, n, false)[1] or ""):find("call_approval", 1, true)
-  end, 20),
-  "Inspect landed away from the triggering tool: "
-    .. vim.inspect({ vim.api.nvim_win_get_cursor(0), vim.api.nvim_buf_get_lines(chat, 0, -1, false) })
-)
-local audit = assert(vim.iter(vim.api.nvim_list_bufs()):find(function(b)
-  return vim.api.nvim_buf_get_name(b):match("%-audit$") ~= nil
-end))
-local audit_win = assert(vim.fn.win_findbuf(audit)[1], "Inspect did not open audit beside chat")
-vim.api.nvim_set_current_win(audit_win)
+local audit = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "Inspect should focus the audit")
+assert(vim.fn.win_findbuf(chat)[1], "conversation should remain visible beside audit")
+local audit_win = vim.api.nvim_get_current_win()
 local line = vim.api.nvim_win_get_cursor(0)[1]
 local entry = vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]
 assert(
@@ -42,6 +32,10 @@ assert(
   "Inspect did not show blocked call"
 )
 assert(vim.fn.foldclosed(line) == -1, "blocked call hidden in fold")
+-- The request should not be a lone folded summary: its audit context is
+-- visible on adjacent lines, including the earlier event from this call.
+local context = table.concat(vim.api.nvim_buf_get_lines(audit, math.max(line - 4, 0), line - 1, false), "\n")
+assert(context:find("• bash rm -rf /", 1, true), "blocked tool call missing before shield request")
 local log = require("harness.path").audit_path(chat)
 local function count(event)
   local n = 0
@@ -60,13 +54,13 @@ vim.cmd("only")
 vim.wait(200)
 assert(vim.api.nvim_get_current_buf() == audit, ":only from audit lost the review")
 vim.cmd("YapApproval") -- Inspect again, restore the conversation beside the audit
-assert(#prompts == 2 and vim.api.nvim_get_current_buf() == chat, "Inspect could not be repeated")
-assert(vim.fn.win_findbuf(audit)[1], "repeat Inspect did not restore audit")
+assert(#prompts == 2 and vim.api.nvim_get_current_buf() == audit, "Inspect could not be repeated")
+assert(vim.fn.win_findbuf(chat)[1], "repeat Inspect did not restore conversation")
+vim.api.nvim_set_current_win(assert(vim.fn.win_findbuf(chat)[1]))
 vim.cmd("only")
 assert(vim.api.nvim_get_current_buf() == chat, ":only from chat left an empty buffer")
 vim.cmd("YapApproval") -- Inspect again from the chat, then Deny from the audit
-assert(#prompts == 3 and vim.api.nvim_get_current_buf() == chat, "third Inspect failed")
-vim.api.nvim_set_current_win(assert(vim.fn.win_findbuf(audit)[1]))
+assert(#prompts == 3 and vim.api.nvim_get_current_buf() == audit, "third Inspect failed")
 vim.cmd("YapApproval")
 assert(
   vim.wait(10000, function()

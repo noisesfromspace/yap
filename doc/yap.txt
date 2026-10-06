@@ -80,9 +80,11 @@ the current buffer unless otherwise noted.
                                                             *:YapApproval*
 :YapApproval          After choosing Inspect in a Run/Deny dialog, use this
                         from the conversation or audit to Run, Deny, or
-                        Inspect again. Inspect focuses the triggering tool
-                        call in the conversation with the full audit entry
-                        alongside it. `:only` keeps the focused view; you can
+                        Inspect again. Inspect focuses the shield-marked
+                        request in the audit with the triggering tool call
+                        directly above it and the conversation alongside.
+                        The surrounding turn is unfolded and the request
+                        centered. `:only` keeps the focused view; you can
                         reopen the paired view by inspecting again. Dismissal
                         denies; the backend also denies after five minutes.
 
@@ -728,11 +730,12 @@ maps the calibrated answer to a layered outcome:
           credential exfiltration or a severity mean >= 2.5; destructive
           calls at even odds or low confidence; high P(harmful)).
           Run/Deny shows the reason and full call arguments, defaults to
-          Deny, and never runs on timeout. Inspect focuses the triggering
-          call in the conversation with its audit entry beside it without
-          answering; |:YapApproval| can repeat Inspect or Run/Deny within
-          five minutes. `:only` from either view does not replace the audit
-          with an empty buffer.
+          Deny, and never runs on timeout. Inspect focuses the shield-marked
+          request in the audit, with the requested tool call immediately
+          before it and the conversation alongside. The surrounding turn is
+          unfolded without answering; |:YapApproval| can repeat Inspect or
+          Run/Deny within five minutes. `:only` from either view does not
+          replace the audit with an empty buffer.
   advise  run, but log the call and show a non-blocking warning (suspicious
           or model-uncertain calls). The toast names the session and points
           to |:YapAlerts| for review.
@@ -1008,7 +1011,10 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
                "cost",?,"context_window",?,"ms","ts"} — one per completed send
 
 The audit view (|:YapLive|) is the human-readable rendering of these
-events and is rebuilt from the file on reopen. Use |:YapAlerts| to pick
+events and is rebuilt from the file on reopen. A shell tool call appears
+before the gate's shield-marked approval request, even if it is denied and
+never produces a tool_start; a running shell call also has a `$ command`
+header when execution begins. Use |:YapAlerts| to pick
 an advisory or approval request from this project's saved sessions and jump
 straight to its unfolded audit entry. The picker includes the session
 filename, timestamp, tool, and reason; entries remain available after Neovim

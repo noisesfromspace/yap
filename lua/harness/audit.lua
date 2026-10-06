@@ -57,11 +57,9 @@ local function render_event(ev)
     end
     return out, "stream"
   elseif ev.type == "tool_call" then
-    -- bash/python render their own `$ command` header from tool_start; the
-    -- full arguments are still in the audit log as this event.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
+    -- Record the requested command before the gate decides whether it runs;
+    -- blocked bash/python calls never emit tool_start, so otherwise their
+    -- approval request would have no preceding call in the audit view.
     local target = ""
     local ok, a = pcall(vim.json.decode, ev.args or "")
     if ok and type(a) == "table" then

@@ -1239,9 +1239,9 @@ local function show_audit_event(buf, ordinal)
     if text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true) then
       index = index + 1
     end
-    if index == ordinal then
+    if index == ordinal and (text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true)) then
       vim.api.nvim_win_set_cursor(0, { n, 0 })
-      vim.cmd("normal! zv")
+      vim.cmd("normal! zvzz") -- unfold the turn and center the request with its surrounding events
       break
     end
   end
@@ -1249,50 +1249,21 @@ end
 
 inspect_approval = function(buf, ev)
   local ordinal = 0
-  local tool_id
+  local target
   for _, line in ipairs(vim.fn.readfile(paths.audit_path(buf))) do
     local ok, entry = pcall(vim.json.decode, line)
-    if ok and type(entry) == "table" then
-      if entry.type == "tool_call" then
-        tool_id = entry.id
-      elseif entry.type == "alert_advice" or entry.type == "approval_request" then
-        ordinal = ordinal + 1
+    if ok and type(entry) == "table" and (entry.type == "alert_advice" or entry.type == "approval_request") then
+      ordinal = ordinal + 1
+      if entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
+        target = ordinal
       end
     end
   end
-  show_audit_event(buf, ordinal)
-  -- The chat is the primary view: land on the triggering tool call, with
-  -- its audit entry still visible in the drawer below. :only now keeps the
-  -- conversation instead of leaving the user in an orphaned audit window.
-  -- The stderr approval event can arrive before the stdout tool header has
-  -- been appended. Follow it briefly without stealing focus if the user
-  -- switches windows while it is still in flight.
-  local wins = vim.fn.win_findbuf(buf)
-  local win = wins[1]
-  if win then
-    vim.api.nvim_set_current_win(win)
+  -- Inspect is an audit action: keep the shield-marked request focused,
+  -- with the conversation visible in the other window for context.
+  if target then
+    show_audit_event(buf, target)
   end
-  local function focus_call(attempt)
-    if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win then
-      return
-    end
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    for n = #lines, 1, -1 do
-      if tool_id and lines[n]:find(tool_id, 1, true) and lines[n]:find('"id"', 1, true) then
-        vim.api.nvim_win_call(win, function()
-          vim.cmd(("%dfoldopen!"):format(n))
-          vim.api.nvim_win_set_cursor(win, { n, 0 })
-        end)
-        return
-      end
-    end
-    if attempt < 20 and pending_approvals[buf] == ev then
-      vim.defer_fn(function()
-        focus_call(attempt + 1)
-      end, 50)
-    end
-  end
-  focus_call(1)
 end
 
 --- After inspecting a paused approval, explicitly answer it. The backend
