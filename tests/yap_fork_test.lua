@@ -104,6 +104,45 @@ end
 assert(nested_parent and nested_child == nested_parent + 1, "nested saved fork not beneath parent")
 assert(nested_items[nested_child].text:find("    ↳ fork · ", 1, true) == 1, "nested fork indentation wrong")
 assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "nested fork window has no yap winbar")
+local nested_buf = vim.api.nvim_get_current_buf()
+local function check_open_tree(pick)
+  captured = nil
+  vim.ui.select = function(items)
+    captured = items
+  end
+  pick()
+  vim.ui.select = select
+  local positions = {}
+  for i, item in ipairs(captured or {}) do
+    positions[item.buf] = i
+  end
+  assert(
+    positions[original_buf] and positions[fork_buf] == positions[original_buf] + 1
+      and positions[nested_buf] == positions[fork_buf] + 1,
+    "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
+  )
+  assert(captured[positions[nested_buf]].text:find("  ↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+end
+check_open_tree(yap.instances)
+local state = require("harness.state")
+state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true, true
+check_open_tree(yap.waiting)
+state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = nil, nil, nil
+local saved_capture
+vim.ui.select = function(items)
+  saved_capture = items
+end
+yap.sessions()
+vim.ui.select = select
+local saved_positions = {}
+for i, item in ipairs(saved_capture or {}) do
+  saved_positions[item.path] = i
+end
+assert(
+  saved_positions[original] and saved_positions[fork] == saved_positions[original] + 1
+    and saved_positions[generated] == saved_positions[fork] + 1,
+  "saved fork tree is broken from within its leaf: " .. vim.inspect(saved_capture)
+)
 local visible = false
 for _, item in ipairs(require("harness.session").list("cwd")) do
   if item.path == generated then
@@ -169,4 +208,61 @@ assert(
   "running source fork link not persisted"
 )
 assert(text(active):find("active question", 1, true), "running source was altered")
+
+-- Closed parents do not appear in open pickers; their forks become regular
+-- root sessions. Open descendants stay nested under their immediate parent.
+vim.api.nvim_set_current_buf(nested_buf)
+vim.cmd("bdelete! " .. original_buf)
+local function check_orphan(pick, root_buf, child_buf, title)
+  captured = nil
+  vim.ui.select = function(items)
+    captured = items
+  end
+  pick()
+  vim.ui.select = select
+  local root_index, child_index
+  for i, item in ipairs(captured or {}) do
+    if item.buf == root_buf then
+      root_index = i
+    elseif item.buf == child_buf then
+      child_index = i
+    end
+    assert(item.buf ~= original_buf, "closed source appeared in open picker")
+  end
+  assert(root_index, "orphan fork missing: " .. vim.inspect(captured))
+  assert(captured[root_index].text == title, "orphan fork should have a regular label: " .. captured[root_index].text)
+  if child_buf then
+    assert(child_index == root_index + 1, "open descendant not nested under orphan fork")
+    assert(captured[child_index].text:find("↳ fork · ", 1, true) == 1, "open child lost fork label")
+  end
+end
+check_orphan(yap.instances, fork_buf, nested_buf, "forked.md")
+state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true
+check_orphan(yap.waiting, fork_buf, nested_buf, "forked.md")
+vim.cmd("bdelete! " .. fork_buf)
+-- A lone current fork behaves like any other current session: it is not
+-- offered as an alternate open session.
+captured = nil
+vim.ui.select = function(items)
+  captured = items
+end
+yap.instances()
+vim.ui.select = select
+for _, item in ipairs(captured or {}) do
+  assert(item.buf ~= nested_buf, "current orphan fork appeared in open picker")
+end
+vim.cmd("enew")
+check_orphan(yap.instances, nested_buf, nil, vim.fn.fnamemodify(generated, ":t"))
+check_orphan(yap.waiting, nested_buf, nil, vim.fn.fnamemodify(generated, ":t"))
+state.awaiting[nested_buf] = nil
+local after_close = require("harness.session").list("cwd")
+local positions = {}
+for i, item in ipairs(after_close) do
+  positions[item.path] = i
+end
+assert(
+  positions[original] and positions[fork] == positions[original] + 1
+    and positions[generated] == positions[fork] + 1,
+  "saved history lost fork nesting after :bd"
+)
 print("OK fork")

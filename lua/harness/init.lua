@@ -3111,7 +3111,7 @@ function M.instances(state)
     local include_current_parent = b == current and has_open_child(b)
     local child_needs_you = subagent_parent and (stopped[b] or errors[b])
     if
-      (b ~= current or include_current_parent)
+      (b ~= current or include_current_parent or fork_parent ~= nil)
       and vim.b[b].yap
       and (not needs_you or not subagent_parent or child_needs_you)
       and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
@@ -3124,6 +3124,7 @@ function M.instances(state)
         model = vim.b[b].yap_model,
         group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
         parent = parent,
+        forked_from = fm and fm.forked_from,
       }
     end
   end
@@ -3146,6 +3147,9 @@ function M.instances(state)
   end
   local roots = {}
   for _, item in ipairs(items) do
+    if item.forked_from and (not item.parent or not by_buf[item.parent]) then
+      item.text = item.text:sub(#"↳ fork · " + 1)
+    end
     if item.parent and by_buf[item.parent] then
       local siblings = children[item.parent] or {}
       siblings[#siblings + 1] = item
