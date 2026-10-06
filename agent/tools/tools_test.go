@@ -122,46 +122,42 @@ func TestBashToolStartEvent(t *testing.T) {
 	}
 }
 
-func TestBashApprovalGate(t *testing.T) {
-	// No approval channel (yap send / unit tests): a dangerous command is
-	// denied rather than run silently. `rm -rf /` stays gated after the
-	// deletion narrowing (only root/home/system/glob targets are).
-	if _, _, err := run(t, "bash", `{"command":"rm -rf /"}`); err == nil || !strings.Contains(err.Error(), "requires approval") {
-		t.Fatalf("dangerous command without approval: %v", err)
+func TestGatePreflight(t *testing.T) {
+	// Dangerous bash/python forms produce a hard-block reason.
+	if tier, reason := Assess("bash", json.RawMessage(`{"command":"rm -rf /"}`)); tier != utils.TierAskJev || reason == "" {
+		t.Fatalf("bash rm -rf /: tier=%v reason=%q", tier, reason)
+	}
+	if tier, reason := Assess("python", json.RawMessage(`{"code":"import os; os.system('id')"}`)); tier != utils.TierAskJev || reason == "" {
+		t.Fatalf("python os.system: tier=%v reason=%q", tier, reason)
 	}
 
-	old := utils.ApprovalReplies
-	approvalIDs := make(chan string, 2)
-	oldWriter := utils.SetEventWriter(approvalIDWriter{ids: approvalIDs})
-	replies := make(chan utils.ApprovalReply)
-	utils.ApprovalReplies = replies
-	go func() {
-		for _, approved := range []bool{false, true} {
-			id := <-approvalIDs
-			replies <- utils.ApprovalReply{ID: id, Approved: approved}
+	// Benign forms: ask-jev tier, no hard floor.
+	if _, reason := Assess("bash", json.RawMessage(`{"command":"echo hi"}`)); reason != "" {
+		t.Fatalf("echo hi: reason=%q", reason)
+	}
+	if _, reason := Assess("python", json.RawMessage(`{"code":"print(1)"}`)); reason != "" {
+		t.Fatalf("print(1): reason=%q", reason)
+	}
+
+	// ask-jev tools without a preflight: gated, no floor.
+	for _, tc := range []struct{ tool, args string }{
+		{"curl", `{"url":"https://example.com"}`},
+		{"subagent", `{"role":"x","task":"y"}`},
+		{"playwright", `{"command":"goto https://example.com"}`},
+	} {
+		if tier, _ := Assess(tc.tool, json.RawMessage(tc.args)); tier != utils.TierAskJev {
+			t.Fatalf("%s: tier=%v", tc.tool, tier)
 		}
-	}()
-	defer func() {
-		utils.SetEventWriter(oldWriter)
-		close(approvalIDs)
-		utils.ApprovalReplies = old
-	}()
-
-	target := filepath.Join(t.TempDir(), "scratch")
-
-	// Denied: the command never runs.
-	if _, _, err := run(t, "bash", `{"command":"rm -rf /"}`); err == nil || !strings.Contains(err.Error(), "rejected") {
-		t.Fatalf("denied command: %v", err)
 	}
 
-	// Approved: the command runs. `chmod a+w` is a broad permission change
-	// (still gated), but on a scratch file it is harmless; the write bit
-	// proves it actually executed.
-	if _, _, err := run(t, "bash", `{"command":"touch `+target+` && chmod a+w `+target+`"}`); err != nil {
-		t.Fatalf("approved command: %v", err)
+	// Silent tools (default) and unknown tools are not gated.
+	for _, tool := range []string{"read", "edit", "write", "search"} {
+		if tier, _ := Assess(tool, json.RawMessage(`{}`)); tier != utils.TierSilent {
+			t.Fatalf("%s should be silent: tier=%v", tool, tier)
+		}
 	}
-	if st, err := os.Stat(target); err != nil || st.Mode().Perm()&0o222 == 0 {
-		t.Fatalf("approved chmod did not take effect: mode=%v err=%v", st, err)
+	if tier, _ := Assess("nope", json.RawMessage(`{}`)); tier != utils.TierSilent {
+		t.Fatalf("unknown tool should be silent: tier=%v", tier)
 	}
 }
 

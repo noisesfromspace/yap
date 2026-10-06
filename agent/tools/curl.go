@@ -52,6 +52,9 @@ func init() {
 			"Sends a browser User-Agent by default to get past agent blocks. Returns the raw response body "+
 			"(curl does not execute JavaScript) — for JS-heavy pages prefer websearch with contentMode=text.",
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
+	// curl can exfiltrate via data/headers over the shared network, so it is
+	// decision-gated (see the alert gate in agent/agent.go).
+	Gate("curl", utils.TierAskJev, nil)
 }
 
 // curlDenyLong / curlDenyShort are curl options that can turn the tool into
@@ -188,7 +191,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 	// backstop (5s later) so curl's own "operation timed out" message wins.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, utils.JailTool("YAP_JAIL_CURL", "curl"), args...)
+	cmd := exec.CommandContext(ctx, "curl", args...)
 	if a.Data != "" {
 		cmd.Stdin = strings.NewReader(a.Data)
 	}

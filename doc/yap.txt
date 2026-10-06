@@ -511,6 +511,7 @@ Config and runtime data:
       "decision": { "base_url": "https://openrouter.ai/api/alpha/decisions",
                     "api_key_env": "OPENROUTER_API_KEY",
                     "model": "typesafe/jev-1.13" },
+      "alert": { "block_prob": 0.7, "advise_prob": 0.35, "min_confidence": 0.6 },
       "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
     }
 <
@@ -523,9 +524,14 @@ Config and runtime data:
                         models the catalog misses or for a provider whose
                         price differs from the catalog. `decision`
                         configures the decision-model backend behind the
-                        jev tool (|yap-tools|); it defaults to Jev via
-                        OpenRouter's Decisions API, OPENROUTER_API_KEY,
-                        and the pinned `typesafe/jev-1.13` release.
+                        jev tool and the alert gate (|yap-tools|); it
+                        defaults to Jev via OpenRouter's Decisions API,
+                        OPENROUTER_API_KEY, and the pinned
+                        `typesafe/jev-1.13` release. `alert` tunes the
+                        pre-execution alert gate (see |yap-alert-gate|):
+                        `block_prob` / `advise_prob` / `min_confidence`
+                        are decision thresholds; any zero value falls back
+                        to the built-in conservative default.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
   ~/.yap/sessions/          Autosaved sessions and their scratch queues,
@@ -672,8 +678,9 @@ path — write the file first with the write tool, then run it). `file`
 is for larger scripts so the code lives in a real, editable file the
 user can `gf` to; the header shows only the file reference. A failed
 script returns its traceback to the model as text. Like bash, it is
-unsandboxed, but dangerous source (subprocess/os.system/…, shutil.rmtree,
-see R15) pauses the turn for an explicit Run/Deny confirmation.
+unsandboxed; dangerous source (subprocess/os.system/…, shutil.rmtree)
+and every other call is screened by the alert gate (see
+|yap-alert-gate|) before it runs.
 
 Path fields on write, edit, read, ls, glob, search, git, and python
 (file and cwd) — plus bash's cwd — expand a leading ~ or ~/ to the
@@ -686,6 +693,37 @@ the yap:ui diff below shows the change, the file on disk is the
 ground truth, and the full arguments are in the audit log. Every tool
 call and result is also emitted as a yap:event and persisted there,
 see |yap-audit|.
+
+THE ALERT GATE                                        *yap-alert-gate*
+
+Every tool call passes a pre-execution gate before it runs. Three tiers:
+
+  silent       read, ls, glob, search, git, github, fetch, websearch, jev,
+               quickfix, close_session, write, edit — run immediately.
+  ask-jev      bash, python, curl, subagent, playwright — one batched
+               decision-model pass decides the outcome.
+  always-block ssh — always pauses for a Run/Deny confirmation (it keeps
+               its own known-hosts check, see below).
+
+For `ask-jev` tools the gate layers a cheap deterministic floor (the R15
+regexes: `rm -rf /`, `sudo`, `curl | sh`, subprocess/os.system, …) under a
+single jev pass. The floor always blocks — the decision model never
+downgrades a fork bomb. Where the floor is silent, jev answers two
+questions in parallel — P(harmful) and a 0–3 severity score — and the gate
+maps the calibrated answer to a layered outcome:
+
+  block   pause the turn for a Run/Deny dialog (credential exfiltration;
+          destructive calls at even odds or low confidence; high P(harmful)).
+  advise  run, but log the call and show a non-blocking warning (suspicious
+          or model-uncertain calls).
+  run     proceed silently.
+
+A decision-model outage never bricks a tool: it degrades to `advise` (a
+loud warning) rather than blocking or running silently. Thresholds live in
+the `alert` block of ~/.config/yap.json (see |yap-configuration|); defaults
+are conservative — a low bar to advise, a high bar to block — and are tuned
+from the audit log. The gate is a steerable safety net, not a security
+boundary: bash is unsandboxed by design (R15).
 
 ==============================================================================
 5. BUFFER FORMAT                                                *yap-buffer*
@@ -928,13 +966,18 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
   output       {"type","name","data","ts"} — streamed bash/python output chunks
                (synthesized by the Lua side as it drains the temp log)
   tool_result  {"type","id","name","bytes","result","ts"} — full result
-  approval_request {"type","id","tool","reason","command","ts"} — a
-               bash/python risk category or SSH remote-command execution
-               triggered a human Run/Deny dialog; reason names the matching
-               high-risk category so false-positive rules can be identified
+  approval_request {"type","id","tool","reason","command","ts"} — the
+               alert gate blocked a call and a human Run/Deny dialog opened;
+               `reason` names the deterministic category (R15) or carries the
+               jev verdict (P(harmful)/severity) so false positives can be
+               identified
   approval_result  {"type","id","approved","ts"} — the human's answer
                (synthesized by the Lua side)
   approval_timeout {"type","id","ts"} — no answer; denied
+  alert_advice {"type","id","name","reason","p_alert","severity",
+               "confidence","ts"} — the alert gate ran a call with a
+               non-blocking warning (see |yap-alert-gate|); reason plus the
+               calibrated numbers explain why
   retry        {"type","attempt","delay_ms","error","ts"} — a transient
                generation error (429/5xx/network) was retried before the
                step emitted any output
@@ -1036,9 +1079,10 @@ of Nerd Font star shapes and colors, or typographic sparkle marks with
 (a generating session needs no attention) and the rollup island and
 description disappear too; only the buffer's own state icon remains, so
 a session awaiting your reply or stuck in an error is still visible from
-another window. The rollup island's left cap overhangs the text edge by
-one cell; the description and everything after it stay flush at
-the text edge. Once a tool has run for 2s its name and elapsed
+another window. When the gutter is more than three columns wide, the
+rollup island's left cap overhangs the text edge by one cell; with a
+narrower gutter it sits flush instead. The description and everything
+after it stay flush at the text edge. Once a tool has run for 2s its name and elapsed
 time join the shimmer (`󰫢 bash 12s`); a pending `# @steer` adds `󰇐`. Then
 a raised rollup island totals ALL OTHER yap sessions by state: `N`
 streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.

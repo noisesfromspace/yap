@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -34,6 +35,25 @@ func init() {
 			"action. Scripts that use shell execution, dynamic code execution, or recursive deletion "+
 			"require user confirmation.",
 		func(a *pythonArgs) (string, string, error) { return runPython(a) })
+	// Deterministic floor: code-exec / dynamic-exec / recursive-delete calls
+	// are hard-blocked (see the alert gate in agent/agent.go).
+	Gate("python", utils.TierAskJev, func(args json.RawMessage) string {
+		var a pythonArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return ""
+		}
+		src := a.Code
+		if strings.TrimSpace(src) == "" && strings.TrimSpace(a.File) != "" {
+			p, err := filepath.Abs(utils.ExpandHome(a.File))
+			if err != nil {
+				return ""
+			}
+			if data, err := os.ReadFile(p); err == nil {
+				src = string(data)
+			}
+		}
+		return utils.DangerousPythonReason(src)
+	})
 }
 
 func runPython(a *pythonArgs) (string, string, error) {
@@ -54,7 +74,6 @@ func runPython(a *pythonArgs) (string, string, error) {
 
 	var cmd *exec.Cmd
 	label := "python3"
-	scan := a.Code
 	if hasCode {
 		// Inline: write the script to a temp file. Tracebacks carry a real
 		// filename and large payloads never hit `python3 -c`'s argv limit.
@@ -75,7 +94,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 			return "", "", err
 		}
 		defer os.Remove(scriptPath)
-		cmd = exec.Command(utils.JailTool("YAP_JAIL_PYTHON", "python3"), scriptPath)
+		cmd = exec.Command("python3", scriptPath)
 	} else {
 		// File: run the script in place. The path resolves like write's
 		// (relative to the Neovim cwd unless absolute), so
@@ -91,20 +110,8 @@ func runPython(a *pythonArgs) (string, string, error) {
 		if st.IsDir() {
 			return "", "", fmt.Errorf("script path is a directory: %s", a.File)
 		}
-		cmd = exec.Command(utils.JailTool("YAP_JAIL_PYTHON", "python3"), scriptPath)
+		cmd = exec.Command("python3", scriptPath)
 		label = "python3 " + a.File
-		if data, err := os.ReadFile(scriptPath); err == nil {
-			scan = string(data)
-		}
-	}
-	if reason := utils.DangerousPythonReason(scan); reason != "" {
-		ok, err := utils.RequestApproval(scan, "python", reason)
-		if err != nil {
-			return "", "", fmt.Errorf("python requires approval: %w", err)
-		}
-		if !ok {
-			return "", "", fmt.Errorf("python rejected by user")
-		}
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

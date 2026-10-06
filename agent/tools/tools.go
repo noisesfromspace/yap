@@ -25,6 +25,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
+
+	"boers.email/yap/agent/utils"
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
@@ -35,6 +37,12 @@ type Tool struct {
 	Schema      json.RawMessage // generated from the tool's Args struct
 	run         func(args json.RawMessage) (result, ui string, err error)
 	close       func()
+	// Alert-gate metadata (see utils/alert.go). gateTier defaults to
+	// TierSilent when Gate is never called; preflight runs deterministic
+	// checks and returns a non-empty hard-block reason, or "" to defer to
+	// the tier's decision.
+	gateTier  utils.Tier
+	preflight func(args json.RawMessage) string
 }
 
 var registry = map[string]*Tool{}
@@ -98,6 +106,31 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 func Get(name string) (*Tool, bool) {
 	t, ok := registry[name]
 	return t, ok
+}
+
+// Gate configures the pre-execution alert gate for a tool, called from the
+// tool file's init() after Register. tier selects how much scrutiny the call
+// gets; preflight (optional) runs deterministic checks and returns a
+// non-empty reason to hard-block the call regardless of the decision model.
+func Gate(name string, tier utils.Tier, preflight func(args json.RawMessage) string) {
+	if t, ok := registry[name]; ok {
+		t.gateTier = tier
+		t.preflight = preflight
+	}
+}
+
+// Assess runs a tool's deterministic preflight and returns its tier plus any
+// hard-block reason. Unknown tools are treated as silent; the caller reports
+// the unknown-tool error.
+func Assess(name string, args json.RawMessage) (utils.Tier, string) {
+	t, ok := registry[name]
+	if !ok {
+		return utils.TierSilent, ""
+	}
+	if t.preflight == nil {
+		return t.gateTier, ""
+	}
+	return t.gateTier, t.preflight(args)
 }
 
 // All returns all registered tools, sorted by name (stable requests).

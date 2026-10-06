@@ -705,6 +705,19 @@ local function handle_event(buf, json_line)
     append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
   elseif ev.type == "approval_timeout" then
     append_event(buf, ev)
+  elseif ev.type == "alert_advice" then
+    -- Non-blocking gate advisory: the call runs, but jev flagged it. Record
+    -- it in the audit log and surface a transient warning; no prompt.
+    append_event(buf, ev)
+    vim.notify(
+      ("yap: %s %s (P=%.2f, severity=%.2f)"):format(
+        ev.name or "",
+        ev.reason or "flagged",
+        tonumber(ev.p_alert) or 0,
+        tonumber(ev.severity) or 0
+      ),
+      vim.log.levels.WARN
+    )
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool blocks never replay on reopen.

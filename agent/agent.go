@@ -296,6 +296,57 @@ func decisionModel(cfg *Config) decision.Model {
 	})
 }
 
+// alertConfig merges the `alert` config block over DefaultAlertConfig. A
+// zero threshold means "not set"; use the default.
+func alertConfig(cfg *Config) utils.AlertConfig {
+	c := utils.DefaultAlertConfig
+	if cfg.Alert.BlockProb > 0 {
+		c.BlockProb = cfg.Alert.BlockProb
+	}
+	if cfg.Alert.AdviseProb > 0 {
+		c.AdviseProb = cfg.Alert.AdviseProb
+	}
+	if cfg.Alert.MinConfidence > 0 {
+		c.MinConfidence = cfg.Alert.MinConfidence
+	}
+	return c
+}
+
+// gateState is the decision model's view of one tool call: the tool, its
+// (scrubbed) arguments, and bounded context — the prose the model wrote
+// before the call and the last user message — so intent is judged, not just
+// the raw command.
+func gateState(name string, input json.RawMessage, t *turn, messages []llm.Message) map[string]any {
+	return map[string]any{
+		"tool":      name,
+		"arguments": utils.Scrub(string(input)),
+		"preamble":  truncateRunes(t.text, 2000),
+		"user":      truncateRunes(lastUserText(messages), 2000),
+	}
+}
+
+func lastUserText(messages []llm.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != llm.RoleUser {
+			continue
+		}
+		for _, p := range messages[i].Content {
+			if p.Type == llm.PartText {
+				return p.Text
+			}
+		}
+	}
+	return ""
+}
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	var req Request
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
@@ -319,7 +370,9 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
-	tools.SetDecisionModel(decisionModel(cfg))
+	dm := decisionModel(cfg)
+	tools.SetDecisionModel(dm)
+	alertCfg := alertConfig(cfg)
 	prov, ok := cfg.Providers[providerName]
 	if !ok {
 		names := make([]string, 0, len(cfg.Providers))
@@ -534,15 +587,40 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				result = "error: unknown tool " + call.Name
 				render.EmitToolResult(out, result, "")
 			} else {
-				var err error
-				result, ui, err = tool.Run(call.Input)
-				if err != nil {
-					result = "error: " + err.Error()
-					ui = ""
-				} else {
-					result = render.FenceResult(call.Name, string(call.Input), result)
+				// Pre-execution alert gate (see utils/alert.go): decide whether
+				// to run, warn (advise), or interrupt for approval before the
+				// tool executes.
+				tier, hardReason := tools.Assess(call.Name, call.Input)
+				run := true
+				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, gateState(call.Name, call.Input, t, messages))
+				switch dec.Outcome {
+				case utils.OutcomeBlock:
+					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason)
+					if aerr != nil {
+						result = "error: " + aerr.Error()
+						run = false
+					} else if !approved {
+						result = "error: " + call.Name + " rejected by user"
+						run = false
+					}
+				case utils.OutcomeAdvise:
+					utils.EmitEvent(map[string]any{
+						"type": "alert_advice", "id": call.ID, "name": call.Name,
+						"reason": dec.Reason, "p_alert": dec.PAlert,
+						"severity": dec.Severity, "confidence": dec.Confidence,
+					})
 				}
-				result = utils.Scrub(result)
+				if run {
+					var err error
+					result, ui, err = tool.Run(call.Input)
+					if err != nil {
+						result = "error: " + err.Error()
+						ui = ""
+					} else {
+						result = render.FenceResult(call.Name, string(call.Input), result)
+					}
+					result = utils.Scrub(result)
+				}
 				render.EmitToolResult(out, result, ui)
 			}
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})

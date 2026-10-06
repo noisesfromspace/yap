@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,20 +25,20 @@ func init() {
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
 			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
 		func(a *bashArgs) (string, string, error) { return runBash(a) })
+	// Deterministic floor: high-risk commands are hard-blocked (see the alert
+	// gate in agent/agent.go); the decision model never downgrades these.
+	Gate("bash", utils.TierAskJev, func(args json.RawMessage) string {
+		var a bashArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return ""
+		}
+		return utils.DangerousCommandReason(a.Command)
+	})
 }
 
 func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
-	}
-	if reason := utils.DangerousCommandReason(a.Command); reason != "" {
-		ok, err := utils.RequestApproval(a.Command, "bash", reason)
-		if err != nil {
-			return "", "", fmt.Errorf("command requires approval: %w", err)
-		}
-		if !ok {
-			return "", "", fmt.Errorf("command rejected by user")
-		}
 	}
 	a.Cwd = utils.ExpandHome(a.Cwd)
 	timeout := utils.ToolDefaultTimeout
@@ -45,7 +46,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
-	cmd := exec.Command(utils.JailTool("YAP_JAIL_BASH", "bash"), "-c", a.Command)
+	cmd := exec.Command("bash", "-c", a.Command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
 	if a.Cwd != "" {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
