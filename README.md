@@ -86,7 +86,6 @@ still notify.
 | `:YapStop`                         | `<leader>c` | Stop the current request.                            |
 | `:YapChangeModel [provider/model]` | `<leader>m` | Pick or set this chat's model.                       |
 | `:YapLive`                         | `<leader>l` | Open the live tool/audit view.                       |
-| `:YapAudit`                        |             | Browse the session's audit log (list + readable record). |
 | `:YapClear [keep]`                 |             | Replace older tool output with audit-log references. |
 | `:YapCompact`                      |             | Summarize, then optionally drop superseded history.  |
 | `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill.                  |

@@ -1068,6 +1068,11 @@ function M.live(buf)
       M.live(t.bufnr)
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   end
+  if M.config.keymaps.toggle_fold ~= "" then
+    vim.keymap.set("n", M.config.keymaps.toggle_fold, function()
+      vim.cmd("normal! za")
+    end, { buffer = t.bufnr, silent = true, desc = "yap: toggle turn fold" })
+  end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
   audit.fold(t.bufnr)
 end

@@ -72,17 +72,6 @@ the current buffer unless otherwise noted.
                         the audit log on reopen, so the live view
                         survives restarts.
 
-                                                                *:YapAudit*
-:YapAudit             Browse the session's audit log in a split panel:
-                        the left pane is the raw JSONL (one event per
-                        line, colored by type, so |:YapClear|'s
-                        path:line references stay exact) and the right
-                        pane is a readable rendering of the event under
-                        the cursor — fields sorted, multiline results
-                        and output shown as text. The raw file is never
-                        rewritten. Works only inside a yap session; `q`
-                        closes the viewer.
-
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
                         all but the last [keep] (default 2) yap:tool
@@ -958,12 +947,12 @@ highlighted (turn headers, `$ command`, `• tool`, timestamps); streamed
 and returned text stays in the default color so it reads as plain text.
 Each completed turn folds back to its header line — a table of
 contents — while the open turn after the last header stays expanded so
-live output remains visible. The view only follows new output when it
-is already near the bottom, so scrolling up to read is never yanked
-back down. |:YapAudit|
-is the split-panel browser for the raw file itself. |:YapClear| placeholders
-correlate a region's tool-call id with its tool_call..tool_result
-line range, so a cleared body points back to exactly what it replaced.
+live output remains visible. `<Tab>` toggles a folded turn open or
+closed. The view only follows new output when it is already near the
+bottom, so scrolling up to read is never yanked back down. |:YapClear|
+placeholders correlate a region's tool-call id with its
+tool_call..tool_result line range, so a cleared body points back to
+exactly what it replaced.
 This is what makes the slimmed write/edit headers (R12) and
 |:YapClear| lossless: anything removed from the context exists here
 verbatim, machine-readable.

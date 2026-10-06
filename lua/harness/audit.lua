@@ -1,21 +1,15 @@
--- The session's audit log, rendered two ways.
+-- The session's audit log, rendered live.
 --
 -- The live view (:YapLive) is a human-readable, highlighted, folded
--- projection of the JSON Lines audit log, rebuilt from it on reopen. The
--- raw browser (:YapAudit) is a split-panel viewer for the raw file itself:
--- one event per line on the left, a readable record on the right. This
--- module owns both renderings; the buffer lifecycle (create, replay on
+-- projection of the JSON Lines audit log, rebuilt from it on reopen. This
+-- module owns the rendering; the buffer lifecycle (create, replay on
 -- reopen, the audit-log write) stays in harness.
 
 local M = {}
 
-local paths = require("harness.path")
-
--- ─── Highlight groups ──────────────────────────────────────────────────────
-
--- Structural lines are colored, content stays default so streamed/returned
--- text reads as plain text. Links (not fixed colors) so every colorscheme
--- renders them; `default` keeps user overrides.
+-- Highlight groups: structure is colored, content stays default so
+-- streamed/returned text reads as plain text. Links (not fixed colors) so
+-- every colorscheme renders them; `default` keeps user overrides.
 local HL = {
   turn = "YapAuditTurn",
   command = "YapAuditCommand",
@@ -32,30 +26,8 @@ link(HL.tool, "Type")
 link(HL.meta, "Comment")
 link(HL.warn, "WarningMsg")
 
--- The raw JSONL list is colored by event type (one event per line).
-local TYPE_HL = {
-  tool_call = "YapAuditRawTool",
-  tool_result = "YapAuditRawResult",
-  tool_start = "YapAuditRawTool",
-  output = "YapAuditRawOutput",
-  turn_end = "YapAuditRawTurn",
-  retry = "YapAuditRawWarn",
-  tool_text_warning = "YapAuditRawWarn",
-  steer = "YapAuditRawWarn",
-  approval_request = "YapAuditRawWarn",
-  approval_result = "YapAuditRawWarn",
-  approval_timeout = "YapAuditRawWarn",
-}
-link("YapAuditRawTool", "Function")
-link("YapAuditRawResult", "String")
-link("YapAuditRawOutput", "Comment")
-link("YapAuditRawTurn", "Title")
-link("YapAuditRawWarn", "WarningMsg")
-
 -- Namespace for the live view's per-line highlights.
-local live_ns = vim.api.nvim_create_namespace("yap.audit.hl")
--- Namespace for the raw browser's per-line highlights.
-local raw_ns = vim.api.nvim_create_namespace("yap.audit.raw")
+local ns = vim.api.nvim_create_namespace("yap.audit.hl")
 
 -- A turn journal line (the live view's section header): `# <ts> turn <model>: …`.
 local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn "
@@ -181,9 +153,9 @@ end
 function M.rebuild(buf, events)
   local lines, hl = render_events(events)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_clear_namespace(buf, live_ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for _, h in ipairs(hl) do
-    vim.api.nvim_buf_add_highlight(buf, live_ns, h[2], h[1], 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], 0, -1)
   end
   return #lines > 1 or lines[1] ~= ""
 end
@@ -211,7 +183,7 @@ function M.append(t, ev)
   vim.api.nvim_buf_set_lines(buf, start, start + 1, false, text)
   for i, l in ipairs(lines) do
     if l.hl then
-      vim.api.nvim_buf_add_highlight(buf, live_ns, l.hl, start + lead + i - 1, 0, -1)
+      vim.api.nvim_buf_add_highlight(buf, ns, l.hl, start + lead + i - 1, 0, -1)
     end
   end
   t.has_content = true
@@ -257,6 +229,14 @@ function M.fold(buf)
       if vim.api.nvim_win_get_buf(win) ~= buf then
         return
       end
+      -- Remember which completed turns the user left open so a <Tab>-opened
+      -- turn survives the re-fold below on the next turn_end.
+      local open = {}
+      for _, finish in ipairs(headers) do
+        if vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
+          open[finish] = true
+        end
+      end
       vim.wo.foldmethod = "manual"
       vim.wo.foldminlines = 0
       vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
@@ -266,7 +246,7 @@ function M.fold(buf)
         local start = prev + 1
         if finish >= start then
           vim.cmd(("%d,%dfold"):format(start, finish))
-          vim.cmd(("%dfoldclose"):format(start))
+          vim.cmd(("%dfold%s"):format(start, open[finish] and "open" or "close"))
         end
         prev = finish
       end
@@ -278,156 +258,6 @@ end
 --- shows that summary line rather than the first tool/output line.
 function M.foldtext()
   return vim.fn.getline(vim.v.foldend)
-end
-
--- ─── Raw JSONL browser (:YapAudit) ─────────────────────────────────────────
-
---- Render one decoded event as readable lines: fields sorted, and multiline
---- string fields (results, output chunks) emitted as raw text so they read
---- as prose instead of escaped JSON.
-local function render_record(ev)
-  if type(ev) ~= "table" or next(ev) == nil then
-    return { vim.json.encode(ev) }
-  end
-  local keys = vim.tbl_keys(ev)
-  table.sort(keys)
-  local out = {}
-  for _, k in ipairs(keys) do
-    local v = ev[k]
-    if type(v) == "string" and v:find("\n", 1, true) then
-      out[#out + 1] = vim.json.encode(k) .. ":"
-      for _, l in ipairs(vim.split(v, "\n", { plain = true })) do
-        out[#out + 1] = "  " .. l
-      end
-    else
-      out[#out + 1] = string.format("%s: %s", vim.json.encode(k), vim.json.encode(v))
-    end
-  end
-  return out
-end
-
-local function set_lines(buf, lines)
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-end
-
-local function highlight_source(buf, lines)
-  vim.api.nvim_buf_clear_namespace(buf, raw_ns, 0, -1)
-  for i, line in ipairs(lines) do
-    if line ~= "" then
-      local ok, ev = pcall(vim.json.decode, line)
-      if ok and type(ev) == "table" then
-        local hl = TYPE_HL[ev.type]
-        if hl then
-          vim.api.nvim_buf_add_highlight(buf, raw_ns, hl, i - 1, 0, -1)
-        end
-      end
-    end
-  end
-end
-
-local browser = {}
-
-local function update_preview()
-  local source, preview = browser.source_buf, browser.preview_buf
-  if not (source and preview and vim.api.nvim_buf_is_valid(source) and vim.api.nvim_buf_is_valid(preview)) then
-    return
-  end
-  local cursor = vim.api.nvim_win_get_cursor(browser.source_win)[1]
-  local line = vim.api.nvim_buf_get_lines(source, cursor - 1, cursor, false)[1]
-  local out
-  if not line or line == "" then
-    out = { "" }
-  else
-    local ok, ev = pcall(vim.json.decode, line)
-    if ok and type(ev) == "table" then
-      out = render_record(ev)
-    else
-      out = { "(invalid JSON) " .. tostring(ev) }
-    end
-  end
-  set_lines(preview, out)
-end
-
-local function close()
-  for _, win in ipairs({ browser.preview_win, browser.source_win }) do
-    if win and vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
-    end
-  end
-  browser.source_buf, browser.preview_buf = nil, nil
-  browser.source_win, browser.preview_win = nil, nil
-end
-
---- Open the split-panel viewer for a JSONL path.
-function M.open(path)
-  close() -- one viewer at a time
-
-  local lines = vim.fn.readfile(path)
-
-  local source = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(source, "yap://audit:" .. path)
-  vim.bo[source].buftype = "nofile"
-  vim.bo[source].bufhidden = "wipe"
-  vim.bo[source].swapfile = false
-  vim.api.nvim_buf_set_lines(source, 0, -1, false, lines)
-  vim.bo[source].modifiable = false
-  highlight_source(source, lines)
-
-  local preview = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(preview, "yap://audit-preview")
-  vim.bo[preview].buftype = "nofile"
-  vim.bo[preview].bufhidden = "wipe"
-  vim.bo[preview].swapfile = false
-  vim.bo[preview].modifiable = false
-
-  -- Source to the right of the current window, preview to the right of it,
-  -- so the chat (or whatever buffer) is left untouched.
-  vim.cmd("rightbelow vsplit")
-  local source_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(source_win, source)
-  vim.wo[source_win].wrap = false
-  vim.wo[source_win].cursorline = true
-
-  vim.cmd("rightbelow vsplit")
-  local preview_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(preview_win, preview)
-  vim.wo[preview_win].foldmethod = "indent"
-  vim.wo[preview_win].foldlevel = 99
-
-  browser.source_buf = source
-  browser.preview_buf = preview
-  browser.source_win = source_win
-  browser.preview_win = preview_win
-
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    buffer = source,
-    callback = update_preview,
-  })
-
-  for _, b in ipairs({ source, preview }) do
-    vim.keymap.set("n", "q", close, { buffer = b, silent = true, desc = "Close audit viewer" })
-  end
-
-  vim.api.nvim_win_set_cursor(source_win, { 1, 0 })
-  update_preview()
-end
-
---- :YapAudit — open the current session's audit log. Works only in a yap
---- buffer (the audit log is keyed off the session's basename and cwd).
-function M.view()
-  local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].yap then
-    vim.notify("yap: :YapAudit only works in a yap session", vim.log.levels.WARN)
-    return
-  end
-  local path = paths.audit_path(buf)
-  if vim.fn.filereadable(path) ~= 1 then
-    vim.notify("yap: no audit log yet for this session", vim.log.levels.WARN)
-    return
-  end
-  M.open(path)
 end
 
 return M
