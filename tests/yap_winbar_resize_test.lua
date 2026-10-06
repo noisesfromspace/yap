@@ -330,7 +330,8 @@ assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).
 assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
   "model text should remain italic inside its island")
 -- Gutter alignment: the state icon centers in the line-number gutter and the
--- rollup island starts flush at the text edge (where the user text lives).
+-- rollup island's left cap overhangs the text edge only when the gutter is
+-- more than 3 columns wide.
 do
   local g_target = vim.api.nvim_create_buf(false, true)
   local g_other = vim.api.nvim_create_buf(false, true)
@@ -343,14 +344,30 @@ do
   state.awaiting[g_other] = true
   vim.api.nvim_win_set_buf(0, g_target)
   vim.wo.number = true
+
+  local function textoff()
+    return vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
+  end
+  local function cap_overhang_cols()
+    local rendered = vim.api.nvim_eval_statusline(yap.winbar(g_target),
+      { winid = 0, use_winbar = true, maxwidth = 200 }).str
+    local at = assert(rendered:find(icons.cap_l, 1, true),
+      "rollup cap missing: " .. rendered)
+    return vim.fn.strdisplaywidth(rendered:sub(1, at - 1))
+  end
+
+  -- Gutter wider than 3 columns: the cap overhangs one cell into the gutter.
   vim.wo.numberwidth = 4
-  assert(vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff == 4,
-    "expected a 4-column gutter")
-  local rendered = vim.api.nvim_eval_statusline(yap.winbar(g_target),
-    { winid = 0, use_winbar = true, maxwidth = 200 }).str
-  local prefix = " " .. icons.idle .. " " .. icons.cap_l
-  assert(rendered:sub(1, #prefix) == prefix,
-    "icon not centered / island cap not overhanging the gutter: " .. rendered)
+  assert(textoff() == 4, "expected a 4-column gutter")
+  assert(cap_overhang_cols() == textoff() - 1,
+    "icon not centered / island cap not overhanging the gutter")
+
+  -- Gutter of exactly 3 columns: the cap stays flush at the text edge.
+  vim.wo.numberwidth = 3
+  assert(textoff() == 3, "expected a 3-column gutter")
+  assert(cap_overhang_cols() == textoff(),
+    "island cap should not overhang a 3-column gutter")
+
   vim.wo.number = false
   state.awaiting[g_other] = nil
   vim.api.nvim_buf_delete(g_target, { force = true })

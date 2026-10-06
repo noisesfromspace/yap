@@ -692,11 +692,14 @@ local function handle_event(buf, json_line)
   elseif ev.type == "approval_request" then
     append_event(buf, ev)
     local command = ev.command or ""
-    local preview = command:gsub("%s+", " ")
-    if #preview > 300 then
-      preview = preview:sub(1, 300) .. "..."
-    end
-    local choice = vim.fn.confirm(("yap: run this?\n\n%s"):format(preview), "&Run\n&Deny", 1, "Warning")
+    local ok_args, args = pcall(vim.json.decode, command)
+    -- Show every argument, not a truncated 300-character prefix: approval
+    -- must not hide the operation being authorized. SSH sends plain text.
+    local detail = ok_args and vim.inspect(args) or command
+    local choice = vim.fn.confirm(
+      ("yap: approve %s?\nReason: %s\n\n%s"):format(ev.tool or "tool", ev.reason or "review call", detail),
+      "&Run\n&Deny", 2, "Warning"
+    )
     local approved = choice == 1
     local process = servers[buf]
     if process then

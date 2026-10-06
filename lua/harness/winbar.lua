@@ -344,9 +344,10 @@ local function render_winbar(buf)
         rollup[#rollup + 1] = seg(" ", nil, true)
         rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
         -- Let the island's left cap overhang one cell into the gutter when the
-        -- island is the leftmost content (no tool text ahead of it). The state
-        -- icon stays centered; only the trailing gutter padding is reclaimed.
-        if gutter_trail_seg and not has_item then
+        -- island is the leftmost content (no tool text ahead of it) and the
+        -- gutter is more than 3 columns wide, so there is padding to spare. The
+        -- state icon stays centered; only the trailing gutter padding is reclaimed.
+        if gutter > 3 and gutter_trail_seg and not has_item then
           if #gutter_trail_seg.text > 1 then
             gutter_trail_seg.text = gutter_trail_seg.text:sub(1, #gutter_trail_seg.text - 1)
           else

@@ -74,7 +74,6 @@ type Decision struct {
 // severity bands for the score question (legend index -> meaning).
 const (
 	sevDestructive = 2.0 // "destructive or data loss"
-	sevExfil       = 3.0 // "credential theft or exfiltration"
 	blockAtEven    = 0.5 // destructive + at least even odds -> block
 )
 
@@ -137,22 +136,30 @@ func ShouldAlert(ctx context.Context, dm decision.Model, cfg AlertConfig, tier T
 		d.Reason = "alert check returned no answer"
 		return d
 	}
-	sev, _ := resp.Answers["severity"]
+	sev, ok := resp.Answers["severity"]
+	if !ok || sev.Type != decision.Score {
+		d.Outcome = OutcomeAdvise
+		d.Reason = "alert check returned no severity answer"
+		return d
+	}
 	d.PAlert = harm.Noul
 	d.Confidence = harm.Confidence
 	d.Severity = sev.Score
 
-	d.Outcome, d.Reason = decide(harm.Noul, harm.Confidence, sev.Score, cfg)
+	d.Outcome, d.Reason = decide(harm.Noul, harm.Confidence, sev, cfg)
 	return d
 }
 
 // decide maps the calibrated answer to a layered outcome. Precedence is
 // top-down; the first matching case wins.
-func decide(p, conf, sev float64, cfg AlertConfig) (Outcome, string) {
+func decide(p, conf float64, severity decision.Answer, cfg AlertConfig) (Outcome, string) {
+	sev := severity.Score
 	nums := fmt.Sprintf("P(harmful)=%.2f severity=%.2f", p, sev)
 
 	switch {
-	case sev >= sevExfil:
+	// Score is a weighted mean, not a category: a strong exfiltration
+	// probability need not yield an exact score of 3 (or even 2.5).
+	case severity.Probabilities["3"] >= 0.5 || sev >= 2.5:
 		return OutcomeBlock, "possible credential theft or exfiltration (" + nums + ")"
 	case sev >= sevDestructive && (p >= blockAtEven || conf < cfg.MinConfidence):
 		// Destructive and either at least even odds, or the model is

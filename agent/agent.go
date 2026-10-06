@@ -312,17 +312,47 @@ func alertConfig(cfg *Config) utils.AlertConfig {
 	return c
 }
 
-// gateState is the decision model's view of one tool call: the tool, its
-// (scrubbed) arguments, and bounded context — the prose the model wrote
-// before the call and the last user message — so intent is judged, not just
-// the raw command.
+// gateState supplies bounded context, including the source of a Python file
+// call: the filename alone is insufficient for a decision about its effects.
 func gateState(name string, input json.RawMessage, t *turn, messages []llm.Message) map[string]any {
-	return map[string]any{
+	state := map[string]any{
 		"tool":      name,
 		"arguments": utils.Scrub(string(input)),
 		"preamble":  truncateRunes(t.text, 2000),
 		"user":      truncateRunes(lastUserText(messages), 2000),
 	}
+	if name == "python" {
+		var a struct {
+			File string `json:"file"`
+		}
+		if json.Unmarshal(input, &a) == nil && a.File != "" {
+			p := utils.ExpandHome(a.File)
+			if err := utils.GuardReadPath(p); err != nil {
+				state["file_source_blocked"] = true
+				return state
+			}
+			f, err := os.Open(p)
+			if err != nil {
+				state["file_source"] = "unreadable: " + err.Error()
+			} else {
+				// A large script should not dominate the Jev request. Mark the
+				// omitted tail explicitly rather than implying a complete scan.
+				data, err := io.ReadAll(io.LimitReader(f, 16*1024+1))
+				f.Close()
+				if err != nil {
+					state["file_source"] = "unreadable: " + err.Error()
+				} else {
+					truncated := len(data) > 16*1024
+					if truncated {
+						data = data[:16*1024]
+					}
+					state["file_source"] = utils.Scrub(string(data))
+					state["file_source_truncated"] = truncated
+				}
+			}
+		}
+	}
+	return state
 }
 
 func lastUserText(messages []llm.Message) string {
@@ -591,8 +621,14 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				// to run, warn (advise), or interrupt for approval before the
 				// tool executes.
 				tier, hardReason := tools.Assess(call.Name, call.Input)
+				state := gateState(call.Name, call.Input, t, messages)
+				if state["file_source_blocked"] == true {
+					hardReason = "Python script is in a protected secret path; inspect the file before approving"
+				} else if state["file_source_truncated"] == true {
+					hardReason = "Python script exceeds the 16 KiB decision window; inspect the full file before approving"
+				}
 				run := true
-				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, gateState(call.Name, call.Input, t, messages))
+				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, state)
 				switch dec.Outcome {
 				case utils.OutcomeBlock:
 					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason)

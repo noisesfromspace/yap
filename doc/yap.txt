@@ -712,8 +712,11 @@ downgrades a fork bomb. Where the floor is silent, jev answers two
 questions in parallel — P(harmful) and a 0–3 severity score — and the gate
 maps the calibrated answer to a layered outcome:
 
-  block   pause the turn for a Run/Deny dialog (credential exfiltration;
-          destructive calls at even odds or low confidence; high P(harmful)).
+  block   pause the turn for a Run/Deny dialog (majority probability of
+          credential exfiltration or a severity mean >= 2.5; destructive
+          calls at even odds or low confidence; high P(harmful)).
+          The dialog shows the reason and full call arguments, defaults to
+          Deny, and never runs on timeout.
   advise  run, but log the call and show a non-blocking warning (suspicious
           or model-uncertain calls).
   run     proceed silently.

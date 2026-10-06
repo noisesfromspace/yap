@@ -56,9 +56,28 @@ func TestAlwaysBlockTier(t *testing.T) {
 }
 
 func TestExfiltrationBlocks(t *testing.T) {
-	// Severity 3 (credential theft) blocks regardless of probability.
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, 3)}, TierAskJev, ""); d.Outcome != OutcomeBlock {
-		t.Fatalf("exfil should block even at low P: %+v", d)
+	// Score is a weighted mean: almost certain exfiltration is below 3.
+	for _, sev := range []float64{3, 2.99} {
+		if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, sev)}, TierAskJev, ""); d.Outcome != OutcomeBlock {
+			t.Fatalf("exfil at score %.2f should block: %+v", sev, d)
+		}
+	}
+	// A majority on exfil also blocks when the other mass pulls the mean
+	// below 2.5.
+	answers := fakeAnswer(0.1, 0.9, 1.8)
+	s := answers["severity"]
+	s.Probabilities = map[string]float64{"0": 0.4, "3": 0.6}
+	answers["severity"] = s
+	if d := gate(t, fakeModel{answers: answers}, TierAskJev, ""); d.Outcome != OutcomeBlock {
+		t.Fatalf("majority exfil should block: %+v", d)
+	}
+}
+
+func TestMissingSeverityAdvises(t *testing.T) {
+	answers := fakeAnswer(0.1, 0.9, 0)
+	delete(answers, "severity")
+	if d := gate(t, fakeModel{answers: answers}, TierAskJev, ""); d.Outcome != OutcomeAdvise {
+		t.Fatalf("missing severity must not silently run: %+v", d)
 	}
 }
 
