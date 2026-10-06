@@ -264,28 +264,27 @@ local function render_winbar(buf)
 
     -- The buffer's own state is a one-cell icon centered in the gutter (the
     -- line-number, sign and fold columns). Session content — tool text, the
-    -- rollup island and the description — starts flush at the text edge. An
-    -- inactive bar has no own-state icon; it shows only the rollup island
-    -- and the session name (that detail belongs to the session the user is
-    -- actually looking at).
+    -- rollup island and the description — starts flush at the text edge. The
+    -- animated busy beacon only shows while the session is active; an
+    -- inactive session drops it (a generating session needs no attention) but
+    -- keeps its state icon, so a waiting/errored/stopped/idle session stays
+    -- visible at a glance from another window.
     local icon, icon_group = nil, nil
     local spinner = running and running[buf]
-    if not inactive then
-      if spinner then
-        icon = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
-        icon_group = "BusySpin"
+    if not inactive and spinner then
+      icon = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
+      icon_group = "BusySpin"
+    elseif not spinner then
+      if errors[buf] then
+        icon, icon_group = icons.error, "Error"
+      elseif stopped[buf] then
+        icon, icon_group = icons.stopped, "Needs"
+      elseif steer[buf] then
+        icon, icon_group = icons.steer, "Needs"
+      elseif awaiting[buf] then
+        icon, icon_group = icons.waiting, "Needs"
       else
-        if errors[buf] then
-          icon, icon_group = icons.error, "Error"
-        elseif stopped[buf] then
-          icon, icon_group = icons.stopped, "Needs"
-        elseif steer[buf] then
-          icon, icon_group = icons.steer, "Needs"
-        elseif awaiting[buf] then
-          icon, icon_group = icons.waiting, "Needs"
-        else
-          icon, icon_group = icons.idle, "Idle"
-        end
+        icon, icon_group = icons.idle, "Idle"
       end
     end
 

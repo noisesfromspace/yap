@@ -214,6 +214,28 @@ assert(inactive_center:find("inactive%-session%.md"), "inactive session name mis
 assert(not inactive_center:find("mock/m1", 1, true), "inactive session shows model instead of name: " .. inactive_center)
 assert(not inactive_bar:find("Generated description", 1, true), "inactive session repeats its description: " .. inactive_bar)
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
+-- An inactive session keeps its leftmost state icon (idle/waiting/error/
+-- stopped) so attention states are visible from another window, but drops
+-- the busy beacon: a generating session needs no attention.
+local inactive_left = inactive_bar:match("^(.-)%%=")
+assert(inactive_left:find("%#YapIdle#" .. icons.idle, 1, true) == 1,
+  "inactive idle session should keep its idle icon leftmost: " .. inactive_bar)
+state.awaiting[target] = true
+assert(yap.winbar(target):find("%#YapNeeds#" .. icons.waiting, 1, true) == 1,
+  "inactive waiting session should keep its waiting icon leftmost")
+state.awaiting[target] = nil
+state.errors[target] = "boom"
+assert(yap.winbar(target):find("%#YapError#" .. icons.error, 1, true) == 1,
+  "inactive errored session should keep its error icon leftmost")
+state.errors[target] = nil
+state.stopped[target] = true
+assert(yap.winbar(target):find("%#YapNeeds#" .. icons.stopped, 1, true) == 1,
+  "inactive stopped session should keep its stopped icon leftmost")
+state.stopped[target] = nil
+state.running[target] = {}
+assert(not yap.winbar(target):find("%#YapBusySpin#", 1, true),
+  "inactive generating session should drop the busy beacon")
+state.running[target] = nil
 vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
 state.running[target], state.running[other], state.awaiting[waiting] = saved_running_target, saved_running_other, saved_waiting
 inactive_bar = yap.winbar(target)
