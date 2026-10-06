@@ -30,7 +30,7 @@ assert(wb:find("%#YapIslandUprightCount#", 1, true), "right usage is not upright
 assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs: " .. wb)
 assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
-assert(not wb:match("idle") and not wb:match("waiting"), "wide winbar has a state glyph: " .. wb)
+assert(wb:find(icons.idle, 1, true) and not wb:find(icons.waiting, 1, true), "wide winbar state icon wrong: " .. wb)
 
 -- With an empty right side, the model island occupies the physical center.
 local saved_usage, saved_total = vim.b[buf].yap_usage, vim.b[buf].yap_session_usage
@@ -41,7 +41,7 @@ assert(select(2, wb:gsub("%%=", "")) == 2, "model should occupy the center secti
 local centered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = 78 }).str
 local model_start = assert(centered:find(" mock/m1 ", 1, true), "center island missing: " .. centered)
 local center_width = vim.fn.strdisplaywidth(" mock/m1 ")
-assert(math.abs(model_start - 1 + center_width / 2 - 39) <= 1,
+assert(math.abs(vim.fn.strdisplaywidth(centered:sub(1, model_start - 1)) + center_width / 2 - 39) <= 1,
   "model island is not centered in 78 columns: " .. centered)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
@@ -78,10 +78,10 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
 -- Narrower: the model island goes first; chips keep tokens + cost.
-wb = winbar_at(40)
-assert(not wb:match("mock/m1"), "40-col winbar kept the model: " .. wb)
-assert(wb:match("1.5k") and wb:match("1.1k"), "40-col winbar missing tokens: " .. wb)
-assert(wb:match("%$0.00342") and wb:match("%$0.51"), "40-col winbar missing costs: " .. wb)
+wb = winbar_at(42)
+assert(not wb:match("mock/m1"), "42-col winbar kept the model: " .. wb)
+assert(wb:match("1.5k") and wb:match("1.1k"), "42-col winbar missing tokens: " .. wb)
+assert(wb:match("%$0.00342") and wb:match("%$0.51"), "42-col winbar missing costs: " .. wb)
 
 -- Narrow: costs drop, tokens survive.
 wb = winbar_at(25)
@@ -95,17 +95,33 @@ assert(wb:match("%$0.00342") and wb:match("%$0.51"), "tiny winbar missing prices
 -- Check Neovim's rendered columns, not just highlight markup. Every
 -- combination uses the same inset, pill padding and section spacing.
 local state = require("harness.state")
+-- The loop below counts only `target`, `other` and `waiting`; the earlier
+-- fixture buffer would otherwise register as an idle session.
+state.sessions[buf] = nil
 local target = vim.api.nvim_create_buf(false, true)
 local other = vim.api.nvim_create_buf(false, true)
 local waiting = vim.api.nvim_create_buf(false, true)
 for _, b in ipairs({ target, other, waiting }) do
   vim.b[b].yap = true
+  state.sessions[b] = true
 end
 vim.b[target].yap_provider = "mock"
 vim.b[target].yap_model = "m1"
 local function rendered_left()
   local left = assert(yap.winbar(target):match("^(.-)%%="))
   return vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+end
+local function expected_rollup(running_n, waiting_n, stopped_n, error_n, idle_n)
+  local chips = {}
+  local function add(icon, n)
+    if n > 0 then chips[#chips + 1] = icon .. n end
+  end
+  add(icons.running, running_n)
+  add(icons.waiting, waiting_n)
+  add(icons.stopped, stopped_n)
+  add(icons.error, error_n)
+  add(icons.idle, idle_n)
+  return icons.cap_l .. " " .. table.concat(chips, "  ") .. " " .. icons.cap_r
 end
 for mask = 0, 15 do
   state.running[target] = mask % 2 == 1 and {} or nil
@@ -114,21 +130,19 @@ for mask = 0, 15 do
   local titled = mask >= 8
   vim.api.nvim_buf_set_lines(target, 0, -1, false,
     titled and { "---", "description: Session title", "---", "" } or { "" })
-  local expected = {}
-  if state.running[target] then expected[#expected + 1] = "@" end
-  if state.running[other] and state.awaiting[waiting] then
-    expected[#expected + 1] = icons.cap_l .. " " .. icons.running .. "1  " .. icons.waiting .. "1 " .. icons.cap_r
-  elseif state.running[other] then
-    expected[#expected + 1] = icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r
-  elseif state.awaiting[waiting] then
-    expected[#expected + 1] = icons.cap_l .. " " .. icons.waiting .. "1 " .. icons.cap_r
-  end
+  local other_running = state.running[other] and 1 or 0
+  local waiting_n = state.awaiting[waiting] and 1 or 0
+  local idle_n = (state.running[other] and 0 or 1) + (state.awaiting[waiting] and 0 or 1)
+  local expected = {
+    state.running[target] and "@" or icons.idle,
+    expected_rollup(other_running, waiting_n, 0, 0, idle_n),
+  }
   if titled then expected[#expected + 1] = "Session title" end
   local actual = rendered_left()
   for _, g in ipairs(spinner_frames) do
     actual = actual:gsub(vim.pesc(g), "@")
   end
-  local expected_str = #expected == 0 and "" or (" " .. table.concat(expected, "  ") .. " ")
+  local expected_str = " " .. table.concat(expected, "  ") .. " "
   assert(actual == expected_str,
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
   local bar = yap.winbar(target)
@@ -152,7 +166,7 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   vim.api.nvim_set_hl(0, "WinBar", { bg = colors[2] })
   vim.api.nvim_set_hl(0, "WinBarNC", { bg = 0x333333 })
   vim.api.nvim_exec_autocmds("ColorScheme", {})
-  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds", "YapIslandCursiveModel", "YapIslandUprightCount", "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel", "YapIslandUprightGaugeLow" }) do
+  for _, group in ipairs({ "YapIsland", "YapIslandBusy", "YapIslandNeeds", "YapIslandError", "YapIslandIdle", "YapIslandCursiveModel", "YapIslandUprightCount", "YapIslandUprightGaugeEmpty", "YapIslandUprightGaugeLabel", "YapIslandUprightGaugeLow" }) do
     assert(vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
       group .. " has a mismatched pill background")
   end
@@ -217,10 +231,11 @@ vim.b[target].yap_usage = nil
 state.last_turn[target] = nil
 vim.api.nvim_buf_delete(picker_buf, { force = true })
 state.running[target], state.running[other], state.awaiting[waiting] = nil, nil, nil
+state.sessions[other], state.sessions[waiting] = nil, nil
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
 vim.api.nvim_win_resize(0, 12, -1)
-assert(rendered_left() == " Session title ", "narrow title has a dangling separator: " .. rendered_left())
+assert(rendered_left() == " " .. icons.idle .. "  Session title ", "narrow title has a dangling separator: " .. rendered_left())
 assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
   "session title is not cursive: " .. yap.winbar(target))
 assert(not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),

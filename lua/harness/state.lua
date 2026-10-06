@@ -5,6 +5,7 @@
 -- reaches into the same tables.
 
 local M = {
+  sessions = {}, -- buf -> true (every open yap session, for the global rollup)
   running = {}, -- buf -> vim.SystemObj (in-flight send process)
   stopped = {}, -- buf -> true (manually interrupted turn)
   live = {}, -- buf -> { name, log, since, out } (running tool)

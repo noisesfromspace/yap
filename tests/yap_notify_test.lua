@@ -28,9 +28,9 @@ yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
 assert(icons.waiting == "󰫁", "default waiting icon changed")
 
--- A fresh chat has nothing to reply to yet: no state glyph.
+-- A fresh chat is idle: its state icon is the idle glyph.
 local buf = yap.new()
-assert(not yap.winbar(buf):match("idle"), "fresh chat should show no idle: " .. yap.winbar(buf))
+assert(yap.winbar(buf):find(icons.idle, 1, true), "fresh chat should show idle: " .. yap.winbar(buf))
 
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hi" })
 yap.send()
@@ -46,17 +46,17 @@ assert(type(turn) == "table" and turn.model == "m1", "turn payload missing: " ..
 vim.wait(300)
 assert(#notified == 0, "notified while the buffer is current: " .. vim.inspect(notified))
 
--- The winbar shows no waiting glyph; the awaiting state only drives the
--- OTHER-buffer rollup island.
+-- The completed buffer shows its waiting state icon; the awaiting state
+-- also drives the OTHER-buffer rollup island.
 local bar = yap.winbar(buf)
-assert(not bar:match("waiting"), "winbar should not show waiting: " .. bar)
+assert(bar:find(icons.waiting, 1, true), "winbar should show waiting: " .. bar)
 
 -- The global rollup: any other yap buffer's winbar counts how many
 -- sessions await the user's reply (the herdr-style overview).
 local buf2 = yap.new()
 local bar2 = yap.winbar(buf2)
 assert(bar2:match(icons.waiting .. "1"), "rollup chip missing on the other buffer: " .. bar2)
-assert(not bar2:match("idle"), "fresh second buffer should show no idle: " .. bar2)
+assert(bar2:find(icons.idle, 1, true), "fresh second buffer should show idle: " .. bar2)
 -- The rollup island sits before the session's model info.
 local island_at = assert(bar2:find(icons.waiting .. "1", 1, true), "island missing: " .. bar2)
 local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2)
@@ -68,6 +68,7 @@ assert(yap.overview(buf2) == icons.waiting .. "1", "overview() wrong: " .. tostr
 -- remains the only session counted as needing a reply.
 local subagent = vim.api.nvim_create_buf(false, true)
 vim.b[subagent].yap = true
+state.sessions[subagent] = true
 vim.b[subagent].yap_subagent_parent = buf
 state.awaiting[subagent] = true
 assert(yap.overview(buf2) == icons.waiting .. "1", "waiting subagent was counted separately: " .. tostring(yap.overview(buf2)))
@@ -75,17 +76,21 @@ state.awaiting[subagent] = nil
 vim.api.nvim_buf_delete(subagent, { force = true })
 
 -- A stopped or errored turn also sets `awaiting` when its stream closes,
--- but it is not "waiting" for a reply: the rollup/overview must exclude it
--- just like <leader>w does, so both views stay in agreement.
+-- but it is not "waiting" for a reply: it is counted as stopped/error in
+-- the rollup, and overview() still excludes it just like <leader>w does.
 local stopped = vim.api.nvim_create_buf(false, true)
 vim.b[stopped].yap = true
+state.sessions[stopped] = true
 state.awaiting[stopped] = true
 state.stopped[stopped] = true
 assert(yap.overview(buf2) == icons.waiting .. "1", "stopped session counted as waiting: " .. tostring(yap.overview(buf2)))
-assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "stopped session entered the rollup: " .. yap.winbar(buf2))
+assert(yap.winbar(buf2):find(icons.stopped .. "1", 1, true), "stopped session missing from the rollup: " .. yap.winbar(buf2))
+assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "stopped session counted as waiting in the rollup: " .. yap.winbar(buf2))
 state.stopped[stopped] = nil
 state.errors[stopped] = "boom"
 assert(yap.overview(buf2) == icons.waiting .. "1", "errored session counted as waiting: " .. tostring(yap.overview(buf2)))
+assert(yap.winbar(buf2):find(icons.error .. "1", 1, true), "errored session missing from the rollup: " .. yap.winbar(buf2))
+assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "errored session counted as waiting in the rollup: " .. yap.winbar(buf2))
 state.awaiting[stopped] = nil
 state.errors[stopped] = nil
 vim.api.nvim_buf_delete(stopped, { force = true })

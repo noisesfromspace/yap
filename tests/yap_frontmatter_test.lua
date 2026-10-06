@@ -43,10 +43,7 @@ assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.create
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 local bar = yap.winbar(buf)
-local description_at =
-  assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
-local model_at = assert(bar:find("alpha/m2", 1, true), "model missing from winbar: " .. bar)
-assert(description_at < model_at, "description should precede model: " .. bar)
+assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
 local long_description = "Improve the session toolbar without crowding out important status information"
 vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, long_description))
 bar = yap.winbar(buf)

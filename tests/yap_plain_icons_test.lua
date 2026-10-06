@@ -10,6 +10,7 @@ assert(icons.since == "" and icons.total == "" and icons.steer == "→")
 local state = require("harness.state")
 local buf, other = yap.new(), vim.api.nvim_create_buf(false, true)
 vim.b[other].yap = true
+state.sessions[other] = true
 state.awaiting[other] = true
 local bar = yap.winbar(buf)
 local rendered = vim.api.nvim_eval_statusline(bar, { winid = 0, use_winbar = true, maxwidth = 200 }).str

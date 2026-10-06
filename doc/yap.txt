@@ -335,11 +335,10 @@ keeps colors on.
 
 `icons` sets the UI glyphs for the winbar and session picker
 (|yap-winbar|). Keys: `since` (since-open token/cost chip), `total`
-(all-time token/cost chip), `running` (rollup: other sessions streaming),
-`error` (winbar error state), `waiting` (rollup: other sessions awaiting
-you), `idle` (picker idle state), `steer` (winbar steer state), `approval`
-(approval request in the audit display), and the island's rounded caps
-`cap_l`/`cap_r`. Defaults are Nerd Font v3
+(all-time token/cost chip), `running`/`waiting`/`stopped`/`error`/`idle`
+(the buffer's state icon and the rollup counts), `steer` (winbar steer
+state), `approval` (approval request in the audit display), and the
+island's rounded caps `cap_l`/`cap_r`. Defaults are Nerd Font v3
 glyphs. `nerd_font = false` selects plain-Unicode icons, the typographic
 spinner, and the block-element context gauge; explicit `icons` overrides
 still take precedence. There is no reliable terminal font detection.
@@ -1034,25 +1033,19 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: an animated spinner beacon while
-the buffer itself is streaming — a random constellation of Nerd Font
-star shapes and colors (or typographic sparkle marks with
+The winbar is the session dashboard. Left: the buffer's own state icon —
+`󰝦` idle, `󰫁` awaiting your reply, `󰓛` stopped, `󰚌` error — or, while it is
+streaming, an animated spinner beacon (a random constellation of Nerd Font
+star shapes and colors, or typographic sparkle marks with
 `nerd_font = false`). Once a tool has run for 2s its name and elapsed
-time join the shimmer (`󰫢 bash 12s`) — then a raised rollup island
-for ALL OTHER yap sessions: `N` (N other buffers streaming a reply) and
-`󰭖N` (N other buffers await you; jump to one with |:YapInstances|). The
-island appears only when at least one other session is running or waiting;
-it never counts the current buffer. After the island: the session
-description (truncated to 40 display columns). A provider/model island sits
-centered in the middle of the bar. Right: two usage chips and a
-context-fill meter (|yap-winbar-numbers|). A state glyph appears on the far
-right only when something is wrong:
-
-  󰚌 error   The last send failed (vim.notify fired too); cleared on the
-            next send.
-
-Idle shows no glyph. When a completed turn awaits your reply, a static ``
-(`cod-verified`) takes the spinner's place; errors do not show it.
+time join the shimmer (`󰫢 bash 12s`); a pending `# @steer` adds `󰇐`. Then
+a raised rollup island totals ALL OTHER yap sessions by state: `N`
+streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.
+It never counts the current buffer and folds subagents into their parent.
+After the island: the session description (truncated to 40 display
+columns). A provider/model island sits centered in the middle of the bar.
+Right: two usage chips and a context-fill meter
+(|yap-winbar-numbers|).
 
 Example: `󰫢 session title` ... ` moonshot/kimi-k3 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
 
@@ -1090,14 +1083,15 @@ that matter. It drops parts in this order as the window shrinks: the
 provider/model island, usage-chip costs, usage-chip tokens
 (leaving costs), then the costs and gauge percentage. The context graph
 remains a fixed eight-cell gauge; the session description truncates next.
-The error glyph and left island (`N`/`󰫁N`) remain, and the winbar re-lays
+The left state icon and the rollup island remain, and the winbar re-lays
 itself out on `WinResized`.
 
-The `N` rollup counts OTHER yap buffers with an in-flight request; the
-`󰫁N` rollup counts OTHER yap buffers with a completed turn awaiting
-your reply. Live sessions enter it when a send finishes; a reopened
-session enters it when it ends on a `# @user` heading with assistant
-history above it. For a global segment independent of yap buffers, use
+The rollup island counts OTHER yap buffers by state — `N` in-flight,
+`󰫁N` awaiting your reply, `󰓛N` stopped, `󰚌N` errored, `󰝦N` idle — and
+appears whenever at least one other session is open. A waiting session
+enters it when a send finishes; a reopened session enters it when it ends
+on a `# @user` heading with assistant history above it. For a global
+segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
 
 ==============================================================================
@@ -1382,9 +1376,10 @@ R19 Turn completion is a first-class event.
     only for a buffer the user isn't looking at, and never on the error
     path, which already notifies (R9). A completed turn sets the
     awaiting hint, which drives the `󰫁N` rollup counting the OTHER
-    awaiting buffers (the winbar itself shows no glyph for it): an
-    imperative UI hint like `errors`/`yap_usage`, not conversation state
-    (R1); reopened sessions seed the rollup from their content on open. Why:
+    awaiting buffers (the buffer's own winbar shows the `󰫁` waiting
+    icon): an imperative UI hint like `errors`/`yap_usage`, not
+    conversation state (R1); reopened sessions seed the rollup from
+    their content on open. Why:
     herdr's "working → blocked → idle" notification is
     a completion *event*, and an autocmd is the Neovim-native hook for
     it (noice/nf-notify, chaining a next send) instead of a hardcoded

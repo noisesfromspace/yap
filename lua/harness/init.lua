@@ -2060,6 +2060,7 @@ local function setup_buffer(buf)
   -- A chat buffer is not code: markdown LSPs (semantic tokens, inlay hints)
   -- add per-redraw cost on a large session and buy nothing (R1).
   vim.b[buf].yap = true
+  state.sessions[buf] = true
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
@@ -2681,6 +2682,7 @@ function M.setup(opts)
       -- don't iterate/retain entries for buffers that are gone.
       live[args.buf] = nil
       state.live_usage[args.buf] = nil
+      state.sessions[args.buf] = nil
       errors[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil

@@ -1,7 +1,7 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
--- yap session buffer: busy beacon, global rollup island, session
--- description, provider/model island, usage/cost chips and the right-edge
--- state glyph. Usage/cost chips remain on the right. Also owns the spinner
+-- yap session buffer: busy beacon (or the buffer's own state icon), global
+-- rollup island, session description, provider/model island and usage/cost
+-- chips. Usage/cost chips remain on the right. Also owns the spinner
 -- that keeps the bar redrawing while a turn streams; the spinner drains
 -- live tool output into the tail buffers through state.drain_tail (set by
 -- the send path).
@@ -18,6 +18,7 @@ local errors = state.errors
 local stopped = state.stopped
 local awaiting = state.awaiting
 local steer = state.steer
+local sessions = state.sessions
 
 -- Irregular, randomly sampled star shapes instead of a rotating arc.
 -- The old typographic sparkle pool stays available without a Nerd Font.
@@ -72,18 +73,30 @@ end
 -- Data of the last completed turn per buffer (the binary's `turn_end`
 -- event), handed to the User YapTurnDone autocmd. Ephemeral.
 
--- Other yap buffers in `set` (awaiting or running): the count for the
--- global overview/rollup chips. A tiny module map, so no buffer scans on
--- redraw (R10); stale entries are skipped via the validity check.
-local function count_others(set, buf)
-  local n = 0
-  for b in pairs(set) do
+-- Other yap sessions (every buffer in `state.sessions` except the current
+-- one, with subagents folded into their parent) classified into the five
+-- picker states. Iterating a tiny module map, not a full buffer scan, keeps
+-- the winbar cheap on every redraw; stale entries are skipped via the
+-- validity check.
+local function other_session_counts(buf)
+  local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0 }
+  for b in pairs(sessions) do
     if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap
-      and not (set == awaiting and (vim.b[b].yap_subagent_parent or errors[b] or stopped[b])) then
-      n = n + 1
+      and not vim.b[b].yap_subagent_parent then
+      if running[b] then
+        counts.running = counts.running + 1
+      elseif errors[b] then
+        counts.error = counts.error + 1
+      elseif stopped[b] then
+        counts.stopped = counts.stopped + 1
+      elseif awaiting[b] then
+        counts.waiting = counts.waiting + 1
+      else
+        counts.idle = counts.idle + 1
+      end
     end
   end
-  return n
+  return counts
 end
 
 -- Seed the awaiting hint for a reopened session from its content (R1):
@@ -160,11 +173,12 @@ local function winbar_description(buf, max)
 end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
--- running tool's name once it has run 2s), then a global-session island,
--- description on the left; a centered provider/model island; usage counters
--- and context meter on the right, followed by an error glyph.
--- As the window narrows the center island drops, then costs, then tokens;
--- the error glyph, prices and context meter survive. Past that the bar clips.
+-- running tool's name once it has run 2s) or this buffer's state icon
+-- (stopped/error/waiting/idle), then a global-session rollup island, then
+-- the description on the left; a centered provider/model island; usage
+-- counters and context meter on the right. As the window narrows the
+-- center island drops, then costs, then tokens; prices and the context
+-- meter survive. Past that the bar clips.
 local function render_winbar(buf)
   local provider, model = util.current_combo(buf)
   local icons = require("harness").config.icons
@@ -219,23 +233,45 @@ local function render_winbar(buf)
         item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
       end
       add_item(item)
-    elseif awaiting[buf] and not errors[buf] then
-      add_item({ seg("", "Done") })
+      if steer[buf] then
+        add_item({ seg(icons.steer, "Needs") })
+      end
+    else
+      local icon, group
+      if errors[buf] then
+        icon, group = icons.error, "Error"
+      elseif stopped[buf] then
+        icon, group = icons.stopped, "Needs"
+      elseif steer[buf] then
+        icon, group = icons.steer, "Needs"
+      elseif awaiting[buf] then
+        icon, group = icons.waiting, "Needs"
+      else
+        icon, group = icons.idle, "Idle"
+      end
+      add_item({ seg(icon, group) })
     end
 
-    local running_others_n = count_others(running, buf)
-    local others = count_others(awaiting, buf)
-    if running_others_n > 0 or others > 0 then
-      local rollup = { seg(icons.cap_l, "IslandCap"), seg(" ", nil, true) }
-      if running_others_n > 0 then
-        rollup[#rollup + 1] = seg(icons.running .. running_others_n, "Busy", true)
+    local counts = other_session_counts(buf)
+    local order = {
+      { icons.running, counts.running, "Busy" },
+      { icons.waiting, counts.waiting, "Needs" },
+      { icons.stopped, counts.stopped, "Needs" },
+      { icons.error, counts.error, "Error" },
+      { icons.idle, counts.idle, "Idle" },
+    }
+    local rollup = { seg(icons.cap_l, "IslandCap"), seg(" ", nil, true) }
+    local first = true
+    for _, chip in ipairs(order) do
+      if chip[2] > 0 then
+        if not first then
+          rollup[#rollup + 1] = seg("  ", nil, true)
+        end
+        rollup[#rollup + 1] = seg(chip[1] .. chip[2], chip[3], true)
+        first = false
       end
-      if running_others_n > 0 and others > 0 then
-        rollup[#rollup + 1] = seg("  ", nil, true)
-      end
-      if others > 0 then
-        rollup[#rollup + 1] = seg(icons.waiting .. others, "Needs", true)
-      end
+    end
+    if not first then
       rollup[#rollup + 1] = seg(" ", nil, true)
       rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
       add_item(rollup)
@@ -399,20 +435,10 @@ local function render_winbar(buf)
     }
   end
 
-  -- Only an error gets a right-edge glyph: idle and "awaiting your reply"
-  -- are self-evident from the absence of the left spinner, so they stay
-  -- silent. The awaiting state still drives the OTHER-buffer rollup island.
-  local function state_segment()
-    if errors[buf] then
-      return seg(" " .. icons.error .. " error ", "Error")
-    end
-    if steer[buf] then
-      return seg(" " .. icons.steer .. " steer ", "Needs")
-    end
-    return nil
-  end
+  -- The state icon now lives on the left (see left_segments); the right
+  -- side keeps only the usage counters and the context meter.
 
-  local function render(left, center, usage, state, left_width, right_width)
+  local function render(left, center, usage, left_width, right_width)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
@@ -439,9 +465,6 @@ local function render_winbar(buf)
         parts[#parts + 1] = render_seg(s, true)
       end
     end
-    if state then
-      parts[#parts + 1] = render_seg(state, true)
-    end
     return table.concat(parts, "")
   end
 
@@ -452,15 +475,14 @@ local function render_winbar(buf)
     local left = left_segments(desc_max)
     local center = show_mid and center_segments() or nil
     local usage = usage_segment(mode)
-    local state = state_segment()
     local left_width = width_of(left)
-    local right_width = (usage and width_of(usage) or 0) + (state and width_of({ state }) or 0)
+    local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
     local total = left_width + center_width + right_width
     if total <= width and (not center or
         (left_width <= math.floor((width - center_width) / 2)
           and right_width <= math.floor((width - center_width) / 2))) then
-      return render(left, center, usage, state, left_width, right_width)
+      return render(left, center, usage, left_width, right_width)
     end
     if show_mid then
       show_mid = false
@@ -473,7 +495,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, nil, usage, state, left_width, right_width) -- smallest layout; let it clip
+      return render(left, nil, usage, left_width, right_width) -- smallest layout; let it clip
     end
   end
 end
@@ -498,7 +520,7 @@ end
 --- visibility.
 function M.overview(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  local n = count_others(awaiting, buf)
+  local n = other_session_counts(buf).waiting
   return n > 0 and (require("harness").config.icons.waiting .. n) or ""
 end
 
@@ -588,6 +610,8 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandError", { fg = attr("YapError", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandIdle", { fg = attr("YapIdle", "fg") or fg, bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes
   -- stay intact while the session title/model are italic and right-side
   -- items explicitly reset italics from linked theme groups.
