@@ -24,11 +24,37 @@ local sessions = state.sessions
 -- The old typographic sparkle pool stays available without a Nerd Font.
 local SPINNER_FRAMES = { "󰫢", "󰫥", "󰙴", "󰫣", "󰫤", "󰫊", "󱝁", "󰃠", "󰫉" }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
-local SPINNER_COLORS = { "BusyTeal", "BusyBlue", "BusyViolet" }
+-- Busy color: a continuous smoothstep tween around the Ember triad
+-- (amber → coral → rose). Fixed synthetic hues, never derived from the
+-- theme, so an achromatic colorscheme cannot wash the beacon out.
+local BUSY_RGB = {
+  { 235 / 255, 201 / 255, 132 / 255 }, -- amber
+  { 235 / 255, 149 / 255, 132 / 255 }, -- coral
+  { 235 / 255, 132 / 255, 175 / 255 }, -- rose
+}
+local BUSY_CYCLE_S = 3 -- seconds per full loop through the triad
+local spin_start = vim.uv.hrtime()
+
+local function spin_color()
+  local t = ((vim.uv.hrtime() - spin_start) / 1e9 % BUSY_CYCLE_S) / BUSY_CYCLE_S
+  local n = #BUSY_RGB
+  local scaled = t * n
+  local i = math.floor(scaled) % n + 1
+  local j = i % n + 1
+  local f = scaled % 1
+  f = f * f * (3 - 2 * f) -- smoothstep: ease into and out of each stop
+  local a, b = BUSY_RGB[i], BUSY_RGB[j]
+  local function lerp(x, y)
+    return x + (y - x) * f
+  end
+  return string.format("#%02x%02x%02x",
+    math.floor(lerp(a[1], b[1]) * 255 + 0.5),
+    math.floor(lerp(a[2], b[2]) * 255 + 0.5),
+    math.floor(lerp(a[3], b[3]) * 255 + 0.5))
+end
 M.spinner_frames = SPINNER_FRAMES -- exported for tests: a random shimmer is hard to assert
 local spinner_glyph = SPINNER_FRAMES[1]
 local plain_spinner_glyph = PLAIN_SPINNER_FRAMES[1]
-local spinner_color = SPINNER_COLORS[1]
 local spinner_timer = nil
 
 -- Local LCG so the shimmer never reseeds the global math.random other
@@ -247,7 +273,7 @@ local function render_winbar(buf)
     if not inactive then
       if spinner then
         icon = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
-        icon_group = spinner_color
+        icon_group = "BusySpin"
       else
         if errors[buf] then
           icon, icon_group = icons.error, "Error"
@@ -603,7 +629,7 @@ function M.spinner_start()
     vim.schedule_wrap(function()
       spinner_glyph = pick(SPINNER_FRAMES)
       plain_spinner_glyph = pick(PLAIN_SPINNER_FRAMES)
-      spinner_color = pick(SPINNER_COLORS)
+      vim.api.nvim_set_hl(0, "YapBusySpin", { fg = spin_color() })
       for b in pairs(running) do
         state.drain_audit(b) -- pull new tool output into the audit view buffers
       end
@@ -632,9 +658,9 @@ local function define_winbar_hl()
   for name, link in pairs(links) do
     vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
   end
-  vim.api.nvim_set_hl(0, "YapBusyTeal", { default = true, fg = "#5fd7c7" })
-  vim.api.nvim_set_hl(0, "YapBusyBlue", { default = true, fg = "#7aa2f7" })
-  vim.api.nvim_set_hl(0, "YapBusyViolet", { default = true, fg = "#bb9af7" })
+  -- The busy beacon's single live-updated group: its fg is recomputed every
+  -- spinner tick by spin_color() (a smoothstep tween around the Ember triad).
+  vim.api.nvim_set_hl(0, "YapBusySpin", { default = true, fg = spin_color() })
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the
   -- linked groups above so user `:hi YapBusy` overrides still win.
