@@ -1,4 +1,4 @@
--- :YapAudit (split-panel JSONL browser) and the tail polish: turn
+-- :YapAudit (split-panel JSONL browser) and the audit-view polish: turn
 -- folding (a table of contents) and per-line highlighting.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
@@ -16,31 +16,32 @@ vim.wait(300)
 local log = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
 assert(log and vim.fn.filereadable(log) == 1, "audit log missing")
 
--- ─── tail: turn folding + highlighting ─────────────────────────────────
+-- ─── audit view: turn folding + highlighting ────────────────────────────
 yap.live()
-local tail = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(tail):match("%-tail$"), "live did not open the tail")
+local audit = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live did not open the audit view")
 local header
-for i, l in ipairs(vim.api.nvim_buf_get_lines(tail, 0, -1, false)) do
+for i, l in ipairs(vim.api.nvim_buf_get_lines(audit, 0, -1, false)) do
   if l:match("^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn ") then
     header = i
     break
   end
 end
-assert(header, "no turn header in tail")
-assert(vim.fn.foldclosed(header) == header, "turn not folded into a header: " .. vim.fn.foldclosed(header))
-local tail_ns = vim.api.nvim_get_namespaces()["yap.tail.hl"]
-assert(tail_ns, "tail highlight namespace missing")
+assert(header, "no turn header in audit view")
+assert(vim.fn.foldclosed(header) ~= -1, "turn not folded: " .. vim.fn.foldclosed(header))
+assert(vim.fn.foldclosedend(header) == header, "turn does not fold back to its header")
+local audit_ns = vim.api.nvim_get_namespaces()["yap.audit.hl"]
+assert(audit_ns, "audit highlight namespace missing")
 local highlighted = false
-for _, m in ipairs(vim.api.nvim_buf_get_extmarks(tail, tail_ns, { header - 1, 0 }, { header, 0 }, { details = true })) do
-  if m[4].hl_group == "YapTailTurn" then
+for _, m in ipairs(vim.api.nvim_buf_get_extmarks(audit, audit_ns, { header - 1, 0 }, { header, 0 }, { details = true })) do
+  if m[4].hl_group == "YapAuditTurn" then
     highlighted = true
   end
 end
 assert(highlighted, "turn header not highlighted")
 
 -- ─── :YapAudit split-panel viewer ──────────────────────────────────────
-yap.live() -- close the tail drawer
+yap.live() -- close the audit view drawer
 local audit = require("harness.audit")
 audit.view()
 -- current window is the preview (rightmost); the source is one window left.

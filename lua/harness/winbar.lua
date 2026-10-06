@@ -3,7 +3,7 @@
 -- rollup island, session description, provider/model island and usage/cost
 -- chips. Usage/cost chips remain on the right. Also owns the spinner
 -- that keeps the bar redrawing while a turn streams; the spinner drains
--- live tool output into the tail buffers through state.drain_tail (set by
+-- live tool output into the audit view buffers through state.drain_audit (set by
 -- the send path).
 
 local M = {}
@@ -605,7 +605,7 @@ function M.spinner_start()
       plain_spinner_glyph = pick(PLAIN_SPINNER_FRAMES)
       spinner_color = pick(SPINNER_COLORS)
       for b in pairs(running) do
-        state.drain_tail(b) -- pull new tool output into the tail buffers
+        state.drain_audit(b) -- pull new tool output into the audit view buffers
       end
       vim.cmd.redrawstatus() -- re-evaluates the winbar expression
       M.spinner_stop_if_idle()

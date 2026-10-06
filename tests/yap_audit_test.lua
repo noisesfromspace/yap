@@ -52,19 +52,19 @@ assert(
   "no turn journal: " .. vim.inspect(turn)
 )
 
--- the tail viewer renders the same events: a one-line entry per tool
+-- the audit view renders the same events: a one-line entry per tool
 -- call, the full result, and the turn journal
-local tail
+local audit
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_get_name(b):match("%-tail$") then
-    tail = b
+  if vim.api.nvim_buf_get_name(b):match("%-audit$") then
+    audit = b
   end
 end
-assert(tail, "no tail buffer")
-local text = table.concat(vim.api.nvim_buf_get_lines(tail, 0, -1, false), "\n")
-assert(text:match("• write /tmp/ml%-test%.md"), "no tool journal line in tail: " .. text)
-assert(text:match("Successfully wrote 250 bytes"), "tool result not rendered in tail: " .. text)
-assert(text:match("# .- turn m1:"), "no turn journal in tail: " .. text)
+assert(audit, "no audit view buffer")
+local text = table.concat(vim.api.nvim_buf_get_lines(audit, 0, -1, false), "\n")
+assert(text:match("• write /tmp/ml%-test%.md"), "no tool journal line in audit view: " .. text)
+assert(text:match("Successfully wrote 250 bytes"), "tool result not rendered in audit view: " .. text)
+assert(text:match("# .- turn m1:"), "no turn journal in audit view: " .. text)
 
 -- :YapClear points each placeholder at the exact JSONL lines it replaced
 -- (tool_call → tool_result for the write call: lines 1-2)

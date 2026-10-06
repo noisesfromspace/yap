@@ -1,7 +1,7 @@
 -- <leader>r is global (it lists sessions across buffers, so it must work
 -- from any file), and opening a session file directly
 -- (nvim ~/.yap/sessions/.../x.md) adopts it as a managed yap buffer:
--- unlisted, keymapped, tail attached.
+-- unlisted, keymapped, audit view attached.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")

@@ -88,7 +88,7 @@ func TestBash(t *testing.T) {
 	}
 }
 
-// The tool_start event announces the temp log the live view tails.
+// The tool_start event announces the temp log the live view follows.
 func TestBashToolStartEvent(t *testing.T) {
 	var buf bytes.Buffer
 	old := utils.SetEventWriter(&buf)

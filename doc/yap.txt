@@ -58,8 +58,8 @@ the current buffer unless otherwise noted.
 :YapStop              Kill the in-flight request for the current buffer.
 
                                                                 *:YapLive*
-:YapLive              Open the session's tail buffer: one persistent
-                        yap://<session>-tail buffer that renders the
+:YapLive              Open the session's audit view: one persistent
+                        yap://<session>-audit buffer that renders the
                         session's audit log (|yap-audit|) as it streams
                         — a `$ command` header per bash call with its
                         drained output, one journal line per non-bash
@@ -190,8 +190,8 @@ the current buffer unless otherwise noted.
                         |:YapWaiting| to jump straight to them). Yap
                         buffers are unlisted — they never appear in |:ls| or
                         buffer pickers
-                        (MiniPick.buffers and friends), and a session's tail
-                        buffer is never listed at all (open it in the session
+                        (MiniPick.buffers and friends), and a session's audit
+                        view buffer is never listed at all (open it in the session
                         with |:YapLive|). This is how you move between sessions.
 
                                                             *:YapWaiting*
@@ -666,7 +666,7 @@ process group: on timeout (default 120s, model-adjustable) the whole
 group is SIGKILLed, and :YapStop takes in-flight commands down with
 the binary. Output streams into a temp file; the binary announces the
 path on stderr (yap:event, see |yap-protocol|) and the Lua side
-drains it into the session's tail buffer (:YapLive) — live output
+drains it into the session's audit view (:YapLive) — live output
 never enters the chat buffer (R16). The result is
 truncated to the LAST 2000 lines / 50KB with the full output kept in
 the temp file; a non-zero exit is reported to the model, not treated
@@ -675,7 +675,7 @@ pauses the turn for an explicit Run/Deny confirmation before it runs.
 
 python runs a Python 3 script the same way, as a fresh process (no
 state carries between calls — one self-contained script per call), with
-the same process-group timeout, live tail, and 2000-line / 50KB tail
+the same process-group timeout, live audit view, and 2000-line / 50KB tail
 truncation. It takes exactly one of `code` (a small inline script,
 written to a temp file and run as `python3 <file>`) or `file` (a path
 to an existing script, resolved relative to the Neovim cwd like write's
@@ -901,7 +901,7 @@ never sent — use it as a backlog and move one item into `# @queue` (or
 `# @steer`) when ready.
 Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
-session (unlisted, keymapped, tail attached), the same as |:YapSessions|
+session (unlisted, keymapped, audit view attached), the same as |:YapSessions|
 resume.
 
 File operations are the session operations (pi equivalents, but manual):
@@ -952,14 +952,15 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
   turn_end     {"type","model","prompt","completion","context_prompt",?,
                "cost",?,"context_window",?,"ms","ts"} — one per completed send
 
-The tail buffer (|:YapLive|) is the human-readable rendering of these
+The audit view (|:YapLive|) is the human-readable rendering of these
 events and is rebuilt from the file on reopen. Structural lines are
 highlighted (turn headers, `$ command`, `• tool`, timestamps); streamed
 and returned text stays in the default color so it reads as plain text.
-Each completed turn folds to its header line — a table of contents —
-while the tail after the last header stays open so live output remains
-visible. The view only follows new output when it is already near the
-bottom, so scrolling up to read is never yanked back down. |:YapAudit|
+Each completed turn folds back to its header line — a table of
+contents — while the open turn after the last header stays expanded so
+live output remains visible. The view only follows new output when it
+is already near the bottom, so scrolling up to read is never yanked
+back down. |:YapAudit|
 is the split-panel browser for the raw file itself. |:YapClear| placeholders
 correlate a region's tool-call id with its tool_call..tool_result
 line range, so a cleared body points back to exactly what it replaced.
@@ -1117,9 +1118,9 @@ segment independent of yap buffers, use
   stderr  error message, exit 1. Also carries `yap:event {json}`
           progress lines; the Lua side timestamps each one and appends
           it to the audit log (|yap-audit|), and renders it into the
-          tail buffer (|:YapLive|):
+          audit view (|:YapLive|):
             tool_start   {"type","name":"bash"|"python","log","command"} — the
-                         tool's output streams into `log`; tail it for live view
+                         tool's output streams into `log`; the audit view follows it for live output
             tool_end     {"type","name":"bash"|"python","log","truncated"} —
                          the tool's log is complete; the Lua side drains the
                          final bytes and removes the untruncated temp log
@@ -1220,9 +1221,9 @@ R8  Sessions are plain markdown files; file operations are the session
     state. save() follows buffer
     renames so :file names and :saveas forks. Why: no second
     serialization format to keep in sync. Session buffers (and their
-    tail buffers) are unlisted — never in |:ls| or buffer pickers — so
+    audit view buffers) are unlisted — never in |:ls| or buffer pickers — so
     navigation is |:YapInstances|, and a session's
-    tail opens with |:YapLive|.
+    audit view opens with |:YapLive|.
 
 R9  Errors surface three ways: vim.notify (transient), winbar error state
     (persistent until next send), and a parse-excluded buffer marker
@@ -1323,13 +1324,13 @@ R16 Live tool output never enters the chat buffer.
     The buffer is the parseable conversation document (R1); streaming
     command output into it forces incremental escaping, dangling-region
     repair and post-turn dedup (the yap:stream/keepstream design this
-    rule replaced). Instead each session has ONE persistent tail buffer
-    (yap://<session>-tail): bash/python announce their temp log via a
+    rule replaced). Instead each session has ONE persistent audit view
+    (yap://<session>-audit): bash/python announce their temp log via a
     yap:event stderr line, the Lua side drains new bytes into the
-    tail (a `$ command` header per call), and :YapLive opens it. The
+    audit view (a `$ command` header per call), and :YapLive opens it. The
     drained bytes are recorded in the audit log as `output` events, and
-    the tail buffer is rebuilt from that log on reopen — there is no
-    separate tail file. The chat buffer only gets one-shot, append-only
+    the audit view is rebuilt from that log on reopen — there is no
+    separate audit-view file. The chat buffer only gets one-shot, append-only
     writes: the tool header
     when the call commits, the result when it finishes. Normal streaming
     is append-only; explicit document operations may rewrite existing
@@ -1347,7 +1348,7 @@ R17 The audit log is the durable record of everything the context
     Lua side from yap:event lines plus synthesized `output` events for
     streamed bash/python output: full tool arguments, streamed
     bash/python output, full results, and one journal line per turn
-    (model, tokens, cost, ms). The tail buffer (|:YapLive|) renders
+    (model, tokens, cost, ms). The audit view (|:YapLive|) renders
     these events and is rebuilt from the file on reopen; the audit file
     is the authoritative record and survives restarts.
     This is what makes slimmed headers (R12) and |:YapClear|

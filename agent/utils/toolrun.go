@@ -18,7 +18,7 @@ const (
 )
 
 // RunStreamed runs a tool process with stdout and stderr merged into a temp
-// log that the Lua side tails live (tool_start/tool_end announce the log path).
+// log that the Lua side follows live (tool_start/tool_end announce the log path).
 // stdin is /dev/null. On timeout the whole process group is SIGKILLed. cmd
 // must already have SysProcAttr.Setpgid set and its Dir validated.
 func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (string, error) {

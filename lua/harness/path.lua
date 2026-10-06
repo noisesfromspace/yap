@@ -121,11 +121,11 @@ function M.session_base(buf)
   return vim.api.nvim_buf_get_name(buf):gsub("^yap://", ""):gsub("[^%w%._-]", "-")
 end
 
---- The tail buffer's name; mirrors the session basename so `:file` renames
---- keep the two together.
-function M.tail_buf_name(buf)
+--- The audit view buffer's name; mirrors the session basename so `:file`
+--- renames keep the two together.
+function M.audit_buf_name(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-tail"
+  return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-audit"
 end
 
 --- The session's JSON Lines audit log.

@@ -16,10 +16,10 @@ local M = {
   steer = {}, -- buf -> pending steering text (sent mid-turn, not yet delivered)
 }
 
--- Set by the send path once drain_tail is defined; the winbar spinner calls
--- it on each tick to pull new tool output into the tail buffers. A slot
--- rather than a hard dependency: winbar loads before the tail machinery.
-M.drain_tail = nil
+-- Set by the send path once drain_audit is defined; the winbar spinner calls
+-- it on each tick to pull new tool output into the audit view buffers. A slot
+-- rather than a hard dependency: winbar loads before the audit machinery.
+M.drain_audit = nil
 
 function M.is_running(buf)
   return M.running[buf] ~= nil

@@ -1,19 +1,19 @@
 -- E2E: a running tool is visible WITHOUT streaming into the chat buffer:
 -- the header lands immediately, the winbar shows the tool name, and the
--- live output stays in the tool's log file (tailed by :YapLive), never
+-- live output stays in the tool's log file (rendered by :YapLive), never
 -- in the buffer. The result lands once, at completion. :YapStop
 -- mid-run leaves the buffer parseable (dangling tool region repaired on
--- process exit). auto_open_live opens the tail terminal by itself.
+-- process exit). auto_open_live opens the audit view by itself.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- The persistent tail buffer of a chat buffer (yap://<basename>-tail).
-local function tail_buf(chat)
+-- The persistent audit view buffer of a chat buffer (yap://<basename>-audit).
+local function audit_buf(chat)
   local name = vim.api.nvim_buf_get_name(chat)
-  name = name:match("^yap://") and (name .. "-tail") or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-tail")
+  name = name:match("^yap://") and (name .. "-audit") or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-audit")
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_get_name(b) == name then
       return b
@@ -75,13 +75,13 @@ local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")
 
--- the tail buffer IS filling while the tool runs
+-- the audit view buffer IS filling while the tool runs
 local tb1
-local tail_filling = vim.wait(10000, function()
-  tb1 = tail_buf(buf)
+local audit_filling = vim.wait(10000, function()
+  tb1 = audit_buf(buf)
   return tb1 and table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n"):match("\nl1\n") ~= nil
 end, 20)
-assert(tail_filling, "tail buffer not filling during the run")
+assert(audit_filling, "audit view buffer not filling during the run")
 
 local done = vim.wait(30000, function()
   return vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == ""
@@ -112,11 +112,11 @@ assert(
 -- winbar back to idle
 assert(not yap.winbar():match("bash"), "winbar still shows the tool after completion")
 
--- the tail holds the FULL output (tool_end drains before the temp log
+-- the audit view holds the FULL output (tool_end drains before the temp log
 -- of an untruncated run is deleted), with a $ command header
-local tail_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
-assert(tail_text:match("^%$ printf"), "no command header in tail: " .. tail_text)
-assert(tail_text:match("\nl1\nl2\n") and tail_text:match("tail%-without%-newline"), "tail incomplete: " .. tail_text)
+local audit_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
+assert(audit_text:match("^%$ printf"), "no command header in audit view: " .. audit_text)
+assert(audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"), "audit view incomplete: " .. audit_text)
 
 -- the audit log records the streamed output as JSON output events
 local audit_file = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
@@ -170,16 +170,16 @@ set_prompt(buf2, "run again; I will stop you")
 yap.send()
 
 -- wait until the tool header has landed, then :YapLive opens the
--- (already created) tail in a split, scrolled to the bottom
+-- (already created) audit view in a split, scrolled to the bottom
 local started = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- yap:tool") ~= nil
 end, 20)
 assert(started, "tool header not present before stop")
-local tb2 = tail_buf(buf2)
-assert(tb2, "no tail buffer for the second session")
+local tb2 = audit_buf(buf2)
+assert(tb2, "no audit view buffer for the second session")
 yap.live()
-assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"), ":YapLive did not open the tail")
-assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail window not at the bottom")
+assert(vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-audit$"), ":YapLive did not open the audit view")
+assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "audit view window not at the bottom")
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
 yap.stop()

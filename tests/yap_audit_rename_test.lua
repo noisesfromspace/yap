@@ -1,6 +1,6 @@
 -- The audit log (.jsonl) follows a `:file` rename the same way the
 -- session does: renaming the session, then sending (which commits the
--- rename) moves the audit log, and the tail viewer keeps rendering it.
+-- rename) moves the audit log, and the audit view keeps rendering it.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -45,14 +45,14 @@ local want = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/" .. vim.fn.fname
 assert(vim.fn.filereadable(old_audit) == 0, "old audit log still exists: " .. old_audit)
 assert(vim.fn.filereadable(want) == 1, "renamed audit log missing: " .. want)
 
--- the tail viewer still renders the (renamed) audit log
-local tail
+-- the audit view still renders the (renamed) audit log
+local audit
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_get_name(b):match("%-tail$") then
-    tail = b
+  if vim.api.nvim_buf_get_name(b):match("%-audit$") then
+    audit = b
   end
 end
-assert(tail, "no tail buffer")
-local tail_text = table.concat(vim.api.nvim_buf_get_lines(tail, 0, -1, false), "\n")
-assert(tail_text:match("• write"), "tail content lost after rename: " .. tail_text)
-print("OK tail-rename")
+assert(audit, "no audit view buffer")
+local audit_text = table.concat(vim.api.nvim_buf_get_lines(audit, 0, -1, false), "\n")
+assert(audit_text:match("• write"), "audit view content lost after rename: " .. audit_text)
+print("OK audit-rename")

@@ -309,7 +309,7 @@ end
 local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
 local fold = require("harness.fold")
-local tail = require("harness.tail")
+local audit = require("harness.audit")
 
 --- End line (0-based, exclusive) of the frontmatter block, or nil when
 --- the buffer has none. Only the model state lives there (see
@@ -497,19 +497,19 @@ local servers = {} -- buf → vim.SystemObj
 -- per token (O(n) per edit on large sessions).
 local stream_flush = {}
 
--- Per-chat-buffer persistent tail: every audit event is rendered into
--- ONE unlisted buffer, yap://<session>-tail, opened by :YapLive. The
--- tail is not a second log — it is the live, human-readable rendering
--- of the JSON Lines audit log (see audit_path), rebuilt from it on
--- reopen. Only the audit log is persisted.
-local tails = {} -- chat buf → { bufnr, offset, has_content, audit }
+-- Per-chat-buffer persistent audit view: every audit event is rendered
+-- into ONE unlisted buffer, yap://<session>-audit, opened by :YapLive.
+-- The audit view is not a second log — it is the live, human-readable
+-- rendering of the JSON Lines audit log (see audit_path), rebuilt from
+-- it on reopen. Only the audit log is persisted.
+local audits = {} -- chat buf → { bufnr, offset, has_content, audit }
 
 -- The audit dir holds one JSON Lines audit log per session, keyed by
 -- the session's basename, so the sessions dir stays clean.
 
 --- Append one event as a JSON object to the session's audit log.
 local function audit_append(buf, ev)
-  local t = tails[buf]
+  local t = audits[buf]
   if not t then
     return
   end
@@ -525,7 +525,7 @@ end
 --- Point the audit log at the session file's name; a `:file` rename
 --- (which also renames the session) renames the log to match.
 local function audit_follow(buf)
-  local t = tails[buf]
+  local t = audits[buf]
   if not t or not t.audit or not vim.b[buf].yap_path then
     return
   end
@@ -578,17 +578,17 @@ local function find_or_create_buffer(name, listed, scratch)
   return b, true
 end
 
-local function ensure_tail(buf)
-  local t = tails[buf]
+local function ensure_audit(buf)
+  local t = audits[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
-  local name = paths.tail_buf_name(buf)
+  local name = paths.audit_buf_name(buf)
   local tbuf = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.bo[tbuf].bufhidden = "hide"
 
   t = { bufnr = tbuf, offset = 0, has_content = false }
-  tails[buf] = t
+  audits[buf] = t
 
   -- Replay the audit log so the live view survives restarts.
   local events = {}
@@ -603,32 +603,32 @@ local function ensure_tail(buf)
       end
     end
   end
-  t.has_content = tail.rebuild(tbuf, events)
+  t.has_content = audit.rebuild(tbuf, events)
   return t
 end
 
---- Append an event to the audit log and render it into the tail buffer.
+--- Append an event to the audit log and render it into the audit view.
 local function append_event(buf, ev)
-  local t = ensure_tail(buf)
+  local t = ensure_audit(buf)
   audit_append(buf, ev)
-  tail.append(t, ev)
-  tail.scroll(t.bufnr)
+  audit.append(t, ev)
+  audit.scroll(t.bufnr)
 end
 
---- Cap the raw tool output streamed into the live tail (and audit log)
---- per tool run. The returned tool result is already tail-truncated to
---- 50KB; the live tail must not accumulate the full log — a runaway
---- command writing gigabytes would otherwise balloon the tail buffer
---- (and audit log) and OOM the editor. 256KB is ample for watching
---- progress while keeping memory bounded.
+--- Cap the raw tool output streamed into the live audit view (and audit
+--- log) per tool run. The returned tool result is already tail-truncated
+--- to 50KB; the live audit view must not accumulate the full log — a
+--- runaway command writing gigabytes would otherwise balloon the audit
+--- view buffer (and audit log) and OOM the editor. 256KB is ample for
+--- watching progress while keeping memory bounded.
 local LIVE_OUTPUT_CAP = 256 * 1024
 
---- Append newly written bytes of the running tool's log to the tail
---- buffer (called on the spinner tick, on tool_end, and on process
+--- Append newly written bytes of the running tool's log to the audit
+--- view buffer (called on the spinner tick, on tool_end, and on process
 --- exit). Defined via the forward declaration: the spinner ticks
 --- before this section runs.
-local function drain_tail(buf)
-  local t, l = tails[buf], live[buf]
+local function drain_audit(buf)
+  local t, l = audits[buf], live[buf]
   if not t or not l then
     return
   end
@@ -660,7 +660,7 @@ local function drain_tail(buf)
   end
 end
 
-state.drain_tail = drain_tail
+state.drain_audit = drain_audit
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
 local scratch_section_text, scratch_set_section, scratch_save
@@ -673,11 +673,11 @@ local function handle_event(buf, json_line)
   ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
     live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0 }
-    local t = ensure_tail(buf)
+    local t = ensure_audit(buf)
     t.offset = 0
     append_event(buf, ev)
   elseif ev.type == "tool_end" then
-    drain_tail(buf) -- the log is complete; capture the final bytes
+    drain_audit(buf) -- the log is complete; capture the final bytes
     live[buf] = nil
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
@@ -763,9 +763,9 @@ local function handle_event(buf, json_line)
     end
     vim.b[buf].yap_session_usage = su
     append_event(buf, ev)
-    local t = tails[buf]
+    local t = audits[buf]
     if t then
-      tail.fold(t.bufnr)
+      audit.fold(t.bufnr)
     end
   end
 end
@@ -982,7 +982,7 @@ end
 local drawer_anchor = {} -- drawer bufnr -> owner window id
 
 --- Open or close a fixed-height drawer below the chat window. This is the
---- ONE toggle pattern for the audit-log tail and the scratch queue: a
+--- ONE toggle pattern for the audit view and the scratch queue: a
 --- single persistent buffer, never duplicated, always a full-width bottom
 --- split, and closed back to the window it was toggled from. Anchoring the
 --- split to a window showing `owner` is what keeps the drawer full-width
@@ -1042,24 +1042,24 @@ local function close_session_drawers(buf)
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
     close_drawer_window(scratch)
   end
-  local tail = tails[buf]
-  if tail and vim.api.nvim_buf_is_valid(tail.bufnr) then
-    close_drawer_window(tail.bufnr)
+  local audit_view = audits[buf]
+  if audit_view and vim.api.nvim_buf_is_valid(audit_view.bufnr) then
+    close_drawer_window(audit_view.bufnr)
   end
 end
 
---- Open the session's tail buffer (:YapLive): one persistent rendering
+--- Open the session's audit view (:YapLive): one persistent rendering
 --- of the audit log, not a new terminal per call. Opens even before any
---- tool has run (an empty tail that fills as tools execute).
+--- tool has run (an empty audit view that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  for chat, t in pairs(tails) do
+  for chat, t in pairs(audits) do
     if t.bufnr == buf then
       toggle_drawer(chat, buf, 12)
       return
     end
   end
-  local t = ensure_tail(buf)
+  local t = ensure_audit(buf)
   if not toggle_drawer(buf, t.bufnr, 12) then
     return
   end
@@ -1069,7 +1069,7 @@ function M.live(buf)
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
-  tail.fold(t.bufnr)
+  audit.fold(t.bufnr)
 end
 
 --- The queue file is a sibling of the session file, sharing its basename
@@ -1758,7 +1758,7 @@ function M.send(buf)
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
       local l = live[buf]
-      drain_tail(buf) -- final bytes; a killed tool never sent tool_end
+      drain_audit(buf) -- final bytes; a killed tool never sent tool_end
       if l then
         live[buf] = nil
         vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
@@ -1960,7 +1960,7 @@ function M.stop(buf)
     servers[buf] = nil
     running[buf] = nil
     winbar.spinner_stop_if_idle()
-    drain_tail(buf)
+    drain_audit(buf)
     local l = live[buf]
     if l then live[buf] = nil; vim.npcall(os.remove, l.log) end
     local f = stream_flush[buf]
@@ -2189,10 +2189,10 @@ function M.new(opts)
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
   -- regardless of the .md extension.
   require("harness.session").save(buf)
-  -- The tail is a rendering of the audit log: create its live-view buffer
+  -- The audit view is a rendering of the audit log: create its live-view buffer
   -- now (empty — the audit log is written on the first event), before any
   -- :file rename or tool run.
-  ensure_tail(buf)
+  ensure_audit(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
@@ -2301,7 +2301,7 @@ end
 
 --- Open a saved session file as a yap buffer.
 --- Turn a session-file buffer into a managed yap buffer: unlisted,
---- keymapped, tail (audit rendering) attached, model combo resumed from
+--- keymapped, audit view attached, model combo resumed from
 --- frontmatter. Shared by :YapSessions resume and by directly opening
 --- a file under ~/.yap/sessions/.
 local function adopt(buf, path)
@@ -2327,7 +2327,7 @@ local function adopt(buf, path)
   -- seed the overview hint so it counts before its first send here.
   winbar.seed_awaiting(buf)
   setup_buffer(buf)
-  ensure_tail(buf) -- restore the live view from the audit log (create if missing)
+  ensure_audit(buf) -- restore the live view from the audit log (create if missing)
   seed_session_usage(buf) -- durable all-time totals from the audit log
   return buf
 end
@@ -2529,7 +2529,7 @@ end
 --- "idle"), a set of them (a table keyed by state name), or nil for all. The
 --- "needs you" set (<leader>w) is `{ waiting = true, stopped = true }`; its
 --- subagent rows are hidden because they are reached through their parent. A
---- current parent remains visible while it has an open subagent. Tails are
+--- current parent remains visible while it has an open subagent. Audit views are
 --- never here — use :YapLive / <leader>l.
 local function has_open_subagent(parent)
   local child = subagent_children[parent]

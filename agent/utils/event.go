@@ -17,7 +17,7 @@ var eventOut io.Writer = os.Stderr
 
 // EmitEvent writes one yap:event line (JSON) to eventOut.
 func EmitEvent(v any) {
-	// Events land in the JSONL audit log and the plain-text tail buffer,
+	// Events land in the JSONL audit log and the plain-text audit view buffer,
 	// never inside an HTML comment, so HTML-escaping only mangles the raw
 	// log (`&&` -> `\u0026`). Skip it; keep `&`/`<`/`>` readable.
 	var buf bytes.Buffer

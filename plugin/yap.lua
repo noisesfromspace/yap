@@ -17,7 +17,7 @@ end, { desc = "Stop the in-flight yap request" })
 
 vim.api.nvim_create_user_command("YapLive", function()
   require("harness").live()
-end, { desc = "Open the session's live tool-output view" })
+end, { desc = "Open the session's live audit view" })
 
 vim.api.nvim_create_user_command("YapAudit", function()
   require("harness.audit").view()
