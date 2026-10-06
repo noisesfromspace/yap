@@ -94,7 +94,7 @@ still notify.
 | `:YapSessions [all]`               |             | Resume a saved session.                              |
 | `:YapFork [name]`                  |             | Fork the conversation into a new session.            |
 | `:YapInstances`                    | `<leader>r` | Pick another open chat.                              |
-| `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply.                     |
+| `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply (or stopped).        |
 | `:YapReload`                       |             | Reload Lua modules (development only).               |
 
 Templates and skills live in `~/.config/yap/templates/` and

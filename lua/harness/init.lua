@@ -2524,10 +2524,13 @@ local function session_rank(buf)
 end
 
 --- Every open yap chat buffer except the current one, annotated with its live
---- state and sorted with waiting sessions last. An optional `state`
---- ("running", "error", "waiting" or "idle") narrows the list; a current
---- parent remains visible while it has an open subagent. Tails are never here —
---- use :YapLive / <leader>l.
+--- state and sorted with waiting sessions last. An optional `state` narrows
+--- the list: a state name ("running", "error", "waiting", "stopped" or
+--- "idle"), a set of them (a table keyed by state name), or nil for all. The
+--- "needs you" set (<leader>w) is `{ waiting = true, stopped = true }`; its
+--- subagent rows are hidden because they are reached through their parent. A
+--- current parent remains visible while it has an open subagent. Tails are
+--- never here — use :YapLive / <leader>l.
 local function has_open_subagent(parent)
   local child = subagent_children[parent]
   if child and vim.api.nvim_buf_is_valid(child) then
@@ -2542,13 +2545,20 @@ local function has_open_subagent(parent)
 end
 
 function M.instances(state)
+  -- Normalize `state` to a set keyed by state name, or nil for "all".
+  local states = state
+  if type(state) == "string" then
+    states = { [state] = true }
+  end
+  -- The "needs you" picker is the waiting + stopped set.
+  local needs_you = states ~= nil and states.waiting == true and states.stopped == true
   local items = {}
   local current = vim.api.nvim_get_current_buf()
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local include_current_parent = b == current and has_open_subagent(b)
     if (b ~= current or include_current_parent) and vim.b[b].yap
-      and not (state == "waiting" and vim.b[b].yap_subagent_parent)
-      and (state == nil or session_state(b) == state) then
+      and not (needs_you and vim.b[b].yap_subagent_parent)
+      and (states == nil or states[session_state(b)]) then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
@@ -2562,9 +2572,9 @@ function M.instances(state)
   end
   if #items == 0 then
     local message = "yap: no open sessions"
-    if state == "waiting" then
+    if needs_you then
       message = "yap: nothing waiting for a reply"
-      if vim.b[current].yap and session_state(current) == "waiting" then
+      if vim.b[current].yap and states[session_state(current)] then
         message = "yap: current session is already open and waiting for a reply"
       end
     end
@@ -2587,7 +2597,7 @@ function M.instances(state)
   local glyph = { running = M.config.icons.running, stopped = M.config.icons.stopped, error = M.config.icons.error,
     waiting = M.config.icons.waiting, idle = M.config.icons.idle }
   vim.ui.select(items, {
-    prompt = state == "waiting" and "yap waiting" or "yap sessions",
+    prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
       return (item.path or "") .. " " .. glyph[item.state] .. " " .. item.text
         .. " (" .. (item.model or item.state) .. ")"
@@ -2602,9 +2612,10 @@ function M.instances(state)
   end)
 end
 
---- Just the sessions awaiting a reply — the "needs you" set (<leader>w).
+--- Just the sessions needing a reply — waiting for one or manually stopped —
+--- the "needs you" set (<leader>w).
 function M.waiting()
-  M.instances("waiting")
+  M.instances({ waiting = true, stopped = true })
 end
 
 function M.setup(opts)

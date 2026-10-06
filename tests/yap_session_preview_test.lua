@@ -109,6 +109,20 @@ assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
   "waiting picker should show the parent but not its subagent: " .. vim.inspect(captured and captured.items))
 state.awaiting[buf], state.awaiting[child] = nil, nil
 
+-- A manually stopped session is also part of the "needs you" set: <leader>w
+-- lists it alongside waiting sessions.
+state.stopped[buf] = true
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.waiting()
+vim.ui.select = orig_select
+assert(captured and #captured.items == 1 and captured.items[1].buf == buf,
+  "waiting picker should list a stopped session: " .. vim.inspect(captured and captured.items))
+assert(captured.items[1].state == "stopped", "stopped state missing: " .. vim.inspect(captured.items[1]))
+state.stopped[buf] = nil
+
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
 vim.api.nvim_buf_set_lines(saved, 0, -1, false, {

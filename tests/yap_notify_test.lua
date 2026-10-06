@@ -77,7 +77,8 @@ vim.api.nvim_buf_delete(subagent, { force = true })
 
 -- A stopped or errored turn also sets `awaiting` when its stream closes,
 -- but it is not "waiting" for a reply: it is counted as stopped/error in
--- the rollup, and overview() still excludes it just like <leader>w does.
+-- the rollup, and overview() still excludes it (<leader>w also lists
+-- stopped sessions, unlike the rollup).
 local stopped = vim.api.nvim_create_buf(false, true)
 vim.b[stopped].yap = true
 state.sessions[stopped] = true

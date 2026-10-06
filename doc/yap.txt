@@ -196,8 +196,9 @@ the current buffer unless otherwise noted.
 
                                                             *:YapWaiting*
 :YapWaiting           List only the open yap sessions awaiting a reply
-                        (state `󰫁 waiting`) and focus the picked one — the
-                        "needs you" subset of |:YapInstances|.
+                        (state `󰫁 waiting`) or manually stopped (state
+                        `󰓛 stopped`) and focus the picked one — the "needs
+                        you" subset of |:YapInstances|.
 
                                                                *:YapReload*
 :YapReload            Reload the Lua modules (development).
@@ -237,8 +238,8 @@ are shown below.
                         scratch queue.
   <leader>r             List every open session with its status (see
                         |:YapInstances|).
-  <leader>w             List just the sessions awaiting a reply (see
-                        |:YapWaiting|).
+  <leader>w             List just the sessions awaiting a reply or manually
+                        stopped (see |:YapWaiting|).
   <leader>y             List saved (history) sessions to resume (see
                         |:YapSessions|).
   <leader>R             List only the history sessions renamed with |:file|
