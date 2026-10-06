@@ -220,6 +220,10 @@ assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs 
 local inactive_left = inactive_bar:match("^(.-)%%=")
 assert(inactive_left:find("%#YapIdle#" .. icons.idle, 1, true) == 1,
   "inactive idle session should keep its idle icon leftmost: " .. inactive_bar)
+-- The rollup island is the ACTIVE session's dashboard of other sessions,
+-- not this window's own signal, so an inactive window must not show it.
+assert(not inactive_left:find(icons.cap_l, 1, true) and not inactive_left:find(icons.idle .. "2", 1, true),
+  "inactive session should hide the other-session rollup island: " .. inactive_left)
 state.awaiting[target] = true
 assert(yap.winbar(target):find("%#YapNeeds#" .. icons.waiting, 1, true) == 1,
   "inactive waiting session should keep its waiting icon leftmost")

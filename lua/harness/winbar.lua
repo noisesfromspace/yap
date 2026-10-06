@@ -316,39 +316,45 @@ local function render_winbar(buf)
       end
     end
 
-    local counts = other_session_counts(buf)
-    local order = {
-      { icons.running, counts.running, "Busy" },
-      { icons.waiting, counts.waiting, "Needs" },
-      { icons.stopped, counts.stopped, "Needs" },
-      { icons.error, counts.error, "Error" },
-      { icons.idle, counts.idle, "Idle" },
-    }
-    local rollup = { seg(icons.cap_l, "IslandCap"), seg(" ", nil, true) }
-    local first = true
-    for _, chip in ipairs(order) do
-      if chip[2] > 0 then
-        if not first then
-          rollup[#rollup + 1] = seg("  ", nil, true)
-        end
-        rollup[#rollup + 1] = seg(chip[1] .. chip[2], chip[3], true)
-        first = false
-      end
-    end
-    if not first then
-      rollup[#rollup + 1] = seg(" ", nil, true)
-      rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
-      -- Let the island's left cap overhang one cell into the gutter when the
-      -- island is the leftmost content (no tool text ahead of it). The state
-      -- icon stays centered; only the trailing gutter padding is reclaimed.
-      if gutter_trail_seg and not has_item then
-        if #gutter_trail_seg.text > 1 then
-          gutter_trail_seg.text = gutter_trail_seg.text:sub(1, #gutter_trail_seg.text - 1)
-        else
-          table.remove(left)
+    -- The rollup island totals every OTHER session by state. It is the
+    -- active session's dashboard, not this window's own signal, so an
+    -- inactive window hides it entirely: the only thing a background
+    -- session is allowed to advertise is its own leftmost state icon.
+    if not inactive then
+      local counts = other_session_counts(buf)
+      local order = {
+        { icons.running, counts.running, "Busy" },
+        { icons.waiting, counts.waiting, "Needs" },
+        { icons.stopped, counts.stopped, "Needs" },
+        { icons.error, counts.error, "Error" },
+        { icons.idle, counts.idle, "Idle" },
+      }
+      local rollup = { seg(icons.cap_l, "IslandCap"), seg(" ", nil, true) }
+      local first = true
+      for _, chip in ipairs(order) do
+        if chip[2] > 0 then
+          if not first then
+            rollup[#rollup + 1] = seg("  ", nil, true)
+          end
+          rollup[#rollup + 1] = seg(chip[1] .. chip[2], chip[3], true)
+          first = false
         end
       end
-      add_item(rollup)
+      if not first then
+        rollup[#rollup + 1] = seg(" ", nil, true)
+        rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
+        -- Let the island's left cap overhang one cell into the gutter when the
+        -- island is the leftmost content (no tool text ahead of it). The state
+        -- icon stays centered; only the trailing gutter padding is reclaimed.
+        if gutter_trail_seg and not has_item then
+          if #gutter_trail_seg.text > 1 then
+            gutter_trail_seg.text = gutter_trail_seg.text:sub(1, #gutter_trail_seg.text - 1)
+          else
+            table.remove(left)
+          end
+        end
+        add_item(rollup)
+      end
     end
 
     local desc = not inactive and winbar_description(buf, desc_max) or nil
