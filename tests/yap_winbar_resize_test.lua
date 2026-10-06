@@ -92,6 +92,24 @@ assert(not wb:match("%$"), "narrow winbar kept costs: " .. wb)
 wb = winbar_at(12)
 assert(not wb:match("1.5k") and not wb:match("1.1k"), "tiny winbar kept tokens: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "tiny winbar missing prices: " .. wb)
+
+-- Equal token totals represent one session: keep only the session chip,
+-- including in compact and price-only layouts. Compare raw totals rather
+-- than rounded display strings.
+vim.b[buf].yap_usage = { prompt = 1000, completion = 42, cost = 0.51 }
+vim.b[buf].yap_session_usage = { prompt = 999, completion = 43, cost = 0.51 }
+for _, cols in ipairs({ 80, 25, 12 }) do
+  wb = winbar_at(cols)
+  assert(not wb:find(icons.since, 1, true), "equal tokens kept since-open chip: " .. wb)
+  assert(wb:find(icons.total, 1, true), "equal tokens lost session chip: " .. wb)
+end
+vim.b[buf].yap_usage = { prompt = 1000, completion = 42, cost = 0.51 }
+vim.b[buf].yap_session_usage = { prompt = 1000, completion = 43, cost = 0.51 }
+wb = winbar_at(80)
+assert(wb:find(icons.since, 1, true) and wb:find(icons.total, 1, true),
+  "different raw token totals were merged: " .. wb)
+vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
+
 -- Check Neovim's rendered columns, not just highlight markup. Every
 -- combination uses the same inset, pill padding and section spacing.
 local state = require("harness.state")

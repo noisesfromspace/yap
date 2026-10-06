@@ -439,6 +439,12 @@ local function render_winbar(buf)
     end
     local u = include_live(vim.b[buf].yap_usage)
     local s = include_live(vim.b[buf].yap_session_usage)
+    -- When both counters represent the same token total, the since-open
+    -- chip adds no information; keep the session's all-time chip only.
+    if u and s and (s.prompt + s.completion) > 0
+        and (u.prompt + u.completion) == (s.prompt + s.completion) then
+      u = nil
+    end
 
     if (mode == "full" or mode == "compact") and u and (u.prompt > 0 or u.completion > 0) then
       local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)
