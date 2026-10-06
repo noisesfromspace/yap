@@ -151,12 +151,16 @@ local function render_event(ev)
   end
 end
 
+local function review_event(ev)
+  return ev.type == "alert_advice" or ev.type == "approval_request"
+end
+
 --- Rebuild the live view from a list of events: the full line list plus the
 --- per-line highlights to reapply. Stream chunks append verbatim; block
 --- events join with one blank line; the buffer keeps one trailing empty
 --- line (the append invariant).
 local function render_events(events)
-  local lines, hl, has = {}, {}, false
+  local lines, hl, has, reviews = {}, {}, false, {}
   for _, ev in ipairs(events) do
     local ev_lines, kind = render_event(ev)
     if ev_lines then
@@ -164,6 +168,9 @@ local function render_events(events)
         lines[#lines + 1] = ""
       end
       local start = #lines
+      if review_event(ev) then
+        reviews[#reviews + 1] = start + 1 -- 1-based buffer line
+      end
       for _, l in ipairs(ev_lines) do
         lines[#lines + 1] = l.text
       end
@@ -176,19 +183,19 @@ local function render_events(events)
     end
   end
   lines[#lines + 1] = ""
-  return lines, hl
+  return lines, hl, reviews
 end
 
 --- Rebuild a live-view buffer from the full event list (the reopen path).
---- Returns whether the buffer now has content.
+--- Returns whether the buffer now has content and the review event line map.
 function M.rebuild(buf, events)
-  local lines, hl = render_events(events)
+  local lines, hl, reviews = render_events(events)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for _, h in ipairs(hl) do
     vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], 0, -1)
   end
-  return #lines > 1 or lines[1] ~= ""
+  return #lines > 1 or lines[1] ~= "", reviews
 end
 
 --- Append one event to a live-view buffer. State `t` is { bufnr, has_content }.
@@ -216,6 +223,9 @@ function M.append(t, ev)
     if l.hl then
       vim.api.nvim_buf_add_highlight(buf, ns, l.hl, start + lead + i - 1, 0, -1)
     end
+  end
+  if review_event(ev) then
+    t.reviews[#t.reviews + 1] = start + lead + 1 -- 1-based buffer line
   end
   t.has_content = true
 end

@@ -646,7 +646,7 @@ local function ensure_audit(buf)
     end
   end
   vim.bo[tbuf].modifiable = true
-  t.has_content = audit.rebuild(tbuf, events)
+  t.has_content, t.reviews = audit.rebuild(tbuf, events)
   vim.bo[tbuf].modifiable = false
   return t
 end
@@ -1234,16 +1234,10 @@ local function show_audit_event(buf, ordinal)
   else
     M.live(buf)
   end
-  local index = 0
-  for n, text in ipairs(vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)) do
-    if text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true) then
-      index = index + 1
-    end
-    if index == ordinal and (text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true)) then
-      vim.api.nvim_win_set_cursor(0, { n, 0 })
-      vim.cmd("normal! zvzz") -- unfold the turn and center the request with its surrounding events
-      break
-    end
+  local n = t.reviews[ordinal]
+  if n then
+    vim.api.nvim_win_set_cursor(0, { n, 0 })
+    vim.cmd("normal! zvzz") -- unfold the turn and center the request with its surrounding events
   end
 end
 
