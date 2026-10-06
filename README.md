@@ -105,7 +105,11 @@ view to Run, Deny, or Inspect again. Unanswered calls are denied after five minu
 
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. The scratch buffer (`<leader>s`) holds notes,
-steering text for the running turn, and queued prompts. See
+steering text for the running turn, and queued prompts. Steering delivered
+at a model boundary is removed from scratch; steering that misses the last
+boundary or is stopped remains a draft, with a warning, for an explicit
+`<C-s>`. A queued prompt is only removed after its send starts successfully.
+See
 `:help yap-keymaps` for the full list.
 
 ## Rendering

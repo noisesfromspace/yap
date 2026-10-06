@@ -1509,10 +1509,13 @@ local function scratch_dispatch_queue(owner)
   if item == "" then
     return false
   end
+  document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
+  if not M.send(owner) then
+    vim.notify("yap: send failed; scratch draft was not consumed", vim.log.levels.WARN)
+    return true
+  end
   scratch_set_section(scratch, section, {})
   scratch_save(scratch)
-  document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
-  M.send(owner)
   return true
 end
 
@@ -1918,6 +1921,28 @@ Return only the title.]]
   )
 end
 
+--- An undelivered steer is a draft, not a follow-up turn. Scratch text
+--- remains in its file; template steering without a scratch gets copied to
+--- the empty chat prompt so it cannot silently disappear.
+local function leave_undelivered_steer(buf)
+  local text = steer[buf]
+  steer[buf] = nil
+  if not text then
+    return
+  end
+  local scratch = vim.b[buf].yap_scratch
+  -- A late user instruction outranks an agent's close_session request.
+  close_after_turn[buf] = nil
+  if scratch and vim.api.nvim_buf_is_valid(scratch) then
+    scratch_save(scratch)
+    vim.notify("yap: steer was not delivered; draft remains in scratch (send again with <C-s>)", vim.log.levels.WARN)
+  else
+    document.append_message(buf, "user", vim.split(text, "\n", { plain = true }))
+    require("harness.session").save(buf)
+    vim.notify("yap: steer was not delivered; draft is in the chat prompt (send with <C-s>)", vim.log.levels.WARN)
+  end
+end
+
 --- Every stream exit, including errors and :YapStop, hands the buffer back
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
@@ -1925,6 +1950,7 @@ local function close_stream(buf)
   document.append_block(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
+  leave_undelivered_steer(buf)
   if subagent_done[buf] then
     local done = subagent_done[buf]
     subagent_done[buf] = nil
@@ -1937,7 +1963,7 @@ function M.send(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   if running[buf] then
     vim.notify("yap: turn already running; use :YapStop to interrupt it", vim.log.levels.WARN)
-    return
+    return false
   end
   -- A close request is scoped to the turn that made it: a stale flag from
   -- a previous errored or stopped turn must not close a later turn.
@@ -2108,25 +2134,10 @@ function M.send(buf)
           end
         end
       end
-      -- A steering message that arrived after the turn's last poll point is
-      -- still pending: degrade it to a follow-up — fill the trailing
-      -- `# @user` prompt with it and start a new turn below.
-      local steer_text = steer[buf]
-      steer[buf] = nil
-      local scratch = vim.b[buf].yap_scratch
-      if
-        steer_text
-        and scratch
-        and vim.api.nvim_buf_is_valid(scratch)
-        and scratch_section_text(scratch, "steer") == steer_text
-      then
-        scratch_set_section(scratch, "steer", {})
-        scratch_save(scratch)
-      end
+      -- A late steer was never injected: keep it as a draft, not an
+      -- automatically sent follow-up turn.
       document.append_block(buf, { "# @user", "" })
-      if steer_text then
-        document.append_message(buf, "user", vim.split(steer_text, "\n", { plain = true }))
-      end
+      leave_undelivered_steer(buf)
       follow_tail()
       awaiting[buf] = true
       require("harness.session").save(buf)
@@ -2147,19 +2158,6 @@ function M.send(buf)
       })
       if compact then
         M.compact_offer(buf)
-      end
-      if steer_text then
-        -- A pending steer wins over close_session (the user's later word
-        -- outranks the agent's). Re-send as a fresh turn once the buffer
-        -- is fully in its final state. Queued work never auto-dispatches:
-        -- each entry waits for an explicit <C-s>.
-        close_after_turn[buf] = nil
-        vim.schedule(function()
-          if not vim.api.nvim_buf_is_valid(buf) then
-            return
-          end
-          M.send(buf)
-        end)
       end
       -- close_session is a frontend side effect (like quickfix): the agent
       -- asked to end the session, so once the turn is fully done and the
@@ -2266,7 +2264,7 @@ function M.send(buf)
       stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
-      return
+      return false
     end
     handle = started
     servers[buf] = handle
@@ -2285,7 +2283,9 @@ function M.send(buf)
   end)
   if not ok then
     process:kill(15)
+    return false
   end
+  return true
 end
 
 --- Stop and wipe every child session when its parent is unloaded.

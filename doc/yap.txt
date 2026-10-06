@@ -217,8 +217,11 @@ are shown below.
                         <C-s> submits # @steer; it remains there until
                         delivered and can be revised/canceled. While idle,
                         <C-s> sends the whole # @queue body as one message
-                        and clears it. Queued work never auto-dispatches
-                        after a turn; it waits for an explicit <C-s>.
+                        and clears it only after the send starts. On send
+                        failure, the draft stays in scratch. Queued work
+                        never auto-dispatches after a turn; it waits for
+                        an explicit <C-s>. An undelivered steer also
+                        remains a draft with a warning (including on stop).
                         Consumption reads and edits the live buffer,
                         then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
@@ -949,10 +952,12 @@ and edits its current in-memory contents, never a disk snapshot. Existing
 plain queue files are migrated under `# @queue`. The whole `# @queue` body
 is one message: it is sent and cleared by <C-s>. A pending steer is the full
 body of `# @steer`, remains visible until delivered, and can be revised or
-canceled by editing/removing that body. If a steer misses the last tool
-boundary, it is consumed when dispatched as a follow-up turn. `# @notes` is
-never sent — use it as a backlog and move one item into `# @queue` (or
-`# @steer`) when ready.
+canceled by editing/removing that body. If a steer misses the last model
+boundary or the turn is stopped, Yap warns and keeps it as a scratch draft
+for a later explicit <C-s>, rather than sending an automatic follow-up.
+Steering inserted from a template without a scratch buffer is left in the
+chat prompt if it was not delivered. `# @notes` is never sent — use it as a
+backlog and move one item into `# @queue` (or `# @steer`) when ready.
 Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, audit view attached), the same as |:YapSessions|

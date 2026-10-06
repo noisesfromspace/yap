@@ -79,4 +79,66 @@ local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), 
 assert(not saved:match("task one") and not saved:match("task two") and not saved:match("follow up after queue"), "consumed scratch text reappeared in saved file")
 assert(saved:match("# @notes") and saved:match("# @queue"), "scratch section structure was not saved")
 
-print("OK scratch_send")
+-- A steer submitted during a final-answer stream has no further model
+-- boundary. It stays in scratch and does not start a surprise follow-up.
+local late = yap.new()
+vim.api.nvim_buf_set_lines(late, -1, -1, false, { "final answer with no tools" })
+assert(yap.send(late), "late-steer turn did not start")
+yap.scratch_toggle(late)
+local late_scratch = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(late_scratch, 0, -1, false, {
+  "# @notes", "", "# @steer", "late instruction", "", "# @queue",
+})
+local late_notices = {}
+local original_notify = vim.notify
+vim.notify = function(msg, ...)
+  late_notices[#late_notices + 1] = msg
+  return original_notify(msg, ...)
+end
+yap.scratch_send(late_scratch)
+assert(vim.wait(15000, function() return not yap.is_running(late) end, 100), "late-steer turn did not finish")
+vim.notify = original_notify
+assert(table.concat(late_notices, "\n"):find("steer was not delivered", 1, true), "late steer had no warning")
+assert(text(late_scratch):find("late instruction", 1, true), "undelivered steer was consumed")
+assert(not text(late):find("late instruction", 1, true), "undelivered steer was sent to chat")
+assert(not text(late):find("# @assistant", text(late):find("# @assistant", 1, true) + 1, true), "late steer auto-dispatched")
+
+-- Stopping a running turn must likewise keep the draft for an explicit send.
+local stopped = yap.new()
+vim.api.nvim_buf_set_lines(stopped, -1, -1, false, { "stop before completion" })
+assert(yap.send(stopped), "stop-steer turn did not start")
+yap.scratch_toggle(stopped)
+local stop_scratch = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(stop_scratch, 0, -1, false, {
+  "# @notes", "", "# @steer", "unfinished instruction", "", "# @queue",
+})
+local stop_notices = {}
+vim.notify = function(msg, ...)
+  stop_notices[#stop_notices + 1] = msg
+  return original_notify(msg, ...)
+end
+yap.scratch_send(stop_scratch)
+yap.stop(stopped)
+vim.notify = original_notify
+assert(table.concat(stop_notices, "\n"):find("steer was not delivered", 1, true), "stopped steer had no warning")
+assert(not yap.is_running(stopped), "stop did not stop the turn")
+assert(text(stop_scratch):find("unfinished instruction", 1, true), "stop consumed pending steer")
+assert(not text(stopped):find("unfinished instruction", 1, true), "stop sent pending steer")
+
+-- A failed backend spawn must not consume the queued message on disk or
+-- in the live scratch buffer.
+yap.config.description_model = ""
+yap.config.description_answer_model = ""
+yap.config.bin = ROOT .. "/no-such-yap-binary"
+local failed = yap.new()
+yap.scratch_toggle(failed)
+local failed_scratch = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(failed_scratch, 0, -1, false, {
+  "# @notes", "", "# @steer", "", "# @queue", "keep this task",
+})
+vim.cmd("write")
+yap.scratch_send(failed_scratch)
+assert(text(failed_scratch):find("keep this task", 1, true), "failed send consumed live queue")
+assert(table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(failed_scratch)), "\n"):find("keep this task", 1, true), "failed send consumed saved queue")
+
+print("OK scratch_send, late steer, stop steer and failed send")

@@ -21,6 +21,12 @@ class H(BaseHTTPRequestHandler):
                 {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
                 {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
             ]
+        elif "edited instruction" in json.dumps(msgs):
+            chunks = [
+                {"choices": [{"delta": {"content": "edited answer"}}]},
+                {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ]
         elif "also check the tests" in json.dumps(msgs):
             chunks = [
                 {"choices": [{"delta": {"content": "final answer"}}]},
