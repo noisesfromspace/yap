@@ -263,6 +263,7 @@ local function render_winbar(buf)
       end
     end
 
+    local gutter_trail_seg = nil
     if gutter > 0 then
       local lead = math.floor((gutter - 1) / 2)
       left[#left + 1] = seg(string.rep(" ", lead), "Idle")
@@ -271,7 +272,8 @@ local function render_winbar(buf)
       end
       local trail = gutter - lead - (icon and 1 or 0)
       if trail > 0 then
-        left[#left + 1] = seg(string.rep(" ", trail), "Idle")
+        gutter_trail_seg = seg(string.rep(" ", trail), "Idle")
+        left[#left + 1] = gutter_trail_seg
       end
     elseif icon then
       -- No gutter (e.g. line numbers off): the icon is the leftmost item.
@@ -311,6 +313,16 @@ local function render_winbar(buf)
     if not first then
       rollup[#rollup + 1] = seg(" ", nil, true)
       rollup[#rollup + 1] = seg(icons.cap_r, "IslandCap")
+      -- Let the island's left cap overhang one cell into the gutter when the
+      -- island is the leftmost content (no tool text ahead of it). The state
+      -- icon stays centered; only the trailing gutter padding is reclaimed.
+      if gutter_trail_seg and not has_item then
+        if #gutter_trail_seg.text > 1 then
+          gutter_trail_seg.text = gutter_trail_seg.text:sub(1, #gutter_trail_seg.text - 1)
+        else
+          table.remove(left)
+        end
+      end
       add_item(rollup)
     end
 

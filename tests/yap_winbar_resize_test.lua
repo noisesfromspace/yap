@@ -322,9 +322,9 @@ do
     "expected a 4-column gutter")
   local rendered = vim.api.nvim_eval_statusline(yap.winbar(g_target),
     { winid = 0, use_winbar = true, maxwidth = 200 }).str
-  local prefix = " " .. icons.idle .. "  " .. icons.cap_l
+  local prefix = " " .. icons.idle .. " " .. icons.cap_l
   assert(rendered:sub(1, #prefix) == prefix,
-    "icon not centered in gutter / island not flush at the text edge: " .. rendered)
+    "icon not centered / island cap not overhanging the gutter: " .. rendered)
   vim.wo.number = false
   state.awaiting[g_other] = nil
   vim.api.nvim_buf_delete(g_target, { force = true })
