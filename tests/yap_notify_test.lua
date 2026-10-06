@@ -136,9 +136,11 @@ assert(items[1].state == "idle", "idle state missing: " .. vim.inspect(items[1])
 assert(items[1].model == "m1", "idle model missing: " .. vim.inspect(items[1]))
 assert(items[2].buf == buf, "waiting session should sort last")
 assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(items[2]))
-assert(items[2].text:match("^/opt/code/yap  .*%.md$"), "cwd + filename fallback: " .. items[2].text)
+assert(items[2].path == "/opt/code/yap", "project cwd missing: " .. vim.inspect(items[2]))
+assert(items[2].text:match(".*%.md$"), "filename fallback: " .. items[2].text)
 local rendered = fmt(items[2])
-assert(rendered:find(icons.waiting .. " m1", 1, true), "glyph + model not rendered: " .. rendered)
+assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: " .. rendered)
+assert(rendered:find("(m1)", 1, true), "model not rendered: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
 -- :YapWaiting / <leader>w list just the sessions awaiting a reply.
@@ -192,10 +194,10 @@ local labels = {}
 for _, it in ipairs(items) do
   labels[it.text] = true
 end
-assert(labels["/opt/code/yap  Finished mock turn"], "cwd/description missing from picker: " .. vim.inspect(items))
+assert(labels["Finished mock turn"], "description missing from picker: " .. vim.inspect(items))
 local has_filename = false
 for label in pairs(labels) do
-  has_filename = has_filename or label:match("^/opt/code/yap  .*%.md$") ~= nil
+  has_filename = has_filename or label:match(".*%.md$") ~= nil
 end
-assert(has_filename, "cwd/filename fallback missing from picker: " .. vim.inspect(items))
+assert(has_filename, "filename fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

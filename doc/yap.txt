@@ -179,12 +179,15 @@ the current buffer unless otherwise noted.
                                                             *:YapInstances*
 :YapInstances         List every open yap session except the current one by
                         its file path and focus the picked one. Each line
-                        starts with a state glyph (`` running, `󰐊` stopped,
-                        `󰚌` error, `󰫁` waiting — a completed turn awaits your
-                        reply — or `󰝦` idle) followed by the session's model
-                        (bare name, no provider), or the state word while a
-                        buffer has no model yet. Waiting sessions sort last
-                        (use |:YapWaiting| to jump straight to them). Yap
+                        reads `{project cwd} {state glyph} {title} ({model})`:
+                        the project directory first, then a state glyph
+                        (`` running, `󰐊` stopped, `󰚌` error, `󰫁` waiting — a
+                        completed turn awaits your reply — or `󰝦` idle), then
+                        the session's title (description, or filename as
+                        fallback), then the model name in parentheses (bare
+                        name, no provider), or the state word while a buffer
+                        has no model yet. Waiting sessions sort last (use
+                        |:YapWaiting| to jump straight to them). Yap
                         buffers are unlisted — they never appear in |:ls| or
                         buffer pickers
                         (MiniPick.buffers and friends), and a session's tail

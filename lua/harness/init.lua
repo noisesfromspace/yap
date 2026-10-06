@@ -2430,14 +2430,16 @@ function M.change_default_model(combo)
   vim.notify("yap: default model set to " .. combo, vim.log.levels.INFO)
 end
 
---- Session label for the picker: description when present, filename as
---- fallback, prefixed with the project cwd.
+--- Session title for the picker: description when present, filename as
+--- fallback. Subagents are indented under their parent; a frontmatter role
+--- marks a saved subagent. The project cwd is rendered separately by
+--- |M.instances| so it can lead the row.
 local function live_session_label(buf)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  local label = require("harness.session").label(path, fm and fm.description, vim.b[buf].yap_project_cwd)
+  local label = require("harness.session").label(path, fm and fm.description)
   local parent = vim.b[buf].yap_subagent_parent
   if parent and vim.api.nvim_buf_is_valid(parent) and vim.b[parent].yap then
     local task = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -2552,6 +2554,7 @@ function M.instances(state)
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b),
+        path = vim.b[b].yap_project_cwd,
         state = session_state(b),
         model = vim.b[b].yap_model,
         group_parent = (vim.b[b].yap_subagent_parent and vim.api.nvim_buf_is_valid(vim.b[b].yap_subagent_parent))
@@ -2580,19 +2583,16 @@ function M.instances(state)
     end
     return a.text < b.text
   end)
-  -- Left cell: state glyph + model (bare name, no provider). The glyph
-  -- already encodes the state, so the model earns the word's old slot.
+  -- Row order: project cwd, state glyph, title, then the bare model name
+  -- (no provider) in parentheses. The glyph already encodes the state, so
+  -- the model name earns the word that used to follow it.
   local glyph = { running = M.config.icons.running, stopped = M.config.icons.stopped, error = M.config.icons.error,
     waiting = M.config.icons.waiting, idle = M.config.icons.idle }
-  local width = 0
-  for _, item in ipairs(items) do
-    item.left = glyph[item.state] .. " " .. (item.model or item.state)
-    width = math.max(width, vim.fn.strdisplaywidth(item.left))
-  end
   vim.ui.select(items, {
     prompt = state == "waiting" and "yap waiting" or "yap sessions",
     format_item = function(item)
-      return item.left .. string.rep(" ", width - vim.fn.strdisplaywidth(item.left) + 2) .. item.text
+      return (item.path or "") .. " " .. glyph[item.state] .. " " .. item.text
+        .. " (" .. (item.model or item.state) .. ")"
     end,
     preview_item = function(item)
       return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
