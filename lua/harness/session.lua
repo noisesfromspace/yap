@@ -329,7 +329,7 @@ function M.pick(opts, on_choice)
   local scope = opts.scope or "cwd"
   local items = M.list(scope)
   if #items == 0 then
-    local msg = scope == "renamed" and "yap: no renamed sessions" or "yap: no saved sessions"
+    local msg = scope == "renamed" and "yap: no renamed conversations in this project" or "yap: no saved conversations in this scope"
     vim.notify(msg, vim.log.levels.INFO)
     return
   end

@@ -123,7 +123,36 @@ vim.api.nvim_exec_autocmds("User", {
 })
 vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
-assert(notified2[1].msg:match("m1 done"), "unexpected message: " .. notified2[1].msg)
+assert(notified2[1].msg:find("— reply ready", 1, true), "unexpected message: " .. notified2[1].msg)
+assert(notified2[1].msg:find(vim.fn.fnamemodify(vim.b[buf].yap_path, ":t"), 1, true),
+  "completion toast must identify the conversation: " .. notified2[1].msg)
+assert(not notified2[1].msg:find("$", 1, true), "usage belongs in the winbar, not a toast")
+
+-- A visible conversation already shows the finished turn, even when it is
+-- not the current buffer; delegated children report through their parent.
+vim.cmd("vsplit")
+vim.api.nvim_win_set_buf(0, buf)
+vim.cmd("wincmd p")
+local child_for_notice = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(child_for_notice, 0, -1, false, { "---", "role: scout", "---" })
+vim.b[child_for_notice].yap_subagent_parent = buf
+state.running[buf] = {} -- delegated turn: the parent will report this result
+vim.notify = function(msg) notified2[#notified2 + 1] = { msg = msg } end
+for _, target in ipairs({ buf, child_for_notice }) do
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "YapTurnDone", modeline = false, data = { buf = target, turn = { model = "m1" } },
+  })
+end
+assert(#notified2 == 1, "visible turn or delegated child produced a redundant toast: " .. vim.inspect(notified2))
+state.running[buf] = nil
+vim.api.nvim_exec_autocmds("User", {
+  pattern = "YapTurnDone", modeline = false, data = { buf = child_for_notice, turn = { model = "m1" } },
+})
+assert(#notified2 == 2 and notified2[2].msg:find("reply ready", 1, true),
+  "a direct child follow-up should notify when hidden: " .. vim.inspect(notified2))
+vim.notify = orig_notify
+vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
+vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
 -- :YapInstances / <leader>r list every other open session with its status;
 -- waiting sessions sort last because they have a dedicated <leader>w picker.
@@ -177,7 +206,7 @@ yap.waiting()
 vim.ui.select = orig_select
 vim.notify = orig_notify_waiting
 assert(not waiting_items, "current waiting session should not appear in the picker")
-assert(current_notice == "yap: current session is already open and waiting for a reply",
+assert(current_notice == "yap: this conversation is already open and waiting for your reply",
   "unexpected empty waiting message: " .. tostring(current_notice))
 vim.cmd("enew")
 

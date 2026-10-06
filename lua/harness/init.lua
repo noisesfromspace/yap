@@ -40,8 +40,8 @@ M.config = {
   -- List available skills (name + description) in new chats' system block
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
-  -- vim.notify when a turn completes in a buffer that is not focused
-  -- (see the User YapTurnDone autocmd installed by setup()).
+  -- vim.notify for a completed turn when its buffer is not visible
+  -- (delegated child results go to the running parent instead).
   notify_done = true,
   -- Keep treesitter's markdown syntax highlighting on yap buffers. It is
   -- on by default: the highlighter is incremental and measured to be
@@ -463,7 +463,7 @@ function M.insert_file()
 
   local function open_picker(items)
     if #items == 0 then
-      vim.notify("yap: no files found under " .. cwd, vim.log.levels.WARN)
+      vim.notify("yap: no files to insert under " .. cwd, vim.log.levels.INFO)
       return
     end
     vim.ui.select(items, { prompt = "yap file" }, insert)
@@ -820,7 +820,7 @@ end
 function M.clear(buf, keep)
   buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
   if running[buf] then
-    vim.notify("yap: send in flight, not clearing", vim.log.levels.WARN)
+    vim.notify("yap: turn running; stop it before clearing old tool output", vim.log.levels.WARN)
     return
   end
   keep = keep or 2
@@ -942,7 +942,7 @@ function M.compact()
     return
   end
   if running[buf] then
-    vim.notify("yap: send in flight, not compacting", vim.log.levels.WARN)
+    vim.notify("yap: turn running; stop it before compacting", vim.log.levels.WARN)
     return
   end
   require("harness.template").append_as_block(buf, compact_prompt_lines())
@@ -1257,7 +1257,6 @@ function M.steer(buf, text)
     return false
   end
   steer[buf] = text
-  vim.notify("yap: steering — remove/edit # @steer to retract or revise", vim.log.levels.INFO)
   return true
 end
 
@@ -1452,7 +1451,12 @@ local function report_error(buf, err)
   vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(block, "-->")
   document.append_block(buf, block)
-  vim.notify("yap: " .. err, vim.log.levels.ERROR)
+  -- A delegated failure is returned to the running parent as a tool result;
+  -- a direct follow-up in the child should still report its own error.
+  local parent = vim.b[buf].yap_subagent_parent
+  if not (parent and running[parent]) then
+    vim.notify("yap: " .. err, vim.log.levels.ERROR)
+  end
 end
 
 --- Close dangling regions left by an interrupted stream. :YapStop
@@ -1690,7 +1694,7 @@ end
 function M.send(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   if running[buf] then
-    vim.notify("yap: already streaming (stop with :YapStop)", vim.log.levels.WARN)
+    vim.notify("yap: turn already running; use :YapStop to interrupt it", vim.log.levels.WARN)
     return
   end
   -- A close request is scoped to the turn that made it: a stale flag from
@@ -1707,7 +1711,7 @@ function M.send(buf)
     content = "Current Neovim working directory: " .. vim.fn.getcwd(),
   })
   if #messages == 0 then
-    vim.notify("yap: nothing to send (write under a # @user heading)", vim.log.levels.WARN)
+    vim.notify("yap: no message to send; write under # @user", vim.log.levels.WARN)
     return
   end
 
@@ -1844,7 +1848,10 @@ function M.send(buf)
           local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
           if err then
             errors[buf] = err
-            vim.notify("yap: " .. err, vim.log.levels.WARN)
+            local parent = vim.b[buf].yap_subagent_parent
+            if not (parent and running[parent]) then
+              vim.notify("yap: " .. err, vim.log.levels.WARN)
+            end
             break
           end
         end
@@ -2485,7 +2492,7 @@ local function pick_model_combo(cb)
   table.insert(models_waiters, function(combos, stderr)
     if not combos then
       local err = (stderr or ""):gsub("%s+$", "")
-      vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+      vim.notify("yap: model picker unavailable (no models returned)" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
     else
       pick(combos)
     end
@@ -2532,7 +2539,7 @@ function M.change_default_model(combo)
   end
   default_combo = combo
   write_default_combo(combo)
-  vim.notify("yap: default model set to " .. combo, vim.log.levels.INFO)
+  vim.notify("yap: default model for new chats: " .. combo, vim.log.levels.INFO)
 end
 
 --- Session title for the picker: description when present, filename as
@@ -2679,14 +2686,15 @@ function M.instances(state)
     end
   end
   if #items == 0 then
-    local message = "yap: no open sessions"
     if needs_you then
-      message = "yap: nothing waiting for a reply"
+      local message = "yap: no conversations need a reply"
       if vim.b[current].yap and states[session_state(current)] then
-        message = "yap: current session is already open and waiting for a reply"
+        message = "yap: this conversation is already open and waiting for your reply"
       end
+      vim.notify(message, vim.log.levels.INFO)
+    else
+      vim.notify("yap: no other open conversations", vim.log.levels.INFO)
     end
-    vim.notify(message, vim.log.levels.INFO)
     return
   end
   table.sort(items, function(a, b)
@@ -2949,7 +2957,8 @@ function M.setup(opts)
   -- buffer when a send finishes. The default handler is the herdr-style
   -- "it's waiting for you" toast, but any user autocmd can hook the
   -- same event — noice/nf-notify rendering, chaining a next send, etc.
-  -- Announce only buffers the user isn't looking at.
+  -- Announce a completed conversation only when it is not visible in any
+  -- window. A delegated child reports to its running parent instead.
   local notify_group = vim.api.nvim_create_augroup("YapTurn", { clear = true })
   vim.api.nvim_create_autocmd("User", {
     group = notify_group,
@@ -2960,7 +2969,8 @@ function M.setup(opts)
         return
       end
       -- The error path already notified (R9); don't double up.
-      if errors[data.buf] then
+      local parent = vim.b[data.buf].yap_subagent_parent
+      if errors[data.buf] or (parent and running[parent]) then
         return
       end
       -- The session is being closed by a tool call, so there is no waiting
@@ -2968,21 +2978,12 @@ function M.setup(opts)
       if close_after_turn[data.buf] then
         return
       end
-      -- When the chat is current, the stream is right in front of you.
-      if vim.api.nvim_get_current_buf() == data.buf then
+      -- No toast if the user can already see the stream in another window.
+      if vim.fn.win_findbuf(data.buf)[1] then
         return
       end
-      local t = data.turn or {}
-      local msg = t.model and ("yap: %s done"):format(t.model) or "yap: turn done"
-      if t.prompt or t.completion then
-        msg = msg .. (" · %s in · %s out"):format(util.fmt_tokens(t.prompt or 0), util.fmt_tokens(t.completion or 0))
-      end
-      if t.cost then
-        msg = msg .. (" · $%.4g"):format(t.cost)
-      end
-      if t.ms then
-        msg = msg .. (" · %.1fs"):format(t.ms / 1000)
-      end
+      local title = live_session_label(data.buf)
+      local msg = ("yap: %s — reply ready"):format(title)
       vim.notify(msg, vim.log.levels.INFO, { title = "yap" })
     end,
   })

@@ -237,7 +237,7 @@ function M.insert(name, opts)
       -- Mid-turn a template steers the running turn instead of editing the
       -- streaming buffer; skills and raw cursor inserts still refuse.
       if entry.kind ~= "template" or opts.at_cursor then
-        vim.notify("yap: send in flight, not inserting", vim.log.levels.WARN)
+        vim.notify("yap: turn running; stop it before inserting a skill or editing the buffer", vim.log.levels.WARN)
         return
       end
       -- Steering is always a `# @user` injection, so a leading role
@@ -286,10 +286,8 @@ function M.insert(name, opts)
     return
   end
   if #entries == 0 then
-    vim.notify(
-      ("yap: no templates in %s or %s"):format(config().templates_dir, config().skills_dir),
-      vim.log.levels.WARN
-    )
+    vim.notify("yap: no templates or skills in " .. config().templates_dir .. " or " .. config().skills_dir,
+      vim.log.levels.INFO)
     return
   end
   local items = {}

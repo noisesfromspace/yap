@@ -309,12 +309,17 @@ semantics, marker rules) as the first system message of every turn. That
 boilerplate is independent of `agents_file` and is never written into the
 session file, so the `# @system` block stays clean.
 
-`notify_done` (default true) fires `vim.notify` when a turn completes in a
-buffer that is not the current one; the turn's `turn_end` payload (model,
-tokens, cost, ms) is attached to the `User YapTurnDone` autocmd so other
-plugins can hook the same event (noice/nf-notify rendering, chaining a
-next send). This background-completion notification is separate from command
-success feedback; ordinary successful commands stay quiet. Disable the toast
+`notify_done` (default true) fires `vim.notify` when a turn completes in
+a conversation not visible in any window. The toast identifies
+the conversation and says a reply is ready; it does not repeat token/cost
+statistics already in the winbar. Delegated children report to their running
+parent instead of producing duplicate completion/error toasts; a direct
+follow-up in the child still notifies when hidden. The turn's `turn_end`
+payload (model, tokens, cost, ms) is attached to the `User YapTurnDone` autocmd
+so other plugins can hook the same event (noice/nf-notify rendering, chaining
+a next send). Ordinary successful commands stay quiet; a changed default model
+notifies because it affects future chats. Invalid actions and errors notify;
+empty picker results are informational rather than warnings. Disable the toast
 with `notify_done = false`; hook the same event with your own `User YapTurnDone`
 autocmd.
 
@@ -1439,8 +1444,10 @@ R19 Turn completion is a first-class event.
     as an error and the default completion notification is suppressed.
     The default handler (installed
     by setup(), disabled with `notify_done = false`) calls vim.notify —
-    only for a buffer the user isn't looking at, and never on the error
-    path, which already notifies (R9). A completed turn sets the
+    only for a buffer not visible in any window, and never on the
+    error path, which already notifies (R9). Delegated child results and
+    failures are reported to the running parent, not toasted separately;
+    a direct child follow-up can notify normally. A completed turn sets the
     awaiting hint, which drives the `󰫁N` rollup counting the OTHER
     awaiting buffers (the buffer's own winbar shows the `󰫁` waiting
     icon): an imperative UI hint like `errors`/`yap_usage`, not

@@ -28,7 +28,12 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
 })
 vim.api.nvim_win_set_cursor(0, { 4, 0 })
+local notify = vim.notify
+local steer_notices = {}
+vim.notify = function(msg) steer_notices[#steer_notices + 1] = msg end
 yap.scratch_send(scratch)
+vim.notify = notify
+assert(#steer_notices == 0, "steering is visible in scratch; no confirmation toast: " .. vim.inspect(steer_notices))
 
 -- Steering stays pending in the live section until the backend confirms it.
 assert(table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n"):match("# @steer\nalso check the tests"), "steer disappeared before delivery")
