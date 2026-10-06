@@ -83,7 +83,7 @@ still notify.
 | ---------------------------------- | ----------- | ---------------------------------------------------- |
 | `:Yap`                             |             | Start a chat.                                        |
 | `:YapSend`                         | `<C-s>`     | Send the transcript.                                 |
-| `:YapStop`                         | `<leader>c` | Stop the current request.                            |
+| `:YapStop`                         | `<C-c>`     | Stop the current request.                            |
 | `:YapChangeModel [provider/model]` | `<leader>m` | Pick or set this chat's model.                       |
 | `:YapLive`                         | `<leader>l` | Open the live tool/audit view.                       |
 | `:YapClear [keep]`                 |             | Replace older tool output with audit-log references. |
