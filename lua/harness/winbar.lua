@@ -74,22 +74,34 @@ local NF_MOOD_RING = {
   { up_to = math.huge, faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
--- Busy color: one of the Ember triad (amber / coral / rose), picked
--- randomly each tick. Fixed synthetic hues, never derived from the theme,
--- so an achromatic colorscheme cannot wash the beacon out.
+-- Busy color: a continuous smoothstep tween around the Ember triad
+-- (amber → coral → rose). Fixed synthetic hues, never derived from the
+-- theme, so an achromatic colorscheme cannot wash the beacon out.
 local BUSY_RGB = {
   { 235 / 255, 201 / 255, 132 / 255 }, -- amber
   { 235 / 255, 149 / 255, 132 / 255 }, -- coral
   { 235 / 255, 132 / 255, 175 / 255 }, -- rose
 }
+local BUSY_CYCLE_S = 3 -- seconds per full loop through the triad
+local spin_start = vim.uv.hrtime()
 
 local function busy_color()
-  local c = pick(BUSY_RGB)
+  local t = ((vim.uv.hrtime() - spin_start) / 1e9 % BUSY_CYCLE_S) / BUSY_CYCLE_S
+  local n = #BUSY_RGB
+  local scaled = t * n
+  local i = math.floor(scaled) % n + 1
+  local j = i % n + 1
+  local f = scaled % 1
+  f = f * f * (3 - 2 * f) -- smoothstep: ease into and out of each stop
+  local a, b = BUSY_RGB[i], BUSY_RGB[j]
+  local function lerp(x, y)
+    return x + (y - x) * f
+  end
   return string.format(
     "#%02x%02x%02x",
-    math.floor(c[1] * 255 + 0.5),
-    math.floor(c[2] * 255 + 0.5),
-    math.floor(c[3] * 255 + 0.5)
+    math.floor(lerp(a[1], b[1]) * 255 + 0.5),
+    math.floor(lerp(a[2], b[2]) * 255 + 0.5),
+    math.floor(lerp(a[3], b[3]) * 255 + 0.5)
   )
 end
 
