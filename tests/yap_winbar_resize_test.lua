@@ -217,9 +217,8 @@ assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs 
 vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
 state.running[target], state.running[other], state.awaiting[waiting] = saved_running_target, saved_running_other, saved_waiting
 inactive_bar = yap.winbar(target)
-local inactive_right = assert(inactive_bar:match("%%=(.*)$"))
-assert(inactive_right:find("%#YapIslandCapNC#", 1, true) and not inactive_right:find("%#YapIslandCap#", 1, true),
-  "right islands should use inactive caps in picker: " .. inactive_right)
+local inactive_right = assert(inactive_bar:match(".*%%=(.*)$"))
+assert(not inactive_right:find("%S"), "inactive winbar keeps usage/gauge on the right: " .. inactive_bar)
 vim.api.nvim_win_close(picker_win, true)
 assert(yap.winbar(target):find("%#YapIslandCap#", 1, true), "active caps not restored after picker")
 vim.g.statusline_winid = nil
@@ -263,7 +262,7 @@ local inactive_bar = vim.api.nvim_eval_statusline(
   vim.wo[left_win].winbar, { winid = left_win, use_winbar = true, maxwidth = 200 }).str
 assert(inactive_bar:find("left-session.md", 1, true), "inactive winbar shows its own session name: " .. inactive_bar)
 assert(not inactive_bar:find("right-session.md", 1, true), "inactive winbar leaks the active session name: " .. inactive_bar)
-assert(inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)
+assert(not inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)
 assert(not inactive_bar:find("2.2k", 1, true), "inactive winbar leaks the active session usage: " .. inactive_bar)
 assert(not inactive_bar:find("mock/m2", 1, true), "inactive winbar leaks the active session model: " .. inactive_bar)
 vim.cmd("close")

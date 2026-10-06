@@ -224,32 +224,37 @@ local function render_winbar(buf)
       has_item = true
     end
 
-    local spinner = running and running[buf]
-    if spinner then
-      local l = live and live[buf]
-      local text = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
-      local item = { seg(text, spinner_color) }
-      if l and os.time() - l.since >= 2 then
-        item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
-      end
-      add_item(item)
-      if steer[buf] then
-        add_item({ seg(icons.steer, "Needs") })
-      end
-    else
-      local icon, group
-      if errors[buf] then
-        icon, group = icons.error, "Error"
-      elseif stopped[buf] then
-        icon, group = icons.stopped, "Needs"
-      elseif steer[buf] then
-        icon, group = icons.steer, "Needs"
-      elseif awaiting[buf] then
-        icon, group = icons.waiting, "Needs"
+    -- An inactive bar shows only the rollup island and the session name:
+    -- no own-state icon, spinner/tool text, costs or gauge. That detail
+    -- belongs to the session the user is actually looking at.
+    if not inactive then
+      local spinner = running and running[buf]
+      if spinner then
+        local l = live and live[buf]
+        local text = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
+        local item = { seg(text, spinner_color) }
+        if l and os.time() - l.since >= 2 then
+          item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
+        end
+        add_item(item)
+        if steer[buf] then
+          add_item({ seg(icons.steer, "Needs") })
+        end
       else
-        icon, group = icons.idle, "Idle"
+        local icon, group
+        if errors[buf] then
+          icon, group = icons.error, "Error"
+        elseif stopped[buf] then
+          icon, group = icons.stopped, "Needs"
+        elseif steer[buf] then
+          icon, group = icons.steer, "Needs"
+        elseif awaiting[buf] then
+          icon, group = icons.waiting, "Needs"
+        else
+          icon, group = icons.idle, "Idle"
+        end
+        add_item({ seg(icon, group) })
       end
-      add_item({ seg(icon, group) })
     end
 
     local counts = other_session_counts(buf)
@@ -474,7 +479,7 @@ local function render_winbar(buf)
   while true do
     local left = left_segments(desc_max)
     local center = show_mid and center_segments() or nil
-    local usage = usage_segment(mode)
+    local usage = not inactive and usage_segment(mode)
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
