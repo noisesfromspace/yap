@@ -23,7 +23,7 @@ assert(not bar:find("", 1, true), "Nerd Font gauge in plain mode: " .. bar)
 state.running[buf] = {}
 bar = yap.winbar(buf)
 assert(bar:find("※", 1, true), "plain spinner missing: " .. bar)
-assert(not bar:find("󰫢", 1, true), "Nerd Font spinner in plain mode: " .. bar)
+assert(not bar:find(vim.fn.nr2char(0xEE4B), 1, true), "Nerd Font spinner in plain mode: " .. bar)
 state.running[buf] = nil
 state.awaiting[other] = nil
 print("OK plain_icons")

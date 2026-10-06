@@ -46,7 +46,6 @@ first. See `:help yap-tools`.
    The plugin starts the backend when you open a chat; there is no server
    to run. With Nix, `nix develop` builds `.dev/bin/yap` and puts it on
    `PATH`.
-
 2. Configure a provider in `~/.config/yap.json`:
 
    ```json
@@ -62,14 +61,12 @@ first. See `:help yap-tools`.
 
    Export the key before starting Neovim: `export MOONSHOT_API_KEY=…`.
    Keep the key out of the config file.
-
 3. Install this repo as a Neovim plugin, or append
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
 
    ```lua
    require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
    ```
-
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
 
 ## Commands
@@ -79,22 +76,30 @@ same buffer. Every send uses Neovim's current working directory as
 request-only context. Commands are quiet on success; warnings and errors
 still notify.
 
-| Command                            | Shortcut    | Purpose                                              |
-| ---------------------------------- | ----------- | ---------------------------------------------------- |
-| `:Yap`                             |             | Start a chat.                                        |
-| `:YapSend`                         | `<C-s>`     | Send the transcript.                                 |
-| `:YapStop`                         | `<C-c>`     | Stop the current request.                            |
-| `:YapChangeModel [provider/model]` | `<leader>m` | Pick or set this chat's model.                       |
-| `:YapLive`                         | `<leader>l` | Open the live tool/audit view.                       |
-| `:YapClear [keep]`                 |             | Replace older tool output with audit-log references. |
-| `:YapCompact`                      |             | Summarize, then optionally drop superseded history.  |
-| `:YapInsert [name]`                | `<C-t>`     | Insert a template or merge a skill.                  |
-| `:YapInsertHere [name]`            | `<leader>T` | Insert template/skill text at the cursor.            |
-| `:YapSessions [all]`               |             | Resume a saved session.                              |
-| `:YapFork [name]`                  |             | Copy the conversation to an independent buffer; edit it to branch. |
-| `:YapInstances`                    | `<leader>r` | Pick another open chat.                              |
-| `:YapWaiting`                      | `<leader>w` | Pick a chat awaiting your reply (or stopped).        |
-| `:YapReload`                       |             | Reload Lua modules (development only).               |
+| Command                                   | Shortcut    | Purpose                                                            |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------ |
+| `:Yap`                                    |             | Start a chat.                                                      |
+| `:YapSend`                                | `<C-s>`     | Send the transcript.                                               |
+| `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
+| `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this chat's model.                                     |
+| `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
+| `:YapAlerts`                              |             | Review advisories and blocked requests in their sessions.          |
+| `:YapApproval`                            |             | Answer Run/Deny after inspecting a paused request.                 |
+| `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
+| `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
+| `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
+| Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
+| `:YapSessions [all]`                      |             | Resume a saved session.                                            |
+| `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
+| Lua: `instances()`                        | `<leader>r` | Pick another open chat.                                            |
+| Lua: `waiting()`                          | `<leader>w` | Pick a chat awaiting your reply (or stopped).                      |
+| Lua: `history()`                          | `<leader>y` | Pick a saved chat with live status.                                |
+| Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new chats.                              |
+
+Lua entries above are functions on `require('harness')`, not Ex commands.
+When a call needs approval, choose **Inspect** to open its conversation
+and full audit without approving it, then use `:YapApproval` to answer
+within 60 seconds (otherwise the call is denied).
 
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. The scratch buffer (`<leader>s`) holds notes,

@@ -134,7 +134,7 @@ function M.append_snippet_block(buf, body)
 end
 
 --- Insert `body` as a snippet above the cursor's line (the raw primitive
---- behind :YapInsertHere).
+--- behind insert(name, { at_cursor = true })).
 function M.insert_snippet_at_cursor(buf, body)
   local row = vim.api.nvim_win_get_cursor(0)[1] - 1
   vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
@@ -205,7 +205,7 @@ function M.skills_intro_lines()
   return #lines > 0 and lines or nil
 end
 
---- :YapInsert [name] / :YapInsertHere [name].
+--- :YapInsert [name] / insert(name, { at_cursor = true }).
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
 --- otherwise a template appends as a message block and a skill merges into
 --- the system block. While the agent is mid-turn a template steers the
@@ -307,7 +307,7 @@ function M.insert(name, opts)
   end)
 end
 
---- Completion list for :YapInsert / :YapInsertHere.
+--- Completion list for :YapInsert and its Lua insert() counterpart.
 function M.template_names()
   local names = {}
   for _, e in ipairs(template_entries()) do

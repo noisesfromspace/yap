@@ -19,6 +19,14 @@ vim.api.nvim_create_user_command("YapLive", function()
   require("harness").live()
 end, { desc = "Open the session's live audit view" })
 
+vim.api.nvim_create_user_command("YapAlerts", function()
+  require("harness").alerts()
+end, { desc = "Review this project's advisories and approval requests in their sessions" })
+
+vim.api.nvim_create_user_command("YapApproval", function()
+  require("harness").approval()
+end, { desc = "Answer a paused Run/Deny request after inspecting its audit" })
+
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
 end, {
@@ -42,16 +50,6 @@ end, {
   desc = "Insert a template (as a # @user block) or skill (into the system prompt); arg: name, or pick from the list",
 })
 
-vim.api.nvim_create_user_command("YapInsertHere", function(cmd)
-  require("harness").insert(cmd.fargs[1], { at_cursor = true })
-end, {
-  nargs = "?",
-  complete = function()
-    return require("harness").template_names()
-  end,
-  desc = "Insert a template or skill verbatim above the cursor",
-})
-
 vim.api.nvim_create_user_command("YapChangeModel", function(cmd)
   require("harness").change_model(cmd.fargs[1])
 end, {
@@ -61,26 +59,6 @@ end, {
   end,
   desc = "Change the provider/model combo for the current buffer (no arg: pick from configured models)",
 })
-
-vim.api.nvim_create_user_command("YapChangeDefaultModel", function(cmd)
-  require("harness").change_default_model(cmd.fargs[1])
-end, {
-  nargs = "?",
-  complete = function()
-    return require("harness").config.models or {}
-  end,
-  desc = "Change the default provider/model combo for new buffers (no arg: pick from configured models)",
-})
-
-vim.api.nvim_create_user_command("YapReload", function()
-  local old_config = require("harness").config
-  for k in pairs(package.loaded) do
-    if k == "harness" or k:match("^harness%.") then
-      package.loaded[k] = nil
-    end
-  end
-  require("harness").setup(old_config)
-end, { desc = "Reload the yap Lua module (development)" })
 
 vim.api.nvim_create_user_command("YapFork", function(cmd)
   local path, err = require("harness").fork(cmd.args)
@@ -101,21 +79,3 @@ end, {
   end,
   desc = "Pick a saved yap session to resume (:YapSessions all for every project, renamed for :file-named sessions only)",
 })
-
-vim.api.nvim_create_user_command("YapHistory", function(cmd)
-  require("harness").history(cmd.fargs[1])
-end, {
-  nargs = "?",
-  complete = function()
-    return { "all" }
-  end,
-  desc = "Pick a saved yap session from history",
-})
-
-vim.api.nvim_create_user_command("YapInstances", function()
-  require("harness").instances()
-end, { desc = "List open yap sessions with status and jump to the picked one" })
-
-vim.api.nvim_create_user_command("YapWaiting", function()
-  require("harness").waiting()
-end, { desc = "List open yap sessions awaiting a reply and jump to the picked one" })

@@ -1,4 +1,4 @@
--- Session picker previews: :YapInstances (live buffers) and :YapSessions
+-- Session picker previews: open-session picker and :YapSessions
 -- (saved files) preview the same two excerpts — the initial # @user
 -- message and the last # @assistant answer — instead of the raw item.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -52,7 +52,7 @@ assert(lines[10] == "last answer line 1" and lines[11] == "last answer line 2",
   "last agent answer wrong: " .. vim.inspect(lines))
 assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty preview missing")
 
--- :YapInstances previews another live buffer with the same excerpts.
+-- The open-session picker previews another live buffer with the same excerpts.
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hello", "", "# @assistant", "", "bye" })
 yap.new() -- current session is omitted from the picker

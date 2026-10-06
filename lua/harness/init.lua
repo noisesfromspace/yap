@@ -131,7 +131,7 @@ local function models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
--- The last default provider/model picked via :YapChangeDefaultModel,
+-- The last default provider/model picked via change_default_model(),
 -- persisted so new buffers reuse it without a rebuild of the (often
 -- Nix-managed) setup() defaults. setup() reads it once;
 -- change_default_model() rewrites it.
@@ -689,6 +689,19 @@ end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
 local scratch_section_text, scratch_set_section, scratch_save
+local live_session_label
+local pending_approvals = {} -- chat buf -> approval_request awaiting an explicit answer
+local inspect_approval
+
+local function answer_approval(buf, approved)
+  local ev = pending_approvals[buf]
+  if not ev then return end
+  pending_approvals[buf] = nil
+  local process = servers[buf]
+  if not process then return end -- backend stopped or timed out; never approve a stale call
+  process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
+  append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
+end
 
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
@@ -721,30 +734,31 @@ local function handle_event(buf, json_line)
     -- Show every argument, not a truncated 300-character prefix: approval
     -- must not hide the operation being authorized. SSH sends plain text.
     local detail = ok_args and vim.inspect(args) or command
+    pending_approvals[buf] = ev
     local choice = vim.fn.confirm(
-      ("yap: approve %s?\nReason: %s\n\n%s"):format(ev.tool or "tool", ev.reason or "review call", detail),
-      "&Run\n&Deny", 2, "Warning"
+      ("yap: approve %s in %s?\nReason: %s\n\n%s\n\nInspect opens the conversation and full audit; answer within 60s using :YapApproval."):format(
+        ev.tool or "tool", live_session_label(buf), ev.reason or "review call", detail),
+      "&Run\n&Deny\n&Inspect", 2, "Warning"
     )
-    local approved = choice == 1
-    local process = servers[buf]
-    if process then
-      process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
+    if choice == 3 then
+      inspect_approval(buf, ev)
+      vim.notify("yap: call paused; review the audit, then :YapApproval (timeout denies after 60s)", vim.log.levels.WARN)
+    else
+      answer_approval(buf, choice == 1)
     end
-    append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
   elseif ev.type == "approval_timeout" then
+    pending_approvals[buf] = nil
     append_event(buf, ev)
   elseif ev.type == "alert_advice" then
-    -- Non-blocking gate advisory: the call runs, but jev flagged it. Record
-    -- it in the audit log and surface a transient warning; no prompt.
+    -- Record before notifying: the picker can now navigate to this exact alert.
     append_event(buf, ev)
     vim.notify(
-      ("yap: %s %s (P=%.2f, severity=%.2f)"):format(
-        ev.name or "",
-        ev.reason or "flagged",
-        tonumber(ev.p_alert) or 0,
-        tonumber(ev.severity) or 0
+      ("yap: %s (%s) — %s %s (P=%.2f, severity=%.2f)\n:YapAlerts"):format(
+        live_session_label(buf), vim.fn.fnamemodify(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf), ":t"),
+        ev.name or "tool", ev.reason or "flagged",
+        tonumber(ev.p_alert) or 0, tonumber(ev.severity) or 0
       ),
-      vim.log.levels.WARN
+      vim.log.levels.WARN, { title = "yap alert" }
     )
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
@@ -1126,6 +1140,116 @@ function M.live(buf)
   end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
   audit.fold(t.bufnr)
+end
+
+--- Open a chat's audit and reveal one reviewable event (ordinal in its log).
+local function show_audit_event(buf, ordinal)
+  if vim.api.nvim_get_current_buf() ~= buf then
+    vim.api.nvim_set_current_buf(buf)
+  end
+  local t = ensure_audit(buf)
+  local wins = vim.fn.win_findbuf(t.bufnr)
+  if wins[1] then
+    vim.api.nvim_set_current_win(wins[1])
+  else
+    M.live(buf)
+  end
+  local index = 0
+  for n, text in ipairs(vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)) do
+    if text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true) then
+      index = index + 1
+    end
+    if index == ordinal then
+      vim.api.nvim_win_set_cursor(0, { n, 0 })
+      vim.cmd("normal! zv")
+      break
+    end
+  end
+end
+
+inspect_approval = function(buf, ev)
+  local ordinal = 0
+  for _, line in ipairs(vim.fn.readfile(paths.audit_path(buf))) do
+    local ok, entry = pcall(vim.json.decode, line)
+    if ok and type(entry) == "table" and (entry.type == "alert_advice" or entry.type == "approval_request") then
+      ordinal = ordinal + 1
+    end
+  end
+  show_audit_event(buf, ordinal)
+end
+
+--- After inspecting a paused approval, explicitly answer it. The backend
+--- denies on timeout; dismissing this dialog also denies.
+function M.approval()
+  local current = vim.api.nvim_get_current_buf()
+  local buf = pending_approvals[current] and current or nil
+  if not buf then
+    for chat, t in pairs(audits) do
+      if t.bufnr == current and pending_approvals[chat] then buf = chat; break end
+    end
+  end
+  if not buf then
+    for chat in pairs(pending_approvals) do
+      if buf then
+        vim.notify("yap: multiple pending approvals; open the relevant session's audit first", vim.log.levels.WARN)
+        return
+      end
+      buf = chat
+    end
+  end
+  if not buf then
+    vim.notify("yap: no pending approval", vim.log.levels.INFO)
+    return
+  end
+  local ev = pending_approvals[buf]
+  local choice = vim.fn.confirm(("yap: approve %s in %s?\nReason: %s\n\n%s"):format(
+    ev.tool or "tool", live_session_label(buf), ev.reason or "review call", ev.command or ""), "&Run\n&Deny", 2, "Warning")
+  answer_approval(buf, choice == 1)
+end
+
+--- Review advisories and blocked calls for this project, including sessions
+--- no longer open. Each picker item lands on its own unfolded audit entry.
+function M.alerts()
+  local items = {}
+  local audit_dir = paths.audit_dir(vim.fn.getcwd())
+  local session_dir = paths.session_dir(vim.fn.getcwd())
+  for _, log in ipairs(vim.fn.glob(audit_dir .. "/*.jsonl", false, true)) do
+    local path = session_dir .. "/" .. vim.fn.fnamemodify(log, ":t:r") .. ".md"
+    if vim.fn.filereadable(path) == 1 then
+      local ordinal = 0
+      for _, line in ipairs(vim.fn.readfile(log)) do
+        local ok, ev = pcall(vim.json.decode, line)
+        if ok and type(ev) == "table" and (ev.type == "alert_advice" or ev.type == "approval_request") then
+          ordinal = ordinal + 1
+          items[#items + 1] = { path = path, event = ev, ordinal = ordinal }
+        end
+      end
+    end
+  end
+  table.sort(items, function(a, b) return (a.event.ts or "") > (b.event.ts or "") end)
+  if #items == 0 then
+    vim.notify("yap: no alerts or approval requests for this project", vim.log.levels.INFO)
+    return
+  end
+  vim.ui.select(items, {
+    prompt = "yap alerts (newest first)",
+    format_item = function(item)
+      local ev = item.event
+      return ("%s  %s  %s %s: %s"):format(ev.ts or "?", vim.fn.fnamemodify(item.path, ":t"),
+        ev.type == "approval_request" and "approval requested" or "advisory", ev.tool or ev.name or "tool", ev.reason or "review call")
+    end,
+  }, function(item)
+    if not item then return end
+    local path = item.path
+    local buf = vim.fn.bufnr(path)
+    if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
+      vim.api.nvim_set_current_buf(buf)
+      adopt(buf, path)
+    else
+      buf = M.open(path)
+    end
+    show_audit_event(buf, item.ordinal)
+  end)
 end
 
 --- The queue file is a sibling of the session file, sharing its basename
@@ -1969,6 +2093,7 @@ function M.send(buf)
     }, vim.schedule_wrap(function(result)
       if servers[buf] ~= handle then return end
       servers[buf] = nil
+      pending_approvals[buf] = nil
       if partial ~= "" then append(partial); partial = "" end
       if stderr_partial ~= "" then table.insert(stderr_chunks, stderr_partial) end
       if running[buf] then
@@ -2137,7 +2262,7 @@ local function setup_buffer(buf)
   vim.bo[buf].bufhidden = "hide"
   -- Sessions are managed, not workspace files: unlisted so they never
   -- clutter :ls or buffer pickers (MiniPick.buffers etc.); reach them
-  -- with :YapInstances.
+  -- with the open-session picker.
   vim.bo[buf].buflisted = false
 
   -- Stop treesitter's syntax highlighter (not the parser) when the user
@@ -2569,7 +2694,7 @@ end
 --- fallback. Subagents are indented under their parent; a frontmatter role
 --- marks a saved subagent. The project cwd is rendered separately by
 --- |M.instances| so it can lead the row.
-local function live_session_label(buf)
+live_session_label = function(buf)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
   local e = frontmatter_end(buf)
@@ -2638,7 +2763,7 @@ end
 function M.history(scope)
   M.sessions(scope)
 end
---- Sort waiting sessions last; their dedicated :YapWaiting / <leader>w picker
+--- Sort waiting sessions last; their dedicated <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
   if errors[buf] then

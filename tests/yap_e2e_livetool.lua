@@ -58,8 +58,9 @@ end
 assert(has_colored_icon, "winbar is missing the spinner color: " .. yap.winbar())
 local spin_hl = vim.api.nvim_get_hl(0, { name = "YapBusySpin", link = false })
 assert(type(spin_hl.fg) == "number" and spin_hl.fg >= 0, "YapBusySpin should carry a 24-bit spinner color")
-assert(vim.api.nvim_get_hl(0, { name = "YapBusyText" }).link == "YapCursiveModel",
-  "activity text should reuse the displayed model-name highlight")
+local text_hl = vim.api.nvim_get_hl(0, { name = "YapBusyText", link = false })
+assert(text_hl.italic, "activity text should stay italic")
+assert(text_hl.fg == spin_hl.fg, "activity text should tint with the beacon color")
 local mid_ok = vim.wait(10000, function()
   local bar = yap.winbar()
   return bar:find("bash", 1, true) ~= nil and bar:find("%#YapBusyText#", 1, true) ~= nil

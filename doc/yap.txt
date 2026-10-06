@@ -72,6 +72,17 @@ the current buffer unless otherwise noted.
                         the audit log on reopen, so the live view
                         survives restarts.
 
+                                                              *:YapAlerts*
+:YapAlerts            Pick an advisory or blocked Run/Deny request from this
+                        project's saved sessions and open its exact entry in
+                        :YapLive. Includes closed sessions; newest first.
+
+                                                            *:YapApproval*
+:YapApproval          After choosing Inspect in a Run/Deny dialog, review
+                        the conversation and full audit, then use this to
+                        answer Run/Deny. Dismissal denies; the backend also
+                        denies automatically after 60 seconds.
+
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
                         all but the last [keep] (default 2) yap:tool
@@ -110,10 +121,8 @@ the current buffer unless otherwise noted.
                         inserting a summarize-prompt template, sending,
                         then deleting the old history.
 
-                                                             *:YapInsertHere*
-:YapInsertHere [name] Like |:YapInsert| but inserts the file's body
-                        verbatim above the cursor — heading/role logic
-                        aside, the raw primitive.
+For raw insertion at the cursor, use `<leader>T` or
+`require('harness').insert(name, { at_cursor = true })`.
 
                                                         *:YapChangeModel*
 :YapChangeModel {provider/model}
@@ -124,18 +133,12 @@ the current buffer unless otherwise noted.
                         otherwise by querying every provider in
                         config.json (GET /models) — no duplicate model
                         configuration needed. The query result is cached
-                        for the session; |:YapReload| refreshes it.
+                        for the session; restart Neovim to refresh it.
 
-                                                      *:YapChangeDefaultModel*
-:YapChangeDefaultModel {provider/model}
-                        Change the default provider/model combo for NEW
-                        buffers, persisted to `$XDG_CACHE_HOME/yap/default`.
-                        Does not touch the current buffer. Without an
-                        argument, picks from the same list as
-                        |:YapChangeModel|. New buffers use this default
-                        before setup()'s `provider`/`model`, so changing
-                        the default model does not require editing the
-                        (often Nix-managed) setup() defaults.
+To change the default for new buffers, use `<leader>M` or
+`require('harness').change_default_model('provider/model')` (omit the
+argument to pick a model). The choice is persisted to
+`$XDG_CACHE_HOME/yap/default` and does not change the current buffer.
 
                                                             *:YapFork*
 :YapFork [name]       Copy the current in-memory conversation (including unsaved
@@ -171,43 +174,20 @@ the current buffer unless otherwise noted.
                         subagents; unnamed forks are also visible. Name one with |:file| or let the first
                         reply label it. Saved subagents appear beneath their
                         parent and can be opened for direct follow-up. Open
-                        sessions stay listed via |:YapInstances|.
+                        sessions stay listed in the open-session picker
+                        (`<leader>r`).
 
-                                                            *:YapHistory*
-:YapHistory [all]      Pick a saved session from history, with live state icons
-                        for sessions that are currently open. Default scope
-                        is the current project; "all" lists every project.
-                        The picker otherwise behaves like |:YapSessions|.
-
-                                                            *:YapInstances*
-:YapInstances         List every open yap session except the current one by
-                        its file path and focus the picked one. Each line
-                        reads `{project cwd} {state glyph} {title} ({model})`:
-                        the project directory first, then a state glyph
-                        (`` running, `󰓛` stopped, `󰚌` error, `󰫁` waiting — a
-                        completed turn awaits your reply — or `󰝦` idle), then
-                        the session's title (description, or filename as
-                        fallback), then the model name in parentheses (bare
-                        name, no provider), or the state word while a buffer
-                        has no model yet. Waiting parent groups sort last
-                        (use |:YapWaiting| to jump straight to them); open
-                        subagents sit beneath their parent with their own
-                        state. Yap
-                        buffers are unlisted — they never appear in |:ls| or
-                        buffer pickers
-                        (MiniPick.buffers and friends), and a session's audit
-                        view buffer is never listed at all (open it in the session
-                        with |:YapLive|). This is how you move between sessions.
-
-                                                            *:YapWaiting*
-:YapWaiting           List open parent sessions awaiting a reply or manually
-                        stopped, plus children whose turns stopped or failed,
-                        and focus the picked conversation. Completed children
-                        are omitted: they can still be reached via
-                        |:YapInstances| or |:YapSessions|.
-
-                                                               *:YapReload*
-:YapReload            Reload the Lua modules (development).
+The history picker (`<leader>y`, `require('harness').history()`)
+shows saved sessions with live state icons; pass `'all'` for every project.
+`require('harness').instances()` lists open sessions, while
+`require('harness').waiting()` lists those awaiting a reply or stopped.
+Open sessions are unlisted (absent from |:ls|); use `<leader>r` to pick
+one. The open-session picker shows project cwd, status, title and model;
+waiting parent groups sort last and subagents sit beneath their parent.
+The waiting picker includes manually stopped sessions and children whose
+turns stopped or failed, but not completed children (find those in the
+open-session or saved-session picker). The audit view is also unlisted;
+open it from its session with |:YapLive|.
 
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*
@@ -223,7 +203,7 @@ are shown below.
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>M             Change the default model for new buffers
-                        (picker, see |:YapChangeDefaultModel|).
+                        (picker; or call `change_default_model()`).
   <leader>l             Watch live tool output (see |:YapLive|).
   <leader>s             Toggle the session's scratch buffer: a
                         file-backed jotter with independently foldable
@@ -238,14 +218,14 @@ are shown below.
                         then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
-                        (see |:YapInsertHere|).
+                        (`require('harness').insert(name, { at_cursor = true })`).
   <leader>i (n)        Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor. Also mapped in the
                         scratch queue.
   <leader>r             List every open session with its status (see
-                        |:YapInstances|).
+                        `require('harness').instances()`).
   <leader>w             List just the sessions awaiting a reply or manually
-                        stopped (see |:YapWaiting|).
+                        stopped (`require('harness').waiting()`).
   <leader>y             List saved (history) sessions to resume (see
                         |:YapSessions|).
   <leader>R             List only the history sessions renamed with |:file|
@@ -410,8 +390,7 @@ Where they live: >
 <
 Both are configurable (`templates_dir`, `skills_dir`). Create the
 directory, drop a file in, then `<C-t>` (or `:YapInsert <name>`)
-to insert it; `<leader>T` (`:YapInsertHere`) dumps the raw file at
-the cursor.
+to insert it; `<leader>T` inserts the raw file at the cursor.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
 
@@ -490,14 +469,15 @@ WHAT INSERT DOES
                             (a leading `# @role` heading sets the role
                             and is never duplicated)
   :YapInsert <skill>      merge the body into the `# @system` block
-  :YapInsertHere <name>   raw file above the cursor, no role logic
+  require('harness').insert(name, { at_cursor = true })
+                            raw file above the cursor, no role logic
 
-All three go through the normal append paths (R7 blank-line handling);
+All insert modes go through the normal append paths (R7 blank-line handling);
 insertion never touches existing lines. While a send is in flight a
 template steers instead: its body (a leading `# @role` heading is
 stripped) is injected at the running turn's next tool boundary as a
 `# @user` block, exactly like a <C-s> steer from the scratch queue
-(see |yap-sessions|). Skills and `:YapInsertHere` are still refused
+(see |yap-sessions|). Skills and raw insertion at the cursor are still refused
 mid-turn — they edit the buffer, which a streaming turn must not be
 disturbed. The `## Skills` intro in a new chat is discoverability
 only — names and descriptions, never skill bodies (toggle it off with
@@ -741,13 +721,16 @@ downgrades a fork bomb. Where the floor is silent, jev answers two
 questions in parallel — P(harmful) and a 0–3 severity score — and the gate
 maps the calibrated answer to a layered outcome:
 
-  block   pause the turn for a Run/Deny dialog (majority probability of
+  block   pause the turn for a Run/Deny/Inspect dialog (majority probability of
           credential exfiltration or a severity mean >= 2.5; destructive
           calls at even odds or low confidence; high P(harmful)).
-          The dialog shows the reason and full call arguments, defaults to
-          Deny, and never runs on timeout.
+          Run/Deny shows the reason and full call arguments, defaults to
+          Deny, and never runs on timeout. Inspect opens the conversation
+          and full audit at the blocked request without answering it; use
+          |:YapApproval| within 60 seconds to decide.
   advise  run, but log the call and show a non-blocking warning (suspicious
-          or model-uncertain calls).
+          or model-uncertain calls). The toast names the session and points
+          to |:YapAlerts| for review.
   run     proceed silently.
 
 A decision-model outage never bricks a tool: it degrades to `advise` (a
@@ -809,8 +792,8 @@ pure per-redraw cost on a large session. setup_buffer marks each buffer and
 an LspAttach guard in setup() stops any markdown client from attaching.
 
 The active combo comes from the frontmatter on open, then from per-buffer
-vars set by |:YapChangeModel|, falling back to the persisted default (the
-last default set via |:YapChangeDefaultModel|) and finally to setup()
+vars set by |:YapChangeModel|, falling back to the persisted default (set
+via `require('harness').change_default_model()`) and finally to setup()
 defaults.
 The buffer holds the model state (R1) but NOT token/cost totals: those
 accumulate in memory for the lifetime of the buffer, and reopening a
@@ -1020,9 +1003,14 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
                "cost",?,"context_window",?,"ms","ts"} — one per completed send
 
 The audit view (|:YapLive|) is the human-readable rendering of these
-events and is rebuilt from the file on reopen. Structural lines are
-highlighted (turn headers, `$ command`, `• tool`, timestamps); streamed
-and returned text stays in the default color so it reads as plain text.
+events and is rebuilt from the file on reopen. Use |:YapAlerts| to pick
+an advisory or approval request from this project's saved sessions and jump
+straight to its unfolded audit entry. The picker includes the session
+filename, timestamp, tool, and reason; entries remain available after Neovim
+restarts. Approval requests also show the full blocked call in the audit.
+Structural lines are highlighted (turn headers, `$ command`, `• tool`,
+timestamps); streamed and returned text stays in the default color so it
+reads as plain text.
 Each completed turn folds back to its header line — a table of
 contents — while the open turn after the last header stays expanded so
 live output remains visible. `<Tab>` toggles a folded turn open or
@@ -1108,9 +1096,10 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 The winbar is the session dashboard. Left: the buffer's own state icon —
 `󰝦` idle, `󰫁` awaiting your reply, `󰓛` stopped, `󰚌` error — centered in the
 line-number gutter (the fold/sign/number columns before the text), or,
-while it is streaming, an animated spinner beacon (a random constellation
-of Nerd Font star shapes and colors, or typographic sparkle marks with
-`nerd_font = false`). When the window is inactive the spinner is hidden
+while it is streaming, an animated mood-ring beacon: a single-cell Nerd Font
+face (`nf-fa-face_*`) that escalates with how long the running tool has been
+grinding, re-tinted every tick from the Ember palette (amber/coral/rose);
+with `nerd_font = false` it is the typographic sparkle marks. When the window is inactive the beacon is hidden
 (a generating session needs no attention) and the rollup island and
 description disappear too; only the buffer's own state icon remains, so
 a session awaiting your reply or stuck in an error is still visible from
@@ -1118,7 +1107,7 @@ another window. When the gutter is more than three columns wide, the
 rollup island's left cap overhangs the text edge by one cell; with a
 narrower gutter it sits flush instead. The description and everything
 after it stay flush at the text edge. Once a tool has run for 2s its name and elapsed
-time join the shimmer (`󰫢 bash 12s`); a pending `# @steer` adds `󰇐`. Then
+time join the shimmer (`bash 12s`); a pending `# @steer` adds `󰇐`. Then
 a raised rollup island totals ALL OTHER yap sessions by state: `N`
 streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.
 It never counts the current buffer and folds subagents into their parent.
@@ -1127,7 +1116,7 @@ columns). A provider/model island sits centered in the middle of the bar.
 Right: two usage chips and a context-fill meter
 (|yap-winbar-numbers|).
 
-Example: `󰫢 session title` ... ` moonshot/kimi-k3 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
+Example: ` session title` ... ` moonshot/kimi-k3 ` ... ` 󰅐 1.5k · $0.0034  󰆼 12k · $0.51   9% █▍░░░░░░ `
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -1296,7 +1285,7 @@ R8  Sessions are plain markdown files; file operations are the session
     renames so :file names and :saveas forks. Why: no second
     serialization format to keep in sync. Session buffers (and their
     audit view buffers) are unlisted — never in |:ls| or buffer pickers — so
-    navigation is |:YapInstances|, and a session's
+    navigation uses `<leader>r` (`require('harness').instances()`), and a session's
     audit view opens with |:YapLive|.
 
 R9  Errors surface three ways: vim.notify (transient), winbar error state

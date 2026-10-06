@@ -6,7 +6,7 @@
 -- autosaved after every completed reply. Pickers identify sessions by their
 -- chosen name (a :file rename) or generated description; unnamed sessions
 -- (no description, still on the auto-generated filename) are hidden unless
--- they have subagents; open sessions stay visible in :YapInstances via the
+-- they have subagents; open sessions stay visible in the open-session picker via the
 -- filename fallback. Saved subagents appear beneath their parent in history.
 
 local M = {}
@@ -264,7 +264,7 @@ end
 --- Markdown preview of a session: the initial `# @user` message followed by
 --- the last `# @assistant` answer, rendered in a scratch buffer with the
 --- `markdown` filetype so pickers show it with normal syntax highlighting
---- instead of flat text. Shared by :YapInstances and :YapSessions so both
+--- instead of flat text. Shared by the open-session and saved-session pickers so both
 --- pickers preview the same two excerpts. Returns the |vim.ui.select()|
 --- preview table `{ buf = ... }`.
 function M.preview(lines)

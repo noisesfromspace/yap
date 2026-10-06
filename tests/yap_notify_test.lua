@@ -154,7 +154,7 @@ vim.notify = orig_notify
 vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
--- :YapInstances / <leader>r list every other open session with its status;
+-- <leader>r lists every other open session with its status;
 -- waiting sessions sort last because they have a dedicated <leader>w picker.
 vim.cmd("enew")
 local items, fmt
@@ -178,7 +178,7 @@ assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: 
 assert(rendered:find("(m1)", 1, true), "model not rendered: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
--- :YapWaiting / <leader>w list just the sessions awaiting a reply.
+-- <leader>w lists just the sessions awaiting a reply.
 local waiting_items
 vim.ui.select = function(list, opts)
   waiting_items = list
