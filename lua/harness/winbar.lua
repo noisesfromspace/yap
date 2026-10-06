@@ -15,6 +15,7 @@ local frontmatter = require("harness.frontmatter")
 local running = state.running
 local live = state.live
 local errors = state.errors
+local stopped = state.stopped
 local awaiting = state.awaiting
 local steer = state.steer
 
@@ -78,7 +79,7 @@ local function count_others(set, buf)
   local n = 0
   for b in pairs(set) do
     if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap
-      and not (set == awaiting and vim.b[b].yap_subagent_parent) then
+      and not (set == awaiting and (vim.b[b].yap_subagent_parent or errors[b] or stopped[b])) then
       n = n + 1
     end
   end
@@ -136,26 +137,26 @@ local function full_description(buf)
   return full
 end
 
+local function truncate_display(text, max)
+  if vim.fn.strdisplaywidth(text) <= max then
+    return text
+  end
+  local chars = math.min(vim.fn.strchars(text), math.max(1, max - 1))
+  local truncated = vim.fn.strcharpart(text, 0, chars)
+  while vim.fn.strdisplaywidth(truncated .. "…") > max and chars > 1 do
+    chars = chars - 1
+    truncated = vim.fn.strcharpart(text, 0, chars)
+  end
+  return truncated .. "…"
+end
+
 --- The session description for the winbar, truncated to `max` display
 --- columns so a long phrase cannot crowd out the right-hand usage/state
 --- chips. The full description is cached (see full_description); only the
 --- cheap width truncation runs per call.
 local function winbar_description(buf, max)
-  max = max or 40
   local d = full_description(buf)
-  if not d then
-    return nil
-  end
-  if vim.fn.strdisplaywidth(d) > max then
-    local chars = math.min(vim.fn.strchars(d), math.max(1, max - 1))
-    d = vim.fn.strcharpart(d, 0, chars)
-    while vim.fn.strdisplaywidth(d .. "…") > max and chars > 1 do
-      chars = chars - 1
-      d = vim.fn.strcharpart(d, 0, chars)
-    end
-    d = d .. "…"
-  end
-  return d
+  return d and truncate_display(d, max or 40) or nil
 end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
@@ -240,7 +241,7 @@ local function render_winbar(buf)
       add_item(rollup)
     end
 
-    local desc = winbar_description(buf, desc_max)
+    local desc = not inactive and winbar_description(buf, desc_max) or nil
     if desc then
       add_item({ seg(desc, "Description", false, true) })
     end
@@ -254,13 +255,14 @@ local function render_winbar(buf)
   -- Fixed-width context meter: percentage plus an eight-cell bar. In the
   -- narrowest layout, the percentage is dropped but the complete bar stays.
   local function context_segment(show_percent)
-    local t = state.last_turn[buf]
+    local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
-    if not ctx or ctx <= 0 or not t.prompt or t.prompt <= 0 then
+    local prompt = t and tonumber(t.context_prompt or t.prompt) or nil
+    if not ctx or ctx <= 0 or not prompt or prompt <= 0 then
       return nil
     end
 
-    local pct = math.min(t.prompt / ctx * 100, 100)
+    local pct = math.min(prompt / ctx * 100, 100)
     local fill, track
     if require("harness").config.nerd_font then
       -- Nerd Font's progress cells have rounded ends but no fractional cell.
@@ -308,8 +310,20 @@ local function render_winbar(buf)
   -- As the bar narrows, costs and tokens drop before the context meter.
   local function usage_segment(mode)
     local chips = {} -- each chip: { { text, group }, ... }
-    local u = vim.b[buf].yap_usage
-    local s = vim.b[buf].yap_session_usage
+    local live = state.live_usage[buf]
+    local function include_live(base)
+      if not live then
+        return base
+      end
+      base = base or { prompt = 0, completion = 0 }
+      return {
+        prompt = base.prompt + (live.prompt or 0),
+        completion = base.completion + (live.completion or 0),
+        cost = (base.cost or 0) + (live.cost or 0),
+      }
+    end
+    local u = include_live(vim.b[buf].yap_usage)
+    local s = include_live(vim.b[buf].yap_session_usage)
 
     if (mode == "full" or mode == "compact") and u and (u.prompt > 0 or u.completion > 0) then
       local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)
@@ -370,10 +384,17 @@ local function render_winbar(buf)
   end
 
   -- The model island is centered independently of left and right content.
+  -- Inactive sessions show their session identity instead of a model that is
+  -- only useful while that session is selected.
   local function center_segments()
+    local text = provider .. "/" .. model
+    if inactive then
+      local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
+      text = truncate_display(label, 40)
+    end
     return {
       seg(" ", "Idle"), seg("", "IslandCap"), seg(" ", "Count", true),
-      seg(provider .. "/" .. model, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
+      seg(text, "Model", true, true), seg(" ", "Count", true), seg("", "IslandCap"),
       seg(" ", "Idle"),
     }
   end

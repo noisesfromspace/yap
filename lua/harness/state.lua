@@ -6,7 +6,9 @@
 
 local M = {
   running = {}, -- buf -> vim.SystemObj (in-flight send process)
+  stopped = {}, -- buf -> true (manually interrupted turn)
   live = {}, -- buf -> { name, log, since, out } (running tool)
+  live_usage = {}, -- buf -> provider-reported usage accumulated during this turn
   errors = {}, -- buf -> error string (winbar + session picker)
   last_turn = {}, -- buf -> turn_end event (User YapTurnDone data)
   awaiting = {}, -- buf -> true (turn complete, awaiting user reply)

@@ -26,6 +26,7 @@ end
 
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
+assert(icons.waiting == "󰫁", "default waiting icon changed")
 
 -- A fresh chat has nothing to reply to yet: no state glyph.
 local buf = yap.new()
@@ -72,6 +73,22 @@ state.awaiting[subagent] = true
 assert(yap.overview(buf2) == icons.waiting .. "1", "waiting subagent was counted separately: " .. tostring(yap.overview(buf2)))
 state.awaiting[subagent] = nil
 vim.api.nvim_buf_delete(subagent, { force = true })
+
+-- A stopped or errored turn also sets `awaiting` when its stream closes,
+-- but it is not "waiting" for a reply: the rollup/overview must exclude it
+-- just like <leader>w does, so both views stay in agreement.
+local stopped = vim.api.nvim_create_buf(false, true)
+vim.b[stopped].yap = true
+state.awaiting[stopped] = true
+state.stopped[stopped] = true
+assert(yap.overview(buf2) == icons.waiting .. "1", "stopped session counted as waiting: " .. tostring(yap.overview(buf2)))
+assert(not yap.winbar(buf2):match(icons.waiting .. "2"), "stopped session entered the rollup: " .. yap.winbar(buf2))
+state.stopped[stopped] = nil
+state.errors[stopped] = "boom"
+assert(yap.overview(buf2) == icons.waiting .. "1", "errored session counted as waiting: " .. tostring(yap.overview(buf2)))
+state.awaiting[stopped] = nil
+state.errors[stopped] = nil
+vim.api.nvim_buf_delete(stopped, { force = true })
 
 -- Yap buffers are unlisted: they never appear in :ls or buffer pickers
 -- (MiniPick.buffers etc.); the pickers are the way back.

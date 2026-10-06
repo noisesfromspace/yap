@@ -310,10 +310,15 @@ function M.pick(opts, on_choice)
     prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",
     format_item = function(item)
-      if item.turns then
-        return item.text .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      local status = opts.status and opts.status(item.path)
+      local label = item.text
+      if status then
+        label = label .. "  " .. status
       end
-      return item.text
+      if item.turns then
+        return label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      end
+      return label
     end,
     preview_item = preview_item,
   }, function(choice)

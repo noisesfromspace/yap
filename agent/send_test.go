@@ -299,10 +299,14 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 				`{"choices":[{"delta":{"content":"before"}}]}`,
 				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"missing_test_tool","arguments":"{}"}}]}}]}`,
 				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+				`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`,
 			)
 			return
 		}
-		sse(w, `{"choices":[{"delta":{"content":"after"}}]}`)
+		sse(w,
+			`{"choices":[{"delta":{"content":"after"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":200,"completion_tokens":20}}`,
+		)
 	}))
 	defer srv.Close()
 	writeConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
@@ -324,12 +328,17 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	s := journal.String()
+	usage := strings.Index(s, `yap:event {"completion":10,"context_prompt":100,"cost":0.00011,"prompt":100,"type":"usage"}`)
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
 	event := strings.Index(s, `yap:event {"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
 	after := strings.Index(s, "after")
-	if header < 0 || event < 0 || result < 0 || after < 0 || !(header < event && event < result && result < after) {
-		t.Fatalf("tool round ordering must be header -> event -> result -> resumed answer (prose may stream and be repositioned by the harness):\n%s", s)
+	finalUsage := strings.Index(s, `"type":"turn_end"`)
+	if usage < 0 || header < 0 || event < 0 || result < 0 || after < 0 || finalUsage < 0 ||
+		!(usage < header && header < event && event < result && result < after && after < finalUsage) ||
+		!strings.Contains(s, `"completion":30,"context_prompt":200,"cost":0.00033,"model":"m1","ms":`) ||
+		!strings.Contains(s, `"prompt":300,"type":"turn_end"`) {
+		t.Fatalf("usage should update after each model step and before tool execution; final event should carry cumulative usage:\n%s", s)
 	}
 }
 

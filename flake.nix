@@ -443,12 +443,12 @@
             };
 
             # Harness (Lua) setup options; consumed by the Neovim config.
-            provider = mkOption {
+            defaultProvider = mkOption {
               type = types.str;
               default = "moonshot";
               description = "Default provider name for new chat buffers.";
             };
-            model = mkOption {
+            defaultModel = mkOption {
               type = types.str;
               default = "kimi-k3";
               description = "Default model for new chat buffers.";

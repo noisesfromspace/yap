@@ -60,8 +60,9 @@ M.config = {
     since = "󰅐",   -- nf-md-clock_outline (since-open token/cost chip)
     total = "󰆼",   -- nf-md-database   (all-time token/cost chip)
     running = "", -- nf-cod-play (rollup: other sessions streaming)
+    stopped = "󰐊", -- nf-md-stop-circle (a manually stopped turn)
     error = "󰚌",   -- nf-md-skull (winbar error state)
-    waiting = "󰭖", -- nf-md-account_clock (rollup: other sessions awaiting you)
+    waiting = "󰫁", -- waiting (rollup: other sessions awaiting you)
     idle = "󰝦",    -- nf-md-circle_outline (picker idle state)
     steer = "󰇐",   -- nf-md-directions (winbar steer state)
     approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
@@ -83,10 +84,12 @@ M.config = {
     send = "<C-s>",
     stop = "<C-c>",
     change_model = "<leader>m",
+    change_default_model = "<leader>M",
     live = "<leader>l",
     scratch = "<leader>s",
     insert = "<C-t>",
     insert_here = "<leader>T",
+    insert_file = "<leader>i",
     sessions = "<leader>r",
     waiting = "<leader>w",
     history = "<leader>y",
@@ -128,6 +131,33 @@ local function models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
+-- The last default provider/model picked via :YapChangeDefaultModel,
+-- persisted so new buffers reuse it without a rebuild of the (often
+-- Nix-managed) setup() defaults. setup() reads it once;
+-- change_default_model() rewrites it.
+local default_combo = nil
+
+local function default_combo_path()
+  return vim.fn.stdpath("cache") .. "/yap/default"
+end
+
+local function read_default_combo()
+  local path = default_combo_path()
+  if vim.fn.filereadable(path) == 1 then
+    local lines = vim.fn.readfile(path)
+    if #lines == 1 and lines[1]:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+      return lines[1]
+    end
+  end
+  return nil
+end
+
+local function write_default_combo(combo)
+  local path = default_combo_path()
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ combo }, path)
+end
+
 local function refresh_models()
   if models_refreshing then return end
   models_refreshing = true
@@ -166,6 +196,7 @@ M.overview = winbar.overview
 -- orchestration code reading like the pre-split module. The winbar reads
 -- the same tables directly.
 local running = state.running
+local stopped = state.stopped
 local live = state.live
 local errors = state.errors
 local last_turn = state.last_turn
@@ -215,16 +246,20 @@ local function focus_forget(buf)
   end
 end
 
--- Landing spot after :bd/:bw/:close of the current session: the most
--- recently focused session awaiting a reply, otherwise the last non-session
--- (file) buffer accessed. Idle sessions are not a landing spot — the user
--- asked to go back to a waiting session, else to a real file.
+-- Landing spot after closing the current session: the most recently focused
+-- session awaiting a reply, otherwise a running session, otherwise the last
+-- non-session (file) buffer. Idle sessions are not a landing spot.
 local function focus_fallback(buf)
   local function open(b)
     return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b)
   end
   for _, b in ipairs(focus_mru) do
     if open(b) and vim.b[b].yap and awaiting[b] then
+      return b
+    end
+  end
+  for _, b in ipairs(focus_mru) do
+    if open(b) and vim.b[b].yap and running[b] then
       return b
     end
   end
@@ -242,7 +277,7 @@ end
 local function yap_about()
   return [[# About Yap
 
-You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply — indent or fence it instead.
+You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply; indent or fence it instead.
 
 Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the project (normally `/opt/code/yap`) rather than guessing.
 
@@ -274,6 +309,7 @@ end
 local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
 local fold = require("harness.fold")
+local tail = require("harness.tail")
 
 --- End line (0-based, exclusive) of the frontmatter block, or nil when
 --- the buffer has none. Only the model state lives there (see
@@ -370,6 +406,78 @@ end
 function M.template_names()
   return require("harness.template").template_names()
 end
+
+local function file_items(cwd)
+  local items = {}
+  local function scan(dir, prefix)
+    for name, kind in vim.fs.dir(dir) do
+      if name ~= ".git" then
+        local path = vim.fs.joinpath(dir, name)
+        local relative = prefix == "" and name or (prefix .. "/" .. name)
+        if kind == "directory" then
+          scan(path, relative)
+        elseif kind == "file" then
+          items[#items + 1] = relative
+        end
+      end
+    end
+  end
+  scan(cwd, "")
+  table.sort(items)
+  return items
+end
+
+--- Pick a file under the current :pwd and insert an @path reference at the cursor.
+function M.insert_file()
+  local buf = vim.api.nvim_get_current_buf()
+  if not (vim.b[buf].yap or vim.b[buf].yap_owner) then
+    return
+  end
+  local win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  local cwd = vim.fn.getcwd()
+
+  local function insert(path)
+    if not path or not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local relative = vim.fs.relpath(cwd, path) or path
+    relative = relative:gsub("\\\\", "/")
+    local reference = relative:find("%s") and ('@"' .. relative .. '"') or ("@" .. relative)
+    local text = reference .. " "
+    vim.api.nvim_buf_set_text(buf, cursor[1] - 1, cursor[2], cursor[1] - 1, cursor[2], { text })
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+      vim.api.nvim_win_set_cursor(win, { cursor[1], cursor[2] })
+    end
+  end
+
+  if _G.MiniPick and MiniPick.builtin and MiniPick.builtin.files then
+    MiniPick.builtin.files(nil, {
+      source = { cwd = cwd, choose = insert },
+    })
+    return
+  end
+
+  local function open_picker(items)
+    if #items == 0 then
+      vim.notify("yap: no files found under " .. cwd, vim.log.levels.WARN)
+      return
+    end
+    vim.ui.select(items, { prompt = "yap file" }, insert)
+  end
+
+  if vim.fn.executable("rg") == 1 then
+    vim.system({ "rg", "--files", "--hidden", "-g", "!.git" }, { cwd = cwd, text = true }, function(result)
+      vim.schedule(function()
+        local items = result.code == 0 and vim.split(result.stdout or "", "\n", { trimempty = true }) or {}
+        open_picker(items)
+      end)
+    end)
+  else
+    open_picker(file_items(cwd))
+  end
+end
+
 function M.is_running(buf)
   return state.is_running(buf)
 end
@@ -455,91 +563,6 @@ local function seed_session_usage(buf)
   vim.b[buf].yap_session_usage = su
 end
 
---- Render one audit event as tail-buffer text. Returns (text, kind)
---- where kind is "block" (blank-line separated) or "stream" (appended
---- verbatim — streamed bash output chunks), or nil to render nothing.
-local function render_event(ev)
-  local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
-  if ev.type == "tool_start" then
-    return "$ " .. (ev.command or ev.name or "tool"), "block"
-  elseif ev.type == "output" then
-    return ev.data or "", "stream"
-  elseif ev.type == "tool_call" then
-    -- bash/python render their own `$ command` header from tool_start; the
-    -- full arguments are still in the audit log as this event.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local target = ""
-    local ok, a = pcall(vim.json.decode, ev.args or "")
-    if ok and type(a) == "table" then
-      target = a.path or a.url or a.command or ""
-    end
-    return ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), "block"
-  elseif ev.type == "tool_result" then
-    -- bash/python output already streamed via output events; don't duplicate it.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local lines = {}
-    if ev.result and ev.result ~= "" then
-      vim.list_extend(lines, vim.split(ev.result:gsub("\n$", ""), "\n", { plain = true }))
-    end
-    table.insert(lines, ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"))
-    return table.concat(lines, "\n"), "block"
-  elseif ev.type == "retry" then
-    return ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, ev.error or ""), "block"
-  elseif ev.type == "tool_text_warning" then
-    return ("%s unexecuted tool call: %s"):format(ts, ev.detail or "model emitted a tool call as text"), "block"
-  elseif ev.type == "steer" then
-    local text = (ev.text or ""):gsub("\n", " ")
-    return ("%s ⌁ steer: %s"):format(ts, text), "block"
-  elseif ev.type == "approval_request" then
-    local context = ev.tool or ""
-    if ev.reason and ev.reason ~= "" then
-      context = context ~= "" and (context .. ": " .. ev.reason) or ev.reason
-    end
-    local label = context ~= "" and (" (" .. context .. ")") or ""
-    return ("%s %s approval requested%s: %s"):format(ts, M.config.icons.approval, label, (ev.command or ""):gsub("\n", " ")), "block"
-  elseif ev.type == "approval_result" then
-    return ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), "block"
-  elseif ev.type == "approval_timeout" then
-    return ("%s approval timed out (denied)"):format(ts), "block"
-  elseif ev.type == "turn_end" then
-    local cost = ev.cost and (" · " .. string.format("$%.4g", ev.cost)) or ""
-    return ("# %s turn %s: %d in · %d out%s · %.1fs"):format(
-      ts,
-      ev.model or "?",
-      ev.prompt or 0,
-      ev.completion or 0,
-      cost,
-      (ev.ms or 0) / 1000
-    ),
-      "block"
-  end
-end
-
---- Rebuild the tail text from a list of audit events (stream chunks
---- append verbatim; block events join with one blank line).
-local function render_events(events)
-  local parts, has = {}, false
-  for _, ev in ipairs(events) do
-    local text, kind = render_event(ev)
-    if text then
-      if kind == "stream" then
-        parts[#parts + 1] = text
-      else
-        if has then
-          parts[#parts + 1] = "\n"
-        end
-        parts[#parts + 1] = text .. "\n"
-      end
-      has = true
-    end
-  end
-  return table.concat(parts)
-end
-
 --- Find a buffer by name, or create one (unlisted) with that name.
 --- Reuse comes first: naming a fresh buffer identically to a leftover
 --- would E95 (the chat buffer may have been wiped and reopened). Returns
@@ -561,10 +584,10 @@ local function ensure_tail(buf)
     return t
   end
   local name = paths.tail_buf_name(buf)
-  local tail = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
-  vim.bo[tail].bufhidden = "hide"
+  local tbuf = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
+  vim.bo[tbuf].bufhidden = "hide"
 
-  t = { bufnr = tail, offset = 0, has_content = false }
+  t = { bufnr = tbuf, offset = 0, has_content = false }
   tails[buf] = t
 
   -- Replay the audit log so the live view survives restarts.
@@ -580,9 +603,7 @@ local function ensure_tail(buf)
       end
     end
   end
-  local lines = vim.split(render_events(events), "\n", { plain = true })
-  vim.api.nvim_buf_set_lines(tail, 0, -1, false, lines)
-  t.has_content = #lines > 1 or lines[1] ~= ""
+  t.has_content = tail.rebuild(tbuf, events)
   return t
 end
 
@@ -590,19 +611,8 @@ end
 local function append_event(buf, ev)
   local t = ensure_tail(buf)
   audit_append(buf, ev)
-  local text, kind = render_event(ev)
-  if not text then
-    return
-  end
-  if kind == "stream" then
-    document.append_text(t.bufnr, text)
-  else
-    document.append_text(t.bufnr, (t.has_content and "\n" or "") .. text .. "\n")
-  end
-  t.has_content = true
-  for _, w in ipairs(vim.fn.win_findbuf(t.bufnr)) do
-    vim.api.nvim_win_set_cursor(w, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
-  end
+  tail.append(t, ev)
+  tail.scroll(t.bufnr)
 end
 
 --- Cap the raw tool output streamed into the live tail (and audit log)
@@ -653,6 +663,8 @@ end
 state.drain_tail = drain_tail
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
+local scratch_section_text, scratch_set_section, scratch_save
+
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
   if not ok or type(ev) ~= "table" then
@@ -723,11 +735,23 @@ local function handle_event(buf, json_line)
   elseif ev.type == "retry" then
     append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "steer" then
-    steer[buf] = nil -- delivered: the text is already in the buffer as a # @user block
+    if steer[buf] == ev.text then
+      steer[buf] = nil -- delivered: remove only the matching live draft
+      local scratch = vim.b[buf].yap_scratch
+      if scratch and vim.api.nvim_buf_is_valid(scratch)
+          and scratch_section_text(scratch, "steer") == ev.text then
+        scratch_set_section(scratch, "steer", {})
+        scratch_save(scratch)
+      end
+    end
     append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "tool_text_warning" then
     append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
+  elseif ev.type == "usage" then
+    state.live_usage[buf] = ev
+    vim.cmd.redrawstatus()
   elseif ev.type == "turn_end" then
+    state.live_usage[buf] = nil
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
     -- Fold this turn into the session's all-time totals (seeded from the
     -- audit log on open; this keeps the in-memory copy in step with it).
@@ -739,6 +763,10 @@ local function handle_event(buf, json_line)
     end
     vim.b[buf].yap_session_usage = su
     append_event(buf, ev)
+    local t = tails[buf]
+    if t then
+      tail.fold(t.bufnr)
+    end
   end
 end
 
@@ -993,6 +1021,33 @@ local function toggle_drawer(owner, bufnr, height)
   return true
 end
 
+local function close_drawer_window(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local tab = vim.api.nvim_win_get_tabpage(win)
+      if #vim.api.nvim_tabpage_list_wins(tab) > 1 then
+        vim.api.nvim_win_close(win, true)
+      else
+        -- Neovim cannot close the last window; replace its view while keeping
+        -- the file-backed drawer buffer available to reopen later.
+        vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
+      end
+    end
+  end
+  drawer_anchor[buf] = nil
+end
+
+local function close_session_drawers(buf)
+  local scratch = vim.b[buf].yap_scratch
+  if scratch and vim.api.nvim_buf_is_valid(scratch) then
+    close_drawer_window(scratch)
+  end
+  local tail = tails[buf]
+  if tail and vim.api.nvim_buf_is_valid(tail.bufnr) then
+    close_drawer_window(tail.bufnr)
+  end
+end
+
 --- Open the session's tail buffer (:YapLive): one persistent rendering
 --- of the audit log, not a new terminal per call. Opens even before any
 --- tool has run (an empty tail that fills as tools execute).
@@ -1014,6 +1069,7 @@ function M.live(buf)
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
+  tail.fold(t.bufnr)
 end
 
 --- The queue file is a sibling of the session file, sharing its basename
@@ -1037,59 +1093,74 @@ local function queue_follow(buf, scratch)
   vim.api.nvim_buf_set_name(scratch, want)
 end
 
---- Take the text to send from the scratch buffer and remove it from the
---- queue: the active visual selection, or the whole buffer in normal mode.
---- The queue is a jotter, so <send> drains it — sent lines leave the buffer.
-local function scratch_take(scratch)
-  local mode = vim.api.nvim_get_mode().mode
-  if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
-    local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
-    vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {})
-    return lines
-  end
-  local anchor, cursor = vim.fn.getpos("v"), vim.fn.getpos(".")
-  local text = vim.fn.getregion(anchor, cursor, { type = mode })
-  if mode == "V" then
-    -- Line-wise: drop the whole selected lines (no leftover empties).
-    local from, to = math.min(anchor[2], cursor[2]), math.max(anchor[2], cursor[2])
-    vim.api.nvim_buf_set_lines(scratch, from - 1, to, false, {})
-  else
-    -- Char/block-wise: remove exactly the selected byte ranges. getregionpos
-    -- returns one [start, end] segment per line with inclusive end columns,
-    -- so the exclusive API end column is the 1-based column unchanged.
-    local ok, segs = pcall(vim.fn.getregionpos, anchor, cursor, { type = mode })
-    if ok and type(segs) == "table" then
-      for i = #segs, 1, -1 do
-        local s, e = segs[i][1], segs[i][2]
-        vim.api.nvim_buf_set_text(scratch, s[2] - 1, s[3] - 1, e[2] - 1, e[3], {})
-      end
+--- Scratch sections are explicit so notes never become an accidental prompt.
+--- Queue entries are one non-empty line each; a steer is one multiline body.
+local function scratch_section(scratch, name)
+  local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
+  local heading
+  for i, line in ipairs(lines) do
+    local role = line:match("^# @([%a]+)%s*$")
+    if role == name then
+      heading = i
+      break
     end
   end
-  -- The selection is consumed; drop back to normal mode so a stale visual
-  -- selection can't eat the next keystroke.
-  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, true, true), "x", false)
-  return text
-end
-
---- Read the text to send from the scratch buffer WITHOUT removing it:
---- the active visual selection, or the current line in normal mode. The
---- scratch is a jotter; steering leaves the draft in place (latest wins —
---- re-<C-s> to update), and the text is only drained when the agent is
---- idle and it is sent as a normal message.
-local function scratch_read(scratch)
-  local mode = vim.api.nvim_get_mode().mode
-  if mode == "v" or mode == "V" or mode == "\22" then
-    local anchor, cursor = vim.fn.getpos("v"), vim.fn.getpos(".")
-    return vim.fn.getregion(anchor, cursor, { type = mode })
+  if not heading then
+    return nil
   end
-  local lnum = vim.fn.line(".")
-  return vim.api.nvim_buf_get_lines(scratch, lnum - 1, lnum, false)
+  local finish = #lines
+  for i = heading + 1, #lines do
+    if lines[i]:match("^# @[%a]+%s*$") then
+      finish = i - 1
+      break
+    end
+  end
+  return heading, finish, lines
 end
 
---- Write the queue buffer to its sibling file so the drained state survives
---- reopening the session. Like session.save it goes through `:write!` so the
---- buffer keeps owning the file (mtime/'modified' bookkeeping stay correct).
-local function scratch_save(scratch)
+local function scratch_section_lines(scratch, name)
+  local heading, finish, lines = scratch_section(scratch, name)
+  if not heading then
+    return {}
+  end
+  local body = {}
+  for i = heading + 1, finish do
+    body[#body + 1] = lines[i]
+  end
+  while #body > 0 and body[1]:match("^%s*$") do table.remove(body, 1) end
+  while #body > 0 and body[#body]:match("^%s*$") do table.remove(body) end
+  return body
+end
+
+scratch_set_section = function(scratch, name, body)
+  local heading, finish = scratch_section(scratch, name)
+  if not heading then
+    return
+  end
+  vim.api.nvim_buf_set_lines(scratch, heading, finish, false, body)
+end
+
+scratch_section_text = function(scratch, name)
+  return table.concat(scratch_section_lines(scratch, name), "\n")
+end
+
+local function scratch_take_queue_item(scratch)
+  local heading, finish, lines = scratch_section(scratch, "queue")
+  if not heading then
+    return nil
+  end
+  for i = heading + 1, finish do
+    if lines[i]:match("%S") then
+      local item = lines[i]:gsub("^%s+", ""):gsub("%s+$", "")
+      vim.api.nvim_buf_set_lines(scratch, i - 1, i, false, {})
+      return item
+    end
+  end
+  return nil
+end
+
+--- Write the live scratch buffer after a consumed item is removed.
+scratch_save = function(scratch)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return
   end
@@ -1101,32 +1172,75 @@ local function scratch_save(scratch)
   end)
 end
 
---- Steer a running turn: hand `text` to the in-flight backend so it is
---- injected as a `# @user` block at the next tool boundary. Latest wins;
---- a steer that misses the turn's last poll point degrades to a follow-up
---- turn in the send-completion path. Assumes the caller checked is_running.
+local function cancel_steer(buf)
+  steer[buf] = nil
+  local proc = running[buf]
+  if not proc then
+    return
+  end
+  local ok = pcall(function()
+    proc:write(vim.json.encode({ type = "unsteer" }) .. "\n")
+  end)
+  if not ok then
+    vim.notify("yap: could not cancel steer (backend gone)", vim.log.levels.WARN)
+  end
+end
+
+--- Steer the running turn using the current # @steer body. The text stays in
+--- the live buffer until the backend confirms delivery, so it can be edited
+--- or removed while waiting for the next model boundary.
 function M.steer(buf, text)
-  steer[buf] = text
+  if text == "" then
+    cancel_steer(buf)
+    return true
+  end
+  if steer[buf] == text then
+    return true
+  end
   local proc = running[buf]
   local ok = pcall(function()
     proc:write(vim.json.encode({ type = "steer", text = text }) .. "\n")
   end)
   if not ok then
-    steer[buf] = nil
     vim.notify("yap: could not steer (backend gone)", vim.log.levels.WARN)
     return false
   end
-  vim.notify("yap: steering — lands at the next tool boundary", vim.log.levels.INFO)
+  steer[buf] = text
+  vim.notify("yap: steering — remove/edit # @steer to retract or revise", vim.log.levels.INFO)
   return true
 end
 
---- Send the scratch queue — all of it, or the visual selection — into the
---- owning chat buffer as a `# @user` message, then submit it. When the
---- owner is idle the sent text is drained (scratch_take) and the queue is
---- saved, as before. When the owner is mid-turn, the same key STEERS: the
---- selection (or the current line) is read but left in place, handed to the
---- running turn, and injected at the next tool boundary — or followed up as
---- a fresh turn if the turn ends first.
+local function sync_scratch_steer(owner, scratch)
+  local pending = steer[owner]
+  if not pending or not M.is_running(owner) then
+    return
+  end
+  local current = scratch_section_text(scratch, "steer")
+  if current ~= pending then
+    M.steer(owner, current)
+  end
+end
+
+local function scratch_dispatch_next(owner)
+  if not vim.api.nvim_buf_is_valid(owner) or M.is_running(owner) then
+    return false
+  end
+  local scratch = vim.b[owner].yap_scratch
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return false
+  end
+  local item = scratch_take_queue_item(scratch)
+  if not item then
+    return false
+  end
+  scratch_save(scratch)
+  document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
+  M.send(owner)
+  return true
+end
+
+--- <C-s> dispatches by state: while running it submits the # @steer body;
+--- while idle it consumes the next one-line # @queue item. Notes are inert.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -1136,39 +1250,36 @@ function M.scratch_send(scratch)
   end
 
   if M.is_running(owner) then
-    -- Steering: read the draft without draining it, so the user keeps
-    -- shaping it until it lands (or re-<C-s> to replace it).
-    local text = scratch_read(scratch)
-    local blank = true
-    for _, l in ipairs(text) do
-      if l:match("%S") then
-        blank = false
-        break
-      end
-    end
-    if blank then
-      vim.notify("yap: scratch is empty", vim.log.levels.WARN)
+    local text = scratch_section_text(scratch, "steer")
+    if text == "" and not steer[owner] then
+      vim.notify("yap: # @steer is empty", vim.log.levels.WARN)
       return
     end
-    M.steer(owner, table.concat(text, "\n"))
+    M.steer(owner, text)
     return
   end
 
-  local text = scratch_take(scratch)
-  local blank = true
-  for _, l in ipairs(text) do
-    if l:match("%S") then
-      blank = false
-      break
+  if not scratch_dispatch_next(owner) then
+    vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
+  end
+end
+
+
+local function scratch_heading(line)
+  return line:match("^# @notes%s*$") or line:match("^# @steer%s*$") or line:match("^# @queue%s*$")
+end
+
+function M.scratch_foldexpr(lnum)
+  local current = vim.fn.getline(lnum)
+  if scratch_heading(current) then
+    return ">1"
+  end
+  for row = lnum - 1, 1, -1 do
+    if scratch_heading(vim.fn.getline(row)) then
+      return "1"
     end
   end
-  if blank then
-    vim.notify("yap: scratch is empty", vim.log.levels.WARN)
-    return
-  end
-  document.append_message(owner, "user", text)
-  scratch_save(scratch) -- persist the drain before the turn streams
-  M.send(owner)
+  return "0"
 end
 
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
@@ -1195,14 +1306,55 @@ function M.scratch_toggle(buf)
     if created and vim.fn.filereadable(want) == 1 then
       vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
     end
+    local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
+    local found = {}
+    for _, line in ipairs(lines) do
+      local role = line:match("^# @([%a]+)%s*$")
+      if role then found[role] = true end
+    end
+    if not found.notes and not found.steer and not found.queue then
+      local legacy = (#lines == 1 and lines[1] == "") and {} or lines
+      local migrated = { "# @notes", "", "# @steer", "", "# @queue" }
+      vim.list_extend(migrated, legacy)
+      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, migrated)
+    else
+      local missing = {}
+      for _, role in ipairs({ "notes", "steer", "queue" }) do
+        if not found[role] then
+          missing[#missing + 1] = ""
+          missing[#missing + 1] = "# @" .. role
+        end
+      end
+      if #missing > 0 then
+        local endline = vim.api.nvim_buf_line_count(scratch)
+        vim.api.nvim_buf_set_lines(scratch, endline, endline, false, missing)
+      end
+    end
     vim.bo[scratch].bufhidden = "hide"
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
+    if not vim.b[scratch].yap_steer_watch then
+      vim.b[scratch].yap_steer_watch = true
+      vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+        buffer = scratch,
+        callback = function()
+          local owner = vim.b[scratch].yap_owner
+          if owner and vim.api.nvim_buf_is_valid(owner) then
+            sync_scratch_steer(owner, scratch)
+          end
+        end,
+      })
+    end
     if M.config.keymaps.scratch ~= "" then
       vim.keymap.set("n", M.config.keymaps.scratch, function()
         M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
+    end
+    if M.config.keymaps.insert_file ~= "" then
+      vim.keymap.set("n", M.config.keymaps.insert_file, function()
+        M.insert_file()
+      end, { buffer = scratch, silent = true, desc = "yap: insert file reference" })
     end
     if M.config.keymaps.send ~= "" then
       vim.keymap.set("n", M.config.keymaps.send, function()
@@ -1216,6 +1368,7 @@ function M.scratch_toggle(buf)
         M.scratch_send(scratch)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch selection" })
     end
+    scratch_save(scratch)
   else
     vim.b[scratch].yap_owner = buf
   end
@@ -1229,12 +1382,11 @@ function M.scratch_toggle(buf)
   end
   vim.wo.winfixheight = true
   vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
-  -- The split inherited the chat window's expr folds; a queue is a plain
-  -- jotter, so drop foldexpr/foldtext evaluation (arbitrary queued text
-  -- must never be interpreted as yap fold structure).
-  vim.wo.foldmethod = "manual"
-  vim.wo.foldexpr = ""
+  vim.wo.foldmethod = "expr"
+  vim.wo.foldexpr = "v:lua.require'harness'.scratch_foldexpr(v:lnum)"
   vim.wo.foldtext = ""
+  vim.wo.foldlevel = 99
+  vim.wo.foldenable = true
 end
 
 --- Record a backend error: notify, persist it in the winbar, and leave a
@@ -1511,6 +1663,7 @@ function M.send(buf)
   refresh_description(buf, "user", messages)
 
   errors[buf] = nil
+  stopped[buf] = nil
   awaiting[buf] = nil
   -- provider/model come from the buffer vars (set by :Yap /
   -- :YapChangeModel), falling back to config; sync them so the winbar
@@ -1518,6 +1671,7 @@ function M.send(buf)
   local provider, model = util.current_combo(buf)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
+  state.live_usage[buf] = nil
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
@@ -1645,6 +1799,12 @@ function M.send(buf)
       -- `# @user` prompt with it and start a new turn below.
       local steer_text = steer[buf]
       steer[buf] = nil
+      local scratch = vim.b[buf].yap_scratch
+      if steer_text and scratch and vim.api.nvim_buf_is_valid(scratch)
+          and scratch_section_text(scratch, "steer") == steer_text then
+        scratch_set_section(scratch, "steer", {})
+        scratch_save(scratch)
+      end
       document.append_block(buf, { "# @user", "" })
       if steer_text then
         document.append_message(buf, "user", vim.split(steer_text, "\n", { plain = true }))
@@ -1673,7 +1833,8 @@ function M.send(buf)
       if steer_text then
         -- A pending steer wins over close_session (the user's later word
         -- outranks the agent's). Re-send as a fresh turn once the buffer
-        -- is fully in its final state.
+        -- is fully in its final state. Queued work never auto-dispatches:
+        -- each entry waits for an explicit <C-s>.
         close_after_turn[buf] = nil
         vim.schedule(function()
           if not vim.api.nvim_buf_is_valid(buf) then
@@ -1797,6 +1958,7 @@ function M.stop(buf)
   if child then M.stop(child) end
   local handle = running[buf]
   if handle then
+    stopped[buf] = true
     handle:kill(15) -- the exit callback closes the interrupted turn
     servers[buf] = nil
     running[buf] = nil
@@ -1973,6 +2135,9 @@ local function setup_buffer(buf)
     vim.cmd.stopinsert()
     M.insert()
   end, "yap: insert template or skill")
+  map("n", keys.insert_file, function()
+    M.insert_file()
+  end, "yap: insert file reference")
   map("n", keys.insert_here, function()
     M.insert(nil, { at_cursor = true })
   end, "yap: insert template or skill at cursor")
@@ -2001,8 +2166,12 @@ function M.new(opts)
     vim.b[buf].yap_path = opts.path
     vim.api.nvim_buf_set_name(buf, opts.path)
   end
-  vim.b[buf].yap_provider = opts.provider or M.config.provider
-  vim.b[buf].yap_model = opts.model or M.config.model
+  local provider, model = M.config.provider, M.config.model
+  if default_combo then
+    provider, model = default_combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  end
+  vim.b[buf].yap_provider = opts.provider or provider
+  vim.b[buf].yap_model = opts.model or model
   vim.b[buf].yap_project_cwd = vim.fs.normalize(vim.fn.getcwd())
 
   local lines = { "# @system", "" }
@@ -2189,39 +2358,48 @@ function M.open(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
+--- Open the provider/model picker and call `cb` with the chosen
+--- "provider/model" combo (nothing on dismiss). Reuses setup()'s `models`
+--- list when configured, otherwise `yap models` (cached, refreshed async).
+local function pick_model_combo(cb)
+  local function pick(items)
+    vim.ui.select(items, { prompt = "yap model" }, function(choice)
+      if choice then
+        cb(choice)
+      end
+    end)
+  end
+  if M.config.models and #M.config.models > 0 then
+    pick(M.config.models)
+    return
+  end
+  if models_cache then
+    pick(models_cache)
+    return
+  end
+  table.insert(models_waiters, function(combos, stderr)
+    if not combos then
+      local err = (stderr or ""):gsub("%s+$", "")
+      vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
+    else
+      pick(combos)
+    end
+  end)
+  refresh_models()
+end
+
 --- Change the provider/model combo for the current buffer.
 --- With an argument: "provider/model". Without: pick from setup()'s
 --- models list, or — when that isn't configured — from `yap models`,
 --- which queries every provider in config.json (GET /models).
 function M.change_model(combo)
-  local buf = vim.api.nvim_get_current_buf()
   if not combo then
-    local function pick(items)
-      vim.ui.select(items, { prompt = "yap model" }, function(choice)
-        if choice then
-          M.change_model(choice)
-        end
-      end)
-    end
-    if M.config.models and #M.config.models > 0 then
-      pick(M.config.models)
-      return
-    end
-    if models_cache then
-      pick(models_cache)
-      return
-    end
-    table.insert(models_waiters, function(combos, stderr)
-      if not combos then
-        local err = (stderr or ""):gsub("%s+$", "")
-        vim.notify("yap: no models found" .. (err ~= "" and (": " .. err) or ""), vim.log.levels.WARN)
-      else
-        pick(combos)
-      end
+    pick_model_combo(function(choice)
+      M.change_model(choice)
     end)
-    refresh_models()
     return
   end
+  local buf = vim.api.nvim_get_current_buf()
   local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   if not provider then
     vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
@@ -2232,11 +2410,24 @@ function M.change_model(combo)
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
 end
 
---- Pick a saved session and open it. scope: "cwd" (default) or "all".
-function M.sessions(scope)
-  require("harness.session").pick({ scope = scope }, function(path)
-    M.open(path)
-  end)
+--- Change the default provider/model for NEW buffers, persisted to
+--- `$XDG_CACHE_HOME/yap/default`. Does not touch the current buffer.
+--- With an argument: "provider/model". Without: pick from the same list
+--- as :YapChangeModel.
+function M.change_default_model(combo)
+  if not combo then
+    pick_model_combo(function(choice)
+      M.change_default_model(choice)
+    end)
+    return
+  end
+  if not combo:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+    vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
+    return
+  end
+  default_combo = combo
+  write_default_combo(combo)
+  vim.notify("yap: default model set to " .. combo, vim.log.levels.INFO)
 end
 
 --- Session label for the picker: description when present, filename as
@@ -2272,12 +2463,51 @@ local function session_state(buf)
     return "running"
   elseif errors[buf] then
     return "error"
+  elseif stopped[buf] then
+    return "stopped"
   elseif awaiting[buf] then
     return "waiting"
   end
   return "idle"
 end
 
+--- Status word + glyph for the session picker, mirroring the winbar state
+--- chips so both views agree. The picker is static, so a fixed glyph
+--- stands in for the winbar's animated spinner.
+local function session_status(buf)
+  local ic = M.config.icons
+  local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, idle = ic.idle }
+  local state = session_state(buf)
+  return glyph[state] .. " " .. state
+end
+
+--- Find an open buffer for a saved session and return its live picker status.
+local function saved_session_status(path)
+  local normalized = vim.fs.normalize(path)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[buf].yap then
+      local name = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
+      if name ~= "" and vim.fs.normalize(name) == normalized then
+        local status = session_state(buf)
+        if status ~= "idle" then
+          return session_status(buf)
+        end
+      end
+    end
+  end
+end
+
+--- Pick a saved session and open it. scope: "cwd" (default) or "all".
+function M.sessions(scope)
+  require("harness.session").pick({ scope = scope, status = saved_session_status }, function(path)
+    M.open(path)
+  end)
+end
+
+--- Alias for the saved-session history picker.
+function M.history(scope)
+  M.sessions(scope)
+end
 --- Sort waiting sessions last; their dedicated :YapWaiting / <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
@@ -2285,10 +2515,12 @@ local function session_rank(buf)
     return 1
   elseif running and running[buf] then
     return 2
+  elseif stopped[buf] then
+    return 3
   elseif awaiting[buf] then
-    return 4
+    return 5
   end
-  return 3
+  return 4
 end
 
 --- Every open yap chat buffer except the current one, annotated with its live
@@ -2350,7 +2582,7 @@ function M.instances(state)
   end)
   -- Left cell: state glyph + model (bare name, no provider). The glyph
   -- already encodes the state, so the model earns the word's old slot.
-  local glyph = { running = M.config.icons.running, error = M.config.icons.error,
+  local glyph = { running = M.config.icons.running, stopped = M.config.icons.stopped, error = M.config.icons.error,
     waiting = M.config.icons.waiting, idle = M.config.icons.idle }
   local width = 0
   for _, item in ipairs(items) do
@@ -2381,12 +2613,13 @@ function M.setup(opts)
   opts = opts or {}
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
-      since = "", total = "", running = "▶", error = "✗", waiting = "◉",
+      since = "", total = "", running = "▶", stopped = "■", error = "✗", waiting = "◉",
       idle = "○", steer = "⌁", approval = "⚠",
       cap_l = "[", cap_r = "]",
     })
   end
   M.config = vim.tbl_deep_extend("force", M.config, opts)
+  default_combo = read_default_combo()
   if not M.config.models or #M.config.models == 0 then
     local path = models_cache_path()
     if vim.fn.filereadable(path) == 1 then
@@ -2399,10 +2632,10 @@ function M.setup(opts)
   paths.dirs.sessions_dir = M.config.sessions_dir
   paths.dirs.audit_dir = M.config.audit_dir
 
-  -- <leader>r, <leader>w, <leader>y and <leader>R are global: they list
-  -- sessions across every buffer, so they must work from any file, not
-  -- just inside a chat. The other keymaps act on the current buffer and
-  -- stay buffer-local in setup_buffer.
+  -- <leader>r, <leader>w, <leader>y, <leader>R and <leader>M are global:
+  -- they list sessions across every buffer or change the default model, so
+  -- they must work from any file, not just inside a chat. The other
+  -- keymaps act on the current buffer and stay buffer-local in setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.instances()
@@ -2423,6 +2656,11 @@ function M.setup(opts)
       M.sessions("renamed")
     end, { silent = true, desc = "yap: renamed history" })
   end
+  if M.config.keymaps.change_default_model ~= "" then
+    vim.keymap.set("n", M.config.keymaps.change_default_model, function()
+      M.change_default_model()
+    end, { silent = true, desc = "yap: change default model" })
+  end
 
   -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file
   -- explorer) adopts it as a managed yap session. Session buffers stay
@@ -2442,9 +2680,11 @@ function M.setup(opts)
       -- Release the per-buffer UI state so the winbar's rollup and cache
       -- don't iterate/retain entries for buffers that are gone.
       live[args.buf] = nil
+      state.live_usage[args.buf] = nil
       errors[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil
+      stopped[args.buf] = nil
       description_seq[args.buf] = nil
       description_started[args.buf] = nil
       winbar.clear_desc(args.buf)
@@ -2452,8 +2692,24 @@ function M.setup(opts)
       focus_forget(args.buf)
     end,
   })
-  -- Record focus order so :bd/:bw/:close on a session can land on a
-  -- waiting session, else the last file buffer (unlisted sessions are
+  vim.api.nvim_create_autocmd("BufWinLeave", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if not vim.b[buf].yap then
+        return
+      end
+      -- Let window/buffer transitions settle; focusing a drawer alone must
+      -- not close it while the chat remains displayed in another window.
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) == 0 then
+          close_session_drawers(buf)
+        end
+      end)
+    end,
+  })
+  -- Record focus order so closing a session can land on a waiting session,
+  -- then a running session, else the last file buffer (unlisted sessions are
   -- invisible to Neovim's own replacement-buffer search).
   vim.api.nvim_create_autocmd("BufEnter", {
     group = adopt_group,
@@ -2585,6 +2841,11 @@ function M.setup(opts)
       end
       -- The error path already notified (R9); don't double up.
       if errors[data.buf] then
+        return
+      end
+      -- The session is being closed by a tool call, so there is no waiting
+      -- session to announce when this turn finishes.
+      if close_after_turn[data.buf] then
         return
       end
       -- When the chat is current, the stream is right in front of you.

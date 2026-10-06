@@ -22,15 +22,15 @@ markdown buffer. A small Go binary (`yap`) is only a provider client: it
 reads the message array on stdin and streams the reply to stdout. There is
 no TUI, and no hidden conversation state anywhere.
 
-The idea is stolen from gptel (Emacs): chat LLM APIs are stateless — every
-request sends the full message array, so whoever holds the array holds the
-truth, and that can be a text buffer. Consequences:
+The idea is stolen from gptel (Emacs): chat LLM APIs are stateless: every
+request sends the full message array, so the whole conversation is the only
+state, and a text buffer can hold it. Consequences:
 
 - Deleting a block removes it from the conversation: that is branching.
 - Editing an assistant reply changes what the model "said".
 - Writing your own `# @assistant` block steers the model (prefill).
 - Yanking, undo, folds and rendering are just Neovim. `:undotree` is a
-  free branch navigator.
+  branch navigator.
 
 ==============================================================================
 2. COMMANDS                                                  *yap-commands*
@@ -71,6 +71,17 @@ the current buffer unless otherwise noted.
                         rendering, not a second log: it is rebuilt from
                         the audit log on reopen, so the live view
                         survives restarts.
+
+                                                                *:YapAudit*
+:YapAudit             Browse the session's audit log in a split panel:
+                        the left pane is the raw JSONL (one event per
+                        line, colored by type, so |:YapClear|'s
+                        path:line references stay exact) and the right
+                        pane is a readable rendering of the event under
+                        the cursor — fields sorted, multiline results
+                        and output shown as text. The raw file is never
+                        rewritten. Works only inside a yap session; `q`
+                        closes the viewer.
 
                                                                 *:YapClear*
 :YapClear [keep]      Slim the context: replace the result bodies of
@@ -126,6 +137,17 @@ the current buffer unless otherwise noted.
                         configuration needed. The query result is cached
                         for the session; |:YapReload| refreshes it.
 
+                                                      *:YapChangeDefaultModel*
+:YapChangeDefaultModel {provider/model}
+                        Change the default provider/model combo for NEW
+                        buffers, persisted to `$XDG_CACHE_HOME/yap/default`.
+                        Does not touch the current buffer. Without an
+                        argument, picks from the same list as
+                        |:YapChangeModel|. New buffers use this default
+                        before setup()'s `provider`/`model`, so changing
+                        the default model does not require editing the
+                        (often Nix-managed) setup() defaults.
+
                                                             *:YapFork*
 :YapFork [name]       Fork the current conversation into a new session in
                         the same project's session directory, independent
@@ -148,21 +170,30 @@ the current buffer unless otherwise noted.
                         sessions stay listed by filename via
                         |:YapInstances|.
 
+                                                            *:YapHistory*
+:YapHistory [all]      Pick a saved session from history, with live state icons
+                        for sessions that are currently open. Default scope
+                        is the current project; "all" lists every project.
+                        The picker otherwise behaves like |:YapSessions|.
+
                                                             *:YapInstances*
 :YapInstances         List every open yap session except the current one by
-                        its file path and focus the picked one. Each line is
-                        annotated with its state — ` running`, `󰚌 error`, `󰭖 waiting`
-                        (a completed turn awaits your reply) or `󰝦 idle` —
-                        waiting sessions sort last (use |:YapWaiting| to jump
-                        straight to them). Yap buffers are unlisted — they
-                        never appear in |:ls| or buffer pickers (MiniPick.buffers and friends),
-                        and a session's tail buffer is never listed at all
-                        (open it in the session with |:YapLive|). This is
-                        how you move between sessions.
+                        its file path and focus the picked one. Each line
+                        starts with a state glyph (`` running, `󰐊` stopped,
+                        `󰚌` error, `󰫁` waiting — a completed turn awaits your
+                        reply — or `󰝦` idle) followed by the session's model
+                        (bare name, no provider), or the state word while a
+                        buffer has no model yet. Waiting sessions sort last
+                        (use |:YapWaiting| to jump straight to them). Yap
+                        buffers are unlisted — they never appear in |:ls| or
+                        buffer pickers
+                        (MiniPick.buffers and friends), and a session's tail
+                        buffer is never listed at all (open it in the session
+                        with |:YapLive|). This is how you move between sessions.
 
                                                             *:YapWaiting*
 :YapWaiting           List only the open yap sessions awaiting a reply
-                        (state `󰭖 waiting`) and focus the picked one — the
+                        (state `󰫁 waiting`) and focus the picked one — the
                         "needs you" subset of |:YapInstances|.
 
                                                                *:YapReload*
@@ -171,30 +202,36 @@ the current buffer unless otherwise noted.
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>w, <leader>y and
-<leader>R, which are global (they list sessions across buffers, so they
-work from any file). Every binding is a `keymaps` config key (see
-|yap-configuration|); the defaults are shown below.
+Set only in yap buffers, except <leader>r, <leader>w, <leader>y,
+<leader>R and <leader>M, which are global (they list sessions across
+buffers, or change the default model, so they work from any file). Every
+binding is a `keymaps` config key (see |yap-configuration|); the defaults
+are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams into the buffer;
                         normal successful sends don't show a toast.
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
+  <leader>M             Change the default model for new buffers
+                        (picker, see |:YapChangeDefaultModel|).
   <leader>l             Watch live tool output (see |:YapLive|).
-  <leader>s             Toggle the session's scratch queue buffer: a
-                        fixed-height, file-backed jotter below the chat.
-                        `:w` saves it; an unsaved queue prompts on exit.
-                        Inside the queue, <C-s> sends the whole buffer —
-                        or the visual selection — to the chat and removes
-                        it from the queue. When the agent is mid-turn,
-                        <C-s> STEERS instead: the current line (or the
-                        visual selection) is sent to the running turn and
-                        injected at its next tool boundary as a `# @user`
-                        block, without being removed from the jotter —
-                        re-<C-s> to replace it, edit it until it lands.
+  <leader>s             Toggle the session's scratch buffer: a
+                        file-backed jotter with independently foldable
+                        `# @notes`, `# @steer`, and `# @queue` sections.
+                        Notes are inert. While a turn runs, <C-s> submits
+                        # @steer; it remains there until delivered and can
+                        be revised/canceled. While idle, <C-s> consumes the
+                        next non-empty line under # @queue and sends it.
+                        Each queued line is dispatched only on <C-s>; queued
+                        work never auto-dispatches after a turn. Consumption
+                        reads and edits the live buffer,
+                        then saves the result to the sidecar file.
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor
                         (see |:YapInsertHere|).
+  <leader>i (n)        Pick a file under the current |:pwd| and insert an
+                        `@path` reference at the cursor. Also mapped in the
+                        scratch queue.
   <leader>r             List every open session with its status (see
                         |:YapInstances|).
   <leader>w             List just the sessions awaiting a reply (see
@@ -314,16 +351,16 @@ gutter on every redraw.
 
 `keymaps` maps each action to its key sequence, so any of |yap-keymaps|
 can be rebound from `setup()`. The table keys are: `send`, `stop`,
-`change_model`, `live`, `scratch`, `insert`, `insert_here`, `sessions` (global),
+`change_model`, `change_default_model` (global), `live`, `scratch`, `insert`, `insert_here`, `insert_file`, `sessions` (global),
 `waiting` (global), `history` (global), `history_renamed` (global), `help`,
 `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
 `toggle_fold`, `inner_message`, `around_message`, `inner_block`,
 `around_block`. Buffer-local keys are applied whenever a session opens
-(and on |:YapSessions| resume / adoption); `sessions`, `waiting`, `history`
-and `history_renamed` are installed once by `setup()`. Set an entry to
-`""` to disable that binding.
+(and on |:YapSessions| resume / adoption); `sessions`, `waiting`, `history`,
+`history_renamed` and `change_default_model` are installed once by
+`setup()`. Set an entry to `""` to disable that binding.
 
 The session description shown in the winbar (|yap-winbar|) and session
 picker is generated in two stages, both sharing one `description:` key in
@@ -706,8 +743,10 @@ pure per-redraw cost on a large session. setup_buffer marks each buffer and
 an LspAttach guard in setup() stops any markdown client from attaching.
 
 The active combo comes from the frontmatter on open, then from per-buffer
-vars set by |:YapChangeModel|, falling back to setup() defaults. The
-buffer holds the model state (R1) but NOT token/cost totals: those
+vars set by |:YapChangeModel|, falling back to the persisted default (the
+last default set via |:YapChangeDefaultModel|) and finally to setup()
+defaults.
+The buffer holds the model state (R1) but NOT token/cost totals: those
 accumulate in memory for the lifetime of the buffer, and reopening a
 session starts them from zero.
 
@@ -846,19 +885,17 @@ reply; every autosave goes through |:write|, so the buffer owns its file:
 'modified', |:w|, and the exit prompt all behave like any normal file buffer.
 The audit log (<session>.jsonl) is written in the audit dir
 (|yap-audit|) as the session runs and follows the session name across
-|:file| renames. The scratch queue is the same kind of sibling:
-~/.yap/sessions/<cwd-slug>/<session>.queue, a plain file-backed buffer
-for queuing agent tasks. Unlike the autosaved session, the queue is
-saved manually — `:w` in the jotter writes it, and an unsaved queue
-triggers the normal modified-buffer prompt on exit. Pressing <C-s> in
-the queue sends its contents (or the active visual selection) to the
-chat as a `# @user` message and removes them from the queue. While the
-agent is streaming, the same <C-s> steers instead: the current line (or
-the visual selection) is handed to the running turn and injected at its
-next tool boundary as a `# @user` block — the draft stays in the jotter
-so you can keep shaping it (re-<C-s> to replace it), and a steer that
-arrives after the turn ends is sent as a follow-up turn. Opening a session
-file directly — plain |:edit| or
+|:file| renames. The scratch buffer is the same kind of sibling:
+~/.yap/sessions/<cwd-slug>/<session>.queue, a file-backed control buffer
+with `# @notes`, `# @steer`, and `# @queue` sections. Sending always reads
+and edits its current in-memory contents, never a disk snapshot. Existing
+plain queue files are migrated under `# @queue`. Queue entries are one
+non-empty line each; the next entry is removed when dispatched and each
+remaining entry waits for its own <C-s>. A pending steer is the full body of
+`# @steer`, remains visible until delivered, and can be revised or canceled
+by editing/removing that body. If a steer misses the last tool boundary, it
+is consumed when dispatched as a follow-up turn. `# @notes` is never sent.
+Opening a session file directly — plain |:edit| or
 `nvim <file>.md` — is recognized: the buffer is adopted as a managed
 session (unlisted, keymapped, tail attached), the same as |:YapSessions|
 resume.
@@ -912,7 +949,14 @@ line, timestamped by the Lua side as each |yap-protocol| event arrives:
                "context_window",?,"ms","ts"} — one per completed send
 
 The tail buffer (|:YapLive|) is the human-readable rendering of these
-events and is rebuilt from the file on reopen. |:YapClear| placeholders
+events and is rebuilt from the file on reopen. Structural lines are
+highlighted (turn headers, `$ command`, `• tool`, timestamps); streamed
+and returned text stays in the default color so it reads as plain text.
+Each completed turn folds to its header line — a table of contents —
+while the tail after the last header stays open so live output remains
+visible. The view only follows new output when it is already near the
+bottom, so scrolling up to read is never yanked back down. |:YapAudit|
+is the split-panel browser for the raw file itself. |:YapClear| placeholders
 correlate a region's tool-call id with its tool_call..tool_result
 line range, so a cleared body points back to exactly what it replaced.
 This is what makes the slimmed write/edit headers (R12) and
@@ -1043,11 +1087,11 @@ that matter. It drops parts in this order as the window shrinks: the
 provider/model island, usage-chip costs, usage-chip tokens
 (leaving costs), then the costs and gauge percentage. The context graph
 remains a fixed eight-cell gauge; the session description truncates next.
-The error glyph and left island (`N`/`󰭖N`) remain, and the winbar re-lays
+The error glyph and left island (`N`/`󰫁N`) remain, and the winbar re-lays
 itself out on `WinResized`.
 
 The `N` rollup counts OTHER yap buffers with an in-flight request; the
-`󰭖N` rollup counts OTHER yap buffers with a completed turn awaiting
+`󰫁N` rollup counts OTHER yap buffers with a completed turn awaiting
 your reply. Live sessions enter it when a send finishes; a reopened
 session enters it when it ends on a `# @user` heading with assistant
 history above it. For a global segment independent of yap buffers, use
@@ -1334,7 +1378,7 @@ R19 Turn completion is a first-class event.
     by setup(), disabled with `notify_done = false`) calls vim.notify —
     only for a buffer the user isn't looking at, and never on the error
     path, which already notifies (R9). A completed turn sets the
-    awaiting hint, which drives the `󰭖N` rollup counting the OTHER
+    awaiting hint, which drives the `󰫁N` rollup counting the OTHER
     awaiting buffers (the winbar itself shows no glyph for it): an
     imperative UI hint like `errors`/`yap_usage`, not conversation state
     (R1); reopened sessions seed the rollup from their content on open. Why:
@@ -1342,6 +1386,17 @@ R19 Turn completion is a first-class event.
     a completion *event*, and an autocmd is the Neovim-native hook for
     it (noice/nf-notify, chaining a next send) instead of a hardcoded
     side effect.
+
+R20 Scratch sections are parsed from the live `*.queue` buffer, never
+    re-read from the saved file during dispatch. `# @notes` is inert;
+    `# @steer` is a replaceable pending message that remains in the buffer
+    until delivery (or follow-up dispatch), and `# @queue` contains one
+    message per non-empty line, consumed in order. Editing/removing a pending
+    steer sends an update/cancellation to the running backend. Queue removal
+    and delivered-steer removal are reflected in the buffer and saved to the
+    sidecar. The three sections fold independently. Why: pending work is
+    retractable, and the visible buffer—not a stale disk snapshot—is the
+    control surface.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:
