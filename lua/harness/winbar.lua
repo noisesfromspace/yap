@@ -188,6 +188,14 @@ local function render_winbar(buf)
   if not ok_w or not width or width <= 0 then
     width = 999 -- no window context: render the full bar
   end
+  -- The gutter is the line-number/sign/fold column band before the text; the
+  -- state icon is centered in it, so the session content starts flush with
+  -- the text. textoff is the live column count for the target window.
+  local gutter = 0
+  local ok_g, wins = pcall(vim.fn.getwininfo, win)
+  if ok_g and wins and wins[1] then
+    gutter = wins[1].textoff or 0
+  end
 
   local function seg(text, group, island, cursive)
     return { text = text, group = group, island = island, cursive = cursive }
@@ -214,46 +222,70 @@ local function render_winbar(buf)
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
   local function left_segments(desc_max)
-    local left, has_item = {}, false
+    local left = {}
+    local has_item = false
     local function add_item(item)
-      -- One left inset; separators belong to the layout, not the items.
-      left[#left + 1] = seg(has_item and "  " or " ", "Idle")
+      -- The first item sits flush at the text edge; later items get a
+      -- two-column gap. The gutter prefix is appended separately below.
+      if has_item then
+        left[#left + 1] = seg("  ", "Idle")
+      end
       for _, s in ipairs(item) do
         left[#left + 1] = s
       end
       has_item = true
     end
 
-    -- An inactive bar shows only the rollup island and the session name:
-    -- no own-state icon, spinner/tool text, costs or gauge. That detail
-    -- belongs to the session the user is actually looking at.
+    -- The buffer's own state is a one-cell icon centered in the gutter (the
+    -- line-number, sign and fold columns). Session content — tool text, the
+    -- rollup island and the description — starts flush at the text edge. An
+    -- inactive bar has no own-state icon; it shows only the rollup island
+    -- and the session name (that detail belongs to the session the user is
+    -- actually looking at).
+    local icon, icon_group = nil, nil
+    local spinner = running and running[buf]
     if not inactive then
-      local spinner = running and running[buf]
       if spinner then
-        local l = live and live[buf]
-        local text = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
-        local item = { seg(text, spinner_color) }
-        if l and os.time() - l.since >= 2 then
-          item[#item + 1] = seg(" " .. l.name .. " " .. (os.time() - l.since) .. "s", "BusyText")
-        end
-        add_item(item)
-        if steer[buf] then
-          add_item({ seg(icons.steer, "Needs") })
-        end
+        icon = require("harness").config.nerd_font and spinner_glyph or plain_spinner_glyph
+        icon_group = spinner_color
       else
-        local icon, group
         if errors[buf] then
-          icon, group = icons.error, "Error"
+          icon, icon_group = icons.error, "Error"
         elseif stopped[buf] then
-          icon, group = icons.stopped, "Needs"
+          icon, icon_group = icons.stopped, "Needs"
         elseif steer[buf] then
-          icon, group = icons.steer, "Needs"
+          icon, icon_group = icons.steer, "Needs"
         elseif awaiting[buf] then
-          icon, group = icons.waiting, "Needs"
+          icon, icon_group = icons.waiting, "Needs"
         else
-          icon, group = icons.idle, "Idle"
+          icon, icon_group = icons.idle, "Idle"
         end
-        add_item({ seg(icon, group) })
+      end
+    end
+
+    if gutter > 0 then
+      local lead = math.floor((gutter - 1) / 2)
+      left[#left + 1] = seg(string.rep(" ", lead), "Idle")
+      if icon then
+        left[#left + 1] = seg(icon, icon_group)
+      end
+      local trail = gutter - lead - (icon and 1 or 0)
+      if trail > 0 then
+        left[#left + 1] = seg(string.rep(" ", trail), "Idle")
+      end
+    elseif icon then
+      -- No gutter (e.g. line numbers off): the icon is the leftmost item.
+      add_item({ seg(icon, icon_group) })
+    end
+
+    -- Tool text and steering belong to the text region, ahead of the rollup.
+    if not inactive and spinner then
+      local l = live and live[buf]
+      if l and os.time() - l.since >= 2 then
+        add_item({ seg(l.name .. " " .. (os.time() - l.since) .. "s", "BusyText") })
+      end
+      if steer[buf] then
+        add_item({ seg(icons.steer, "Needs") })
       end
     end
 

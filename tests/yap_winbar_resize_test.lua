@@ -142,7 +142,7 @@ for mask = 0, 15 do
   for _, g in ipairs(spinner_frames) do
     actual = actual:gsub(vim.pesc(g), "@")
   end
-  local expected_str = " " .. table.concat(expected, "  ") .. " "
+  local expected_str = table.concat(expected, "  ") .. " "
   assert(actual == expected_str,
     "inconsistent rendered spacing for state " .. mask .. ": " .. actual)
   local bar = yap.winbar(target)
@@ -272,7 +272,7 @@ vim.api.nvim_buf_delete(right_buf, { force = true })
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
 vim.api.nvim_win_resize(0, 12, -1)
-assert(rendered_left() == " " .. icons.idle .. "  Session title ", "narrow title has a dangling separator: " .. rendered_left())
+assert(rendered_left() == icons.idle .. "  Session title ", "narrow title has a dangling separator: " .. rendered_left())
 assert(yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
   "session title is not cursive: " .. yap.winbar(target))
 assert(not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),
@@ -303,4 +303,31 @@ assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).
   "model island should share the rollup surface")
 assert(vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
   "model text should remain italic inside its island")
+-- Gutter alignment: the state icon centers in the line-number gutter and the
+-- rollup island starts flush at the text edge (where the user text lives).
+do
+  local g_target = vim.api.nvim_create_buf(false, true)
+  local g_other = vim.api.nvim_create_buf(false, true)
+  for _, b in ipairs({ g_target, g_other }) do
+    vim.b[b].yap = true
+    state.sessions[b] = true
+  end
+  vim.b[g_target].yap_provider = "mock"
+  vim.b[g_target].yap_model = "m1"
+  state.awaiting[g_other] = true
+  vim.api.nvim_win_set_buf(0, g_target)
+  vim.wo.number = true
+  vim.wo.numberwidth = 4
+  assert(vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff == 4,
+    "expected a 4-column gutter")
+  local rendered = vim.api.nvim_eval_statusline(yap.winbar(g_target),
+    { winid = 0, use_winbar = true, maxwidth = 200 }).str
+  local prefix = " " .. icons.idle .. "  " .. icons.cap_l
+  assert(rendered:sub(1, #prefix) == prefix,
+    "icon not centered in gutter / island not flush at the text edge: " .. rendered)
+  vim.wo.number = false
+  state.awaiting[g_other] = nil
+  vim.api.nvim_buf_delete(g_target, { force = true })
+  vim.api.nvim_buf_delete(g_other, { force = true })
+end
 print("OK winbar_resize")

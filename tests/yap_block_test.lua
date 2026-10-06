@@ -27,7 +27,7 @@ local function left_text(buf)
   return left:gsub("%%#.-#", ""):gsub("%%%*", "")
 end
 local rollup_left = left_text(buf2)
-assert(rollup_left == " " .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " ", "rollup spacing is inconsistent: " .. rollup_left)
+assert(rollup_left == icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " ", "rollup spacing is inconsistent: " .. rollup_left)
 local state = require("harness.state")
 state.running[buf2] = {}
 local with_both = left_text(buf)
@@ -39,7 +39,7 @@ vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
   "---", "provider: mock", "model: m1", "description: second session", "models:", "  - mock/m1", "---", "",
 })
 local titled_rollup = left_text(buf2)
-assert(titled_rollup:match("^ " .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  second session $"), "title gap differs from the rollup gap: " .. titled_rollup)
+assert(titled_rollup:match("^" .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  second session $"), "title gap differs from the rollup gap: " .. titled_rollup)
 assert(not titled_rollup:find("   ", 1, true), "titled left sections should have two-column gaps: " .. titled_rollup)
 
 -- A new session must still be able to send while the first streams: each

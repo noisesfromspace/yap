@@ -1036,10 +1036,12 @@ Navigation keymaps jump between headings, see |yap-keymaps|.
 9. WINBAR                                                      *yap-winbar*
 
 The winbar is the session dashboard. Left: the buffer's own state icon —
-`󰝦` idle, `󰫁` awaiting your reply, `󰓛` stopped, `󰚌` error — or, while it is
-streaming, an animated spinner beacon (a random constellation of Nerd Font
-star shapes and colors, or typographic sparkle marks with
-`nerd_font = false`). Once a tool has run for 2s its name and elapsed
+`󰝦` idle, `󰫁` awaiting your reply, `󰓛` stopped, `󰚌` error — centered in the
+line-number gutter (the fold/sign/number columns before the text), or,
+while it is streaming, an animated spinner beacon (a random constellation
+of Nerd Font star shapes and colors, or typographic sparkle marks with
+`nerd_font = false`). The rollup island and everything after it starts
+flush at the text edge. Once a tool has run for 2s its name and elapsed
 time join the shimmer (`󰫢 bash 12s`); a pending `# @steer` adds `󰇐`. Then
 a raised rollup island totals ALL OTHER yap sessions by state: `N`
 streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.
