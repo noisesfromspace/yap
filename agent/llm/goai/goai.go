@@ -284,6 +284,7 @@ func toSDKMessage(msg llm.Message) provider.Message {
 		content = append(content, provider.Part{
 			Type:            provider.PartType(p.Type),
 			Text:            p.Text,
+			URL:             p.URL,
 			ToolCallID:      p.ToolCallID,
 			ToolName:        p.ToolName,
 			ToolInput:       p.ToolInput,
@@ -339,6 +340,7 @@ func toLLMMessages(msgs []provider.Message) []llm.Message {
 			content = append(content, llm.Part{
 				Type:            llm.PartType(p.Type),
 				Text:            p.Text,
+				URL:             p.URL,
 				ToolCallID:      p.ToolCallID,
 				ToolName:        p.ToolName,
 				ToolInput:       p.ToolInput,

@@ -96,6 +96,7 @@ EOF
 
 # Start all tests in background
 run yap_test 18132 mock_slow.py
+run yap_attachment_test 18132 mock_slow.py
 run yap_static_test 18132 mock_slow.py
 run yap_session_usage_test 18132 mock_slow.py
 run yap_scratch_send_test 18132 mock_slow.py

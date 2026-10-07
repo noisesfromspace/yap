@@ -81,6 +81,7 @@ still notify.
 | ----------------------------------------- | ----------- | ------------------------------------------------------------------ |
 | `:Yap`                                    |             | Start a session.                                                   |
 | `:YapSend`                                | `<C-s>`     | Send the transcript.                                               |
+| `:YapAttach`                              |             | Import the photo path on the current user line as an attachment.   |
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
@@ -112,6 +113,19 @@ boundary or is stopped remains a draft, with a warning, for an explicit
 `<C-s>`. A queued prompt is only removed after its send starts successfully.
 See
 `:help yap-keymaps` for the full list.
+
+## Photo attachments
+
+In a Yap user message, drop a PNG or JPEG from your file manager onto Ghostty
+while Neovim is in Insert mode. Put its pasted path on a line by itself, then
+run `:YapAttach` on that line. Yap copies up to 10 MiB into a private asset
+store under Neovim's data directory and replaces the path with a visible
+`![FILE: name](file:///...)` reference. The photo is sent as an image part
+alongside your question on each subsequent send; ordinary paths and Markdown
+images are text only. Removing the reference from the session stops sending
+it. Retain the asset store when moving or restoring sessions; the Markdown
+file alone does not contain the image. Supported image formats and size limits
+also depend on your chosen model/provider.
 
 ## Rendering
 

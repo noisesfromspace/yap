@@ -10,6 +10,17 @@ import (
 	"boers.email/yap/agent/llm"
 )
 
+func TestImagePartReachesSDK(t *testing.T) {
+	url := "data:image/png;base64,iVBORw0KGgo="
+	got := toSDKMessage(llm.Message{Role: llm.RoleUser, Content: []llm.Part{
+		{Type: llm.PartText, Text: "Look"},
+		{Type: llm.PartImage, URL: url},
+	}})
+	if len(got.Content) != 2 || got.Content[1].Type != provider.PartImage || got.Content[1].URL != url {
+		t.Fatalf("image lost by adapter: %+v", got.Content)
+	}
+}
+
 // fakeModel is a fake GoAI LanguageModel. It records every GenerateParams it
 // receives and returns one fixed ordered response (reasoning with a signature,
 // text, then a tool call with a thought signature).

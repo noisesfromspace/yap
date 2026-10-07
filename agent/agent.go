@@ -465,7 +465,14 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		var content []llm.Part
 		if m.Content != "" {
-			content = append(content, llm.Part{Type: llm.PartText, Text: m.Content})
+			if role == llm.RoleUser {
+				content, err = userParts(m.Content)
+				if err != nil {
+					return err
+				}
+			} else {
+				content = append(content, llm.Part{Type: llm.PartText, Text: m.Content})
+			}
 		}
 		messages = append(messages, llm.Message{Role: role, Content: content})
 	}

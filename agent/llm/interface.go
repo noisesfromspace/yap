@@ -22,6 +22,7 @@ type PartType string
 
 const (
 	PartText       PartType = "text"
+	PartImage      PartType = "image"
 	PartReasoning  PartType = "reasoning"
 	PartToolCall   PartType = "tool-call"
 	PartToolResult PartType = "tool-result"
@@ -34,6 +35,7 @@ const (
 type Part struct {
 	Type            PartType
 	Text            string
+	URL             string
 	ToolCallID      string
 	ToolName        string
 	ToolInput       json.RawMessage
