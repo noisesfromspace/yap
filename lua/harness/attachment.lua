@@ -92,6 +92,18 @@ function M.attach(buf, row)
     format = ext:sub(2),
     sha256 = hash,
   })
+  -- Stage the asset for the frontmatter `assets` manifest. Persisting it here
+  -- would rewrite the frontmatter mid-import and shift every line number, so
+  -- it is deferred to the next save (session.stamp_updated_at merges it).
+  -- vim.b copies tables on read, so reassign the whole list after mutating.
+  local assets = vim.b[buf].yap_assets or {}
+  for _, a in ipairs(assets) do
+    if a == hash .. ext then
+      return reference
+    end
+  end
+  assets[#assets + 1] = hash .. ext
+  vim.b[buf].yap_assets = assets
   return reference
 end
 

@@ -42,6 +42,13 @@ assert(att.bytes == #image, "attachment bytes wrong: " .. vim.inspect(att))
 assert(att.format == "png", "attachment format wrong: " .. vim.inspect(att))
 assert(att.sha256 == vim.fn.sha256(vim.base64.encode(image)), "attachment sha256 wrong: " .. vim.inspect(att))
 
+-- The imported asset is recorded in the frontmatter `assets` manifest on the
+-- next save (never mid-attach, which would shift line numbers).
+require("harness.session").save(buf)
+local fm = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+assert(fm and fm.assets and #fm.assets == 1, "asset not recorded in frontmatter: " .. vim.inspect(fm and fm.assets))
+assert(fm.assets[1] == vim.fn.fnamemodify(path, ":t"), "asset entry is not the basename: " .. vim.inspect(fm.assets))
+
 local messages = yap.parse_buffer(buf)
 assert(messages[#messages].role == "user" and messages[#messages].content == ref)
 

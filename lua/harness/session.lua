@@ -61,8 +61,30 @@ local function stamp_updated_at(buf)
       turns = turns + 1
     end
   end
+  -- Merge assets staged by attachment.attach() (buffer-local, deferred here
+  -- so attaching never rewrites the frontmatter mid-import and shifts the
+  -- line numbers import_paths is iterating).
+  local assets = fm.assets or {}
+  local added = false
+  local pending = vim.b[buf].yap_assets
+  if pending then
+    for _, a in ipairs(pending) do
+      local dup = false
+      for _, x in ipairs(assets) do
+        if x == a then
+          dup = true
+          break
+        end
+      end
+      if not dup then
+        assets[#assets + 1] = a
+        added = true
+      end
+    end
+    vim.b[buf].yap_assets = nil
+  end
   local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-  if fm.updated_at == updated_at and fm.turns == turns then
+  if fm.updated_at == updated_at and fm.turns == turns and not added then
     return -- unchanged: skip the rewrite so an untouched frontmatter stays clean
   end
   local block = frontmatter.render(
@@ -79,7 +101,8 @@ local function stamp_updated_at(buf)
     fm.created_cwd,
     fm.forked_from,
     fm.forks,
-    fm.subagent_parent
+    fm.subagent_parent,
+    assets
   )
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
@@ -110,6 +133,48 @@ function M.save(buf)
   end)
   if view then
     vim.fn.winrestview(view)
+  end
+end
+
+-- Track whether a buffer-name change was a `:file` rename (move the sidecar
+-- files) or a `:saveas` copy (copy them). Both change the buffer name and
+-- fire BufFilePost; `:saveas` additionally writes in the same command, which
+-- arrives as BufWritePre before the deferred decision lands. A `:file` rename
+-- is left for audit.follow_rename and scratch.notes_follow to move lazily; a
+-- `:saveas` copy is rehomed eagerly so the original session keeps its files.
+local rename_pending = {} -- [buf] = "copy" | "move"
+
+--- BufFilePost: the buffer name changed. Default to a `:file` rename; a
+--- BufWritePre in the same command flips it to `:saveas` (see rename_write).
+function M.rename_post(buf)
+  rename_pending[buf] = "move"
+  vim.schedule(function()
+    local is_copy = rename_pending[buf] == "copy"
+    rename_pending[buf] = nil
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    if is_copy then
+      -- `:saveas` continues in the same buffer under a new name. Retarget the
+      -- sidecars immediately so the original session keeps its history and the
+      -- copy's next turn appends to its own files (session.save() just
+      -- records the name change; it does not move sidecars).
+      local old_path = vim.b[buf].yap_path
+      local new_path = vim.api.nvim_buf_get_name(buf)
+      if old_path and old_path ~= new_path and new_path ~= "" and not new_path:match("^%a+://") then
+        vim.b[buf].yap_path = new_path
+        require("harness.audit").rehome_copy(buf)
+        require("harness.scratch").rehome_copy(buf, old_path)
+      end
+    end
+  end)
+end
+
+--- BufWritePre: a write in the same command as the name change means the
+--- change was `:saveas` (copy), not a bare `:file` rename.
+function M.rename_write(buf)
+  if rename_pending[buf] then
+    rename_pending[buf] = "copy"
   end
 end
 
@@ -193,7 +258,8 @@ function M.fork(buf, name, running)
         fm.created_cwd,
         vim.b[buf].yap_path,
         {},
-        nil
+        nil,
+        fm.assets
       )
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block
@@ -258,7 +324,8 @@ function M.fork(buf, name, running)
       source_fm.created_cwd,
       source_fm.forked_from,
       forks,
-      source_fm.subagent_parent
+      source_fm.subagent_parent,
+      source_fm.assets
     )
     vim.api.nvim_buf_set_lines(buf, 0, ending, false, block)
   end

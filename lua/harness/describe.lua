@@ -196,7 +196,8 @@ Return only the title.]]
         fm.created_cwd,
         fm.forked_from,
         fm.forks,
-        fm.subagent_parent
+        fm.subagent_parent,
+        fm.assets
       )
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)

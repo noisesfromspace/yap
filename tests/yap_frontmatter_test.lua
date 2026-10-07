@@ -163,6 +163,13 @@ assert(
     and links.forks[1] == "/tmp/fork.md",
   "links not roundtripped"
 )
+local assets_fm = frontmatter.parse(
+  frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, { "abc123.png", "def456.jpg" })
+)
+assert(
+  vim.deep_equal(assets_fm.assets, { "abc123.png", "def456.jpg" }),
+  "assets not roundtripped: " .. vim.inspect(assets_fm.assets)
+)
 
 -- 9. a :file-renamed session keeps its chosen name over the description
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"

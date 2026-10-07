@@ -223,7 +223,8 @@ function M.start(parent, ev)
       child_fm.created_cwd,
       child_fm.forked_from,
       child_fm.forks,
-      parent_path
+      parent_path,
+      child_fm.assets
     )
   )
   require("harness.session").save(child)

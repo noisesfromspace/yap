@@ -2223,6 +2223,25 @@ function M.setup(opts)
       end
     end,
   })
+  -- Distinguish a `:file` rename (move the sidecar files) from a `:saveas`
+  -- copy (copy them). Both fire BufFilePost; `:saveas` also writes in the
+  -- same command, so BufWritePre flips the deferred decision before it lands.
+  vim.api.nvim_create_autocmd("BufFilePost", {
+    group = adopt_group,
+    callback = function(args)
+      if vim.b[args.buf].yap then
+        require("harness.session").rename_post(args.buf)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWritePre", {
+    group = adopt_group,
+    callback = function(args)
+      if vim.b[args.buf].yap then
+        require("harness.session").rename_write(args.buf)
+      end
+    end,
+  })
   -- The winbar degrades with window width (see render_winbar); re-evaluate
   -- its `%!` expression whenever a window is resized.
   vim.api.nvim_create_autocmd("WinResized", {

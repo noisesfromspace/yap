@@ -438,6 +438,28 @@ function M.follow_rename(buf)
   end
 end
 
+--- Retarget the audit log for a `:saveas` copy. The original session keeps its
+--- log untouched; the buffer gets a copy at the new session's path and future
+--- events append to the copy. Called before the next turn's events are written
+--- so the copy never mixes the original's and the copy's histories. A session
+--- with no audit log yet has nothing to copy (its first event lands at the new
+--- path).
+function M.rehome_copy(buf)
+  local t = audits[buf]
+  if not t or not t.audit then
+    return
+  end
+  local want = paths.audit_path(buf)
+  if want == t.audit then
+    return
+  end
+  if vim.fn.filereadable(t.audit) == 1 and vim.fn.filereadable(want) == 0 then
+    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
+    vim.uv.fs_copyfile(t.audit, want)
+  end
+  t.audit = want
+end
+
 --- Seed the all-time session usage from the audit log: sum every turn_end
 --- journal entry so a reopened session shows its full historical cost
 --- immediately. yap_usage is per-buffer and resets on reopen; this is its

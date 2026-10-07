@@ -39,9 +39,12 @@ this also applies to typed paths and changes only matching user lines. Go reads
 references on each send, extracts filename, detected media type, byte size,
 and pixel dimensions when decodable, then sends that metadata as adjacent text
 alongside the image bytes. Removing the reference removes the attachment;
-missing/invalid assets fail the send. The asset store must accompany a session
-when moved to another machine. Why: branching by deletion, prefill by editing,
-and undo-tree navigation only work if the buffer is the single source of truth.
+missing/invalid assets fail the send. Each imported asset's basename is staged
+and, on the next save, merged into the frontmatter `assets` list, so a session
+declares which content-addressed files it references. The asset store must
+accompany a session when moved to another machine. Why: branching by deletion,
+prefill by editing, and undo-tree navigation only work if the buffer is the
+single source of truth.
 
 #### R-markers-not-sent — `<!-- yap:* -->` marker regions are never sent as buffer text
 
@@ -83,7 +86,7 @@ hand-rolled `"\n"` prefixes broke separation when trailing-blank trimming was
 added; a buffer-wide normalize pass made every send rewrite the whole buffer
 and churn fold state.)
 
-#### R-session-is-file — Sessions are plain markdown files; file operations are the session operations
+#### R-session-is-file — Sessions are a small file set; file operations are the session operations
 
 The file is created at buffer creation so a fresh session is file-backed (and
 nameable via `:file`) before the first reply. Saves follow every turn exit,
@@ -91,19 +94,25 @@ including errors and `:YapStop`, and go through `:write!` (not `writefile()`):
 the buffer owns the file, so mtime bookkeeping, `:w`, and E13 all behave
 normally. Every stream exit, including backend errors and `:YapStop`, repairs
 any dangling streamed marker, appends a fresh `# @user` message, and saves that
-final writable state. `save()` follows buffer renames so `:file` names and
-`:saveas` forks. Why: no second serialization format to keep in sync. Session
-buffers (and their audit view buffers) are unlisted — never in `:ls` or buffer
-pickers — so navigation uses `<leader>r`, and a session's audit view opens with
-`:YapLive`.
+final writable state. The markdown file is the only serialization of the
+message history, but a session is a small set of sibling files: the audit log
+(R-audit-log), the scratch notes file, and the frontmatter `assets` manifest
+(R-frontmatter). `save()` follows buffer renames: a `:file` rename moves the
+sidecars lazily (audit at the next turn, notes at the next scratch toggle),
+while a `:saveas` copy rehomes them eagerly so the original session keeps its
+own files and the copy continues with full history. Why: no second
+serialization format to keep in sync. Session buffers (and their audit view
+buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
+`<leader>r`, and a session's audit view opens with `:YapLive`.
 
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
 The frontmatter holds `provider`/`model` (the combo to resume with), `created_cwd` (the
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
-`updated_at` timestamps, and `turns` (the count of completed replies, stamped
-on save for the picker). yap writes the model fields only on `:Yap` and
+`updated_at` timestamps, `turns` (the count of completed replies, stamped
+on save for the picker), and `assets` (the manifest of content-addressed photo
+files the session references). yap writes the model fields only on `:Yap` and
 `:YapChangeModel` — never during a send, so the append-only rule holds
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
@@ -229,7 +238,9 @@ arguments, streamed bash/python output, full results, `attachment` events for
 image imports (success metadata or the failure), and one journal line per
 turn (model, tokens, cost, ms). The audit view (`:YapLive`) renders these
 events and is rebuilt from the file on reopen; the audit file is the
-authoritative record and survives restarts. This is what makes slimmed headers
+authoritative record and survives restarts. A `:file` rename moves the log to
+match the new name; a `:saveas` copy copies it, so the original session keeps
+its own history. This is what makes slimmed headers
 (R-tool-region) and `:YapClear` lossless.
 
 ### Neovim presentation and turn lifecycle

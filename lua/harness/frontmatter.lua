@@ -21,6 +21,8 @@
 --     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
 --   forks:
 --     - /home/martijn/.yap/sessions/.../branch.md
+--   assets:
+--     - <sha256>.png
 --   ---
 --
 -- `description` is the one-line summary the picker shows; `model` and
@@ -35,7 +37,8 @@
 -- of every combo actually used (most-recent-last); `forked_from` and
 -- `forks` link copied sessions in both directions; `subagent_parent` points
 -- back to the owner; `subagents` is the ordered list of subagent session
--- paths this session ran (most-recent-last).
+-- paths this session ran (most-recent-last); `assets` is the manifest of
+-- content-addressed photo files this session references.
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
@@ -50,7 +53,7 @@ local M = {}
 local config = require("harness.config")
 
 local function is_list_key(k)
-  return k == "models" or k == "subagents" or k == "forks"
+  return k == "models" or k == "subagents" or k == "forks" or k == "assets"
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
@@ -64,7 +67,7 @@ function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {}, subagents = {}, forks = {} }
+  local fm = { models = {}, subagents = {}, forks = {}, assets = {} }
   local list_key = nil
   for i = 2, #lines do
     local line = lines[i]
@@ -106,8 +109,10 @@ function M.parse(lines)
           fm.models[#fm.models + 1] = item
         elseif list_key == "subagents" then
           fm.subagents[#fm.subagents + 1] = item
-        else
+        elseif list_key == "forks" then
           fm.forks[#fm.forks + 1] = item
+        elseif list_key == "assets" then
+          fm.assets[#fm.assets + 1] = item
         end
       end
     end
@@ -131,7 +136,8 @@ function M.render(
   created_cwd,
   forked_from,
   forks,
-  subagent_parent
+  subagent_parent,
+  assets
 )
   local lines = { "---" }
   if description and description ~= "" then
@@ -179,6 +185,12 @@ function M.render(
     lines[#lines + 1] = "forks:"
     for _, p in ipairs(forks) do
       lines[#lines + 1] = "  - " .. p
+    end
+  end
+  if assets and #assets > 0 then
+    lines[#lines + 1] = "assets:"
+    for _, a in ipairs(assets) do
+      lines[#lines + 1] = "  - " .. a
     end
   end
   lines[#lines + 1] = "---"
@@ -234,7 +246,8 @@ function M.sync(buf)
     created_cwd,
     fm and fm.forked_from,
     fm and fm.forks,
-    fm and fm.subagent_parent
+    fm and fm.subagent_parent,
+    fm and fm.assets
   )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
@@ -277,7 +290,8 @@ function M.record_subagent(parent, child_path)
     fm.created_cwd,
     fm.forked_from,
     fm.forks,
-    fm.subagent_parent
+    fm.subagent_parent,
+    fm.assets
   )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end

@@ -149,6 +149,25 @@ local function notes_follow(buf, scratch)
   vim.api.nvim_buf_set_name(scratch, want)
 end
 
+--- Retarget the notes file (and any open scratch buffer) for a `:saveas` copy.
+--- The original session keeps its notes; the buffer gets a copy at the new
+--- session's path, created here so the next scratch toggle loads the copy
+--- rather than a fresh empty file.
+function M.rehome_copy(buf, old_session_path)
+  local old = vim.fn.fnamemodify(old_session_path, ":r") .. ".notes"
+  local want = paths.notes_path(buf)
+  if old ~= want and vim.fn.filereadable(old) == 1 and vim.fn.filereadable(want) == 0 then
+    vim.uv.fs_copyfile(old, want)
+  end
+  local scratch = vim.b[buf].yap_scratch
+  if scratch and vim.api.nvim_buf_is_valid(scratch) then
+    local name = vim.api.nvim_buf_get_name(scratch)
+    if name ~= want then
+      vim.api.nvim_buf_set_name(scratch, want)
+    end
+  end
+end
+
 local function scratch_dispatch_queue(owner)
   if not vim.api.nvim_buf_is_valid(owner) or state.is_running(owner) then
     return false

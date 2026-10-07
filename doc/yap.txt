@@ -353,6 +353,8 @@ lives, as YAML frontmatter: >
     - deepseek/deepseek-v4-pro
   subagents:
     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
+  assets:
+    - <sha256>.png
   ---
 <
 
@@ -360,7 +362,9 @@ lives, as YAML frontmatter: >
 directory the session was created in (the session-dir slug is lossy, so this
 is the only exact record); `models` is the ordered history of every combo
 used (most-recent-last); `subagents` lists subagent session paths
-(most-recent-last); `created_at` / `updated_at` are timestamps; `turns`
+(most-recent-last); `assets` is the manifest of content-addressed photo files
+this session references (see |yap-attach|); `created_at` / `updated_at` are
+timestamps; `turns`
 counts completed `# @assistant` replies so the picker can show depth without
 opening the file. The frontmatter is the ONLY durable session state: yap
 writes the model fields on :Yap and |:YapChangeModel|, stamps `updated_at` on
@@ -455,15 +459,22 @@ write/edit return short confirmations and stay bare.
 ==============================================================================
 7. SESSIONS                                                  *yap-sessions*
 
-A session is just the buffer's markdown written to a file — the buffer IS the
-serialization, there is no other format. Files live under
+A session is the conversation markdown written to a file, plus a small set
+of sibling sidecar files that carry what the conversation does not: an
+append-only audit log, an optional scratch notes file, and any photo
+attachments in a shared asset store. The markdown file IS the conversation —
+the buffer is the only serialization of the message history — but a session
+is a small file set, not a single file. Files live under
 ~/.yap/sessions/<cwd-slug>/ and are saved after every turn exit, including
 backend errors and stops. The file is created when the buffer opens, so a
 fresh session is file-backed from the start and nameable with |:file| before
 the first reply; every save goes through |:write|, so 'modified', |:w| and the
 exit prompt behave like any normal file buffer. The audit log
 (<session>.jsonl) is written in the audit dir (|yap-audit|) and follows the
-session name across |:file| renames.
+session name across |:file| renames. The scratch notes file
+(<session>.notes) sits beside the session file. Photo attachments live in a
+content-addressed asset store under Neovim's data directory; the frontmatter
+`assets` list records which assets a session references.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — is
 recognized and adopted as a managed session (unlisted, keymapped, audit view
@@ -477,11 +488,11 @@ File operations are the session operations:
                         toggled.
   :saveas copy.md       Save the current conversation to a new session file
                         and continue in that buffer as the copy. The old file
-                        is left unchanged, but this is not a full copy of
-                        sidecar data: on next use the audit log and scratch
-                        queue are MOVED (not copied) to the new name. Use
-                        |:YapFork| for an independent session with its audit
-                        history copied.
+                        is left unchanged, and its audit log and scratch
+                        queue are COPIED (not moved) to the new name, so the
+                        copy continues with full history while the original
+                        keeps its own. Use |:YapFork| to branch into a
+                        separate buffer without touching the source.
   delete a region + send  Branch the conversation within the active session.
 
 SCRATCH BUFFER

@@ -10,7 +10,12 @@ So the buffer is the conversation. Delete a message and the next request
 won't include it. Edit a reply and the model continues from your version.
 Branching, prefill, and undo navigation are just editing.
 
-A session is a Markdown file in `~/.yap/sessions/<project>/`
+A session is the conversation Markdown file in `~/.yap/sessions/<project>/`,
+plus a small set of sibling sidecar files that hold what the conversation
+doesn't: an append-only audit log (`~/.yap/audit/<project>/<name>.jsonl`), an
+optional scratch notes file (`<name>.notes`), and any photo attachments in a
+shared content-addressed asset store. The Markdown file is the conversation;
+the sidecars carry tool output, usage, notes, and image bytes.
 
 Inspired by pi and gptel.
 
