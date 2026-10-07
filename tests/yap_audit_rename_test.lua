@@ -1,6 +1,6 @@
--- The audit log (.jsonl) follows a `:file` rename the same way the
--- session does: renaming the session, then sending (which commits the
--- rename) moves the audit log, and the audit view keeps rendering it.
+-- Renaming a session means renaming its directory: the name is derived from
+-- the directory, so history follows the rename for free, and the audit log
+-- and notes move with the directory (they live inside it).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -10,50 +10,40 @@ local function text(buf)
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 end
 
-local function count(s, pat)
-  return select(2, s:gsub(pat, ""))
-end
-
 local buf = yap.new()
-
 yap.send()
 local ok = vim.wait(10000, function()
   return text(buf):match("File written%.") ~= nil
 end, 100)
 assert(ok, "first send did not complete")
-vim.wait(300)
+vim.wait(300) -- let the turn-end save and description settle
 
+local paths = require("harness.path")
 local old = vim.b[buf].yap_path
-local old_audit = require("harness.path").audit_path(buf)
-assert(old_audit and vim.fn.filereadable(old_audit) == 1, "audit log not written")
+local old_dir = vim.fn.fnamemodify(old, ":h")
+assert(vim.fn.filereadable(paths.audit_path(buf)) == 1, "audit log not written")
 
--- Rename the session the way the user does (:file new-name.md); the next
--- send is what persists the rename and drags the audit log along.
-local name = vim.fn.fnamemodify(old, ":t:r") .. "-renamed"
-local new = vim.fn.fnamemodify(old, ":h:h") .. "/" .. name .. "/" .. name .. ".md"
-vim.api.nvim_buf_set_name(buf, new)
+-- Close the buffer so no later save re-points it at the stale path.
+vim.cmd("bwipeout!")
 
-local before = count(text(buf), "File written%.")
-yap.send()
-local ok2 = vim.wait(10000, function()
-  return count(text(buf), "File written%.") > before
-end, 100)
-assert(ok2, "second send did not complete")
-vim.wait(300)
+-- Rename the session directory; history derives the name from the directory.
+local project = vim.fn.fnamemodify(old, ":h:h")
+local new_dir = project .. "/renamed-session"
+assert(vim.fn.rename(old_dir, new_dir) == 0, "directory rename failed")
+local new = new_dir .. "/session.md"
+assert(vim.fn.filereadable(new) == 1, "session.md missing after rename")
 
-local slug = vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-")
-local want = vim.fn.fnamemodify(new, ":r") .. ".jsonl"
-assert(vim.fn.filereadable(old_audit) == 0, "old audit log still exists: " .. old_audit)
-assert(vim.fn.filereadable(want) == 1, "renamed audit log missing: " .. want)
+-- The audit log and notes move with the directory.
+assert(vim.fn.filereadable(new_dir .. "/audit.jsonl") == 1, "audit log did not follow the directory")
+assert(vim.fn.filereadable(old_dir .. "/audit.jsonl") == 0, "old audit log left behind")
 
--- the audit view still renders the (renamed) audit log
-local audit
-for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_get_name(b):match("%-audit$") then
-    audit = b
+-- History shows the renamed session under its new name.
+local found
+for _, item in ipairs(require("harness.session").list("cwd")) do
+  if item.path == new then
+    found = item
   end
 end
-assert(audit, "no audit view buffer")
-local audit_text = table.concat(vim.api.nvim_buf_get_lines(audit, 0, -1, false), "\n")
-assert(audit_text:match("• write"), "audit view content lost after rename: " .. audit_text)
+assert(found and found.text == "renamed-session", "renamed session missing or mislabeled: " .. vim.inspect(found))
+
 print("OK audit-rename")

@@ -171,14 +171,14 @@ assert(
   "assets not roundtripped: " .. vim.inspect(assets_fm.assets)
 )
 
--- 9. a :file-renamed session keeps its chosen name over the description
-local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker.md"
+-- 9. a renamed session keeps its chosen directory name over the description
+local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker/session.md"
 assert(
-  session.label(named_path, "Generated description") == "fix-picker.md",
-  "named session should use its filename: " .. session.label(named_path, "Generated description")
+  session.label(named_path, "Generated description") == "fix-picker",
+  "named session should use its directory name: " .. session.label(named_path, "Generated description")
 )
 assert(
-  session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker.md",
+  session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker",
   "named session label should keep the cwd prefix: "
     .. session.label(named_path, "Generated description", "/opt/code/yap")
 )

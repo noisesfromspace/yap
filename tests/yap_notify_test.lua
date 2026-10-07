@@ -162,7 +162,7 @@ vim.notify = orig_notify
 assert(#notified2 == 1, "expected a background-turn notification, got: " .. vim.inspect(notified2))
 assert(notified2[1].msg:sub(-#icons.waiting) == icons.waiting, "unexpected message: " .. notified2[1].msg)
 assert(
-  notified2[1].msg:find(vim.fn.fnamemodify(vim.b[buf].yap_path, ":t"), 1, true),
+  notified2[1].msg:find(require("harness.path").session_name(vim.b[buf].yap_path), 1, true),
   "completion toast must identify the conversation: " .. notified2[1].msg
 )
 assert(not notified2[1].msg:find("$", 1, true), "usage belongs in the winbar, not a toast")
@@ -219,7 +219,7 @@ assert(items[1].model == "m1", "idle model missing: " .. vim.inspect(items[1]))
 assert(items[2].buf == buf, "waiting session should sort last")
 assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(items[2]))
 assert(items[2].path == "/opt/code/yap", "project cwd missing: " .. vim.inspect(items[2]))
-assert(items[2].text:match(".*%.md$"), "filename fallback: " .. items[2].text)
+assert(items[2].text == require("harness.path").session_name(vim.b[buf].yap_path), "name fallback: " .. items[2].text)
 local rendered = fmt(items[2])
 assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: " .. rendered)
 assert(not rendered:find("(m1)", 1, true) and not rendered:find("/opt/code/yap", 1, true),
@@ -262,7 +262,7 @@ assert(
 )
 vim.cmd("enew")
 
--- A description replaces the filename fallback in the picker label.
+-- A description replaces the name fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 table.insert(first_lines, 1, "---")
 table.insert(first_lines, 2, "provider: mock")
@@ -282,9 +282,9 @@ for _, it in ipairs(items) do
   labels[it.text] = true
 end
 assert(labels["Finished mock turn"], "description missing from picker: " .. vim.inspect(items))
-local has_filename = false
+local has_name_fallback = false
 for label in pairs(labels) do
-  has_filename = has_filename or label:match(".*%.md$") ~= nil
+  has_name_fallback = has_name_fallback or label:match("^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x$") ~= nil
 end
-assert(has_filename, "filename fallback missing from picker: " .. vim.inspect(items))
+assert(has_name_fallback, "name fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

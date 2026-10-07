@@ -10,10 +10,11 @@ local yap = require("harness")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- The persistent audit view buffer of a session buffer (yap://<basename>-audit).
+-- The persistent audit view buffer of a session buffer (yap://<name>-audit).
 local function audit_buf(chat)
   local name = vim.api.nvim_buf_get_name(chat)
-  name = name:match("^yap://") and (name .. "-audit") or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-audit")
+  name = name:match("^yap://") and (name .. "-audit")
+    or ("yap://" .. require("harness.path").session_name(name) .. "-audit")
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_get_name(b) == name then
       return b

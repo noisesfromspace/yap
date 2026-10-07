@@ -100,11 +100,11 @@ vim.cmd("YapAlerts")
 vim.ui.select = old_select
 assert(selected and #labels == 4, "alerts picker did not list advisories and approvals: " .. vim.inspect(labels))
 assert(table.concat(labels, "\n"):find("approval requested", 1, true), "approval not identified in picker")
-assert(table.concat(labels, "\n"):find(vim.fn.fnamemodify(path1, ":t"), 1, true), "first session unidentified")
-assert(table.concat(labels, "\n"):find(vim.fn.fnamemodify(path2, ":t"), 1, true), "second session unidentified")
+assert(table.concat(labels, "\n"):find(paths.session_name(path1), 1, true), "first session unidentified")
+assert(table.concat(labels, "\n"):find(paths.session_name(path2), 1, true), "second session unidentified")
 local audit = vim.api.nvim_get_current_buf()
 assert(
-  vim.api.nvim_buf_get_name(audit):find(vim.fn.fnamemodify(path1, ":t") .. "-audit", 1, true),
+  vim.api.nvim_buf_get_name(audit):find(paths.session_name(path1) .. "-audit", 1, true),
   "wrong session opened"
 )
 local line = vim.api.nvim_win_get_cursor(0)[1]

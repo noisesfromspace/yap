@@ -37,20 +37,22 @@ print("saved: " .. path)
 local items = session.list("cwd")
 assert(#items == 0, "expected no listed sessions, got " .. #items)
 
--- 3b. naming the session with :file keeps it visible before a description
--- is generated (the picker shows the chosen name)
+-- 3b. naming a session means renaming its directory; the picker derives the
+-- name from the directory and keeps it visible before a description is
+-- generated.
 local project_dir = vim.fn.fnamemodify(path, ":h:h")
-local named = project_dir .. "/named-session/named-session.md"
-vim.api.nvim_buf_set_name(buf, named)
-session.save(buf)
+local named_dir = project_dir .. "/named-session"
+assert(vim.fn.rename(vim.fn.fnamemodify(path, ":h"), named_dir) == 0, "session directory rename failed")
+local named = named_dir .. "/session.md"
+assert(vim.fn.filereadable(named) == 1, "session.md missing after directory rename: " .. named)
 items = session.list("cwd")
 assert(#items == 1, "expected named session, got " .. #items)
-assert(items[1].text == "named-session.md", "named session should show its filename: " .. items[1].text)
+assert(items[1].text == "named-session", "named session should show its directory name: " .. items[1].text)
 print("listed: " .. items[1].text)
 local renamed = session.list("renamed")
 assert(
-  #renamed == 1 and renamed[1].text == "named-session.md",
-  "renamed scope should list the :file-named session: " .. vim.inspect(renamed)
+  #renamed == 1 and renamed[1].text == "named-session",
+  "renamed scope should list the renamed session: " .. vim.inspect(renamed)
 )
 
 -- 3c. a fresh session with an unsent # @user prompt is a "scheduled"
@@ -78,7 +80,7 @@ end
 
 -- 4. reopen and parse back
 vim.cmd("bwipeout!")
-yap.open(path)
+yap.open(named)
 local msgs = yap.parse_buffer(vim.api.nvim_get_current_buf())
 assert(#msgs == 3, "expected 3 messages, got " .. #msgs)
 assert(msgs[2].role == "user" and msgs[2].content:match("airspeed"), "msg 2 wrong")

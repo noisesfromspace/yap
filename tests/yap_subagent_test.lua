@@ -4,14 +4,14 @@ local yap = require("harness")
 yap.setup({ provider = "mock", model = "m1" })
 local parent = yap.new()
 local parent_path = vim.b[parent].yap_path
-local name = vim.fn.fnamemodify(parent_path, ":t:r") .. "-abc123"
-local child_path = vim.fn.fnamemodify(parent_path, ":h:h") .. "/" .. name .. "/" .. name .. ".md"
+local name = require("harness.path").session_name(parent_path) .. "-abc123"
+local child_path = vim.fn.fnamemodify(parent_path, ":h:h") .. "/" .. name .. "/session.md"
 local child = yap.new({ hidden = true, path = child_path, agent = "scout", system = "Scout agent", tools = { "read" } })
 assert(vim.api.nvim_get_current_buf() == parent, "child stole the parent window")
 assert(vim.fn.filereadable(child_path) == 1, "child not saved as markdown")
 assert(vim.b[child].yap_tools[1] == "read", "role tool allowlist missing")
 local lines = vim.fn.readfile(child_path)
-assert(table.concat(lines, "\n"):find("Scout role", 1, true), "role prompt not saved")
+assert(table.concat(lines, "\n"):find("Scout agent", 1, true), "role prompt not saved")
 local found = false
 for _, item in ipairs(require("harness.session").list("cwd")) do
   if item.path == child_path then

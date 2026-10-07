@@ -139,7 +139,7 @@ never injected bodies. Why: the buffer stays the only state (R-buffer-only-state
 templates/skills are just text, so one insert command covers compaction,
 snippets and skills.
 
-#### R-scratch-sections — Scratch sections are parsed from the live `*.notes` buffer, never re-read from the saved file during dispatch
+#### R-scratch-sections — Scratch sections are parsed from the live `notes.md` buffer, never re-read from the saved file during dispatch
 
 `# @notes` is an inert backlog; `# @steer` is a replaceable pending message
 that remains in the buffer until delivery (or follow-up dispatch), and the
@@ -231,8 +231,8 @@ format has no transient states to repair.
 
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
-`<session>.jsonl` beside the session markdown (in its own
-`<cwd-slug>/<session>/` directory), JSON Lines (one timestamped JSON object per line),
+`audit.jsonl` beside the session markdown (in its own
+`<cwd-slug>/<session>/` directory, `<session>/session.md`), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from yap:event lines plus synthesized
 `output` events for streamed bash/python output: full tool arguments, streamed
 bash/python output, full results, `attachment` events for image imports

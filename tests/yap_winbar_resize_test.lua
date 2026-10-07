@@ -267,7 +267,7 @@ local picker_win = vim.api.nvim_open_win(picker_buf, true, {
   style = "minimal",
 })
 vim.g.statusline_winid = session_win
-vim.b[target].yap_path = "/tmp/inactive-session.md"
+vim.b[target].yap_path = "/tmp/inactive-session/session.md"
 vim.api.nvim_buf_set_lines(target, 0, -1, false, {
   "---",
   "provider: mock",
@@ -284,7 +284,7 @@ state.running[target], state.running[other], state.awaiting[waiting] = nil, nil,
 local inactive_bar = yap.winbar(target)
 local inactive_center = inactive_bar:match("%%=(.-)%%=")
 assert(inactive_center, "inactive session name should occupy the center island: " .. inactive_bar)
-assert(inactive_center:find("inactive%-session%.md"), "inactive session name missing from center: " .. inactive_center)
+assert(inactive_center:find("inactive%-session"), "inactive session name missing from center: " .. inactive_center)
 assert(
   not inactive_center:find("mock/m1", 1, true),
   "inactive session shows model instead of name: " .. inactive_center
@@ -368,8 +368,8 @@ for _, b in ipairs({ left_buf, right_buf }) do
 end
 vim.b[left_buf].yap_model = "m1"
 vim.b[right_buf].yap_model = "m2"
-vim.b[left_buf].yap_path = "/tmp/left-session.md"
-vim.b[right_buf].yap_path = "/tmp/right-session.md"
+vim.b[left_buf].yap_path = "/tmp/left-session/session.md"
+vim.b[right_buf].yap_path = "/tmp/right-session/session.md"
 vim.b[left_buf].yap_usage = { prompt = 1100, completion = 10, cost = 0.01 }
 vim.b[right_buf].yap_usage = { prompt = 2200, completion = 20, cost = 0.02 }
 vim.api.nvim_win_set_buf(0, left_buf)
@@ -384,9 +384,9 @@ vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
 vim.api.nvim_win_set_width(left_win, 100)
 local inactive_bar =
   vim.api.nvim_eval_statusline(vim.wo[left_win].winbar, { winid = left_win, use_winbar = true, maxwidth = 200 }).str
-assert(inactive_bar:find("left-session.md", 1, true), "inactive winbar shows its own session name: " .. inactive_bar)
+assert(inactive_bar:find("left-session", 1, true), "inactive winbar shows its own session name: " .. inactive_bar)
 assert(
-  not inactive_bar:find("right-session.md", 1, true),
+  not inactive_bar:find("right-session", 1, true),
   "inactive winbar leaks the active session name: " .. inactive_bar
 )
 assert(not inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)

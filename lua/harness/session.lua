@@ -112,13 +112,6 @@ function M.save(buf)
     return
   end
   local path = vim.b[buf].yap_path
-  local bufname = vim.api.nvim_buf_get_name(buf)
-  -- Follow buffer renames (:file, :saveas): renaming the file IS session
-  -- naming, and :saveas to a new file IS forking.
-  if path and bufname ~= "" and bufname ~= path and not bufname:match("^%a+://") then
-    path = bufname
-    vim.b[buf].yap_path = path
-  end
   if not path then
     local dir = paths.session_dir(vim.fn.getcwd())
     paths.ensure_session_dir(dir)
@@ -126,9 +119,15 @@ function M.save(buf)
     vim.b[buf].yap_path = path
     vim.npcall(vim.api.nvim_buf_set_name, buf, path)
   end
+  -- The session file is always <dir>/session.md; a `:file` rename no longer
+  -- renames the session (its directory does), so re-point the buffer at its
+  -- canonical file before writing. This also stops a relative `:file` target
+  -- from re-rooting the write into the cwd (and chmod'ing it 0700).
+  local bufname = vim.api.nvim_buf_get_name(buf)
+  if bufname ~= path and bufname ~= "" and not bufname:match("^%a+://") then
+    vim.npcall(vim.api.nvim_buf_set_name, buf, path)
+  end
   stamp_updated_at(buf)
-  -- A `:file`/`:saveas` target may be a fresh directory (a renamed or copied
-  -- session); keep it private like directories created by new_session_path().
   paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
   vim.api.nvim_buf_call(buf, function()
@@ -140,53 +139,6 @@ function M.save(buf)
   vim.fn.setfperm(path, "rw-------")
   if view then
     vim.fn.winrestview(view)
-  end
-end
-
--- Track whether a buffer-name change was a `:file` rename (move the sidecar
--- files) or a `:saveas` copy (copy them). Both change the buffer name and
--- fire BufFilePost; `:saveas` additionally writes in the same command, which
--- arrives as BufWritePre before the deferred decision lands. A `:file` rename
--- is left for audit.follow_rename and scratch.notes_follow to move lazily; a
--- `:saveas` copy is rehomed eagerly so the original session keeps its files.
-local rename_pending = {} -- [buf] = "copy" | "move"
-
---- BufFilePost: the buffer name changed. Default to a `:file` rename; a
---- BufWritePre in the same command flips it to `:saveas` (see rename_write).
-function M.rename_post(buf)
-  rename_pending[buf] = "move"
-  local new_path = vim.api.nvim_buf_get_name(buf)
-  if new_path ~= "" and not new_path:match("^%a+://") then
-    paths.ensure_session_dir(vim.fn.fnamemodify(new_path, ":h"))
-  end
-  vim.schedule(function()
-    local is_copy = rename_pending[buf] == "copy"
-    rename_pending[buf] = nil
-    if not vim.api.nvim_buf_is_valid(buf) then
-      return
-    end
-    if is_copy then
-      -- `:saveas` continues in the same buffer under a new name. Retarget the
-      -- sidecars immediately so the original session keeps its history and the
-      -- copy's next turn appends to its own files (session.save() just
-      -- records the name change; it does not move sidecars).
-      local old_path = vim.b[buf].yap_path
-      local new_path = vim.api.nvim_buf_get_name(buf)
-      if old_path and old_path ~= new_path and new_path ~= "" and not new_path:match("^%a+://") then
-        vim.b[buf].yap_path = new_path
-        vim.fn.setfperm(new_path, "rw-------") -- the copy holds the same conversation
-        require("harness.audit").rehome_copy(buf)
-        require("harness.scratch").rehome_copy(buf, old_path)
-      end
-    end
-  end)
-end
-
---- BufWritePre: a write in the same command as the name change means the
---- change was `:saveas` (copy), not a bare `:file` rename.
-function M.rename_write(buf)
-  if rename_pending[buf] then
-    rename_pending[buf] = "copy"
   end
 end
 
@@ -288,7 +240,7 @@ function M.fork(buf, name, running)
   -- in either session must never write into the other's audit log.
   local audit = paths.audit_path(buf)
   if vim.fn.filereadable(audit) == 1 then
-    local dest = vim.fn.fnamemodify(path, ":r") .. ".jsonl"
+    local dest = vim.fn.fnamemodify(path, ":h") .. "/audit.jsonl"
     paths.ensure_session_dir(vim.fn.fnamemodify(dest, ":h"))
     local copied, copy_err
     if running then
@@ -469,9 +421,9 @@ end
 --- fall back to the description (then the filename). Project overviews prefix
 --- the cwd so sessions from different worktrees are obvious.
 function M.label(path, description, project_cwd)
-  local filename = path and path ~= "" and vim.fn.fnamemodify(path, ":t") or nil
-  local named = filename ~= nil and not paths.is_default_name(path)
-  local identity = named and filename or (description and description ~= "" and description or filename or "session")
+  local name = path and path ~= "" and paths.session_name(path) or nil
+  local named = name ~= nil and not paths.is_default_name(path)
+  local identity = named and name or (description and description ~= "" and description or name or "session")
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
@@ -496,10 +448,11 @@ function M.list(scope)
 
   local items, children, parents = {}, {}, {}
   for _, dir in ipairs(dirs) do
-    -- Sessions live one per directory: <dir>/<session>/<session>.md. glob()
-    -- skips dotfiles, so hidden sessions are never listed.
-    for _, path in ipairs(vim.fn.glob(dir .. "/*/*.md", false, true)) do
-      local name = vim.fn.fnamemodify(path, ":t")
+    -- Sessions live one per directory: <dir>/<session>/session.md. The
+    -- `*/session.md` glob skips dotfiles (hidden sessions are never listed)
+    -- and avoids picking up the notes.md sidecar, which is also a .md file.
+    for _, path in ipairs(vim.fn.glob(dir .. "/*/session.md", false, true)) do
+      local name = paths.session_name(path)
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
       local description = fm and fm.description or ""
@@ -611,7 +564,7 @@ function M.pick(opts, on_choice)
   local projects = {}
   local icon_width = 1
   for _, item in ipairs(items) do
-    projects[vim.fn.fnamemodify(item.path, ":h")] = true
+    projects[vim.fn.fnamemodify(item.path, ":h:h")] = true
     local status = opts.status and opts.status(item.path)
     if status then
       icon_width = math.max(icon_width, vim.fn.strdisplaywidth(status))
@@ -623,7 +576,7 @@ function M.pick(opts, on_choice)
     kind = "yap_session",
     format_item = function(item)
       local icon = opts.status and opts.status(item.path)
-      local project = slug_cwd(vim.fn.fnamemodify(item.path, ":h"))
+      local project = slug_cwd(vim.fn.fnamemodify(item.path, ":h:h"))
       local label = item.text
       -- list("all") prefixes roots for callers; move that identity to a
       -- suffix in the picker so titles remain aligned across projects.

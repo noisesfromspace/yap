@@ -356,7 +356,7 @@ local function handle_event(buf, json_line)
     local lines = {
       ("yap: %s (%s) — %s: %s"):format(
         live_session_label(buf),
-        vim.fn.fnamemodify(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf), ":t"),
+        paths.session_name(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)),
         ev.name or "tool",
         ev.reason or "flagged"
       ),
@@ -832,10 +832,10 @@ function M.alerts()
       pairs[#pairs + 1] = { log = log, path = path }
     end
   end
-  -- Audit logs are <name>.jsonl siblings of <name>.md, one session per
-  -- directory: <session_dir>/<name>/<name>{.md,.jsonl}.
+  -- Audit logs are <dir>/audit.jsonl beside <dir>/session.md, one session
+  -- per directory.
   for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
-    add(log, vim.fn.fnamemodify(log, ":r") .. ".md")
+    add(log, vim.fn.fnamemodify(log, ":h") .. "/session.md")
   end
   for _, pair in ipairs(pairs) do
     local log, path = pair.log, pair.path
@@ -873,7 +873,7 @@ function M.alerts()
       local ev = item.event
       return ("%s  %s  %s %s: %s"):format(
         ev.ts or "?",
-        vim.fn.fnamemodify(item.path, ":t"),
+        paths.session_name(item.path),
         ev.type == "approval_request" and "approval requested" or "advisory",
         ev.tool or ev.name or "tool",
         ev.reason or "review call"
@@ -1193,7 +1193,6 @@ function M.send(buf)
         done(not errors[buf])
       end
       describe.refresh(buf, "answer")
-      audit.follow_rename(buf) -- first save named the session; rename the log to match
       -- A completed turn is a first-class event (herdr's "working → blocked
       -- → idle" notification). Fire it once the buffer is in its final state
       -- so handlers see the appended `# @user` and the saved session.
@@ -2227,10 +2226,12 @@ function M.setup(opts)
     local name = vim.api.nvim_buf_get_name(buf)
     local root = paths.sessions_root()
     -- Only the session Markdown itself is a session: the sidecar files in
-    -- the same tree (the scratch notes and the audit log) must never be
-    -- adopted, or the scratch jotter becomes a session (its own winbar, its
-    -- own <C-s> send, a rollup entry) instead of dispatching to its owner.
-    return name, name:sub(1, #root + 1) == root .. "/" and name:match("%.md$") ~= nil
+    -- the same directory (notes.md and audit.jsonl) must never be adopted,
+    -- or the scratch jotter becomes a session (its own winbar, its own
+    -- <C-s> send, a rollup entry) instead of dispatching to its owner. The
+    -- session file is always named `session.md`; a `.md` suffix alone no
+    -- longer marks a session (notes.md is also `.md`).
+    return name, name:sub(1, #root + 1) == root .. "/" and vim.fn.fnamemodify(name, ":t") == "session.md"
   end
   vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,
@@ -2250,25 +2251,10 @@ function M.setup(opts)
       end
     end,
   })
-  -- Distinguish a `:file` rename (move the sidecar files) from a `:saveas`
-  -- copy (copy them). Both fire BufFilePost; `:saveas` also writes in the
-  -- same command, so BufWritePre flips the deferred decision before it lands.
-  vim.api.nvim_create_autocmd("BufFilePost", {
-    group = adopt_group,
-    callback = function(args)
-      if vim.b[args.buf].yap then
-        require("harness.session").rename_post(args.buf)
-      end
-    end,
-  })
-  vim.api.nvim_create_autocmd("BufWritePre", {
-    group = adopt_group,
-    callback = function(args)
-      if vim.b[args.buf].yap then
-        require("harness.session").rename_write(args.buf)
-      end
-    end,
-  })
+  -- The session's identity is its directory, so a `:file`/`:saveas` rename no
+  -- longer renames or copies a session; renaming the directory does, and
+  -- |:YapFork| copies. save() re-points the buffer at its canonical
+  -- <dir>/session.md, so a stray buffer name is never followed or written to.
   -- The winbar degrades with window width (see render_winbar); re-evaluate
   -- its `%!` expression whenever a window is resized.
   vim.api.nvim_create_autocmd("WinResized", {

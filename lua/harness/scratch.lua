@@ -1,4 +1,4 @@
--- The scratch queue and mid-turn steering: a file-backed `*.notes` jotter
+-- The scratch queue and mid-turn steering: a file-backed `notes.md` jotter
 -- (<leader>s) with three explicit sections (# @notes / # @steer / # @queue)
 -- and the # @steer mechanism that redirects a running turn.
 
@@ -138,40 +138,6 @@ local function sync_scratch_steer(owner, scratch)
   end
 end
 
--- Drag the notes file and buffer along after a `:file` rename of the
--- session, the same way the audit log follows.
-local function notes_follow(buf, scratch)
-  local want = paths.notes_path(buf)
-  local name = vim.api.nvim_buf_get_name(scratch)
-  if name == want then
-    return
-  end
-  if name ~= "" and vim.fn.filereadable(name) == 1 and vim.fn.filereadable(want) == 0 then
-    os.rename(name, want)
-  end
-  vim.api.nvim_buf_set_name(scratch, want)
-end
-
---- Retarget the notes file (and any open scratch buffer) for a `:saveas` copy.
---- The original session keeps its notes; the buffer gets a copy at the new
---- session's path, created here so the next scratch toggle loads the copy
---- rather than a fresh empty file.
-function M.rehome_copy(buf, old_session_path)
-  local old = vim.fn.fnamemodify(old_session_path, ":r") .. ".notes"
-  local want = paths.notes_path(buf)
-  if old ~= want and vim.fn.filereadable(old) == 1 and vim.fn.filereadable(want) == 0 then
-    vim.uv.fs_copyfile(old, want)
-    vim.fn.setfperm(want, "rw-------") -- notes can hold pending prompts/steers
-  end
-  local scratch = vim.b[buf].yap_scratch
-  if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    local name = vim.api.nvim_buf_get_name(scratch)
-    if name ~= want then
-      vim.api.nvim_buf_set_name(scratch, want)
-    end
-  end
-end
-
 local function scratch_dispatch_queue(owner)
   if not vim.api.nvim_buf_is_valid(owner) or state.is_running(owner) then
     return false
@@ -240,7 +206,7 @@ end
 
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
 --- opened below the session window. It is a real, file-backed buffer — a
---- sibling `*.notes` file of the session — so `:write` saves it and an
+--- sibling `notes.md` file of the session — so `:write` saves it and an
 --- unsaved notes file prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
 local SCRATCH_HEIGHT = 8
@@ -336,8 +302,6 @@ function M.scratch_toggle(buf)
   else
     vim.b[scratch].yap_owner = buf
   end
-
-  notes_follow(buf, scratch) -- session renamed? drag the notes file along
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens
   -- full-width below it (see harness.drawer).

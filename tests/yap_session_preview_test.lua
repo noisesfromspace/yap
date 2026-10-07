@@ -360,7 +360,7 @@ assert(saved_preview[#saved_preview] == "history answer", "saved last answer wro
 -- A named parent keeps its auto-named children in renamed history, while a
 -- custom-named orphan child is discoverable as a typed root.
 local dir = require("harness.path").session_dir(vim.fn.getcwd())
-local named_parent = yap.new({ path = dir .. "/named-history-parent/named-history-parent.md" })
+local named_parent = yap.new({ path = dir .. "/named-history-parent/session.md" })
 local named_parent_path = vim.b[named_parent].yap_path
 local named_child = yap.new({ agent = "scout", hidden = true })
 local named_child_path = vim.b[named_child].yap_path
@@ -369,7 +369,7 @@ vim.api.nvim_buf_set_lines(named_child, 3, 3, false, { "description: Generated f
 session.save(named_child)
 vim.api.nvim_buf_set_lines(named_parent, 3, 3, false, { "subagents:", "  - " .. named_child_path })
 session.save(named_parent)
-local orphan = yap.new({ path = dir .. "/named-history-orphan/named-history-orphan.md", agent = "scout", hidden = true })
+local orphan = yap.new({ path = dir .. "/named-history-orphan/session.md", agent = "scout", hidden = true })
 local orphan_path = vim.b[orphan].yap_path
 vim.api.nvim_buf_set_lines(orphan, -1, -1, false, { "orphan task" })
 session.save(orphan)
@@ -462,7 +462,7 @@ end
 local paths = require("harness.path")
 local other_dir = paths.session_dir("/tmp/yap-other-project")
 vim.fn.mkdir(other_dir .. "/other-project", "p")
-vim.fn.writefile(vim.fn.readfile(path), other_dir .. "/other-project/other-project.md")
+vim.fn.writefile(vim.fn.readfile(path), other_dir .. "/other-project/session.md")
 captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
@@ -474,13 +474,13 @@ for _, item in ipairs(captured.items) do
   local row = captured.opts.format_item(item)
   if item.path == path then all_parent = row end
   if item.path == saved_child_path then all_child = row end
-  if item.path == other_dir .. "/other-project/other-project.md" then other_row = row end
+  if item.path == other_dir .. "/other-project/session.md" then other_row = row end
 end
-assert(all_parent and all_parent:find("^   " .. vim.pesc(vim.fn.getcwd()) .. "  Preview test") == 1,
-  "history cwd should precede root title: " .. tostring(all_parent))
+assert(all_parent and all_parent:find("^   Preview test") == 1
+  and all_parent:find(vim.fn.getcwd(), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
 assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
   and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
-assert(other_row and vim.startswith(other_row, "   " .. paths.slug_cwd(other_dir) .. "  other-project.md"),
+assert(other_row and vim.startswith(other_row, "   other-project"),
   "other project prefix missing: " .. tostring(other_row))
 
 print("OK session_preview")

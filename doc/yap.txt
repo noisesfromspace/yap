@@ -465,17 +465,16 @@ append-only audit log, an optional scratch notes file, and any photo
 attachments in a shared asset store. The markdown file IS the conversation —
 the buffer is the only serialization of the message history — but a session
 is a small file set, not a single file. Each session has its own directory,
-~/.yap/sessions/<cwd-slug>/<session>/, containing <session>.md and its
-sidecars. Sessions are saved after every turn exit, including
+~/.yap/sessions/<cwd-slug>/<session>/, containing session.md (the
+conversation), audit.jsonl (the audit log), and notes.md (the scratch jotter).
+The session's name is its directory, so renaming the directory renames the
+session. Sessions are saved after every turn exit, including
 backend errors and stops. The file is created when the buffer opens, so a
-fresh session is file-backed from the start and nameable with |:file| before
-the first reply; every save goes through |:write|, so 'modified', |:w| and the
-exit prompt behave like any normal file buffer. The audit log
-(<session>.jsonl) sits beside the session file and follows the
-session name across |:file| renames. The scratch notes file
-(<session>.notes) sits beside the session file. Photo attachments live in a
-content-addressed asset store under Neovim's data directory; the frontmatter
-`assets` list records which assets a session references.
+fresh session is file-backed from the start; every save goes through
+|:write|, so 'modified', |:w| and the exit prompt behave like any normal
+file buffer. Photo attachments live in a content-addressed asset store under
+Neovim's data directory; the frontmatter `assets` list records which assets
+a session references.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — is
 recognized and adopted as a managed session (unlisted, keymapped, audit view
@@ -483,23 +482,19 @@ attached), the same as |:YapSessions| resume.
 
 File operations are the session operations:
 
-  :file new-name.md     Rename/name the active session; the picker shows the
-                        chosen name. Yap moves the audit log after a
-                        successful turn and the scratch queue when next
-                        toggled.
-  :saveas copy.md       Save the current conversation to a new session file
-                        and continue in that buffer as the copy. The old file
-                        is left unchanged, and its audit log and scratch
-                        queue are COPIED (not moved) to the new name, so the
-                        copy continues with full history while the original
-                        keeps its own. Use |:YapFork| to branch into a
-                        separate buffer without touching the source.
+  rename the directory    Rename/name the active session; the picker derives
+                          the name from the directory, so it follows for
+                          free (the audit log and notes live inside it).
+  |:YapFork|              Copy the current conversation into a new session
+                          directory and continue in a separate buffer. The
+                          source is left unchanged and its audit log is
+                          COPIED (not moved) to the new directory.
   delete a region + send  Branch the conversation within the active session.
 
 SCRATCH BUFFER
 
 <leader>s toggles the scratch buffer — a file-backed sibling
-(<session>.notes) with three independently foldable sections:
+(`notes.md`) with three independently foldable sections:
 
   # @notes    An inert backlog; never sent.
   # @steer    A replaceable pending message for the RUNNING turn. <C-s>
@@ -517,7 +512,7 @@ left in the user prompt if it was not delivered.
 AUDIT LOG                                                        *yap-audit*
 
 The session file holds the context; the audit log holds everything the
-context doesn't carry. <session>.jsonl beside the session file — append-only,
+context doesn't carry. audit.jsonl beside the session file — append-only,
 survives restarts, one JSON object per line (JSON Lines), timestamped by the
 Lua side as each event arrives:
 
@@ -948,10 +943,10 @@ replaces.
                       continues from it.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
-  scratch             The file-backed `*.notes` control buffer holding
+  scratch             The file-backed `notes.md` control buffer holding
                       `# @notes` / `# @steer` / `# @queue`. (Not "jotter",
                       "sidecar".)
-  audit log           The append-only `<session>.jsonl` record of every tool
+  audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.
   audit view          The rendered buffer `:YapLive` rebuilds from the audit

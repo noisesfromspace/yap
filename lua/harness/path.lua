@@ -1,6 +1,6 @@
--- Session path resolution — one place for the cwd↔slug transform and the
--- derived file paths. The audit log and notes are siblings of the session
--- markdown, so only the sessions root needs resolving here.
+-- Session path resolution — one place for the cwd↔slug transform, the
+-- session name (its directory), and the derived file paths. The audit log
+-- and notes are fixed-name siblings of the session markdown.
 
 local M = {}
 
@@ -80,7 +80,7 @@ function M.ensure_session_dir(dir)
 end
 
 --- Originating cwd for a persisted session file, from its directory slug.
---- A session lives at <sessions>/<cwd-slug>/<session>/<session>.md, so the
+--- A session lives at <sessions>/<cwd-slug>/<session>/session.md, so the
 --- slug is two levels up from the markdown file.
 function M.project_cwd(path)
   return unscream(vim.fn.fnamemodify(path, ":h:h:t"))
@@ -97,58 +97,58 @@ function M.session_path(buf)
   return vim.b[buf].yap_path
 end
 
--- Auto-generated session filenames: <timestamp>-<hex>.md. The pattern below
--- is the exact inverse of new_session_path's format string — keep them
--- together, or unnamed sessions leak into the picker / get hidden.
-local DEFAULT_NAME = "^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$"
+-- Auto-generated session names: <timestamp>-<hex> (the directory name). The
+-- pattern below is the exact inverse of new_session_path's format string —
+-- keep them together, or unnamed sessions leak into the picker / get hidden.
+local DEFAULT_NAME = "^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x$"
 
---- A fresh session file path under `dir`. Sessions live one per directory:
---- <dir>/<name>/<name>.md, so the markdown, notes, and audit log are all in
---- one place. `name` (optional) is the session base name; without it an
---- auto-generated timestamp+hex name is used. The session directory is
---- created here (0700), ready for the first write.
+--- A fresh session path under `dir`: <dir>/<name>/session.md, with the
+--- session named by its directory. `name` (optional) is the session base
+--- name; without it an auto-generated timestamp+hex name is used. The
+--- session directory is created here (0700), ready for the first write.
 function M.new_session_path(dir, name)
   name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
   local sdir = dir .. "/" .. name
   M.ensure_session_dir(sdir)
-  return sdir .. "/" .. name .. ".md"
+  return sdir .. "/session.md"
 end
 
---- True when `path` still carries the auto-generated filename (never named
---- with :file). These are unnamed scratch sessions.
+--- The session's name: the directory immediately above the markdown file.
+--- Sessions are <dir>/<name>/session.md, so the name is the directory and
+--- renaming the directory renames the session everywhere it is displayed.
+function M.session_name(path)
+  return vim.fn.fnamemodify(path, ":h:t")
+end
+
+--- True when the session directory still carries the auto-generated name
+--- (never renamed). These are unnamed scratch sessions.
 function M.is_default_name(path)
-  return vim.fn.fnamemodify(path, ":t"):match(DEFAULT_NAME) ~= nil
+  return M.session_name(path):match(DEFAULT_NAME) ~= nil
 end
 
---- Session basename (no extension); falls back to the buffer name.
-function M.session_base(buf)
-  local path = M.session_path(buf)
-  if path then
-    return vim.fn.fnamemodify(path, ":t:r")
-  end
-  return vim.api.nvim_buf_get_name(buf):gsub("^yap://", ""):gsub("[^%w%._-]", "-")
-end
-
---- The audit view buffer's name; mirrors the session basename so `:file`
---- renames keep the two together.
+--- The audit view buffer's name; mirrors the session name (its directory)
+--- so a renamed session keeps its audit view.
 function M.audit_buf_name(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-audit"
+  return "yap://" .. M.session_name(path) .. "-audit"
 end
 
---- The session's JSON Lines audit log: a sibling of the session markdown
---- (<name>.jsonl next to <name>.md). It follows the session file, not the
---- current working directory, so a session opened from another project still
---- writes to its own log.
+--- The session's JSON Lines audit log: <dir>/audit.jsonl, beside the session
+--- markdown. It follows the session directory, not the current working
+--- directory, so a session opened from another project still writes to its
+--- own log.
 function M.audit_path(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":r") .. ".jsonl"
+  return vim.fn.fnamemodify(path, ":h") .. "/audit.jsonl"
 end
 
---- The session's scratch notes file (a sibling of the session file).
+--- The session's scratch notes file: <dir>/notes.md, beside the session
+--- markdown. The `.md` extension gives it markdown highlighting in editors
+--- that open it directly; the scratch buffer itself is created without
+--- filetype detection, so no LSP clients attach to it.
 function M.notes_path(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":r") .. ".notes"
+  return vim.fn.fnamemodify(path, ":h") .. "/notes.md"
 end
 
 return M

@@ -180,7 +180,7 @@ function M.start(parent, ev)
     end
   end
   local parent_path = vim.b[parent].yap_path
-  local parent_name = vim.fn.fnamemodify(parent_path, ":t:r")
+  local parent_name = paths.session_name(parent_path)
   local dir = paths.session_dir(vim.b[parent].yap_project_cwd or vim.fn.getcwd())
   local child_path
   repeat

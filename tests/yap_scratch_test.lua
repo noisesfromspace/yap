@@ -13,7 +13,7 @@ local scratch = vim.api.nvim_get_current_buf()
 assert(scratch ~= buf, "scratch is the session buffer")
 assert(vim.bo[scratch].buftype == "", "scratch buffer is not file-backed")
 assert(vim.bo[scratch].buflisted == false, "scratch buffer should be unlisted")
-assert(vim.api.nvim_buf_get_name(scratch):match("%.notes$") ~= nil, "scratch buffer is not a .notes file")
+assert(vim.api.nvim_buf_get_name(scratch):match("/notes%.md$") ~= nil, "scratch buffer is not a notes.md file")
 local notes_file = vim.api.nvim_buf_get_name(scratch)
 assert(vim.fn.filereadable(notes_file) == 1, "new notes file was not saved automatically")
 local initial = { "# @notes", "", "# @steer", "", "# @queue" }

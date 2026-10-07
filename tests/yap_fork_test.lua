@@ -22,7 +22,7 @@ vim.cmd("YapFork forked")
 local fork_buf = vim.api.nvim_get_current_buf()
 local fork = vim.b[fork_buf].yap_path
 local expected_dir = paths.session_dir(vim.b[original_buf].yap_project_cwd)
-assert(fork_buf ~= original_buf and fork == expected_dir .. "/forked/forked.md", "fork must open an independent buffer")
+assert(fork_buf ~= original_buf and fork == expected_dir .. "/forked/session.md", "fork must open an independent buffer")
 assert(
   vim.b[original_buf].yap_path == original and vim.api.nvim_buf_get_name(original_buf) == original,
   "source renamed"
@@ -46,9 +46,9 @@ for i, item in ipairs(saved_items) do
   end
 end
 assert(source_index and fork_index == source_index + 1, "saved fork not beneath source: " .. vim.inspect(saved_items))
-assert(saved_items[fork_index].text == "  ↳ fork · forked.md", "saved fork label wrong")
+assert(saved_items[fork_index].text == "  ↳ fork · forked", "saved fork label wrong")
 local renamed_items = require("harness.session").list("renamed")
-assert(renamed_items[1] and renamed_items[1].path == fork and renamed_items[1].text == "fork · forked.md (parent not shown)",
+assert(renamed_items[1] and renamed_items[1].path == fork and renamed_items[1].text == "fork · forked (parent not shown)",
   "named fork under unnamed parent missing from renamed history: " .. vim.inspect(renamed_items))
 local captured
 local select = vim.ui.select
@@ -67,7 +67,7 @@ for i, item in ipairs(captured) do
   end
 end
 assert(live_source and live_fork == live_source + 1, "open fork not beneath source: " .. vim.inspect(captured))
-assert(captured[live_fork].text == "↳ fork · forked.md", "open fork label wrong")
+assert(captured[live_fork].text == "↳ fork · forked", "open fork label wrong")
 vim.ui.select = function(items, opts)
   captured = { items = items, format = opts.format_item }
 end
@@ -101,7 +101,7 @@ assert(vim.api.nvim_get_current_buf() == fork_buf, "failed fork changed focus")
 assert(not require("harness.session").fork(fork_buf, "../outside"), "path escape accepted")
 local generated = assert(yap.fork())
 assert(
-  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$"),
+  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x/session%.md$"),
   "unexpected generated fork name: " .. generated
 )
 assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == fork, "nested fork parent missing")
@@ -262,10 +262,10 @@ local function check_orphan(pick, root_buf, child_buf, title)
     assert(captured[child_index].text:find("↳ fork · ", 1, true) == 1, "open child lost fork label")
   end
 end
-check_orphan(yap.instances, fork_buf, nested_buf, "fork · forked.md (parent not shown)")
+check_orphan(yap.instances, fork_buf, nested_buf, "fork · forked (parent not shown)")
 state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true
 -- The current leaf is omitted only from needs-you, even with an open parent.
-check_orphan(yap.waiting, fork_buf, nil, "fork · forked.md (parent not shown)")
+check_orphan(yap.waiting, fork_buf, nil, "fork · forked (parent not shown)")
 vim.cmd("bdelete! " .. fork_buf)
 -- A lone current fork appears in the general picker but not needs-you.
 captured = nil
@@ -277,7 +277,7 @@ vim.ui.select = select
 local found_current = false
 for _, item in ipairs(captured or {}) do
   found_current = found_current
-    or (item.buf == nested_buf and item.text == "fork · " .. vim.fn.fnamemodify(generated, ":t") .. " (parent not shown)")
+    or (item.buf == nested_buf and item.text == "fork · " .. paths.session_name(generated) .. " (parent not shown)")
 end
 assert(found_current, "current orphan fork missing from open picker")
 -- A current leaf is hidden by needs-you even when other sessions need attention.
@@ -292,8 +292,8 @@ for _, item in ipairs(captured or {}) do
   assert(item.buf ~= nested_buf, "current leaf should be hidden from needs-you")
 end
 vim.cmd("enew")
-check_orphan(yap.instances, nested_buf, nil, "fork · " .. vim.fn.fnamemodify(generated, ":t") .. " (parent not shown)")
-check_orphan(yap.waiting, nested_buf, nil, "fork · " .. vim.fn.fnamemodify(generated, ":t") .. " (parent not shown)")
+check_orphan(yap.instances, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
+check_orphan(yap.waiting, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
 state.awaiting[nested_buf] = nil
 local after_close = require("harness.session").list("cwd")
 local positions = {}
