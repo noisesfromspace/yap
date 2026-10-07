@@ -22,6 +22,7 @@ local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
 local winbar = require("harness.winbar")
 local spinner = require("harness.spinner")
+local drawer = require("harness.drawer")
 
 M.winbar = winbar.winbar
 M.overview = winbar.overview
@@ -39,6 +40,7 @@ local steer = state.steer
 local servers = state.servers
 local subagent_children = state.subagent_children
 local subagent_done = state.subagent_done
+local pending_approvals = state.pending_approvals
 
 local start_subagent
 local adopt
@@ -344,28 +346,13 @@ local function seed_session_usage(buf)
   vim.b[buf].yap_session_usage = su
 end
 
---- Find a buffer by name, or create one (unlisted) with that name.
---- Reuse comes first: naming a fresh buffer identically to a leftover
---- would E95 (the chat buffer may have been wiped and reopened). Returns
---- the buffer and whether it was freshly created.
-local function find_or_create_buffer(name, listed, scratch)
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_get_name(b) == name then
-      return b, false
-    end
-  end
-  local b = vim.api.nvim_create_buf(listed, scratch)
-  vim.api.nvim_buf_set_name(b, name)
-  return b, true
-end
-
 local function ensure_audit(buf)
   local t = audits[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
   local name = paths.audit_buf_name(buf)
-  local tbuf = find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
+  local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
 
@@ -484,7 +471,6 @@ end
 --- Handle one `yap:event {json}` line from the binary's stderr.
 local scratch_section_text, scratch_set_section, scratch_save
 local live_session_label
-local pending_approvals = {} -- chat buf -> approval_request awaiting an explicit answer
 local inspect_approval
 
 local function answer_approval(buf, approved)
@@ -842,86 +828,16 @@ function M.compact_delete(buf)
   require("harness.session").save(buf)
 end
 
--- The chat window each open drawer is anchored to, so closing the drawer
--- returns the cursor to the window it was toggled from (never stranded on
--- a dead window or jumped to an unrelated one).
-local drawer_anchor = {} -- drawer bufnr -> owner window id
-
---- Open or close a fixed-height drawer below the chat window. This is the
---- ONE toggle pattern for the audit view and the scratch queue: a
---- single persistent buffer, never duplicated, always a full-width bottom
---- split, and closed back to the window it was toggled from. Anchoring the
---- split to a window showing `owner` is what keeps the drawer full-width
---- when the chat shares a vertical split — a bare `belowright split` would
---- carve a half-width jotter out of the current pane.
-local function toggle_drawer(owner, bufnr, height)
-  local wins = vim.fn.win_findbuf(bufnr)
-  if #wins > 0 then
-    for _, win in ipairs(wins) do
-      if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
-      end
-    end
-    local anchor = drawer_anchor[bufnr]
-    if anchor and vim.api.nvim_win_is_valid(anchor) then
-      vim.api.nvim_set_current_win(anchor)
-    end
-    drawer_anchor[bufnr] = nil
-    return false
-  end
-
-  local owner_wins = vim.fn.win_findbuf(owner)
-  local cur = vim.api.nvim_get_current_win()
-  local anchor
-  if vim.tbl_contains(owner_wins, cur) then
-    anchor = cur -- stay where the user toggled from
-  elseif #owner_wins > 0 and vim.api.nvim_win_is_valid(owner_wins[1]) then
-    anchor = owner_wins[1]
-  end
-  if anchor and vim.api.nvim_win_is_valid(anchor) then
-    vim.api.nvim_set_current_win(anchor)
-  end
-  vim.cmd("botright " .. height .. "split")
-  vim.api.nvim_win_set_buf(0, bufnr)
-  drawer_anchor[bufnr] = anchor
-  return true
-end
-
-local function close_drawer_window(buf, owner)
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(win) then
-      -- tabpage_list_wins includes floating windows, but Neovim cannot
-      -- close the last ordinary window of a tab (E444), even with floats.
-      local tab = vim.api.nvim_win_get_tabpage(win)
-      local normal = 0
-      for _, other in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-        if vim.api.nvim_win_get_config(other).relative == "" then
-          normal = normal + 1
-        end
-      end
-      if normal > 1 then
-        vim.api.nvim_win_close(win, true)
-      elseif pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
-        -- Inspect + :only while focused on the audit: keep the review
-        -- visible, not an empty replacement buffer. :YapApproval still
-        -- works from this window even when the chat is hidden.
-      else
-        -- Keep the drawer buffer available to reopen later.
-        vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))
-      end
-    end
-  end
-  drawer_anchor[buf] = nil
-end
+-- Drawer open/close lives in harness.drawer.
 
 local function close_session_drawers(buf)
   local scratch = vim.b[buf].yap_scratch
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    close_drawer_window(scratch, buf)
+    drawer.close(scratch, buf)
   end
   local audit_view = audits[buf]
   if audit_view and vim.api.nvim_buf_is_valid(audit_view.bufnr) then
-    close_drawer_window(audit_view.bufnr, buf)
+    drawer.close(audit_view.bufnr, buf)
   end
 end
 
@@ -932,12 +848,12 @@ function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for chat, t in pairs(audits) do
     if t.bufnr == buf then
-      toggle_drawer(chat, buf, 12)
+      drawer.toggle(chat, buf, 12)
       return
     end
   end
   local t = ensure_audit(buf)
-  if not toggle_drawer(buf, t.bufnr, 12) then
+  if not drawer.toggle(buf, t.bufnr, 12) then
     return
   end
   if M.config.keymaps.live ~= "" then
@@ -1378,7 +1294,7 @@ function M.scratch_toggle(buf)
     -- otherwise create a file-backed buffer and load the saved queue.
     local want = queue_path(buf)
     local created
-    scratch, created = find_or_create_buffer(want, false, false) -- unlisted, file-backed
+    scratch, created = util.find_or_create_buffer(want, false, false) -- unlisted, file-backed
     if created and vim.fn.filereadable(want) == 1 then
       vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
     end
@@ -1454,8 +1370,8 @@ function M.scratch_toggle(buf)
   queue_follow(buf, scratch) -- session renamed? drag the queue file along
 
   -- Toggle: a visible queue closes back to the chat; an invisible one opens
-  -- full-width below it (see toggle_drawer).
-  if not toggle_drawer(buf, scratch, SCRATCH_HEIGHT) then
+  -- full-width below it (see harness.drawer).
+  if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT) then
     return
   end
   vim.wo.winfixheight = true
