@@ -476,46 +476,53 @@ local function render_winbar(buf)
     return segs
   end
 
-  -- The model island is centered independently of left and right content.
-  -- Inactive sessions show their session identity instead of a model that is
-  -- only useful while that session is selected. A pending steer icon sits
-  -- immediately left of the model; a matching blank cell on the right keeps
-  -- the model name on the true midpoint. The active bar adds the fold-view
-  -- switch to the island's right with a matching blank on the left, so the
-  -- model name stays centered even though the whole section grows.
-  local function center_segments(show_switch)
-    local text = provider .. "/" .. model
-    if inactive then
-      local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
-      text = truncate_display(label, 40)
+  -- The center section holds the model island and, in the active bar, the
+  -- fold-view switch to its right. Inactive sessions show their session
+  -- identity instead of a model that is only useful while that session is
+  -- selected. A pending steer icon sits immediately left of the model; a
+  -- matching blank cell on the right keeps the model name on the true
+  -- midpoint. The switch is added with a matching blank on the left so the
+  -- model name stays centered even though the whole section grows. When the
+  -- window is too narrow for the island, it drops alone and leaves the
+  -- switch behind (see render_winbar).
+  local function center_segments(show_model, switch_in_center)
+    local switch_segs = switch_in_center and fold_switch_segs() or nil
+    if not show_model and not switch_segs then
+      return nil
     end
-    local show_steer = not inactive and steer[buf] ~= nil
-    local switch_segs = show_switch and fold_switch_segs() or nil
     local center = {}
-    if switch_segs then
-      -- Blank left of the island: the switch width plus its two-column gap.
-      center[#center + 1] = seg(string.rep(" ", width_of(switch_segs) + 2), "Idle")
-    end
-    center[#center + 1] = seg(" ", "Idle")
-    center[#center + 1] = seg("", "IslandCap")
-    center[#center + 1] = seg(" ", "Count", true)
-    if show_steer then
-      center[#center + 1] = seg(icons.steer, "Needs", true)
+    if show_model then
+      local text = provider .. "/" .. model
+      if inactive then
+        local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
+        text = truncate_display(label, 40)
+      end
+      local show_steer = not inactive and steer[buf] ~= nil
+      if switch_segs then
+        -- Blank left of the island: the switch width plus its two-column gap.
+        center[#center + 1] = seg(string.rep(" ", width_of(switch_segs) + 2), "Idle")
+      end
+      center[#center + 1] = seg(" ", "Idle")
+      center[#center + 1] = seg("", "IslandCap")
       center[#center + 1] = seg(" ", "Count", true)
+      if show_steer then
+        center[#center + 1] = seg(icons.steer, "Needs", true)
+        center[#center + 1] = seg(" ", "Count", true)
+      end
+      center[#center + 1] = seg(text, "Model", true, true)
+      center[#center + 1] = seg(" ", "Count", true)
+      if show_steer then
+        center[#center + 1] = seg("  ", "Count", true)
+      end
+      center[#center + 1] = seg("", "IslandCap")
     end
-    center[#center + 1] = seg(text, "Model", true, true)
-    center[#center + 1] = seg(" ", "Count", true)
-    if show_steer then
-      center[#center + 1] = seg("  ", "Count", true)
-    end
-    center[#center + 1] = seg("", "IslandCap")
     if switch_segs then
-      center[#center + 1] = seg("  ", "Idle")
+      center[#center + 1] = seg(show_model and "  " or " ", "Idle")
       for _, s in ipairs(switch_segs) do
         center[#center + 1] = s
       end
+      center[#center + 1] = seg(" ", "Idle")
     end
-    center[#center + 1] = seg(" ", "Idle")
     return center
   end
 
@@ -554,29 +561,30 @@ local function render_winbar(buf)
 
   -- Preserve real centering: drop the middle when either edge cluster
   -- would collide with it, then degrade the right side as before.
-  local desc_max, mode, show_mid, show_switch = 40, "full", true, true
+  local desc_max, mode, show_model, show_switch = 40, "full", true, true
   while true do
     local left = left_segments(desc_max, inactive and show_switch)
-    local center = show_mid and center_segments(not inactive) or nil
+    local switch_in_center = not inactive and show_switch
+    local center = (show_model or switch_in_center) and center_segments(show_model, switch_in_center) or nil
     local usage = not inactive and usage_segment(mode)
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
     local total = left_width + center_width + right_width
-    if
-      total <= width
-      and (
-        not center
-        or (
-          left_width <= math.floor((width - center_width) / 2)
-          and right_width <= math.floor((width - center_width) / 2)
-        )
-      )
-    then
+    -- Only the model island (or an inactive session's label) needs true
+    -- centering; a switch alone can sit anywhere it fits. So the centering
+    -- constraint applies only while the model is still shown.
+    local fits = total <= width
+    if center and show_model then
+      fits = fits
+        and left_width <= math.floor((width - center_width) / 2)
+        and right_width <= math.floor((width - center_width) / 2)
+    end
+    if fits then
       return render(left, center, usage, left_width, right_width)
     end
-    if show_mid then
-      show_mid = false
+    if show_model then
+      show_model = false
     elseif show_switch then
       show_switch = false
     elseif mode == "full" then

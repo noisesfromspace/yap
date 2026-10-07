@@ -636,8 +636,8 @@ as `in × input price + out × output price` (USD per 1M tokens) — your
 a freshly opened session the two chips are equal; after a reopen they diverge.
 
 The bar is width-aware and drops parts as the window shrinks (provider/model
-island and fold-view switch, then chip costs, chip tokens, then costs and
-gauge percentage), re-laying out on `WinResized`. The rollup island appears whenever at least one other
+island first, then the fold-view switch, then chip costs, chip tokens, then
+costs and gauge percentage), re-laying out on `WinResized`. The rollup island appears whenever at least one other
 session is open. For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
 
