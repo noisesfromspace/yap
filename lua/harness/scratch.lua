@@ -1,4 +1,4 @@
--- The scratch queue and mid-turn steering: a file-backed `*.queue` jotter
+-- The scratch queue and mid-turn steering: a file-backed `*.notes` jotter
 -- (<leader>s) with three explicit sections (# @notes / # @steer / # @queue)
 -- and the # @steer mechanism that redirects a running turn.
 
@@ -135,10 +135,10 @@ local function sync_scratch_steer(owner, scratch)
   end
 end
 
--- Drag the queue file and buffer along after a `:file` rename of the
+-- Drag the notes file and buffer along after a `:file` rename of the
 -- session, the same way the audit log follows.
-local function queue_follow(buf, scratch)
-  local want = paths.queue_path(buf)
+local function notes_follow(buf, scratch)
+  local want = paths.notes_path(buf)
   local name = vim.api.nvim_buf_get_name(scratch)
   if name == want then
     return
@@ -217,8 +217,8 @@ end
 
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
 --- opened below the session window. It is a real, file-backed buffer — a
---- sibling `*.queue` file of the session — so `:write` saves it and an
---- unsaved queue prompts on exit like any other modified buffer. It is a
+--- sibling `*.notes` file of the session — so `:write` saves it and an
+--- unsaved notes file prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
 local SCRATCH_HEIGHT = 8
 
@@ -233,7 +233,7 @@ function M.scratch_toggle(buf)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     -- Reuse a leftover queue buffer from a wiped-and-reopened session,
     -- otherwise create a file-backed buffer and load the saved queue.
-    local want = paths.queue_path(buf)
+    local want = paths.notes_path(buf)
     local created
     scratch, created = util.find_or_create_buffer(want, false, false) -- unlisted, file-backed
     if created and vim.fn.filereadable(want) == 1 then
@@ -309,7 +309,7 @@ function M.scratch_toggle(buf)
     vim.b[scratch].yap_owner = buf
   end
 
-  queue_follow(buf, scratch) -- session renamed? drag the queue file along
+  notes_follow(buf, scratch) -- session renamed? drag the notes file along
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens
   -- full-width below it (see harness.drawer).

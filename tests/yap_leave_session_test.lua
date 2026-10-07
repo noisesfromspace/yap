@@ -7,7 +7,7 @@ local session = yap.new()
 local session_win = vim.api.nvim_get_current_win()
 local paths = require("harness.path")
 local scratch = vim.api.nvim_create_buf(false, false)
-vim.api.nvim_buf_set_name(scratch, paths.queue_path(session))
+vim.api.nvim_buf_set_name(scratch, paths.notes_path(session))
 vim.b[session].yap_scratch = scratch
 vim.b[scratch].yap_owner = session
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "unsent task" })
@@ -17,7 +17,7 @@ vim.api.nvim_win_set_buf(scratch_win, scratch)
 vim.api.nvim_buf_call(scratch, function()
   vim.cmd("write")
 end)
-local queue_path = vim.api.nvim_buf_get_name(scratch)
+local notes_path = vim.api.nvim_buf_get_name(scratch)
 
 vim.api.nvim_set_current_win(session_win)
 yap.live(session)
@@ -36,7 +36,7 @@ assert(
 )
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped")
 assert(vim.api.nvim_buf_is_valid(audit), "audit view buffer was wiped")
-assert(vim.fn.filereadable(queue_path) == 1, "scratch queue file was removed")
+assert(vim.fn.filereadable(notes_path) == 1, "scratch notes file was removed")
 assert(vim.api.nvim_buf_get_lines(scratch, 0, -1, false)[1] == "unsent task", "scratch contents were lost")
 
 -- A drawer can be the only window in its tab while another tab has windows.

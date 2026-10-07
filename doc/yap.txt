@@ -476,7 +476,7 @@ File operations are the session operations:
 SCRATCH BUFFER
 
 <leader>s toggles the scratch buffer — a file-backed sibling
-(<session>.queue) with three independently foldable sections:
+(<session>.notes) with three independently foldable sections:
 
   # @notes    An inert backlog; never sent.
   # @steer    A replaceable pending message for the RUNNING turn. <C-s>
@@ -896,7 +896,7 @@ replaces.
                       continues from it.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
-  scratch             The file-backed `*.queue` control buffer holding
+  scratch             The file-backed `*.notes` control buffer holding
                       `# @notes` / `# @steer` / `# @queue`. (Not "jotter",
                       "sidecar".)
   audit log           The append-only `<session>.jsonl` record of every tool

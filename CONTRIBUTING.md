@@ -293,7 +293,7 @@ notification is a completion *event*, and an autocmd is the Neovim-native hook
 for it (noice/nf-notify, chaining a next send) instead of a hardcoded side
 effect.
 
-### R20 — Scratch sections are parsed from the live `*.queue` buffer, never re-read from the saved file during dispatch
+### R20 — Scratch sections are parsed from the live `*.notes` buffer, never re-read from the saved file during dispatch
 
 `# @notes` is an inert backlog; `# @steer` is a replaceable pending message
 that remains in the buffer until delivery (or follow-up dispatch), and the

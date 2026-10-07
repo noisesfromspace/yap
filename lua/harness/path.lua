@@ -1,4 +1,4 @@
--- Session/audit/queue path resolution — one place for the cwd↔slug
+-- Session/audit/notes path resolution — one place for the cwd↔slug
 -- transform and the derived file paths. Sessions and audit logs key off the
 -- same slug, and :YapClear placeholders point into the audit dir, so the
 -- transform must live once, not be re-derived inline.
@@ -133,10 +133,10 @@ function M.audit_path(buf)
   return M.audit_dir(vim.fn.getcwd()) .. "/" .. M.session_base(buf) .. ".jsonl"
 end
 
---- The session's scratch queue file (a sibling of the session file).
-function M.queue_path(buf)
+--- The session's scratch notes file (a sibling of the session file).
+function M.notes_path(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":r") .. ".queue"
+  return vim.fn.fnamemodify(path, ":r") .. ".notes"
 end
 
 return M

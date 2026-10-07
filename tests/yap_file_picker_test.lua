@@ -34,7 +34,7 @@ end, 10)
 assert(inserted, "file reference was not inserted in chat")
 assert(listed and vim.tbl_contains(listed, "src/example.lua"), "picker did not search current :pwd")
 
--- The same action and shortcut are installed in the session's queue file.
+-- The same action and shortcut are installed in the session's notes file.
 yap.scratch_toggle()
 local scratch = vim.api.nvim_get_current_buf()
 local n = vim.api.nvim_buf_line_count(scratch)
