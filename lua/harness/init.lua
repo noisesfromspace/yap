@@ -235,7 +235,10 @@ local function answer_approval(buf, approved)
     return
   end -- backend stopped or timed out; never approve a stale call
   process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
-  audit.append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
+  audit.append_event(
+    buf,
+    { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
+  )
 end
 
 local function handle_event(buf, json_line)
@@ -1686,7 +1689,9 @@ live_session_label = function(buf, parent)
   if role then
     local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    label = role .. " · " .. ((fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
+    label = role
+      .. " · "
+      .. ((fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
   end
   if role and parent then
     return "↳ " .. label
@@ -1788,8 +1793,13 @@ local function has_open_child(parent)
       end
       local e = frontmatter.end_line(buf)
       local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-      if fm and ((fm.forked_from and vim.fs.normalize(fm.forked_from) == path)
-        or (fm.subagent_parent and vim.fs.normalize(fm.subagent_parent) == path)) then
+      if
+        fm
+        and (
+          (fm.forked_from and vim.fs.normalize(fm.forked_from) == path)
+          or (fm.subagent_parent and vim.fs.normalize(fm.subagent_parent) == path)
+        )
+      then
         return true
       end
     end
@@ -1826,7 +1836,8 @@ function M.instances(state)
     local subagent_parent = vim.b[b].yap_subagent_parent
     local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
-    subagent_parent = subagent_parent or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
+    subagent_parent = subagent_parent
+      or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
     local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
     local parent = subagent_parent or fork_parent
     local is_subagent = fm and fm.role or vim.b[b].yap_role
@@ -1928,8 +1939,12 @@ function M.instances(state)
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
       local icon = glyph[item.state]
-      return icon .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon)) .. "  "
-        .. string.rep("  ", item.depth) .. item.text .. suffix
+      return icon
+        .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon))
+        .. "  "
+        .. string.rep("  ", item.depth)
+        .. item.text
+        .. suffix
     end,
     preview_item = function(item)
       if not vim.api.nvim_buf_is_valid(item.buf) then
