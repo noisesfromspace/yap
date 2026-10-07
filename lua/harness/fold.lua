@@ -207,29 +207,27 @@ local function apply(buf, win, w, list)
     for _, b in ipairs(list) do
       wanted[b.id] = b
     end
-    -- Native folds shift on edits; old numeric coordinates cannot be used
-    -- to delete them, so stale folds are found by anchored intent and the
-    -- projection is rebuilt. A fold is stale when any of these is true:
-    --   · its anchor moved (an edit above it) or it no longer exists
-    --     (foldlevel < 1 at its start);
-    --   · it dropped out of the projection (no wanted block);
-    --   · its range drifted — a stream append grows its finish, or splits
-    --     its final line so Neovim shrinks the native fold by one.
-    --     foldlevel reflects the fold RANGE (open or closed), so a finish
-    --     line outside any fold means drift.
-    local rebuild = w.rebuild
-    for id, old in pairs(w.installed) do
-      local b = wanted[id]
-      if
-        position(buf, id) ~= old.start
-        or vim.fn.foldlevel(old.start) ~= 1
-        or not b
-        or b.start ~= old.start
-        or b.finish ~= old.finish
-        or vim.fn.foldlevel(b.finish) < 1
-      then
-        rebuild = true
-        break
+    -- A full rebuild is needed when the window was (re)entered, the view was
+    -- reset, an anchor moved (an edit above shifted its line numbers), or a
+    -- fold's range drifted — a stream append grows a block's finish, or
+    -- splits the buffer's last line so Neovim shrinks the native fold by one
+    -- (the foldlevel of the recorded finish drops to 0). None of the stream
+    -- appends move the cursor, so this rebuild stays cursor-free.
+    local rebuild = w.rebuild or w.reset or w.restore
+    if not rebuild then
+      for id, old in pairs(w.installed) do
+        local b = wanted[id]
+        if
+          position(buf, id) ~= old.start
+          or vim.fn.foldlevel(old.start) ~= 1
+          or not b
+          or b.start ~= old.start
+          or b.finish ~= old.finish
+          or vim.fn.foldlevel(b.finish) < 1
+        then
+          rebuild = true
+          break
+        end
       end
     end
     if rebuild then
@@ -238,12 +236,11 @@ local function apply(buf, win, w, list)
       if not w.reset and not w.restore then
         capture(buf, win, w)
       end
-      -- Rebuild cursor-free: zE wipes every fold without touching the
-      -- cursor or viewport, then each intended block is re-projected from
-      -- its anchored intent. The old path deleted drifted folds one at a
-      -- time with `zd`, which requires jumping the cursor to the fold's
-      -- start line and back on every flush — that up-and-back is what made
-      -- streaming folds flicker.
+      -- Rebuild cursor-free: zE wipes every fold without touching the cursor
+      -- or viewport, then each intended block is re-projected from its
+      -- anchored intent. The old path deleted drifted folds one at a time
+      -- with `zd`, which requires jumping the cursor to the fold and back on
+      -- every flush — that up-and-back was the streaming flicker.
       vim.cmd("normal! zE")
       w.installed = {}
       for _, b in ipairs(list) do
@@ -418,6 +415,29 @@ function M.text(start, finish)
     return e.text
   end
 
+  -- A block whose range still reaches the live tail is being written; keep
+  -- its fold label stable so streamed growth does not repaint it every
+  -- flush. An open detail block (finish == nil) or the last heading is the
+  -- in-flight block; completed blocks show a line count.
+  local p = parse(buf)
+  local streaming = false
+  if p.headings[#p.headings] and p.headings[#p.headings].line == start then
+    streaming = true
+  else
+    for _, d in ipairs(p.details) do
+      if d.start == start and d.finish == nil then
+        streaming = true
+        break
+      end
+    end
+  end
+  local function suffix()
+    if streaming then
+      return " …"
+    end
+    return string.format(" (%d lines)", finish - start + 1)
+  end
+
   local first = vim.fn.getline(start)
   local text
 
@@ -431,11 +451,11 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
+    text = string.format("▸ tool: %s%s", name or "?", suffix())
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
-      text = string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
+      text = string.format("▸ yap: %s%s", region, suffix())
     else
       local role = first:match(HEAD) or "?"
       local preview = ""
@@ -451,7 +471,7 @@ function M.text(start, finish)
       elseif preview == "" then
         preview = "(empty)"
       end
-      text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
+      text = string.format("▸ @%s │ %s%s", role, preview, suffix())
     end
   end
 
