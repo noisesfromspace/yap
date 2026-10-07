@@ -78,8 +78,9 @@ assert(reloaded ~= scratch, "scratch did not recreate")
 local reloaded_text = table.concat(vim.api.nvim_buf_get_lines(reloaded, 0, -1, false), "\n")
 assert(reloaded_text == table.concat(saved, "\n"), "saved scratch sections not reloaded")
 
--- A drawer is anchored full-width below the chat even when the chat is one
--- pane of a vertical split, and closing it refocuses the chat.
+-- A drawer is anchored below the chat's own window: when the chat is one
+-- pane of a vertical split the drawer stays in that column (not full-width),
+-- and closing it refocuses the chat.
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 vim.cmd("vsplit")
@@ -87,8 +88,12 @@ vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 assert(vim.api.nvim_get_current_buf() == reloaded, "scratch did not reopen beside the vertical split")
 assert(
-  vim.api.nvim_win_get_width(0) == vim.o.columns,
-  "scratch drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns
+  vim.api.nvim_win_get_width(0) == vim.api.nvim_win_get_width(chat_win),
+  "scratch drawer is not under the chat column: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.api.nvim_win_get_width(chat_win)
+)
+assert(
+  vim.api.nvim_win_get_position(0)[2] == vim.api.nvim_win_get_position(chat_win)[2],
+  "scratch drawer is not aligned with the chat column"
 )
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()

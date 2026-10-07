@@ -23,15 +23,19 @@ assert(#vim.fn.win_findbuf(audit) == 0, "live from chat did not toggle visible a
 -- the session buffer is untouched and still parseable
 assert(#yap.parse_buffer(buf) == 1, "session buffer changed")
 
--- The audit view is a drawer too: full-width under a vertical split, and
+-- The audit view is a drawer too: under the session's own column, and
 -- closing it from the chat refocuses the session window.
 vim.cmd("vsplit")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 assert(vim.api.nvim_get_current_buf() == audit, "audit view did not reopen beside the vertical split")
 assert(
-  vim.api.nvim_win_get_width(0) == vim.o.columns,
-  "audit view drawer is not full-width: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.o.columns
+  vim.api.nvim_win_get_width(0) == vim.api.nvim_win_get_width(chat_win),
+  "audit view drawer is not under the session column: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.api.nvim_win_get_width(chat_win)
+)
+assert(
+  vim.api.nvim_win_get_position(0)[2] == vim.api.nvim_win_get_position(chat_win)[2],
+  "audit view drawer is not aligned with the session column"
 )
 vim.api.nvim_set_current_win(chat_win)
 yap.live()

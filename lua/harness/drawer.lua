@@ -1,7 +1,7 @@
 -- Fixed-height bottom drawers: the ONE toggle pattern shared by the audit
 -- view (:YapLive) and the scratch queue (<leader>s). A single persistent
--- buffer, never duplicated, always a full-width bottom split, and closed
--- back to the window it was toggled from.
+-- buffer, never duplicated, always a bottom split under the session's own
+-- window, and closed back to the window it was toggled from.
 
 local M = {}
 
@@ -13,9 +13,9 @@ local state = require("harness.state")
 local drawer_anchor = {} -- drawer bufnr -> owner window id
 
 --- Open or close a fixed-height drawer below the session window. Anchoring the
---- split to a window showing `owner` is what keeps the drawer full-width
---- when the session shares a vertical split — a bare `belowright split` would
---- carve a half-width jotter out of the current pane.
+--- split to a window showing `owner` keeps the drawer in the session's own
+--- column when the session shares a vertical split — `belowright` splits the
+--- anchor window, so the drawer never spans the whole tab.
 function M.toggle(owner, bufnr, height)
   local wins = vim.fn.win_findbuf(bufnr)
   if #wins > 0 then
@@ -43,7 +43,7 @@ function M.toggle(owner, bufnr, height)
   if anchor and vim.api.nvim_win_is_valid(anchor) then
     vim.api.nvim_set_current_win(anchor)
   end
-  vim.cmd("botright " .. height .. "split")
+  vim.cmd("belowright " .. height .. "split")
   vim.api.nvim_win_set_buf(0, bufnr)
   drawer_anchor[bufnr] = anchor
   return true
