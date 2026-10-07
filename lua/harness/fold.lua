@@ -279,12 +279,13 @@ function M.reconcile(buf, full)
   s.projected_tick = vim.api.nvim_buf_get_changedtick(buf)
 end
 
-function M.level()
-  local s = sessions[vim.api.nvim_get_current_buf()]
+function M.level(win)
+  win = win or vim.api.nvim_get_current_win()
+  local s = sessions[vim.api.nvim_win_get_buf(win)]
   if not s then
     return 2
   end
-  local w = s.windows[vim.api.nvim_get_current_win()]
+  local w = s.windows[win]
   return w and w.view or s.default_view
 end
 

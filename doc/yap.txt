@@ -588,7 +588,10 @@ and description disappear; the state icon remains, so a session awaiting your
 reply or stuck in an error is still visible from another window.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
-(`bash 12s`); a pending `# @steer` adds a steer icon to the model island. Then
+(`bash 12s`); a pending `# @steer` adds a steer icon to the model island. A
+three-stop fold-view switch (`1  2  3`) on the left highlights the selected
+preset for this window; click a stop to select it, or use <leader>1..3.
+Individual folds can still be toggled independently (|yap-folding|). Then
 a rollup island totals ALL OTHER yap sessions by state: streaming, awaiting
 you, stopped, errored, idle. It never counts the current buffer and folds
 subagents into their parent. After the island: the session description
@@ -615,8 +618,8 @@ as `in × input price + out × output price` (USD per 1M tokens) — your
 a freshly opened session the two chips are equal; after a reopen they diverge.
 
 The bar is width-aware and drops parts as the window shrinks (provider/model
-island, chip costs, chip tokens, then costs and gauge percentage), re-laying
-out on `WinResized`. The rollup island appears whenever at least one other
+island and fold-view switch, then chip costs, chip tokens, then costs and
+gauge percentage), re-laying out on `WinResized`. The rollup island appears whenever at least one other
 session is open. For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
 

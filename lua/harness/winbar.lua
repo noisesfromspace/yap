@@ -154,11 +154,11 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s) or this buffer's state icon
--- (stopped/error/waiting/idle), then a global-session rollup island, then
--- the description on the left; a centered provider/model island; usage
--- counters and context meter on the right. As the window narrows the
--- center island drops, then costs, then tokens; prices and the context
--- meter survive. Past that the bar clips.
+-- (stopped/error/waiting/idle), then a three-stop fold view switch and a
+-- global-session rollup island, then the description on the left; a centered
+-- provider/model island; usage counters and context meter on the right. As
+-- the window narrows the center island drops, then the switch; usage
+-- counters and context meter retain their existing width priorities.
 local function render_winbar(buf)
   local provider, model = config.current_combo(buf)
   local icons = require("harness").config.icons
@@ -177,18 +177,22 @@ local function render_winbar(buf)
     gutter = wins[1].textoff or 0
   end
 
-  local function seg(text, group, island, cursive)
-    return { text = text, group = group, island = island, cursive = cursive }
+  local function seg(text, group, island, cursive, click)
+    return { text = text, group = group, island = island, cursive = cursive, click = click }
   end
   local function render_seg(s, upright)
+    local text
     if s.group == "IslandCap" then
-      return winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
+      text = winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
+    else
+      local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
+      if s.island then
+        text = island_hl(s.text, s.group, style)
+      else
+        text = winbar_hl(s.text, (style or "") .. (s.group or "Idle"))
+      end
     end
-    local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
-    if s.island then
-      return island_hl(s.text, s.group, style)
-    end
-    return winbar_hl(s.text, (style or "") .. (s.group or "Idle"))
+    return s.click and ("%" .. s.click .. "@v:lua.YapFoldViewClick@" .. text .. "%T") or text
   end
   local function width_of(segs)
     local n = 0
@@ -201,7 +205,7 @@ local function render_winbar(buf)
   -- Mandatory left cluster (never dropped; the description shrinks). Build
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
-  local function left_segments(desc_max)
+  local function left_segments(desc_max, show_switch)
     local left = {}
     local has_item = false
     local function add_item(item)
@@ -255,6 +259,15 @@ local function render_winbar(buf)
     elseif icon then
       -- No gutter (e.g. line numbers off): the icon is the leftmost item.
       add_item({ seg(icon, icon_group) })
+    end
+
+    if show_switch then
+      local selected = require("harness.fold").level(win)
+      local stops = {}
+      for level = 1, 3 do
+        stops[#stops + 1] = seg(" " .. level .. " ", level == selected and "ViewActive" or "ViewInactive", false, false, level)
+      end
+      add_item(stops)
     end
 
     -- Tool text belongs to the text region, ahead of the rollup. A pending
@@ -512,9 +525,9 @@ local function render_winbar(buf)
 
   -- Preserve real centering: drop the middle when either edge cluster
   -- would collide with it, then degrade the right side as before.
-  local desc_max, mode, show_mid = 40, "full", true
+  local desc_max, mode, show_mid, show_switch = 40, "full", true, true
   while true do
-    local left = left_segments(desc_max)
+    local left = left_segments(desc_max, show_switch)
     local center = show_mid and center_segments() or nil
     local usage = not inactive and usage_segment(mode)
     local left_width = width_of(left)
@@ -535,6 +548,8 @@ local function render_winbar(buf)
     end
     if show_mid then
       show_mid = false
+    elseif show_switch then
+      show_switch = false
     elseif mode == "full" then
       mode = "compact"
     elseif mode == "compact" then
@@ -547,6 +562,21 @@ local function render_winbar(buf)
       return render(left, nil, usage, left_width, right_width) -- smallest layout; let it clip
     end
   end
+end
+
+--- Select a fold view from the winbar. The click belongs to the window under
+--- the mouse, which can differ from the current window in a split.
+_G.YapFoldViewClick = function(level, _, button)
+  if button ~= "l" or level < 1 or level > 3 then
+    return
+  end
+  local win = vim.fn.getmousepos().winid
+  if win == 0 or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  vim.api.nvim_win_call(win, function()
+    require("harness.fold").set_view_level(level)
+  end)
 end
 
 --- Winbar expression: the winbar is set to a self-evaluating `%!` call of
@@ -588,6 +618,8 @@ local function define_winbar_hl()
   local links = {
     Model = "Keyword",
     Description = "Title",
+    ViewActive = "Keyword",
+    ViewInactive = "Comment",
     Busy = "DiagnosticOk",
     Done = "DiagnosticOk",
     Idle = "Comment",
@@ -620,6 +652,7 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
+  vim.api.nvim_set_hl(0, "YapViewActive", { fg = attr("YapModel", "fg") or fg, bg = bg, bold = true })
   -- The context meter is a raised pill, distinct from the surrounding bar.
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({
