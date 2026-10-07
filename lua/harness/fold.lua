@@ -415,29 +415,6 @@ function M.text(start, finish)
     return e.text
   end
 
-  -- A block whose range still reaches the live tail is being written; keep
-  -- its fold label stable so streamed growth does not repaint it every
-  -- flush. An open detail block (finish == nil) or the last heading is the
-  -- in-flight block; completed blocks show a line count.
-  local p = parse(buf)
-  local streaming = false
-  if p.headings[#p.headings] and p.headings[#p.headings].line == start then
-    streaming = true
-  else
-    for _, d in ipairs(p.details) do
-      if d.start == start and d.finish == nil then
-        streaming = true
-        break
-      end
-    end
-  end
-  local function suffix()
-    if streaming then
-      return " …"
-    end
-    return string.format(" (%d lines)", finish - start + 1)
-  end
-
   local first = vim.fn.getline(start)
   local text
 
@@ -451,11 +428,11 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    text = string.format("▸ tool: %s%s", name or "?", suffix())
+    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
-      text = string.format("▸ yap: %s%s", region, suffix())
+      text = string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
     else
       local role = first:match(HEAD) or "?"
       local preview = ""
@@ -471,7 +448,7 @@ function M.text(start, finish)
       elseif preview == "" then
         preview = "(empty)"
       end
-      text = string.format("▸ @%s │ %s%s", role, preview, suffix())
+      text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
     end
   end
 

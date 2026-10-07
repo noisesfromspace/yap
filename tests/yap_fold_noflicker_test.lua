@@ -52,10 +52,10 @@ for _, l in ipairs({ "let me think\n", "about this\n", "a bit more\n" }) do
   assert(v.lnum == v0.lnum and v.col == v0.col, "cursor moved while streaming a closed fold")
   assert(v.topline == v0.topline, "topline moved while streaming a closed fold")
   assert(vim.fn.foldclosed(opener) == opener, "thinking fold reopened while streaming")
-  -- The fold label must stay stable while the block grows: a live line count
-  -- repaints the foldtext every flush, which reads as the streaming flicker.
+  -- The fold label shows a live line count while the block grows, so the
+  -- user can watch the fold's size increase as content streams in.
   local label = fold.text(opener, vim.fn.line("$"))
-  assert(label:match("…") and not label:match("%d+ lines"), "streaming foldtext not stable: " .. label)
+  assert(label:match("%d+ lines"), "streaming foldtext missing line count: " .. label)
 end
 
 -- Open fold: the user za-opens the block to watch it stream. The fold stays

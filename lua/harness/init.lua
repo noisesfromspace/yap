@@ -993,14 +993,7 @@ function M.send(buf)
     -- This is a THROTTLE: the timer starts on the first token of a batch.
     -- Only incomplete structural prefixes wait for classification; ordinary
     -- prose flushes every tick even under continuous token flow.
-    --
-    -- Every flush also re-projects the growing in-flight fold (manual folds
-    -- cannot grow to cover appended lines, so hiding streamed text requires
-    -- a re-fold), and each re-fold repaints the fold line in a terminal —
-    -- the remaining streaming-fold flicker. A longer window trades stream
-    -- granularity for fewer repaints: 150ms is ~7 repaints/sec instead of
-    -- ~33, with prose still arriving near-instantly in chunks.
-    local STREAM_FLUSH_MS = 150
+    local STREAM_FLUSH_MS = 30
     local pending = ""
     local flush_timer = nil
     local function flush_pending(final)
