@@ -752,9 +752,11 @@ Highlights:
   - search and glob shell out to ripgrep (rg): search returns
     path:line:content matches, glob lists files (gitignore-aware); both
     truncate to 2000 lines / 50KB.
-  - websearch queries the Exa search API and returns up to N results as
-    markdown; its key is the env var named by `websearch.api_key_env` in
-    ~/.config/yap.json (default `EXA_API_KEY`).
+  - websearch queries a pluggable search provider and returns up to N
+    results as markdown. The provider is `websearch.provider` in
+    ~/.config/yap.json (default `exa`); Exa's key is the env var named by
+    `websearch.api_key_env` (default `EXA_API_KEY`). Adding a provider is
+    one self-registering file in agent/tools.
   - jev is a decision model, not a language model: it answers calibrated,
     typed questions — P(yes) for yes/no, a winner + probabilities for
     pick-one, a weighted position for a scale — as probabilities, not prose.

@@ -409,6 +409,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	if err != nil {
 		return err
 	}
+	tools.SetWebsearchProvider(cfg.Websearch.Provider)
 	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	dm := decisionModel(cfg)

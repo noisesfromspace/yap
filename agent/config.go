@@ -14,10 +14,13 @@ type Provider struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
-// Websearch configures the Exa websearch tool. Only the API key env var
-// name is needed; the key VALUE lives in the agenix secret env file
-// sourced by the wrapper before exec'ing the agent.
+// Websearch configures the websearch tool. Provider selects the search
+// backend (default "exa"; each provider is a self-registering file in
+// agent/tools). APIKeyEnv names the env var holding the Exa API key; the
+// key VALUE lives in the agenix secret env file sourced by the wrapper
+// before exec'ing the agent.
 type Websearch struct {
+	Provider  string `json:"provider"`
 	APIKeyEnv string `json:"api_key_env"`
 }
 

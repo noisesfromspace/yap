@@ -24,9 +24,9 @@ func TestWebsearch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oldURL, oldEnv := websearchURL, websearchAPIKeyEnv
-	websearchURL, websearchAPIKeyEnv = srv.URL+"/search", "YAP_TEST_EXA_KEY"
-	defer func() { websearchURL, websearchAPIKeyEnv = oldURL, oldEnv }()
+	oldURL, oldEnv := exaURL, exaAPIKeyEnv
+	exaURL, exaAPIKeyEnv = srv.URL+"/search", "YAP_TEST_EXA_KEY"
+	defer func() { exaURL, exaAPIKeyEnv = oldURL, oldEnv }()
 	t.Setenv("YAP_TEST_EXA_KEY", "sekret")
 
 	r, _, err := run(t, "websearch", `{"query":"hello","type":"fast","contentMode":"summary"}`)
@@ -63,13 +63,13 @@ func TestWebsearchSafety(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oldURL, oldModel := websearchURL, decisionModel
-	websearchURL = srv.URL
+	oldURL, oldModel := exaURL, decisionModel
+	exaURL = srv.URL
 	decisionModel = &fakeDecision{resp: decide.Response{Answers: map[string]decide.Answer{
 		"injection": {Name: "injection", Type: decide.Noul, Noul: 0.91},
 	}}}
-	defer func() { websearchURL, decisionModel = oldURL, oldModel }()
-	t.Setenv(websearchAPIKeyEnv, "test-key")
+	defer func() { exaURL, decisionModel = oldURL, oldModel }()
+	t.Setenv(exaAPIKeyEnv, "test-key")
 
 	result, _, err := run(t, "websearch", `{"query":"test","safety":true}`)
 	if err != nil {
@@ -89,10 +89,10 @@ func TestWebsearchHighlights(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oldURL := websearchURL
-	websearchURL = srv.URL
-	defer func() { websearchURL = oldURL }()
-	t.Setenv(websearchAPIKeyEnv, "sekret")
+	oldURL := exaURL
+	exaURL = srv.URL
+	defer func() { exaURL = oldURL }()
+	t.Setenv(exaAPIKeyEnv, "sekret")
 
 	r, _, err := run(t, "websearch", `{"query":"hello"}`)
 	if err != nil {
@@ -103,4 +103,37 @@ func TestWebsearchHighlights(t *testing.T) {
 			t.Fatalf("missing %q in %q", want, r)
 		}
 	}
+}
+
+// TestWebsearchProviderSelection proves a new provider slots in behind the
+// same websearch tool: register it, select it by name, and the shared
+// dispatcher formats its results. Unknown names are a tool error.
+func TestWebsearchProviderSelection(t *testing.T) {
+	registerWebsearchProvider("stub", stubProvider{})
+	defer delete(websearchProviders, "stub")
+
+	old := websearchProviderName
+	websearchProviderName = "stub"
+	defer func() { websearchProviderName = old }()
+
+	r, _, err := run(t, "websearch", `{"query":"hello"}`)
+	if err != nil {
+		t.Fatalf("websearch stub: %v", err)
+	}
+	for _, want := range []string{"## Search: hello", "### 1. Stub Title", "- **URL:** https://stub", "- Stub Snippet"} {
+		if !strings.Contains(r, want) {
+			t.Fatalf("missing %q in %q", want, r)
+		}
+	}
+
+	websearchProviderName = "nope"
+	if _, _, err := run(t, "websearch", `{"query":"x"}`); err == nil || !strings.Contains(err.Error(), "nope") {
+		t.Fatalf("unknown provider: %v", err)
+	}
+}
+
+type stubProvider struct{}
+
+func (stubProvider) search(_ *websearchArgs) ([]websearchResult, error) {
+	return []websearchResult{{Title: "Stub Title", URL: "https://stub", Snippet: "Stub Snippet"}}, nil
 }

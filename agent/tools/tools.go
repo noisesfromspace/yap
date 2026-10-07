@@ -1,8 +1,9 @@
 // Package tools holds ONLY the agent's callable tools — nothing else.
 // Every non-test Go file in this directory except tools.go (the registry
-// below) defines exactly one tool: one file per tool, each self-registering
-// via Register in init(). Adding or changing a tool = editing a file here
-// and recompiling (CGO_ENABLED=0).
+// below) defines exactly one tool or websearch provider: one file per tool,
+// each self-registering via Register (or registerWebsearchProvider) in
+// init(). Adding or changing a tool = editing a file here and recompiling
+// (CGO_ENABLED=0).
 //
 // A tool defines an Args struct; the JSON schema sent to the provider is
 // generated from it by reflection (invopop/jsonschema), and incoming

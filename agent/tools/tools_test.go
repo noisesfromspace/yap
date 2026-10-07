@@ -373,8 +373,9 @@ func TestToolCleanup(t *testing.T) {
 }
 
 // TestToolsOnlyToolFiles guards the package layout: every non-test .go file
-// except tools.go (the registry) must call Register — i.e. define a tool.
-// Helpers that tools need belong in agent/utils, not here.
+// except tools.go (the registry) must self-register — a tool via Register,
+// or a websearch provider via registerWebsearchProvider. Helpers that tools
+// need belong in agent/utils, not here.
 func TestToolsOnlyToolFiles(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -389,7 +390,9 @@ func TestToolsOnlyToolFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "Register(") {
+		isTool := strings.Contains(string(data), "Register(")
+		isProvider := strings.Contains(string(data), "registerWebsearchProvider(")
+		if !isTool && !isProvider {
 			t.Errorf("%s: non-tool file in agent/tools — helpers belong in agent/utils", name)
 		}
 	}
