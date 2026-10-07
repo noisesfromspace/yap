@@ -870,6 +870,8 @@ local function handle_event(buf, json_line)
       end
     end
     append_event(buf, ev) -- audit trail: a steering message landed mid-turn
+  elseif ev.type == "model_change" then
+    append_event(buf, ev) -- audit trail: a model switch landed mid-turn
   elseif ev.type == "tool_text_warning" then
     append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
   elseif ev.type == "usage" then
@@ -2994,6 +2996,18 @@ function M.change_model(combo)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
   sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
+  -- A running turn adopts the new combo at its next model boundary; an idle
+  -- buffer just uses it on the next send. The backend keeps native tool
+  -- history intact, so no stop-and-resend is needed.
+  local proc = running[buf]
+  if proc then
+    local ok = pcall(function()
+      proc:write(vim.json.encode({ type = "model", provider = provider, model = model }) .. "\n")
+    end)
+    if not ok then
+      vim.notify("yap: could not switch model mid-turn (backend gone)", vim.log.levels.WARN)
+    end
+  end
 end
 
 --- Change the default provider/model for NEW buffers, persisted to

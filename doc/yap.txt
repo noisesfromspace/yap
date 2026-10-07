@@ -140,6 +140,14 @@ For raw insertion at the cursor, use `<leader>T` or
                         config.json (GET /models) — no duplicate model
                         configuration needed. The query result is cached
                         for the session; restart Neovim to refresh it.
+                        While a turn is running, the new combo takes
+                        effect at the next model boundary (after the
+                        current tool batch, like steering) and leaves a
+                        `<!-- yap:model ... -->` marker in the buffer;
+                        native tool history is kept, so no
+                        stop-and-resend happens. A combo that fails to
+                        resolve is reported as a `<!-- yap:error -->`
+                        marker and the turn keeps its current model.
 
 To change the default for new buffers, use `<leader>M` or
 `require('harness').change_default_model('provider/model')` (omit the

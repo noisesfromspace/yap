@@ -139,6 +139,11 @@ local function render_event(ev)
   elseif ev.type == "steer" then
     local text = flat(ev.text)
     return { { text = ("%s ⌁ steer: %s"):format(ts, text), hl = HL.warn } }, "block"
+  elseif ev.type == "model_change" then
+    if ev.error then
+      return { { text = ("%s model switch to %s failed: %s"):format(ts, flat(ev.to), flat(ev.error)), hl = HL.warn } }, "block"
+    end
+    return { { text = ("%s ⇄ model: %s → %s"):format(ts, flat(ev.from), flat(ev.to)), hl = HL.meta } }, "block"
   elseif ev.type == "approval_request" then
     local tool, reason = flat(ev.tool), flat(ev.reason)
     local context = tool

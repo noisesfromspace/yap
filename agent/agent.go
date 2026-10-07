@@ -82,6 +82,16 @@ type turn struct {
 	responseMessages []llm.Message
 }
 
+// boundary is a pending mid-turn injection from the frontend, delivered at
+// the next model boundary (before the next generation step). A non-empty
+// steer is a user message to inject; provider/model (non-empty together)
+// switch the generation model for the remainder of the turn.
+type boundary struct {
+	steer    string
+	provider string
+	model    string
+}
+
 // streamStep runs one generation step via the adapter. It writes thinking
 // markers and streams assistant prose live. Prose from a tool-bearing round
 // stays where it streamed (before the tool blocks), matching the model's
@@ -382,17 +392,18 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read request from stdin: %w", err)
 	}
-	return runTurn(providerName, model, req, outw, func() string { return "" })
+	return runTurn(providerName, model, req, outw, func() boundary { return boundary{} })
 }
 
-// runTurn runs one agent loop. poll, when non-nil, is consulted before
-// each generation step after the first: it returns a pending steering
-// message ("") when none. A steer is written into the buffer as a
-// `# @user` block and appended to the native message history, so the model
-// sees it at the next tool boundary within the same turn — native tool
-// results stay native, unlike a stop-and-resend which flattens them to
+// runTurn runs one agent loop. poll is consulted before each generation
+// step after the first: it returns a pending steering message and/or a
+// provider/model switch (zero values when none). A steer is written into
+// the buffer as a `# @user` block and appended to the native message
+// history; a model switch rebuilds the provider/model and continues the
+// same turn. Both land at the next tool boundary, so native tool results
+// stay native — unlike a stop-and-resend, which flattens them to
 // transcript text.
-func runTurn(providerName, model string, req Request, outw io.Writer, poll func() string) error {
+func runTurn(providerName, model string, req Request, outw io.Writer, poll func() boundary) error {
 	start := time.Now()
 	cfg, err := loadConfig()
 	if err != nil {
@@ -403,19 +414,29 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	dm := decisionModel(cfg)
 	tools.SetDecisionModel(dm)
 	alertCfg := alertConfig(cfg)
-	prov, ok := cfg.Providers[providerName]
-	if !ok {
-		names := make([]string, 0, len(cfg.Providers))
-		for n := range cfg.Providers {
-			names = append(names, n)
+	// resolveModel builds the provider + model for a combo. It is re-run on
+	// every mid-turn switch so a stale or bad combo fails loudly instead of
+	// silently continuing on the previous model.
+	resolveModel := func(provName, mdl string) (llm.LanguageModel, error) {
+		prov, ok := cfg.Providers[provName]
+		if !ok {
+			names := make([]string, 0, len(cfg.Providers))
+			for n := range cfg.Providers {
+				names = append(names, n)
+			}
+			return nil, fmt.Errorf("unknown provider %q (configured: %s)", provName, strings.Join(names, ", "))
 		}
-		return fmt.Errorf("unknown provider %q (configured: %s)", providerName, strings.Join(names, ", "))
-	}
-	if os.Getenv(prov.APIKeyEnv) == "" {
-		return fmt.Errorf("provider %q: env var %s is not set", providerName, prov.APIKeyEnv)
+		if os.Getenv(prov.APIKeyEnv) == "" {
+			return nil, fmt.Errorf("provider %q: env var %s is not set", provName, prov.APIKeyEnv)
+		}
+		p, err := providerFactory(provName, prov)
+		if err != nil {
+			return nil, err
+		}
+		return p.Model(mdl), nil
 	}
 
-	p, err := providerFactory(providerName, prov)
+	modelImpl, err := resolveModel(providerName, model)
 	if err != nil {
 		return err
 	}
@@ -447,8 +468,8 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		messages = append(messages, llm.Message{Role: role, Content: content})
 	}
-	modelImpl := p.Model(model)
 	var totPrompt, totCompletion int
+	var totCost float64
 	lastPrompt := 0
 	// contextPromptTokens is the full size of the prompt the model saw on a
 	// step, including cached input. The SDK normalizes InputTokens to exclude
@@ -461,8 +482,10 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		return t.prompt + t.cacheRead
 	}
-	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
-		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
+	// stepCost prices one step at the model that produced it; the running
+	// total keeps a mid-turn switch honest (each segment billed at its own
+	// provider/model rate).
+	stepCost := func(prompt, completion int) float64 {
 		input, output := 0.0, 0.0
 		havePricing := false
 		if prices, ok := cfg.Pricing[model]; ok {
@@ -473,12 +496,19 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			if !havePricing {
 				input, output = info.Input, info.Output
 			}
-			if info.ContextWindow > 0 {
-				m["context_window"] = info.ContextWindow
-			}
 		}
 		if havePricing || input > 0 || output > 0 {
-			m["cost"] = float64(prompt)/1e6*input + float64(completion)/1e6*output
+			return float64(prompt)/1e6*input + float64(completion)/1e6*output
+		}
+		return 0
+	}
+	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
+		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
+		if info, ok := price.Lookup(providerName, model); ok && info.ContextWindow > 0 {
+			m["context_window"] = info.ContextWindow
+		}
+		if totCost > 0 {
+			m["cost"] = totCost
 		}
 		return m
 	}
@@ -500,19 +530,55 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 
 	ctx := context.Background()
 	for iter := 0; ; iter++ {
-		// Steering: inject a queued user message at the next model boundary
-		// — after the previous round's tool batch, before the next
-		// generation. The heading block is streamed into the buffer and the
-		// text is appended to the native message history in the same turn.
+		// Mid-turn injections land at the next model boundary — after the
+		// previous round's tool batch, before the next generation. Steering
+		// appends a native user message; a model switch rebuilds the
+		// provider/model for the remainder of the turn. Both keep native tool
+		// history intact, unlike a stop-and-resend.
 		if iter > 0 {
-			if steer := poll(); steer != "" {
-				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", steer)
+			b := poll()
+			if b.provider != "" && (b.provider != providerName || b.model != model) {
+				newImpl, serr := resolveModel(b.provider, b.model)
+				if serr != nil {
+					// A bad combo must not corrupt the turn: keep the current
+					// model and surface the failure as an error marker.
+					fmt.Fprintf(out, "<!-- yap:error\nmodel switch to %s/%s failed: %s\n-->\n\n", b.provider, b.model, serr)
+					out.Flush()
+					wrote, trail = true, 2
+					utils.EmitEvent(map[string]any{
+						"type":  "model_change",
+						"from":  providerName + "/" + model,
+						"to":    b.provider + "/" + b.model,
+						"error": serr.Error(),
+					})
+				} else {
+					from := providerName + "/" + model
+					providerName, model = b.provider, b.model
+					modelImpl = newImpl
+					payload := render.MarshalCommentJSON(map[string]any{
+						"from": from,
+						"to":   providerName + "/" + model,
+					}, "")
+					fmt.Fprintf(out, "<!-- yap:model %s -->\n\n", payload)
+					out.Flush()
+					wrote, trail = true, 2
+					utils.EmitEvent(map[string]any{
+						"type":     "model_change",
+						"from":     from,
+						"to":       providerName + "/" + model,
+						"provider": providerName,
+						"model":    model,
+					})
+				}
+			}
+			if b.steer != "" {
+				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", b.steer)
 				out.Flush()
 				wrote, trail = true, 2
-				utils.EmitEvent(map[string]any{"type": "steer", "text": steer})
+				utils.EmitEvent(map[string]any{"type": "steer", "text": b.steer})
 				messages = append(messages, llm.Message{
 					Role:    llm.RoleUser,
-					Content: []llm.Part{{Type: llm.PartText, Text: steer}},
+					Content: []llm.Part{{Type: llm.PartText, Text: b.steer}},
 				})
 			}
 		}
@@ -544,6 +610,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
+		totCost += stepCost(t.prompt, t.completion)
 		lastPrompt = contextPromptTokens(t)
 		if t.prompt+t.completion > 0 {
 			m := usagePayload(totPrompt, totCompletion, lastPrompt)

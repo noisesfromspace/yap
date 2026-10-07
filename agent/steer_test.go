@@ -38,12 +38,12 @@ func TestRunTurnSteer(t *testing.T) {
 
 	var out bytes.Buffer
 	polled := false
-	poll := func() string {
+	poll := func() boundary {
 		if polled {
-			return ""
+			return boundary{}
 		}
 		polled = true
-		return "also check the tests"
+		return boundary{steer: "also check the tests"}
 	}
 	err := runTurn("mock", "m1", Request{Messages: []Message{{Role: "user", Content: "go"}}}, &out, poll)
 	if err != nil {
@@ -131,5 +131,111 @@ func TestServeSteerMidTurn(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "# @user\nalso check the tests") {
 		t.Fatalf("steer not injected: %q", out.String())
+	}
+}
+
+// TestRunTurnModelSwitch: a provider/model switch injected after the first
+// tool batch must rebuild the generation model in place — the second request
+// goes out under the new combo while the native tool result stays native
+// (no flattening) — and leave a visible `<!-- yap:model ... -->` marker.
+func TestRunTurnModelSwitch(t *testing.T) {
+	var secondModel string
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		calls++
+		if calls == 1 {
+			sse(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"echo hi\"}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
+		}
+		secondModel, _ = body["model"].(string)
+		sse(w, `{"choices":[{"delta":{"content":"switched"}}]}`)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"},"other":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	polled := false
+	poll := func() boundary {
+		if polled {
+			return boundary{}
+		}
+		polled = true
+		return boundary{provider: "other", model: "m2"}
+	}
+	err := runTurn("mock", "m1", Request{Messages: []Message{{Role: "user", Content: "go"}}}, &out, poll)
+	if err != nil {
+		t.Fatalf("runTurn: %v", err)
+	}
+	s := out.String()
+
+	if !strings.Contains(s, `<!-- yap:model {"from":"mock/m1","to":"other/m2"} -->`) {
+		t.Fatalf("model marker missing:\n%s", s)
+	}
+	if secondModel != "m2" {
+		t.Fatalf("second request model = %q, want m2", secondModel)
+	}
+	if !strings.Contains(s, "switched") {
+		t.Fatalf("final answer missing:\n%s", s)
+	}
+}
+
+// TestServeModelSwitchMidTurn: end-to-end through serve() — a `model` line
+// on stdin while a turn runs (during a slow first tool) switches the model
+// at the next boundary, leaving the marker in the buffer.
+func TestServeModelSwitchMidTurn(t *testing.T) {
+	firstCall := make(chan struct{}, 1)
+	var secondModel string
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		calls++
+		if calls == 1 {
+			firstCall <- struct{}{}
+			sse(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"sleep 0.3; echo hi\"}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
+		}
+		secondModel, _ = body["model"].(string)
+		sse(w, `{"choices":[{"delta":{"content":"done"}}]}`)
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"},"other":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	r, w := io.Pipe()
+	defer r.Close()
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- serve(r, &out) }()
+	_, _ = io.WriteString(w, `{"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	<-firstCall // the turn is running: the first LLM call is in flight
+	_, _ = io.WriteString(w, `{"type":"model","provider":"other","model":"m2"}`+"\n")
+	_ = w.Close()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("model switch blocked serve")
+	}
+	if calls != 2 {
+		t.Fatalf("calls=%d (want 2)", calls)
+	}
+	if secondModel != "m2" {
+		t.Fatalf("second request model = %q, want m2", secondModel)
+	}
+	if !strings.Contains(out.String(), `<!-- yap:model {"from":"mock/m1","to":"other/m2"} -->`) {
+		t.Fatalf("model marker not injected: %q", out.String())
 	}
 }

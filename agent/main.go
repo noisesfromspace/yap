@@ -110,16 +110,32 @@ func serve(in io.Reader, out io.Writer) error {
 	requests := make(chan []byte)
 	readErr := make(chan error, 1)
 
-	// Steering: a channel the currently-running turn polls for user
-	// messages injected mid-turn. Scoped to one turn at a time — a steer
-	// arriving while no turn is running is dropped, because the frontend
-	// only sends one while its buffer is streaming and degrades a missed
-	// steer into a follow-up turn itself.
-	type steerUpdate struct {
-		text string
+	// Mid-turn injections: a channel the currently-running turn polls for
+	// steering messages and model switches. Scoped to one turn at a time —
+	// an injection arriving while no turn is running is dropped, because the
+	// frontend only sends one while its buffer is streaming and degrades a
+	// missed steer into a follow-up turn itself.
+	type update struct {
+		steer    string
+		provider string
+		model    string
 	}
-	var steerMu sync.Mutex
-	var steerCh chan steerUpdate
+	var updateMu sync.Mutex
+	var updateCh chan update
+
+	// push delivers an update to the running turn, always keeping the latest
+	// one (an older pending steer/model is superseded, not queued).
+	push := func(ch chan update, u update) {
+		select {
+		case ch <- u:
+		default:
+			select {
+			case <-ch:
+			default:
+			}
+			ch <- u
+		}
+	}
 
 	go func() {
 		scanner := bufio.NewScanner(in)
@@ -127,8 +143,10 @@ func serve(in io.Reader, out io.Writer) error {
 		for scanner.Scan() {
 			line := append([]byte(nil), scanner.Bytes()...)
 			var reply struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
 				tools.SubagentReply
 			}
 			if json.Unmarshal(line, &reply) == nil {
@@ -145,23 +163,23 @@ func serve(in io.Reader, out io.Writer) error {
 					utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}
 					continue
 				case "steer", "unsteer":
-					steerMu.Lock()
-					ch := steerCh
-					steerMu.Unlock()
+					updateMu.Lock()
+					ch := updateCh
+					updateMu.Unlock()
 					if ch != nil {
 						text := reply.Text
 						if reply.Type == "unsteer" {
 							text = ""
 						}
-						select {
-						case ch <- steerUpdate{text: text}:
-						default:
-							select {
-							case <-ch:
-							default:
-							}
-							ch <- steerUpdate{text: text}
-						}
+						push(ch, update{steer: text})
+					}
+					continue
+				case "model":
+					updateMu.Lock()
+					ch := updateCh
+					updateMu.Unlock()
+					if ch != nil {
+						push(ch, update{provider: reply.Provider, model: reply.Model})
 					}
 					continue
 				}
@@ -179,33 +197,45 @@ func serve(in io.Reader, out io.Writer) error {
 			if req.Provider == "" || req.Model == "" {
 				err = fmt.Errorf("provider and model are required")
 			} else {
-				steerMu.Lock()
-				steerCh = make(chan steerUpdate, 1)
-				ch := steerCh
-				steerMu.Unlock()
-				pending := ""
-				hasPending := false
-				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out}, func() string {
+				updateMu.Lock()
+				updateCh = make(chan update, 1)
+				ch := updateCh
+				updateMu.Unlock()
+				pendingSteer := ""
+				hasSteer := false
+				var pendProvider, pendModel string
+				hasModel := false
+				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out}, func() boundary {
 					for {
 						select {
-						case update := <-ch:
-							pending = update.text
-							hasPending = pending != ""
-						default:
-							if hasPending {
-								text := pending
-								pending, hasPending = "", false
-								return text
+						case u := <-ch:
+							if u.provider != "" {
+								pendProvider, pendModel, hasModel = u.provider, u.model, true
+							} else {
+								pendingSteer = u.steer
+								hasSteer = pendingSteer != ""
 							}
-							return ""
+						default:
+							b := boundary{}
+							if hasModel {
+								b.provider, b.model = pendProvider, pendModel
+								hasModel = false
+								pendProvider, pendModel = "", ""
+							}
+							if hasSteer {
+								b.steer = pendingSteer
+								hasSteer = false
+								pendingSteer = ""
+							}
+							return b
 						}
 					}
 				})
-				steerMu.Lock()
-				if steerCh == ch {
-					steerCh = nil
+				updateMu.Lock()
+				if updateCh == ch {
+					updateCh = nil
 				}
-				steerMu.Unlock()
+				updateMu.Unlock()
 			}
 		}
 		if err != nil {
