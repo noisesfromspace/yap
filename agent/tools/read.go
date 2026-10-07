@@ -8,7 +8,7 @@ import (
 	"boers.email/yap/agent/utils"
 )
 
-// Same limits as pi's read tool (doc: R12 result policy).
+// Same limits as pi's read tool (doc: R-tool-region result policy).
 const (
 	readMaxLines = 2000
 	readMaxBytes = 50 * 1024

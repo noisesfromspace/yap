@@ -147,11 +147,11 @@ func escapeMarkerPrefixes(s string) string {
 // visible in the buffer while the tool runs, and the gap to the result
 // honestly represents execution time. Flushed so the header lands
 // before a long-running tool's result. Blocks carry no leading
-// newlines; the caller pads (one blank line between blocks, R7).
+// newlines; the caller pads (one blank line between blocks, R-blank-lines).
 func EmitToolHeader(out *bufio.Writer, call llm.ToolCall) {
 	// write/edit carry their full content in the arguments; the header
 	// keeps only the shape — the yap:ui diff shows the change and the
-	// audit log has the full arguments (R12).
+	// audit log has the full arguments (R-tool-region).
 	argsJSON := utils.Scrub(string(call.Input))
 	args, ok := utils.SlimArgs(call.Name, argsJSON)
 	if !ok {
@@ -198,7 +198,7 @@ func EmitToolResult(out *bufio.Writer, result, ui string) {
 		fence := backtickFence(ui)
 		fmt.Fprintf(out, "<!-- yap:ui -->\n%sdiff\n%s\n%s\n<!-- /yap:ui -->\n", fence, ui, fence)
 	}
-	// Regions self-terminate with exactly one blank line (R7).
+	// Regions self-terminate with exactly one blank line (R-blank-lines).
 	out.WriteString("<!-- /yap:tool -->\n\n")
 	out.Flush()
 }

@@ -427,7 +427,7 @@ end
 --- (default 2) yap:tool regions with a placeholder; the full output
 --- stays in the audit log. Headers (flattened into the model's transcript)
 --- and yap:ui diffs stay. This is the one sanctioned rewrite of
---- existing lines (R16): the user owns the document, and clearing old
+--- existing lines (R-live-output-audit): the user owns the document, and clearing old
 --- tool output is what keeps long sessions inside the context window.
 function M.clear(buf, keep)
   buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
@@ -524,7 +524,7 @@ end
 
 --- The compaction prompt: a `compact` template in templates_dir overrides
 --- the built-in default (compaction is the template mechanism applied,
---- R18). Returns trimmed body lines, never a leading # @role heading.
+--- R-templates-skills). Returns trimmed body lines, never a leading # @role heading.
 local function compact_prompt_lines()
   local lines = template.named_lines("compact")
   if not lines then
@@ -576,7 +576,7 @@ end
 
 --- Delete every message between the system message and the final summary
 --- (the last # @assistant message), leaving frontmatter + system message +
---- summary + the trailing # @user prompt. Blank-line separation is R7.
+--- summary + the trailing # @user prompt. Blank-line separation is R-blank-lines.
 function M.compact_delete(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -621,7 +621,7 @@ function M.compact_delete(buf)
   for i = 1, se do
     kept[#kept + 1] = lines[i]
   end
-  kept[#kept + 1] = "" -- one blank line between system and summary (R7)
+  kept[#kept + 1] = "" -- one blank line between system and summary (R-blank-lines)
   for i = ai, #lines do
     kept[#kept + 1] = lines[i]
   end
@@ -1414,7 +1414,7 @@ local function setup_buffer(buf)
   -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
   -- A session buffer is not code: markdown LSPs (semantic tokens, inlay hints)
-  -- add per-redraw cost on a large session and buy nothing (R1).
+  -- add per-redraw cost on a large session and buy nothing (R-buffer-only-state).
   vim.b[buf].yap = true
   state.sessions[buf] = true
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
@@ -1548,7 +1548,7 @@ function M.new(opts)
   end
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  frontmatter.sync(buf) -- prepend the session's model state (R1: it lives in the buffer)
+  frontmatter.sync(buf) -- prepend the session's model state (R-buffer-only-state: it lives in the buffer)
   -- Create the session file up front so the buffer is file-backed from
   -- the start: `:file` names the session immediately, before the first
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
@@ -2226,7 +2226,7 @@ function M.setup(opts)
   end
 
   -- yap buffers carry no language server: the buffer is the conversation
-  -- (R1), and a markdown LSP streaming semantic-token/inlay-hint updates is
+  -- (R-buffer-only-state), and a markdown LSP streaming semantic-token/inlay-hint updates is
   -- pure per-redraw cost. The guard stops any client that attaches to a
   -- marked buffer; setup_buffer marks the buffer and stops clients that
   -- attached during :edit before the mark existed.
@@ -2258,7 +2258,7 @@ function M.setup(opts)
       if not M.config.notify_done then
         return
       end
-      -- The error path already notified (R9); don't double up.
+      -- The error path already notified (R-error-surface); don't double up.
       local parent = vim.b[data.buf].yap_subagent_parent
       if errors[data.buf] or (parent and running[parent]) then
         return

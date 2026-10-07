@@ -1,5 +1,5 @@
 -- yap buffers must not carry a language server: the buffer is the
--- conversation (R1), and a markdown LSP's semantic-token/inlay-hint stream is
+-- conversation (R-buffer-only-state), and a markdown LSP's semantic-token/inlay-hint stream is
 -- pure per-redraw cost on a large session. The guard marks buffers in
 -- setup_buffer and stops clients in both directions: already-attached clients
 -- (a session opened with :edit) and clients that attach later (LspAttach).

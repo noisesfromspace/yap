@@ -68,7 +68,7 @@ local done2 = vim.wait(10000, function()
   return l[#l] == "" and l[#l - 1] == "# @user"
 end, 100)
 assert(done2, "second session did not stream to completion")
--- wait for completion and check the whole buffer obeys R7
+-- wait for completion and check the whole buffer obeys R-blank-lines
 local done = vim.wait(8000, function()
   local l = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   return l[#l] == "" and l[#l - 1] == "# @user"

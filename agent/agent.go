@@ -513,7 +513,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		return m
 	}
 
-	// Block spacing (R7): blocks never start with newlines and
+	// Block spacing (R-blank-lines): blocks never start with newlines and
 	// self-terminate with exactly one blank line; pad() bridges the
 	// transitions (heading → first block, streamed text → tool header).
 	wrote, trail := false, 0
@@ -746,7 +746,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			})
 		}
 		// Prose for this round already streamed live before the tool regions;
-		// the tool regions self-terminate with a blank line (R7), so nothing
+		// the tool regions self-terminate with a blank line (R-blank-lines), so nothing
 		// more to emit here.
 		out.Flush()
 	}

@@ -16,7 +16,7 @@ import (
 // gray middle, so jev only pays a round-trip where a wrong call can hurt.
 //
 // It is deliberately NOT a security boundary — bash is unsandboxed by
-// design (doc: R15) and any gate is steerable. It exists to make the common
+// design (doc: R-compiled-tools) and any gate is steerable. It exists to make the common
 // catastrophic mistake (an injected `rm -rf /`, an exfiltration curl) pause
 // for a human, matching the "allow this" approval flow the deterministic
 // regexes already provide.

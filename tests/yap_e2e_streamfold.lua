@@ -24,7 +24,7 @@ for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
 end
 assert(opener, "no tool header in buffer")
 assert(vim.fn.foldclosed(opener) == opener, "streamed tool fold not closed: " .. vim.fn.foldclosed(opener))
--- write/edit headers are slimmed (R12): the arguments carry only the
+-- write/edit headers are slimmed (R-tool-region): the arguments carry only the
 -- shape, not the content (full args are in the audit log)
 local header = vim.api.nvim_buf_get_lines(buf, opener - 1, opener, false)[1]
 assert(header:match('"content":"%[%d+ lines%]"'), "write header not slimmed: " .. header)

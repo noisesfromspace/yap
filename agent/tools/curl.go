@@ -61,7 +61,7 @@ func init() {
 // an arbitrary file-writer or an SSRF vector (unix sockets, config files,
 // output files, DNS rebinding, interface pinning) and are therefore refused.
 // This is defense-in-depth against prompt-injected curl invocations, not a
-// security boundary — bash is unsandboxed by design (doc: R15).
+// security boundary — bash is unsandboxed by design (doc: R-compiled-tools).
 var (
 	curlDenyLong = []string{
 		"--unix-socket", "--abstract-unix-socket", "--config", "--output",

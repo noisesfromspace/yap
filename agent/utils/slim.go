@@ -7,7 +7,7 @@ import (
 )
 
 // SlimArgs returns a compact stand-in for a tool call's arguments for
-// the yap:tool header in the buffer (R12). write/edit calls can carry
+// the yap:tool header in the buffer (R-tool-region). write/edit calls can carry
 // kilobytes of content that the user already sees as the yap:ui diff
 // below the header, so the header — which parse_buffer flattens into
 // the model's transcript on later sends — keeps only the shape

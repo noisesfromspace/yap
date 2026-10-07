@@ -30,7 +30,7 @@ import (
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
-// an optional display-only payload for the buffer (yap:ui, R12).
+// an optional display-only payload for the buffer (yap:ui, R-tool-region).
 type Tool struct {
 	Name        string
 	Description string

@@ -49,7 +49,7 @@ end
 -- The agent is awaiting the user's next prompt: set when a turn
 -- completes (a `# @user` heading is appended), cleared when the user
 -- sends. Drives the herdr-style "needs you" winbar state. A UI hint,
--- not conversation state (R1) — same drift tradeoff as yap_usage.
+-- not conversation state (R-buffer-only-state) — same drift tradeoff as yap_usage.
 
 -- Data of the last completed turn per buffer (the binary's `turn_end`
 -- event), handed to the User YapTurnDone autocmd. Ephemeral.
@@ -79,7 +79,7 @@ local function other_session_counts(buf)
   return counts
 end
 
--- Seed the awaiting hint for a reopened session from its content (R1):
+-- Seed the awaiting hint for a reopened session from its content (R-buffer-only-state):
 -- it awaits the next reply when it has assistant history and ends on a
 -- `# @user` heading. One-time scan at open, never on redraw.
 function M.seed_awaiting(buf)

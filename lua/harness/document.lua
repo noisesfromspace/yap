@@ -243,7 +243,7 @@ function M.follow_windows(buf, wins, expected)
 end
 
 --- Append whole lines as a standalone chunk, separated from the buffer's current
---- end by exactly one blank line (R7), no matter how the buffer ends.
+--- end by exactly one blank line (R-blank-lines), no matter how the buffer ends.
 --- All structural appends (headings, error markers) go through here.
 function M.append_lines(buf, chunk)
   if not vim.api.nvim_buf_is_valid(buf) then
@@ -287,7 +287,7 @@ end
 --- user already typed — instead of emitting a duplicate heading above it.
 --- Otherwise a fresh heading message is appended. This is the single place
 --- that decides reuse-vs-wrap for plain-text appends; snippet appends use
---- trailing_role directly for the same decision. (R6 makes reuse and a new
+--- trailing_role directly for the same decision. (R-role-alternation makes reuse and a new
 --- adjacent message parse the same, so this is purely about keeping the
 --- visible buffer well-formed.)
 function M.append_message(buf, role, lines)
@@ -309,7 +309,7 @@ function M.append_message(buf, role, lines)
     return
   end
   -- Keep everything through the heading, then any body already under it,
-  -- then the new lines (R7: one blank line after the heading, one between
+  -- then the new lines (R-blank-lines: one blank line after the heading, one between
   -- merged bodies).
   local out = {}
   for i = 1, heading do

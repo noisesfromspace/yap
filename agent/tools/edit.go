@@ -9,7 +9,7 @@ import (
 	"boers.email/yap/agent/utils"
 )
 
-// pi's edit semantics (doc: R12 result policy): every oldText is matched
+// pi's edit semantics (doc: R-tool-region result policy): every oldText is matched
 // against the ORIGINAL content, must occur exactly once, and edits must
 // not overlap. The result is a short confirmation; the unified diff is
 // display-only via the ui payload.

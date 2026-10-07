@@ -11,12 +11,14 @@ there, with permission of user. This applies to **AI agents**.
 
 ## Working with the rules
 
-The numbered rules are the design contract. Keep their IDs stable when moving
-them: code, tests, and discussions can refer to them. For a behavior change,
-find the relevant rule, update it with the implementation, and add or adjust
-the corresponding tests. Preserve the reason for the rule, not just the
-current mechanics. For verification, run `CGO_ENABLED=0 go test ./...` for
-Go changes or `tests/run.sh` for the full Go + Neovim suite.
+The rules are the design contract, identified by stable `R-...` slugs (not
+ordinal numbers), so they can move between sections and new ones can be added
+without renumbering anything. Code, tests, and discussions refer to them by
+slug. For a behavior change, find the relevant rule, update it with the
+implementation, and add or adjust the corresponding tests. Preserve the reason
+for the rule, not just the current mechanics. For verification, run
+`CGO_ENABLED=0 go test ./...` for Go changes or `tests/run.sh` for the full
+Go + Neovim suite.
 
 ## Business rules
 
@@ -26,13 +28,18 @@ this repository MUST keep this section up-to-date.
 
 ### Conversation document and persistence
 
-#### R1 — The buffer is the only conversation state
+#### R-buffer-only-state — The buffer is the only conversation state
 
 Neither the Lua side nor the Go binary may keep message state between turns.
-Why: branching by deletion, prefill by editing, and undo-tree navigation only
+An explicit `![FILE: name](file:///...)` reference in a user message is an
+image attachment: `:YapAttach` imports the dropped path into a local asset
+store and replaces that line with the reference. Go reads it on each send and
+sends its bytes as an image part. Removing the reference removes the attachment;
+missing/invalid assets fail the send. The asset store must accompany a session
+when moved to another machine. Why: branching by deletion, prefill by editing, and undo-tree navigation only
 work if the buffer is the single source of truth.
 
-#### R2 — `<!-- yap:* -->` marker regions are never sent as buffer text
+#### R-markers-not-sent — `<!-- yap:* -->` marker regions are never sent as buffer text
 
 The parser skips them (thinking, error, usage, yap:ui) or flattens them
 (yap:tool becomes plain assistant transcript text naming the tool, its JSON
@@ -40,17 +47,17 @@ arguments and result — the raw region text is still never sent). Why: thinking
 or display payloads re-sent to the API pollute or break the conversation.
 (Bug of record: the first error comment WAS sent back as assistant content.)
 
-#### R3 — Lines before the first heading are ignored
+#### R-pre-heading-ignored — Lines before the first heading are ignored
 
 The session header lives there. The parser's flush must clear the accumulator
 when no role is set. (Bug of record: pre-heading text was prepended to the
 first message until this was fixed.)
 
-#### R6 — Adjacent same-role messages are merged on send; empty messages dropped
+#### R-role-alternation — Adjacent same-role messages are merged on send; empty messages dropped
 
 Why: providers require role alternation.
 
-#### R7 — Exactly one blank line between messages, enforced locally at every write
+#### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
 Structural appends (headings, error markers) go through `append_lines()`,
 which trims trailing blanks and prepends exactly one blank line itself — never
@@ -70,7 +77,7 @@ hand-rolled `"\n"` prefixes broke separation when trailing-blank trimming was
 added; a buffer-wide normalize pass made every send rewrite the whole buffer
 and churn fold state.)
 
-#### R8 — Sessions are plain markdown files; file operations are the session operations
+#### R-session-is-file — Sessions are plain markdown files; file operations are the session operations
 
 The file is created at buffer creation so a fresh session is file-backed (and
 nameable via `:file`) before the first reply. Saves follow every turn exit,
@@ -84,23 +91,24 @@ buffers (and their audit view buffers) are unlisted — never in `:ls` or buffer
 pickers — so navigation uses `<leader>r`, and a session's audit view opens with
 `:YapLive`.
 
-#### R14 — The model state is durable YAML frontmatter; everything else is ephemeral
+#### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
-The frontmatter holds `provider`/`model` (the combo to resume with), `cwd` (the
+The frontmatter holds `provider`/`model` (the combo to resume with), `created_cwd` (the
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, and `turns` (the count of completed replies, stamped
 on save for the picker). yap writes the model fields only on `:Yap` and
-`:YapChangeModel` — never during a send, so R7's append-only rule holds — and
+`:YapChangeModel` — never during a send, so the append-only rule holds
+(R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
 metadata). It reads the frontmatter on open and surfaces it in the
 `:YapSessions` picker. Token/cost totals are deliberately NOT frontmatter:
 they accumulate in per-buffer memory for the winbar and reset on reopen. The
 earlier frontmatter design got this wrong by folding per-reply usage into the
 header, which made every metadata update a non-local buffer edit that fought
-R7.
+R-blank-lines.
 
-#### R18 — Templates and skills are plain markdown files inserted into the buffer
+#### R-templates-skills — Templates and skills are plain markdown files inserted into the buffer
 
 `templates_dir` files append as a `# @user` message: a body with no leading
 heading is wrapped automatically; a leading `# @role` heading (including
@@ -112,11 +120,11 @@ quotes the message format). A skill's optional frontmatter may carry
 `description:` for the skills intro (skills_intro) and is stripped on insert.
 Nothing is auto-loaded and nothing is hidden: the inserted text is visible,
 editable buffer content like any other, and the intro is a short visible list,
-never injected bodies. Why: the buffer stays the only state (R1), and
+never injected bodies. Why: the buffer stays the only state (R-buffer-only-state), and
 templates/skills are just text, so one insert command covers compaction,
 snippets and skills.
 
-#### R20 — Scratch sections are parsed from the live `*.notes` buffer, never re-read from the saved file during dispatch
+#### R-scratch-sections — Scratch sections are parsed from the live `*.notes` buffer, never re-read from the saved file during dispatch
 
 `# @notes` is an inert backlog; `# @steer` is a replaceable pending message
 that remains in the buffer until delivery (or follow-up dispatch), and the
@@ -129,12 +137,12 @@ the control surface.
 
 ### Backend and wire protocol
 
-#### R4 — The binary emits plain text and yap markers only
+#### R-plain-text-only — The binary emits plain text and yap markers only
 
 No ANSI, no padding, no rendering. Why: markdown rendering is the user's
 ft=markdown setup; cell-based TUIs break Neovim yanking.
 
-#### R5 — Providers go through the GoAI SDK behind Yap's own adapter
+#### R-goai-adapter — Providers go through the GoAI SDK behind Yap's own adapter
 
 Native OpenAI (Responses API), Anthropic, Google/Gemini and DeepSeek, plus any
 OpenAI-compatible /chat/completions endpoint (Moonshot/Kimi, OpenRouter,
@@ -143,7 +151,7 @@ unchanged: plain text and yap markers.
 
 ### Tools and audit trail
 
-#### R12 — One buffer region = one tool call+result pair
+#### R-tool-region — One buffer region = one tool call+result pair
 
 A yap:tool region holds the call (single-line JSON header) and the result text
 together; parsing flattens the region into plain assistant transcript text
@@ -160,13 +168,13 @@ diff and the file on disk don't already show (Anthropic's clear_tool_inputs is
 the same idea); the full arguments are in the audit log. Old result bodies can
 be cleared explicitly with `:YapClear`.
 
-#### R13 — No MCP
+#### R-no-mcp — No MCP
 
 The author's tools are thin HTTP wrappers that are less code as native Go
 functions than an MCP client; MCP also has no equivalent of pi's hook bus. If
 ever needed, add mark3labs/mcp-go additively.
 
-#### R15 — Tools are compiled-in Go files, one per file in agent/tools/
+#### R-compiled-tools — Tools are compiled-in Go files, one per file in agent/tools/
 
 Each file self-registers via init(); adding a tool = adding a file and
 recompiling. Not config files (the author wants tool code, not opaque
@@ -186,9 +194,9 @@ bubblewrap (Codex's Linux choice), not command-pattern allowlists (documented
 as bypassable). bash/python's operational mechanics are unchanged: own process
 group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
 
-#### R16 — Live tool output never enters the session buffer
+#### R-live-output-audit — Live tool output never enters the session buffer
 
-The buffer is the parseable conversation document (R1); streaming command
+The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
 each session has ONE persistent audit view (yap://<session>-audit): bash/python
@@ -206,7 +214,7 @@ selected model, and the transient yap:usage marker is consumed into in-memory
 totals. Why: output exists in exactly one place at any moment, and the buffer
 format has no transient states to repair.
 
-#### R17 — The audit log is the durable record of everything the context doesn't carry
+#### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
 `~/.yap/audit/<cwd-slug>/<session>.jsonl`, JSON Lines (one timestamped JSON
 object per line), append-only, written by the Lua side from yap:event lines
@@ -215,17 +223,17 @@ arguments, streamed bash/python output, full results, and one journal line per
 turn (model, tokens, cost, ms). The audit view (`:YapLive`) renders these
 events and is rebuilt from the file on reopen; the audit file is the
 authoritative record and survives restarts. This is what makes slimmed headers
-(R12) and `:YapClear` lossless.
+(R-tool-region) and `:YapClear` lossless.
 
 ### Neovim presentation and turn lifecycle
 
-#### R9 — Errors surface three ways
+#### R-error-surface — Errors surface three ways
 
 `vim.notify` (transient), winbar error state (persistent until next send), and
 a parse-excluded buffer marker (record). Spawn failures of the binary are
 caught and reported the same way.
 
-#### R10 — Folding is a projection of anchored structural units
+#### R-folding — Folding is a projection of anchored structural units
 
 Each window owns its view (initially 2) and open/closed choices. View 1 folds
 system and assistant messages, including the newest; view 2 folds system and
@@ -239,7 +247,7 @@ Unchanged ranges are not recreated. Arbitrary edits/undo reconcile too.
 Cursor/scroll restoration is distinct from the explicit follow-tail behavior.
 The winbar displays the applied view, not the number of currently open folds.
 
-#### R11 — Streaming appends at the end of the buffer, fully async
+#### R-async-stream — Streaming appends at the end of the buffer, fully async
 
 gptel-style: the buffer stays editable while a reply streams in. Editing above
 the streaming reply is safe; typing inside/below it interleaves with the
@@ -255,7 +263,7 @@ the stream, and nothing moves from a non-normal mode. (The one deliberate
 exception, unchanged: a completed turn puts the cursor on the new `# @user`
 heading, so the next prompt is ready to type.)
 
-#### R19 — Turn completion is a first-class event
+#### R-turn-complete-event — Turn completion is a first-class event
 
 When the binary exits successfully, the Lua side emits `User YapTurnDone` with
 `data = { buf, turn }` (turn is the binary's `turn_end` payload when usage was
@@ -265,12 +273,12 @@ marker (for example an empty completion or the tool-iteration bound); that
 state is surfaced as an error and the default completion notification is
 suppressed. The default handler (installed by setup(), disabled with
 `notify_done = false`) calls vim.notify — only for a buffer not visible in any
-window, and never on the error path, which already notifies (R9). Delegated
+window, and never on the error path, which already notifies (R-error-surface). Delegated
 child results and failures are reported to the running parent, not toasted
 separately; a direct child follow-up can notify normally. A completed turn sets
 the awaiting hint, which drives the `󰫁N` rollup counting the OTHER awaiting
 buffers (the buffer's own winbar shows the waiting icon): an imperative UI hint
-like `errors`/`yap_usage`, not conversation state (R1); reopened sessions seed
+like `errors`/`yap_usage`, not conversation state (R-buffer-only-state); reopened sessions seed
 the rollup from their content on open. Why: herdr's "working → blocked → idle"
 notification is a completion *event*, and an autocmd is the Neovim-native hook
 for it (noice/nf-notify, chaining a next send) instead of a hardcoded side
@@ -280,7 +288,9 @@ effect.
 
 - **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...]}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
-  as assistant transcript text).
+  as assistant transcript text). Explicit user `![FILE: name](file:///...)`
+  references stay in Markdown and Go converts them into ordered image parts
+  when sending; binary data is never in the session or stdin.
 - **argv** — `yap serve` (one persistent process per session buffer).
 - **stdout** — raw assistant text, streamed; thinking, tool regions and usage
   wrapped in yap markers. Each turn ends with an RS-prefixed
@@ -299,7 +309,7 @@ effect.
     tool's log is complete; the Lua side drains the final bytes and removes
     the untruncated temp log.
   - `tool_call` `{"type","name","args"}` — every tool before it runs, full
-    arguments (the buffer header keeps only slimmed write/edit args, R12).
+    arguments (the buffer header keeps only slimmed write/edit args, R-tool-region).
   - `tool_result` `{"type","name","bytes","result"}` — full result.
   - `approval_request` `{"type","id","command"}` — a dangerous command pauses
     the turn; the Lua side prompts and replies

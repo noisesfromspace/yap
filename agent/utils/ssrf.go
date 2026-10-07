@@ -12,7 +12,7 @@ import (
 // SSRF guard for fetch/curl: reject targets that resolve to non-global
 // addresses (cloud metadata, private ranges, link-local, multicast, CGNAT).
 // Deterministic local check — no model, nothing leaves the machine. It is
-// best-effort defense (bash is deliberately unsandboxed, R15), not a
+// best-effort defense (bash is deliberately unsandboxed, R-compiled-tools), not a
 // security boundary.
 
 // isBlockedIP reports whether ip must not be fetched directly. Loopback is

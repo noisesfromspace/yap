@@ -55,7 +55,7 @@ func TestRunTurnSteer(t *testing.T) {
 	if !strings.Contains(s, "# @user\nalso check the tests\n\n# @assistant\n") {
 		t.Fatalf("steer block not in buffer:\n%s", s)
 	}
-	// R7: exactly one blank line between blocks — never two.
+	// R-blank-lines: exactly one blank line between blocks — never two.
 	if strings.Contains(s, "\n\n\n") {
 		t.Fatalf("double blank line between blocks:\n%s", s)
 	}

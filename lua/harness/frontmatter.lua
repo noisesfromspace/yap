@@ -203,7 +203,7 @@ end
 
 --- Rewrite the buffer's frontmatter to match the current combo, growing
 --- the `models` history. Called only from new()/change_model() — never
---- during a send (R7: sends only append).
+--- during a send (R-blank-lines: sends only append).
 function M.sync(buf)
   local provider, model = config.current_combo(buf)
   local combo = provider .. "/" .. model
