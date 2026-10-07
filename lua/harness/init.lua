@@ -645,14 +645,23 @@ end
 
 -- Drawer open/close lives in harness.drawer.
 
-local function close_session_drawers(buf)
-  local scratch = vim.b[buf].yap_scratch
+-- Close the session's drawers. `scratch`/`audit_buf` are the drawer buffers
+-- captured while `buf` was still loaded: :bd unloads the session before a
+-- deferred callback runs, clearing vim.b[buf].yap_scratch, so the callback
+-- must not re-read it from the buffer.
+local function close_session_drawers(buf, scratch, audit_buf)
+  if not scratch and vim.api.nvim_buf_is_valid(buf) then
+    scratch = vim.b[buf].yap_scratch
+  end
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
     drawer.close(scratch, buf)
   end
-  local audit_view = audit.view(buf)
-  if audit_view and vim.api.nvim_buf_is_valid(audit_view.bufnr) then
-    drawer.close(audit_view.bufnr, buf)
+  if not audit_buf then
+    local t = audit.view(buf)
+    audit_buf = t and t.bufnr
+  end
+  if audit_buf and vim.api.nvim_buf_is_valid(audit_buf) then
+    drawer.close(audit_buf, buf)
   end
 end
 
@@ -2157,11 +2166,17 @@ function M.setup(opts)
       if not vim.b[buf].yap then
         return
       end
+      -- Capture the drawer buffers now: :bd unloads the session before the
+      -- deferred check below runs, clearing vim.b[buf].yap_scratch. The audit
+      -- view already survives via the module table, but capture it too.
+      local scratch = vim.b[buf].yap_scratch
+      local t = audit.view(buf)
+      local audit_buf = t and t.bufnr
       -- Let window/buffer transitions settle; focusing a drawer alone must
       -- not close it while the session remains displayed in another window.
       vim.schedule(function()
-        if vim.api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) == 0 then
-          close_session_drawers(buf)
+        if #vim.fn.win_findbuf(buf) == 0 then
+          close_session_drawers(buf, scratch, audit_buf)
         end
       end)
     end,

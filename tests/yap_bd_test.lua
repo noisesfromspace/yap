@@ -116,4 +116,24 @@ assert(
 )
 assert(state.running[child] == nil, "closed subagent should not keep a running request")
 
+-- Deleting a session closes its open notes/audit drawers: the windows go
+-- away, while the file-backed scratch and the audit-view buffer persist for
+-- a later reopen (they belong to the session, not the deleted buffer).
+local s = yap.new()
+yap.scratch_toggle()
+local scratch = vim.api.nvim_get_current_buf()
+vim.api.nvim_set_current_win(vim.fn.win_findbuf(s)[1])
+yap.live(s)
+local audit = vim.api.nvim_get_current_buf()
+vim.api.nvim_set_current_win(vim.fn.win_findbuf(s)[1])
+vim.cmd("bd")
+assert(
+  vim.wait(2000, function()
+    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
+  end),
+  "scratch/live drawers stayed open after :bd"
+)
+assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped on :bd")
+assert(vim.api.nvim_buf_is_valid(audit), "audit view buffer was wiped on :bd")
+
 print("OK bd")
