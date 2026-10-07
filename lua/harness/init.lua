@@ -92,7 +92,7 @@ end
 
 -- Landing spot after closing the current session: the most recently focused
 -- session awaiting a reply, otherwise a running session, otherwise the last
--- non-session (file) buffer. Idle sessions are not a landing spot.
+-- ordinary file buffer. Idle sessions are not a landing spot.
 local function focus_fallback(buf)
   local function open(b)
     return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b)
@@ -108,7 +108,14 @@ local function focus_fallback(buf)
     end
   end
   for _, b in ipairs(focus_mru) do
-    if open(b) and not vim.b[b].yap then
+    -- Only real, listed file buffers count. Explorers (mini.files, netrw),
+    -- quickfix, terminal, help and other special windows are skipped so :bd
+    -- never parks the cursor in one.
+    if open(b)
+      and not vim.b[b].yap
+      and vim.bo[b].buftype == ""
+      and vim.bo[b].buflisted
+    then
       return b
     end
   end

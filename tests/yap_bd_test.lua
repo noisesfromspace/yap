@@ -82,6 +82,25 @@ assert(
   "after :bd D, expected the last file, got " .. cur_name()
 )
 
+-- A special window (explorer/quickfix/nofile) is not a landing spot either:
+-- :bd skips it and lands on the last ordinary file buffer.
+local function open_special()
+  local special = vim.api.nvim_create_buf(true, false)
+  vim.bo[special].buftype = "nofile"
+  vim.api.nvim_set_current_buf(special)
+  return special
+end
+local filebuf4 = open_file()
+open_special() -- focus the explorer-like buffer after the file
+local e = yap.new()
+vim.cmd("bd")
+assert(
+  vim.wait(2000, function()
+    return current() == filebuf4
+  end),
+  "after :bd E, expected the last file over the explorer, got " .. cur_name()
+)
+
 -- An unloaded parent also closes its hidden child sessions.
 local parent = yap.new()
 local child = yap.new()
