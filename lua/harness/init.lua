@@ -285,196 +285,10 @@ end
 -- per token (O(n) per edit on large sessions).
 local stream_flush = {}
 
--- Per-chat-buffer persistent audit view: every audit event is rendered
--- into ONE unlisted buffer, yap://<session>-audit, opened by :YapLive.
--- The audit view is not a second log — it is the live, human-readable
--- rendering of the JSON Lines audit log (see audit_path), rebuilt from
--- it on reopen. Only the audit log is persisted.
+-- Audit lifecycle (log write, live-view buffer, seed usage, drain, poll)
+-- lives in harness.audit.
+
 local follow_override = {} -- chat buf -> windows deliberately focused by YapAlerts during a turn
-local audits = {} -- chat buf → { bufnr, offset, has_content, audit }
-
--- The audit dir holds one JSON Lines audit log per session, keyed by
--- the session's basename, so the sessions dir stays clean.
-
---- Append one event as a JSON object to the session's audit log.
-local function audit_append(buf, ev)
-  local t = audits[buf]
-  if not t then
-    return
-  end
-  if not t.audit then
-    t.audit = paths.audit_path(buf)
-    -- 0700: the audit log holds full tool args and results (potentially
-    -- secrets); the directory must not be world-readable.
-    vim.fs.mkdir(vim.fn.fnamemodify(t.audit, ":h"), { parents = true, mode = 448 }) -- 0o700
-  end
-  vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
-end
-
---- Point the audit log at the session file's name; a `:file` rename
---- (which also renames the session) renames the log to match.
-local function audit_follow(buf)
-  local t = audits[buf]
-  if not t or not t.audit or not vim.b[buf].yap_path then
-    return
-  end
-  local want = paths.audit_path(buf)
-  if want ~= t.audit and vim.fn.filereadable(want) == 0 then
-    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
-    if os.rename(t.audit, want) then
-      t.audit = want
-    end
-  end
-end
-
---- Seed the all-time session usage from the audit log: sum every turn_end
---- journal entry so a reopened session shows its full historical cost
---- immediately. yap_usage is per-buffer and resets on reopen; this is its
---- durable per-session counterpart (the audit log, not the session file,
---- is the source of truth).
-local function seed_session_usage(buf)
-  local su = { prompt = 0, completion = 0 }
-  local path = paths.audit_path(buf)
-  if vim.fn.filereadable(path) == 1 then
-    for _, line in ipairs(vim.fn.readfile(path)) do
-      if line ~= "" then
-        local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" and ev.type == "turn_end" then
-          su.prompt = su.prompt + (ev.prompt or 0)
-          su.completion = su.completion + (ev.completion or 0)
-          if ev.cost then
-            su.cost = (su.cost or 0) + ev.cost
-          end
-        end
-      end
-    end
-  end
-  vim.b[buf].yap_session_usage = su
-end
-
-local function ensure_audit(buf)
-  local t = audits[buf]
-  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
-    return t
-  end
-  local name = paths.audit_buf_name(buf)
-  local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
-  vim.bo[tbuf].bufhidden = "hide"
-  vim.bo[tbuf].modifiable = false
-
-  t = { bufnr = tbuf, offset = 0, has_content = false }
-  audits[buf] = t
-
-  -- Replay the audit log so the live view survives restarts.
-  local events = {}
-  local path = paths.audit_path(buf)
-  if vim.fn.filereadable(path) == 1 then
-    for _, line in ipairs(vim.fn.readfile(path)) do
-      if line ~= "" then
-        local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" then
-          events[#events + 1] = ev
-        end
-      end
-    end
-  end
-  vim.bo[tbuf].modifiable = true
-  t.has_content, t.reviews = audit.rebuild(tbuf, events)
-  vim.bo[tbuf].modifiable = false
-  return t
-end
-
---- Append an event to the audit log and render it into the audit view.
-local function append_event(buf, ev)
-  local t = ensure_audit(buf)
-  audit_append(buf, ev)
-  vim.bo[t.bufnr].modifiable = true
-  audit.append(t, ev)
-  vim.bo[t.bufnr].modifiable = false
-  audit.scroll(t.bufnr)
-end
-
---- Cap the raw tool output streamed into the live audit view (and audit
---- log) per tool run. The returned tool result is already tail-truncated
---- to 50KB; the live audit view must not accumulate the full log — a
---- runaway command writing gigabytes would otherwise balloon the audit
---- view buffer (and audit log) and OOM the editor. 256KB is ample for
---- watching progress while keeping memory bounded.
-local LIVE_OUTPUT_CAP = 256 * 1024
-
---- Append newly written bytes of the running tool's log to the audit
---- view buffer (called on the spinner tick, on tool_end, and on process
---- exit). Defined via the forward declaration: the spinner ticks
---- before this section runs.
-local function drain_audit(buf)
-  local t, l = audits[buf], live[buf]
-  if not t or not l then
-    return
-  end
-  local fd = vim.uv.fs_open(l.log, "r", 438)
-  if not fd then
-    return
-  end
-  local stat = vim.uv.fs_fstat(fd)
-  if not stat then
-    vim.uv.fs_close(fd)
-    return
-  end
-  local data
-  local room = LIVE_OUTPUT_CAP - (l.out or 0)
-  if stat.size > t.offset and room > 0 then
-    local want = math.min(stat.size - t.offset, room)
-    data = vim.uv.fs_read(fd, want, t.offset)
-    if data then
-      l.out = (l.out or 0) + #data
-    end
-  end
-  t.offset = stat.size -- always advance past the read (or skipped) bytes
-  vim.uv.fs_close(fd)
-  if data and #data > 0 then
-    append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
-  elseif room <= 0 and stat.size > 0 and not l.truncated then
-    l.truncated = true
-    append_event(buf, {
-      type = "output",
-      name = l.name,
-      ts = os.date("%Y-%m-%dT%H:%M:%S"),
-      data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(
-        LIVE_OUTPUT_CAP,
-        stat.size - LIVE_OUTPUT_CAP
-      ),
-    })
-  end
-end
-
--- Poll tool logs independently of the visual spinner. Direct drains on
--- tool_end and process exit still capture the final bytes before cleanup.
-local audit_poll_timer
-local function audit_poll_stop_if_idle()
-  if audit_poll_timer and not next(running) then
-    audit_poll_timer:stop()
-    audit_poll_timer:close()
-    audit_poll_timer = nil
-  end
-end
-local function audit_poll_start()
-  if audit_poll_timer then
-    return
-  end
-  audit_poll_timer = vim.uv.new_timer()
-  audit_poll_timer:start(
-    0,
-    180,
-    vim.schedule_wrap(function()
-      for b in pairs(running) do
-        drain_audit(b)
-      end
-      audit_poll_stop_if_idle()
-    end)
-  )
-end
-
---- Handle one `yap:event {json}` line from the binary's stderr.
 local live_session_label
 local inspect_approval
 
@@ -489,7 +303,7 @@ local function answer_approval(buf, approved)
     return
   end -- backend stopped or timed out; never approve a stale call
   process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
-  append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
+  audit.append_event(buf, { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") })
 end
 
 local function handle_event(buf, json_line)
@@ -500,11 +314,11 @@ local function handle_event(buf, json_line)
   ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
     live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0 }
-    local t = ensure_audit(buf)
+    local t = audit.ensure(buf)
     t.offset = 0
-    append_event(buf, ev)
+    audit.append_event(buf, ev)
   elseif ev.type == "tool_end" then
-    drain_audit(buf) -- the log is complete; capture the final bytes
+    audit.drain(buf) -- the log is complete; capture the final bytes
     live[buf] = nil
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
@@ -519,7 +333,7 @@ local function handle_event(buf, json_line)
       M.stop(child)
     end
   elseif ev.type == "approval_request" then
-    append_event(buf, ev)
+    audit.append_event(buf, ev)
     local command = ev.command or ""
     local ok_args, args = pcall(vim.json.decode, command)
     -- Show every argument, not a truncated 300-character prefix: approval
@@ -545,10 +359,10 @@ local function handle_event(buf, json_line)
     end
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
-    append_event(buf, ev)
+    audit.append_event(buf, ev)
   elseif ev.type == "alert_advice" then
     -- Record before notifying: the picker can now navigate to this exact alert.
-    append_event(buf, ev)
+    audit.append_event(buf, ev)
     vim.notify(
       ("yap: %s (%s) — %s %s (P=%.2f, severity=%.2f)\n:YapAlerts"):format(
         live_session_label(buf),
@@ -585,11 +399,11 @@ local function handle_event(buf, json_line)
       -- file is saved before the buffer is wiped (complete() below).
       close_after_turn[buf] = true
     end
-    append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
+    audit.append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
-    append_event(buf, ev) -- full result; bash output already streamed above
+    audit.append_event(buf, ev) -- full result; bash output already streamed above
   elseif ev.type == "retry" then
-    append_event(buf, ev) -- a transient generation error was retried
+    audit.append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "steer" then
     if steer[buf] == ev.text then
       steer[buf] = nil -- delivered: remove only the matching live draft
@@ -599,11 +413,11 @@ local function handle_event(buf, json_line)
         scratchmod.save(scratch)
       end
     end
-    append_event(buf, ev) -- audit trail: a steering message landed mid-turn
+    audit.append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "model_change" then
-    append_event(buf, ev) -- audit trail: a model switch landed mid-turn
+    audit.append_event(buf, ev) -- audit trail: a model switch landed mid-turn
   elseif ev.type == "tool_text_warning" then
-    append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
+    audit.append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
   elseif ev.type == "usage" then
     state.live_usage[buf] = ev
     vim.cmd.redrawstatus()
@@ -619,8 +433,8 @@ local function handle_event(buf, json_line)
       su.cost = (su.cost or 0) + ev.cost
     end
     vim.b[buf].yap_session_usage = su
-    append_event(buf, ev)
-    local t = audits[buf]
+    audit.append_event(buf, ev)
+    local t = audit.view(buf)
     if t then
       audit.fold(t.bufnr, false, true)
     end
@@ -840,7 +654,7 @@ local function close_session_drawers(buf)
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
     drawer.close(scratch, buf)
   end
-  local audit_view = audits[buf]
+  local audit_view = audit.view(buf)
   if audit_view and vim.api.nvim_buf_is_valid(audit_view.bufnr) then
     drawer.close(audit_view.bufnr, buf)
   end
@@ -851,13 +665,13 @@ end
 --- tool has run (an empty audit view that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  for chat, t in pairs(audits) do
+  for chat, t in pairs(audit.views()) do
     if t.bufnr == buf then
       drawer.toggle(chat, buf, 12)
       return
     end
   end
-  local t = ensure_audit(buf)
+  local t = audit.ensure(buf)
   if not drawer.toggle(buf, t.bufnr, 12) then
     return
   end
@@ -890,7 +704,7 @@ local function show_audit_event(buf, ordinal)
   if vim.api.nvim_get_current_buf() ~= buf then
     vim.api.nvim_set_current_buf(buf)
   end
-  local t = ensure_audit(buf)
+  local t = audit.ensure(buf)
   local wins = vim.fn.win_findbuf(t.bufnr)
   if wins[1] then
     vim.api.nvim_set_current_win(wins[1])
@@ -970,7 +784,7 @@ function M.approval()
   local current = vim.api.nvim_get_current_buf()
   local buf = pending_approvals[current] and current or nil
   if not buf then
-    for chat, t in pairs(audits) do
+    for chat, t in pairs(audit.views()) do
       if t.bufnr == current and pending_approvals[chat] then
         buf = chat
         break
@@ -1230,7 +1044,7 @@ function M.send(buf)
   -- buffer is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear.
   spinner.start()
-  audit_poll_start()
+  audit.poll_start()
 
   local process = servers[buf]
   if not process then
@@ -1312,13 +1126,13 @@ function M.send(buf)
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
       local l = live[buf]
-      drain_audit(buf) -- final bytes; a killed tool never sent tool_end
+      audit.drain(buf) -- final bytes; a killed tool never sent tool_end
       if l then
         live[buf] = nil
         vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
       spinner.stop_if_idle()
-      audit_poll_stop_if_idle()
+      audit.poll_stop_if_idle()
       repair_stream_tail(buf)
       if not result.ok then
         local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
@@ -1362,7 +1176,7 @@ function M.send(buf)
         done(not errors[buf])
       end
       describe.refresh(buf, "answer")
-      audit_follow(buf) -- first save named the session; rename the log to match
+      audit.follow_rename(buf) -- first save named the session; rename the log to match
       -- A completed turn is a first-class event (herdr's "working → blocked
       -- → idle" notification). Fire it once the buffer is in its final state
       -- so handlers see the appended `# @user` and the saved session.
@@ -1475,7 +1289,7 @@ function M.send(buf)
     )
     if not ok then
       spinner.stop_if_idle()
-      audit_poll_stop_if_idle()
+      audit.poll_stop_if_idle()
       stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
@@ -1534,8 +1348,8 @@ function M.stop(buf)
     servers[buf] = nil
     running[buf] = nil
     spinner.stop_if_idle()
-    audit_poll_stop_if_idle()
-    drain_audit(buf)
+    audit.poll_stop_if_idle()
+    audit.drain(buf)
     local l = live[buf]
     if l then
       live[buf] = nil
@@ -1776,7 +1590,7 @@ function M.new(opts)
   -- The audit view is a rendering of the audit log: create its live-view buffer
   -- now (empty — the audit log is written on the first event), before any
   -- :file rename or tool run.
-  ensure_audit(buf)
+  audit.ensure(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
   setup_buffer(buf)
@@ -2032,8 +1846,8 @@ adopt = function(buf, path)
   -- seed the overview hint so it counts before its first send here.
   winbar.seed_awaiting(buf)
   setup_buffer(buf)
-  ensure_audit(buf) -- restore the live view from the audit log (create if missing)
-  seed_session_usage(buf) -- durable all-time totals from the audit log
+  audit.ensure(buf) -- restore the live view from the audit log (create if missing)
+  audit.seed_session_usage(buf) -- durable all-time totals from the audit log
   return buf
 end
 
