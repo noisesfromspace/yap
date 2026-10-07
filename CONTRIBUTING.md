@@ -1,9 +1,11 @@
-# Contributing to yap
+## Contributor policy
 
-This file holds the parts of the design contract that only matter to people
-changing the code: the Lua <-> Go wire protocol and the numbered business
-rules. The user-facing reference is `doc/yap.txt`; this file is the
-contributor's contract, not `:help`.
+No large refactors. Changes are kept narrowly scoped and local, so each one
+is reviewable against the numbered rules below without sprawling across
+modules. When a change would touch many areas, restructure code, or rework
+behavior beyond the task at hand, do not edit this checkout in place: fork
+the project first (copy it to a separate directory) and make the change
+there, with permission of user. This applies to **AI agents**.
 
 ## Lua <-> Go protocol
 
