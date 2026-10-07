@@ -189,17 +189,22 @@ shows saved sessions with live state icons; pass `'all'` for every project.
 `require('harness').instances()` lists all open sessions, including the
 current one, while `require('harness').waiting()` lists those awaiting a
 reply or stopped. Open sessions are unlisted (absent from |:ls|); use
-`<leader>r` to pick one. The open-session picker shows project cwd, status,
-title and model on root rows; child rows show their status, fork/role and
-subagent description (falling back to the task) or fork title without
-repeating the model. Waiting parent
-groups sort last and children sit beneath their parent. Children whose
-parent is not shown become labelled roots. The waiting picker hides the
-current session unless it has an
-open fork or subagent to group; it includes manually stopped sessions and
-children whose turns stopped or failed, but not completed subagents (find
-those in the open-session or saved-session picker). The audit view is also
-unlisted; open it from its session with |:YapLive|.
+`<leader>r` to pick one. Open and waiting picker rows keep the state icon
+in a fixed left column, with fork/subagent titles indented beneath their
+parent. Root rows show title and model; children omit the model. The
+project cwd appears after root titles only when sessions span multiple
+projects. Waiting parent groups sort last and children sit beneath their
+parent. Child labels use the fork title or the subagent role and description
+(falling back to the task). Children whose parent is not shown become
+labelled roots. History keeps the same title indentation, leaves the status
+column blank for closed sessions, and marks open sessions (including idle
+ones); turn counts remain beside titles. The all-projects history picker
+puts project paths after roots when multiple projects are present. The waiting
+picker hides the current session unless it has an open fork or subagent to
+group; it includes manually stopped sessions and children whose turns
+stopped or failed, but not completed subagents (find those in the
+open-session or saved-session picker). The audit view is also unlisted;
+open it from its session with |:YapLive|.
 
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*

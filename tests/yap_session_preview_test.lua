@@ -150,9 +150,10 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("↳ scout · inspect this task", 1, true) and not rendered_child:find(vim.fn.getcwd(), 1, true)
+  rendered_child:find("^" .. yap.config.icons.idle .. "    ↳ scout · inspect this task") == 1
+    and not rendered_child:find(vim.fn.getcwd(), 1, true)
     and not rendered_child:find("(m1)", 1, true),
-  "child row wastes space: " .. rendered_child
+  "child title should be indented after aligned status icon, without cwd/model: " .. rendered_child
 )
 local state = require("harness.state")
 state.running[child] = {}
@@ -175,6 +176,8 @@ assert(
   parent_position and child_position == parent_position + 1,
   "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
 )
+assert(captured.opts.format_item(captured.items[child_position]):find("^" .. yap.config.icons.running .. "    ↳") == 1,
+  "running child title should be indented after aligned icon")
 state.running[child] = nil
 
 -- Completed children do not need attention; stopped or errored ones do.
@@ -203,6 +206,10 @@ assert(
   captured and #captured.items == 2 and captured.items[1].buf == buf and captured.items[2].buf == child,
   "stopped child needs attention beneath its parent: " .. vim.inspect(captured and captured.items)
 )
+assert(captured.opts.format_item(captured.items[1]):find("^" .. yap.config.icons.waiting .. " ") == 1,
+  "waiting parent's icon should start the row")
+assert(captured.opts.format_item(captured.items[2]):find("^" .. yap.config.icons.stopped .. "    ↳") == 1,
+  "stopped child's title should be indented in waiting picker")
 state.stopped[child] = nil
 state.awaiting[buf], state.awaiting[child] = nil, nil
 
@@ -221,6 +228,26 @@ assert(
 )
 assert(captured.items[1].state == "stopped", "stopped state missing: " .. vim.inspect(captured.items[1]))
 state.stopped[buf] = nil
+
+-- Across projects, keep the cwd after root titles rather than before icons.
+local other_project = "/tmp/yap-other-project"
+vim.b[picker].yap_project_cwd = other_project
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.instances()
+vim.ui.select = orig_select
+local root_row, child_row
+for _, item in ipairs(captured.items) do
+  if item.buf == buf then root_row = captured.opts.format_item(item) end
+  if item.buf == child then child_row = captured.opts.format_item(item) end
+end
+assert(root_row and root_row:find("^" .. yap.config.icons.idle .. " ") == 1
+  and root_row:find("  " .. vim.fn.getcwd(), 1, true), "project path displaced root icon: " .. tostring(root_row))
+assert(child_row and child_row:find("^" .. yap.config.icons.idle .. "    ↳") == 1
+  and not child_row:find(vim.fn.getcwd(), 1, true), "project path displaced child title: " .. tostring(child_row))
+vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 
 -- :YapSessions previews the saved file with the same excerpts.
 local saved = yap.new()
@@ -337,7 +364,7 @@ assert(positions[orphan_path] and renamed[positions[orphan_path]].text == "scout
 -- state, including a manually stopped turn.
 local state = require("harness.state")
 local icons = yap.config.icons
-local function history_status(expected)
+local function history_status(expected, expected_state)
   captured = nil
   vim.ui.select = function(items, opts)
     captured = { items = items, opts = opts }
@@ -352,15 +379,71 @@ local function history_status(expected)
   end
   assert(item, "expected saved history row: " .. vim.inspect(captured))
   local rendered = captured.opts.format_item(item)
-  assert(rendered:find(expected, 1, true), "history row missing " .. expected .. ": " .. rendered)
+  assert(rendered:find("^" .. expected .. "  ") == 1, "history icon is not in the fixed column: " .. rendered)
+  assert(rendered:find("  " .. expected_state, 1, true), "history status word missing: " .. rendered)
 end
 state.running[saved] = {}
-history_status(icons.running .. " running")
+history_status(icons.running, "running")
 state.running[saved] = nil
 state.awaiting[saved] = true
-history_status(icons.waiting .. " waiting")
+history_status(icons.waiting, "waiting")
 state.stopped[saved] = true
-history_status(icons.stopped .. " stopped")
+history_status(icons.stopped, "stopped")
 state.awaiting[saved], state.stopped[saved] = nil, nil
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.history()
+vim.ui.select = orig_select
+local idle_row
+for _, item in ipairs(captured.items) do
+  if item.path == path then idle_row = captured.opts.format_item(item) end
+end
+assert(idle_row and idle_row:find("^" .. icons.idle .. "  ") == 1,
+  "open idle history session needs a live icon: " .. tostring(idle_row))
+-- A closed session keeps the status column blank, while the parent and
+-- children still form a tree under that fixed column.
+vim.api.nvim_buf_delete(saved, { force = true })
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.history()
+vim.ui.select = orig_select
+for _, item in ipairs(captured.items) do
+  local row = captured.opts.format_item(item)
+  if item.path == path then
+    assert(row:find("^   Preview test") == 1, "closed history row should have blank status: " .. row)
+  elseif item.path == saved_child_path then
+    assert(row:find("^" .. icons.idle .. "    ↳") == 1, "history child title should be indented after status: " .. row)
+  end
+end
+
+-- All-project history places the project after each root, not before the
+-- status column; children keep their indented titles without repeating it.
+local paths = require("harness.path")
+local other_dir = paths.session_dir("/tmp/yap-other-project")
+vim.fn.mkdir(other_dir, "p")
+vim.fn.writefile(vim.fn.readfile(path), other_dir .. "/other-project.md")
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.history("all")
+vim.ui.select = orig_select
+local all_parent, all_child, other_row
+for _, item in ipairs(captured.items) do
+  local row = captured.opts.format_item(item)
+  if item.path == path then all_parent = row end
+  if item.path == saved_child_path then all_child = row end
+  if item.path == other_dir .. "/other-project.md" then other_row = row end
+end
+assert(all_parent and all_parent:find("^   Preview test") == 1
+  and all_parent:find("  " .. vim.fn.getcwd(), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
+assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
+  and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
+assert(other_row and vim.startswith(other_row, "   other-project.md")
+  and other_row:find("  " .. paths.slug_cwd(other_dir), 1, true), "other project suffix missing: " .. tostring(other_row))
 
 print("OK session_preview")

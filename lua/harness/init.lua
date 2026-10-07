@@ -3014,14 +3014,13 @@ end
 --- Find an open buffer for a saved session and return its live picker status.
 local function saved_session_status(path)
   local normalized = vim.fs.normalize(path)
+  -- An open history row has a state icon, even when idle; closed rows have
+  -- a blank status column so their titles still align.
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[buf].yap then
       local name = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
       if name ~= "" and vim.fs.normalize(name) == normalized then
-        local status = session_state(buf)
-        if status ~= "idle" then
-          return session_status(buf)
-        end
+        return session_status(buf)
       end
     end
   end
@@ -3179,9 +3178,7 @@ function M.instances(state)
   end)
   local ordered = {}
   local function add(item, depth)
-    if depth > 1 then
-      item.text = string.rep("  ", depth - 1) .. item.text
-    end
+    item.depth = depth
     ordered[#ordered + 1] = item
     local siblings = children[item.buf] or {}
     table.sort(siblings, function(a, b)
@@ -3195,9 +3192,13 @@ function M.instances(state)
     add(item, 0)
   end
   items = ordered
-  -- Row order: project cwd, state glyph, title, then the bare model name
-  -- (no provider) in parentheses. The glyph already encodes the state, so
-  -- the model name earns the word that used to follow it.
+  -- Keep icons in a fixed column; indent titles, not the status column.
+  -- A project path is useful only when the picker includes multiple projects.
+  local projects = {}
+  for _, item in ipairs(items) do
+    projects[vim.b[item.buf].yap_project_cwd or ""] = true
+  end
+  local multiple_projects = vim.tbl_count(projects) > 1
   local glyph = {
     running = M.config.icons.running,
     stopped = M.config.icons.stopped,
@@ -3205,11 +3206,18 @@ function M.instances(state)
     waiting = M.config.icons.waiting,
     idle = M.config.icons.idle,
   }
+  local icon_width = 0
+  for _, icon in pairs(glyph) do
+    icon_width = math.max(icon_width, vim.fn.strdisplaywidth(icon))
+  end
   vim.ui.select(items, {
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
-      local prefix = item.path ~= "" and (item.path .. " ") or " "
-      return prefix .. glyph[item.state] .. " " .. item.text .. (item.child and "" or " (" .. (item.model or item.state) .. ")")
+      local suffix = multiple_projects and item.path and item.path ~= "" and ("  " .. item.path) or ""
+      local icon = glyph[item.state]
+      return icon .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon)) .. "  "
+        .. string.rep("  ", item.depth) .. item.text
+        .. (item.child and "" or " (" .. (item.model or item.state) .. ")") .. suffix
     end,
     preview_item = function(item)
       if not vim.api.nvim_buf_is_valid(item.buf) then

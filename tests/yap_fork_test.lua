@@ -120,8 +120,10 @@ assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "nested fork window
 local nested_buf = vim.api.nvim_get_current_buf()
 local function check_open_tree(pick, leaf_visible)
   captured = nil
-  vim.ui.select = function(items)
+  local format
+  vim.ui.select = function(items, opts)
     captured = items
+    format = opts.format_item
   end
   pick()
   vim.ui.select = select
@@ -135,8 +137,16 @@ local function check_open_tree(pick, leaf_visible)
         or not leaf_visible and not positions[nested_buf]),
     "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
   )
+  assert(format(captured[positions[original_buf]]):find("^" .. yap.config.icons.waiting) == 1
+      or format(captured[positions[original_buf]]):find("^" .. yap.config.icons.idle) == 1,
+    "root icon should start the row")
+  assert(format(captured[positions[fork_buf]]):find("^" .. (leaf_visible and yap.config.icons.idle or yap.config.icons.waiting) .. "    ↳") == 1,
+    "fork status icon should align with root and indent its title")
   if leaf_visible then
-    assert(captured[positions[nested_buf]].text:find("  ↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+    local leaf = captured[positions[nested_buf]]
+    assert(leaf.text:find("↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+    assert(leaf.depth == 2 and format(leaf):find("^" .. yap.config.icons.idle .. "      ↳") == 1,
+      "nested fork title should be indented twice after aligned status icon")
   end
 end
 check_open_tree(yap.instances, true)

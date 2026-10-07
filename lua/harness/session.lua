@@ -452,6 +452,7 @@ function M.list(scope)
       return
     end
     shown[item.path] = true
+    item.depth = depth
     if depth > 0 then
       item.text = string.rep("  ", depth) .. item.text
     end
@@ -514,17 +515,42 @@ function M.pick(opts, on_choice)
   local scope_label = scope == "all" and "all projects"
     or scope == "renamed" and "renamed, cwd project"
     or "cwd project"
+  local projects = {}
+  local icon_width = 1
+  for _, item in ipairs(items) do
+    projects[vim.fn.fnamemodify(item.path, ":h")] = true
+    local status = opts.status and opts.status(item.path)
+    if status then
+      icon_width = math.max(icon_width, vim.fn.strdisplaywidth(status:match("^%S+")))
+    end
+  end
+  local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",
     format_item = function(item)
       local status = opts.status and opts.status(item.path)
-      local label = item.text
+      local icon, state
       if status then
-        label = label .. "  " .. status
+        icon, state = status:match("^(%S+) (.+)$")
       end
+      local project = slug_cwd(vim.fn.fnamemodify(item.path, ":h"))
+      local label = item.text
+      -- list("all") prefixes roots for callers; move that identity to a
+      -- suffix in the picker so titles remain aligned across projects.
+      if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
+        label = label:sub(#project + 3)
+      end
+      local prefix = (icon or "") .. string.rep(" ", icon_width - (icon and vim.fn.strdisplaywidth(icon) or 0))
+      label = prefix .. "  " .. label
       if item.turns then
-        return label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+        label = label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      end
+      if state and state ~= "idle" then
+        label = label .. "  " .. state
+      end
+      if multiple_projects and item.depth == 0 then
+        label = label .. "  " .. project
       end
       return label
     end,
