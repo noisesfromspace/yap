@@ -89,7 +89,6 @@ still notify.
 | ----------------------------------------- | ----------- | ------------------------------------------------------------------ |
 | `:Yap`                                    |             | Start a session.                                                   |
 | `:YapSend`                                | `<C-s>`     | Send the transcript.                                               |
-| `:YapAttach`                              |             | Import the photo path on the current user line as an attachment.   |
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
@@ -121,8 +120,7 @@ In a Yap user message, drop a PNG or JPEG from your file manager onto Ghostty
 while Neovim is in Insert mode, on a line by itself. Write your question and
 send normally: Yap automatically imports the path and replaces it with a
 visible `![FILE: name](file:///...)` reference before sending the photo as an
-image part. No `:YapAttach` step is needed. You can still use `:YapAttach`
-to import a path manually before sending. Yap copies up to 10 MiB into a
+image part. No explicit step is needed; Yap copies up to 10 MiB into a
 private asset store under Neovim's data directory. Any standalone absolute
 PNG/JPEG path in a user message (including one you typed) is imported on send;
 paths inside prose and ordinary Markdown images remain text. Removing the

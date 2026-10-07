@@ -11,13 +11,6 @@ vim.api.nvim_create_user_command("YapSend", function()
   require("harness").send()
 end, { desc = "Send the buffer to the model" })
 
-vim.api.nvim_create_user_command("YapAttach", function()
-  local _, err = require("harness.attachment").attach()
-  if err then
-    vim.notify("yap: " .. err, vim.log.levels.WARN)
-  end
-end, { desc = "Replace the dropped photo path on the current user line with an image attachment" })
-
 vim.api.nvim_create_user_command("YapStop", function()
   require("harness").stop()
 end, { desc = "Stop the in-flight yap request" })

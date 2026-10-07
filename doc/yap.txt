@@ -189,19 +189,6 @@ the current buffer unless otherwise noted.
                         working directory as request-only context (evaluated
                         at send time), so `:cd` takes effect on the next send.
                         Not written into the session buffer.
-*:YapAttach*
-:YapAttach            Optional: on a line containing only a dropped PNG/JPEG
-                        path in a user message, import it immediately into
-                        Neovim's data directory and replace it with a
-                        `![FILE: name](file:///...)` reference. Normally no
-                        command is needed: on :YapSend standalone absolute
-                        PNG/JPEG paths in user messages are imported first.
-                        A typed path has the same effect as a dropped one.
-                        The backend sends the image bytes (up to 10 MiB) plus
-                        its filename, detected media type, byte size and
-                        pixel dimensions when decodable to the model. Keep the
-                        asset store when moving sessions; delete the reference
-                        to stop sending the photo.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*
@@ -528,7 +515,7 @@ Lua side as each event arrives:
   tool_start      bash/python's temp log path (`command` is secret-scrubbed)
   output          streamed bash/python output chunks (synthesized as drained)
   tool_result     full result
-  attachment      an image import on |:YapAttach| / |:YapSend| (source,
+  attachment      an image import on |:YapSend| (source,
                   asset path, size, format, sha256) or a failed import
                   (error plus the attempted source)
   approval_request / approval_result / approval_timeout

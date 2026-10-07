@@ -30,15 +30,15 @@ this repository MUST keep this section up-to-date.
 
 #### R-buffer-only-state — The buffer is the only conversation state
 
-Neither the Lua side nor the Go binary may keep message state between turns.
-An explicit `![FILE: name](file:///...)` reference in a user message is an
-image attachment: `:YapAttach` imports the dropped path into a local asset
-store and replaces that line with the reference. On send, standalone absolute
-PNG/JPEG paths in user messages are imported automatically before parsing;
-this also applies to typed paths and changes only matching user lines. Go reads
-references on each send, extracts filename, detected media type, byte size,
-and pixel dimensions when decodable, then sends that metadata as adjacent text
-alongside the image bytes. Removing the reference removes the attachment;
+Neither the Lua side nor the Go binary may keep message state between turns. An
+explicit `![FILE: name](file:///...)` reference in a user message is an image
+attachment; a standalone dropped or typed PNG/JPEG path is imported into a
+local asset store and replaced with that reference on send. On send, standalone
+absolute PNG/JPEG paths in user messages are imported automatically before
+parsing; this also applies to typed paths and changes only matching user lines.
+Go reads references on each send, extracts filename, detected media type, byte
+size, and pixel dimensions when decodable, then sends that metadata as adjacent
+text alongside the image bytes. Removing the reference removes the attachment;
 missing/invalid assets fail the send. Each imported asset's basename is staged
 and, on the next save, merged into the frontmatter `assets` list, so a session
 declares which content-addressed files it references. The asset store must
