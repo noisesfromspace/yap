@@ -186,11 +186,13 @@ assert(
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "audit view window not at the bottom")
 
 vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
+vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- park away from the stream tail
+local stop_row = vim.api.nvim_win_get_cursor(0)[1]
 yap.stop()
 assert(state.stopped[buf2], "manual stop state not recorded")
 assert(
-  vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf2),
-  "stop did not move the cursor to the new # @user prompt"
+  vim.api.nvim_win_get_cursor(0)[1] == stop_row,
+  "stop moved the cursor away from where it was parked"
 )
 -- M.stop() closes the stream immediately; the process exit callback may lag behind.
 local repaired = vim.wait(5000, function()
