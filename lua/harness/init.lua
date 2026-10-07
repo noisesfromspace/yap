@@ -18,7 +18,6 @@ local config = require("harness.config")
 M.config = config.defaults
 
 local state = require("harness.state")
-local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
 local winbar = require("harness.winbar")
 local spinner = require("harness.spinner")
