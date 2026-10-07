@@ -244,9 +244,30 @@ for _, item in ipairs(captured.items) do
   if item.buf == child then child_row = captured.opts.format_item(item) end
 end
 assert(root_row and root_row:find("^" .. yap.config.icons.idle .. " ") == 1
-  and root_row:find("  " .. vim.fn.getcwd(), 1, true), "project path displaced root icon: " .. tostring(root_row))
+  and root_row:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
+  and not root_row:find("(m1)", 1, true), "project path should replace model in parentheses: " .. tostring(root_row))
 assert(child_row and child_row:find("^" .. yap.config.icons.idle .. "    ↳") == 1
   and not child_row:find(vim.fn.getcwd(), 1, true), "project path displaced child title: " .. tostring(child_row))
+-- The waiting picker uses the same mixed-project labels, with no model.
+state.awaiting[buf] = true
+state.awaiting[picker] = true
+vim.cmd("enew") -- neither project is current, so both waiting roots are listed
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.waiting()
+vim.ui.select = orig_select
+local waiting_root, waiting_other
+for _, item in ipairs(captured.items) do
+  if item.buf == buf then waiting_root = captured.opts.format_item(item) end
+  if item.buf == picker then waiting_other = captured.opts.format_item(item) end
+end
+assert(waiting_root and waiting_root:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
+  and not waiting_root:find("(m1)", 1, true), "waiting row should show cwd instead of model: " .. tostring(waiting_root))
+assert(waiting_other and waiting_other:find(" (" .. other_project .. ")", 1, true)
+  and not waiting_other:find("(m1)", 1, true), "other project's waiting row should show its cwd: " .. tostring(waiting_other))
+state.awaiting[buf], state.awaiting[picker] = nil, nil
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 
 -- :YapSessions previews the saved file with the same excerpts.

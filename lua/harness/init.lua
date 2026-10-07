@@ -3193,7 +3193,7 @@ function M.instances(state)
   end
   items = ordered
   -- Keep icons in a fixed column; indent titles, not the status column.
-  -- A project path is useful only when the picker includes multiple projects.
+  -- Disambiguate roots by project only when this picker spans projects.
   local projects = {}
   for _, item in ipairs(items) do
     projects[vim.b[item.buf].yap_project_cwd or ""] = true
@@ -3213,11 +3213,10 @@ function M.instances(state)
   vim.ui.select(items, {
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
-      local suffix = multiple_projects and item.path and item.path ~= "" and ("  " .. item.path) or ""
+      local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
       local icon = glyph[item.state]
       return icon .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon)) .. "  "
-        .. string.rep("  ", item.depth) .. item.text
-        .. (item.child and "" or " (" .. (item.model or item.state) .. ")") .. suffix
+        .. string.rep("  ", item.depth) .. item.text .. suffix
     end,
     preview_item = function(item)
       if not vim.api.nvim_buf_is_valid(item.buf) then

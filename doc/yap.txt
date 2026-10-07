@@ -192,10 +192,9 @@ current one, while `require('harness').waiting()` lists those awaiting a
 reply or stopped. Open sessions are unlisted (absent from |:ls|); use
 `<leader>r` to pick one. Open and waiting picker rows keep the state icon
 in a fixed left column, with fork/subagent titles indented beneath their
-parent. Root rows show title and model; children omit the model. The
-project cwd appears after root titles only when sessions span multiple
-projects. Waiting parent groups sort last and children sit beneath their
-parent. Child labels use the fork title or the subagent role and description
+parent. No model is shown. The project cwd appears in parentheses after
+root titles only when sessions span multiple projects. Waiting parent groups
+sort last and children sit beneath their parent. Child labels use the fork title or the subagent role and description
 (falling back to the task). Children whose parent is not shown become
 labelled roots. History keeps the same title indentation, leaves the status
 column blank for closed sessions, and marks open sessions (including idle

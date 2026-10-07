@@ -206,13 +206,15 @@ assert(items[2].path == "/opt/code/yap", "project cwd missing: " .. vim.inspect(
 assert(items[2].text:match(".*%.md$"), "filename fallback: " .. items[2].text)
 local rendered = fmt(items[2])
 assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: " .. rendered)
-assert(rendered:find("(m1)", 1, true), "model not rendered: " .. rendered)
+assert(not rendered:find("(m1)", 1, true) and not rendered:find("/opt/code/yap", 1, true),
+  "single-project open picker should show neither model nor cwd: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
 -- <leader>w lists just the sessions awaiting a reply.
-local waiting_items
+local waiting_items, waiting_fmt
 vim.ui.select = function(list, opts)
   waiting_items = list
+  waiting_fmt = opts.format_item
 end
 yap.waiting()
 vim.ui.select = orig_select
@@ -220,6 +222,7 @@ assert(waiting_items and #waiting_items == 1, "expected one waiting session, got
 assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
 assert(waiting_items[1].state == "waiting", "waiting state missing: " .. vim.inspect(waiting_items[1]))
 assert(waiting_items[1].model == "m1", "waiting model missing: " .. vim.inspect(waiting_items[1]))
+assert(not waiting_fmt(waiting_items[1]):find("(m1)", 1, true), "waiting picker should hide the model")
 
 -- If the only waiting session is already current, explain that instead of
 -- claiming nothing is waiting.
