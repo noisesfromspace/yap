@@ -88,7 +88,7 @@ still notify.
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
-| `:YapSessions [all]`                      |             | Resume a saved session.                                            |
+| `:YapSessions [scope]`                    |             | Resume a saved session (`cwd`, `all`, `renamed`).                  |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
 | Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
 | Lua: `instances()`                        | `<leader>r` | Pick another open session.                                         |
@@ -147,5 +147,8 @@ The full vocabulary is in `:help yap-glossary`.
 
 ## Documentation
 
-The full reference is in `:help yap`. Contributors should read
-`:help yap-rules` before changing behavior, and update it when they do.
+The full reference is in `:help yap` (`doc/yap.txt`). The contributor-facing
+contract — the Lua <-> Go wire protocol and the numbered business rules —
+lives in [`CONTRIBUTING.md`](CONTRIBUTING.md). AI assistants (and any human
+contributor) editing this repository MUST read `CONTRIBUTING.md` before
+changing behavior, and update it when they do.
