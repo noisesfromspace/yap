@@ -543,6 +543,7 @@ local stream_flush = {}
 -- The audit view is not a second log — it is the live, human-readable
 -- rendering of the JSON Lines audit log (see audit_path), rebuilt from
 -- it on reopen. Only the audit log is persisted.
+local follow_override = {} -- chat buf -> windows deliberately focused by YapAlerts during a turn
 local audits = {} -- chat buf → { bufnr, offset, has_content, audit }
 
 -- The audit dir holds one JSON Lines audit log per session, keyed by
@@ -1241,6 +1242,47 @@ local function show_audit_event(buf, ordinal)
   end
 end
 
+--- Focus the matching tool block in the chat without leaving the audit drawer.
+--- The audit records calls even if the user later edits their transcript, so
+--- a missing block simply leaves the chat cursor where it was.
+local function focus_alert_call(buf, call)
+  if not call then
+    return
+  end
+  local win = vim.fn.win_findbuf(buf)[1]
+  if not win then
+    return
+  end
+  local seen = 0
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for _, detail in ipairs(require("harness.structure").parse(buf).details) do
+    if detail.kind == "tool" then
+      local id
+      for i = detail.start, math.min(detail.start + 4, #lines) do
+        id = lines[i]:match('"id"%s*:%s*"([^"\\]+)"')
+        if id or lines[i]:find("-->", 1, true) then
+          break
+        end
+      end
+      if id == call.id then
+        seen = seen + 1
+        if seen == call.occurrence then
+          -- A picker selection wins over tail-following for this turn.
+          local paused = follow_override[buf]
+          if paused then
+            paused[win] = true
+          end
+          vim.api.nvim_win_call(win, function()
+            vim.api.nvim_win_set_cursor(win, { detail.start, 0 })
+            vim.cmd("normal! zvzz")
+          end)
+          return
+        end
+      end
+    end
+  end
+end
+
 inspect_approval = function(buf, ev)
   local ordinal = 0
   local target
@@ -1315,11 +1357,23 @@ function M.alerts()
     local path = session_dir .. "/" .. vim.fn.fnamemodify(log, ":t:r") .. ".md"
     if vim.fn.filereadable(path) == 1 then
       local ordinal = 0
+      local occurrences, last_call = {}, nil
       for _, line in ipairs(vim.fn.readfile(log)) do
         local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" and (ev.type == "alert_advice" or ev.type == "approval_request") then
-          ordinal = ordinal + 1
-          items[#items + 1] = { path = path, event = ev, ordinal = ordinal }
+        if ok and type(ev) == "table" then
+          if ev.type == "tool_call" and ev.id then
+            occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+            last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+          elseif ev.type == "alert_advice" or ev.type == "approval_request" then
+            ordinal = ordinal + 1
+            -- Advisory IDs identify the call; approval IDs identify the
+            -- approval dialog, so the latter uses the last executed call.
+            local call = last_call
+            if ev.type == "alert_advice" and ev.id and occurrences[ev.id] then
+              call = { id = ev.id, occurrence = occurrences[ev.id] }
+            end
+            items[#items + 1] = { path = path, event = ev, ordinal = ordinal, call = call }
+          end
         end
       end
     end
@@ -1356,6 +1410,7 @@ function M.alerts()
       buf = M.open(path)
     end
     show_audit_event(buf, item.ordinal)
+    focus_alert_call(buf, item.call)
   end)
 end
 
@@ -2002,8 +2057,10 @@ function M.send(buf)
   -- streams (follow_windows); one parked elsewhere is not dragged along.
   local follow = document.following_windows(buf)
   local expected_follow = {}
+  local paused_follow = {}
+  follow_override[buf] = paused_follow
   local function sync_followers()
-    document.sync_followers(buf, follow, expected_follow)
+    document.sync_followers(buf, follow, expected_follow, paused_follow)
   end
   local function follow_tail()
     document.follow_windows(buf, follow, expected_follow)
@@ -2093,6 +2150,7 @@ function M.send(buf)
       finish_flush()
       sync_followers()
       running[buf] = nil
+      follow_override[buf] = nil
       stderr_chunks = {}
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil

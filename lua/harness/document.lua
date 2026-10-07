@@ -188,10 +188,10 @@ end
 --- CursorMoved event races. Adopt any window that has since joined the tail
 --- (the user pressed G after the send), so following means "cursor on the
 --- tail line", not only the send-time snapshot.
-function M.sync_followers(buf, wins, expected)
+function M.sync_followers(buf, wins, expected, excluded)
   for i = #wins, 1, -1 do
     local w = wins[i]
-    if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
+    if (excluded and excluded[w]) or not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
       expected[w] = nil
       table.remove(wins, i)
     else
@@ -209,7 +209,7 @@ function M.sync_followers(buf, wins, expected)
     member[w] = true
   end
   for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-    if not member[w] then
+    if not member[w] and not (excluded and excluded[w]) then
       local ok, cur = pcall(vim.api.nvim_win_get_cursor, w)
       if ok and cur[1] >= count then
         wins[#wins + 1] = w
