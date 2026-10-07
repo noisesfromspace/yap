@@ -14,15 +14,6 @@ local M = {}
 local frontmatter = require("harness.frontmatter")
 local paths = require("harness.path")
 
-function M.sessions_root()
-  return paths.sessions_root()
-end
-
---- Best-effort originating cwd for an existing persisted session.
-function M.project_cwd(path)
-  return paths.project_cwd(path)
-end
-
 --- Write the buffer to its session file, creating one (named after the
 --- current time) on first save. Also called when a buffer is opened so
 --- the session is file-backed from the start. Renames the buffer to the

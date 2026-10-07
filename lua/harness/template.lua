@@ -333,4 +333,75 @@ function M.named_lines(name)
   end
 end
 
+local function file_items(cwd)
+  local items = {}
+  local function scan(dir, prefix)
+    for name, kind in vim.fs.dir(dir) do
+      if name ~= ".git" then
+        local path = vim.fs.joinpath(dir, name)
+        local relative = prefix == "" and name or (prefix .. "/" .. name)
+        if kind == "directory" then
+          scan(path, relative)
+        elseif kind == "file" then
+          items[#items + 1] = relative
+        end
+      end
+    end
+  end
+  scan(cwd, "")
+  table.sort(items)
+  return items
+end
+
+--- Pick a file under the current :pwd and insert an @path reference at the cursor.
+function M.insert_file()
+  local buf = vim.api.nvim_get_current_buf()
+  if not (vim.b[buf].yap or vim.b[buf].yap_owner) then
+    return
+  end
+  local win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  local cwd = vim.fn.getcwd()
+
+  local function insert(path)
+    if not path or not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local relative = vim.fs.relpath(cwd, path) or path
+    relative = relative:gsub("\\\\", "/")
+    local reference = relative:find("%s") and ('@"' .. relative .. '"') or ("@" .. relative)
+    local text = reference .. " "
+    vim.api.nvim_buf_set_text(buf, cursor[1] - 1, cursor[2], cursor[1] - 1, cursor[2], { text })
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+      vim.api.nvim_win_set_cursor(win, { cursor[1], cursor[2] })
+    end
+  end
+
+  if _G.MiniPick and MiniPick.builtin and MiniPick.builtin.files then
+    MiniPick.builtin.files(nil, {
+      source = { cwd = cwd, choose = insert },
+    })
+    return
+  end
+
+  local function open_picker(items)
+    if #items == 0 then
+      vim.notify("yap: no files to insert under " .. cwd, vim.log.levels.INFO)
+      return
+    end
+    vim.ui.select(items, { prompt = "yap file" }, insert)
+  end
+
+  if vim.fn.executable("rg") == 1 then
+    vim.system({ "rg", "--files", "--hidden", "-g", "!.git" }, { cwd = cwd, text = true }, function(result)
+      vim.schedule(function()
+        local items = result.code == 0 and vim.split(result.stdout or "", "\n", { trimempty = true }) or {}
+        open_picker(items)
+      end)
+    end)
+  else
+    open_picker(file_items(cwd))
+  end
+end
+
 return M
