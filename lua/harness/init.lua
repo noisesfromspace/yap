@@ -1544,6 +1544,12 @@ function M.new(opts)
   opts = opts or {}
   local win = vim.api.nvim_get_current_win()
   local previous = vim.api.nvim_win_get_buf(win)
+  -- `enew` (and the hidden case's closing nvim_win_set_buf) switches this
+  -- window's buffer, which E1513 forbids while 'winfixbuf' is set — a
+  -- mini.files explorer window pins its buffer. Clear it for the span of
+  -- this function and restore it so a pinned window stays pinned.
+  local fixed = vim.wo[win].winfixbuf
+  vim.wo[win].winfixbuf = false
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
   if opts.system then
@@ -1594,6 +1600,7 @@ function M.new(opts)
   if opts.hidden then
     vim.api.nvim_win_set_buf(win, previous)
   end
+  vim.wo[win].winfixbuf = fixed
 
   return buf
 end
@@ -1659,6 +1666,16 @@ local function focus_buf(buf)
   end
 end
 
+--- Load `path` into the current window, briefly clearing `winfixbuf` so a
+--- window fixed to its buffer can still be redirected by `:edit` (E1513).
+local function edit_buf(path)
+  local win = vim.api.nvim_get_current_win()
+  local fixed = vim.wo[win].winfixbuf
+  vim.wo[win].winfixbuf = false
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  vim.wo[win].winfixbuf = fixed
+end
+
 --- Fork the in-memory transcript into an independent managed session. Keep
 --- the source buffer (and any running process) attached to its original path.
 --- bufload adopts the new file; switching buffers instead of :edit also works
@@ -1695,7 +1712,7 @@ function M.open(path)
     focus_buf(buf)
     return adopt(buf, path)
   end
-  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  edit_buf(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
