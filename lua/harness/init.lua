@@ -3001,14 +3001,13 @@ local function session_state(buf)
   return "idle"
 end
 
---- Status word + glyph for the session picker, mirroring the winbar state
---- chips so both views agree. The picker is static, so a fixed glyph
---- stands in for the winbar's animated spinner.
+--- State glyph for the session picker, mirroring the winbar state chips.
+--- The picker is static, so a fixed glyph stands in for the winbar's
+--- animated spinner; the state word is omitted because the icon conveys it.
 local function session_status(buf)
   local ic = M.config.icons
   local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, idle = ic.idle }
-  local state = session_state(buf)
-  return glyph[state] .. " " .. state
+  return glyph[session_state(buf)]
 end
 
 --- Find an open buffer for a saved session and return its live picker status.

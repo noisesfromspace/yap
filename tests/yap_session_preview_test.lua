@@ -385,7 +385,7 @@ assert(positions[orphan_path] and renamed[positions[orphan_path]].text == "scout
 -- state, including a manually stopped turn.
 local state = require("harness.state")
 local icons = yap.config.icons
-local function history_status(expected, expected_state)
+local function history_status(expected)
   captured = nil
   vim.ui.select = function(items, opts)
     captured = { items = items, opts = opts }
@@ -401,15 +401,14 @@ local function history_status(expected, expected_state)
   assert(item, "expected saved history row: " .. vim.inspect(captured))
   local rendered = captured.opts.format_item(item)
   assert(rendered:find("^" .. expected .. "  ") == 1, "history icon is not in the fixed column: " .. rendered)
-  assert(rendered:find("  " .. expected_state, 1, true), "history status word missing: " .. rendered)
 end
 state.running[saved] = {}
-history_status(icons.running, "running")
+history_status(icons.running)
 state.running[saved] = nil
 state.awaiting[saved] = true
-history_status(icons.waiting, "waiting")
+history_status(icons.waiting)
 state.stopped[saved] = true
-history_status(icons.stopped, "stopped")
+history_status(icons.stopped)
 state.awaiting[saved], state.stopped[saved] = nil, nil
 captured = nil
 vim.ui.select = function(items, opts)

@@ -521,7 +521,7 @@ function M.pick(opts, on_choice)
     projects[vim.fn.fnamemodify(item.path, ":h")] = true
     local status = opts.status and opts.status(item.path)
     if status then
-      icon_width = math.max(icon_width, vim.fn.strdisplaywidth(status:match("^%S+")))
+      icon_width = math.max(icon_width, vim.fn.strdisplaywidth(status))
     end
   end
   local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
@@ -529,11 +529,7 @@ function M.pick(opts, on_choice)
     prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",
     format_item = function(item)
-      local status = opts.status and opts.status(item.path)
-      local icon, state
-      if status then
-        icon, state = status:match("^(%S+) (.+)$")
-      end
+      local icon = opts.status and opts.status(item.path)
       local project = slug_cwd(vim.fn.fnamemodify(item.path, ":h"))
       local label = item.text
       -- list("all") prefixes roots for callers; move that identity to a
@@ -545,9 +541,6 @@ function M.pick(opts, on_choice)
       label = prefix .. "  " .. label
       if item.turns then
         label = label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
-      end
-      if state and state ~= "idle" then
-        label = label .. "  " .. state
       end
       if multiple_projects and item.depth == 0 then
         label = label .. "  " .. project
