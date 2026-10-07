@@ -152,8 +152,8 @@ func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allo
 		return taskResult{result: p.wait(args.IDs)}
 	case "start_task":
 		var args struct {
-			Tool      string          `json:"tool"`
-			Arguments json.RawMessage `json:"arguments"`
+			Tool      string `json:"tool"`
+			Arguments string `json:"arguments"`
 		}
 		if err := json.Unmarshal(call.Input, &args); err != nil {
 			return taskResult{result: "error: " + err.Error()}
@@ -168,8 +168,8 @@ func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allo
 		if !ok {
 			return taskResult{result: "error: unknown tool " + args.Tool}
 		}
-		if len(args.Arguments) == 0 || args.Arguments[0] != '{' {
-			return taskResult{result: "error: arguments must be a JSON object"}
+		if trimmed := strings.TrimSpace(args.Arguments); trimmed == "" || trimmed[0] != '{' || !json.Valid([]byte(args.Arguments)) {
+			return taskResult{result: "error: arguments must be a JSON object string"}
 		}
 		p.mu.Lock()
 		if len(p.tasks) >= maxConcurrentTasks {
@@ -177,7 +177,7 @@ func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allo
 			return taskResult{result: "error: too many outstanding tasks; call wait_tasks first"}
 		}
 		p.mu.Unlock()
-		inner := llm.ToolCall{ID: call.ID, Name: args.Tool, Input: args.Arguments}
+		inner := llm.ToolCall{ID: call.ID, Name: args.Tool, Input: json.RawMessage(args.Arguments)}
 		if denial := decideTool(inner, t, messages, dm, cfg); denial != "" {
 			return taskResult{result: denial}
 		}

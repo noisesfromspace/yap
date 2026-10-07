@@ -81,7 +81,7 @@ func TestBackgroundTaskWaitAndAutomaticDrain(t *testing.T) {
 				calls++
 				switch calls {
 				case 1:
-					toolRound(w, taskCall("start", "start_task", map[string]any{"tool": "fetch", "arguments": map[string]any{"url": pages.URL}}))
+					toolRound(w, taskCall("start", "start_task", map[string]any{"tool": "fetch", "arguments": fmt.Sprintf(`{"url":%q}`, pages.URL)}))
 				case 2:
 					if automatic {
 						sse(w, `{"choices":[{"delta":{"content":"draft answer"}}]}`)
@@ -111,7 +111,7 @@ func TestBackgroundTaskWaitAndAutomaticDrain(t *testing.T) {
 func TestBackgroundCannotBypassToolAllowlist(t *testing.T) {
 	p := &taskPool{tasks: make(map[string]*backgroundTask)}
 	allowed := []string{"start_task", "wait_tasks"}
-	v := p.call(llm.ToolCall{ID: "c1", Name: "start_task", Input: json.RawMessage(`{"tool":"bash","arguments":{"command":"touch /tmp/yap-disallowed-test"}}`)}, &turn{}, nil, &allowed, nil, utils.DefaultAlertConfig)
+	v := p.call(llm.ToolCall{ID: "c1", Name: "start_task", Input: json.RawMessage(`{"tool":"bash","arguments":"{\"command\":\"touch /tmp/yap-disallowed-test\"}"}`)}, &turn{}, nil, &allowed, nil, utils.DefaultAlertConfig)
 	if !strings.Contains(v.result, "not allowed") || len(p.pending()) != 0 {
 		t.Fatal(v.result)
 	}
