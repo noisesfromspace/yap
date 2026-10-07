@@ -94,8 +94,23 @@ end
 -- session awaiting a reply, otherwise a running session, otherwise the last
 -- ordinary file buffer. Idle sessions are not a landing spot.
 local function focus_fallback(buf)
+  -- A buffer already on screen in another window of this tab is not a
+  -- landing spot: switching the current window to it would duplicate it
+  -- across a split.
+  local function shown(b)
+    local tab = vim.api.nvim_get_current_tabpage()
+    for _, w in ipairs(vim.fn.win_findbuf(b)) do
+      if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_tabpage(w) == tab then
+        return true
+      end
+    end
+    return false
+  end
   local function open(b)
-    return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b)
+    return b ~= buf
+      and vim.api.nvim_buf_is_valid(b)
+      and vim.api.nvim_buf_is_loaded(b)
+      and not shown(b)
   end
   for _, b in ipairs(focus_mru) do
     if open(b) and vim.b[b].yap and awaiting[b] then
@@ -2216,14 +2231,33 @@ function M.setup(opts)
         return
       end
       local target = focus_fallback(buf)
-      if not target then
-        return
-      end
       vim.schedule(function()
-        if not vim.api.nvim_buf_is_valid(target) then
+        local win = vim.api.nvim_get_current_win()
+        local cur = vim.api.nvim_get_current_buf()
+        if not target or not vim.api.nvim_buf_is_valid(target) then
+          -- Every fallback is already visible in another split (or there is
+          -- nothing left to land on): collapse this now-empty window instead
+          -- of duplicating the session already on screen.
+          if vim.api.nvim_buf_get_name(cur) == "" and not vim.bo[cur].modified then
+            local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
+            if #lines <= 1 and (#lines == 0 or lines[1] == "") then
+              local tab = vim.api.nvim_get_current_tabpage()
+              local normal = 0
+              for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+                if vim.api.nvim_win_get_config(w).relative == "" then
+                  normal = normal + 1
+                end
+              end
+              if normal > 1 then
+                vim.api.nvim_win_close(win, true)
+                if not vim.api.nvim_win_is_valid(win) then
+                  vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
+                end
+              end
+            end
+          end
           return
         end
-        local cur = vim.api.nvim_get_current_buf()
         if cur == target then
           return
         end

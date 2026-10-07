@@ -136,4 +136,23 @@ assert(
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped on :bd")
 assert(vim.api.nvim_buf_is_valid(audit), "audit view buffer was wiped on :bd")
 
+-- A split already showing the fallback session must not be duplicated: the
+-- fallback is skipped, so closing the current session collapses its
+-- now-empty window and leaves the other split untouched.
+local visible = yap.new()
+state.awaiting[visible] = true
+vim.cmd("vsplit")
+local closing = yap.new()
+state.awaiting[closing] = true
+assert(vim.api.nvim_get_current_buf() == closing, "closing session should be current")
+vim.cmd("bd")
+assert(
+  vim.wait(2000, function()
+    return #vim.api.nvim_list_wins() == 1
+      and vim.api.nvim_get_current_buf() == visible
+      and #vim.fn.win_findbuf(visible) == 1
+  end),
+  "closing a session whose fallback is already visible should collapse the split, not duplicate"
+)
+
 print("OK bd")
