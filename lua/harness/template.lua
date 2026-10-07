@@ -207,8 +207,9 @@ end
 
 --- :YapInsert [name] / insert(name, { at_cursor = true }).
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
---- otherwise a template appends as a message block and a skill merges into
---- the system block. While the agent is mid-turn a template steers the
+--- otherwise a template appends as a message block and immediately sends it,
+--- while a skill merges into the system block. Snippets and at-cursor
+--- inserts remain editable. While the agent is mid-turn a template steers the
 --- running turn (injected at the next tool boundary) instead of inserting;
 --- skills and at-cursor inserts still refuse. With no name, pick from the
 --- combined list.
@@ -271,6 +272,9 @@ function M.insert(name, opts)
       merge_into_system(buf, lines)
     else
       M.append_as_block(buf, lines)
+      if #lines > 0 then
+        require("harness").send(buf)
+      end
     end
   end
 

@@ -119,12 +119,13 @@ the current buffer unless otherwise noted.
                         no leading heading; a leading `# @role`
                         heading (including `# @user`) is used as-is to
                         set the role and never duplicates the trailing
-                        block. A skill merges its body into the
+                        block. Plain templates send immediately; snippet
+                        templates stay editable until you send them.
+                        A skill merges its body into the
                         `# @system` block. With no argument, pick from
                         a combined list. This is the generic
-                        text-injection mechanism: compaction is
-                        inserting a summarize-prompt template, sending,
-                        then deleting the old history.
+                        text-injection mechanism: compaction can also be
+                        run directly with |:YapCompact|.
 
 For raw insertion at the cursor, use `<leader>T` or
 `require('harness').insert(name, { at_cursor = true })`.
@@ -433,9 +434,10 @@ A prompt you reach for often, as a template: >
   Be concise; reference file:line for each finding.
 <
 The body is wrapped in `# @user` for you, so you can leave the heading
-out. To prefill an assistant reply instead, start the file with
-`# @assistant`. A leading `# @user` heading is fine too — it sets the
-role and fills the trailing `# @user` block without duplicating it.
+out. A plain template is sent immediately after insertion. To prefill an
+assistant reply instead, start the file with `# @assistant`. A leading
+`# @user` heading is fine too — it sets the role and fills the trailing
+`# @user` block without duplicating it.
 
 A template containing LSP snippet syntax is expanded as a native
 Neovim snippet: `$1`/`${1:placeholder}` become tabstops the cursor
@@ -446,7 +448,8 @@ For example, a template body of: >
 <
 inserts with the cursor on `${1:<topic or path>}` (selected, so typing
 replaces it) and `<Tab>` afterwards continues past the end of the
-inserted block.
+inserted block. Snippet templates are not sent automatically, so you can
+fill in the placeholders before sending with `<C-s>`.
 
 HOW TO WRITE A SKILL                                          *yap-skill*
 
@@ -485,7 +488,8 @@ format and quotes the headings as examples.
 
 WHAT INSERT DOES
 
-  :YapInsert <template>   wrap-in-# @user and append at the end
+  :YapInsert <template>   wrap-in-# @user and append at the end,
+                            then send (unless it is a snippet)
                             (a leading `# @role` heading sets the role
                             and is never duplicated)
   :YapInsert <skill>      merge the body into the `# @system` block
@@ -493,7 +497,8 @@ WHAT INSERT DOES
                             raw file above the cursor, no role logic
 
 All insert modes go through the normal append paths (R7 blank-line handling);
-insertion never touches existing lines. While a send is in flight a
+insertion never touches existing lines. Plain templates send immediately;
+snippets, skills and raw at-cursor inserts do not. While a send is in flight a
 template steers instead: its body (a leading `# @role` heading is
 stripped) is injected at the running turn's next tool boundary as a
 `# @user` block, exactly like a <C-s> steer from the scratch queue
@@ -513,8 +518,8 @@ offer to delete); the manual recipe remains available:
   1. `<C-t>` and pick `compact` (ships at
      `templates/compact.md`; copy it into your templates_dir), or
      write your own "summarize the conversation above…" prompt.
-  2. `<C-s>` to send it.
-  3. Delete the history above the summary (deletion = branching,
+     Plain templates send automatically; a hand-written prompt needs `<C-s>`.
+  2. Delete the history above the summary (deletion = branching,
      |yap-introduction|). The summary block is the new context.
 <
 The archive-marker idea (folding old messages away) is deliberately
