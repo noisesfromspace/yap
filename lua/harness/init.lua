@@ -2226,7 +2226,11 @@ function M.setup(opts)
   local function is_session_path(buf)
     local name = vim.api.nvim_buf_get_name(buf)
     local root = paths.sessions_root()
-    return name, name:sub(1, #root + 1) == root .. "/"
+    -- Only the session Markdown itself is a session: the sidecar files in
+    -- the same tree (the scratch notes and the audit log) must never be
+    -- adopted, or the scratch jotter becomes a session (its own winbar, its
+    -- own <C-s> send, a rollup entry) instead of dispatching to its owner.
+    return name, name:sub(1, #root + 1) == root .. "/" and name:match("%.md$") ~= nil
   end
   vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,

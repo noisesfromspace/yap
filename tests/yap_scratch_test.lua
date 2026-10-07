@@ -29,6 +29,15 @@ assert(
   "scratch window is not below the chat"
 )
 assert(vim.wo.winbar == "", "scratch window inherited the yap winbar")
+assert(vim.b[scratch].yap == nil, "scratch jotter was adopted as a yap session")
+assert(
+  not require("harness.state").sessions[scratch],
+  "scratch jotter registered as a session for the winbar rollup"
+)
+assert(
+  vim.fn.maparg("<C-s>", "n", false, true).desc == "yap: send scratch",
+  "scratch <C-s> must dispatch to the owner session, not send the jotter itself"
+)
 assert(vim.wo.foldmethod == "expr", "scratch sections are not foldable")
 assert(vim.wo.foldenable, "scratch folding is disabled")
 
