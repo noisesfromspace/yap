@@ -85,6 +85,9 @@ function M.save(scratch)
   vim.api.nvim_buf_call(scratch, function()
     vim.cmd("silent noautocmd keepjumps write!")
   end)
+  -- Pending prompts/steers can hold secrets; keep the notes file 0600 like the
+  -- session markdown and audit log. :write preserves the mode on later saves.
+  vim.fn.setfperm(vim.api.nvim_buf_get_name(scratch), "rw-------")
 end
 
 local function cancel_steer(buf)
@@ -158,6 +161,7 @@ function M.rehome_copy(buf, old_session_path)
   local want = paths.notes_path(buf)
   if old ~= want and vim.fn.filereadable(old) == 1 and vim.fn.filereadable(want) == 0 then
     vim.uv.fs_copyfile(old, want)
+    vim.fn.setfperm(want, "rw-------") -- notes can hold pending prompts/steers
   end
   local scratch = vim.b[buf].yap_scratch
   if scratch and vim.api.nvim_buf_is_valid(scratch) then

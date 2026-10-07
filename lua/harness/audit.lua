@@ -419,11 +419,20 @@ local function write_log(buf, ev)
   end
   if not t.audit then
     t.audit = paths.audit_path(buf)
-    -- 0700: the audit log holds full tool args and results (potentially
-    -- secrets); the directory must not be world-readable.
-    vim.fs.mkdir(vim.fn.fnamemodify(t.audit, ":h"), { parents = true, mode = 448 }) -- 0o700
+    -- The jsonl holds full tool args and results (potentially secrets); keep
+    -- it 0600. The parent (the sessions <cwd-slug>/ dir) is created by save().
+    paths.ensure_session_dir(vim.fn.fnamemodify(t.audit, ":h"))
+  end
+  -- Create the log 0600 before the first append so it is never briefly
+  -- world-readable: writefile() would create it 0644 under a permissive umask.
+  if vim.fn.filereadable(t.audit) == 0 then
+    local fd = vim.uv.fs_open(t.audit, "wx", 384) -- 0600
+    if fd then
+      vim.uv.fs_close(fd)
+    end
   end
   vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
+  vim.fn.setfperm(t.audit, "rw-------") -- also tighten a legacy 0644 log
 end
 
 --- Point the audit log at the session file's name; a `:file` rename
@@ -435,7 +444,7 @@ function M.follow_rename(buf)
   end
   local want = paths.audit_path(buf)
   if want ~= t.audit and vim.fn.filereadable(want) == 0 then
-    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
+    paths.ensure_session_dir(vim.fn.fnamemodify(want, ":h"))
     if os.rename(t.audit, want) then
       t.audit = want
     end
@@ -458,8 +467,9 @@ function M.rehome_copy(buf)
     return
   end
   if vim.fn.filereadable(t.audit) == 1 and vim.fn.filereadable(want) == 0 then
-    vim.fs.mkdir(vim.fn.fnamemodify(want, ":h"), { parents = true, mode = 448 }) -- 0o700
-    vim.uv.fs_copyfile(t.audit, want)
+    paths.ensure_session_dir(vim.fn.fnamemodify(want, ":h"))
+    vim.uv.fs_copyfile(t.audit, want) -- copyfile preserves the source's 0600
+    vim.fn.setfperm(want, "rw-------")
   end
   t.audit = want
 end

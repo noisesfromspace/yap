@@ -1,17 +1,15 @@
--- Session/audit/notes path resolution — one place for the cwd↔slug
--- transform and the derived file paths. Sessions and audit logs key off the
--- same slug, and :YapClear placeholders point into the audit dir, so the
--- transform must live once, not be re-derived inline.
+-- Session path resolution — one place for the cwd↔slug transform and the
+-- derived file paths. The audit log and notes are siblings of the session
+-- markdown, so only the sessions root needs resolving here.
 
 local M = {}
 
--- The .yap data roots. These are the DEFAULTS; yap.setup() may override
--- them via `sessions_dir` / `audit_dir`. A leading `~` is resolved against
--- the real home directory (see home()), never the current working
--- directory, so yap's data can never land inside the project.
+-- The .yap data root. This is the DEFAULT; yap.setup() may override it via
+-- `sessions_dir`. A leading `~` is resolved against the real home directory
+-- (see home()), never the current working directory, so yap's data can never
+-- land inside the project.
 M.dirs = {
   sessions_dir = "~/.yap/sessions",
-  audit_dir = "~/.yap/audit",
 }
 
 local cached_home
@@ -68,16 +66,17 @@ function M.sessions_root()
   return M.expand(M.dirs.sessions_dir)
 end
 
-function M.audit_root()
-  return M.expand(M.dirs.audit_dir)
-end
-
 function M.session_dir(cwd)
   return M.sessions_root() .. "/" .. cwd_slug(cwd)
 end
 
-function M.audit_dir(cwd)
-  return M.audit_root() .. "/" .. cwd_slug(cwd)
+--- Ensure a session directory exists and is private (0700): it holds the
+--- conversation markdown, notes, and audit log — all of which can contain
+--- secrets. Matches the old per-project audit-dir posture, now that audit
+--- logs are co-located here.
+function M.ensure_session_dir(dir)
+  vim.fs.mkdir(dir, { parents = true })
+  vim.fn.setfperm(dir, "rwx------")
 end
 
 --- Originating cwd for a persisted session file, from its directory slug.
@@ -128,9 +127,13 @@ function M.audit_buf_name(buf)
   return "yap://" .. vim.fn.fnamemodify(path, ":t") .. "-audit"
 end
 
---- The session's JSON Lines audit log.
+--- The session's JSON Lines audit log: a sibling of the session markdown
+--- (<name>.jsonl next to <name>.md). It follows the session file, not the
+--- current working directory, so a session opened from another project still
+--- writes to its own log.
 function M.audit_path(buf)
-  return M.audit_dir(vim.fn.getcwd()) .. "/" .. M.session_base(buf) .. ".jsonl"
+  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":r") .. ".jsonl"
 end
 
 --- The session's scratch notes file (a sibling of the session file).

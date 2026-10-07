@@ -823,29 +823,38 @@ end
 --- no longer open. Each picker item lands on its own unfolded audit entry.
 function M.alerts()
   local items = {}
-  local audit_dir = paths.audit_dir(vim.fn.getcwd())
   local session_dir = paths.session_dir(vim.fn.getcwd())
-  for _, log in ipairs(vim.fn.glob(audit_dir .. "/*.jsonl", false, true)) do
-    local path = session_dir .. "/" .. vim.fn.fnamemodify(log, ":t:r") .. ".md"
-    if vim.fn.filereadable(path) == 1 then
-      local ordinal = 0
-      local occurrences, last_call = {}, nil
-      for _, line in ipairs(vim.fn.readfile(log)) do
-        local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" then
-          if ev.type == "tool_call" and ev.id then
-            occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-            last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-          elseif ev.type == "alert_advisory" or ev.type == "approval_request" then
-            ordinal = ordinal + 1
-            -- Advisory IDs identify the call; approval IDs identify the
-            -- approval dialog, so the latter uses the last executed call.
-            local call = last_call
-            if ev.type == "alert_advisory" and ev.id and occurrences[ev.id] then
-              call = { id = ev.id, occurrence = occurrences[ev.id] }
-            end
-            items[#items + 1] = { path = path, event = ev, ordinal = ordinal, call = call }
+  local pairs = {}
+  local seen = {}
+  local function add(log, path)
+    if vim.fn.filereadable(path) == 1 and not seen[path] then
+      seen[path] = true
+      pairs[#pairs + 1] = { log = log, path = path }
+    end
+  end
+  -- Audit logs are <name>.jsonl siblings of <name>.md in the sessions dir.
+  for _, log in ipairs(vim.fn.glob(session_dir .. "/*.jsonl", false, true)) do
+    add(log, session_dir .. "/" .. vim.fn.fnamemodify(log, ":t:r") .. ".md")
+  end
+  for _, pair in ipairs(pairs) do
+    local log, path = pair.log, pair.path
+    local ordinal = 0
+    local occurrences, last_call = {}, nil
+    for _, line in ipairs(vim.fn.readfile(log)) do
+      local ok, ev = pcall(vim.json.decode, line)
+      if ok and type(ev) == "table" then
+        if ev.type == "tool_call" and ev.id then
+          occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+          last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+        elseif ev.type == "alert_advisory" or ev.type == "approval_request" then
+          ordinal = ordinal + 1
+          -- Advisory IDs identify the call; approval IDs identify the
+          -- approval dialog, so the latter uses the last executed call.
+          local call = last_call
+          if ev.type == "alert_advisory" and ev.id and occurrences[ev.id] then
+            call = { id = ev.id, occurrence = occurrences[ev.id] }
           end
+          items[#items + 1] = { path = path, event = ev, ordinal = ordinal, call = call }
         end
       end
     end
@@ -2066,7 +2075,6 @@ function M.setup(opts)
   end
   -- Propagate the (possibly overridden) data roots to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
-  paths.dirs.audit_dir = M.config.audit_dir
 
   -- <leader>r, <leader>w, <leader>y, <leader>R and <leader>M are global:
   -- they list sessions across every buffer or change the default model, so

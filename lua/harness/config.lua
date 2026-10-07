@@ -25,11 +25,10 @@ M.defaults = {
   templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
   skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
   agents_dir = "~/.yap/agents", -- agent-definition files (subagents)
-  -- Session and audit data roots. Defaults mirror harness.path (resolved
-  -- against the real home directory, never the project cwd); override in
-  -- setup() to relocate them.
+  -- Session data root. Defaults mirror harness.path (resolved against the
+  -- real home directory, never the project cwd); override in setup() to
+  -- relocate it. The audit log and notes live beside each session.
   sessions_dir = paths.dirs.sessions_dir,
-  audit_dir = paths.dirs.audit_dir,
   -- List available skills (name + description) in new sessions' system message
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,

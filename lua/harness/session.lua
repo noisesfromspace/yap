@@ -121,7 +121,7 @@ function M.save(buf)
   end
   if not path then
     local dir = paths.session_dir(vim.fn.getcwd())
-    vim.fs.mkdir(dir, { parents = true })
+    paths.ensure_session_dir(dir)
     path = paths.new_session_path(dir)
     vim.b[buf].yap_path = path
     vim.npcall(vim.api.nvim_buf_set_name, buf, path)
@@ -131,6 +131,10 @@ function M.save(buf)
   vim.api.nvim_buf_call(buf, function()
     vim.cmd("silent noautocmd keepjumps write!")
   end)
+  -- The transcript routinely contains secrets (the model echoes config and
+  -- keys into the conversation); keep it 0600 like the audit log. :write
+  -- preserves the mode on later saves.
+  vim.fn.setfperm(path, "rw-------")
   if view then
     vim.fn.winrestview(view)
   end
@@ -163,6 +167,7 @@ function M.rename_post(buf)
       local new_path = vim.api.nvim_buf_get_name(buf)
       if old_path and old_path ~= new_path and new_path ~= "" and not new_path:match("^%a+://") then
         vim.b[buf].yap_path = new_path
+        vim.fn.setfperm(new_path, "rw-------") -- the copy holds the same conversation
         require("harness.audit").rehome_copy(buf)
         require("harness.scratch").rehome_copy(buf, old_path)
       end
@@ -196,7 +201,7 @@ function M.fork(buf, name, running)
   else
     path = paths.new_session_path(dir)
   end
-  vim.fs.mkdir(dir, { parents = true })
+  paths.ensure_session_dir(dir)
   -- Exclusive creation prevents a named fork (or a rare generated-name
   -- collision) from replacing an existing session, even if it is empty.
   local fd, err = vim.uv.fs_open(path, "wx", 384) -- 0600
@@ -276,8 +281,8 @@ function M.fork(buf, name, running)
   -- in either session must never write into the other's audit log.
   local audit = paths.audit_path(buf)
   if vim.fn.filereadable(audit) == 1 then
-    local dest = paths.audit_dir(vim.fn.getcwd()) .. "/" .. vim.fn.fnamemodify(path, ":t:r") .. ".jsonl"
-    vim.fs.mkdir(vim.fn.fnamemodify(dest, ":h"), { parents = true, mode = 448 }) -- 0700
+    local dest = vim.fn.fnamemodify(path, ":r") .. ".jsonl"
+    paths.ensure_session_dir(vim.fn.fnamemodify(dest, ":h"))
     local copied, copy_err
     if running then
       local events, last_turn = {}, 0
@@ -288,6 +293,12 @@ function M.fork(buf, name, running)
           last_turn = #events
         end
       end
+      -- Pre-create 0600 so writefile() (which would create 0644) never leaves
+      -- a brief world-readable window on a file holding full args/results.
+      local fd = vim.uv.fs_open(dest, "wx", 384) -- 0600
+      if fd then
+        vim.uv.fs_close(fd)
+      end
       copied, copy_err = pcall(vim.fn.writefile, vim.list_slice(events, 1, last_turn), dest)
     else
       copied, copy_err = vim.uv.fs_copyfile(audit, dest)
@@ -296,6 +307,7 @@ function M.fork(buf, name, running)
       vim.fn.delete(path)
       return nil, "cannot copy fork audit: " .. tostring(copy_err)
     end
+    vim.fn.setfperm(dest, "rw-------") -- the copied journal holds the same secrets
   end
   -- A running source persists this link on its normal turn-end save.
   if fm then

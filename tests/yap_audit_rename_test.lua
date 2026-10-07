@@ -24,7 +24,7 @@ assert(ok, "first send did not complete")
 vim.wait(300)
 
 local old = vim.b[buf].yap_path
-local old_audit = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
+local old_audit = require("harness.path").audit_path(buf)
 assert(old_audit and vim.fn.filereadable(old_audit) == 1, "audit log not written")
 
 -- Rename the session the way the user does (:file new-name.md); the next
@@ -41,7 +41,7 @@ assert(ok2, "second send did not complete")
 vim.wait(300)
 
 local slug = vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-")
-local want = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/" .. vim.fn.fnamemodify(new, ":t:r") .. ".jsonl"
+local want = vim.fn.fnamemodify(new, ":r") .. ".jsonl"
 assert(vim.fn.filereadable(old_audit) == 0, "old audit log still exists: " .. old_audit)
 assert(vim.fn.filereadable(want) == 1, "renamed audit log missing: " .. want)
 

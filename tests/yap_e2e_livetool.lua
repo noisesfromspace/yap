@@ -120,7 +120,7 @@ assert(
 )
 
 -- the audit log records the streamed output as JSON output events
-local audit_file = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)[1]
+local audit_file = require("harness.path").audit_path(buf)
 assert(audit_file and vim.fn.filereadable(audit_file) == 1, "audit log missing")
 local streamed_parts = {}
 for _, line in ipairs(vim.fn.readfile(audit_file)) do

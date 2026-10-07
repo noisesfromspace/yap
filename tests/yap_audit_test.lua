@@ -10,13 +10,13 @@ end, 100)
 assert(ok, "send did not complete")
 vim.wait(300) -- let the last scheduled event handlers run
 
--- the audit log (~/.yap/audit/<cwd-slug>/<session>.jsonl) is JSON
--- Lines: one structured event per line, carrying everything the context
--- doesn't (full arguments, full results, one turn journal per send)
-local logs = vim.fn.glob(vim.fn.expand("~") .. "/.yap/audit/*/*.jsonl", false, true)
-assert(#logs == 1, "expected one audit log, got: " .. vim.inspect(logs))
+-- the audit log (<name>.jsonl next to <name>.md) is JSON Lines: one
+-- structured event per line, carrying everything the context doesn't
+-- (full arguments, full results, one turn journal per send)
+local log = require("harness.path").audit_path(buf)
+assert(vim.fn.filereadable(log) == 1, "audit log not written")
 local events = {}
-for _, line in ipairs(vim.fn.readfile(logs[1])) do
+for _, line in ipairs(vim.fn.readfile(log)) do
   if line ~= "" then
     local ok, ev = pcall(vim.json.decode, line)
     assert(ok and type(ev) == "table", "malformed audit line: " .. line)

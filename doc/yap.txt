@@ -53,8 +53,7 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     system = "You are a helpful coding assistant. Answer concisely.",
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     agents_dir = "~/.yap/agents",       -- subagent definitions
-    sessions_dir = "~/.yap/sessions",   -- autosaved sessions + scratch queues
-    audit_dir = "~/.yap/audit",         -- audit logs
+    sessions_dir = "~/.yap/sessions",   -- autosaved sessions + scratch queues + audit logs
     notify_done = true,           -- vim.notify when a hidden turn finishes
     description_model = "openai/gpt-5-nano",       -- on-send label
     description_answer_model = "openai/gpt-5-mini", -- final session title
@@ -70,12 +69,11 @@ edits apply to the next session. When missing or empty, `system` is used. The
 path is used verbatim (no `~` expansion); the default is
 `$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
 
-`agents_dir`, `sessions_dir` and `audit_dir` locate yap's data under
-`~/.yap/`. A leading `~` is resolved against the real home directory — never
-the current working directory — and an absolute path is used verbatim, so an
-unset, empty, or relative `$HOME` must not make yap write its `.yap` folder
-into the project. Defaults: `~/.yap/agents/`, `~/.yap/sessions/`,
-`~/.yap/audit/`.
+`agents_dir` and `sessions_dir` locate yap's data under `~/.yap/`. A leading `~`
+is resolved against the real home directory — never the current working
+directory — and an absolute path is used verbatim, so an unset, empty, or
+relative `$HOME` must not make yap write its `.yap` folder into the project.
+Defaults: `~/.yap/agents/`, `~/.yap/sessions/`.
 
 The harness always prepends its own `# About Yap` boilerplate (buffer
 semantics, marker rules) as the first system message of every turn. It is
@@ -165,8 +163,8 @@ Config and runtime data:
   thresholds; any zero value falls back to a conservative default.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
-  ~/.yap/sessions/          Autosaved sessions + scratch queues (|yap-sessions|).
-  ~/.yap/audit/             Audit logs (|yap-audit|).
+  ~/.yap/sessions/          Autosaved sessions + scratch queues + audit logs
+                            (|yap-sessions| |yap-audit|).
   ~/.yap/agents/            Subagent definitions (|yap-tools|).
 
 ==============================================================================
@@ -472,7 +470,7 @@ backend errors and stops. The file is created when the buffer opens, so a
 fresh session is file-backed from the start and nameable with |:file| before
 the first reply; every save goes through |:write|, so 'modified', |:w| and the
 exit prompt behave like any normal file buffer. The audit log
-(<session>.jsonl) is written in the audit dir (|yap-audit|) and follows the
+(<session>.jsonl) sits beside the session file and follows the
 session name across |:file| renames. The scratch notes file
 (<session>.notes) sits beside the session file. Photo attachments live in a
 content-addressed asset store under Neovim's data directory; the frontmatter
@@ -518,7 +516,7 @@ left in the user prompt if it was not delivered.
 AUDIT LOG                                                        *yap-audit*
 
 The session file holds the context; the audit log holds everything the
-context doesn't carry. ~/.yap/audit/<cwd-slug>/<session>.jsonl — append-only,
+context doesn't carry. <session>.jsonl beside the session file — append-only,
 survives restarts, one JSON object per line (JSON Lines), timestamped by the
 Lua side as each event arrives:
 
@@ -559,8 +557,8 @@ what it replaced.
 
 This is what makes the slimmed write/edit headers and |:YapClear| lossless:
 anything removed from the context exists here verbatim, machine-readable. The
-audit directory is created mode 0700 (the log holds full arguments and
-results).
+session directory is kept mode 0700 and the audit log, session markdown, and
+notes files mode 0600 — transcripts and tool output routinely contain secrets.
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*

@@ -25,8 +25,8 @@ assert(ok, "first send did not complete")
 vim.wait(300)
 
 local old = vim.b[buf].yap_path
-local slug = vim.fs.normalize(vim.fn.getcwd()):gsub("[^%w%._-]", "-")
-local old_audit = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/" .. vim.fn.fnamemodify(old, ":t:r") .. ".jsonl"
+local paths = require("harness.path")
+local old_audit = paths.audit_path(buf)
 assert(vim.fn.filereadable(old_audit) == 1, "audit log not written")
 
 local new = old:gsub("%.md$", "-copy.md")
@@ -34,7 +34,7 @@ vim.cmd("saveas " .. vim.fn.fnameescape(new))
 vim.wait(200) -- let the deferred rehome run
 
 assert(vim.b[buf].yap_path == new, "yap_path did not follow :saveas")
-local new_audit = vim.fn.expand("~") .. "/.yap/audit/" .. slug .. "/" .. vim.fn.fnamemodify(new, ":t:r") .. ".jsonl"
+local new_audit = vim.fn.fnamemodify(new, ":r") .. ".jsonl"
 assert(vim.fn.filereadable(old_audit) == 1, "original audit log lost after :saveas")
 assert(vim.fn.filereadable(new_audit) == 1, "copied audit log missing after :saveas")
 
