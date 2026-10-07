@@ -179,7 +179,7 @@ function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
   if not (owner and vim.api.nvim_buf_is_valid(owner)) then
-    vim.notify("yap: scratch has no chat buffer", vim.log.levels.WARN)
+    vim.notify("yap: scratch has no session buffer", vim.log.levels.WARN)
     return
   end
 
@@ -216,7 +216,7 @@ function M.scratch_foldexpr(lnum)
 end
 
 --- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
---- opened below the chat window. It is a real, file-backed buffer — a
+--- opened below the session window. It is a real, file-backed buffer — a
 --- sibling `*.queue` file of the session — so `:write` saves it and an
 --- unsaved queue prompts on exit like any other modified buffer. It is a
 --- quick "queue" for agent tasks, never part of the conversation.
@@ -311,7 +311,7 @@ function M.scratch_toggle(buf)
 
   queue_follow(buf, scratch) -- session renamed? drag the queue file along
 
-  -- Toggle: a visible queue closes back to the chat; an invisible one opens
+  -- Toggle: a visible queue closes back to the session; an invisible one opens
   -- full-width below it (see harness.drawer).
   if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT) then
     return

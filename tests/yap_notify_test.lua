@@ -42,7 +42,7 @@ assert(ok, "YapTurnDone did not fire")
 assert(event_buf == buf, "event buf mismatch: " .. tostring(event_buf))
 assert(type(turn) == "table" and turn.model == "m1", "turn payload missing: " .. vim.inspect(turn))
 
--- The chat buffer is still current: the default handler must NOT notify.
+-- The session buffer is still current: the default handler must NOT notify.
 vim.wait(300)
 assert(#notified == 0, "notified while the buffer is current: " .. vim.inspect(notified))
 
@@ -127,8 +127,8 @@ vim.api.nvim_buf_delete(stopped, { force = true })
 
 -- Yap buffers are unlisted: they never appear in :ls or buffer pickers
 -- (MiniPick.buffers etc.); the pickers are the way back.
-assert(not vim.bo[buf].buflisted, "chat buffer should be unlisted")
-assert(not vim.bo[buf2].buflisted, "second chat buffer should be unlisted")
+assert(not vim.bo[buf].buflisted, "session buffer should be unlisted")
+assert(not vim.bo[buf2].buflisted, "second session buffer should be unlisted")
 local audits_unlisted = true
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
   if vim.api.nvim_buf_get_name(b):match("%-audit$") then
@@ -165,7 +165,7 @@ vim.cmd("vsplit")
 vim.api.nvim_win_set_buf(0, buf)
 vim.cmd("wincmd p")
 local child_for_notice = vim.api.nvim_create_buf(false, true)
-vim.api.nvim_buf_set_lines(child_for_notice, 0, -1, false, { "---", "role: scout", "---" })
+vim.api.nvim_buf_set_lines(child_for_notice, 0, -1, false, { "---", "agent: scout", "---" })
 vim.b[child_for_notice].yap_subagent_parent = buf
 state.running[buf] = {} -- delegated turn: the parent will report this result
 vim.notify = function(msg)

@@ -108,7 +108,7 @@ captured.on_choice(other_item)
 assert(vim.api.nvim_get_current_buf() == buf, "live picker choice should still focus its session")
 
 -- Open child sessions are a separate picker row, indented beneath their parent.
-local child = yap.new({ role = "scout", hidden = true })
+local child = yap.new({ agent = "scout", hidden = true })
 vim.b[child].yap_subagent_parent = buf
 vim.b[child].yap_subagent_task = "inspect this task"
 captured = nil
@@ -290,7 +290,7 @@ vim.api.nvim_buf_set_lines(saved, 0, -1, false, {
 session.save(saved)
 local path = vim.b[saved].yap_path
 assert(path and vim.fn.filereadable(path) == 1, "session not saved")
-local saved_child = yap.new({ role = "scout", system = "Scout role", hidden = true })
+local saved_child = yap.new({ agent = "scout", system = "Scout agent", hidden = true })
 local saved_child_path = vim.b[saved_child].yap_path
 local child_lines = vim.api.nvim_buf_get_lines(saved_child, 0, -1, false)
 child_lines[#child_lines + 1] =
@@ -345,14 +345,14 @@ assert(saved_preview[#saved_preview] == "history answer", "saved last answer wro
 local dir = require("harness.path").session_dir(vim.fn.getcwd())
 local named_parent = yap.new({ path = dir .. "/named-history-parent.md" })
 local named_parent_path = vim.b[named_parent].yap_path
-local named_child = yap.new({ role = "scout", hidden = true })
+local named_child = yap.new({ agent = "scout", hidden = true })
 local named_child_path = vim.b[named_child].yap_path
 vim.api.nvim_buf_set_lines(named_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
 vim.api.nvim_buf_set_lines(named_child, 3, 3, false, { "description: Generated follow-up description", "subagent_parent: " .. named_parent_path })
 session.save(named_child)
 vim.api.nvim_buf_set_lines(named_parent, 3, 3, false, { "subagents:", "  - " .. named_child_path })
 session.save(named_parent)
-local orphan = yap.new({ path = dir .. "/named-history-orphan.md", role = "scout", hidden = true })
+local orphan = yap.new({ path = dir .. "/named-history-orphan.md", agent = "scout", hidden = true })
 local orphan_path = vim.b[orphan].yap_path
 vim.api.nvim_buf_set_lines(orphan, -1, -1, false, { "orphan task" })
 session.save(orphan)

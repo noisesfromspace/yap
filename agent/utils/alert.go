@@ -8,7 +8,7 @@ import (
 )
 
 // The alert gate is the pre-execution decision for a single tool call:
-// should it run silently, run with a non-blocking warning, or pause the
+// should it run silently, run with an advisory, or pause the
 // turn and ask the user to approve? It layers a cheap deterministic floor
 // (regexes, per-tool checks) under one batched decision-model pass for the
 // gray middle, so jev only pays a round-trip where a wrong call can hurt.
@@ -23,40 +23,41 @@ import (
 type Tier int
 
 const (
-	TierSilent      Tier = iota // run without consulting the decision model
-	TierAskJev                  // ask the decision model; block/advise/run
-	TierAlwaysBlock             // always pause for approval (no model)
+	TierSilent         Tier = iota // run without consulting the decision model
+	TierAskJev                     // ask the decision model; approval/advisory/run
+	TierAlwaysApproval             // always pause for approval (no model)
 )
 
 // Outcome is the gate's verdict for one tool call.
 type Outcome int
 
 const (
-	OutcomeRun    Outcome = iota // run silently
-	OutcomeAdvise                // run, but surface a non-blocking warning
-	OutcomeBlock                 // pause and ask the user to approve
+	OutcomeRun      Outcome = iota // run silently
+	OutcomeAdvisory                // run, but surface an advisory
+	OutcomeApproval                // pause and ask the user to approve (requires approval)
 )
 
 // AlertConfig tunes the decision thresholds. Zero values are replaced by
 // DefaultAlertConfig; a value is "unset" when it is <= 0.
 type AlertConfig struct {
-	// BlockProb is the P(harmful) at or above which a non-destructive call
-	// blocks. Interruption is reserved for high probability or high severity.
-	BlockProb float64
-	// AdviseProb is the low bar for a non-blocking warning ("lots of alerts").
-	AdviseProb float64
+	// ApprovalProb is the P(harmful) at or above which a non-destructive call
+	// requires approval. Interruption is reserved for high probability or
+	// high severity.
+	ApprovalProb float64
+	// AdvisoryProb is the low bar for an advisory ("lots of advisories").
+	AdvisoryProb float64
 	// MinConfidence is the calibration floor: below it an answer is treated
 	// as "no signal" and escalates to at least a warning.
 	MinConfidence float64
 }
 
-// DefaultAlertConfig is the conservative starting point: a low bar to advise
-// (surfaces suspicious calls without interrupting), a high bar to block
-// (interruption reserved for high-probability or high-severity harm). Tuned
-// from the audit log via the `alert` config block.
+// DefaultAlertConfig is the conservative starting point: a low bar for an
+// advisory (surfaces suspicious calls without interrupting), a high bar for
+// approval (interruption reserved for high-probability or high-severity
+// harm). Tuned from the audit log via the `alert` config block.
 var DefaultAlertConfig = AlertConfig{
-	BlockProb:     0.7,
-	AdviseProb:    0.35,
+	ApprovalProb:  0.7,
+	AdvisoryProb:  0.35,
 	MinConfidence: 0.6,
 }
 
@@ -74,26 +75,26 @@ type Decision struct {
 // severity bands for the score question (legend index -> meaning).
 const (
 	sevDestructive = 2.0 // "destructive or data loss"
-	blockAtEven    = 0.5 // destructive + at least even odds -> block
+	approvalAtEven = 0.5 // destructive + at least even odds -> approval
 )
 
 // ShouldAlert decides the outcome for one tool call.
 //
-//	hardReason != ""            -> Block (deterministic floor; never downgraded)
-//	tier == TierAlwaysBlock     -> Block (e.g. ssh)
+//	hardReason != ""            -> Approval (deterministic floor; never downgraded)
+//	tier == TierAlwaysApproval  -> Approval (e.g. ssh)
 //	tier == TierSilent          -> Run
 //	tier == TierAskJev          -> the decision model decides (below)
 //
-// It never fails: a decision-model outage fail-closes to a non-blocking
-// warning (OutcomeAdvise) so a down backend warns loudly instead of either
+// It never fails: a decision-model outage fail-closes to an advisory
+// (OutcomeAdvisory) so a down backend warns loudly instead of either
 // bricking the tool or running silently.
 func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tier, hardReason string, state any) Decision {
 	d := Decision{Outcome: OutcomeRun}
 	if tier == TierSilent {
 		return d
 	}
-	if hardReason != "" || tier == TierAlwaysBlock {
-		d.Outcome = OutcomeBlock
+	if hardReason != "" || tier == TierAlwaysApproval {
+		d.Outcome = OutcomeApproval
 		d.Reason = hardReason
 		if d.Reason == "" {
 			d.Reason = "requires approval"
@@ -102,7 +103,7 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 	}
 	// tier == TierAskJev
 	if dm == nil {
-		d.Outcome = OutcomeAdvise
+		d.Outcome = OutcomeAdvisory
 		d.Reason = "no decision model configured; alert check skipped"
 		return d
 	}
@@ -125,20 +126,20 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 		},
 	})
 	if err != nil {
-		d.Outcome = OutcomeAdvise
+		d.Outcome = OutcomeAdvisory
 		d.Reason = fmt.Sprintf("alert check failed (%v)", err)
 		return d
 	}
 
 	harm, ok := resp.Answers["harmful"]
 	if !ok || harm.Type != decide.Noul {
-		d.Outcome = OutcomeAdvise
+		d.Outcome = OutcomeAdvisory
 		d.Reason = "alert check returned no answer"
 		return d
 	}
 	sev, ok := resp.Answers["severity"]
 	if !ok || sev.Type != decide.Score {
-		d.Outcome = OutcomeAdvise
+		d.Outcome = OutcomeAdvisory
 		d.Reason = "alert check returned no severity answer"
 		return d
 	}
@@ -160,21 +161,21 @@ func decideOutcome(p, conf float64, severity decide.Answer, cfg AlertConfig) (Ou
 	// Score is a weighted mean, not a category: a strong exfiltration
 	// probability need not yield an exact score of 3 (or even 2.5).
 	case severity.Probabilities["3"] >= 0.5 || sev >= 2.5:
-		return OutcomeBlock, "possible credential theft or exfiltration (" + nums + ")"
-	case sev >= sevDestructive && (p >= blockAtEven || conf < cfg.MinConfidence):
+		return OutcomeApproval, "possible credential theft or exfiltration (" + nums + ")"
+	case sev >= sevDestructive && (p >= approvalAtEven || conf < cfg.MinConfidence):
 		// Destructive and either at least even odds, or the model is
 		// uncalibrated about it: no signal -> ask rather than act.
-		return OutcomeBlock, "possible destructive operation (" + nums + ")"
+		return OutcomeApproval, "possible destructive operation (" + nums + ")"
 	case sev >= sevDestructive:
-		return OutcomeAdvise, "possibly destructive, model unsure (" + nums + ")"
-	case p >= cfg.BlockProb && sev >= 1:
-		return OutcomeBlock, "likely harmful (" + nums + ")"
-	case p >= cfg.AdviseProb:
-		return OutcomeAdvise, "suspicious tool call (" + nums + ")"
-	case conf < cfg.MinConfidence && p >= cfg.AdviseProb/2:
+		return OutcomeAdvisory, "possibly destructive, model unsure (" + nums + ")"
+	case p >= cfg.ApprovalProb && sev >= 1:
+		return OutcomeApproval, "likely harmful (" + nums + ")"
+	case p >= cfg.AdvisoryProb:
+		return OutcomeAdvisory, "suspicious tool call (" + nums + ")"
+	case conf < cfg.MinConfidence && p >= cfg.AdvisoryProb/2:
 		// Near 0.5 with low confidence is "no signal": conservative path is
 		// to surface it rather than run silently.
-		return OutcomeAdvise, "decision model uncertain (" + nums + ")"
+		return OutcomeAdvisory, "decision model uncertain (" + nums + ")"
 	default:
 		return OutcomeRun, ""
 	}

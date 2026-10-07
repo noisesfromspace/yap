@@ -39,8 +39,8 @@ type Decision struct {
 // Alert tunes the pre-execution tool-call gate (see agent/utils/alert.go).
 // Zero values use DefaultAlertConfig; set a value only to override it.
 type Alert struct {
-	BlockProb     float64 `json:"block_prob"`
-	AdviseProb    float64 `json:"advise_prob"`
+	ApprovalProb  float64 `json:"approval_prob"`
+	AdvisoryProb  float64 `json:"advisory_prob"`
 	MinConfidence float64 `json:"min_confidence"`
 }
 

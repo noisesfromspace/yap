@@ -109,7 +109,7 @@ end
 --- The un-truncated frontmatter description for a buffer, cached per
 --- changedtick. The winbar re-evaluates on every screen draw, and the
 --- description only changes when the buffer is edited, so re-reading and
---- re-parsing the frontmatter block each redraw is wasted work.
+--- re-parsing the frontmatter each redraw is wasted work.
 local desc_cache = {} -- buf -> { tick, full }
 
 local function full_description(buf)

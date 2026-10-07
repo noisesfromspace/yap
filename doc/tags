@@ -18,6 +18,7 @@ yap-compact	yap.txt	/*yap-compact*
 yap-configuration	yap.txt	/*yap-configuration*
 yap-contents	yap.txt	/*yap-contents*
 yap-folding	yap.txt	/*yap-folding*
+yap-glossary	yap.txt	/*yap-glossary*
 yap-introduction	yap.txt	/*yap-introduction*
 yap-keymaps	yap.txt	/*yap-keymaps*
 yap-markers	yap.txt	/*yap-markers*
@@ -27,7 +28,7 @@ yap-sessions	yap.txt	/*yap-sessions*
 yap-skill	yap.txt	/*yap-skill*
 yap-template	yap.txt	/*yap-template*
 yap-templates	yap.txt	/*yap-templates*
-yap-tool-block	yap.txt	/*yap-tool-block*
+yap-tool-region	yap.txt	/*yap-tool-region*
 yap-tools	yap.txt	/*yap-tools*
 yap-winbar	yap.txt	/*yap-winbar*
 yap-winbar-numbers	yap.txt	/*yap-winbar-numbers*

@@ -29,7 +29,7 @@ local structure = require("harness.structure")
 local p_fold = fold.parse(buf)
 local p_struct = structure.parse(buf)
 assert(
-  p_fold.count == p_struct.count and #p_fold.headings == #p_struct.headings and #p_fold.details == #p_struct.details,
+  p_fold.count == p_struct.count and #p_fold.headings == #p_struct.headings and #p_fold.regions == #p_struct.regions,
   "shared parser outputs match"
 )
 

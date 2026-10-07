@@ -37,7 +37,7 @@ type Message struct {
 
 type Request struct {
 	Messages []Message `json:"messages"`
-	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child role: allowlist
+	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -94,7 +94,7 @@ type boundary struct {
 
 // streamStep runs one generation step via the adapter. It writes thinking
 // markers and streams assistant prose live. Prose from a tool-bearing round
-// stays where it streamed (before the tool blocks), matching the model's
+// stays where it streamed (before the tool regions), matching the model's
 // part order: preamble text precedes the calls it introduces.
 func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string) (*turn, error) {
 	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed)})
@@ -151,7 +151,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 
 	if inThinking {
 		closeThinking()
-		// Thinking-only round still wrote a block that self-terminates
+		// Thinking-only round still wrote a region that self-terminates
 		// with a blank line; report spacing to the caller.
 		t.outWrote = true
 		t.outTrail = 2
@@ -310,11 +310,11 @@ func decisionModel(cfg *Config) decide.Model {
 // zero threshold means "not set"; use the default.
 func alertConfig(cfg *Config) utils.AlertConfig {
 	c := utils.DefaultAlertConfig
-	if cfg.Alert.BlockProb > 0 {
-		c.BlockProb = cfg.Alert.BlockProb
+	if cfg.Alert.ApprovalProb > 0 {
+		c.ApprovalProb = cfg.Alert.ApprovalProb
 	}
-	if cfg.Alert.AdviseProb > 0 {
-		c.AdviseProb = cfg.Alert.AdviseProb
+	if cfg.Alert.AdvisoryProb > 0 {
+		c.AdvisoryProb = cfg.Alert.AdvisoryProb
 	}
 	if cfg.Alert.MinConfidence > 0 {
 		c.MinConfidence = cfg.Alert.MinConfidence
@@ -685,7 +685,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				render.EmitToolResult(out, result, "")
 			} else {
 				// Pre-execution alert gate (see utils/alert.go): decide whether
-				// to run, warn (advise), or interrupt for approval before the
+				// to run, warn (advisory), or interrupt for approval before the
 				// tool executes.
 				tier, hardReason := tools.Assess(call.Name, call.Input)
 				state := gateState(call.Name, call.Input, t, messages)
@@ -697,7 +697,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				run := true
 				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, state)
 				switch dec.Outcome {
-				case utils.OutcomeBlock:
+				case utils.OutcomeApproval:
 					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason)
 					if aerr != nil {
 						result = "error: " + aerr.Error()
@@ -706,9 +706,9 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 						result = "error: " + call.Name + " rejected by user"
 						run = false
 					}
-				case utils.OutcomeAdvise:
+				case utils.OutcomeAdvisory:
 					utils.EmitEvent(map[string]any{
-						"type": "alert_advice", "id": call.ID, "name": call.Name,
+						"type": "alert_advisory", "id": call.ID, "name": call.Name,
 						"reason": dec.Reason, "p_alert": dec.PAlert,
 						"severity": dec.Severity, "confidence": dec.Confidence,
 					})
@@ -738,7 +738,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				}},
 			})
 		}
-		// Prose for this round already streamed live before the tool blocks;
+		// Prose for this round already streamed live before the tool regions;
 		// the tool regions self-terminate with a blank line (R7), so nothing
 		// more to emit here.
 		out.Flush()

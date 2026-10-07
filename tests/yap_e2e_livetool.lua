@@ -1,4 +1,4 @@
--- E2E: a running tool is visible WITHOUT streaming into the chat buffer:
+-- E2E: a running tool is visible WITHOUT streaming into the session buffer:
 -- the header lands immediately, the winbar shows the tool name, and the
 -- live output stays in the tool's log file (rendered by :YapLive), never
 -- in the buffer. The result lands once, at completion. :YapStop
@@ -10,7 +10,7 @@ local yap = require("harness")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- The persistent audit view buffer of a chat buffer (yap://<basename>-audit).
+-- The persistent audit view buffer of a session buffer (yap://<basename>-audit).
 local function audit_buf(chat)
   local name = vim.api.nvim_buf_get_name(chat)
   name = name:match("^yap://") and (name .. "-audit") or ("yap://" .. vim.fn.fnamemodify(name, ":t") .. "-audit")

@@ -1,10 +1,10 @@
 -- yap text objects: operate on the buffer's structure — a whole message
--- (`# @role` block) or a display block (thinking/tool/error marker region).
+-- (`# @role` message) or a display region (thinking/tool/error marker region).
 --
---   im / am   inner / a message      (content without heading / whole block)
---   it / at   inner / a block        (content without markers / whole region)
+--   im / am   inner / a message      (content without heading / whole message)
+--   it / at   inner / a region       (content without markers / whole region)
 --
--- so `dit` clears a thinking/tool block, `dat` removes it entirely, `cim`
+-- so `dit` clears a thinking/tool region, `dat` removes it entirely, `cim`
 -- replaces a message body while keeping its `# @role` heading, `dam` drops
 -- a message wholesale.
 --
@@ -52,10 +52,10 @@ local function message_range(lnum)
   return heading, nxt or (vim.fn.line("$") + 1)
 end
 
--- The same cached scan used for folding and navigation recognizes block
+-- The same cached scan used for folding and navigation recognizes region
 -- boundaries and ignores marker-looking lines inside fenced tool results.
-local function block_range(lnum)
-  for _, detail in ipairs(fold.parse(vim.api.nvim_get_current_buf()).details) do
+local function region_range(lnum)
+  for _, detail in ipairs(fold.parse(vim.api.nvim_get_current_buf()).regions) do
     if detail.finish and detail.start <= lnum and lnum <= detail.finish then
       return { open = detail.start, close = detail.finish }
     end
@@ -107,16 +107,16 @@ local function around_message()
   return line_range(heading, nxt - 1)
 end
 
-local function inner_block()
-  local b = block_range(vim.fn.line("."))
+local function inner_region()
+  local b = region_range(vim.fn.line("."))
   if not b or b.close - 1 < b.open + 1 then
     return "\27"
   end
   return char_range(b.open + 1, b.close - 1)
 end
 
-local function around_block()
-  local b = block_range(vim.fn.line("."))
+local function around_region()
+  local b = region_range(vim.fn.line("."))
   if not b then
     return "\27"
   end
@@ -136,8 +136,8 @@ function M.setup_buffer(buf, keys)
   -- Visual-mode <expr> mappings bracket the range and select it.
   map("x", keys.inner_message, inner_message, "yap: inner message")
   map("x", keys.around_message, around_message, "yap: a message")
-  map("x", keys.inner_block, inner_block, "yap: inner block")
-  map("x", keys.around_block, around_block, "yap: a block")
+  map("x", keys.inner_region, inner_region, "yap: inner region")
+  map("x", keys.around_region, around_region, "yap: a region")
 
   -- Operator-pending mappings re-enter visual mode (charwise for inner,
   -- linewise for outer); the pending operator then applies to the
@@ -152,8 +152,8 @@ function M.setup_buffer(buf, keys)
   end
   op(keys.inner_message, keys.inner_message, false, "yap: inner message")
   op(keys.around_message, keys.around_message, true, "yap: a message")
-  op(keys.inner_block, keys.inner_block, false, "yap: inner block")
-  op(keys.around_block, keys.around_block, true, "yap: a block")
+  op(keys.inner_region, keys.inner_region, false, "yap: inner region")
+  op(keys.around_region, keys.around_region, true, "yap: a region")
 end
 
 return M

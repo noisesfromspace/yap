@@ -20,11 +20,11 @@ assert(#vim.fn.win_findbuf(audit) == 1, "live did not reopen audit view")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 assert(#vim.fn.win_findbuf(audit) == 0, "live from chat did not toggle visible audit view closed")
--- the chat buffer is untouched and still parseable
-assert(#yap.parse_buffer(buf) == 1, "chat buffer changed")
+-- the session buffer is untouched and still parseable
+assert(#yap.parse_buffer(buf) == 1, "session buffer changed")
 
 -- The audit view is a drawer too: full-width under a vertical split, and
--- closing it from the chat refocuses the chat window.
+-- closing it from the chat refocuses the session window.
 vim.cmd("vsplit")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()

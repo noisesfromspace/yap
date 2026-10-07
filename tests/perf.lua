@@ -433,7 +433,7 @@ for _, h in ipairs(p.headings) do
     starts.msg = h.line
   end
 end
-for _, d in ipairs(p.details) do
+for _, d in ipairs(p.regions) do
   if d.kind == "tool" and not starts.tool then
     starts.tool = d.start
   end
@@ -446,7 +446,7 @@ for _, d in ipairs(p.details) do
 end
 
 local function fold_end(lnum)
-  for _, d in ipairs(p.details) do
+  for _, d in ipairs(p.regions) do
     if d.start == lnum then
       return d.finish or p.count
     end

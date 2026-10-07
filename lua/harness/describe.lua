@@ -188,7 +188,7 @@ Return only the title.]]
         fm.models,
         fm.created_at,
         description,
-        fm.role,
+        fm.agent,
         fm.tools,
         fm.subagents,
         fm.updated_at,

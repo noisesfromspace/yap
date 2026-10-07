@@ -7,14 +7,14 @@ local M = {}
 
 local state = require("harness.state")
 
--- The chat window each open drawer is anchored to, so closing the drawer
+-- The session window each open drawer is anchored to, so closing the drawer
 -- returns the cursor to the window it was toggled from (never stranded on
 -- a dead window or jumped to an unrelated one).
 local drawer_anchor = {} -- drawer bufnr -> owner window id
 
---- Open or close a fixed-height drawer below the chat window. Anchoring the
+--- Open or close a fixed-height drawer below the session window. Anchoring the
 --- split to a window showing `owner` is what keeps the drawer full-width
---- when the chat shares a vertical split — a bare `belowright split` would
+--- when the session shares a vertical split — a bare `belowright split` would
 --- carve a half-width jotter out of the current pane.
 function M.toggle(owner, bufnr, height)
   local wins = vim.fn.win_findbuf(bufnr)
@@ -50,7 +50,7 @@ function M.toggle(owner, bufnr, height)
 end
 
 --- Close every window showing `buf`, keeping the drawer buffer itself so it
---- can be reopened. `owner` is the chat buffer the drawer belongs to.
+--- can be reopened. `owner` is the session buffer the drawer belongs to.
 function M.close(buf, owner)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
@@ -68,7 +68,7 @@ function M.close(buf, owner)
       elseif state.pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
         -- Inspect + :only while focused on the audit: keep the review
         -- visible, not an empty replacement buffer. :YapApproval still
-        -- works from this window even when the chat is hidden.
+        -- works from this window even when the session is hidden.
       else
         -- Keep the drawer buffer available to reopen later.
         vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))

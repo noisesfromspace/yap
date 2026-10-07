@@ -17,7 +17,7 @@ local M = {
   steer = {}, -- buf -> pending steering text (sent mid-turn, not yet delivered)
   subagent_children = {}, -- parent buf -> child buf (the running subagent)
   subagent_done = {}, -- child buf -> function(success) to report its result
-  pending_approvals = {}, -- chat buf -> approval_request awaiting an explicit answer
+  pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer
 }
 
 function M.is_running(buf)

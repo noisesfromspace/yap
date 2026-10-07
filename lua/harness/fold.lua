@@ -1,8 +1,8 @@
--- Yap folds are a projection of structural blocks, not their identity.
--- Extmarks anchor blocks through edits/undo. Each window owns its view and
+-- Yap folds are a projection of structural units, not their identity.
+-- Extmarks anchor folds through edits/undo. Each window owns its view and
 -- explicit open/closed choices. Native folds are observed before replacing
 -- changed ranges, so Tab, za/zo/zc and Ex fold commands have the same meaning.
--- Views remain flat: messages in view 1, details in view 2, none in view 3.
+-- Views remain flat: messages in view 1, regions in view 2, none in view 3.
 
 local M = {}
 
@@ -30,20 +30,20 @@ local function compact(s)
   return (s or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
--- One O(n) forward pass over the buffer produces the structural blocks the
+-- One O(n) forward pass over the buffer produces the structural units the
 -- three views fold. Fences and multi-line HTML comments are tracked so a
 -- fake `# @user` inside a fenced tool result, or a `-->` inside a fence,
 -- can't split the structure. This mirrors the old classify() state machine
--- but emits block ranges instead of per-line level strings.
+-- but emits fold ranges instead of per-line level strings.
 --
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
---   details  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
+--   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
 
 -- ─── identity, intent and projection ───────────────────────────────────────
 
-local anchors = vim.api.nvim_create_namespace("yap.fold.blocks")
-local sessions = {} -- buf -> block identities and per-window projections
+local anchors = vim.api.nvim_create_namespace("yap.fold.regions")
+local sessions = {} -- buf -> fold identities and per-window projections
 local group = vim.api.nvim_create_augroup("YapFolds", { clear = true })
 
 local function position(buf, id)
@@ -139,7 +139,7 @@ end
 -- Copies at the same line get new identities; a pin cannot transfer to them.
 local function identify(buf, s, p)
   if s.tick == vim.api.nvim_buf_get_changedtick(buf) then
-    return s.blocks
+    return s.folds
   end
   local at = {}
   for id, kind in pairs(s.records) do
@@ -168,13 +168,13 @@ local function identify(buf, s, p)
   for i, h in ipairs(p.headings) do
     add("message:" .. h.role, h.line, p.headings[i + 1] and p.headings[i + 1].line - 1 or p.count)
   end
-  for _, d in ipairs(p.details) do
-    add("detail:" .. d.kind, d.start, d.finish or p.count)
+  for _, d in ipairs(p.regions) do
+    add("region:" .. d.kind, d.start, d.finish or p.count)
   end
   table.sort(all, function(a, b)
     return a.start < b.start
   end)
-  s.blocks, s.tick = all, vim.api.nvim_buf_get_changedtick(buf)
+  s.folds, s.tick = all, vim.api.nvim_buf_get_changedtick(buf)
   return all
 end
 
@@ -183,8 +183,8 @@ local function intended(all, level)
   for _, b in ipairs(all) do
     local include = level ~= 3 and b.kind == "message:system"
       or level == 1 and b.kind == "message:assistant"
-      or level == 2 and b.kind:sub(1, 7) == "detail:"
-    -- System material may itself contain details. Never install overlapping
+      or level == 2 and b.kind:sub(1, 7) == "region:"
+    -- System material may itself contain regions. Never install overlapping
     -- folds: the enclosing system range already hides that material.
     if include and b.start > finish then
       list[#list + 1], finish = b, b.finish
@@ -209,7 +209,7 @@ local function apply(buf, win, w, list)
     end
     -- A full rebuild is needed when the window was (re)entered, the view was
     -- reset, an anchor moved (an edit above shifted its line numbers), or a
-    -- fold's range drifted — a stream append grows a block's finish, or
+    -- fold's range drifted — a stream append grows a fold's finish, or
     -- splits the buffer's last line so Neovim shrinks the native fold by one
     -- (the foldlevel of the recorded finish drops to 0). None of the stream
     -- appends move the cursor, so this rebuild stays cursor-free.
@@ -237,7 +237,7 @@ local function apply(buf, win, w, list)
         capture(buf, win, w)
       end
       -- Rebuild cursor-free: zE wipes every fold without touching the cursor
-      -- or viewport, then each intended block is re-projected from its
+      -- or viewport, then each intended fold is re-projected from its
       -- anchored intent. The old path deleted drifted folds one at a time
       -- with `zd`, which requires jumping the cursor to the fold and back on
       -- every flush — that up-and-back was the streaming flicker.
@@ -304,7 +304,7 @@ local function act(lnum, action)
   M.reconcile(buf)
   local s = sessions[buf]
   local w = window(s, win)
-  for _, b in ipairs(intended(s.blocks, w.view)) do
+  for _, b in ipairs(intended(s.folds, w.view)) do
     if lnum >= b.start and lnum <= b.finish then
       local open = action == "open" or action == "toggle" and vim.fn.foldclosed(b.start) ~= -1
       w.intent[b.id] = open
@@ -522,29 +522,29 @@ function M.prev_assistant_message()
   return message_jump("assistant", true)
 end
 
--- Block-region navigation: the three display blocks worth hopping between
+-- Region navigation: the three display regions worth hopping between
 -- when reviewing a long reply. Like message navigation, this uses the
 -- fence- and comment-aware parse folding projects, not vim.fn.search: a
--- `<!-- yap:tool` line inside a fenced result, or inside a thinking block's
+-- `<!-- yap:tool` line inside a fenced result, or inside a thinking region's
 -- content (a model reasoning about a tool call quotes the marker verbatim),
 -- is literal text, not a boundary, and a raw line search lands on it.
 -- These also serve as x/o motions (v]t, d]c), so they move the cursor
 -- directly; Neovim records the operator/visual range from that movement.
-local function jump_block(kinds, backwards)
+local function jump_region(kinds, backwards)
   local buf = vim.api.nvim_get_current_buf()
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   local target
-  local details = parse(buf).details
+  local regions = parse(buf).regions
   if backwards then
-    for i = #details, 1, -1 do
-      local d = details[i]
+    for i = #regions, 1, -1 do
+      local d = regions[i]
       if kinds[d.kind] and d.start < cur then
         target = d.start
         break
       end
     end
   else
-    for _, d in ipairs(details) do
+    for _, d in ipairs(regions) do
       if kinds[d.kind] and d.start > cur then
         target = d.start
         break
@@ -558,7 +558,7 @@ local function jump_block(kinds, backwards)
   return 0
 end
 
--- `]t`/`[t` hop between tool calls and thinking: both are machine blocks
+-- `]t`/`[t` hop between tool calls and thinking: both are machine regions
 -- worth reviewing, and a tool call is usually preceded by thinking. `]c`
 -- remains thinking-only.
 local TOOL_OR_THINK = { tool = true, thinking = true }
@@ -566,27 +566,27 @@ local THINK_ONLY = { thinking = true }
 local ERROR_ONLY = { error = true }
 
 function M.next_tool()
-  return jump_block(TOOL_OR_THINK, false)
+  return jump_region(TOOL_OR_THINK, false)
 end
 
 function M.prev_tool()
-  return jump_block(TOOL_OR_THINK, true)
+  return jump_region(TOOL_OR_THINK, true)
 end
 
 function M.next_think()
-  return jump_block(THINK_ONLY, false)
+  return jump_region(THINK_ONLY, false)
 end
 
 function M.prev_think()
-  return jump_block(THINK_ONLY, true)
+  return jump_region(THINK_ONLY, true)
 end
 
 function M.next_error()
-  return jump_block(ERROR_ONLY, false)
+  return jump_region(ERROR_ONLY, false)
 end
 
 function M.prev_error()
-  return jump_block(ERROR_ONLY, true)
+  return jump_region(ERROR_ONLY, true)
 end
 
 -- ─── Buffer setup ──────────────────────────────────────────────────────────
@@ -603,7 +603,7 @@ function M.setup_buffer(buf, keys)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
   end
   -- Also as motions: visual (`v]t` selects to the next tool) and
-  -- operator-pending (`d]c` deletes to the next thinking block).
+  -- operator-pending (`d]c` deletes to the next thinking region).
   local map_motion = function(lhs, rhs, desc)
     if lhs == "" then
       return
@@ -620,32 +620,32 @@ function M.setup_buffer(buf, keys)
   -- on — the neogit "OpenOrScroll" feel — pinning it so it stays open.
   -- The bare functions stay pure jumps so they still work as x/o motions
   -- (v]t, d]c).
-  local block_jump = function(fn)
+  local region_jump = function(fn)
     return function()
       if fn() ~= 0 then
         M.open(vim.api.nvim_win_get_cursor(0)[1])
       end
     end
   end
-  map(keys.next_tool, block_jump(M.next_tool), "Next tool call or thinking block")
-  map(keys.prev_tool, block_jump(M.prev_tool), "Previous tool call or thinking block")
-  map(keys.next_think, block_jump(M.next_think), "Next thinking block")
-  map(keys.prev_think, block_jump(M.prev_think), "Previous thinking block")
-  map(keys.next_error, block_jump(M.next_error), "Next error block")
-  map(keys.prev_error, block_jump(M.prev_error), "Previous error block")
-  map_motion(keys.next_tool, M.next_tool, "Select to next tool call or thinking block")
-  map_motion(keys.prev_tool, M.prev_tool, "Select to previous tool call or thinking block")
-  map_motion(keys.next_think, M.next_think, "Select to next thinking block")
-  map_motion(keys.prev_think, M.prev_think, "Select to previous thinking block")
-  map_motion(keys.next_error, M.next_error, "Select to next error block")
-  map_motion(keys.prev_error, M.prev_error, "Select to previous error block")
+  map(keys.next_tool, region_jump(M.next_tool), "Next tool call or thinking region")
+  map(keys.prev_tool, region_jump(M.prev_tool), "Previous tool call or thinking region")
+  map(keys.next_think, region_jump(M.next_think), "Next thinking region")
+  map(keys.prev_think, region_jump(M.prev_think), "Previous thinking region")
+  map(keys.next_error, region_jump(M.next_error), "Next error region")
+  map(keys.prev_error, region_jump(M.prev_error), "Previous error region")
+  map_motion(keys.next_tool, M.next_tool, "Select to next tool call or thinking region")
+  map_motion(keys.prev_tool, M.prev_tool, "Select to previous tool call or thinking region")
+  map_motion(keys.next_think, M.next_think, "Select to next thinking region")
+  map_motion(keys.prev_think, M.prev_think, "Select to previous thinking region")
+  map_motion(keys.next_error, M.next_error, "Select to next error region")
+  map_motion(keys.prev_error, M.prev_error, "Select to previous error region")
   local bind_view = function(key, level, desc)
     map(key, function()
       M.set_view_level(level)
     end, desc)
   end
   bind_view(keys.view_1, 1, "Fold all agent messages (user prompts stay open)")
-  bind_view(keys.view_2, 2, "Fold all tool calls and thinking blocks")
+  bind_view(keys.view_2, 2, "Fold all tool calls and thinking regions")
   bind_view(keys.view_3, 3, "Unfold everything")
   map(keys.toggle_fold, function()
     M.toggle(vim.api.nvim_win_get_cursor(0)[1])

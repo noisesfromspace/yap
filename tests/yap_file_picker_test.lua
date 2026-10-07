@@ -17,8 +17,8 @@ local function has_mapping(buffer, mode, desc)
   end
   return false
 end
-assert(has_mapping(buf, "n", "yap: insert file reference"), "chat buffer has no normal-mode file picker shortcut")
-assert(not has_mapping(buf, "i", "yap: insert file reference"), "chat buffer has an insert-mode file picker shortcut")
+assert(has_mapping(buf, "n", "yap: insert file reference"), "session buffer has no normal-mode file picker shortcut")
+assert(not has_mapping(buf, "i", "yap: insert file reference"), "session buffer has an insert-mode file picker shortcut")
 local original_select = vim.ui.select
 local listed
 vim.ui.select = function(items, _, on_choice)

@@ -76,12 +76,12 @@ end
 
 --- Render one audit event as live-view lines. Returns (lines, kind)
 --- where each line is { text = string, hl = highlight group|nil } and
---- kind is "block" (blank-line separated) or "stream" (appended verbatim —
+--- kind is "section" (blank-line separated) or "stream" (appended verbatim —
 --- streamed bash output chunks), or nil to render nothing.
 local function render_event(ev)
   local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" then
-    return { { text = "$ " .. flat(ev.command or ev.name or "tool"), hl = HL.command } }, "block"
+    return { { text = "$ " .. flat(ev.command or ev.name or "tool"), hl = HL.command } }, "section"
   elseif ev.type == "output" then
     local out = {}
     for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
@@ -90,14 +90,14 @@ local function render_event(ev)
     return out, "stream"
   elseif ev.type == "tool_call" then
     -- Record the requested command before the gate decides whether it runs;
-    -- blocked bash/python calls never emit tool_start, so otherwise their
+    -- approval-paused bash/python calls never emit tool_start, so otherwise their
     -- approval request would have no preceding call in the audit view.
     local target = ""
     local ok, a = pcall(vim.json.decode, ev.args or "")
     if ok and type(a) == "table" then
       target = flat(a.path or a.url or a.command or "")
     end
-    return { { text = ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), hl = HL.tool } }, "block"
+    return { { text = ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), hl = HL.tool } }, "section"
   elseif ev.type == "tool_result" then
     -- bash/python output already streamed via output events; don't duplicate it.
     if ev.name == "bash" or ev.name == "python" then
@@ -110,8 +110,8 @@ local function render_event(ev)
       end
     end
     lines[#lines + 1] = { text = ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"), hl = HL.meta }
-    return lines, "block"
-  elseif ev.type == "alert_advice" then
+    return lines, "section"
+  elseif ev.type == "alert_advisory" then
     return {
       {
         text = ("%s ⚠ alert [%s] %s: %s (P=%.2f, severity=%.2f)"):format(
@@ -125,7 +125,7 @@ local function render_event(ev)
         hl = HL.warn,
       },
     },
-      "block"
+      "section"
   elseif ev.type == "retry" then
     return {
       {
@@ -133,22 +133,22 @@ local function render_event(ev)
         hl = HL.warn,
       },
     },
-      "block"
+      "section"
   elseif ev.type == "tool_text_warning" then
     local detail = flat(ev.detail)
     if detail == "" then
       detail = "model emitted a tool call as text"
     end
-    return { { text = ("%s unexecuted tool call: %s"):format(ts, detail), hl = HL.warn } }, "block"
+    return { { text = ("%s unexecuted tool call: %s"):format(ts, detail), hl = HL.warn } }, "section"
   elseif ev.type == "steer" then
     local text = flat(ev.text)
-    return { { text = ("%s ⌁ steer: %s"):format(ts, text), hl = HL.warn } }, "block"
+    return { { text = ("%s ⌁ steer: %s"):format(ts, text), hl = HL.warn } }, "section"
   elseif ev.type == "model_change" then
     if ev.error then
       return { { text = ("%s model switch to %s failed: %s"):format(ts, flat(ev.to), flat(ev.error)), hl = HL.warn } },
-        "block"
+        "section"
     end
-    return { { text = ("%s ⇄ model: %s → %s"):format(ts, flat(ev.from), flat(ev.to)), hl = HL.meta } }, "block"
+    return { { text = ("%s ⇄ model: %s → %s"):format(ts, flat(ev.from), flat(ev.to)), hl = HL.meta } }, "section"
   elseif ev.type == "approval_request" then
     local tool, reason = flat(ev.tool), flat(ev.reason)
     local context = tool
@@ -168,11 +168,11 @@ local function render_event(ev)
         hl = HL.warn,
       },
     },
-      "block"
+      "section"
   elseif ev.type == "approval_result" then
-    return { { text = ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), hl = HL.warn } }, "block"
+    return { { text = ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), hl = HL.warn } }, "section"
   elseif ev.type == "approval_timeout" then
-    return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "block"
+    return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "section"
   elseif ev.type == "turn_end" then
     return {
       {
@@ -185,16 +185,16 @@ local function render_event(ev)
         hl = HL.turn,
       },
     },
-      "block"
+      "section"
   end
 end
 
 local function review_event(ev)
-  return ev.type == "alert_advice" or ev.type == "approval_request"
+  return ev.type == "alert_advisory" or ev.type == "approval_request"
 end
 
 --- Rebuild the live view from a list of events: the full line list plus the
---- per-line highlights to reapply. Stream chunks append verbatim; block
+--- per-line highlights to reapply. Stream chunks append verbatim; section
 --- events join with one blank line; the buffer keeps one trailing empty
 --- line (the append invariant).
 local function render_events(events)
@@ -202,7 +202,7 @@ local function render_events(events)
   for _, ev in ipairs(events) do
     local ev_lines, kind = render_event(ev)
     if ev_lines then
-      if kind == "block" and has then
+      if kind == "section" and has then
         lines[#lines + 1] = ""
       end
       local start = #lines
@@ -237,7 +237,7 @@ function M.rebuild(buf, events)
 end
 
 --- Append one event to a live-view buffer. State `t` is { bufnr, has_content }.
---- Block events get a blank line before them (unless the view is empty);
+--- Section events get a blank line before them (unless the view is empty);
 --- stream events append directly. Per-line highlights are applied here.
 function M.append(t, ev)
   local lines, kind = render_event(ev)
@@ -248,7 +248,7 @@ function M.append(t, ev)
   remember(buf)
   local count = vim.api.nvim_buf_line_count(buf)
   local start = count - 1 -- 0-based index of the trailing empty line
-  local lead = (kind == "block" and t.has_content) and 1 or 0
+  local lead = (kind == "section" and t.has_content) and 1 or 0
   local text = {}
   if lead == 1 then
     text[#text + 1] = ""
@@ -367,12 +367,12 @@ function M.foldtext()
 end
 
 -- ─── Lifecycle ─────────────────────────────────────────────────────────────
--- Per-chat-buffer persistent audit view: every audit event is rendered
+-- Per-session-buffer persistent audit view: every audit event is rendered
 -- into ONE unlisted buffer, yap://<session>-audit, opened by :YapLive. The
 -- audit view is not a second log — it is the live, human-readable rendering
 -- of the JSON Lines audit log, rebuilt from it on reopen. Only the audit log
 -- is persisted.
-local audits = {} -- chat buf → { bufnr, offset, has_content, reviews, audit }
+local audits = {} -- session buf → { bufnr, offset, has_content, reviews, audit }
 local audit_poll_timer
 
 --- Cap the raw tool output streamed into the live audit view (and audit
@@ -439,7 +439,7 @@ function M.seed_session_usage(buf)
   vim.b[buf].yap_session_usage = su
 end
 
---- The chat buffer's audit-view state (and buffer), created on first use.
+--- The session buffer's audit-view state (and buffer), created on first use.
 function M.ensure(buf)
   local t = audits[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
@@ -553,13 +553,13 @@ function M.poll_start()
   )
 end
 
---- The chat buffer's audit-view state, or nil (for callers that need the
+--- The session buffer's audit-view state, or nil (for callers that need the
 --- view buffer or review line map).
 function M.view(buf)
   return audits[buf]
 end
 
---- Every chat buffer's audit-view state, keyed by chat buffer.
+--- Every session buffer's audit-view state, keyed by session buffer.
 function M.views()
   return audits
 end

@@ -1,5 +1,5 @@
 // Package jev adapts TypeSafe's Jev decision model to Yap's decision
-// surface. Jev is a System One decision model, not a chat model: it takes
+// surface. Jev is a System One decision model, not a language model: it takes
 // a state plus typed questions and returns calibrated probabilities in one
 // parallel pass. It is reached through OpenRouter's Decisions API (alpha),
 // authenticated by a plain OpenRouter API key.

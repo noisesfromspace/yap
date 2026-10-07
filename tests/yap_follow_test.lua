@@ -187,7 +187,7 @@ do
   )
   assert(
     vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(buf),
-    "G-joiner did not stay pinned through the thinking block"
+    "G-joiner did not stay pinned through the thinking region"
   )
   print(("follow: G-joiner stayed pinned through the thinking block over %d samples"):format(n))
 end

@@ -120,7 +120,7 @@ do
   local think = find_line(buf, "^<!%-%- yap:thinking")
   assert(vim.fn.foldclosed(think) == think, "precondition: thinking folded in view 2")
   za(buf, think)
-  assert(vim.fn.foldclosed(think) == -1, "za did not open the thinking block")
+  assert(vim.fn.foldclosed(think) == -1, "za did not open the thinking region")
   append_tool(buf, "t1")
   assert(vim.fn.foldclosed(think) == -1, "za-opened thinking closed on structural append")
   print("OK za-opened thinking survives in view 2")

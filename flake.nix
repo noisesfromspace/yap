@@ -290,19 +290,19 @@
               type = types.nullOr types.str;
               default = null;
               description = ''
-                Directory of skill files merged into the system block,
+                Directory of skill files merged into the system message,
                 passed to the harness as `skills_dir`. When null the
                 harness default ({file}`~/.config/yap/skills`) is used.
               '';
             };
 
-            rolesDir = mkOption {
+            agentsDir = mkOption {
               type = types.nullOr types.str;
               default = null;
               description = ''
-                Directory of subagent role definitions, passed to the harness
-                as `roles_dir`. When null the harness default
-                ({file}`~/.yap/roles`) is used.
+                Directory of agent-definition files (subagents), passed to the harness
+                as `agents_dir`. When null the harness default
+                ({file}`~/.yap/agents`) is used.
               '';
             };
 
@@ -330,12 +330,12 @@
             defaultProvider = mkOption {
               type = types.str;
               default = "moonshot";
-              description = "Default provider name for new chat buffers.";
+              description = "Default provider name for new session buffers.";
             };
             defaultModel = mkOption {
               type = types.str;
               default = "kimi-k3";
-              description = "Default model for new chat buffers.";
+              description = "Default model for new session buffers.";
             };
             system = mkOption {
               type = types.str;

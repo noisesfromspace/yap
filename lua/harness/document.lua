@@ -12,13 +12,13 @@ local roles = { system = "system", user = "user", assistant = "assistant" }
 --- old session files stays inert).
 --- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
 --- `<!-- yap:tool -->` regions are FLATTENED: a valid region inside an
---- assistant block becomes ordinary assistant transcript text — the tool
+--- assistant message becomes ordinary assistant transcript text — the tool
 --- name, its JSON arguments, and the result — so the visible markdown IS
 --- the conversation and persisted history never reconstructs native
 --- tool-call/tool-result messages. Deleting/editing the region changes the
 --- transcript directly.
---- Adjacent same-role blocks are merged (providers require alternation).
---- Empty blocks are dropped.
+--- Adjacent same-role messages are merged (providers require alternation).
+--- Empty messages are dropped.
 function M.parse_buffer(buf)
   local messages = {}
   local role, acc = nil, {}
@@ -131,7 +131,7 @@ function M.parse_buffer(buf)
       elseif line:match("^<!%-%- yap:tool%s*$") and role == "assistant" then
         header_acc = {} -- multi-line header form (long calls)
       elseif line:match("^<!%-%- yap:tool") then
-        skipping = true -- region outside an assistant block: orphan, skip
+        skipping = true -- region outside an assistant message: orphan, skip
       elseif line:match("^<!%-%- yap:%a+") then
         -- Single-line markers (`<!-- yap:usage {...} -->`) close on the
         -- same line; otherwise the next content line would be swallowed.
@@ -242,10 +242,10 @@ function M.follow_windows(buf, wins, expected)
   end
 end
 
---- Append whole lines as a new block, separated from the buffer's current
+--- Append whole lines as a standalone chunk, separated from the buffer's current
 --- end by exactly one blank line (R7), no matter how the buffer ends.
 --- All structural appends (headings, error markers) go through here.
-function M.append_block(buf, block)
+function M.append_lines(buf, chunk)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -254,7 +254,7 @@ function M.append_block(buf, block)
   while keep > 1 and vim.api.nvim_buf_get_lines(buf, keep - 1, keep, false)[1] == "" do
     keep = keep - 1
   end
-  local lines = vim.deepcopy(block)
+  local lines = vim.deepcopy(chunk)
   table.insert(lines, 1, "")
   local fold = require("harness.fold")
   fold.before_change(buf)
@@ -264,7 +264,7 @@ end
 
 --- The role of the buffer's last message heading (`# @user`, ...), or nil
 --- when the buffer has no heading yet. This is the single place that reads
---- "what block would an append land in", shared by the plain-text inserter
+--- "what message would an append land in", shared by the plain-text inserter
 --- (append_message) and the snippet inserter so both reuse the trailing
 --- heading instead of duplicating it.
 function M.trailing_role(buf)
@@ -283,12 +283,12 @@ end
 
 --- Append `lines` as a `# @<role>` message. If the buffer's last heading
 --- is already that role (e.g. the empty `# @user` prompt a completed turn
---- leaves behind), the lines fill that block — merging with any body the
+--- leaves behind), the lines fill that message — merging with any body the
 --- user already typed — instead of emitting a duplicate heading above it.
---- Otherwise a fresh heading block is appended. This is the single place
+--- Otherwise a fresh heading message is appended. This is the single place
 --- that decides reuse-vs-wrap for plain-text appends; snippet appends use
 --- trailing_role directly for the same decision. (R6 makes reuse and a new
---- adjacent block parse the same, so this is purely about keeping the
+--- adjacent message parse the same, so this is purely about keeping the
 --- visible buffer well-formed.)
 function M.append_message(buf, role, lines)
   if not vim.api.nvim_buf_is_valid(buf) then
@@ -303,9 +303,9 @@ function M.append_message(buf, role, lines)
     end
   end
   if not (heading and all[heading]:match("^# @" .. role .. "%s*$")) then
-    local block = { "# @" .. role, "" }
-    vim.list_extend(block, lines)
-    M.append_block(buf, block)
+    local message = { "# @" .. role, "" }
+    vim.list_extend(message, lines)
+    M.append_lines(buf, message)
     return
   end
   -- Keep everything through the heading, then any body already under it,

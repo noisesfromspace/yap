@@ -100,12 +100,12 @@ local seen = {}
 for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
   seen[m.lhs] = m.desc or ""
 end
-assert(seen["]t"] == "Next tool call or thinking block", "]t mapping missing/wrong: " .. tostring(seen["]t"]))
-assert(seen["[t"] == "Previous tool call or thinking block", "[t mapping missing/wrong")
-assert(seen["]c"] == "Next thinking block", "]c mapping missing/wrong")
-assert(seen["[c"] == "Previous thinking block", "[c mapping missing/wrong")
-assert(seen["]e"] == "Next error block", "]e mapping missing/wrong")
-assert(seen["[e"] == "Previous error block", "[e mapping missing/wrong")
+assert(seen["]t"] == "Next tool call or thinking region", "]t mapping missing/wrong: " .. tostring(seen["]t"]))
+assert(seen["[t"] == "Previous tool call or thinking region", "[t mapping missing/wrong")
+assert(seen["]c"] == "Next thinking region", "]c mapping missing/wrong")
+assert(seen["[c"] == "Previous thinking region", "[c mapping missing/wrong")
+assert(seen["]e"] == "Next error region", "]e mapping missing/wrong")
+assert(seen["[e"] == "Previous error region", "[e mapping missing/wrong")
 
 -- A fenced read result can contain `# @user` and (escaped) yap markers;
 -- message navigation must treat them as literal content, not structure.

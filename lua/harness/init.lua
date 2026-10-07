@@ -3,7 +3,7 @@
 -- A yap buffer is plain markdown. Headings of the form `# @user`,
 -- `# @assistant` and `# @system` delimit messages; everything between
 -- headings is message content. The buffer is the ONLY state: deleting a
--- block removes it from the conversation, editing an assistant reply
+-- message removes it from the conversation, editing an assistant reply
 -- changes what the model "said", inserting a fake reply steers it.
 -- gptel semantics, Neovim native.
 --
@@ -129,11 +129,11 @@ For GitHub searches and reading GitHub code, repositories, issues, pull requests
 
 ## Skills
 
-Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system block names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
+Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system message names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
 
 ## Subagents
 
-- `subagent` takes a `role` (from `roles_dir`, default `~/.yap/roles/<role>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `role`); this appends a user turn to the same child, preserving its system prompt and history. A bare model name inherits the parent's provider/model.
+- `subagent` takes an `agent` (from `agents_dir`, default `~/.yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. A bare model name inherits the parent's provider/model.
 ]]
 end
 
@@ -204,7 +204,7 @@ end
 
 -- ─── Send ──────────────────────────────────────────────────────────────────
 
--- One persistent serve backend per chat buffer, so several sessions can
+-- One persistent serve backend per session buffer, so several sessions can
 -- stream at once. Each backend keeps its own tool state (SSH connections
 -- above all) for the life of its buffer; a stopped process is restarted
 -- on the next send. `servers` lives in harness.state (shared with the
@@ -220,7 +220,7 @@ local stream_flush = {}
 -- Audit lifecycle (log write, live-view buffer, seed usage, drain, poll)
 -- lives in harness.audit.
 
-local follow_override = {} -- chat buf -> windows deliberately focused by YapAlerts during a turn
+local follow_override = {} -- session buf -> windows deliberately focused by YapAlerts during a turn
 local live_session_label
 local inspect_approval
 
@@ -295,7 +295,7 @@ local function handle_event(buf, json_line)
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)
-  elseif ev.type == "alert_advice" then
+  elseif ev.type == "alert_advisory" then
     -- Record before notifying: the picker can now navigate to this exact alert.
     audit.append_event(buf, ev)
     vim.notify(
@@ -312,7 +312,7 @@ local function handle_event(buf, json_line)
     )
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
-    -- creates a list, so persisted tool blocks never replay on reopen.
+    -- creates a list, so persisted tool regions never replay on reopen.
     if ev.name == "quickfix" then
       local ok_qf, a = pcall(vim.json.decode, ev.args or "")
       if ok_qf and type(a) == "table" and type(a.entries) == "table" then
@@ -510,7 +510,7 @@ function M.compact()
     vim.notify("yap: turn running; stop it before compacting", vim.log.levels.WARN)
     return
   end
-  template.append_as_block(buf, compact_prompt_lines())
+  template.append_as_message(buf, compact_prompt_lines())
   vim.b[buf].yap_compact_pending = true
   M.send()
 end
@@ -527,8 +527,8 @@ function M.compact_offer(buf)
   end)
 end
 
---- Delete every message between the system block and the final summary
---- (the last # @assistant block), leaving frontmatter + system block +
+--- Delete every message between the system message and the final summary
+--- (the last # @assistant message), leaving frontmatter + system message +
 --- summary + the trailing # @user prompt. Blank-line separation is R7.
 function M.compact_delete(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
@@ -546,8 +546,8 @@ function M.compact_delete(buf)
     vim.notify("yap: no assistant summary to keep", vim.log.levels.WARN)
     return
   end
-  -- Keep frontmatter + the system block: the system block ends at the
-  -- first heading after # @system; with no system block, keep only the
+  -- Keep frontmatter + the system message: the system message ends at the
+  -- first heading after # @system; with no system message, keep only the
   -- frontmatter (everything before the first heading).
   local se = 0
   for i = 1, #lines do
@@ -559,11 +559,11 @@ function M.compact_delete(buf)
         end
       end
       if se == 0 then
-        se = #lines -- system block runs to the end (no later heading)
+        se = #lines -- system message runs to the end (no later heading)
       end
       break
     elseif lines[i]:match(HEAD) then
-      se = i - 1 -- no system block: keep frontmatter only
+      se = i - 1 -- no system message: keep frontmatter only
       break
     end
   end
@@ -600,9 +600,9 @@ end
 --- tool has run (an empty audit view that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  for chat, t in pairs(audit.views()) do
+  for owner, t in pairs(audit.views()) do
     if t.bufnr == buf then
-      drawer.toggle(chat, buf, 12)
+      drawer.toggle(owner, buf, 12)
       return
     end
   end
@@ -634,7 +634,7 @@ function M.live(buf)
   audit.fold(t.bufnr)
 end
 
---- Open a chat's audit and reveal one reviewable event (ordinal in its log).
+--- Open a session's audit and reveal one reviewable event (ordinal in its log).
 local function show_audit_event(buf, ordinal)
   if vim.api.nvim_get_current_buf() ~= buf then
     vim.api.nvim_set_current_buf(buf)
@@ -653,9 +653,9 @@ local function show_audit_event(buf, ordinal)
   end
 end
 
---- Focus the matching tool block in the chat without leaving the audit drawer.
+--- Focus the matching tool region in the session without leaving the audit drawer.
 --- The audit records calls even if the user later edits their transcript, so
---- a missing block simply leaves the chat cursor where it was.
+--- a missing region simply leaves the session cursor where it was.
 local function focus_alert_call(buf, call)
   if not call then
     return
@@ -666,7 +666,7 @@ local function focus_alert_call(buf, call)
   end
   local seen = 0
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for _, detail in ipairs(require("harness.structure").parse(buf).details) do
+  for _, detail in ipairs(require("harness.structure").parse(buf).regions) do
     if detail.kind == "tool" then
       local id
       for i = detail.start, math.min(detail.start + 4, #lines) do
@@ -699,7 +699,7 @@ inspect_approval = function(buf, ev)
   local target
   for _, line in ipairs(vim.fn.readfile(paths.audit_path(buf))) do
     local ok, entry = pcall(vim.json.decode, line)
-    if ok and type(entry) == "table" and (entry.type == "alert_advice" or entry.type == "approval_request") then
+    if ok and type(entry) == "table" and (entry.type == "alert_advisory" or entry.type == "approval_request") then
       ordinal = ordinal + 1
       if entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
         target = ordinal
@@ -719,20 +719,20 @@ function M.approval()
   local current = vim.api.nvim_get_current_buf()
   local buf = pending_approvals[current] and current or nil
   if not buf then
-    for chat, t in pairs(audit.views()) do
-      if t.bufnr == current and pending_approvals[chat] then
-        buf = chat
+    for owner, t in pairs(audit.views()) do
+      if t.bufnr == current and pending_approvals[owner] then
+        buf = owner
         break
       end
     end
   end
   if not buf then
-    for chat in pairs(pending_approvals) do
+    for owner in pairs(pending_approvals) do
       if buf then
         vim.notify("yap: multiple pending approvals; open the relevant session's audit first", vim.log.levels.WARN)
         return
       end
-      buf = chat
+      buf = owner
     end
   end
   if not buf then
@@ -758,7 +758,7 @@ function M.approval()
   end
 end
 
---- Review advisories and blocked calls for this project, including sessions
+--- Review advisories and approval requests for this project, including sessions
 --- no longer open. Each picker item lands on its own unfolded audit entry.
 function M.alerts()
   local items = {}
@@ -775,12 +775,12 @@ function M.alerts()
           if ev.type == "tool_call" and ev.id then
             occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
             last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-          elseif ev.type == "alert_advice" or ev.type == "approval_request" then
+          elseif ev.type == "alert_advisory" or ev.type == "approval_request" then
             ordinal = ordinal + 1
             -- Advisory IDs identify the call; approval IDs identify the
             -- approval dialog, so the latter uses the last executed call.
             local call = last_call
-            if ev.type == "alert_advice" and ev.id and occurrences[ev.id] then
+            if ev.type == "alert_advisory" and ev.id and occurrences[ev.id] then
               call = { id = ev.id, occurrence = occurrences[ev.id] }
             end
             items[#items + 1] = { path = path, event = ev, ordinal = ordinal, call = call }
@@ -831,10 +831,10 @@ local function report_error(buf, err)
   errors[buf] = err
   -- The marker is an HTML comment: neutralize any `-->` in the error
   -- text so it can't close the comment early for markdown renderers.
-  local block = { "<!-- yap:error" }
-  vim.list_extend(block, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
-  table.insert(block, "-->")
-  document.append_block(buf, block)
+  local lines = { "<!-- yap:error" }
+  vim.list_extend(lines, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
+  table.insert(lines, "-->")
+  document.append_lines(buf, lines)
   -- A delegated failure is returned to the running parent as a tool result;
   -- a direct follow-up in the child should still report its own error.
   local parent = vim.b[buf].yap_subagent_parent
@@ -870,21 +870,21 @@ local function repair_stream_tail(buf)
       comment_open = false
     end
   end
-  local block = {}
+  local repair = {}
   if comment_open then
-    table.insert(block, "-->")
+    table.insert(repair, "-->")
   end
   if in_tool then
-    table.insert(block, "<!-- /yap:tool -->")
+    table.insert(repair, "<!-- /yap:tool -->")
   end
-  if #block > 0 then
-    vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, block)
+  if #repair > 0 then
+    vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, repair)
   end
 end
 
 -- Session titling (description generation) lives in harness.describe.
 --- remains in its file; template steering without a scratch gets copied to
---- the empty chat prompt so it cannot silently disappear.
+--- the empty user prompt so it cannot silently disappear.
 local function leave_undelivered_steer(buf)
   local text = steer[buf]
   steer[buf] = nil
@@ -900,7 +900,7 @@ local function leave_undelivered_steer(buf)
   else
     document.append_message(buf, "user", vim.split(text, "\n", { plain = true }))
     require("harness.session").save(buf)
-    vim.notify("yap: steer was not delivered; draft is in the chat prompt (send with <C-s>)", vim.log.levels.WARN)
+    vim.notify("yap: steer was not delivered; draft is in the user prompt (send with <C-s>)", vim.log.levels.WARN)
   end
 end
 
@@ -908,7 +908,7 @@ end
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
   repair_stream_tail(buf)
-  document.append_block(buf, { "# @user", "" })
+  document.append_lines(buf, { "# @user", "" })
   awaiting[buf] = true
   require("harness.session").save(buf)
   leave_undelivered_steer(buf)
@@ -973,7 +973,7 @@ function M.send(buf)
   end
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
-  document.append_block(buf, { "# @assistant", "" })
+  document.append_lines(buf, { "# @assistant", "" })
   follow_tail()
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
@@ -988,7 +988,7 @@ function M.send(buf)
     local stderr_chunks = {}
     local status, barrier
     -- Coalesce rapid per-token stdout flushes into one buffer edit per
-    -- ~STREAM_FLUSH_MS: block parsing is O(n) per edit, so batching keeps a
+    -- ~STREAM_FLUSH_MS: region parsing is O(n) per edit, so batching keeps a
     -- fast stream smooth on large sessions instead of stalling per token.
     -- This is a THROTTLE: the timer starts on the first token of a batch.
     -- Only incomplete structural prefixes wait for classification; ordinary
@@ -1100,7 +1100,7 @@ function M.send(buf)
       end
       -- A late steer was never injected: keep it as a draft, not an
       -- automatically sent follow-up turn.
-      document.append_block(buf, { "# @user", "" })
+      document.append_lines(buf, { "# @user", "" })
       leave_undelivered_steer(buf)
       follow_tail()
       awaiting[buf] = true
@@ -1366,7 +1366,7 @@ end
 local function setup_buffer(buf)
   -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
-  -- A chat buffer is not code: markdown LSPs (semantic tokens, inlay hints)
+  -- A session buffer is not code: markdown LSPs (semantic tokens, inlay hints)
   -- add per-redraw cost on a large session and buy nothing (R1).
   vim.b[buf].yap = true
   state.sessions[buf] = true
@@ -1401,7 +1401,7 @@ local function setup_buffer(buf)
     end)
   end
 
-  -- Diff hunks are meaningless on a chat transcript, and mini.diff's
+  -- Diff hunks are meaningless on a session transcript, and mini.diff's
   -- number-column rendering collides with 'relativenumber': the two
   -- re-render the gutter together on every redraw (a ~20x cost on long
   -- sessions — relativenumber alone is ~0.01ms, mini.diff alone ~0, but
@@ -1462,7 +1462,7 @@ local function setup_buffer(buf)
   vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
 end
 
---- Open a new yap chat buffer.
+--- Open a new yap session buffer.
 function M.new(opts)
   opts = opts or {}
   local win = vim.api.nvim_get_current_win()
@@ -1472,8 +1472,8 @@ function M.new(opts)
   if opts.system then
     vim.b[buf].yap_system = opts.system
   end
-  if opts.role then
-    vim.b[buf].yap_role = opts.role
+  if opts.agent then
+    vim.b[buf].yap_agent = opts.agent
   end
   if opts.tools then
     vim.b[buf].yap_tools = opts.tools
@@ -1547,8 +1547,8 @@ adopt = function(buf, path)
     if fm and fm.tools then
       vim.b[buf].yap_tools = fm.tools
     end
-    if fm and fm.role then
-      vim.b[buf].yap_role = fm.role
+    if fm and fm.agent then
+      vim.b[buf].yap_agent = fm.agent
     end
   end
   -- A reopened session that ended on `# @user` awaits the next reply;
@@ -1672,7 +1672,7 @@ function M.change_default_model(combo)
     return
   end
   config.write_default_combo(combo)
-  vim.notify("yap: default model for new chats: " .. combo, vim.log.levels.INFO)
+  vim.notify("yap: default model for new sessions: " .. combo, vim.log.levels.INFO)
 end
 
 --- Session title for the picker: description when present, filename as
@@ -1685,7 +1685,7 @@ live_session_label = function(buf, parent)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
   local session = require("harness.session")
   local label = session.label(path, fm and fm.description)
-  local role = fm and fm.role or vim.b[buf].yap_role
+  local role = fm and fm.agent or vim.b[buf].yap_agent
   if role then
     local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -1770,7 +1770,7 @@ local function session_rank(buf)
   return 4
 end
 
---- Every open yap chat buffer, annotated with its live state and sorted with
+--- Every open yap session buffer, annotated with its live state and sorted with
 --- waiting sessions last. The needs-you picker omits the current leaf session,
 --- but keeps a current parent when it has open children to group beneath it.
 --- An optional `state` narrows the list: a state name ("running", "error",
@@ -1840,7 +1840,7 @@ function M.instances(state)
       or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
     local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
     local parent = subagent_parent or fork_parent
-    local is_subagent = fm and fm.role or vim.b[b].yap_role
+    local is_subagent = fm and fm.agent or vim.b[b].yap_agent
     local include_current = not needs_you or (b == current and has_open_child(b))
     local child_needs_you = is_subagent and (stopped[b] or errors[b])
     if
@@ -1994,7 +1994,7 @@ function M.setup(opts)
 
   -- <leader>r, <leader>w, <leader>y, <leader>R and <leader>M are global:
   -- they list sessions across every buffer or change the default model, so
-  -- they must work from any file, not just inside a chat. The other
+  -- they must work from any file, not just inside a session. The other
   -- keymaps act on the current buffer and stay buffer-local in setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
@@ -2062,7 +2062,7 @@ function M.setup(opts)
         return
       end
       -- Let window/buffer transitions settle; focusing a drawer alone must
-      -- not close it while the chat remains displayed in another window.
+      -- not close it while the session remains displayed in another window.
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(buf) and #vim.fn.win_findbuf(buf) == 0 then
           close_session_drawers(buf)

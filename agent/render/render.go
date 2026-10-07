@@ -1,5 +1,5 @@
 // Package render turns the agent's tool activity into markdown for the
-// chat buffer: the yap:tool / yap:usage markers, HTML-comment escaping for
+// session buffer: the yap:tool / yap:usage markers, HTML-comment escaping for
 // thinking text and tool headers/results, and the fenced-code-block logic.
 // These concerns used to be split between package main and package utils;
 // keeping them in one package gives the Lua parser and the markdown

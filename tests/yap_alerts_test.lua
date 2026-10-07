@@ -21,7 +21,7 @@ local function add(buf, id, reason)
     }),
     vim.json.encode({ type = "tool_call", id = id, name = "bash", args = '{"command":"echo warning"}' }),
     vim.json.encode({
-      type = "alert_advice",
+      type = "alert_advisory",
       id = id,
       name = "bash",
       reason = reason,
@@ -155,7 +155,7 @@ local audit_renderer = require("harness.audit")
 local has, reviews = audit_renderer.rebuild(view, {})
 local live = { bufnr = view, has_content = has, reviews = reviews }
 audit_renderer.append(live, { type = "output", data = "diff\n+approval requested [fake]" })
-audit_renderer.append(live, { type = "alert_advice", id = "real", name = "bash", reason = "real warning" })
+audit_renderer.append(live, { type = "alert_advisory", id = "real", name = "bash", reason = "real warning" })
 assert(#live.reviews == 1, "quoted output counted as a live alert")
 assert(
   vim.api.nvim_buf_get_lines(view, live.reviews[1] - 1, live.reviews[1], false)[1]:find("real warning", 1, true),

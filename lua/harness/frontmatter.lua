@@ -7,7 +7,7 @@
 --   model: kimi-k3
 --   provider: moonshot
 --   cwd: /opt/code/yap
---   role: reviewer
+--   agent: reviewer
 --   tools: read,search,glob
 --   turns: 14
 --   created_at: 2025-09-29T19:22:33Z
@@ -26,9 +26,9 @@
 -- `description` is the one-line summary the picker shows; `model` and
 -- `provider` are the combo to resume with; `cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
--- this is the only exact record of where a session ran); `role`/`tools`
--- mark a subagent session (its role name and the tools it may call);
--- `turns` counts the completed replies (`# @assistant` blocks) — a
+-- this is the only exact record of where a session ran); `agent`/`tools`
+-- mark a subagent session (its agent-definition name and the tools it may call);
+-- `turns` counts the completed replies (`# @assistant` messages) — a
 -- session-depth summary for the picker, stamped on save with `updated_at`;
 -- `created_at` records when the session was created; `updated_at` records
 -- its last write (stamped on every save); `models` is the ordered history
@@ -39,10 +39,10 @@
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
--- yap owns the block, so parsing is a few pattern matches,
+-- yap owns the frontmatter, so parsing is a few pattern matches,
 -- not a YAML library; Neovim has no YAML parser and does not need one.
 --
--- render() returns ONLY the `--- ... ---` block (no trailing blank line);
+-- render() returns ONLY the `--- ... ---` frontmatter (no trailing blank line);
 -- callers own the blank separator that follows it.
 
 local M = {}
@@ -53,12 +53,12 @@ local function is_list_key(k)
   return k == "models" or k == "subagents" or k == "forks"
 end
 
---- Parse a frontmatter block from a Lua list of lines. Returns
---- { provider, model, cwd, created_at, updated_at, turns, description, role,
+--- Parse frontmatter from a Lua list of lines. Returns
+--- { provider, model, cwd, created_at, updated_at, turns, description, agent,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...},
 ---   forks = {path,...}, forked_from = path?, subagent_parent = path? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
---- unknown keys and comments are ignored, so a hand-edited block does not
+--- unknown keys and comments are ignored, so a hand-edited frontmatter does not
 --- break resuming.
 function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
@@ -92,8 +92,8 @@ function M.parse(lines)
         fm.turns = tonumber(v)
       elseif k == "description" then
         fm.description = v
-      elseif k == "role" then
-        fm.role = v
+      elseif k == "agent" then
+        fm.agent = v
       elseif k == "tools" then
         fm.tools = vim.split(v, ",", { plain = true })
       elseif is_list_key(k) then
@@ -115,7 +115,7 @@ function M.parse(lines)
   return nil -- unterminated
 end
 
---- Render the frontmatter block for a combo + ordered history. The
+--- Render the frontmatter for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
 function M.render(
   provider,
@@ -123,7 +123,7 @@ function M.render(
   models,
   created_at,
   description,
-  role,
+  agent,
   tools,
   subagents,
   updated_at,
@@ -142,8 +142,8 @@ function M.render(
   if cwd and cwd ~= "" then
     lines[#lines + 1] = "cwd: " .. cwd
   end
-  if role then
-    lines[#lines + 1] = "role: " .. role
+  if agent then
+    lines[#lines + 1] = "agent: " .. agent
   end
   if tools then
     lines[#lines + 1] = "tools: " .. table.concat(tools, ",")
@@ -185,7 +185,7 @@ function M.render(
   return lines
 end
 
---- End line (0-based, exclusive) of the frontmatter block, or nil when
+--- End line (0-based, exclusive) of the frontmatter, or nil when
 --- the buffer has none. Only the model state lives here; token/cost totals
 --- stay in the winbar.
 function M.end_line(buf)
@@ -226,7 +226,7 @@ function M.sync(buf)
     models,
     created_at,
     fm and fm.description,
-    fm and fm.role or vim.b[buf].yap_role,
+    fm and fm.agent or vim.b[buf].yap_agent,
     fm and fm.tools or vim.b[buf].yap_tools,
     fm and fm.subagents,
     fm and fm.updated_at,
@@ -269,7 +269,7 @@ function M.record_subagent(parent, child_path)
     fm.models,
     fm.created_at,
     fm.description,
-    fm.role,
+    fm.agent,
     fm.tools,
     subagents,
     fm.updated_at,

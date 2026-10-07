@@ -16,9 +16,9 @@ Inspired by pi and gptel.
 
 ## What you get
 
-- Text objects for messages, thinking, and tool blocks (`dit` clears a
-  block, `dam` drops a message).
-- `]`/`[` navigation between messages and blocks (`]m`, `]u`, `]a`, `]t`).
+- Text objects for messages, thinking, and tool regions (`dit` clears a
+  region, `dam` drops a message).
+- `]`/`[` navigation between messages and regions (`]m`, `]u`, `]a`, `]t`).
 - A winbar with session description, model, token totals, cost, and
   streaming status.
 - Folding to collapse agent output or tool calls (`<leader>1/2/3`).
@@ -43,7 +43,7 @@ first. See `:help yap-tools`.
    CGO_ENABLED=0 go build -o ~/.local/bin/yap ./agent
    ```
 
-   The plugin starts the backend when you open a chat; there is no server
+   The plugin starts the backend when you open a session; there is no server
    to run. With Nix, `nix develop` builds `.dev/bin/yap` and puts it on
    `PATH`.
 2. Configure a provider in `~/.config/yap.json`:
@@ -71,19 +71,19 @@ first. See `:help yap-tools`.
 
 ## Commands
 
-`:Yap` opens an editable Markdown chat. The reply streams back into the
+`:Yap` opens an editable Markdown session. The reply streams back into the
 same buffer. Every send uses Neovim's current working directory as
 request-only context. Commands are quiet on success; warnings and errors
 still notify.
 
 | Command                                   | Shortcut    | Purpose                                                            |
 | ----------------------------------------- | ----------- | ------------------------------------------------------------------ |
-| `:Yap`                                    |             | Start a chat.                                                      |
+| `:Yap`                                    |             | Start a session.                                                   |
 | `:YapSend`                                | `<C-s>`     | Send the transcript.                                               |
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
-| `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this chat's model.                                     |
+| `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
-| `:YapAlerts`                              |             | Review advisories and blocked requests in their sessions.          |
+| `:YapAlerts`                              |             | Review advisories and approval requests in their sessions.         |
 | `:YapApproval`                            |             | Answer Run/Deny after inspecting a paused request.                 |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
@@ -91,10 +91,10 @@ still notify.
 | `:YapSessions [all]`                      |             | Resume a saved session.                                            |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
 | Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
-| Lua: `instances()`                        | `<leader>r` | Pick another open chat.                                            |
-| Lua: `waiting()`                          | `<leader>w` | Pick a chat awaiting your reply (or stopped).                      |
-| Lua: `history()`                          | `<leader>y` | Pick a saved chat with live status.                                |
-| Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new chats.                              |
+| Lua: `instances()`                        | `<leader>r` | Pick another open session.                                         |
+| Lua: `waiting()`                          | `<leader>w` | Pick a session awaiting your reply (or stopped).                   |
+| Lua: `history()`                          | `<leader>y` | Pick a saved session with live status.                             |
+| Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new sessions.                           |
 
 Lua entries above are functions on `require('harness')`, not Ex commands.
 When a call needs approval, choose **Inspect** to see the shield-marked
@@ -117,7 +117,26 @@ See
 Any Markdown renderer you use works on a yap buffer.
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
 adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
-`usage` labels and draws each tool region as one block.
+`usage` labels and draws each tool region as one region.
+
+## Terminology
+
+| Term                  | Meaning                                                                    |
+| --------------------- | -------------------------------------------------------------------------- |
+| session               | one conversation: Markdown file + audit log + scratch queue                 |
+| session buffer        | the Neovim buffer editing a session                                         |
+| message               | a `# @role` heading plus its body                                           |
+| region                | a marker-delimited span: tool, thinking, error, or ui                       |
+| tool region           | one tool call + its result                                                  |
+| turn                  | one completed send → one assistant reply                                     |
+| send                  | the action and in-flight request (`:YapSend` / `<C-s>`)                     |
+| prefill               | hand-writing an `# @assistant` message to continue from it                  |
+| steer                 | mid-turn injection of a `# @steer` body at a model boundary                 |
+| advisory / approval   | the alert gate's run-with-warning / pause-for-approval outcomes             |
+| agent definition      | a `~/.yap/agents/<name>.md` file describing a subagent (not a “role”)       |
+| audit log / view      | the append-only `.jsonl` record, and the rendered `:YapLive` buffer          |
+
+The full vocabulary is in `:help yap-glossary`.
 
 ## Notes
 

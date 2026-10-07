@@ -81,9 +81,9 @@ assert(vim.fn.foldclosed(tool1) == tool1, "view keypress did not clear the pin")
 -- navigation auto-open (what ]t maps to): jump then pin the destination
 fold.set_view_level(2)
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
-assert(fold.next_tool() == think1, "next_tool -> thinking block")
+assert(fold.next_tool() == think1, "next_tool -> thinking region")
 fold.open(vim.api.nvim_win_get_cursor(0)[1])
-assert(vim.fn.foldclosed(think1) == -1, "nav open did not open the thinking block")
+assert(vim.fn.foldclosed(think1) == -1, "nav open did not open the thinking region")
 
 -- re-apply never changes the applied view
 assert(fold.level() == 2, "re-apply changed the applied view level")

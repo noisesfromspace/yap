@@ -21,16 +21,16 @@ M.defaults = {
   agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/AGENTS.md",
   -- Templates are text files inserted into the context by :YapInsert
   -- (a compaction prompt, a snippet, ...); skills are the same but
-  -- system-prompt material, merged into the # @system block.
+  -- system-prompt material, merged into the `# @system` message.
   templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
   skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
-  roles_dir = "~/.yap/roles", -- subagent role definitions
+  agents_dir = "~/.yap/agents", -- agent-definition files (subagents)
   -- Session and audit data roots. Defaults mirror harness.path (resolved
   -- against the real home directory, never the project cwd); override in
   -- setup() to relocate them.
   sessions_dir = paths.dirs.sessions_dir,
   audit_dir = paths.dirs.audit_dir,
-  -- List available skills (name + description) in new chats' system block
+  -- List available skills (name + description) in new sessions' system message
   -- so they are discoverable; bodies are only ever inserted manually.
   skills_intro = true,
   -- vim.notify for a completed turn when its buffer is not visible
@@ -67,7 +67,7 @@ M.defaults = {
   -- before the agent answers.
   description_model = "openai/gpt-5-nano",
   -- Bigger model that writes the final title once the turn completes
-  -- (back on the # @user block): a whole-session summary that tells the
+  -- (back on the `# @user` message): a whole-session summary that tells the
   -- story so the session is easy to find in the picker later.
   description_answer_model = "openai/gpt-5-mini",
   -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
@@ -109,8 +109,8 @@ M.defaults = {
 
     inner_message = "im",
     around_message = "am",
-    inner_block = "it",
-    around_block = "at",
+    inner_region = "it",
+    around_region = "at",
   },
 }
 

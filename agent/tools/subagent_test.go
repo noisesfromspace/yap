@@ -15,7 +15,7 @@ func TestSubagentTimeout(t *testing.T) {
 	if !ok {
 		t.Fatal("subagent tool missing")
 	}
-	_, _, err := tool.Run([]byte(`{"role":"scout","task":"test"}`))
+	_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test"}`))
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout, got %v", err)
 	}

@@ -142,7 +142,7 @@ func TestGatePreflight(t *testing.T) {
 	// ask-jev tools without a preflight: gated, no floor.
 	for _, tc := range []struct{ tool, args string }{
 		{"curl", `{"url":"https://example.com"}`},
-		{"subagent", `{"role":"x","task":"y"}`},
+		{"subagent", `{"agent":"x","task":"y"}`},
 		{"playwright", `{"command":"goto https://example.com"}`},
 	} {
 		if tier, _ := Assess(tc.tool, json.RawMessage(tc.args)); tier != utils.TierAskJev {
@@ -221,7 +221,7 @@ func TestWriteEdit(t *testing.T) {
 
 	// edit: multiple disjoint edits in one call
 	r, ui, err = run(t, "edit", `{"path":"`+f+`","edits":[{"oldText":"alpha","newText":"ALPHA"},{"oldText":"gamma","newText":"GAMMA"}]}`)
-	if err != nil || !strings.Contains(r, "replaced 2 block(s)") {
+	if err != nil || !strings.Contains(r, "replaced 2 edit(s)") {
 		t.Fatalf("edit: %q %v", r, err)
 	}
 	data, _ = os.ReadFile(f)

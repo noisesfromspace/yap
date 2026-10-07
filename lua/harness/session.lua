@@ -35,7 +35,7 @@ local paths = require("harness.path")
 --- read feeds both the frontmatter parse and the turn count; the write
 --- serializes the whole buffer anyway, so the extra scan is not new work.
 --- The rewrite is skipped when neither field changed. Legacy files without
---- a block are skipped.
+--- frontmatter are skipped.
 local function stamp_updated_at(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
@@ -63,7 +63,7 @@ local function stamp_updated_at(buf)
   end
   local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
   if fm.updated_at == updated_at and fm.turns == turns then
-    return -- unchanged: skip the rewrite so an untouched block stays clean
+    return -- unchanged: skip the rewrite so an untouched frontmatter stays clean
   end
   local block = frontmatter.render(
     fm.provider,
@@ -71,7 +71,7 @@ local function stamp_updated_at(buf)
     fm.models,
     fm.created_at,
     fm.description,
-    fm.role,
+    fm.agent,
     fm.tools,
     fm.subagents,
     updated_at,
@@ -185,7 +185,7 @@ function M.fork(buf, name, running)
         fm.models,
         created,
         fm.description,
-        fm.role,
+        fm.agent,
         fm.tools,
         fm.subagents,
         created,
@@ -250,7 +250,7 @@ function M.fork(buf, name, running)
       source_fm.models,
       source_fm.created_at,
       source_fm.description,
-      source_fm.role,
+      source_fm.agent,
       source_fm.tools,
       source_fm.subagents,
       source_fm.updated_at,
@@ -265,7 +265,7 @@ function M.fork(buf, name, running)
   return path
 end
 
-local function trim_block(acc)
+local function trim_message(acc)
   while #acc > 0 and acc[1]:match("^%s*$") do
     table.remove(acc, 1)
   end
@@ -275,62 +275,62 @@ local function trim_block(acc)
   return acc
 end
 
--- Body of the first `# @role` block, heading excluded, surrounding
+-- Body of the first `# @role` message, heading excluded, surrounding
 -- blank lines trimmed.
-local function first_block(lines, role)
+local function first_message(lines, role)
   local acc = {}
-  local in_block = false
+  local in_message = false
   for _, line in ipairs(lines) do
     local heading = line:match("^# @(%a+)%s*$")
     if heading then
-      if in_block then
+      if in_message then
         break
       end
-      in_block = heading == role
-    elseif in_block then
+      in_message = heading == role
+    elseif in_message then
       acc[#acc + 1] = line
     end
   end
-  return trim_block(acc)
+  return trim_message(acc)
 end
 
--- Body of the last `# @role` block, heading excluded, surrounding
+-- Body of the last `# @role` message, heading excluded, surrounding
 -- blank lines trimmed.
-local function last_block(lines, role)
+local function last_message(lines, role)
   local acc = {}
-  local in_block = false
+  local in_message = false
   for _, line in ipairs(lines) do
     local heading = line:match("^# @(%a+)%s*$")
     if heading then
-      in_block = heading == role
-      if in_block then
+      in_message = heading == role
+      if in_message then
         acc = {}
       end
-    elseif in_block then
+    elseif in_message then
       acc[#acc + 1] = line
     end
   end
-  return trim_block(acc)
+  return trim_message(acc)
 end
 
---- True when the trailing `# @user` block holds an unsent prompt. `lines` is
+--- True when the trailing `# @user` message holds an unsent prompt. `lines` is
 --- the cheap 200-line slice list() reads for labels; a very long system
 --- prompt can push the trailing prompt past that slice, so re-read the whole
 --- file only in that truncated case. This is what makes a "scheduled" prompt
 --- (typed, not yet sent) discoverable in the history picker.
 local function has_pending_user_text(path, lines)
-  if #last_block(lines, "user") > 0 then
+  if #last_message(lines, "user") > 0 then
     return true
   end
   if #lines == 200 then
-    return #last_block(vim.fn.readfile(path), "user") > 0
+    return #last_message(vim.fn.readfile(path), "user") > 0
   end
   return false
 end
 
 --- First task line for a subagent's stable picker identity, even after follow-ups.
 function M.task(lines)
-  for _, line in ipairs(first_block(lines, "user")) do
+  for _, line in ipairs(first_message(lines, "user")) do
     if line:match("%S") then
       return line:gsub("^%s+", ""):gsub("%s+$", "")
     end
@@ -345,8 +345,8 @@ end
 --- preview table `{ buf = ... }`.
 function M.preview(lines)
   local content = {}
-  local user = first_block(lines, "user")
-  local assistant = last_block(lines, "assistant")
+  local user = first_message(lines, "user")
+  local assistant = last_message(lines, "assistant")
   if #user > 0 then
     content[#content + 1] = "## First message"
     content[#content + 1] = ""
@@ -425,8 +425,8 @@ function M.list(scope)
           models = fm and #fm.models > 1 and fm.models or nil,
           turns = fm and fm.turns,
         }
-        if fm and fm.role then
-          item.text = "↳ " .. fm.role .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
+        if fm and fm.agent then
+          item.text = "↳ " .. fm.agent .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
           children[path] = item
         elseif fm and fm.forked_from then
           item.text = "↳ fork · " .. M.label(path, description)

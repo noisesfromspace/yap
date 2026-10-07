@@ -97,11 +97,11 @@ local function is_snippet(text)
   return text:find("%$[%d{]") ~= nil
 end
 
---- Append a template as a message block: a leading `# @role` heading is
---- used as-is (so a template can be a prefill or raw block); otherwise the
+--- Append a template as a message: a leading `# @role` heading is
+--- used as-is (so a template can be a prefill or raw message); otherwise the
 --- text is a `# @user` message. `document.append_message` owns the
 --- reuse-the-trailing-heading-or-wrap decision.
-function M.append_as_block(buf, lines)
+function M.append_as_message(buf, lines)
   if #lines == 0 then
     vim.notify("yap: template is empty", vim.log.levels.WARN)
     return
@@ -118,11 +118,11 @@ function M.append_as_block(buf, lines)
   end
 end
 
---- Append `body` (a message block, no surrounding blank lines) to the end
+--- Append `body` (a message, no surrounding blank lines) to the end
 --- of the buffer as a native snippet: one blank line of separation, cursor
 --- left on the first tabstop. `<Tab>`/`<S-Tab>` jump between placeholders
 --- and typing over a placeholder replaces it (Neovim's snippet machinery).
-function M.append_snippet_block(buf, body)
+function M.append_snippet(buf, body)
   local n = vim.api.nvim_buf_line_count(buf)
   local keep = n
   while keep > 1 and vim.api.nvim_buf_get_lines(buf, keep - 1, keep, false)[1] == "" do
@@ -141,8 +141,8 @@ function M.insert_snippet_at_cursor(buf, body)
   vim.snippet.expand(body .. "\n")
 end
 
---- Merge a skill's body into the buffer's `# @system` block (or create the
---- block at the top when there is none). Skills are system-prompt material:
+--- Merge a skill's body into the buffer's `# @system` message (or create the
+--- message at the top when there is none). Skills are system-prompt material:
 --- they go where a stateless provider keeps instructions.
 local function merge_into_system(buf, lines)
   if #lines == 0 then
@@ -190,8 +190,8 @@ local function insert_at_cursor(buf, lines)
   vim.api.nvim_buf_set_lines(buf, row, row, false, vim.deepcopy(lines))
 end
 
---- Skills intro for new chats: a short `## Skills` list (name + frontmatter
---- description) in the system block — discoverability, not auto-load.
+--- Skills intro for new sessions: a short `## Skills` list (name + frontmatter
+--- description) in the system message — discoverability, not auto-load.
 --- Returns nil when there are no skills.
 function M.skills_intro_lines()
   local lines = {}
@@ -207,8 +207,8 @@ end
 
 --- :YapInsert [name] / insert(name, { at_cursor = true }).
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
---- otherwise a template appends as a message block and immediately sends it,
---- while a skill merges into the system block. Snippets and at-cursor
+--- otherwise a template appends as a message and immediately sends it,
+--- while a skill merges into the system message. Snippets and at-cursor
 --- inserts remain editable. While the agent is mid-turn a template steers the
 --- running turn (injected at the next tool boundary) instead of inserting;
 --- skills and at-cursor inserts still refuse. With no name, pick from the
@@ -260,18 +260,18 @@ function M.insert(name, opts)
         M.insert_snippet_at_cursor(buf, body)
       else
         -- Same reuse decision as append_message: an unheaded snippet fills
-        -- the trailing `# @user` block instead of adding a second heading.
+        -- the trailing `# @user` message instead of adding a second heading.
         if not lines[1]:match(HEAD) and document.trailing_role(buf) ~= "user" then
           body = "# @user\n\n" .. body
         end
-        M.append_snippet_block(buf, body)
+        M.append_snippet(buf, body)
       end
     elseif opts.at_cursor then
       insert_at_cursor(buf, lines)
     elseif entry.kind == "skill" then
       merge_into_system(buf, lines)
     else
-      M.append_as_block(buf, lines)
+      M.append_as_message(buf, lines)
       if #lines > 0 then
         require("harness").send(buf)
       end

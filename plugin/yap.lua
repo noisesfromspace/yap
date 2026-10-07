@@ -5,7 +5,7 @@ vim.g.loaded_yap = true
 
 vim.api.nvim_create_user_command("Yap", function()
   require("harness").new()
-end, { desc = "Open a new yap chat buffer" })
+end, { desc = "Open a new yap session buffer" })
 
 vim.api.nvim_create_user_command("YapSend", function()
   require("harness").send()
@@ -47,7 +47,7 @@ end, {
   complete = function()
     return require("harness").template_names()
   end,
-  desc = "Insert a template (as a # @user block) or skill (into the system prompt); arg: name, or pick from the list",
+  desc = "Insert a template (as a `# @user` message) or skill (into the system prompt); arg: name, or pick from the list",
 })
 
 vim.api.nvim_create_user_command("YapChangeModel", function(cmd)

@@ -5,12 +5,12 @@ yap.setup()
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
 
--- <leader>s is bound in the chat buffer
+-- <leader>s is bound in the session buffer
 yap.scratch_toggle()
 local scratch_win = vim.api.nvim_get_current_win()
 assert(scratch_win ~= chat_win, "scratch did not open a new window")
 local scratch = vim.api.nvim_get_current_buf()
-assert(scratch ~= buf, "scratch is the chat buffer")
+assert(scratch ~= buf, "scratch is the session buffer")
 assert(vim.bo[scratch].buftype == "", "scratch buffer is not file-backed")
 assert(vim.bo[scratch].buflisted == false, "scratch buffer should be unlisted")
 assert(vim.api.nvim_buf_get_name(scratch):match("%.queue$") ~= nil, "scratch buffer is not a .queue file")

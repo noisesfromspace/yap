@@ -38,12 +38,12 @@ local function sample(source)
     if fold and vim.wo.foldtext:find("harness.fold", 1, true) then
       local ok, p = pcall(fold.parse, buf)
       if ok then
-        for i = math.max(1, #p.details - 11), #p.details do
-          local d = p.details[i]
+        for i = math.max(1, #p.regions - 11), #p.regions do
+          local d = p.regions[i]
           positions[#positions + 1] = d.start
           expected[d.start] = d.finish or p.count
         end
-        for _, d in ipairs(p.details) do
+        for _, d in ipairs(p.regions) do
           if d.start <= cursor and cursor <= (d.finish or p.count) then
             positions[#positions + 1] = d.start
             expected[d.start] = d.finish or p.count

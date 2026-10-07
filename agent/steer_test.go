@@ -59,9 +59,9 @@ func TestRunTurnSteer(t *testing.T) {
 	if strings.Contains(s, "\n\n\n") {
 		t.Fatalf("double blank line between blocks:\n%s", s)
 	}
-	// The final answer streams after the reopened assistant block.
+	// The final answer streams after the reopened assistant message.
 	if !strings.Contains(s, "# @assistant\n\ndone") {
-		t.Fatalf("final answer not after reopened assistant block:\n%s", s)
+		t.Fatalf("final answer not after reopened assistant message:\n%s", s)
 	}
 
 	// The steer reached the second request as a user message after the

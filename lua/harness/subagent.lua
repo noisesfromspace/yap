@@ -20,7 +20,7 @@ local errors = state.errors
 local running = state.running
 local servers = state.servers
 
--- The tools a subagent role may request; role files also use the aliases
+-- The tools a subagent may request; agent-definition files also use the aliases
 -- below (grep/find/webfetch) which are mapped onto these canonical names.
 local ALLOWED_TOOLS = {
   "ls",
@@ -40,9 +40,9 @@ local ALLOWED_TOOLS = {
   "jev",
 }
 
--- A role with no `tools:` header gets this read-only set: a subagent is one
+-- An agent definition with no `tools:` header gets this read-only set: a subagent is one
 -- prompt-injection hop removed from the user's attention, so it must opt into
--- write/bash/python/curl/ssh explicitly. Any role may still request the full
+-- write/bash/python/curl/ssh explicitly. Any agent definition may still request the full
 -- set (minus recursive `subagent`) via its `tools:` header.
 local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "git", "websearch", "quickfix", "jev" }
 
@@ -78,7 +78,7 @@ local function subagent_result(parent, child, child_path, reply)
 end
 
 --- Handle a `subagent_request` event: resume an owned child session, or
---- create a new one from a role file.
+--- create a new one from an agent-definition file.
 function M.start(parent, ev)
   local function reply(text)
     local process = servers[parent]
@@ -105,8 +105,8 @@ function M.start(parent, ev)
       return
     end
     local child_fm = frontmatter.parse(vim.fn.readfile(child_path))
-    if not child_fm or not child_fm.role or (ev.role and ev.role ~= "" and ev.role ~= child_fm.role) then
-      reply("error: subagent role mismatch")
+    if not child_fm or not child_fm.agent or (ev.agent and ev.agent ~= "" and ev.agent ~= child_fm.agent) then
+      reply("error: subagent definition mismatch")
       return
     end
     local child = vim.fn.bufadd(child_path)
@@ -127,14 +127,14 @@ function M.start(parent, ev)
     harness().send(child)
     return
   end
-  if type(ev.role) ~= "string" or not ev.role:match("^[%w_-]+$") then
+  if type(ev.agent) ~= "string" or not ev.agent:match("^[%w_-]+$") then
     reply("error: invalid subagent request")
     return
   end
-  local role_file = paths.expand(harness().config.roles_dir) .. "/" .. ev.role .. ".md"
-  local ok_lines, lines = pcall(vim.fn.readfile, role_file)
+  local agent_file = paths.expand(harness().config.agents_dir) .. "/" .. ev.agent .. ".md"
+  local ok_lines, lines = pcall(vim.fn.readfile, agent_file)
   if not ok_lines or #lines == 0 or lines[1] ~= "---" then
-    reply("error: missing role " .. ev.role .. " (" .. role_file .. ")")
+    reply("error: missing agent definition " .. ev.agent .. " (" .. agent_file .. ")")
     return
   end
   local header, closing = {}, nil
@@ -149,12 +149,12 @@ function M.start(parent, ev)
     end
   end
   if not closing then
-    reply("error: invalid role " .. role_file)
+    reply("error: invalid agent definition " .. agent_file)
     return
   end
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
   local provider, model = config.current_combo(parent)
-  -- Pi roles commonly use bare model names; Yap cannot infer their provider.
+  -- Pi agent definitions commonly use bare model names; Yap cannot infer their provider.
   -- Only a provider/model pair overrides the known-working parent combo.
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
@@ -173,7 +173,7 @@ function M.start(parent, ev)
     for name in header.tools:gmatch("[^,%s]+") do
       name = aliases[name] or name
       if not known[name] then
-        reply("error: role " .. ev.role .. " requires unsupported tool " .. name)
+        reply("error: agent definition " .. ev.agent .. " requires unsupported tool " .. name)
         return
       end
       allowed[#allowed + 1] = name
@@ -189,7 +189,7 @@ function M.start(parent, ev)
   local ok, child = pcall(harness().new, {
     path = child_path,
     system = body,
-    role = ev.role,
+    agent = ev.agent,
     provider = provider,
     model = model,
     tools = allowed,
@@ -215,7 +215,7 @@ function M.start(parent, ev)
       child_fm.models,
       child_fm.created_at,
       child_fm.description,
-      child_fm.role,
+      child_fm.agent,
       child_fm.tools,
       child_fm.subagents,
       child_fm.updated_at,

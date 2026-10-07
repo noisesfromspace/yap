@@ -5,7 +5,7 @@
 //
 // The catalog is generated from LiteLLM's community-maintained
 // model_prices_and_context_window.json (direct-provider pricing), trimmed
-// to chat models with a numeric per-token price. It is committed so normal
+// to language models with a numeric per-token price. It is committed so normal
 // builds and runs stay offline; refresh it with:
 //
 //	go generate ./agent/price

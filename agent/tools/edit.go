@@ -89,7 +89,7 @@ func init() {
 				return "", "", err
 			}
 			ui := utils.UnifiedDiff(a.Path, orig, content)
-			result := fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(a.Edits), a.Path)
+			result := fmt.Sprintf("Successfully replaced %d edit(s) in %s.", len(a.Edits), a.Path)
 			if note != "" {
 				result = note + "\n" + result
 			}

@@ -21,7 +21,7 @@ end
 
 --- Find a buffer by name, or create one (unlisted) with that name.
 --- Reuse comes first: naming a fresh buffer identically to a leftover
---- would E95 (the chat buffer may have been wiped and reopened). Returns
+--- would E95 (the session buffer may have been wiped and reopened). Returns
 --- the buffer and whether it was freshly created.
 function M.find_or_create_buffer(name, listed, scratch)
   for _, b in ipairs(vim.api.nvim_list_bufs()) do

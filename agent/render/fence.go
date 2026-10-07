@@ -10,7 +10,7 @@ import (
 // result is raw content (read/bash) or extracted content (fetch), or
 // ok=false for tools whose result is a short confirmation (write/edit)
 // or an error message — those stay bare. Content-bearing results live in
-// the chat buffer, which is markdown: raw file content or command output
+// the session buffer, which is markdown: raw file content or command output
 // gets parsed by markdown_inline (links, emphasis, headings, <hr>) and
 // picks up stray styling. Wrapping it in a fence renders it as code
 // instead.

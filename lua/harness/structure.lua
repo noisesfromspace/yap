@@ -32,14 +32,14 @@ local function fence_run(line)
   return c, n, rest:sub(n + 1)
 end
 
--- One O(n) forward pass over the buffer produces the structural blocks the
+-- One O(n) forward pass over the buffer produces the structural units the
 -- three views fold. Fences and multi-line HTML comments are tracked so a
 -- fake `# @user` inside a fenced tool result, or a `-->` inside a fence,
 -- can't split the structure. This mirrors the old classify() state machine
--- but emits block ranges instead of per-line level strings.
+-- but emits fold ranges instead of per-line level strings.
 --
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
---   details  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
+--   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
 local model_cache = {} -- buf -> { tick, parse }
 
@@ -51,7 +51,7 @@ local function parse(buf)
   end
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local headings, details = {}, {}
+  local headings, regions = {}, {}
   local region, fence, comment = nil, nil, nil
   local tool
   local function end_tool(finish)
@@ -71,8 +71,8 @@ local function parse(buf)
       -- Inside a multi-line HTML comment: raw text until a bare `-->`
       -- (a ``` inside a comment is NOT a fence).
       if line:match("^%-%->%s*$") then
-        if comment.detail then
-          comment.detail.finish = i
+        if comment.region then
+          comment.region.finish = i
         end
         comment = nil
       end
@@ -89,10 +89,10 @@ local function parse(buf)
       elseif line:match(TOOL_OPEN) and region ~= "tool" then
         end_tool(i - 1)
         local d = { kind = "tool", start = i }
-        details[#details + 1] = d
+        regions[#regions + 1] = d
         tool, region = d, "tool"
         -- Pretty JSON headers are comments too: fence/heading-looking
-        -- argument lines must not change the surrounding block structure.
+        -- argument lines must not change the surrounding region structure.
         if not line:find("-->", 1, true) then
           comment = { kind = "tool_inner" }
         end
@@ -104,8 +104,8 @@ local function parse(buf)
         else
           local kind = line:match("yap:(%a+)") or "comment"
           local d = { kind = kind, start = i }
-          details[#details + 1] = d
-          comment = { kind = kind, detail = d }
+          regions[#regions + 1] = d
+          comment = { kind = kind, region = d }
         end
       elseif line:match(TOOL_CLOSE) then
         end_tool(i)
@@ -115,7 +115,7 @@ local function parse(buf)
     end
   end
 
-  local p = { headings = headings, details = details, count = #lines }
+  local p = { headings = headings, regions = regions, count = #lines }
   model_cache[buf] = { tick = tick, parse = p }
   return p
 end

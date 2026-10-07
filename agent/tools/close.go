@@ -4,7 +4,7 @@ package tools
 // performs no Go-side action, it only returns a confirmation. The Neovim
 // side sees the live tool_call event and closes the session buffer once the
 // turn has fully completed and the session file has been saved, so the
-// request survives as a persisted tool block but never replays on reopen.
+// request survives as a persisted tool region but never replays on reopen.
 type closeArgs struct{}
 
 func init() {
