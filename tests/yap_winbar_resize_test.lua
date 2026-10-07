@@ -431,9 +431,8 @@ assert(
   vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
   "model text should remain italic inside its island"
 )
--- Gutter alignment: the state icon centers in the line-number gutter and the
--- rollup island's left cap overhangs the text edge only when the gutter is
--- more than 3 columns wide.
+-- Gutter alignment: the state icon (including the running animation) stays
+-- centered in the gutter while the first rollup cap starts at the text edge.
 do
   local g_target = vim.api.nvim_create_buf(false, true)
   local g_other = vim.api.nvim_create_buf(false, true)
@@ -450,22 +449,42 @@ do
   local function textoff()
     return vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].textoff
   end
-  local function cap_overhang_cols()
+  local function positions()
     local rendered =
       vim.api.nvim_eval_statusline(yap.winbar(g_target), { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    local at = assert(rendered:find(icons.cap_l, 1, true), "rollup cap missing: " .. rendered)
-    return vim.fn.strdisplaywidth(rendered:sub(1, at - 1))
+    local cap = assert(rendered:find(icons.cap_l, 1, true), "rollup cap missing: " .. rendered)
+    local state_icon = state.running[g_target] and spinner_frames[1] or icons.idle
+    local icon_at
+    if state.running[g_target] then
+      for _, frame in ipairs(spinner_frames) do
+        icon_at = rendered:find(frame, 1, true)
+        if icon_at then
+          state_icon = frame
+          break
+        end
+      end
+    else
+      icon_at = rendered:find(state_icon, 1, true)
+    end
+    assert(icon_at, "state icon missing: " .. rendered)
+    local icon_col = vim.fn.strdisplaywidth(rendered:sub(1, icon_at - 1))
+    local cap_col = vim.fn.strdisplaywidth(rendered:sub(1, cap - 1))
+    return icon_col, cap_col
   end
 
-  -- Gutter wider than 3 columns: the cap overhangs one cell into the gutter.
-  vim.wo.numberwidth = 4
-  assert(textoff() == 4, "expected a 4-column gutter")
-  assert(cap_overhang_cols() == textoff() - 1, "icon not centered / island cap not overhanging the gutter")
+  for _, gutter_width in ipairs({ 3, 4, 5 }) do
+    vim.wo.numberwidth = gutter_width
+    assert(textoff() == gutter_width, "unexpected gutter width")
+    for _, is_running in ipairs({ false, true }) do
+      state.running[g_target] = is_running and {} or nil
+      local icon_col, cap_col = positions()
+      assert(icon_col == math.floor((gutter_width - 1) / 2), "state icon not centered in gutter")
+      assert(cap_col == gutter_width, "rollup cap not flush with text edge")
+      assert(cap_col - icon_col - 1 == (gutter_width == 3 and 1 or 2), "state icon too close to rollup cap")
+    end
+  end
 
-  -- Gutter of exactly 3 columns: the cap stays flush at the text edge.
-  vim.wo.numberwidth = 3
-  assert(textoff() == 3, "expected a 3-column gutter")
-  assert(cap_overhang_cols() == textoff(), "island cap should not overhang a 3-column gutter")
+  state.running[g_target] = nil
 
   vim.wo.number = false
   state.awaiting[g_other] = nil

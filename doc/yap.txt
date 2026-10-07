@@ -1119,10 +1119,10 @@ with `nerd_font = false` it is the typographic sparkle marks. When the window is
 (a generating session needs no attention) and the rollup island and
 description disappear too; only the buffer's own state icon remains, so
 a session awaiting your reply or stuck in an error is still visible from
-another window. When the gutter is more than three columns wide, the
-rollup island's left cap overhangs the text edge by one cell; with a
-narrower gutter it sits flush instead. The description and everything
-after it stay flush at the text edge. Once a tool has run for 2s its name and elapsed
+another window. The rollup island's left cap starts at the text edge;
+the state icon remains centered in the gutter. The description follows
+preceding items with a two-column gap (or starts at the text edge if first).
+Once a tool has run for 2s its name and elapsed
 time join the shimmer (`bash 12s`); a pending `# @steer` adds `󰇐`. Then
 a raised rollup island totals ALL OTHER yap sessions by state: `N`
 streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.
