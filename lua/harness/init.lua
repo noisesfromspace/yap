@@ -190,6 +190,7 @@ local state = require("harness.state")
 local util = require("harness.util")
 local frontmatter = require("harness.frontmatter")
 local winbar = require("harness.winbar")
+local spinner = require("harness.spinner")
 
 M.winbar = winbar.winbar
 M.overview = winbar.overview
@@ -2074,7 +2075,7 @@ function M.send(buf)
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear.
-  winbar.spinner_start()
+  spinner.start()
   audit_poll_start()
 
   local process = servers[buf]
@@ -2162,7 +2163,7 @@ function M.send(buf)
         live[buf] = nil
         vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
       end
-      winbar.spinner_stop_if_idle()
+      spinner.stop_if_idle()
       audit_poll_stop_if_idle()
       repair_stream_tail(buf)
       if not result.ok then
@@ -2319,7 +2320,7 @@ function M.send(buf)
       end)
     )
     if not ok then
-      winbar.spinner_stop_if_idle()
+      spinner.stop_if_idle()
       audit_poll_stop_if_idle()
       stream_flush[buf] = nil
       report_error(buf, tostring(started))
@@ -2378,7 +2379,7 @@ function M.stop(buf)
     handle:kill(15) -- the exit callback closes the interrupted turn
     servers[buf] = nil
     running[buf] = nil
-    winbar.spinner_stop_if_idle()
+    spinner.stop_if_idle()
     audit_poll_stop_if_idle()
     drain_audit(buf)
     local l = live[buf]
