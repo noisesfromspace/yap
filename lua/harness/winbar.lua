@@ -62,7 +62,12 @@ end
 local function other_session_counts(buf)
   local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0 }
   for b in pairs(sessions) do
-    if b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.b[b].yap and not vim.b[b].yap_subagent_parent then
+    if
+      b ~= buf
+      and vim.api.nvim_buf_is_valid(b)
+      and vim.b[b].yap
+      and not (vim.b[b].yap_subagent_parent or vim.b[b].yap_agent)
+    then
       if running[b] then
         counts.running = counts.running + 1
       elseif errors[b] then

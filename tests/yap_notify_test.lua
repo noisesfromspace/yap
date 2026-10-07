@@ -65,7 +65,9 @@ assert(not yap.winbar(buf):match(icons.waiting .. "%d"), "rollup counts the curr
 assert(yap.overview(buf2) == icons.waiting .. "1", "overview() wrong: " .. tostring(yap.overview(buf2)))
 
 -- A waiting subagent is not an independent item in the rollup; its parent
--- remains the only session counted as needing a reply.
+-- remains the only session counted as needing a reply. A subagent is marked
+-- by yap_subagent_parent while its parent owns it live, and by yap_agent
+-- once reopened from disk, so both markers are excluded.
 local subagent = vim.api.nvim_create_buf(false, true)
 vim.b[subagent].yap = true
 state.sessions[subagent] = true
@@ -74,6 +76,12 @@ state.awaiting[subagent] = true
 assert(
   yap.overview(buf2) == icons.waiting .. "1",
   "waiting subagent was counted separately: " .. tostring(yap.overview(buf2))
+)
+vim.b[subagent].yap_subagent_parent = nil
+vim.b[subagent].yap_agent = "scout"
+assert(
+  yap.overview(buf2) == icons.waiting .. "1",
+  "reopened subagent was counted separately: " .. tostring(yap.overview(buf2))
 )
 state.awaiting[subagent] = nil
 vim.api.nvim_buf_delete(subagent, { force = true })
