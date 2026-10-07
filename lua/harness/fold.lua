@@ -691,7 +691,10 @@ function M.setup_buffer(buf, keys)
   -- normal! and Ex commands are also observed before stream edits/leaving.
   for _, command in ipairs({ "za", "zo", "zc", "zA", "zO", "zC", "zR", "zM", "zr", "zm" }) do
     map(command, function()
-      vim.cmd("normal! " .. (vim.v.count > 0 and tostring(vim.v.count) or "") .. command)
+      -- zo/zc/za raise E490 "No fold found" when the cursor is not on a
+      -- fold (or is already in the target state); silent! keeps that a
+      -- no-op instead of an E5108 Lua stack trace.
+      vim.cmd("silent! normal! " .. (vim.v.count > 0 and tostring(vim.v.count) or "") .. command)
       M.before_change(buf)
     end, "Yap: " .. command)
   end

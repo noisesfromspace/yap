@@ -187,4 +187,32 @@ do
   print("OK za-opened old assistant survives a new reply in view 1")
 end
 
+-- ── native fold commands on a non-fold line are a no-op, not E5108 ──────
+do
+  local buf = buf_with({
+    "# @system",
+    "",
+    "sys",
+    "",
+    "# @user",
+    "",
+    "Q",
+    "",
+  })
+  fold.set_view_level(3) -- nothing folded anywhere
+  vim.api.nvim_win_set_cursor(0, { 2, 0 })
+  local feed = function(keys)
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "mtx", false)
+  end
+  feed("zo")
+  feed("zc")
+  feed("za")
+  feed("zO")
+  feed("zC")
+  local msgs = vim.api.nvim_exec2("messages", { output = true }).output
+  assert(not msgs:find("E5108"), "fold command on a non-fold line raised a Lua error")
+  assert(not msgs:find("E490"), "fold command on a non-fold line raised E490")
+  print("OK native fold commands on non-fold line are a no-op")
+end
+
 print("OK fold_za")
