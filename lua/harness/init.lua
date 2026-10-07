@@ -3212,10 +3212,13 @@ function M.instances(state)
       return prefix .. glyph[item.state] .. " " .. item.text .. (item.child and "" or " (" .. (item.model or item.state) .. ")")
     end,
     preview_item = function(item)
+      if not vim.api.nvim_buf_is_valid(item.buf) then
+        return nil -- a session can close while the picker is open
+      end
       return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))
     end,
   }, function(choice)
-    if choice then
+    if choice and vim.api.nvim_buf_is_valid(choice.buf) and vim.api.nvim_buf_is_loaded(choice.buf) then
       focus_buf(choice.buf)
     end
   end)

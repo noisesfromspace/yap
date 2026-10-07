@@ -60,8 +60,8 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hello", "", "# @
 yap.new() -- current session is included in the general picker
 local captured
 local orig_select = vim.ui.select
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
+vim.ui.select = function(items, opts, on_choice)
+  captured = { items = items, opts = opts, on_choice = on_choice }
 end
 yap.instances()
 vim.ui.select = orig_select
@@ -84,6 +84,28 @@ assert(
   "instances preview wrong: " .. vim.inspect(live_preview)
 )
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
+
+-- A session can be wiped after the picker opens but before a queued preview
+-- or choose callback runs (for example, after close_session completes).
+local closed = yap.new()
+vim.ui.select = function(items, opts, on_choice)
+  captured = { items = items, opts = opts, on_choice = on_choice }
+end
+yap.instances()
+vim.ui.select = orig_select
+local closed_item
+for _, item in ipairs(captured.items) do
+  if item.buf == closed then
+    closed_item = item
+    break
+  end
+end
+assert(closed_item, "closed session missing from picker")
+vim.api.nvim_buf_delete(closed, { force = true })
+assert(captured.opts.preview_item(closed_item) == nil, "closed session should not be previewed")
+captured.on_choice(closed_item) -- must not try to focus an invalid buffer
+captured.on_choice(other_item)
+assert(vim.api.nvim_get_current_buf() == buf, "live picker choice should still focus its session")
 
 -- Open child sessions are a separate picker row, indented beneath their parent.
 local child = yap.new({ role = "scout", hidden = true })
