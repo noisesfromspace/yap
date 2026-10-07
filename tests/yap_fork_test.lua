@@ -47,9 +47,6 @@ for i, item in ipairs(saved_items) do
 end
 assert(source_index and fork_index == source_index + 1, "saved fork not beneath source: " .. vim.inspect(saved_items))
 assert(saved_items[fork_index].text == "  ↳ fork · forked", "saved fork label wrong")
-local renamed_items = require("harness.session").list("renamed")
-assert(renamed_items[1] and renamed_items[1].path == fork and renamed_items[1].text == "fork · forked (parent not shown)",
-  "named fork under unnamed parent missing from renamed history: " .. vim.inspect(renamed_items))
 local captured
 local select = vim.ui.select
 vim.ui.select = function(items)

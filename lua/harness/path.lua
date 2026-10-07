@@ -97,15 +97,11 @@ function M.session_path(buf)
   return vim.b[buf].yap_path
 end
 
--- Auto-generated session names: <timestamp>-<hex> (the directory name). The
--- pattern below is the exact inverse of new_session_path's format string —
--- keep them together, or unnamed sessions leak into the picker / get hidden.
-local DEFAULT_NAME = "^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x$"
-
 --- A fresh session path under `dir`: <dir>/<name>/session.md, with the
---- session named by its directory. `name` (optional) is the session base
---- name; without it an auto-generated timestamp+hex name is used. The
---- session directory is created here (0700), ready for the first write.
+--- session stored in a directory named by `name`. `name` (optional) is the
+--- session base name; without it an auto-generated timestamp+hex name is
+--- used. The session directory is created here (0700), ready for the first
+--- write.
 function M.new_session_path(dir, name)
   name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
   local sdir = dir .. "/" .. name
@@ -113,21 +109,15 @@ function M.new_session_path(dir, name)
   return sdir .. "/session.md"
 end
 
---- The session's name: the directory immediately above the markdown file.
---- Sessions are <dir>/<name>/session.md, so the name is the directory and
---- renaming the directory renames the session everywhere it is displayed.
+--- The session's directory name (the directory immediately above the
+--- markdown file). It is the final fallback identity, not the display name:
+--- the frontmatter `title`/`description` win.
 function M.session_name(path)
   return vim.fn.fnamemodify(path, ":h:t")
 end
 
---- True when the session directory still carries the auto-generated name
---- (never renamed). These are unnamed scratch sessions.
-function M.is_default_name(path)
-  return M.session_name(path):match(DEFAULT_NAME) ~= nil
-end
-
---- The audit view buffer's name; mirrors the session name (its directory)
---- so a renamed session keeps its audit view.
+--- The audit view buffer's name; mirrors the session directory name so a
+--- renamed directory keeps its audit view.
 function M.audit_buf_name(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
   return "yap://" .. M.session_name(path) .. "-audit"

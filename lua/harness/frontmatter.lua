@@ -3,6 +3,7 @@
 -- Scope is deliberately narrow — only durable per-session state lives here:
 --
 --   ---
+--   title: Fix session picker labels
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
@@ -25,7 +26,9 @@
 --     - <sha256>.png
 --   ---
 --
--- `description` is the one-line summary the picker shows; `model` and
+-- `title` is always present (empty by default) and wins over `description`
+-- when you type a value into it; `description` is the generated one-line
+-- summary the picker shows while the title is empty; `model` and
 -- `provider` are the combo to resume with; `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent`/`tools`
@@ -57,7 +60,7 @@ local function is_list_key(k)
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
---- { provider, model, created_cwd, created_at, updated_at, turns, description, agent,
+--- { provider, model, created_cwd, created_at, updated_at, turns, title, description, agent,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...},
 ---   forks = {path,...}, forked_from = path?, subagent_parent = path? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
@@ -93,6 +96,8 @@ function M.parse(lines)
         fm.forked_from = v
       elseif k == "turns" then
         fm.turns = tonumber(v)
+      elseif k == "title" then
+        fm.title = v
       elseif k == "description" then
         fm.description = v
       elseif k == "agent" then
@@ -127,6 +132,7 @@ function M.render(
   model,
   models,
   created_at,
+  title,
   description,
   agent,
   tools,
@@ -140,6 +146,11 @@ function M.render(
   assets
 )
   local lines = { "---" }
+  -- `title` is always written (empty by default) so a hand-edited value sits
+  -- in the buffer ready to fill in; an empty title leaves the generated
+  -- description in charge.
+  local t = title and title:gsub("[\r\n]+", " "):gsub(":%s*$", "") or ""
+  lines[#lines + 1] = (t == "" and "title:" or ("title: " .. t))
   if description and description ~= "" then
     lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
   end
@@ -237,6 +248,7 @@ function M.sync(buf)
     model,
     models,
     created_at,
+    fm and fm.title,
     fm and fm.description,
     fm and fm.agent or vim.b[buf].yap_agent,
     fm and fm.tools or vim.b[buf].yap_tools,
@@ -281,6 +293,7 @@ function M.record_subagent(parent, child_path)
     fm.model,
     fm.models,
     fm.created_at,
+    fm.title,
     fm.description,
     fm.agent,
     fm.tools,

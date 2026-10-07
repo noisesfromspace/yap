@@ -10,7 +10,9 @@ yap.setup({ bin = ROOT .. "/yap", provider = "def", model = "default-m" })
 local buf = yap.new({ provider = "zeta", model = "m1" })
 local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 assert(lines[1] == "---", "new buffer must start with frontmatter: " .. tostring(lines[1]))
+assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid YAML null): " .. tostring(lines[2]))
 local fm = frontmatter.parse(lines)
+assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
@@ -28,7 +30,7 @@ vim.api.nvim_buf_set_lines(
   0,
   e,
   false,
-  frontmatter.render("zeta", "m1", fm.models, created, "Implement session descriptions")
+  frontmatter.render("zeta", "m1", fm.models, created, nil, "Implement session descriptions")
 )
 
 -- 2. parse_buffer ignores the frontmatter (it is not a message)
@@ -47,7 +49,7 @@ assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not append
 local bar = yap.winbar(buf)
 assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
 local long_description = "Improve the session toolbar without crowding out important status information"
-vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, long_description))
+vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, nil, long_description))
 bar = yap.winbar(buf)
 assert(bar:find("Improve the session toolbar without cro…", 1, true), "description not truncated: " .. bar)
 assert(not bar:find(long_description, 1, true), "full description leaked into winbar: " .. bar)
@@ -56,7 +58,7 @@ vim.api.nvim_buf_set_lines(
   0,
   e,
   false,
-  frontmatter.render("alpha", "m2", fm.models, created, "Implement session descriptions")
+  frontmatter.render("alpha", "m2", fm.models, created, nil, "Implement session descriptions")
 )
 
 -- 4. switching to the same combo is a no-op for the history
@@ -94,11 +96,6 @@ assert(
   "all-project label should show decoded cwd: " .. all_items[1].text
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
-local renamed_items = session.list("renamed")
-assert(
-  #renamed_items == 0,
-  "description-labelled auto-named session should not appear in renamed scope: " .. vim.inspect(renamed_items)
-)
 
 -- 7. a legacy file without frontmatter keeps the config default and is
 --    left untouched (open must not inject a dirtying edit)
@@ -120,6 +117,7 @@ local subagents_block = frontmatter.render(
   "m1",
   { "zeta/m1" },
   created,
+  nil,
   nil,
   nil,
   nil,
@@ -148,6 +146,7 @@ local links = frontmatter.parse(
     nil,
     nil,
     nil,
+    nil,
     {},
     nil,
     0,
@@ -164,23 +163,32 @@ assert(
   "links not roundtripped"
 )
 local assets_fm = frontmatter.parse(
-  frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, { "abc123.png", "def456.jpg" })
+  frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, { "abc123.png", "def456.jpg" })
 )
 assert(
   vim.deep_equal(assets_fm.assets, { "abc123.png", "def456.jpg" }),
   "assets not roundtripped: " .. vim.inspect(assets_fm.assets)
 )
 
--- 9. a renamed session keeps its chosen directory name over the description
+-- 9. a `title` wins over the generated description; without a title the
+-- description wins, and the directory name is only the final fallback.
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker/session.md"
 assert(
-  session.label(named_path, "Generated description") == "fix-picker",
-  "named session should use its directory name: " .. session.label(named_path, "Generated description")
+  session.label(named_path, "Pinned title", "Generated description") == "Pinned title",
+  "title should win over description: " .. session.label(named_path, "Pinned title", "Generated description")
 )
 assert(
-  session.label(named_path, "Generated description", "/opt/code/yap") == "/opt/code/yap  fix-picker",
-  "named session label should keep the cwd prefix: "
-    .. session.label(named_path, "Generated description", "/opt/code/yap")
+  session.label(named_path, nil, "Generated description") == "Generated description",
+  "description should win when no title: " .. session.label(named_path, nil, "Generated description")
+)
+assert(
+  session.label(named_path, nil, nil) == "fix-picker",
+  "directory name should be the fallback: " .. session.label(named_path, nil, nil)
+)
+assert(
+  session.label(named_path, "Pinned title", "Generated description", "/opt/code/yap") == "/opt/code/yap  Pinned title",
+  "title label should keep the cwd prefix: "
+    .. session.label(named_path, "Pinned title", "Generated description", "/opt/code/yap")
 )
 
 -- 10. save stamps a turn count from the `# @user` headings

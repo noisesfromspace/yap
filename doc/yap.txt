@@ -110,7 +110,7 @@ gutter on every redraw.
 |yap-keymaps| can be rebound from `setup()`. Keys: `send`, `stop`,
 `change_model`, `change_default_model` (global), `live`, `scratch`, `insert`,
 `insert_here`, `insert_file`, `sessions` (global), `waiting` (global),
-`history` (global), `history_renamed` (global), `help`,
+`history` (global), `help`,
 `next_message`/`prev_message`, `next_user`/`prev_user`,
 `next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
 `next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
@@ -119,8 +119,11 @@ gutter on every redraw.
 the global ones are installed once by `setup()`. Set an entry to `""` to
 disable it.
 
-The session description shown in the winbar (|yap-winbar|) and session
-picker is generated in two stages sharing one `description:` frontmatter key.
+The session name shown in the winbar (|yap-winbar|) and session picker
+comes from a frontmatter `title:` when one is typed in (the field is
+always present, empty by default), otherwise from the generated
+`description:`. The description is produced in two stages
+sharing one `description:` frontmatter key.
 `description_model` (default `openai/gpt-5-nano`) supplies an instant label
 from the first useful request when you start a session; it does not relabel
 every follow-up. `description_answer_model` (default `openai/gpt-5-mini`)
@@ -128,7 +131,8 @@ writes an overall title after each completed turn, based on the user's
 requests in order, with the first request anchoring the session goal. Routine
 commit/close requests are excluded, and assistant/tool output is never title
 context. Set either to "" to disable that stage; the description survives in
-the frontmatter either way.
+the frontmatter either way. A `title:` typed in the frontmatter wins over the
+generated description.
 
 `templates_dir` and `skills_dir` (defaults `~/.config/yap/templates/` and
 `~/.config/yap/skills/`) hold the plain-markdown files inserted by
@@ -267,20 +271,18 @@ the current buffer unless otherwise noted.
                         the copy's `forked_from` frontmatter link them.
 *:YapSessions*
 :YapSessions [scope]  Pick a saved session to resume. scope is `cwd` (the
-                        default, current project), `all` (every project), or
-                        `renamed` (sessions named with |:file|, plus their
-                        forks and subagents). Sessions still on their
-                        auto-generated filename are hidden unless they have
-                        subagents, are unnamed forks, or hold an unsent
-                        `# @user` prompt. Saved subagents appear beneath their
-                        parent; orphan children show `(parent not shown)`.
-                        Open sessions are unlisted (absent from |:ls|); use
-                        `<leader>r`.
+                        default, current project) or `all` (every project).
+                        Sessions without a `title:` or `description:` are
+                        hidden unless they have subagents, are unnamed forks,
+                        or hold an unsent `# @user` prompt. Saved subagents
+                        appear beneath their parent; orphan children show
+                        `(parent not shown)`. Open sessions are unlisted
+                        (absent from |:ls|); use `<leader>r`.
 
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>w, <leader>y, <leader>R
+Set only in yap buffers, except <leader>r, <leader>w, <leader>y
 and <leader>M, which are global (they list sessions or change the default
 model, so they work from any file). Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
@@ -301,7 +303,6 @@ model, so they work from any file). Every binding is a `keymaps` config key
   <leader>w             Pick a session awaiting a reply or manually stopped
                         (waiting()).
   <leader>y             Pick a saved session to resume (history()).
-  <leader>R             Pick only renamed history sessions.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
   <Tab>                 Toggle the fold under the cursor.
@@ -340,6 +341,8 @@ heading is ignored by the parser — that is where the session's model state
 lives, as YAML frontmatter: >
 
   ---
+  title: Fix the session picker
+  description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
   created_cwd: /opt/code/yap
@@ -356,6 +359,10 @@ lives, as YAML frontmatter: >
   ---
 <
 
+`title` is always present (empty by default); typing a value after it wins
+over `description` as the session's display name, and leaving it empty keeps
+the generated `description` in charge. `description` is the generated summary
+shown while the title is empty.
 `provider`/`model` is the combo to resume with; `created_cwd` is the exact working
 directory the session was created in (the session-dir slug is lossy, so this
 is the only exact record); `models` is the ordered history of every combo
@@ -467,8 +474,8 @@ the buffer is the only serialization of the message history — but a session
 is a small file set, not a single file. Each session has its own directory,
 ~/.yap/sessions/<cwd-slug>/<session>/, containing session.md (the
 conversation), audit.jsonl (the audit log), and notes.md (the scratch jotter).
-The session's name is its directory, so renaming the directory renames the
-session. Sessions are saved after every turn exit, including
+The session's display name is its frontmatter `title:` when set, else its
+generated `description:`; the directory is only a fallback identifier. Sessions are saved after every turn exit, including
 backend errors and stops. The file is created when the buffer opens, so a
 fresh session is file-backed from the start; every save goes through
 |:write|, so 'modified', |:w| and the exit prompt behave like any normal
@@ -482,9 +489,9 @@ attached), the same as |:YapSessions| resume.
 
 File operations are the session operations:
 
-  rename the directory    Rename/name the active session; the picker derives
-                          the name from the directory, so it follows for
-                          free (the audit log and notes live inside it).
+  edit the `title:` line  Type a value after the always-present, empty
+                         `title:` frontmatter key to name the session; leave
+                         it empty for the generated description to win.
   |:YapFork|              Copy the current conversation into a new session
                           directory and continue in a separate buffer. The
                           source is left unchanged and its audit log is
@@ -608,7 +615,7 @@ centered in the line-number
 gutter, or, while streaming, an animated beacon that escalates with how long
 the running tool has been grinding (a typographic sparkle with
 `nerd_font = false`). When the window is inactive the beacon, rollup island
-and description disappear; the state icon remains, so a session awaiting your
+and title disappear; the state icon remains, so a session awaiting your
 reply or stuck in an error is still visible from another window.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
@@ -620,8 +627,9 @@ centered); in an inactive bar it stays on the left. Individual folds can
 still be toggled independently (|yap-folding|). Then a rollup island totals
 ALL OTHER yap sessions by state: streaming, awaiting you, stopped, errored,
 idle. It never counts the current buffer and folds subagents into their
-parent. After the island: the session description (truncated to 40 display
-columns). A provider/model island sits centered in the bar; the steer icon
+parent. After the island: the session title (a `title:` frontmatter value
+when set, else the generated description), truncated to 40 display columns.
+A provider/model island sits centered in the bar; the steer icon
 sits immediately left of the model name, with a matching blank on the right
 so the name stays centered. Right: two usage chips and a context-fill meter
 (|yap-winbar-numbers|).

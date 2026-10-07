@@ -284,16 +284,16 @@ state.running[target], state.running[other], state.awaiting[waiting] = nil, nil,
 local inactive_bar = yap.winbar(target)
 local inactive_center = inactive_bar:match("%%=(.-)%%=")
 assert(inactive_center, "inactive session name should occupy the center island: " .. inactive_bar)
-assert(inactive_center:find("inactive%-session"), "inactive session name missing from center: " .. inactive_center)
+assert(inactive_center:find("Generated description"), "inactive session name missing from center: " .. inactive_center)
 assert(
   not inactive_center:find("mock/m1", 1, true),
   "inactive session shows model instead of name: " .. inactive_center
 )
-assert(
-  not inactive_bar:find("Generated description", 1, true),
-  "inactive session repeats its description: " .. inactive_bar
-)
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
+-- A frontmatter `title` wins over the generated description in the center.
+vim.api.nvim_buf_set_lines(target, 3, 3, false, { "title: Inactive title" })
+local titled_inactive_center = yap.winbar(target):match("%%=(.-)%%=")
+assert(titled_inactive_center:find("Inactive title"), "inactive title should win over description: " .. titled_inactive_center)
 -- An inactive session keeps its leftmost state icon (idle/waiting/error/
 -- stopped) so attention states are visible from another window, but drops
 -- the busy beacon: a generating session needs no attention.

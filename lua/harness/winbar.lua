@@ -111,15 +111,16 @@ function M.seed_awaiting(buf)
   end
 end
 
---- The un-truncated frontmatter description for a buffer, cached per
---- changedtick. The winbar re-evaluates on every screen draw, and the
---- description only changes when the buffer is edited, so re-reading and
---- re-parsing the frontmatter each redraw is wasted work.
-local desc_cache = {} -- buf -> { tick, full }
+--- The un-truncated frontmatter title for a buffer: `title` when set, else
+--- the generated `description`. Cached per changedtick; the winbar
+--- re-evaluates on every screen draw and the title only changes when the
+--- buffer is edited, so re-reading and re-parsing the frontmatter each
+--- redraw is wasted work.
+local title_cache = {} -- buf -> { tick, full }
 
-local function full_description(buf)
+local function full_title(buf)
   local tick = vim.api.nvim_buf_get_changedtick(buf)
-  local c = desc_cache[buf]
+  local c = title_cache[buf]
   if c and c.tick == tick then
     return c.full
   end
@@ -127,11 +128,13 @@ local function full_description(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
   if lines[1] and lines[1]:match("^%-%-%-%s*$") then
     local fm = frontmatter.parse(lines)
-    if fm and fm.description and fm.description ~= "" then
+    if fm and fm.title and fm.title ~= "" then
+      full = fm.title
+    elseif fm and fm.description and fm.description ~= "" then
       full = fm.description
     end
   end
-  desc_cache[buf] = { tick = tick, full = full }
+  title_cache[buf] = { tick = tick, full = full }
   return full
 end
 
@@ -148,12 +151,12 @@ local function truncate_display(text, max)
   return truncated .. "…"
 end
 
---- The session description for the winbar, truncated to `max` display
---- columns so a long phrase cannot crowd out the right-hand usage/state
---- chips. The full description is cached (see full_description); only the
---- cheap width truncation runs per call.
-local function winbar_description(buf, max)
-  local d = full_description(buf)
+--- The session title for the winbar, truncated to `max` display columns so
+--- a long phrase cannot crowd out the right-hand usage/state chips. The
+--- full title is cached (see full_title); only the cheap width truncation
+--- runs per call.
+local function winbar_title(buf, max)
+  local d = full_title(buf)
   return d and truncate_display(d, max or 40) or nil
 end
 
@@ -332,9 +335,9 @@ local function render_winbar(buf)
       end
     end
 
-    local desc = not inactive and winbar_description(buf, desc_max) or nil
-    if desc then
-      add_item({ seg(desc, "Description", false, true) })
+    local title = not inactive and winbar_title(buf, desc_max) or nil
+    if title then
+      add_item({ seg(title, "Description", false, true) })
     end
 
     if has_item then
@@ -499,7 +502,7 @@ local function render_winbar(buf)
     if show_model then
       local text = provider .. "/" .. model
       if inactive then
-        local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
+        local label = require("harness.session").label(vim.b[buf].yap_path, nil, full_title(buf))
         text = truncate_display(label, 40)
       end
       local show_steer = not inactive and steer[buf] ~= nil
@@ -640,10 +643,10 @@ function M.winbar(buf)
   return render_winbar(buf)
 end
 
---- Drop a buffer's cached description (BufWipeout). The changedtick check
---- already invalidates on buffer-number reuse; this releases the entry sooner.
+--- Drop a buffer's cached title (BufWipeout). The changedtick check already
+--- invalidates on buffer-number reuse; this releases the entry sooner.
 function M.clear_desc(buf)
-  desc_cache[buf] = nil
+  title_cache[buf] = nil
 end
 
 --- The herdr-style rollup for a statusline/tabline: `<waiting icon>N` when

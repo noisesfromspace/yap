@@ -357,46 +357,57 @@ assert(
 )
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
 
--- A named parent keeps its auto-named children in renamed history, while a
--- custom-named orphan child is discoverable as a typed root.
+-- A frontmatter title wins over the generated description for saved and
+-- open sessions; a child still prefers its own title over the task when one
+-- is present.
 local dir = require("harness.path").session_dir(vim.fn.getcwd())
-local named_parent = yap.new({ path = dir .. "/named-history-parent/session.md" })
-local named_parent_path = vim.b[named_parent].yap_path
-local named_child = yap.new({ agent = "scout", hidden = true })
-local named_child_path = vim.b[named_child].yap_path
-vim.api.nvim_buf_set_lines(named_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
-vim.api.nvim_buf_set_lines(named_child, 3, 3, false, { "description: Generated follow-up description", "subagent_parent: " .. named_parent_path })
-session.save(named_child)
-vim.api.nvim_buf_set_lines(named_parent, 3, 3, false, { "subagents:", "  - " .. named_child_path })
-session.save(named_parent)
-local orphan = yap.new({ path = dir .. "/named-history-orphan/session.md", agent = "scout", hidden = true })
-local orphan_path = vim.b[orphan].yap_path
-vim.api.nvim_buf_set_lines(orphan, -1, -1, false, { "orphan task" })
-session.save(orphan)
-local renamed = session.list("renamed")
-local positions = {}
-for i, item in ipairs(renamed) do
-  positions[item.path] = i
+local titled_parent = yap.new({ path = dir .. "/titled-history-parent/session.md" })
+local titled_parent_path = vim.b[titled_parent].yap_path
+local titled_child = yap.new({ agent = "scout", hidden = true })
+local titled_child_path = vim.b[titled_child].yap_path
+-- Type the title into the always-present `title:` line, then add the child's
+-- description and parent link into its frontmatter.
+local function type_title(buf, value)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i, l in ipairs(lines) do
+    if l:match("^title:") then
+      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { "title: " .. value })
+      return
+    end
+  end
+  error("no title line to edit")
 end
-assert(positions[named_parent_path] and positions[named_child_path] == positions[named_parent_path] + 1,
-  "renamed parent lost its child: " .. vim.inspect(renamed))
-assert(renamed[positions[named_child_path]].text == "  ↳ scout · Generated follow-up description",
-  "saved child should prefer its description over the task: " .. vim.inspect(renamed))
-vim.api.nvim_set_current_buf(named_parent)
-local live_named
+vim.api.nvim_buf_set_lines(titled_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
+type_title(titled_child, "Pinned child title")
+vim.api.nvim_buf_set_lines(titled_child, 3, 3, false, { "description: Generated follow-up description", "subagent_parent: " .. titled_parent_path })
+session.save(titled_child)
+type_title(titled_parent, "Pinned parent title")
+vim.api.nvim_buf_set_lines(titled_parent, 3, 3, false, { "subagents:", "  - " .. titled_child_path })
+session.save(titled_parent)
+local titled_items = session.list("cwd")
+local titled_positions = {}
+for i, item in ipairs(titled_items) do
+  titled_positions[item.path] = i
+end
+assert(titled_positions[titled_parent_path] and titled_positions[titled_child_path] == titled_positions[titled_parent_path] + 1,
+  "titled parent lost its child: " .. vim.inspect(titled_items))
+assert(titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
+  "title should win over description: " .. vim.inspect(titled_items))
+assert(titled_items[titled_positions[titled_child_path]].text == "  ↳ scout · Pinned child title",
+  "saved child should prefer its title over description/task: " .. vim.inspect(titled_items))
+vim.api.nvim_set_current_buf(titled_parent)
+local live_titled
 vim.ui.select = function(items, opts)
-  live_named = { items = items, format = opts.format_item }
+  live_titled = { items = items, format = opts.format_item }
 end
 yap.instances()
 vim.ui.select = orig_select
-for _, item in ipairs(live_named.items) do
-  if item.buf == named_child then
-    assert(item.text == "↳ scout · Generated follow-up description", "open child should prefer its description: " .. item.text)
-    assert(not live_named.format(item):find("(m1)", 1, true), "open subagent row repeats its model")
+for _, item in ipairs(live_titled.items) do
+  if item.buf == titled_child then
+    assert(item.text == "↳ scout · Pinned child title", "open child should prefer its title: " .. item.text)
+    assert(not live_titled.format(item):find("(m1)", 1, true), "open subagent row repeats its model")
   end
 end
-assert(positions[orphan_path] and renamed[positions[orphan_path]].text == "scout · orphan task (parent not shown)",
-  "named orphan subagent missing from renamed history: " .. vim.inspect(renamed))
 
 -- The history picker annotates saved sessions that are open with their live
 -- state, including a manually stopped turn.
@@ -480,7 +491,7 @@ assert(all_parent and all_parent:find("^   Preview test") == 1
   and all_parent:find(vim.fn.getcwd(), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
 assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
   and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
-assert(other_row and vim.startswith(other_row, "   other-project"),
-  "other project prefix missing: " .. tostring(other_row))
+assert(other_row and other_row:find("^   Preview test") == 1
+  and other_row:find("/tmp/yap/other/project", 1, true), "other project prefix missing: " .. tostring(other_row))
 
 print("OK session_preview")

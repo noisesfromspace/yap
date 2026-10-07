@@ -98,7 +98,7 @@ still notify.
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
-| `:YapSessions [scope]`                    |             | Resume a saved session (`cwd`, `all`, `renamed`).                  |
+| `:YapSessions [scope]`                    |             | Resume a saved session (`cwd`, `all`).                             |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
 | Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
 | Lua: `instances()`                        | `<leader>r` | Pick another open session.                                         |

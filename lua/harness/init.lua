@@ -1752,23 +1752,23 @@ function M.change_default_model(combo)
   vim.notify("yap: default model for new sessions: " .. combo, vim.log.levels.INFO)
 end
 
---- Session title for the picker: description when present, filename as
---- fallback. Subagents and forks are indented under their parent when it
---- is open. The project cwd is rendered separately by |M.instances|.
+--- Session title for the picker: `title` when set, else `description`,
+--- else the filename. Subagents and forks are indented under their parent
+--- when it is open. The project cwd is rendered separately by |M.instances|.
 live_session_label = function(buf, parent)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
   local e = frontmatter.end_line(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
   local session = require("harness.session")
-  local label = session.label(path, fm and fm.description)
+  local label = session.label(path, fm and fm.title, fm and fm.description)
   local role = fm and fm.agent or vim.b[buf].yap_agent
   if role then
     local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     label = role
       .. " · "
-      .. ((fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
+      .. ((fm and fm.title ~= "" and fm.title) or (fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
   end
   if role and parent then
     return "↳ " .. label
@@ -2094,11 +2094,6 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymaps.history, function()
       M.sessions()
     end, { silent = true, desc = "yap: history" })
-  end
-  if M.config.keymaps.history_renamed ~= "" then
-    vim.keymap.set("n", M.config.keymaps.history_renamed, function()
-      M.sessions("renamed")
-    end, { silent = true, desc = "yap: renamed history" })
   end
   if M.config.keymaps.change_default_model ~= "" then
     vim.keymap.set("n", M.config.keymaps.change_default_model, function()

@@ -82,7 +82,7 @@ vim.api.nvim_create_user_command("YapSessions", function(cmd)
 end, {
   nargs = "?",
   complete = function()
-    return { "all", "renamed" }
+    return { "all" }
   end,
-  desc = "Pick a saved yap session to resume (:YapSessions all for every project, renamed for :file-named sessions only)",
+  desc = "Pick a saved yap session to resume (:YapSessions all for every project)",
 })

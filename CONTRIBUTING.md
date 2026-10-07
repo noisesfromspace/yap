@@ -88,8 +88,8 @@ and churn fold state.)
 
 #### R-session-is-file — Sessions are a small file set; file operations are the session operations
 
-The file is created at buffer creation so a fresh session is file-backed (and
-nameable via `:file`) before the first reply. Saves follow every turn exit,
+The file is created at buffer creation so a fresh session is file-backed
+before the first reply. Saves follow every turn exit,
 including errors and `:YapStop`, and go through `:write!` (not `writefile()`):
 the buffer owns the file, so mtime bookkeeping, `:w`, and E13 all behave
 normally. Every stream exit, including backend errors and `:YapStop`, repairs

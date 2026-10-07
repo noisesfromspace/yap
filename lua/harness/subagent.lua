@@ -216,6 +216,7 @@ function M.start(parent, ev)
       child_fm.model,
       child_fm.models,
       child_fm.created_at,
+      child_fm.title,
       child_fm.description,
       child_fm.agent,
       child_fm.tools,

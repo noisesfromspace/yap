@@ -86,7 +86,6 @@ M.defaults = {
     sessions = "<leader>r",
     waiting = "<leader>w",
     history = "<leader>y",
-    history_renamed = "<leader>R",
     help = "g?",
 
     next_message = "]m",

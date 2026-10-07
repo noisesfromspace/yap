@@ -4,11 +4,12 @@
 -- buffer IS the conversation, so the file is a lossless serialization.
 -- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. Pickers identify sessions by their
--- chosen name (a :file rename) or generated description; unnamed sessions
--- (no description, still on the auto-generated filename) are hidden unless
--- they have subagents or hold an unsent `# @user` prompt (a scheduled
--- prompt); open sessions stay visible in the open-session picker via the
--- filename fallback. Saved subagents appear beneath their parent in history.
+-- frontmatter `title` (always present, empty by default; a typed value wins)
+-- or generated `description`;
+-- unnamed sessions (no title or description) are hidden unless they have
+-- subagents or hold an unsent `# @user` prompt (a scheduled prompt); open
+-- sessions stay visible in the open-session picker via the filename fallback.
+-- Saved subagents appear beneath their parent in history.
 
 local M = {}
 
@@ -92,6 +93,7 @@ local function stamp_updated_at(buf)
     fm.model,
     fm.models,
     fm.created_at,
+    fm.title,
     fm.description,
     fm.agent,
     fm.tools,
@@ -213,6 +215,7 @@ function M.fork(buf, name, running)
         fm.model,
         fm.models,
         created,
+        fm.title,
         fm.description,
         fm.agent,
         fm.tools,
@@ -286,6 +289,7 @@ function M.fork(buf, name, running)
       source_fm.model,
       source_fm.models,
       source_fm.created_at,
+      source_fm.title,
       source_fm.description,
       source_fm.agent,
       source_fm.tools,
@@ -416,18 +420,20 @@ local function slug_cwd(dir)
   return paths.slug_cwd(dir)
 end
 
---- Shared picker identity. A session named with :file keeps that name in
---- every view, over any generated description; only auto-generated filenames
---- fall back to the description (then the filename). Project overviews prefix
---- the cwd so sessions from different worktrees are obvious.
-function M.label(path, description, project_cwd)
+--- Shared picker identity. A non-empty frontmatter `title` wins over the
+--- generated `description`; otherwise the description wins, and the
+--- directory name is only the final fallback. Project overviews prefix the
+--- cwd so sessions from different worktrees are obvious.
+function M.label(path, title, description, project_cwd)
   local name = path and path ~= "" and paths.session_name(path) or nil
-  local named = name ~= nil and not paths.is_default_name(path)
-  local identity = named and name or (description and description ~= "" and description or name or "session")
+  local identity = (title and title ~= "" and title)
+    or (description and description ~= "" and description)
+    or name
+    or "session"
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
---- List saved sessions. scope = "cwd" (default), "all", or "renamed"
+--- List saved sessions. scope = "cwd" (default) or "all"
 --- Items: { path, mtime, text, model, models? } sorted by parent recency;
 --- `model`/`models` come from the session frontmatter.
 function M.list(scope)
@@ -442,9 +448,6 @@ function M.list(scope)
   else
     dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
-  -- "renamed" narrows the history to sessions named with :file (a custom
-  -- filename), as opposed to description-labelled auto-generated names.
-  local renamed_only = scope == "renamed"
 
   local items, children, parents = {}, {}, {}
   for _, dir in ipairs(dirs) do
@@ -455,29 +458,28 @@ function M.list(scope)
       local name = paths.session_name(path)
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
+      local title = fm and fm.title or ""
       local description = fm and fm.description or ""
       local item = {
         path = path,
         mtime = vim.fn.getftime(path),
-        text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
+        text = M.label(path, title, description, scope == "all" and slug_cwd(dir) or nil),
         model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
         models = fm and #fm.models > 1 and fm.models or nil,
         turns = fm and fm.turns,
       }
       if fm and fm.agent then
-        item.text = "↳ " .. fm.agent .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
+        item.text = "↳ " .. fm.agent .. " · " .. ((title ~= "" and title) or (description ~= "" and description) or M.task(lines) or name)
         children[path] = item
       elseif fm and fm.forked_from then
-        item.text = "↳ fork · " .. M.label(path, description)
+        item.text = "↳ fork · " .. M.label(path, title, description)
         children[path] = item
         parents[vim.fs.normalize(path)] = vim.fs.normalize(fm.forked_from)
       elseif
-        (
-          not paths.is_default_name(path)
-          or description ~= ""
-          or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
-          or has_pending_user_text(path, lines)
-        ) and (not renamed_only or not paths.is_default_name(path))
+        title ~= ""
+        or description ~= ""
+        or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
+        or has_pending_user_text(path, lines)
       then
         items[#items + 1] = item
       end
@@ -520,11 +522,9 @@ function M.list(scope)
     add(item, 0)
   end
   -- Preserve discoverability when a parent is missing or excluded by scope.
-  -- In renamed history, only custom-named orphans qualify; descendants of
-  -- named roots are already included by add() regardless of their names.
   local orphans = {}
   for _, child in pairs(children) do
-    if not shown[child.path] and (not renamed_only or not paths.is_default_name(child.path)) then
+    if not shown[child.path] then
       orphans[#orphans + 1] = child
     end
   end
@@ -553,14 +553,10 @@ function M.pick(opts, on_choice)
   local scope = opts.scope or "cwd"
   local items = M.list(scope)
   if #items == 0 then
-    local msg = scope == "renamed" and "yap: no renamed conversations in this project"
-      or "yap: no saved conversations in this scope"
-    vim.notify(msg, vim.log.levels.INFO)
+    vim.notify("yap: no saved conversations in this scope", vim.log.levels.INFO)
     return
   end
-  local scope_label = scope == "all" and "all projects"
-    or scope == "renamed" and "renamed, cwd project"
-    or "cwd project"
+  local scope_label = scope == "all" and "all projects" or "cwd project"
   local projects = {}
   local icon_width = 1
   for _, item in ipairs(items) do
