@@ -3447,6 +3447,13 @@ function M.setup(opts)
       if vim.api.nvim_get_current_buf() ~= buf or not vim.b[buf].yap then
         return
       end
+      -- A blocking command-line prompt (vim.ui.select's inputlist/input)
+      -- keeps the session as the current buffer while the user is really in
+      -- the picker; close quietly like a background turn instead of
+      -- redirecting the user to another session mid-pick.
+      if vim.fn.getcmdtype() ~= "" then
+        return
+      end
       local target = focus_fallback(buf)
       if not target then
         return

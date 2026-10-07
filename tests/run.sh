@@ -35,8 +35,8 @@ exitfiles=()
 processed=()
 declare -A mockmap
 
-run() { # name port [mock]
-  local name="$1" port="$2" mock="${3:-}"
+run() { # name port [mock] [dofile]
+  local name="$1" port="$2" mock="${3:-}" mode="${4:-}"
   local TEST_DIR="$TESTHOME/$name"
   rm -rf "$TEST_DIR"
   mkdir -p "$TEST_DIR/.config"
@@ -72,10 +72,17 @@ EOF
   # Run nvim in a background subshell and write its exit code to exitfile.
   # Point XDG_CONFIG_HOME at the test dir so the spawned agent binary reads
   # the mock provider config written above instead of the user's real one.
-  (
-    XDG_CONFIG_HOME="$TEST_DIR/.config" XDG_CACHE_HOME="$TEST_DIR/.cache" HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" -l "tests/$name.lua" >"$log" 2>&1
-    echo $? > "$exitfile"
-  ) &
+  if [ "$mode" = "dofile" ]; then
+    (
+      XDG_CONFIG_HOME="$TEST_DIR/.config" XDG_CACHE_HOME="$TEST_DIR/.cache" HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" "+lua dofile('$ROOT/tests/$name.lua')" +qa >"$log" 2>&1
+      echo $? > "$exitfile"
+    ) &
+  else
+    (
+      XDG_CONFIG_HOME="$TEST_DIR/.config" XDG_CACHE_HOME="$TEST_DIR/.cache" HOME="$TEST_DIR" nvim --headless -u NONE --cmd "set rtp^=$ROOT" -l "tests/$name.lua" >"$log" 2>&1
+      echo $? > "$exitfile"
+    ) &
+  fi
   local pid=$!
 
   pids+=("$pid")
@@ -94,6 +101,7 @@ run yap_notify_test 18132 mock_slow.py
 run yap_block_test 18132 mock_slow.py
 run yap_toolparse_test 18133 mock_tool.py
 run yap_close_session_test 18142 mock_close.py
+run yap_close_session_picker_test 18142 mock_close.py dofile
 run yap_e2e_livetool 18141 mock_stream.py
 run yap_e2e_streamfold 18135 mock_write.py
 run yap_audit_test 18135 mock_write.py
