@@ -207,6 +207,7 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
     "YapIsland",
     "YapIslandBusy",
     "YapIslandNeeds",
+    "YapIslandUprightNeeds",
     "YapIslandError",
     "YapIslandIdle",
     "YapIslandCursiveModel",

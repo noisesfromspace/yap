@@ -384,14 +384,12 @@ local function render_winbar(buf)
       add_item({ seg(icon, icon_group) })
     end
 
-    -- Tool text and steering belong to the text region, ahead of the rollup.
+    -- Tool text belongs to the text region, ahead of the rollup. A pending
+    -- steer icon instead joins the model island (see center_segments).
     if not inactive and spinner then
       local l = live and live[buf]
       if l and os.time() - l.since >= 2 then
         add_item({ seg(l.name .. " " .. (os.time() - l.since) .. "s", "BusyText") })
-      end
-      if steer[buf] then
-        add_item({ seg(icons.steer, "Needs") })
       end
     end
 
@@ -577,22 +575,33 @@ local function render_winbar(buf)
 
   -- The model island is centered independently of left and right content.
   -- Inactive sessions show their session identity instead of a model that is
-  -- only useful while that session is selected.
+  -- only useful while that session is selected. A pending steer icon sits
+  -- immediately left of the model; a matching blank cell on the right keeps
+  -- the model name on the true midpoint.
   local function center_segments()
     local text = provider .. "/" .. model
     if inactive then
       local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
       text = truncate_display(label, 40)
     end
-    return {
+    local show_steer = not inactive and steer[buf] ~= nil
+    local center = {
       seg(" ", "Idle"),
       seg("", "IslandCap"),
       seg(" ", "Count", true),
-      seg(text, "Model", true, true),
-      seg(" ", "Count", true),
-      seg("", "IslandCap"),
-      seg(" ", "Idle"),
     }
+    if show_steer then
+      center[#center + 1] = seg(icons.steer, "Needs", true)
+      center[#center + 1] = seg(" ", "Count", true)
+    end
+    center[#center + 1] = seg(text, "Model", true, true)
+    center[#center + 1] = seg(" ", "Count", true)
+    if show_steer then
+      center[#center + 1] = seg("  ", "Count", true)
+    end
+    center[#center + 1] = seg("", "IslandCap")
+    center[#center + 1] = seg(" ", "Idle")
+    return center
   end
 
   -- The state icon now lives on the left (see left_segments); the right
@@ -793,6 +802,7 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandUprightNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandError", { fg = attr("YapError", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandIdle", { fg = attr("YapIdle", "fg") or fg, bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes

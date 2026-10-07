@@ -1147,12 +1147,15 @@ another window. The rollup island's left cap starts at the text edge;
 the state icon remains centered in the gutter. The description follows
 preceding items with a two-column gap (or starts at the text edge if first).
 Once a tool has run for 2s its name and elapsed
-time join the shimmer (`bash 12s`); a pending `# @steer` adds `󰇐`. Then
+time join the shimmer (`bash 12s`); a pending `# @steer` adds `󰇐` to the
+model island instead. Then
 a raised rollup island totals ALL OTHER yap sessions by state: `N`
 streaming, `󰫁N` awaiting you, `󰓛N` stopped, `󰚌N` errored, and `󰝦N` idle.
 It never counts the current buffer and folds subagents into their parent.
 After the island: the session description (truncated to 40 display
-columns). A provider/model island sits centered in the middle of the bar.
+columns). A provider/model island sits centered in the middle of the bar;
+the steer icon sits immediately left of the model name, with a matching
+blank on the right so the model name stays centered.
 Right: two usage chips and a context-fill meter
 (|yap-winbar-numbers|).
 
