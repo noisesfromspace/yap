@@ -147,102 +147,8 @@ local document = require("harness.document")
 local fold = require("harness.fold")
 local audit = require("harness.audit")
 
---- End line (0-based, exclusive) of the frontmatter block, or nil when
---- the buffer has none. Only the model state lives there (see
---- harness.frontmatter); token/cost totals stay in the winbar.
-local function frontmatter_end(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
-  if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
-    return nil
-  end
-  for i = 2, #lines do
-    if lines[i]:match("^%-%-%-%s*$") then
-      return i
-    end
-  end
-  return nil
-end
-
---- Rewrite the buffer's frontmatter to match the current combo, growing
---- the `models` history. Called only from new()/change_model() — never
---- during a send (R7: sends only append).
-local function sync_frontmatter(buf)
-  local provider, model = config.current_combo(buf)
-  local combo = provider .. "/" .. model
-  local e = frontmatter_end(buf)
-  local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  local models = fm and fm.models or {}
-  if #models == 0 and fm and fm.provider and fm.model then
-    table.insert(models, fm.provider .. "/" .. fm.model)
-  end
-  if models[#models] ~= combo then
-    table.insert(models, combo)
-  end
-  local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
-  -- The exact cwd is recorded once, when the session is created; later
-  -- rewrites preserve it (the session dir slug alone is lossy).
-  local cwd = (fm and fm.cwd) or vim.b[buf].yap_project_cwd
-  local block = frontmatter.render(
-    provider,
-    model,
-    models,
-    created_at,
-    fm and fm.description,
-    fm and fm.role or vim.b[buf].yap_role,
-    fm and fm.tools or vim.b[buf].yap_tools,
-    fm and fm.subagents,
-    fm and fm.updated_at,
-    fm and fm.turns,
-    cwd,
-    fm and fm.forked_from,
-    fm and fm.forks,
-    fm and fm.subagent_parent
-  )
-  if e then
-    vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
-  else
-    table.insert(block, "")
-    vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
-  end
-end
-
---- Append a subagent session path to the parent's frontmatter `subagents`
---- list. It records ownership for tool follow-ups; saved children also appear
---- in the session history picker.
-local function record_subagent(parent, child_path)
-  local e = frontmatter_end(parent)
-  if not e then
-    return
-  end
-  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false))
-  if not fm then
-    return
-  end
-  local subagents = fm.subagents or {}
-  for _, p in ipairs(subagents) do
-    if p == child_path then
-      return
-    end
-  end
-  subagents[#subagents + 1] = child_path
-  local block = frontmatter.render(
-    fm.provider,
-    fm.model,
-    fm.models,
-    fm.created_at,
-    fm.description,
-    fm.role,
-    fm.tools,
-    subagents,
-    fm.updated_at,
-    fm.turns,
-    fm.cwd,
-    fm.forked_from,
-    fm.forks,
-    fm.subagent_parent
-  )
-  vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
-end
+-- Frontmatter read/write (end_line, parse, render, sync, record_subagent)
+-- lives in harness.frontmatter.
 
 -- Conversation document parsing/appending lives in harness.document.
 
@@ -1668,7 +1574,7 @@ local function title_messages(messages)
 end
 
 local function current_description(buf)
-  local e = frontmatter_end(buf)
+  local e = frontmatter.end_line(buf)
   if not e then
     return ""
   end
@@ -1781,7 +1687,7 @@ Return only the title.]]
       if #description > 60 then
         description = description:sub(1, 59):gsub("%s+%S*$", "") .. "…"
       end
-      local e = frontmatter_end(buf)
+      local e = frontmatter.end_line(buf)
       if not e then
         return
       end
@@ -2445,7 +2351,7 @@ function M.new(opts)
   end
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  sync_frontmatter(buf) -- prepend the session's model state (R1: it lives in the buffer)
+  frontmatter.sync(buf) -- prepend the session's model state (R1: it lives in the buffer)
   -- Create the session file up front so the buffer is file-backed from
   -- the start: `:file` names the session immediately, before the first
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
@@ -2648,7 +2554,7 @@ start_subagent = function(parent, ev)
   vim.b[child].yap_subagent_parent = parent
   vim.b[child].yap_subagent_task = ev.task
   local child_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(child, 0, -1, false))
-  local ending = frontmatter_end(child)
+  local ending = frontmatter.end_line(child)
   vim.api.nvim_buf_set_lines(
     child,
     0,
@@ -2673,7 +2579,7 @@ start_subagent = function(parent, ev)
   )
   require("harness.session").save(child)
   subagent_children[parent] = child
-  record_subagent(parent, child_path)
+  frontmatter.record_subagent(parent, child_path)
   subagent_done[child] = subagent_result(parent, child, child_path, reply)
   M.send(child)
 end
@@ -2692,7 +2598,7 @@ adopt = function(buf, path)
   -- Resume the recorded combo; legacy files without frontmatter keep the
   -- config default. Nothing is injected on open — that would dirty the
   -- buffer the moment it is resumed.
-  local e = frontmatter_end(buf)
+  local e = frontmatter.end_line(buf)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
     if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
@@ -2795,7 +2701,7 @@ function M.change_model(combo)
   end
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
-  sync_frontmatter(buf) -- persist: combo + used-models history live in the buffer
+  frontmatter.sync(buf) -- persist: combo + used-models history live in the buffer
   -- A running turn adopts the new combo at its next model boundary; an idle
   -- buffer just uses it on the next send. The backend keeps native tool
   -- history intact, so no stop-and-resend is needed.
@@ -2835,7 +2741,7 @@ end
 live_session_label = function(buf, parent)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
-  local e = frontmatter_end(buf)
+  local e = frontmatter.end_line(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
   local session = require("harness.session")
   local label = session.label(path, fm and fm.description)
@@ -2943,7 +2849,7 @@ local function has_open_child(parent)
       if vim.b[buf].yap_subagent_parent == parent then
         return true
       end
-      local e = frontmatter_end(buf)
+      local e = frontmatter.end_line(buf)
       local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
       if fm and ((fm.forked_from and vim.fs.normalize(fm.forked_from) == path)
         or (fm.subagent_parent and vim.fs.normalize(fm.subagent_parent) == path)) then
@@ -2981,7 +2887,7 @@ function M.instances(state)
   end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local subagent_parent = vim.b[b].yap_subagent_parent
-    local e = vim.b[b].yap and frontmatter_end(b)
+    local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
     subagent_parent = subagent_parent or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
     local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
