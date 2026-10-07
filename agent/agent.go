@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"boers.email/yap/agent/decide"
@@ -537,6 +538,8 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 
 	ctx := context.Background()
+	pool := &taskPool{tasks: make(map[string]*backgroundTask)}
+	defer func() { pool.wait(nil) }() // also reap tasks on model errors or iteration limit
 	for iter := 0; ; iter++ {
 		// Mid-turn injections land at the next model boundary — after the
 		// previous round's tool batch, before the next generation. Steering
@@ -630,6 +633,20 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 
 		if len(t.calls) == 0 {
+			if ids := pool.pending(); len(ids) > 0 {
+				// A final answer cannot race outstanding checks. Complete them,
+				// show their output chronologically, and let the model revise its
+				// answer with actual results rather than treating launch as success.
+				results := pool.wait(ids)
+				injection := "Background task results (automatic turn-scoped wait):\n" + render.FenceResult("bash", "", results) + "\nReview these before your final answer."
+				pad()
+				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", injection)
+				out.Flush()
+				wrote, trail = true, 2
+				messages = append(messages, t.responseMessages...)
+				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: injection}}})
+				continue
+			}
 			if label, ok := detectTextToolCall(t.text); ok {
 				// The model wrote a tool call as prose (flattened transcript
 				// form, or <invoke> XML) instead of a native tool call, so
@@ -663,7 +680,34 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		// signatures, thought signatures, reasoning_content) intact — then
 		// execute each call and append native tool-result messages.
 		messages = append(messages, t.responseMessages...)
+		// Only an entire read-only round can run concurrently. Collect before
+		// emitting regions so Markdown, audit IDs and native results stay in
+		// model call order regardless of completion order.
+		parallel := len(t.calls) > 1
 		for _, call := range t.calls {
+			tier, hardReason := tools.Assess(call.Name, call.Input)
+			if !parallelTools[call.Name] || !allowedTool(call.Name, req.Tools) || tier != utils.TierSilent || hardReason != "" {
+				parallel = false
+				break
+			}
+		}
+		results := make([]taskResult, len(t.calls))
+		if parallel {
+			var wg sync.WaitGroup
+			limit := make(chan struct{}, maxConcurrentTasks)
+			for i, call := range t.calls {
+				wg.Add(1)
+				limit <- struct{}{}
+				go func(i int, call llm.ToolCall) {
+					defer wg.Done()
+					defer func() { <-limit }()
+					tool, _ := tools.Get(call.Name)
+					results[i] = runTool(tool, call)
+				}(i, call)
+			}
+			wg.Wait()
+		}
+		for i, call := range t.calls {
 			// Flush the session-visible call before publishing its audit event.
 			// stdout/stderr are separate pipes, so this is the only causal
 			// boundary Yap can establish before the tool starts.
@@ -674,73 +718,14 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.
 			utils.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": utils.Scrub(string(call.Input))})
-			tool, ok := tools.Get(call.Name)
-			if req.Tools != nil {
-				permitted := false
-				for _, name := range *req.Tools {
-					if name == call.Name {
-						permitted = true
-						break
-					}
-				}
-				if !permitted {
-					ok = false
-				}
-			}
-			var result, ui string
-			if !ok {
-				result = "error: unknown tool " + call.Name
-				render.EmitToolResult(out, result, "")
+			var value taskResult
+			if parallel {
+				value = results[i]
 			} else {
-				// Pre-execution alert gate (see utils/alert.go): decide whether
-				// to run, warn (advisory), or interrupt for approval before the
-				// tool executes.
-				tier, hardReason := tools.Assess(call.Name, call.Input)
-				state := gateState(call.Name, call.Input, t, messages)
-				if state["file_source_blocked"] == true {
-					hardReason = "Python script is in a protected secret path; inspect the file before approving"
-				} else if state["file_source_truncated"] == true {
-					hardReason = "Python script exceeds the 16 KiB decision window; inspect the full file before approving"
-				}
-				run := true
-				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, state)
-				switch dec.Outcome {
-				case utils.OutcomeApproval:
-					reason := dec.Reason
-					if m := dec.Metrics(); m != "" {
-						reason += " (" + m + ")"
-					}
-					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, reason)
-					if aerr != nil {
-						result = "error: " + aerr.Error()
-						run = false
-					} else if !approved {
-						result = "error: " + call.Name + " rejected by user"
-						run = false
-					}
-				case utils.OutcomeAdvisory:
-					category, categoryProb := dec.SeverityCategory()
-					utils.EmitEvent(map[string]any{
-						"type": "alert_advisory", "id": call.ID, "name": call.Name,
-						"reason": dec.Reason, "p_alert": dec.PAlert,
-						"severity": dec.Severity, "confidence": dec.Confidence,
-						"severity_category": category, "severity_category_prob": categoryProb,
-						"severity_breakdown": dec.SeverityBreakdown(),
-					})
-				}
-				if run {
-					var err error
-					result, ui, err = tool.Run(call.Input)
-					if err != nil {
-						result = "error: " + err.Error()
-						ui = ""
-					} else {
-						result = render.FenceResult(call.Name, string(call.Input), result)
-					}
-					result = utils.Scrub(result)
-				}
-				render.EmitToolResult(out, result, ui)
+				value = pool.call(call, t, messages, req.Tools, dm, alertCfg)
 			}
+			result, ui := value.result, value.ui
+			render.EmitToolResult(out, result, ui)
 			utils.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, llm.Message{

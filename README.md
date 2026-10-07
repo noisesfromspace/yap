@@ -35,7 +35,11 @@ Inspired by pi and gptel.
 
 The agent ships with a fixed set of tools. It reads and edits files, runs
 bash, python, and ssh, searches the web, reads GitHub, drives a browser
-with Playwright, and delegates to subagents in separate sessions. Tools run
+with Playwright, and delegates to subagents in separate sessions. Independent
+read-only calls in one round run concurrently (up to four). For slow bash,
+fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
+can continue independent work and later call `wait_tasks` for the result. Yap
+waits for outstanding tasks before a final answer. Tools run
 on your machine with no sandbox; some destructive commands require approval
 first. See `:help yap-tools`.
 

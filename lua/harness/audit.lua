@@ -82,6 +82,10 @@ local function render_event(ev)
   local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" then
     return { { text = "$ " .. flat(ev.command or ev.name or "tool"), hl = HL.command } }, "section"
+  elseif ev.type == "task_start" then
+    return { { text = ("%s task %s started (%s)"):format(ts, flat(ev.id), flat(ev.name)), hl = HL.meta } }, "section"
+  elseif ev.type == "task_end" then
+    return { { text = ("%s task %s %s (%s)"):format(ts, flat(ev.id), flat(ev.status or "settled"), flat(ev.name)), hl = HL.meta } }, "section"
   elseif ev.type == "output" then
     local out = {}
     for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
@@ -532,43 +536,38 @@ end
 --- view buffer (called on the spinner tick, on tool_end, and on process
 --- exit).
 function M.drain(buf)
-  local t, l = audits[buf], state.live[buf]
-  if not t or not l then
+  local t, logs = audits[buf], state.live_logs[buf]
+  if not t or not logs then
     return
   end
-  local fd = vim.uv.fs_open(l.log, "r", 438)
-  if not fd then
-    return
-  end
-  local stat = vim.uv.fs_fstat(fd)
-  if not stat then
-    vim.uv.fs_close(fd)
-    return
-  end
-  local data
-  local room = LIVE_OUTPUT_CAP - (l.out or 0)
-  if stat.size > t.offset and room > 0 then
-    local want = math.min(stat.size - t.offset, room)
-    data = vim.uv.fs_read(fd, want, t.offset)
-    if data then
-      l.out = (l.out or 0) + #data
+  for _, l in pairs(logs) do
+    local fd = vim.uv.fs_open(l.log, "r", 438)
+    if fd then
+      local stat = vim.uv.fs_fstat(fd)
+      if stat then
+        local data
+        local room = LIVE_OUTPUT_CAP - (l.out or 0)
+        if stat.size > (l.offset or 0) and room > 0 then
+          data = vim.uv.fs_read(fd, math.min(stat.size - (l.offset or 0), room), l.offset or 0)
+          if data then
+            l.out = (l.out or 0) + #data
+          end
+        end
+        l.offset = stat.size
+        if data and #data > 0 then
+          M.append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
+        elseif room <= 0 and stat.size > 0 and not l.truncated then
+          l.truncated = true
+          M.append_event(buf, {
+            type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"),
+            data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(
+              LIVE_OUTPUT_CAP, stat.size - LIVE_OUTPUT_CAP
+            ),
+          })
+        end
+      end
+      vim.uv.fs_close(fd)
     end
-  end
-  t.offset = stat.size -- always advance past the read (or skipped) bytes
-  vim.uv.fs_close(fd)
-  if data and #data > 0 then
-    M.append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
-  elseif room <= 0 and stat.size > 0 and not l.truncated then
-    l.truncated = true
-    M.append_event(buf, {
-      type = "output",
-      name = l.name,
-      ts = os.date("%Y-%m-%dT%H:%M:%S"),
-      data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(
-        LIVE_OUTPUT_CAP,
-        stat.size - LIVE_OUTPUT_CAP
-      ),
-    })
   end
 end
 

@@ -420,10 +420,12 @@ A tool call and its result are ONE region inside an assistant message: >
 
   Result text     Exactly what the model received. edit/write tools return
                   short confirmations; read-like tools return (truncated)
-                  content. The header lands BEFORE the tool runs, so the call
-                  (and its arguments) is visible while it executes and the gap
-                  to the result represents execution time. Live output is
-                  followed via |:YapLive|, never written into the buffer.
+                  content. Normally the header lands BEFORE the tool runs,
+                  so its arguments are visible during execution. In a
+                  parallel read-only round, calls run together and their
+                  completed regions are emitted in original call order.
+                  Live bash output is followed via |:YapLive|, never written
+                  into the buffer.
 
   <!-- yap:ui   Optional display-only payload: a rendered unified diff for
                   edits and writes (creates included, as an all-`+` diff),
@@ -775,9 +777,25 @@ bounded at 300 iterations per send.
 
 Built-ins: ls, read, fetch, bash, python, curl, git, write, edit, search,
 glob, websearch, github, playwright, quickfix, ssh, jev, close_session,
-subagent.
+subagent, start_task, wait_tasks.
 
 Highlights:
+
+  - Multiple independent read-only calls in the same model round (ls, read,
+    search, glob, git, fetch, websearch) execute concurrently, up to four at
+    once. Yap waits for all of them and renders regions/results in call order.
+    Mixed rounds and side-effecting tools retain sequential execution.
+  - start_task starts bash, fetch or websearch in the background after the
+    usual tool safety gate, returning a turn-local task ID. The agent can do
+    independent work, then use wait_tasks with IDs (or omit IDs for all)
+    to block until results are ready. At most four tasks may be outstanding.
+    Do not infer success from a launch acknowledgment. Tasks cannot outlive
+    the current turn: if the model tries to finish with tasks pending, Yap
+    waits and gives the results to the model before the final reply. Stopping
+    the turn stops tool subprocesses. The session shows launch/wait regions;
+    :YapLive shows live bash output and task start/end events. Tasks do not
+    persist across reopened sessions; edits and subagents cannot be started
+    in the background.
 
   - search and glob shell out to ripgrep (rg): search returns
     path:line:content matches, glob lists files (gitignore-aware); both

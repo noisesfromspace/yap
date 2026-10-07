@@ -131,6 +131,8 @@ For GitHub searches and reading GitHub code, repositories, issues, pull requests
 
 Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system message names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
 
+For independent slow work, `start_task` can launch bash, fetch, or websearch and return a task ID. Continue unrelated work, then call `wait_tasks` once to get the result before claiming success. If nothing useful can overlap, use the ordinary tool directly. Tasks end within this turn; do not start conflicting commands in parallel. Multiple independent read-only calls in one model response run concurrently automatically.
+
 ## Subagents
 
 - `subagent` takes an `agent` (from `agents_dir`, default `~/.yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. A bare model name inherits the parent's provider/model.
@@ -280,13 +282,16 @@ local function handle_event(buf, json_line)
   end
   ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
-    live[buf] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0 }
-    local t = audit.ensure(buf)
-    t.offset = 0
+    local logs = state.live_logs[buf] or {}
+    state.live_logs[buf] = logs
+    logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0, offset = 0 }
+    live[buf] = logs[ev.log]
     audit.append_event(buf, ev)
   elseif ev.type == "tool_end" then
     audit.drain(buf) -- the log is complete; capture the final bytes
-    live[buf] = nil
+    local logs = state.live_logs[buf] or {}
+    logs[ev.log] = nil
+    live[buf] = next(logs) and select(2, next(logs)) or nil
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
@@ -384,6 +389,8 @@ local function handle_event(buf, json_line)
     audit.append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
     audit.append_event(buf, ev) -- full result; bash output already streamed above
+  elseif ev.type == "task_start" or ev.type == "task_end" then
+    audit.append_event(buf, ev)
   elseif ev.type == "retry" then
     audit.append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "steer" then
@@ -1118,12 +1125,12 @@ function M.send(buf)
       stderr_chunks = {}
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
-      local l = live[buf]
       audit.drain(buf) -- final bytes; a killed tool never sent tool_end
-      if l then
-        live[buf] = nil
-        vim.npcall(os.remove, l.log) -- a killed tool leaves a temp log behind
+      for path in pairs(state.live_logs[buf] or {}) do
+        vim.npcall(os.remove, path)
       end
+      state.live_logs[buf] = nil
+      live[buf] = nil
       spinner.stop_if_idle()
       audit.poll_stop_if_idle()
       repair_stream_tail(buf)
@@ -1328,11 +1335,11 @@ function M.stop(buf)
     spinner.stop_if_idle()
     audit.poll_stop_if_idle()
     audit.drain(buf)
-    local l = live[buf]
-    if l then
-      live[buf] = nil
-      vim.npcall(os.remove, l.log)
+    for path in pairs(state.live_logs[buf] or {}) do
+      vim.npcall(os.remove, path)
     end
+    state.live_logs[buf] = nil
+    live[buf] = nil
     local f = stream_flush[buf]
     if f then
       f()
