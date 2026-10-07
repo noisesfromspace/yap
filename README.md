@@ -25,7 +25,6 @@ Inspired by pi and gptel.
 - Sessions as plain Markdown files you can resume, fork, and render.
 - Templates and skills merged into the conversation (`:YapInsert`).
 - Whatever picker you use (`vim.ui.select`).
-- Async streaming over `vim.system`, with a `User YapTurnDone` autocmd.
 
 ## Tools
 
@@ -98,13 +97,6 @@ still notify.
 | Lua: `history()`                          | `<leader>y` | Pick a saved session with live status.                             |
 | Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new sessions.                           |
 
-Lua entries above are functions on `require('harness')`, not Ex commands.
-When a call needs approval, choose **Inspect** to see the shield-marked
-request in the audit, with the requested tool call immediately above it
-and the conversation alongside. The turn is unfolded and centered on the
-request. You can `:only` the chat or audit; use `:YapApproval` from either
-view to Run, Deny, or Inspect again. Unanswered calls are denied after five minutes.
-
 Templates and skills live in `~/.config/yap/templates/` and
 `~/.config/yap/skills/`. The scratch buffer (`<leader>s`) holds notes,
 steering text for the running turn, and queued prompts. Steering delivered
@@ -131,27 +123,27 @@ Supported image formats and size limits also depend on your model/provider.
 
 ## Rendering
 
-Any Markdown renderer you use works on a yap buffer.
+Markdown renders should work, but output or user input could break it. 
 [touchup](https://git.boers.email/nodes/seed.boers.email/rad:z3idaVuBJSG4LUD3zbP2PoXfry3xX)
 adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
 `usage` labels and draws each tool region as one region.
 
 ## Terminology
 
-| Term                  | Meaning                                                                    |
-| --------------------- | -------------------------------------------------------------------------- |
-| session               | one conversation: Markdown file + audit log + scratch queue                 |
-| session buffer        | the Neovim buffer editing a session                                         |
-| message               | a `# @role` heading plus its body                                           |
-| region                | a marker-delimited span: tool, thinking, error, or ui                       |
-| tool region           | one tool call + its result                                                  |
-| turn                  | one completed send → one assistant reply                                     |
-| send                  | the action and in-flight request (`:YapSend` / `<C-s>`)                     |
-| prefill               | hand-writing an `# @assistant` message to continue from it                  |
-| steer                 | mid-turn injection of a `# @steer` body at a model boundary                 |
-| advisory / approval   | the alert gate's run-with-warning / pause-for-approval outcomes             |
-| agent definition      | a `~/.yap/agents/<name>.md` file describing a subagent (not a “role”)       |
-| audit log / view      | the append-only `.jsonl` record, and the rendered `:YapLive` buffer          |
+| Term                | Meaning                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| session             | one conversation: Markdown file + audit log + scratch queue           |
+| session buffer      | the Neovim buffer editing a session                                   |
+| message             | a `# @role` heading plus its body                                     |
+| region              | a marker-delimited span: tool, thinking, error, or ui                 |
+| tool region         | one tool call + its result                                            |
+| turn                | one completed send → one assistant reply                              |
+| send                | the action and in-flight request (`:YapSend` / `<C-s>`)               |
+| prefill             | hand-writing an `# @assistant` message to continue from it            |
+| steer               | mid-turn injection of a `# @steer` body at a model boundary           |
+| advisory / approval | the alert gate's run-with-warning / pause-for-approval outcomes       |
+| agent definition    | a `~/.yap/agents/<name>.md` file describing a subagent (not a “role”) |
+| audit log / view    | the append-only `.jsonl` record, and the rendered `:YapLive` buffer   |
 
 The full vocabulary is in `:help yap-glossary`.
 
@@ -165,7 +157,7 @@ The full vocabulary is in `:help yap-glossary`.
 ## Documentation
 
 The full reference is in `:help yap` (`doc/yap.txt`). The contributor-facing
-contract — the Lua <-> Go wire protocol and the numbered business rules —
+contract — the Lua \<-> Go wire protocol and the numbered business rules —
 lives in [`CONTRIBUTING.md`](CONTRIBUTING.md). AI assistants (and any human
 contributor) editing this repository MUST read `CONTRIBUTING.md` before
 changing behavior, and update it when they do.

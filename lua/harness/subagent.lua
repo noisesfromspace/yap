@@ -220,7 +220,7 @@ function M.start(parent, ev)
       child_fm.subagents,
       child_fm.updated_at,
       child_fm.turns,
-      child_fm.cwd,
+      child_fm.created_cwd,
       child_fm.forked_from,
       child_fm.forks,
       parent_path

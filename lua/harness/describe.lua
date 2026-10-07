@@ -193,7 +193,7 @@ Return only the title.]]
         fm.subagents,
         fm.updated_at,
         fm.turns,
-        fm.cwd,
+        fm.created_cwd,
         fm.forked_from,
         fm.forks,
         fm.subagent_parent

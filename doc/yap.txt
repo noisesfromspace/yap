@@ -27,10 +27,6 @@ To install: build the binary and put it on Neovim's PATH (see the README),
 configure a provider in ~/.config/yap.json, then
 `require("harness").setup({...})` and run `:Yap`.
 
-The idea is borrowed from gptel (Emacs): chat LLM APIs are stateless — every
-request sends the full message array, so the whole conversation is the only
-state, and a text buffer can hold it. Consequences:
-
 - Deleting a region removes it from the conversation: that is branching.
 - Editing an assistant reply changes what the model "said".
 - Writing your own `# @assistant` message steers the model (prefill).
@@ -348,7 +344,7 @@ lives, as YAML frontmatter: >
   ---
   model: kimi-k3
   provider: moonshot
-  cwd: /opt/code/yap
+  created_cwd: /opt/code/yap
   turns: 14
   created_at: 2025-09-29T19:22:33Z
   updated_at: 2025-09-29T19:24:01Z
@@ -360,7 +356,7 @@ lives, as YAML frontmatter: >
   ---
 <
 
-`provider`/`model` is the combo to resume with; `cwd` is the exact working
+`provider`/`model` is the combo to resume with; `created_cwd` is the exact working
 directory the session was created in (the session-dir slug is lossy, so this
 is the only exact record); `models` is the ordered history of every combo
 used (most-recent-last); `subagents` lists subagent session paths

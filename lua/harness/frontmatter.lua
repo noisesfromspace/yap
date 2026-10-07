@@ -6,7 +6,7 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   cwd: /opt/code/yap
+--   created_cwd: /opt/code/yap
 --   agent: reviewer
 --   tools: read,search,glob
 --   turns: 14
@@ -24,7 +24,7 @@
 --   ---
 --
 -- `description` is the one-line summary the picker shows; `model` and
--- `provider` are the combo to resume with; `cwd` is the exact working
+-- `provider` are the combo to resume with; `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent`/`tools`
 -- mark a subagent session (its agent-definition name and the tools it may call);
@@ -54,7 +54,7 @@ local function is_list_key(k)
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
---- { provider, model, cwd, created_at, updated_at, turns, description, agent,
+--- { provider, model, created_cwd, created_at, updated_at, turns, description, agent,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...},
 ---   forks = {path,...}, forked_from = path?, subagent_parent = path? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
@@ -78,8 +78,8 @@ function M.parse(lines)
         fm.provider = v
       elseif k == "model" then
         fm.model = v
-      elseif k == "cwd" then
-        fm.cwd = v
+      elseif k == "created_cwd" or k == "cwd" then -- "cwd" is the pre-rename key
+        fm.created_cwd = v
       elseif k == "created_at" then
         fm.created_at = v
       elseif k == "updated_at" then
@@ -128,7 +128,7 @@ function M.render(
   subagents,
   updated_at,
   turns,
-  cwd,
+  created_cwd,
   forked_from,
   forks,
   subagent_parent
@@ -139,8 +139,8 @@ function M.render(
   end
   lines[#lines + 1] = "model: " .. model
   lines[#lines + 1] = "provider: " .. provider
-  if cwd and cwd ~= "" then
-    lines[#lines + 1] = "cwd: " .. cwd
+  if created_cwd and created_cwd ~= "" then
+    lines[#lines + 1] = "created_cwd: " .. created_cwd
   end
   if agent then
     lines[#lines + 1] = "agent: " .. agent
@@ -219,7 +219,7 @@ function M.sync(buf)
   local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
-  local cwd = (fm and fm.cwd) or vim.b[buf].yap_project_cwd
+  local created_cwd = (fm and fm.created_cwd) or vim.b[buf].yap_project_cwd
   local block = M.render(
     provider,
     model,
@@ -231,7 +231,7 @@ function M.sync(buf)
     fm and fm.subagents,
     fm and fm.updated_at,
     fm and fm.turns,
-    cwd,
+    created_cwd,
     fm and fm.forked_from,
     fm and fm.forks,
     fm and fm.subagent_parent
@@ -274,7 +274,7 @@ function M.record_subagent(parent, child_path)
     subagents,
     fm.updated_at,
     fm.turns,
-    fm.cwd,
+    fm.created_cwd,
     fm.forked_from,
     fm.forks,
     fm.subagent_parent

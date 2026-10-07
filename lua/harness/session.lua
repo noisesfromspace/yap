@@ -76,7 +76,7 @@ local function stamp_updated_at(buf)
     fm.subagents,
     updated_at,
     turns,
-    fm.cwd,
+    fm.created_cwd,
     fm.forked_from,
     fm.forks,
     fm.subagent_parent
@@ -190,7 +190,7 @@ function M.fork(buf, name, running)
         fm.subagents,
         created,
         turns,
-        fm.cwd,
+        fm.created_cwd,
         vim.b[buf].yap_path,
         {},
         nil
@@ -255,7 +255,7 @@ function M.fork(buf, name, running)
       source_fm.subagents,
       source_fm.updated_at,
       source_fm.turns,
-      source_fm.cwd,
+      source_fm.created_cwd,
       source_fm.forked_from,
       forks,
       source_fm.subagent_parent
