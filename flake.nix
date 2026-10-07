@@ -201,14 +201,15 @@
               export YAP_ROOT="$(pwd)"
               export TOUCHUP_ROOT="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
               if [ -d "$YAP_ROOT/agent" ]; then
-                export YAP_BIN="$YAP_ROOT/.dev/bin/yap"
-                mkdir -p "$YAP_ROOT/.dev/bin"
+                export YAP_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/yap"
+                export YAP_BIN="$YAP_CACHE/bin/yap"
+                mkdir -p "$YAP_CACHE/bin"
                 if ( cd "$YAP_ROOT" && ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
                   echo "yap: built agent -> $YAP_BIN"
                 else
                   echo "yap: agent build failed (see above); Neovim still usable, :YapSend will not work" >&2
                 fi
-                export PATH="$YAP_ROOT/.dev/bin:$PATH"
+                export PATH="$YAP_CACHE/bin:$PATH"
               else
                 echo "yap: run 'nix develop' from the repo root (agent/ not found)" >&2
               fi

@@ -44,8 +44,9 @@ first. See `:help yap-tools`.
    ```
 
    The plugin starts the backend when you open a session; there is no server
-   to run. With Nix, `nix develop` builds `.dev/bin/yap` and puts it on
-   `PATH`.
+   to run. With Nix, `nix develop` builds the agent into
+   `$XDG_CACHE_HOME/yap/bin/yap` (default `~/.cache/yap/bin/yap`) and puts it
+   on `PATH`.
 2. Configure a provider in `~/.config/yap.json`:
 
    ```json

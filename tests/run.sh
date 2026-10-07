@@ -16,9 +16,11 @@ TESTHOME="$(mktemp -d)"
 trap 'rm -rf "$TESTHOME"; kill $(jobs -p) 2>/dev/null' EXIT
 
 cd "$ROOT" || exit 1
-CGO_ENABLED=0 go build -o yap ./agent || exit 1
+YAP_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/yap/bin/yap"
+mkdir -p "$(dirname "$YAP_BIN")"
+CGO_ENABLED=0 go build -o "$YAP_BIN" ./agent || exit 1
 CGO_ENABLED=0 go test ./... || exit 1
-export PATH="$ROOT:$PATH"
+export PATH="$(dirname "$YAP_BIN"):$PATH"
 # yap_fold_ui_test drives an attached Neovim over msgpack RPC, which the
 # ambient python may lack, so pull an interpreter that has it from nix.
 # `nix shell` is non-pure here, so the 0.13 nvim already on PATH stays
