@@ -789,12 +789,12 @@ heading is ignored by the parser — that is where the session's model state
 lives, as YAML frontmatter:
 
   ---
-  provider: moonshot
   model: kimi-k3
+  provider: moonshot
   cwd: /opt/code/yap
+  turns: 14
   created_at: 2025-09-29T19:22:33Z
   updated_at: 2025-09-29T19:24:01Z
-  turns: 14
   models:
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro

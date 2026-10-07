@@ -3,39 +3,39 @@
 -- Scope is deliberately narrow — only durable per-session state lives here:
 --
 --   ---
---   provider: moonshot
+--   description: Fix session picker labels and summaries
 --   model: kimi-k3
+--   provider: moonshot
 --   cwd: /opt/code/yap
 --   role: reviewer
 --   tools: read,search,glob
+--   turns: 14
 --   created_at: 2025-09-29T19:22:33Z
 --   updated_at: 2025-09-29T19:24:01Z
---   turns: 14
---   description: Fix session picker labels and summaries
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
---   subagent_parent: /home/martijn/.yap/sessions/.../parent.md
 --   forked_from: /home/martijn/.yap/sessions/.../source.md
---   forks:
---     - /home/martijn/.yap/sessions/.../branch.md
+--   subagent_parent: /home/martijn/.yap/sessions/.../parent.md
 --   subagents:
 --     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
+--   forks:
+--     - /home/martijn/.yap/sessions/.../branch.md
 --   ---
 --
--- `provider`/`model` is the combo to resume with; `cwd` is the exact
--- working directory the session was created in (the directory slug is
--- lossy, so this is the only exact record of where a session ran);
--- `role`/`tools` mark a
--- subagent session (its role name and the tools it may call); `created_at`
--- records when the session was created; `updated_at` records its last
--- write (stamped on every save); `turns` counts the completed replies
--- (`# @assistant` blocks) — a session-depth summary for the picker, stamped
--- on save with `updated_at`; `models` is the ordered history of every combo
--- actually used (most-recent-last); `subagents` is the ordered list of
--- subagent session paths this session ran (most-recent-last). `subagent_parent`
--- points back to the owner; `forked_from` and `forks` link copied sessions
--- in both directions.
+-- `description` is the one-line summary the picker shows; `model` and
+-- `provider` are the combo to resume with; `cwd` is the exact working
+-- directory the session was created in (the directory slug is lossy, so
+-- this is the only exact record of where a session ran); `role`/`tools`
+-- mark a subagent session (its role name and the tools it may call);
+-- `turns` counts the completed replies (`# @assistant` blocks) — a
+-- session-depth summary for the picker, stamped on save with `updated_at`;
+-- `created_at` records when the session was created; `updated_at` records
+-- its last write (stamped on every save); `models` is the ordered history
+-- of every combo actually used (most-recent-last); `forked_from` and
+-- `forks` link copied sessions in both directions; `subagent_parent` points
+-- back to the owner; `subagents` is the ordered list of subagent session
+-- paths this session ran (most-recent-last).
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
@@ -131,15 +131,14 @@ function M.render(
   forks,
   subagent_parent
 )
-  local lines = { "---", "provider: " .. provider, "model: " .. model }
+  local lines = { "---" }
+  if description and description ~= "" then
+    lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
+  end
+  lines[#lines + 1] = "model: " .. model
+  lines[#lines + 1] = "provider: " .. provider
   if cwd and cwd ~= "" then
     lines[#lines + 1] = "cwd: " .. cwd
-  end
-  if forked_from then
-    lines[#lines + 1] = "forked_from: " .. forked_from
-  end
-  if subagent_parent then
-    lines[#lines + 1] = "subagent_parent: " .. subagent_parent
   end
   if role then
     lines[#lines + 1] = "role: " .. role
@@ -147,23 +146,26 @@ function M.render(
   if tools then
     lines[#lines + 1] = "tools: " .. table.concat(tools, ",")
   end
+  if turns ~= nil then
+    lines[#lines + 1] = "turns: " .. turns
+  end
   if created_at then
     lines[#lines + 1] = "created_at: " .. created_at
   end
   if updated_at then
     lines[#lines + 1] = "updated_at: " .. updated_at
   end
-  if turns ~= nil then
-    lines[#lines + 1] = "turns: " .. turns
-  end
-  if description and description ~= "" then
-    lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
-  end
   if models and #models > 0 then
     lines[#lines + 1] = "models:"
     for _, c in ipairs(models) do
       lines[#lines + 1] = "  - " .. c
     end
+  end
+  if forked_from then
+    lines[#lines + 1] = "forked_from: " .. forked_from
+  end
+  if subagent_parent then
+    lines[#lines + 1] = "subagent_parent: " .. subagent_parent
   end
   if subagents and #subagents > 0 then
     lines[#lines + 1] = "subagents:"
