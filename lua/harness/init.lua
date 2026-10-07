@@ -3048,10 +3048,12 @@ local function session_rank(buf)
   return 4
 end
 
---- Every open yap chat buffer except the current one, annotated with its live
---- state and sorted with waiting sessions last. An optional `state` narrows
---- the list: a state name ("running", "error", "waiting", "stopped" or
---- "idle"), a set of them (a table keyed by state name), or nil for all. The
+--- Every open yap chat buffer, annotated with its live state and sorted with
+--- waiting sessions last. The needs-you picker omits the current leaf session,
+--- but keeps a current parent when it has open children to group beneath it.
+--- An optional `state` narrows the list: a state name ("running", "error",
+--- "waiting", "stopped" or "idle"), a set of them (a table keyed by state
+--- name), or nil for all. The
 --- "needs you" includes ordinary waiting/stopped parents, but only stopped
 --- or errored children: a finished child need not be replied to. A current
 --- parent remains visible while it has an open subagent. Audit views are
@@ -3108,10 +3110,10 @@ function M.instances(state)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
     local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
     local parent = subagent_parent or fork_parent
-    local include_current_parent = b == current and has_open_child(b)
+    local include_current = not needs_you or (b == current and has_open_child(b))
     local child_needs_you = subagent_parent and (stopped[b] or errors[b])
     if
-      (b ~= current or include_current_parent or fork_parent ~= nil)
+      (b ~= current or include_current)
       and vim.b[b].yap
       and (not needs_you or not subagent_parent or child_needs_you)
       and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
@@ -3136,7 +3138,7 @@ function M.instances(state)
       end
       vim.notify(message, vim.log.levels.INFO)
     else
-      vim.notify("yap: no other open conversations", vim.log.levels.INFO)
+      vim.notify("yap: no open conversations", vim.log.levels.INFO)
     end
     return
   end

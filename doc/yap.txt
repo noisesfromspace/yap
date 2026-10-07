@@ -184,15 +184,16 @@ argument to pick a model). The choice is persisted to
 
 The history picker (`<leader>y`, `require('harness').history()`)
 shows saved sessions with live state icons; pass `'all'` for every project.
-`require('harness').instances()` lists open sessions, while
-`require('harness').waiting()` lists those awaiting a reply or stopped.
-Open sessions are unlisted (absent from |:ls|); use `<leader>r` to pick
-one. The open-session picker shows project cwd, status, title and model;
-waiting parent groups sort last and subagents sit beneath their parent.
-The waiting picker includes manually stopped sessions and children whose
-turns stopped or failed, but not completed children (find those in the
-open-session or saved-session picker). The audit view is also unlisted;
-open it from its session with |:YapLive|.
+`require('harness').instances()` lists all open sessions, including the
+current one, while `require('harness').waiting()` lists those awaiting a
+reply or stopped. Open sessions are unlisted (absent from |:ls|); use
+`<leader>r` to pick one. The open-session picker shows project cwd, status,
+title and model; waiting parent groups sort last and children sit beneath
+their parent. The waiting picker hides the current session unless it has an
+open fork or subagent to group; it includes manually stopped sessions and
+children whose turns stopped or failed, but not completed subagents (find
+those in the open-session or saved-session picker). The audit view is also
+unlisted; open it from its session with |:YapLive|.
 
 ==============================================================================
 3. KEYMAPS                                                    *yap-keymaps*

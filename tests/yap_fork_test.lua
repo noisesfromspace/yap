@@ -105,7 +105,7 @@ assert(nested_parent and nested_child == nested_parent + 1, "nested saved fork n
 assert(nested_items[nested_child].text:find("    ↳ fork · ", 1, true) == 1, "nested fork indentation wrong")
 assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "nested fork window has no yap winbar")
 local nested_buf = vim.api.nvim_get_current_buf()
-local function check_open_tree(pick)
+local function check_open_tree(pick, leaf_visible)
   captured = nil
   vim.ui.select = function(items)
     captured = items
@@ -118,15 +118,18 @@ local function check_open_tree(pick)
   end
   assert(
     positions[original_buf] and positions[fork_buf] == positions[original_buf] + 1
-      and positions[nested_buf] == positions[fork_buf] + 1,
+      and (leaf_visible and positions[nested_buf] == positions[fork_buf] + 1
+        or not leaf_visible and not positions[nested_buf]),
     "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
   )
-  assert(captured[positions[nested_buf]].text:find("  ↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+  if leaf_visible then
+    assert(captured[positions[nested_buf]].text:find("  ↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+  end
 end
-check_open_tree(yap.instances)
+check_open_tree(yap.instances, true)
 local state = require("harness.state")
 state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true, true
-check_open_tree(yap.waiting)
+check_open_tree(yap.waiting, false)
 state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = nil, nil, nil
 local saved_capture
 vim.ui.select = function(items)
@@ -238,18 +241,31 @@ local function check_orphan(pick, root_buf, child_buf, title)
 end
 check_orphan(yap.instances, fork_buf, nested_buf, "forked.md")
 state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true
-check_orphan(yap.waiting, fork_buf, nested_buf, "forked.md")
+-- The current leaf is omitted only from needs-you, even with an open parent.
+check_orphan(yap.waiting, fork_buf, nil, "forked.md")
 vim.cmd("bdelete! " .. fork_buf)
--- A lone current fork behaves like any other current session: it is not
--- offered as an alternate open session.
+-- A lone current fork appears in the general picker but not needs-you.
 captured = nil
 vim.ui.select = function(items)
   captured = items
 end
 yap.instances()
 vim.ui.select = select
+local found_current = false
 for _, item in ipairs(captured or {}) do
-  assert(item.buf ~= nested_buf, "current orphan fork appeared in open picker")
+  found_current = found_current or (item.buf == nested_buf and item.text == vim.fn.fnamemodify(generated, ":t"))
+end
+assert(found_current, "current orphan fork missing from open picker")
+-- A current leaf is hidden by needs-you even when other sessions need attention.
+state.awaiting[nested_buf] = true
+captured = nil
+vim.ui.select = function(items)
+  captured = items
+end
+yap.waiting()
+vim.ui.select = select
+for _, item in ipairs(captured or {}) do
+  assert(item.buf ~= nested_buf, "current leaf should be hidden from needs-you")
 end
 vim.cmd("enew")
 check_orphan(yap.instances, nested_buf, nil, vim.fn.fnamemodify(generated, ":t"))

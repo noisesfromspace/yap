@@ -57,7 +57,7 @@ assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty previ
 -- The open-session picker previews another live buffer with the same excerpts.
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hello", "", "# @assistant", "", "bye" })
-yap.new() -- current session is omitted from the picker
+yap.new() -- current session is included in the general picker
 local captured
 local orig_select = vim.ui.select
 vim.ui.select = function(items, opts)
@@ -65,12 +65,20 @@ vim.ui.select = function(items, opts)
 end
 yap.instances()
 vim.ui.select = orig_select
+local other_item, current_item
+for _, item in ipairs(captured and captured.items or {}) do
+  if item.buf == buf then
+    other_item = item
+  elseif item.buf == vim.api.nvim_get_current_buf() then
+    current_item = item
+  end
+end
 assert(
-  captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "expected only the other open session: " .. vim.inspect(captured and captured.items)
+  captured and #captured.items == 2 and other_item and current_item,
+  "open picker should include the current session: " .. vim.inspect(captured and captured.items)
 )
 assert(type(captured.opts.preview_item) == "function", "instances preview_item missing")
-local live_preview = preview_text(captured.opts.preview_item(captured.items[1]))
+local live_preview = preview_text(captured.opts.preview_item(other_item))
 assert(
   live_preview[1] == "## First message" and live_preview[3] == "hello",
   "instances preview wrong: " .. vim.inspect(live_preview)
