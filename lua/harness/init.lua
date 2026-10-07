@@ -13,178 +13,9 @@
 local M = {}
 
 local paths = require("harness.path")
+local config = require("harness.config")
 
-M.config = {
-  bin = "yap", -- path to the yap binary
-  provider = "moonshot",
-  model = "kimi-k3",
-  -- Optional override list of "provider/model" combos for
-  -- :YapChangeModel. When unset, the picker queries every provider
-  -- in config.json for its model list (GET /models).
-  models = nil,
-  -- System prompt for new buffers: read from agents_file if it exists
-  -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
-  system = "You are a helpful coding assistant. Answer concisely.",
-  agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/AGENTS.md",
-  -- Templates are text files inserted into the context by :YapInsert
-  -- (a compaction prompt, a snippet, ...); skills are the same but
-  -- system-prompt material, merged into the # @system block.
-  templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
-  skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
-  roles_dir = "~/.yap/roles", -- subagent role definitions
-  -- Session and audit data roots. Defaults mirror harness.path (resolved
-  -- against the real home directory, never the project cwd); override in
-  -- setup() to relocate them.
-  sessions_dir = paths.dirs.sessions_dir,
-  audit_dir = paths.dirs.audit_dir,
-  -- List available skills (name + description) in new chats' system block
-  -- so they are discoverable; bodies are only ever inserted manually.
-  skills_intro = true,
-  -- vim.notify for a completed turn when its buffer is not visible
-  -- (delegated child results go to the running parent instead).
-  notify_done = true,
-  -- Keep treesitter's markdown syntax highlighting on yap buffers. It is
-  -- on by default: the highlighter is incremental and measured to be
-  -- negligible (~0.001ms/scroll) — the per-redraw cost attributed to
-  -- "treesitter" in profiling was actually touchup re-rendering plus live
-  -- buffer churn, not the highlighter. Set false to drop syntax colors.
-  syntax_highlight = true,
-  -- Terminal glyph availability cannot be detected reliably; set false to use
-  -- plain Unicode status glyphs, the original spinner and block gauge.
-  nerd_font = true,
-  -- UI glyphs for the winbar and session picker (see doc/yap.txt
-  -- |yap-winbar|). Defaults are Nerd Font v3 glyphs; the plain-unicode
-  -- fallback preset for unpatched fonts is under |yap-configuration|.
-  -- Set any to "" to drop its glyph.
-  icons = {
-    since = "󰅐", -- nf-md-clock_outline (since-open token/cost chip)
-    total = "󰆼", -- nf-md-database   (all-time token/cost chip)
-    running = "", -- nf-cod-play (rollup: other sessions streaming)
-    stopped = "󰓛", -- nf-md-stop (a manually stopped turn)
-    error = "󰚌", -- nf-md-skull (winbar error state)
-    waiting = "󰫁", -- waiting (rollup: other sessions awaiting you)
-    idle = "󰝦", -- nf-md-circle_outline (picker idle state)
-    steer = "󰇐", -- nf-md-directions (winbar steer state)
-    approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
-    cap_l = "", -- nf-ple-lower_right_triangle (island left cap)
-    cap_r = "", -- nf-ple-lower_left_triangle  (island right cap)
-  },
-  -- Smallest model that labels the session from the latest user message
-  -- as soon as it is sent, so the winbar and session picker have a title
-  -- before the agent answers.
-  description_model = "openai/gpt-5-nano",
-  -- Bigger model that writes the final title once the turn completes
-  -- (back on the # @user block): a whole-session summary that tells the
-  -- story so the session is easy to find in the picker later.
-  description_answer_model = "openai/gpt-5-mini",
-  -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
-  -- to disable it. Buffer-local maps are applied when a session opens;
-  -- `sessions` and `waiting` are global (installed by setup()).
-  keymaps = {
-    send = "<C-s>",
-    stop = "<C-c>",
-    change_model = "<leader>m",
-    change_default_model = "<leader>M",
-    live = "<leader>l",
-    scratch = "<leader>s",
-    insert = "<C-t>",
-    insert_here = "<leader>T",
-    insert_file = "<leader>i",
-    sessions = "<leader>r",
-    waiting = "<leader>w",
-    history = "<leader>y",
-    history_renamed = "<leader>R",
-    help = "g?",
-
-    next_message = "]m",
-    prev_message = "[m",
-    next_user = "]u",
-    prev_user = "[u",
-    next_assistant = "]a",
-    prev_assistant = "[a",
-    next_tool = "]t",
-    prev_tool = "[t",
-    next_think = "]c",
-    prev_think = "[c",
-    next_error = "]e",
-    prev_error = "[e",
-
-    view_1 = "<leader>1",
-    view_2 = "<leader>2",
-    view_3 = "<leader>3",
-    toggle_fold = "<Tab>",
-
-    inner_message = "im",
-    around_message = "am",
-    inner_block = "it",
-    around_block = "at",
-  },
-}
-
--- Keep the last successful discovery on disk. A refresh starts in the
--- background during setup; the picker uses the cached list immediately.
-local models_cache = nil
-local models_waiters = {}
-local models_refreshing = false
-
-local function models_cache_path()
-  return vim.fn.stdpath("cache") .. "/yap/models"
-end
-
--- The last default provider/model picked via change_default_model(),
--- persisted so new buffers reuse it without a rebuild of the (often
--- Nix-managed) setup() defaults. setup() reads it once;
--- change_default_model() rewrites it.
-local default_combo = nil
-
-local function default_combo_path()
-  return vim.fn.stdpath("cache") .. "/yap/default"
-end
-
-local function read_default_combo()
-  local path = default_combo_path()
-  if vim.fn.filereadable(path) == 1 then
-    local lines = vim.fn.readfile(path)
-    if #lines == 1 and lines[1]:match("^[%w_.:%-]+/[%w_.:%-]+$") then
-      return lines[1]
-    end
-  end
-  return nil
-end
-
-local function write_default_combo(combo)
-  local path = default_combo_path()
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  vim.fn.writefile({ combo }, path)
-end
-
-local function refresh_models()
-  if models_refreshing then
-    return
-  end
-  models_refreshing = true
-  vim.system({ M.config.bin, "models" }, { text = true }, function(res)
-    vim.schedule(function()
-      models_refreshing = false
-      local combos = {}
-      if res.code == 0 then
-        for line in (res.stdout or ""):gmatch("[^\n]+") do
-          table.insert(combos, line)
-        end
-      end
-      if #combos > 0 then
-        models_cache = combos
-        local path = models_cache_path()
-        vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-        vim.fn.writefile(combos, path)
-      end
-      for _, waiter in ipairs(models_waiters) do
-        waiter(models_cache, res.stderr)
-      end
-      models_waiters = {}
-    end)
-  end)
-end
+M.config = config.defaults
 
 local state = require("harness.state")
 local util = require("harness.util")
@@ -205,11 +36,12 @@ local errors = state.errors
 local last_turn = state.last_turn
 local awaiting = state.awaiting
 local steer = state.steer
+local servers = state.servers
+local subagent_children = state.subagent_children
+local subagent_done = state.subagent_done
 
 local start_subagent
 local adopt
-local subagent_done = {}
-local subagent_children = {}
 -- close_session is a request-scoped frontend side effect (like quickfix):
 -- the agent asked to end the session, so the buffer is wiped once the turn
 -- has fully completed and the session file has been saved.
@@ -335,7 +167,7 @@ end
 --- the `models` history. Called only from new()/change_model() — never
 --- during a send (R7: sends only append).
 local function sync_frontmatter(buf)
-  local provider, model = util.current_combo(buf)
+  local provider, model = config.current_combo(buf)
   local combo = provider .. "/" .. model
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
@@ -529,8 +361,8 @@ end
 -- One persistent serve backend per chat buffer, so several sessions can
 -- stream at once. Each backend keeps its own tool state (SSH connections
 -- above all) for the life of its buffer; a stopped process is restarted
--- on the next send.
-local servers = {} -- buf → vim.SystemObj
+-- on the next send. `servers` lives in harness.state (shared with the
+-- subagent and scratch modules).
 
 -- buf → flush function: flushes streamed stdout that has been buffered for
 -- a redraw tick into the buffer. The send path coalesces per-token stdout
@@ -2051,7 +1883,7 @@ function M.send(buf)
   -- provider/model come from the buffer vars (set by :Yap /
   -- :YapChangeModel), falling back to config; sync them so the winbar
   -- and this send agree.
-  local provider, model = util.current_combo(buf)
+  local provider, model = config.current_combo(buf)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
   state.live_usage[buf] = nil
@@ -2595,8 +2427,8 @@ function M.new(opts)
     vim.api.nvim_buf_set_name(buf, opts.path)
   end
   local provider, model = M.config.provider, M.config.model
-  if default_combo then
-    provider, model = default_combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  if config.default_combo then
+    provider, model = config.default_combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
   end
   vim.b[buf].yap_provider = opts.provider or provider
   vim.b[buf].yap_model = opts.model or model
@@ -2766,7 +2598,7 @@ start_subagent = function(parent, ev)
     return
   end
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
-  local provider, model = util.current_combo(parent)
+  local provider, model = config.current_combo(parent)
   -- Pi roles commonly use bare model names; Yap cannot infer their provider.
   -- Only a provider/model pair overrides the known-working parent combo.
   if header.model and header.model ~= "" then
@@ -2944,46 +2776,13 @@ function M.open(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
---- Open the provider/model picker and call `cb` with the chosen
---- "provider/model" combo (nothing on dismiss). Reuses setup()'s `models`
---- list when configured, otherwise `yap models` (cached, refreshed async).
-local function pick_model_combo(cb)
-  local function pick(items)
-    vim.ui.select(items, { prompt = "yap model" }, function(choice)
-      if choice then
-        cb(choice)
-      end
-    end)
-  end
-  if M.config.models and #M.config.models > 0 then
-    pick(M.config.models)
-    return
-  end
-  if models_cache then
-    pick(models_cache)
-    return
-  end
-  table.insert(models_waiters, function(combos, stderr)
-    if not combos then
-      local err = (stderr or ""):gsub("%s+$", "")
-      vim.notify(
-        "yap: model picker unavailable (no models returned)" .. (err ~= "" and (": " .. err) or ""),
-        vim.log.levels.WARN
-      )
-    else
-      pick(combos)
-    end
-  end)
-  refresh_models()
-end
-
 --- Change the provider/model combo for the current buffer.
 --- With an argument: "provider/model". Without: pick from setup()'s
 --- models list, or — when that isn't configured — from `yap models`,
 --- which queries every provider in config.json (GET /models).
 function M.change_model(combo)
   if not combo then
-    pick_model_combo(function(choice)
+    config.pick(function(choice)
       M.change_model(choice)
     end)
     return
@@ -3017,7 +2816,7 @@ end
 --- as :YapChangeModel.
 function M.change_default_model(combo)
   if not combo then
-    pick_model_combo(function(choice)
+    config.pick(function(choice)
       M.change_default_model(choice)
     end)
     return
@@ -3026,8 +2825,7 @@ function M.change_default_model(combo)
     vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
     return
   end
-  default_combo = combo
-  write_default_combo(combo)
+  config.write_default_combo(combo)
   vim.notify("yap: default model for new chats: " .. combo, vim.log.levels.INFO)
 end
 
@@ -3327,16 +3125,10 @@ function M.setup(opts)
     })
   end
   M.config = vim.tbl_deep_extend("force", M.config, opts)
-  default_combo = read_default_combo()
+  config.default_combo = config.read_default_combo()
   if not M.config.models or #M.config.models == 0 then
-    local path = models_cache_path()
-    if vim.fn.filereadable(path) == 1 then
-      local cached = vim.fn.readfile(path)
-      if #cached > 0 then
-        models_cache = cached
-      end
-    end
-    refresh_models()
+    config.load_models_cache()
+    config.refresh_models()
   end
   -- Propagate the (possibly overridden) data roots to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir

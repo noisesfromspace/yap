@@ -8,6 +8,7 @@ local M = {}
 
 local state = require("harness.state")
 local util = require("harness.util")
+local config = require("harness.config")
 local frontmatter = require("harness.frontmatter")
 local spinner = require("harness.spinner")
 
@@ -159,7 +160,7 @@ end
 -- center island drops, then costs, then tokens; prices and the context
 -- meter survive. Past that the bar clips.
 local function render_winbar(buf)
-  local provider, model = util.current_combo(buf)
+  local provider, model = config.current_combo(buf)
   local icons = require("harness").config.icons
   local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
   local inactive = win ~= vim.api.nvim_get_current_win()

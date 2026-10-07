@@ -138,7 +138,7 @@ state.live[buf] = { since = os.time() - 3, name = "bash" }
 local bar = yap.winbar(buf)
 local left, center, right = bar:match("^(.-)%%=(.-)%%=(.*)$")
 assert(left and center and right, "winbar missing centered section: " .. bar)
-local provider, model = require("harness.util").current_combo(buf)
+local provider, model = require("harness.config").current_combo(buf)
 local combo = provider .. "/" .. model
 assert(not left:find(combo, 1, true) and not right:find(combo, 1, true), "model outside center: " .. bar)
 local rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
