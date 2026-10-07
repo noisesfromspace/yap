@@ -27,6 +27,9 @@ local function add(buf, id, reason)
       reason = reason,
       p_alert = 0.42,
       severity = 1.3,
+      confidence = 0.55,
+      severity_category = "reversible",
+      severity_category_prob = 0.97,
       ts = "2026-01-01T12:00:00",
     }),
     vim.json.encode({
@@ -141,6 +144,10 @@ local n = vim.api.nvim_win_get_cursor(0)[1]
 assert(
   vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), n - 1, n, false)[1]:find("later warning", 1, true),
   "later advisory landed on quoted audit output"
+)
+assert(
+  vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), n - 1, n, false)[1]:find("reversible", 1, true),
+  "advisory did not show its severity category"
 )
 chatwin = vim.fn.win_findbuf(vim.fn.bufnr(path1))[1]
 chatline = vim.api.nvim_win_get_cursor(chatwin)[1]

@@ -112,20 +112,29 @@ local function render_event(ev)
     lines[#lines + 1] = { text = ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"), hl = HL.meta }
     return lines, "section"
   elseif ev.type == "alert_advisory" then
-    return {
-      {
-        text = ("%s ⚠ alert [%s] %s: %s (P=%.2f, severity=%.2f)"):format(
-          ts,
-          flat(ev.id),
-          flat(ev.name),
-          flat(ev.reason),
-          tonumber(ev.p_alert) or 0,
-          tonumber(ev.severity) or 0
-        ),
-        hl = HL.warn,
-      },
-    },
-      "section"
+    local parts = { (flat(ev.reason)) }
+    local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
+    if p then
+      parts[#parts + 1] = ("P(harmful)=%.2f"):format(p)
+    end
+    if sev then
+      local label = ("severity=%.2f"):format(sev)
+      local cat = flat(ev.severity_category)
+      if cat ~= "" then
+        local prob = tonumber(ev.severity_category_prob)
+        label = label .. (prob and (" %s (%.0f%%)"):format(cat, prob * 100) or (" " .. cat))
+      end
+      parts[#parts + 1] = label
+    end
+    if conf then
+      parts[#parts + 1] = ("conf=%.2f"):format(conf)
+    end
+    local text = ("%s ⚠ %s: %s"):format(ts, flat(ev.name), table.concat(parts, " · "))
+    local id = flat(ev.id)
+    if id ~= "" then
+      text = text .. (" [%s]"):format(id)
+    end
+    return { { text = text, hl = HL.warn } }, "section"
   elseif ev.type == "retry" then
     return {
       {

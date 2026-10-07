@@ -698,7 +698,11 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				dec := utils.ShouldAlert(context.Background(), dm, alertCfg, tier, hardReason, state)
 				switch dec.Outcome {
 				case utils.OutcomeApproval:
-					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason)
+					reason := dec.Reason
+					if m := dec.Metrics(); m != "" {
+						reason += " (" + m + ")"
+					}
+					approved, aerr := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, reason)
 					if aerr != nil {
 						result = "error: " + aerr.Error()
 						run = false
@@ -707,10 +711,13 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 						run = false
 					}
 				case utils.OutcomeAdvisory:
+					category, categoryProb := dec.SeverityCategory()
 					utils.EmitEvent(map[string]any{
 						"type": "alert_advisory", "id": call.ID, "name": call.Name,
 						"reason": dec.Reason, "p_alert": dec.PAlert,
 						"severity": dec.Severity, "confidence": dec.Confidence,
+						"severity_category": category, "severity_category_prob": categoryProb,
+						"severity_breakdown": dec.SeverityBreakdown(),
 					})
 				}
 				if run {

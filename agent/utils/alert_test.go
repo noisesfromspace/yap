@@ -135,3 +135,24 @@ func TestNoModelAdvisory(t *testing.T) {
 		t.Fatalf("missing model should warn (advisory), not run silently: %+v", d)
 	}
 }
+
+func TestSeverityCategorization(t *testing.T) {
+	d := Decision{
+		PAlert: 0.23, Severity: 0.99, Confidence: 0.55,
+		SeverityProbabilities: map[string]float64{"0": 0.02, "1": 0.97, "2": 0.01},
+	}
+	cat, catP := d.SeverityCategory()
+	if cat != "reversible" || catP < 0.96 || catP > 0.98 {
+		t.Fatalf("SeverityCategory: %q %.2f", cat, catP)
+	}
+	if b := d.SeverityBreakdown(); b != "benign 2% · reversible 97% · destructive 1%" {
+		t.Fatalf("SeverityBreakdown: %q", b)
+	}
+	if m := d.Metrics(); m != "P(harmful)=0.23 · severity=0.99 reversible (97%) · conf=0.55" {
+		t.Fatalf("Metrics: %q", m)
+	}
+	// No model consulted: metrics must stay empty so hard-block reasons read cleanly.
+	if m := (Decision{Reason: "recursive deletion"}).Metrics(); m != "" {
+		t.Fatalf("Metrics on a hard-block decision should be empty: %q", m)
+	}
+}

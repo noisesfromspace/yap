@@ -507,7 +507,8 @@ Lua side as each event arrives:
                   the alert gate paused a call for approval; the human's
                   answer. `reason` names the deterministic category or carries
                   the jev verdict so false positives can be identified.
-  alert_advisory  the gate ran a call with a warning (reason + numbers)
+  alert_advisory  the gate ran a call with a warning (reason, P(harmful),
+                  categorized severity, and confidence)
   retry           a transient generation error (429/5xx/network) was retried
                   before any output was emitted
   turn_end        model, prompt, completion, cost, ms — one per completed send
@@ -848,7 +849,9 @@ P(harmful) and a 0–3 severity score — and maps the answer to:
              audit; |:YapApproval| repeats Inspect or Run/Deny within five
              minutes.
   advisory   run, but log the call and show a non-blocking warning. The toast
-             names the session and points to |:YapAlerts| for review.
+             names the session, gives the P(harmful), the severity score
+             with its category breakdown, and the model's confidence, then
+             points to |:YapAlerts| for review.
   run        proceed silently.
 
 A decision-model outage never bricks a tool: it degrades to `advisory` (a

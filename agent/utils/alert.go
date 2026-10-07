@@ -3,6 +3,8 @@ package utils
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"boers.email/yap/agent/decide"
 )
@@ -70,6 +72,9 @@ type Decision struct {
 	PAlert     float64 // P(harmful)
 	Severity   float64 // worst-case harm score (0..3)
 	Confidence float64
+	// SeverityProbabilities is the severity score's per-band distribution
+	// (category index -> probability); nil when no model was consulted.
+	SeverityProbabilities map[string]float64
 }
 
 // severity bands for the score question (legend index -> meaning).
@@ -77,6 +82,18 @@ const (
 	sevDestructive = 2.0 // "destructive or data loss"
 	approvalAtEven = 0.5 // destructive + at least even odds -> approval
 )
+
+// severityLabels is the severity score question's ordered level -> meaning
+// (index 0 = benign, 3 = credential theft or exfiltration); severityShort is
+// the compact form rendered in advisories. Keep the two tables in sync.
+var severityLabels = []string{
+	"benign",
+	"reversible or inconvenient",
+	"destructive or data loss",
+	"credential theft or exfiltration",
+}
+
+var severityShort = []string{"benign", "reversible", "destructive", "exfiltration"}
 
 // ShouldAlert decides the outcome for one tool call.
 //
@@ -121,7 +138,7 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 				Name:         "severity",
 				Type:         decide.Score,
 				Instructions: "What is the worst plausible harm if this tool call runs unapproved?",
-				Criteria:     []string{"benign", "reversible or inconvenient", "destructive or data loss", "credential theft or exfiltration"},
+				Criteria:     severityLabels,
 			},
 		},
 	})
@@ -146,37 +163,86 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 	d.PAlert = harm.Noul
 	d.Confidence = harm.Confidence
 	d.Severity = sev.Score
+	d.SeverityProbabilities = sev.Probabilities
 
 	d.Outcome, d.Reason = decideOutcome(harm.Noul, harm.Confidence, sev, cfg)
 	return d
 }
 
-// decideOutcome maps the calibrated answer to a layered outcome. Precedence is
-// top-down; the first matching case wins.
+// decideOutcome maps the calibrated answer to a layered outcome and a plain
+// human phrase. Precedence is top-down; the first matching case wins. The
+// numbers are kept out of the reason and rendered separately (see Metrics,
+// SeverityCategory) so the advisory line and approval dialog stay readable.
 func decideOutcome(p, conf float64, severity decide.Answer, cfg AlertConfig) (Outcome, string) {
 	sev := severity.Score
-	nums := fmt.Sprintf("P(harmful)=%.2f severity=%.2f", p, sev)
 
 	switch {
 	// Score is a weighted mean, not a category: a strong exfiltration
 	// probability need not yield an exact score of 3 (or even 2.5).
 	case severity.Probabilities["3"] >= 0.5 || sev >= 2.5:
-		return OutcomeApproval, "possible credential theft or exfiltration (" + nums + ")"
+		return OutcomeApproval, "possible credential theft or exfiltration"
 	case sev >= sevDestructive && (p >= approvalAtEven || conf < cfg.MinConfidence):
 		// Destructive and either at least even odds, or the model is
 		// uncalibrated about it: no signal -> ask rather than act.
-		return OutcomeApproval, "possible destructive operation (" + nums + ")"
+		return OutcomeApproval, "possible destructive operation"
 	case sev >= sevDestructive:
-		return OutcomeAdvisory, "possibly destructive, model unsure (" + nums + ")"
+		return OutcomeAdvisory, "possibly destructive, model unsure"
 	case p >= cfg.ApprovalProb && sev >= 1:
-		return OutcomeApproval, "likely harmful (" + nums + ")"
+		return OutcomeApproval, "likely harmful"
 	case p >= cfg.AdvisoryProb:
-		return OutcomeAdvisory, "suspicious tool call (" + nums + ")"
+		return OutcomeAdvisory, "suspicious tool call"
 	case conf < cfg.MinConfidence && p >= cfg.AdvisoryProb/2:
 		// Near 0.5 with low confidence is "no signal": conservative path is
 		// to surface it rather than run silently.
-		return OutcomeAdvisory, "decision model uncertain (" + nums + ")"
+		return OutcomeAdvisory, "decision model uncertain"
 	default:
 		return OutcomeRun, ""
 	}
+}
+
+// SeverityCategory returns the dominant severity band's short label and its
+// probability ("reversible", 0.97), or ("", 0) when no distribution is
+// available (the model was not consulted or returned no per-band scores).
+func (d Decision) SeverityCategory() (string, float64) {
+	bestIdx, bestP := -1, -1.0
+	for idx, p := range d.SeverityProbabilities {
+		if p <= bestP {
+			continue
+		}
+		bestP = p
+		if i, err := strconv.Atoi(idx); err == nil && i >= 0 && i < len(severityShort) {
+			bestIdx = i
+		}
+	}
+	if bestIdx < 0 {
+		return "", 0
+	}
+	return severityShort[bestIdx], bestP
+}
+
+// SeverityBreakdown renders the severity distribution as a compact
+// "benign 2% · reversible 97% · destructive 1%" (non-zero bands, in order).
+// Empty when no distribution is available.
+func (d Decision) SeverityBreakdown() string {
+	var parts []string
+	for i, label := range severityShort {
+		if p := d.SeverityProbabilities[strconv.Itoa(i)]; p > 0 {
+			parts = append(parts, fmt.Sprintf("%s %.0f%%", label, p*100))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// Metrics renders the decision's numbers compactly for surfaces that show
+// only a reason string (the approval dialog and the alerts picker). Empty
+// when no model was consulted, so hard-block reasons stay as-is.
+func (d Decision) Metrics() string {
+	if d.PAlert == 0 && d.Severity == 0 && d.Confidence == 0 {
+		return ""
+	}
+	sev := fmt.Sprintf("severity=%.2f", d.Severity)
+	if cat, catP := d.SeverityCategory(); cat != "" {
+		sev = fmt.Sprintf("%s %s (%.0f%%)", sev, cat, catP*100)
+	}
+	return fmt.Sprintf("P(harmful)=%.2f · %s · conf=%.2f", d.PAlert, sev, d.Confidence)
 }

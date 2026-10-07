@@ -330,18 +330,33 @@ local function handle_event(buf, json_line)
   elseif ev.type == "alert_advisory" then
     -- Record before notifying: the picker can now navigate to this exact alert.
     audit.append_event(buf, ev)
-    vim.notify(
-      ("yap: %s (%s) — %s %s (P=%.2f, severity=%.2f)\n:YapAlerts"):format(
+    local parts = {}
+    local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
+    if p then
+      parts[#parts + 1] = ("P(harmful)=%.2f"):format(p)
+    end
+    if sev then
+      parts[#parts + 1] = ("severity=%.2f"):format(sev)
+    end
+    if conf then
+      parts[#parts + 1] = ("conf=%.2f"):format(conf)
+    end
+    local lines = {
+      ("yap: %s (%s) — %s: %s"):format(
         live_session_label(buf),
         vim.fn.fnamemodify(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf), ":t"),
         ev.name or "tool",
-        ev.reason or "flagged",
-        tonumber(ev.p_alert) or 0,
-        tonumber(ev.severity) or 0
+        ev.reason or "flagged"
       ),
-      vim.log.levels.WARN,
-      { title = "yap alert" }
-    )
+    }
+    if #parts > 0 then
+      lines[#lines + 1] = table.concat(parts, " · ")
+    end
+    if ev.severity_breakdown and ev.severity_breakdown ~= "" then
+      lines[#lines + 1] = "severity: " .. ev.severity_breakdown
+    end
+    lines[#lines + 1] = ":YapAlerts"
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.WARN, { title = "yap alert" })
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool regions never replay on reopen.
