@@ -889,7 +889,7 @@ local function handle_event(buf, json_line)
     append_event(buf, ev)
     local t = audits[buf]
     if t then
-      audit.fold(t.bufnr)
+      audit.fold(t.bufnr, false, true)
     end
   end
 end

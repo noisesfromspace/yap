@@ -33,6 +33,34 @@ local ns = vim.api.nvim_create_namespace("yap.audit.hl")
 -- `# <ts> turn: <in> in · <out> out · <s>s`.
 local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn:"
 
+-- An append can invalidate a native manual fold before turn_end projects the
+-- next one. Remember the window's choices while its old folds still exist.
+local turn_open = {} -- win -> { [header line] = open }
+local function headers(buf)
+  local result = {}
+  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if line:match(TURN) then
+      result[#result + 1] = i
+    end
+  end
+  return result
+end
+
+local function remember(buf)
+  local ends = headers(buf)
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    vim.api.nvim_win_call(win, function()
+      local open = turn_open[win] or {}
+      for _, finish in ipairs(ends) do
+        if vim.fn.foldlevel(finish) > 0 then
+          open[finish] = vim.fn.foldclosed(finish) == -1
+        end
+      end
+      turn_open[win] = open
+    end)
+  end
+end
+
 --- Flatten embedded newlines in a free-text field so a single audit field
 --- can never inject a new buffer line (nvim_buf_set_lines rejects strings
 --- containing '\n'). Multi-line tool output already arrives split via
@@ -207,6 +235,7 @@ function M.append(t, ev)
     return
   end
   local buf = t.bufnr
+  remember(buf)
   local count = vim.api.nvim_buf_line_count(buf)
   local start = count - 1 -- 0-based index of the trailing empty line
   local lead = (kind == "block" and t.has_content) and 1 or 0
@@ -253,32 +282,31 @@ end
 --- turn collapses to a summary line. The open turn after the last header stays
 --- expanded so live output remains visible. Manual folds, applied from a
 --- window showing the buffer; a hidden view folds the next time it is shown.
-function M.fold(buf, force)
+function M.fold(buf, force, open_new)
   local wins = vim.fn.win_findbuf(buf)
   if #wins == 0 then
     return
   end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local headers = {}
-  for i, line in ipairs(lines) do
-    if line:match(TURN) then
-      headers[#headers + 1] = i
-    end
-  end
+  local ends = headers(buf)
   for _, win in ipairs(wins) do
     vim.api.nvim_win_call(win, function()
       if vim.api.nvim_win_get_buf(win) ~= buf then
         return
       end
-      -- Remember which completed turns the user left open so a <Tab>-opened
-      -- turn survives the re-fold below on the next turn_end. `force` (the
-      -- <leader>1 fold-everything view key) ignores that and closes all.
+      -- Preserve existing manual choices. A turn that just completed was
+      -- visible while it streamed, so leave its new fold open in a live view;
+      -- replay/reopen still starts with completed turns collapsed.
       local open = {}
       if not force then
-        for _, finish in ipairs(headers) do
-          if vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
+        for _, finish in ipairs(ends) do
+          if open_new and turn_open[win] and turn_open[win][finish] ~= nil then
+            open[finish] = turn_open[win][finish]
+          elseif vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
             open[finish] = true
           end
+        end
+        if open_new then
+          open[ends[#ends]] = true
         end
       end
       vim.wo.foldmethod = "manual"
@@ -286,7 +314,7 @@ function M.fold(buf, force)
       vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
       vim.cmd("normal! zE")
       local prev = 0
-      for _, finish in ipairs(headers) do
+      for _, finish in ipairs(ends) do
         local start = prev + 1
         if finish >= start then
           vim.cmd(("%d,%dfold"):format(start, finish))
@@ -294,6 +322,7 @@ function M.fold(buf, force)
         end
         prev = finish
       end
+      turn_open[win] = nil
     end)
   end
 end
@@ -316,6 +345,7 @@ function M.unfold_all(buf)
       vim.wo.foldminlines = 0
       vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
       vim.cmd("normal! zR")
+      turn_open[win] = nil
     end)
   end
 end

@@ -60,4 +60,30 @@ feed(leader .. "2")
 assert(vim.fn.foldclosed(header) == -1, "<leader>2 did not unfold the turn")
 feed(leader .. "1")
 assert(vim.fn.foldclosed(header) ~= -1, "<leader>1 did not fold the turn")
+
+-- Completing a visible turn must not collapse its live output or change the
+-- previous turn's manual choice. Reopening later still folds by default.
+local renderer = require("harness.audit")
+local t = { bufnr = audit, has_content = true, reviews = {} }
+local function complete_turn()
+  vim.bo[audit].modifiable = true
+  renderer.append(t, { type = "tool_start", command = "echo live" })
+  renderer.append(t, { type = "turn_end", ts = "2026-01-01T12:00:00", prompt = 1, completion = 1 })
+  vim.bo[audit].modifiable = false
+  local last = vim.api.nvim_buf_line_count(audit) - 1
+  renderer.fold(audit, false, true)
+  return last
+end
+local second = complete_turn()
+assert(vim.fn.foldclosed(header) ~= -1, "completion reopened the closed previous turn")
+assert(vim.fn.foldclosed(second) == -1, "completion collapsed the visible turn")
+vim.cmd(("%dfoldopen"):format(header))
+local third = complete_turn()
+assert(vim.fn.foldclosed(header) == -1, "completion closed a previously opened turn")
+assert(vim.fn.foldclosed(second) == -1, "completion closed another opened turn")
+assert(vim.fn.foldclosed(third) == -1, "next completion collapsed the visible turn")
+renderer.fold_all(audit)
+assert(vim.fn.foldclosed(third) ~= -1, "fold-all did not close the completed turn")
+renderer.fold(audit)
+assert(vim.fn.foldclosed(third) ~= -1, "reopen unfolded the completed turn")
 print("OK audit-view")
