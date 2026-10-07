@@ -224,7 +224,8 @@ format has no transient states to repair.
 `~/.yap/audit/<cwd-slug>/<session>.jsonl`, JSON Lines (one timestamped JSON
 object per line), append-only, written by the Lua side from yap:event lines
 plus synthesized `output` events for streamed bash/python output: full tool
-arguments, streamed bash/python output, full results, and one journal line per
+arguments, streamed bash/python output, full results, `attachment` events for
+image imports (success metadata or the failure), and one journal line per
 turn (model, tokens, cost, ms). The audit view (`:YapLive`) renders these
 events and is rebuilt from the file on reopen; the audit file is the
 authoritative record and survives restarts. This is what makes slimmed headers

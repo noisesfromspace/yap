@@ -1,6 +1,16 @@
 local M = {}
 local max_bytes = 10 * 1024 * 1024
 
+--- Append one `attachment` event to the session's audit log. Every attach
+--- attempt is recorded: success carries the full metadata (name, source,
+--- asset, bytes, format, sha256); failure carries the error plus whatever
+--- was known. The image bytes themselves are never logged.
+local function record(buf, fields)
+  fields.type = "attachment"
+  fields.ts = os.date("%Y-%m-%dT%H:%M:%S")
+  require("harness.audit").append_event(buf, fields)
+end
+
 --- Turn a dropped, shell-escaped image path on the current user line into a
 --- durable local reference. Ghostty pastes paths, not file contents.
 function M.attach(buf, row)
@@ -27,15 +37,19 @@ function M.attach(buf, row)
   path = vim.fn.fnamemodify(path, ":p")
   local stat = vim.uv.fs_stat(path)
   if not stat or stat.type ~= "file" or stat.size > max_bytes then
-    return nil, "expected a local image file of at most 10 MiB: " .. path
+    local msg = "expected a local image file of at most 10 MiB: " .. path
+    record(buf, { error = msg, source = path, bytes = stat and stat.size or nil })
+    return nil, msg
   end
   local fd, err = vim.uv.fs_open(path, "r", 0)
   if not fd then
+    record(buf, { error = err, source = path })
     return nil, err
   end
   local bytes, read_err = vim.uv.fs_read(fd, stat.size, 0)
   vim.uv.fs_close(fd)
   if not bytes then
+    record(buf, { error = read_err, source = path, bytes = stat.size })
     return nil, read_err
   end
   local ext
@@ -44,26 +58,40 @@ function M.attach(buf, row)
   elseif bytes:sub(1, 3) == "\255\216\255" then
     ext = ".jpg"
   else
-    return nil, "only PNG and JPEG photos are supported"
+    local msg = "only PNG and JPEG photos are supported"
+    record(buf, { error = msg, source = path, bytes = #bytes })
+    return nil, msg
   end
+  local hash = vim.fn.sha256(vim.base64.encode(bytes))
   local dir = vim.fn.stdpath("data") .. "/yap/assets"
   vim.fn.mkdir(dir, "p", 448) -- 0700
-  local dest = dir .. "/" .. vim.fn.sha256(vim.base64.encode(bytes)) .. ext
+  local dest = dir .. "/" .. hash .. ext
   if not vim.uv.fs_stat(dest) then
     local out, open_err = vim.uv.fs_open(dest, "wx", 384) -- 0600; never overwrite an existing asset
     if not out then
+      record(buf, { error = open_err, source = path, asset = dest, bytes = #bytes, format = ext:sub(2), sha256 = hash })
       return nil, open_err
     end
     local written, write_err = vim.uv.fs_write(out, bytes, 0)
     vim.uv.fs_close(out)
     if written ~= #bytes then
       vim.uv.fs_unlink(dest)
-      return nil, write_err or "incomplete image copy"
+      local msg = write_err or "incomplete image copy"
+      record(buf, { error = msg, source = path, asset = dest, bytes = #bytes, format = ext:sub(2), sha256 = hash })
+      return nil, msg
     end
   end
   local name = vim.fs.basename(path):gsub("[%[%]\r\n]", "_")
   local reference = "![FILE: " .. name .. "](" .. vim.uri_from_fname(dest) .. ")"
   vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { reference })
+  record(buf, {
+    name = name,
+    source = path,
+    asset = dest,
+    bytes = #bytes,
+    format = ext:sub(2),
+    sha256 = hash,
+  })
   return reference
 end
 

@@ -98,6 +98,21 @@ local function render_event(ev)
       target = flat(a.path or a.url or a.command or "")
     end
     return { { text = ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), hl = HL.tool } }, "section"
+  elseif ev.type == "attachment" then
+    if ev.error then
+      local src = flat(ev.source)
+      if src == "" then
+        src = flat(ev.name) ~= "" and flat(ev.name) or "photo"
+      end
+      return { { text = ("%s ⇗ %s: %s"):format(ts, src, flat(ev.error)), hl = HL.warn } }, "section"
+    end
+    return {
+      {
+        text = ("%s ⇗ %s (%d bytes, %s) → %s"):format(ts, flat(ev.source), ev.bytes or 0, flat(ev.format or "?"), flat(ev.asset)),
+        hl = HL.meta,
+      },
+    },
+      "section"
   elseif ev.type == "tool_result" then
     -- bash/python output already streamed via output events; don't duplicate it.
     if ev.name == "bash" or ev.name == "python" then

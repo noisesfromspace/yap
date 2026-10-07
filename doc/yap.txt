@@ -516,6 +516,9 @@ Lua side as each event arrives:
   tool_start      bash/python's temp log path (`command` is secret-scrubbed)
   output          streamed bash/python output chunks (synthesized as drained)
   tool_result     full result
+  attachment      an image import on |:YapAttach| / |:YapSend| (source,
+                  asset path, size, format, sha256) or a failed import
+                  (error plus the attempted source)
   approval_request / approval_result / approval_timeout
                   the alert gate paused a call for approval; the human's
                   answer. `reason` names the deterministic category or carries
