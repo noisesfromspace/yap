@@ -22,7 +22,7 @@ vim.cmd("YapFork forked")
 local fork_buf = vim.api.nvim_get_current_buf()
 local fork = vim.b[fork_buf].yap_path
 local expected_dir = paths.session_dir(vim.b[original_buf].yap_project_cwd)
-assert(fork_buf ~= original_buf and fork == expected_dir .. "/forked.md", "fork must open an independent buffer")
+assert(fork_buf ~= original_buf and fork == expected_dir .. "/forked/forked.md", "fork must open an independent buffer")
 assert(
   vim.b[original_buf].yap_path == original and vim.api.nvim_buf_get_name(original_buf) == original,
   "source renamed"
@@ -101,7 +101,7 @@ assert(vim.api.nvim_get_current_buf() == fork_buf, "failed fork changed focus")
 assert(not require("harness.session").fork(fork_buf, "../outside"), "path escape accepted")
 local generated = assert(yap.fork())
 assert(
-  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$"),
+  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x/%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$"),
   "unexpected generated fork name: " .. generated
 )
 assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == fork, "nested fork parent missing")

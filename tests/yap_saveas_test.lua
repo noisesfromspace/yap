@@ -29,7 +29,8 @@ local paths = require("harness.path")
 local old_audit = paths.audit_path(buf)
 assert(vim.fn.filereadable(old_audit) == 1, "audit log not written")
 
-local new = old:gsub("%.md$", "-copy.md")
+local name = vim.fn.fnamemodify(old, ":t:r") .. "-copy"
+local new = vim.fn.fnamemodify(old, ":h:h") .. "/" .. name .. "/" .. name .. ".md"
 vim.cmd("saveas " .. vim.fn.fnameescape(new))
 vim.wait(200) -- let the deferred rehome run
 

@@ -832,9 +832,10 @@ function M.alerts()
       pairs[#pairs + 1] = { log = log, path = path }
     end
   end
-  -- Audit logs are <name>.jsonl siblings of <name>.md in the sessions dir.
-  for _, log in ipairs(vim.fn.glob(session_dir .. "/*.jsonl", false, true)) do
-    add(log, session_dir .. "/" .. vim.fn.fnamemodify(log, ":t:r") .. ".md")
+  -- Audit logs are <name>.jsonl siblings of <name>.md, one session per
+  -- directory: <session_dir>/<name>/<name>{.md,.jsonl}.
+  for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
+    add(log, vim.fn.fnamemodify(log, ":r") .. ".md")
   end
   for _, pair in ipairs(pairs) do
     local log, path = pair.log, pair.path

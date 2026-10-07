@@ -464,8 +464,9 @@ of sibling sidecar files that carry what the conversation does not: an
 append-only audit log, an optional scratch notes file, and any photo
 attachments in a shared asset store. The markdown file IS the conversation —
 the buffer is the only serialization of the message history — but a session
-is a small file set, not a single file. Files live under
-~/.yap/sessions/<cwd-slug>/ and are saved after every turn exit, including
+is a small file set, not a single file. Each session has its own directory,
+~/.yap/sessions/<cwd-slug>/<session>/, containing <session>.md and its
+sidecars. Sessions are saved after every turn exit, including
 backend errors and stops. The file is created when the buffer opens, so a
 fresh session is file-backed from the start and nameable with |:file| before
 the first reply; every save goes through |:write|, so 'modified', |:w| and the

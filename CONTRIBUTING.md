@@ -231,13 +231,13 @@ format has no transient states to repair.
 
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
-`<session>.jsonl` beside the session markdown (a sibling in the sessions
-`<cwd-slug>/` directory), JSON Lines (one timestamped JSON object per line),
+`<session>.jsonl` beside the session markdown (in its own
+`<cwd-slug>/<session>/` directory), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from yap:event lines plus synthesized
 `output` events for streamed bash/python output: full tool arguments, streamed
 bash/python output, full results, `attachment` events for image imports
 (success metadata or the failure), and one journal line per turn (model,
-tokens, cost, ms). The sessions `<cwd-slug>/` directory is kept mode 0700 and
+tokens, cost, ms). The per-session directory is kept mode 0700 and
 the session markdown, notes, and audit log files mode 0600 — transcripts and
 tool output routinely contain secrets, so nothing in the session directory is
 world-readable. The audit view (`:YapLive`) renders these

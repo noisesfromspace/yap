@@ -4,7 +4,8 @@ local yap = require("harness")
 yap.setup({ provider = "mock", model = "m1" })
 local parent = yap.new()
 local parent_path = vim.b[parent].yap_path
-local child_path = parent_path:gsub("%.md$", "") .. "-abc123.md"
+local name = vim.fn.fnamemodify(parent_path, ":t:r") .. "-abc123"
+local child_path = vim.fn.fnamemodify(parent_path, ":h:h") .. "/" .. name .. "/" .. name .. ".md"
 local child = yap.new({ hidden = true, path = child_path, agent = "scout", system = "Scout agent", tools = { "read" } })
 assert(vim.api.nvim_get_current_buf() == parent, "child stole the parent window")
 assert(vim.fn.filereadable(child_path) == 1, "child not saved as markdown")

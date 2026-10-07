@@ -29,7 +29,8 @@ assert(old_audit and vim.fn.filereadable(old_audit) == 1, "audit log not written
 
 -- Rename the session the way the user does (:file new-name.md); the next
 -- send is what persists the rename and drags the audit log along.
-local new = old:gsub("%.md$", "-renamed.md")
+local name = vim.fn.fnamemodify(old, ":t:r") .. "-renamed"
+local new = vim.fn.fnamemodify(old, ":h:h") .. "/" .. name .. "/" .. name .. ".md"
 vim.api.nvim_buf_set_name(buf, new)
 
 local before = count(text(buf), "File written%.")

@@ -39,8 +39,8 @@ assert(#items == 0, "expected no listed sessions, got " .. #items)
 
 -- 3b. naming the session with :file keeps it visible before a description
 -- is generated (the picker shows the chosen name)
-local dir = vim.fn.fnamemodify(path, ":h")
-local named = dir .. "/named-session.md"
+local project_dir = vim.fn.fnamemodify(path, ":h:h")
+local named = project_dir .. "/named-session/named-session.md"
 vim.api.nvim_buf_set_name(buf, named)
 session.save(buf)
 items = session.list("cwd")

@@ -80,8 +80,10 @@ function M.ensure_session_dir(dir)
 end
 
 --- Originating cwd for a persisted session file, from its directory slug.
+--- A session lives at <sessions>/<cwd-slug>/<session>/<session>.md, so the
+--- slug is two levels up from the markdown file.
 function M.project_cwd(path)
-  return unscream(vim.fn.fnamemodify(path, ":h:t"))
+  return unscream(vim.fn.fnamemodify(path, ":h:h:t"))
 end
 
 --- cwd display for a sessions-root subdirectory (the "all projects" scope).
@@ -100,9 +102,16 @@ end
 -- together, or unnamed sessions leak into the picker / get hidden.
 local DEFAULT_NAME = "^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%.md$"
 
---- A fresh, never-yet-named session file path under `dir`.
-function M.new_session_path(dir)
-  return string.format("%s/%s-%04x.md", dir, os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
+--- A fresh session file path under `dir`. Sessions live one per directory:
+--- <dir>/<name>/<name>.md, so the markdown, notes, and audit log are all in
+--- one place. `name` (optional) is the session base name; without it an
+--- auto-generated timestamp+hex name is used. The session directory is
+--- created here (0700), ready for the first write.
+function M.new_session_path(dir, name)
+  name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
+  local sdir = dir .. "/" .. name
+  M.ensure_session_dir(sdir)
+  return sdir .. "/" .. name .. ".md"
 end
 
 --- True when `path` still carries the auto-generated filename (never named

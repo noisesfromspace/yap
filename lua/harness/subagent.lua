@@ -180,11 +180,13 @@ function M.start(parent, ev)
     end
   end
   local parent_path = vim.b[parent].yap_path
-  local stem = parent_path:gsub("%.md$", "")
+  local parent_name = vim.fn.fnamemodify(parent_path, ":t:r")
+  local dir = paths.session_dir(vim.b[parent].yap_project_cwd or vim.fn.getcwd())
   local child_path
   repeat
     local random = vim.uv.random(3)
-    child_path = stem .. "-" .. string.format("%02x%02x%02x", random:byte(1, 3)) .. ".md"
+    local hex = string.format("%02x%02x%02x", random:byte(1, 3))
+    child_path = paths.new_session_path(dir, parent_name .. "-" .. hex)
   until vim.fn.filereadable(child_path) == 0
   local ok, child = pcall(harness().new, {
     path = child_path,

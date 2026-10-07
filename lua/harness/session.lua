@@ -127,6 +127,9 @@ function M.save(buf)
     vim.npcall(vim.api.nvim_buf_set_name, buf, path)
   end
   stamp_updated_at(buf)
+  -- A `:file`/`:saveas` target may be a fresh directory (a renamed or copied
+  -- session); keep it private like directories created by new_session_path().
+  paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
   vim.api.nvim_buf_call(buf, function()
     vim.cmd("silent noautocmd keepjumps write!")
@@ -152,6 +155,10 @@ local rename_pending = {} -- [buf] = "copy" | "move"
 --- BufWritePre in the same command flips it to `:saveas` (see rename_write).
 function M.rename_post(buf)
   rename_pending[buf] = "move"
+  local new_path = vim.api.nvim_buf_get_name(buf)
+  if new_path ~= "" and not new_path:match("^%a+://") then
+    paths.ensure_session_dir(vim.fn.fnamemodify(new_path, ":h"))
+  end
   vim.schedule(function()
     local is_copy = rename_pending[buf] == "copy"
     rename_pending[buf] = nil
@@ -197,7 +204,7 @@ function M.fork(buf, name, running)
     if not name:match("%.md$") then
       name = name .. ".md"
     end
-    path = dir .. "/" .. name
+    path = paths.new_session_path(dir, name)
   else
     path = paths.new_session_path(dir)
   end
@@ -489,42 +496,41 @@ function M.list(scope)
 
   local items, children, parents = {}, {}, {}
   for _, dir in ipairs(dirs) do
-    for name, type in vim.fs.dir(dir) do
-      -- glob("*.md") skips dotfiles; vim.fs.dir does not.
-      if type == "file" and name:sub(1, 1) ~= "." and name:match("%.md$") then
-        local path = vim.fs.joinpath(dir, name)
-        local lines = vim.fn.readfile(path, "", 200)
-        local fm = frontmatter.parse(lines)
-        local description = fm and fm.description or ""
-        local item = {
-          path = path,
-          mtime = vim.fn.getftime(path),
-          text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
-          model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
-          models = fm and #fm.models > 1 and fm.models or nil,
-          turns = fm and fm.turns,
-        }
-        if fm and fm.agent then
-          item.text = "↳ " .. fm.agent .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
-          children[path] = item
-        elseif fm and fm.forked_from then
-          item.text = "↳ fork · " .. M.label(path, description)
-          children[path] = item
-          parents[vim.fs.normalize(path)] = vim.fs.normalize(fm.forked_from)
-        elseif
-          (
-            not paths.is_default_name(path)
-            or description ~= ""
-            or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
-            or has_pending_user_text(path, lines)
-          ) and (not renamed_only or not paths.is_default_name(path))
-        then
-          items[#items + 1] = item
-        end
-        if fm then
-          for _, child_path in ipairs(fm.subagents) do
-            parents[vim.fs.normalize(child_path)] = path
-          end
+    -- Sessions live one per directory: <dir>/<session>/<session>.md. glob()
+    -- skips dotfiles, so hidden sessions are never listed.
+    for _, path in ipairs(vim.fn.glob(dir .. "/*/*.md", false, true)) do
+      local name = vim.fn.fnamemodify(path, ":t")
+      local lines = vim.fn.readfile(path, "", 200)
+      local fm = frontmatter.parse(lines)
+      local description = fm and fm.description or ""
+      local item = {
+        path = path,
+        mtime = vim.fn.getftime(path),
+        text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil),
+        model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
+        models = fm and #fm.models > 1 and fm.models or nil,
+        turns = fm and fm.turns,
+      }
+      if fm and fm.agent then
+        item.text = "↳ " .. fm.agent .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
+        children[path] = item
+      elseif fm and fm.forked_from then
+        item.text = "↳ fork · " .. M.label(path, description)
+        children[path] = item
+        parents[vim.fs.normalize(path)] = vim.fs.normalize(fm.forked_from)
+      elseif
+        (
+          not paths.is_default_name(path)
+          or description ~= ""
+          or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
+          or has_pending_user_text(path, lines)
+        ) and (not renamed_only or not paths.is_default_name(path))
+      then
+        items[#items + 1] = item
+      end
+      if fm then
+        for _, child_path in ipairs(fm.subagents) do
+          parents[vim.fs.normalize(child_path)] = path
         end
       end
     end
@@ -576,7 +582,7 @@ function M.list(scope)
     if not shown[child.path] then
       child.text = child.text:sub(#"↳ " + 1) .. " (parent not shown)"
       if scope == "all" then
-        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
+        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h:h")) .. "  " .. child.text
       end
       add(child, 0)
     end
