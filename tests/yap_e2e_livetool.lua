@@ -113,7 +113,7 @@ assert(not yap.winbar():match("bash"), "winbar still shows the tool after comple
 -- the audit view holds the FULL output (tool_end drains before the temp log
 -- of an untruncated run is deleted), with a $ command header
 local audit_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
-assert(audit_text:match("^%$ printf"), "no command header in audit view: " .. audit_text)
+assert(audit_text:match("\n%$ printf"), "no command header in audit view: " .. audit_text)
 assert(
   audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"),
   "audit view incomplete: " .. audit_text
