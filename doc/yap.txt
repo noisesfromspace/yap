@@ -601,16 +601,18 @@ reply or stuck in an error is still visible from another window.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
 (`bash 12s`); a pending `# @steer` adds a steer icon to the model island. A
-three-stop fold-view switch (`1  2  3`) on the left highlights the selected
-preset for this window; click a stop to select it, or use <leader>1..3.
-Individual folds can still be toggled independently (|yap-folding|). Then
-a rollup island totals ALL OTHER yap sessions by state: streaming, awaiting
-you, stopped, errored, idle. It never counts the current buffer and folds
-subagents into their parent. After the island: the session description
-(truncated to 40 display columns). A provider/model island sits centered in
-the bar; the steer icon sits immediately left of the model name, with a
-matching blank on the right so the name stays centered. Right: two usage chips
-and a context-fill meter (|yap-winbar-numbers|).
+three-stop fold-view switch (`1  2  3`) highlights the selected preset for
+this window; click a stop to select it, or use <leader>1..3. In the active
+bar it sits to the right of the centered model island (the model name stays
+centered); in an inactive bar it stays on the left. Individual folds can
+still be toggled independently (|yap-folding|). Then a rollup island totals
+ALL OTHER yap sessions by state: streaming, awaiting you, stopped, errored,
+idle. It never counts the current buffer and folds subagents into their
+parent. After the island: the session description (truncated to 40 display
+columns). A provider/model island sits centered in the bar; the steer icon
+sits immediately left of the model name, with a matching blank on the right
+so the name stays centered. Right: two usage chips and a context-fill meter
+(|yap-winbar-numbers|).
 
 Reading the numbers                                    *yap-winbar-numbers*
 

@@ -21,8 +21,23 @@ local function stops(win, selected)
     local group = level == selected and "ViewActive" or "ViewInactive"
     assert(wb:find("%" .. level .. "@v:lua.YapFoldViewClick@%#Yap" .. group .. "# " .. level .. " %*%T", 1, true), wb)
   end
-  local displayed = vim.api.nvim_eval_statusline(wb, { winid = win, use_winbar = true, maxwidth = 120 }).str
-  assert(displayed:find(" 1  2  3 ", 1, true), "fold switch text missing: " .. displayed)
+  local left = wb:match("^(.-)%%=") or ""
+  local center = wb:match("^.-%%=(.-)%%=")
+  local function has_switch(section)
+    if not section or section == "" then
+      return false
+    end
+    local rendered = vim.api.nvim_eval_statusline(section, { winid = win, use_winbar = true, maxwidth = 120 }).str
+    return rendered:find(" 1  2  3 ", 1, true) ~= nil
+  end
+  -- Active: beside the centered model island. Inactive: stays on the left.
+  local in_center = win == vim.api.nvim_get_current_win()
+  assert(has_switch(left) == (not in_center), "fold switch on the wrong side of the model: " .. wb)
+  if in_center then
+    assert(has_switch(center), "fold switch missing from the centered section: " .. wb)
+  else
+    assert(not has_switch(center), "fold switch leaked into the centered section: " .. wb)
+  end
 end
 
 stops(left_win, 2)

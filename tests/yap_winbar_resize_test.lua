@@ -171,7 +171,6 @@ for mask = 0, 15 do
   local idle_n = (state.running[other] and 0 or 1) + (state.awaiting[waiting] and 0 or 1)
   local expected = {
     state.running[target] and "@" or icons.idle,
-    " 1  2  3 ",
     expected_rollup(other_running, waiting_n, 0, 0, idle_n),
   }
   if titled then
@@ -189,6 +188,7 @@ for mask = 0, 15 do
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
     assert(centered_text:find(" mock/m1 ", 1, true), "model island missing from center: " .. centered_text)
     assert(not centered_text:find("󰘖", 1, true), "fold island leaked into center: " .. centered_text)
+    assert(centered_text:find(" 1  2  3 ", 1, true), "fold switch missing from center: " .. centered_text)
     assert(
       center:find("%#YapIslandCursiveModel#", 1, true) and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
       "model and padding must use the island surface: " .. center
@@ -434,7 +434,8 @@ assert(
   "model text should remain italic inside its island"
 )
 -- Gutter alignment: the state icon (including the running animation) stays
--- centered in the gutter while the view switch starts at the text edge.
+-- centered in the gutter while the rollup island starts at the text edge
+-- (the fold-view switch now sits beside the centered model island).
 do
   local g_target = vim.api.nvim_create_buf(false, true)
   local g_other = vim.api.nvim_create_buf(false, true)
@@ -481,8 +482,8 @@ do
       state.running[g_target] = is_running and {} or nil
       local icon_col, cap_col = positions()
       assert(icon_col == math.floor((gutter_width - 1) / 2), "state icon not centered in gutter")
-      assert(cap_col == gutter_width + 11, "rollup cap not after the fold switch")
-      assert(cap_col - icon_col - 1 == (gutter_width == 3 and 1 or 2) + 11, "state icon spacing changed")
+      assert(cap_col == gutter_width, "rollup cap not flush after the gutter")
+      assert(cap_col - icon_col - 1 == (gutter_width == 3 and 1 or 2), "state icon spacing changed")
     end
   end
 

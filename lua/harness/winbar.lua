@@ -154,11 +154,13 @@ end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
 -- running tool's name once it has run 2s) or this buffer's state icon
--- (stopped/error/waiting/idle), then a three-stop fold view switch and a
--- global-session rollup island, then the description on the left; a centered
--- provider/model island; usage counters and context meter on the right. As
--- the window narrows the center island drops, then the switch; usage
--- counters and context meter retain their existing width priorities.
+-- (stopped/error/waiting/idle), then the global-session rollup island and
+-- the description on the left; a centered provider/model island with the
+-- three-stop fold view switch to its right (in the active bar only — an
+-- inactive bar keeps the switch on the left); usage counters and context
+-- meter on the right. As the window narrows the center island drops, then
+-- the switch; usage counters and context meter retain their existing width
+-- priorities.
 local function render_winbar(buf)
   local provider, model = config.current_combo(buf)
   local icons = require("harness").config.icons
@@ -181,6 +183,7 @@ local function render_winbar(buf)
     return { text = text, group = group, island = island, cursive = cursive, click = click }
   end
   local function render_seg(s, upright)
+    upright = upright and s.upright ~= false
     local text
     if s.group == "IslandCap" then
       text = winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
@@ -200,6 +203,21 @@ local function render_winbar(buf)
       n = n + vim.fn.strdisplaywidth(s.text)
     end
     return n
+  end
+
+  -- The three-stop fold view switch. Rendered with its own groups (not the
+  -- upright style the center section applies), so it looks identical whether
+  -- it sits in the left cluster (inactive bar) or beside the model island
+  -- (active bar).
+  local function fold_switch_segs()
+    local selected = require("harness.fold").level(win)
+    local stops = {}
+    for level = 1, 3 do
+      local s = seg(" " .. level .. " ", level == selected and "ViewActive" or "ViewInactive", false, false, level)
+      s.upright = false
+      stops[#stops + 1] = s
+    end
+    return stops
   end
 
   -- Mandatory left cluster (never dropped; the description shrinks). Build
@@ -261,13 +279,10 @@ local function render_winbar(buf)
       add_item({ seg(icon, icon_group) })
     end
 
+    -- The fold-view switch lives in the left cluster only for an inactive
+    -- bar; the active bar parks it to the right of the centered model island.
     if show_switch then
-      local selected = require("harness.fold").level(win)
-      local stops = {}
-      for level = 1, 3 do
-        stops[#stops + 1] = seg(" " .. level .. " ", level == selected and "ViewActive" or "ViewInactive", false, false, level)
-      end
-      add_item(stops)
+      add_item(fold_switch_segs())
     end
 
     -- Tool text belongs to the text region, ahead of the rollup. A pending
@@ -463,19 +478,25 @@ local function render_winbar(buf)
   -- Inactive sessions show their session identity instead of a model that is
   -- only useful while that session is selected. A pending steer icon sits
   -- immediately left of the model; a matching blank cell on the right keeps
-  -- the model name on the true midpoint.
-  local function center_segments()
+  -- the model name on the true midpoint. The active bar adds the fold-view
+  -- switch to the island's right with a matching blank on the left, so the
+  -- model name stays centered even though the whole section grows.
+  local function center_segments(show_switch)
     local text = provider .. "/" .. model
     if inactive then
       local label = require("harness.session").label(vim.b[buf].yap_path, full_description(buf))
       text = truncate_display(label, 40)
     end
     local show_steer = not inactive and steer[buf] ~= nil
-    local center = {
-      seg(" ", "Idle"),
-      seg("", "IslandCap"),
-      seg(" ", "Count", true),
-    }
+    local switch_segs = show_switch and fold_switch_segs() or nil
+    local center = {}
+    if switch_segs then
+      -- Blank left of the island: the switch width plus its two-column gap.
+      center[#center + 1] = seg(string.rep(" ", width_of(switch_segs) + 2), "Idle")
+    end
+    center[#center + 1] = seg(" ", "Idle")
+    center[#center + 1] = seg("", "IslandCap")
+    center[#center + 1] = seg(" ", "Count", true)
     if show_steer then
       center[#center + 1] = seg(icons.steer, "Needs", true)
       center[#center + 1] = seg(" ", "Count", true)
@@ -486,6 +507,12 @@ local function render_winbar(buf)
       center[#center + 1] = seg("  ", "Count", true)
     end
     center[#center + 1] = seg("", "IslandCap")
+    if switch_segs then
+      center[#center + 1] = seg("  ", "Idle")
+      for _, s in ipairs(switch_segs) do
+        center[#center + 1] = s
+      end
+    end
     center[#center + 1] = seg(" ", "Idle")
     return center
   end
@@ -527,8 +554,8 @@ local function render_winbar(buf)
   -- would collide with it, then degrade the right side as before.
   local desc_max, mode, show_mid, show_switch = 40, "full", true, true
   while true do
-    local left = left_segments(desc_max, show_switch)
-    local center = show_mid and center_segments() or nil
+    local left = left_segments(desc_max, inactive and show_switch)
+    local center = show_mid and center_segments(not inactive) or nil
     local usage = not inactive and usage_segment(mode)
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
