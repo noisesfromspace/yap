@@ -23,9 +23,14 @@ local frontmatter = require("harness.frontmatter")
 local winbar = require("harness.winbar")
 local spinner = require("harness.spinner")
 local drawer = require("harness.drawer")
+local scratchmod = require("harness.scratch")
 
 M.winbar = winbar.winbar
 M.overview = winbar.overview
+M.steer = scratchmod.steer
+M.scratch_send = scratchmod.scratch_send
+M.scratch_foldexpr = scratchmod.scratch_foldexpr
+M.scratch_toggle = scratchmod.scratch_toggle
 
 -- Shared per-buffer state lives in harness.state; these aliases keep the
 -- orchestration code reading like the pre-split module. The winbar reads
@@ -469,7 +474,6 @@ local function audit_poll_start()
 end
 
 --- Handle one `yap:event {json}` line from the binary's stderr.
-local scratch_section_text, scratch_set_section, scratch_save
 local live_session_label
 local inspect_approval
 
@@ -589,9 +593,9 @@ local function handle_event(buf, json_line)
     if steer[buf] == ev.text then
       steer[buf] = nil -- delivered: remove only the matching live draft
       local scratch = vim.b[buf].yap_scratch
-      if scratch and vim.api.nvim_buf_is_valid(scratch) and scratch_section_text(scratch, "steer") == ev.text then
-        scratch_set_section(scratch, "steer", {})
-        scratch_save(scratch)
+      if scratch and vim.api.nvim_buf_is_valid(scratch) and scratchmod.section_text(scratch, "steer") == ev.text then
+        scratchmod.set_section(scratch, "steer", {})
+        scratchmod.save(scratch)
       end
     end
     append_event(buf, ev) -- audit trail: a steering message landed mid-turn
@@ -1071,319 +1075,7 @@ function M.alerts()
   end)
 end
 
---- The queue file is a sibling of the session file, sharing its basename
---- with a `.queue` extension, so it lives in the sessions dir but
---- session.list()'s `*.md` glob never mistakes it for a session.
-local function queue_path(buf)
-  return paths.queue_path(buf)
-end
-
---- Drag the queue file and buffer along after a `:file` rename of the
---- session, the same way the audit log follows (see audit_follow).
-local function queue_follow(buf, scratch)
-  local want = queue_path(buf)
-  local name = vim.api.nvim_buf_get_name(scratch)
-  if name == want then
-    return
-  end
-  if name ~= "" and vim.fn.filereadable(name) == 1 and vim.fn.filereadable(want) == 0 then
-    os.rename(name, want)
-  end
-  vim.api.nvim_buf_set_name(scratch, want)
-end
-
---- Scratch sections are explicit so notes never become an accidental prompt.
---- The queue body is one message; a steer is one multiline body.
-local function scratch_section(scratch, name)
-  local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
-  local heading
-  for i, line in ipairs(lines) do
-    local role = line:match("^# @([%a]+)%s*$")
-    if role == name then
-      heading = i
-      break
-    end
-  end
-  if not heading then
-    return nil
-  end
-  local finish = #lines
-  for i = heading + 1, #lines do
-    if lines[i]:match("^# @[%a]+%s*$") then
-      finish = i - 1
-      break
-    end
-  end
-  return heading, finish, lines
-end
-
-local function scratch_section_lines(scratch, name)
-  local heading, finish, lines = scratch_section(scratch, name)
-  if not heading then
-    return {}
-  end
-  local body = {}
-  for i = heading + 1, finish do
-    body[#body + 1] = lines[i]
-  end
-  while #body > 0 and body[1]:match("^%s*$") do
-    table.remove(body, 1)
-  end
-  while #body > 0 and body[#body]:match("^%s*$") do
-    table.remove(body)
-  end
-  return body
-end
-
-scratch_set_section = function(scratch, name, body)
-  local heading, finish = scratch_section(scratch, name)
-  if not heading then
-    return
-  end
-  vim.api.nvim_buf_set_lines(scratch, heading, finish, false, body)
-end
-
-scratch_section_text = function(scratch, name)
-  return table.concat(scratch_section_lines(scratch, name), "\n")
-end
-
---- Write the live scratch buffer after a consumed item is removed.
-scratch_save = function(scratch)
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    return
-  end
-  if vim.api.nvim_buf_get_name(scratch) == "" then
-    return
-  end
-  vim.api.nvim_buf_call(scratch, function()
-    vim.cmd("silent noautocmd keepjumps write!")
-  end)
-end
-
-local function cancel_steer(buf)
-  steer[buf] = nil
-  local proc = running[buf]
-  if not proc then
-    return
-  end
-  local ok = pcall(function()
-    proc:write(vim.json.encode({ type = "unsteer" }) .. "\n")
-  end)
-  if not ok then
-    vim.notify("yap: could not cancel steer (backend gone)", vim.log.levels.WARN)
-  end
-end
-
---- Steer the running turn using the current # @steer body. The text stays in
---- the live buffer until the backend confirms delivery, so it can be edited
---- or removed while waiting for the next model boundary.
-function M.steer(buf, text)
-  if text == "" then
-    cancel_steer(buf)
-    return true
-  end
-  if steer[buf] == text then
-    return true
-  end
-  local proc = running[buf]
-  local ok = pcall(function()
-    proc:write(vim.json.encode({ type = "steer", text = text }) .. "\n")
-  end)
-  if not ok then
-    vim.notify("yap: could not steer (backend gone)", vim.log.levels.WARN)
-    return false
-  end
-  steer[buf] = text
-  return true
-end
-
-local function sync_scratch_steer(owner, scratch)
-  local pending = steer[owner]
-  if not pending or not M.is_running(owner) then
-    return
-  end
-  local current = scratch_section_text(scratch, "steer")
-  if current ~= pending then
-    M.steer(owner, current)
-  end
-end
-
-local function scratch_dispatch_queue(owner)
-  if not vim.api.nvim_buf_is_valid(owner) or M.is_running(owner) then
-    return false
-  end
-  local scratch = vim.b[owner].yap_scratch
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    return false
-  end
-  local section = scratch_section_text(scratch, "queue") ~= "" and "queue" or "steer"
-  local item = scratch_section_text(scratch, section)
-  if item == "" then
-    return false
-  end
-  document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
-  if not M.send(owner) then
-    vim.notify("yap: send failed; scratch draft was not consumed", vim.log.levels.WARN)
-    return true
-  end
-  scratch_set_section(scratch, section, {})
-  scratch_save(scratch)
-  return true
-end
-
---- <C-s> dispatches by state: while running it submits the # @steer body;
---- while idle it sends the whole # @queue body as one message, falling back
---- to # @steer when the queue is empty. Notes remain an inert backlog.
-function M.scratch_send(scratch)
-  scratch = scratch or vim.api.nvim_get_current_buf()
-  local owner = vim.b[scratch].yap_owner
-  if not (owner and vim.api.nvim_buf_is_valid(owner)) then
-    vim.notify("yap: scratch has no chat buffer", vim.log.levels.WARN)
-    return
-  end
-
-  if M.is_running(owner) then
-    local text = scratch_section_text(scratch, "steer")
-    if text == "" and not steer[owner] then
-      vim.notify("yap: # @steer is empty", vim.log.levels.WARN)
-      return
-    end
-    M.steer(owner, text)
-    return
-  end
-
-  if not scratch_dispatch_queue(owner) then
-    vim.notify("yap: # @queue and # @steer are empty", vim.log.levels.WARN)
-  end
-end
-
-local function scratch_heading(line)
-  return line:match("^# @notes%s*$") or line:match("^# @steer%s*$") or line:match("^# @queue%s*$")
-end
-
-function M.scratch_foldexpr(lnum)
-  local current = vim.fn.getline(lnum)
-  if scratch_heading(current) then
-    return ">1"
-  end
-  for row = lnum - 1, 1, -1 do
-    if scratch_heading(vim.fn.getline(row)) then
-      return "1"
-    end
-  end
-  return "0"
-end
-
---- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
---- opened below the chat window. It is a real, file-backed buffer — a
---- sibling `*.queue` file of the session — so `:write` saves it and an
---- unsaved queue prompts on exit like any other modified buffer. It is a
---- quick "queue" for agent tasks, never part of the conversation.
-local SCRATCH_HEIGHT = 8
-
-function M.scratch_toggle(buf)
-  buf = buf or vim.api.nvim_get_current_buf()
-  if not vim.b[buf].yap then
-    vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
-    return
-  end
-
-  local scratch = vim.b[buf].yap_scratch
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    -- Reuse a leftover queue buffer from a wiped-and-reopened session,
-    -- otherwise create a file-backed buffer and load the saved queue.
-    local want = queue_path(buf)
-    local created
-    scratch, created = util.find_or_create_buffer(want, false, false) -- unlisted, file-backed
-    if created and vim.fn.filereadable(want) == 1 then
-      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
-    end
-    local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
-    local found = {}
-    for _, line in ipairs(lines) do
-      local role = line:match("^# @([%a]+)%s*$")
-      if role then
-        found[role] = true
-      end
-    end
-    if not found.notes and not found.steer and not found.queue then
-      local legacy = (#lines == 1 and lines[1] == "") and {} or lines
-      local migrated = { "# @notes", "", "# @steer", "", "# @queue" }
-      vim.list_extend(migrated, legacy)
-      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, migrated)
-    else
-      local missing = {}
-      for _, role in ipairs({ "notes", "steer", "queue" }) do
-        if not found[role] then
-          missing[#missing + 1] = ""
-          missing[#missing + 1] = "# @" .. role
-        end
-      end
-      if #missing > 0 then
-        local endline = vim.api.nvim_buf_line_count(scratch)
-        vim.api.nvim_buf_set_lines(scratch, endline, endline, false, missing)
-      end
-    end
-    vim.bo[scratch].bufhidden = "hide"
-    vim.bo[scratch].buflisted = false
-    vim.b[buf].yap_scratch = scratch
-    vim.b[scratch].yap_owner = buf
-    if not vim.b[scratch].yap_steer_watch then
-      vim.b[scratch].yap_steer_watch = true
-      vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-        buffer = scratch,
-        callback = function()
-          local owner = vim.b[scratch].yap_owner
-          if owner and vim.api.nvim_buf_is_valid(owner) then
-            sync_scratch_steer(owner, scratch)
-          end
-        end,
-      })
-    end
-    if M.config.keymaps.scratch ~= "" then
-      vim.keymap.set("n", M.config.keymaps.scratch, function()
-        M.scratch_toggle(buf)
-      end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
-    end
-    if M.config.keymaps.insert_file ~= "" then
-      vim.keymap.set("n", M.config.keymaps.insert_file, function()
-        M.insert_file()
-      end, { buffer = scratch, silent = true, desc = "yap: insert file reference" })
-    end
-    if M.config.keymaps.send ~= "" then
-      vim.keymap.set("n", M.config.keymaps.send, function()
-        M.scratch_send(scratch)
-      end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
-      vim.keymap.set("i", M.config.keymaps.send, function()
-        vim.cmd.stopinsert()
-        M.scratch_send(scratch)
-      end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
-      vim.keymap.set("x", M.config.keymaps.send, function()
-        M.scratch_send(scratch)
-      end, { buffer = scratch, silent = true, desc = "yap: send scratch selection" })
-    end
-    scratch_save(scratch)
-  else
-    vim.b[scratch].yap_owner = buf
-  end
-
-  queue_follow(buf, scratch) -- session renamed? drag the queue file along
-
-  -- Toggle: a visible queue closes back to the chat; an invisible one opens
-  -- full-width below it (see harness.drawer).
-  if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT) then
-    return
-  end
-  vim.wo.winfixheight = true
-  vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
-  vim.wo.foldmethod = "expr"
-  vim.wo.foldexpr = "v:lua.require'harness'.scratch_foldexpr(v:lnum)"
-  vim.wo.foldtext = ""
-  vim.wo.foldlevel = 99
-  vim.wo.foldenable = true
-end
-
---- Record a backend error: notify, persist it in the winbar, and leave a
+-- The scratch queue and mid-turn steering live in harness.scratch.
 --- parse-excluded marker in the buffer as a record.
 local function report_error(buf, err)
   errors[buf] = err
@@ -1646,7 +1338,7 @@ local function leave_undelivered_steer(buf)
   -- A late user instruction outranks an agent's close_session request.
   close_after_turn[buf] = nil
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    scratch_save(scratch)
+    scratchmod.save(scratch)
     vim.notify("yap: steer was not delivered; draft remains in scratch (send again with <C-s>)", vim.log.levels.WARN)
   else
     document.append_message(buf, "user", vim.split(text, "\n", { plain = true }))
