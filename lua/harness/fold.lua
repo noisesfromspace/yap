@@ -207,11 +207,27 @@ local function apply(buf, win, w, list)
     for _, b in ipairs(list) do
       wanted[b.id] = b
     end
-    -- Native folds shift on edits. Old numeric coordinates cannot be used
-    -- to delete them; rebuild on movement/deletion using anchored intent.
+    -- Native folds shift on edits; old numeric coordinates cannot be used
+    -- to delete them, so stale folds are found by anchored intent and the
+    -- projection is rebuilt. A fold is stale when any of these is true:
+    --   · its anchor moved (an edit above it) or it no longer exists
+    --     (foldlevel < 1 at its start);
+    --   · it dropped out of the projection (no wanted block);
+    --   · its range drifted — a stream append grows its finish, or splits
+    --     its final line so Neovim shrinks the native fold by one.
+    --     foldlevel reflects the fold RANGE (open or closed), so a finish
+    --     line outside any fold means drift.
     local rebuild = w.rebuild
     for id, old in pairs(w.installed) do
-      if position(buf, id) ~= old.start or vim.fn.foldlevel(old.start) ~= 1 then
+      local b = wanted[id]
+      if
+        position(buf, id) ~= old.start
+        or vim.fn.foldlevel(old.start) ~= 1
+        or not b
+        or b.start ~= old.start
+        or b.finish ~= old.finish
+        or vim.fn.foldlevel(b.finish) < 1
+      then
         rebuild = true
         break
       end
@@ -222,29 +238,27 @@ local function apply(buf, win, w, list)
       if not w.reset and not w.restore then
         capture(buf, win, w)
       end
+      -- Rebuild cursor-free: zE wipes every fold without touching the
+      -- cursor or viewport, then each intended block is re-projected from
+      -- its anchored intent. The old path deleted drifted folds one at a
+      -- time with `zd`, which requires jumping the cursor to the fold's
+      -- start line and back on every flush — that up-and-back is what made
+      -- streaming folds flicker.
       vim.cmd("normal! zE")
       w.installed = {}
-    end
-    for id, old in pairs(w.installed) do
-      local b = wanted[id]
-      -- A stream append can split a fold's final line; Neovim then shrinks
-      -- the native fold by one line while the model and our bookkeeping are
-      -- unchanged. foldlevel reflects the fold RANGE (open or closed), so a
-      -- finish line that is no longer inside any fold means the installed
-      -- range has drifted and must be recreated.
-      if not b or b.start ~= old.start or b.finish ~= old.finish or vim.fn.foldlevel(b.finish) < 1 then
-        if vim.fn.foldlevel(old.start) > 0 then
-          vim.api.nvim_win_set_cursor(0, { old.start, 0 })
-          vim.cmd("normal! zd")
-        end
-        w.installed[id] = nil
-      end
-    end
-    for _, b in ipairs(list) do
-      if not w.installed[b.id] then
+      for _, b in ipairs(list) do
         vim.cmd(("%d,%dfold"):format(b.start, b.finish))
         vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
         w.installed[b.id] = { start = b.start, finish = b.finish }
+      end
+    else
+      -- Nothing moved: only install folds that are new to this window.
+      for _, b in ipairs(list) do
+        if not w.installed[b.id] then
+          vim.cmd(("%d,%dfold"):format(b.start, b.finish))
+          vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+          w.installed[b.id] = { start = b.start, finish = b.finish }
+        end
       end
     end
     w.rebuild, w.reset, w.restore = false, false, false
