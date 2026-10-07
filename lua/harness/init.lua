@@ -2972,7 +2972,7 @@ live_session_label = function(buf, parent)
   if role then
     local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    label = role .. " · " .. (task or (fallback ~= "" and fallback) or label)
+    label = role .. " · " .. ((fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
   end
   if role and parent then
     return "↳ " .. label

@@ -191,7 +191,8 @@ current one, while `require('harness').waiting()` lists those awaiting a
 reply or stopped. Open sessions are unlisted (absent from |:ls|); use
 `<leader>r` to pick one. The open-session picker shows project cwd, status,
 title and model on root rows; child rows show their status, fork/role and
-original task or fork title without repeating the model. Waiting parent
+subagent description (falling back to the task) or fork title without
+repeating the model. Waiting parent
 groups sort last and children sit beneath their parent. Children whose
 parent is not shown become labelled roots. The waiting picker hides the
 current session unless it has an

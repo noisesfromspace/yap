@@ -293,8 +293,8 @@ for i, item in ipairs(renamed) do
 end
 assert(positions[named_parent_path] and positions[named_child_path] == positions[named_parent_path] + 1,
   "renamed parent lost its child: " .. vim.inspect(renamed))
-assert(renamed[positions[named_child_path]].text == "  ↳ scout · original task",
-  "saved child changed identity after follow-up: " .. vim.inspect(renamed))
+assert(renamed[positions[named_child_path]].text == "  ↳ scout · Generated follow-up description",
+  "saved child should prefer its description over the task: " .. vim.inspect(renamed))
 vim.api.nvim_set_current_buf(named_parent)
 local live_named
 vim.ui.select = function(items, opts)
@@ -304,7 +304,7 @@ yap.instances()
 vim.ui.select = orig_select
 for _, item in ipairs(live_named.items) do
   if item.buf == named_child then
-    assert(item.text == "↳ scout · original task", "open child label disagrees with history: " .. item.text)
+    assert(item.text == "↳ scout · Generated follow-up description", "open child should prefer its description: " .. item.text)
     assert(not live_named.format(item):find("(m1)", 1, true), "open subagent row repeats its model")
   end
 end

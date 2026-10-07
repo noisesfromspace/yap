@@ -419,7 +419,7 @@ function M.list(scope)
           turns = fm and fm.turns,
         }
         if fm and fm.role then
-          item.text = "↳ " .. fm.role .. " · " .. (M.task(lines) or (description ~= "" and description) or name)
+          item.text = "↳ " .. fm.role .. " · " .. ((description ~= "" and description) or M.task(lines) or name)
           children[path] = item
         elseif fm and fm.forked_from then
           item.text = "↳ fork · " .. M.label(path, description)
