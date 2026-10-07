@@ -244,7 +244,9 @@ Each window owns its view (initially 2) and open/closed choices. View 1 folds
 system and assistant messages, including the newest; view 2 folds system and
 regions; view 3 removes folds. Explicit view keys reset this window only.
 Native commands and Tab share state. New folds follow defaults, not
-neighbours; growing folds retain the user's choice. Identity survives position
+neighbours; growing folds retain the user's choice. A mouse click on a closed
+fold opens it (the same state as Tab); clicks on open content stay native.
+Identity survives position
 changes and undo through extmarks. Streaming updates text and fold ranges
 synchronously before yielding; incomplete marker prefixes are buffered until
 classifiable. Hidden sessions are reconciled synchronously on window entry.

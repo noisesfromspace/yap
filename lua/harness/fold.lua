@@ -324,6 +324,34 @@ function M.toggle(lnum)
   act(lnum, "toggle")
 end
 
+--- `<LeftMouse>` expr-map handler: open the fold under a click, or fall
+--- through to Neovim's native click. Returning "<LeftMouse>" lets Neovim
+--- perform its own press (cursor placement, window focus, drag-select) on
+--- open lines; returning "" consumes the click after opening a closed fold
+--- in place. The open path must not run `:normal` (forbidden inside an expr
+--- map), so it relies on the buffer already being reconciled — which it is
+--- between stream flushes and the scheduled edit reconcile. Clicks in a
+--- background split open the fold there without stealing focus (no WinEnter),
+--- matching the winbar switch's window handling.
+function M.mouse_left()
+  local pos = vim.fn.getmousepos()
+  local win = pos.winid
+  if win == 0 or not vim.api.nvim_win_is_valid(win) or pos.line <= 0 then
+    return "<LeftMouse>"
+  end
+  local folded = vim.api.nvim_win_call(win, function()
+    return vim.fn.foldclosed(pos.line) ~= -1
+  end)
+  if not folded then
+    return "<LeftMouse>"
+  end
+  vim.api.nvim_win_call(win, function()
+    M.open(pos.line)
+    vim.api.nvim_win_set_cursor(win, { pos.line, 0 })
+  end)
+  return ""
+end
+
 -- Capture before a stream edit: Neovim may remove a one-line manual fold
 -- when that line is split. After the edit it is too late to recover its
 -- native open/closed choice. Document mutations call this before writing.
@@ -651,6 +679,14 @@ function M.setup_buffer(buf, keys)
   map(keys.toggle_fold, function()
     M.toggle(vim.api.nvim_win_get_cursor(0)[1])
   end, "Toggle fold")
+  -- A click on a closed fold opens it; clicks on open content keep native
+  -- mouse behavior (cursor placement and drag-select).
+  vim.keymap.set("n", "<LeftMouse>", M.mouse_left, {
+    buffer = buf,
+    expr = true,
+    silent = true,
+    desc = "yap: open fold on click",
+  })
   -- Native user commands update the same state as Tab, including closes.
   -- normal! and Ex commands are also observed before stream edits/leaving.
   for _, command in ipairs({ "za", "zo", "zc", "zA", "zO", "zC", "zR", "zM", "zr", "zm" }) do

@@ -571,9 +571,11 @@ and the system prompt; view 3 removes all folds. Opening an assistant in view
 code and multiline comments.
 
 <Tab> toggles the region under the cursor. ]t/[t, ]c/[c and ]e/[e jump to and
-open a region without closing earlier ones. Native za/zo/zc, zA/zO/zC and
-zR/zM/zr/zm update the same state; closing a previously opened region is just
-as persistent as opening it. ]m/]u/]a only navigate. Message navigation and
+open a region without closing earlier ones. Clicking a closed fold opens it
+(the same choice as <Tab>); clicks elsewhere keep their normal mouse behavior.
+Native za/zo/zc, zA/zO/zC and zR/zM/zr/zm update the same state; closing a
+previously opened region is just as persistent as opening it. ]m/]u/]a only
+navigate. Message navigation and
 the message text objects follow the same structural parse as folding, so a
 `# @user` line inside a fenced tool result is literal content, never a message
 boundary; region navigation does the same for `<!-- yap:tool` or
