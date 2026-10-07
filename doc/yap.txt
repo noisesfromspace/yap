@@ -171,16 +171,18 @@ argument to pick a model). The choice is persisted to
                                                             *:YapSessions*
 :YapSessions [scope]  Pick a saved session to resume. Default scope is the
                         current project (cwd); "all" lists every project,
-                        "renamed" lists only the sessions named with
-                        |:file| (a custom filename), ignoring
-                        description-labelled auto-generated names.
+                        "renamed" lists sessions named with |:file| (a
+                        custom filename), plus their forks and subagents.
+                        A named child of a parent excluded by this filter
+                        remains available as an orphan root.
                         Sessions still on their auto-generated filename
                         (no description yet) are hidden unless they have
                         subagents; unnamed forks are also visible. Name one with |:file| or let the first
                         reply label it. Saved subagents appear beneath their
-                        parent and can be opened for direct follow-up. Open
-                        sessions stay listed in the open-session picker
-                        (`<leader>r`).
+                        parent and can be opened for direct follow-up. Orphan
+                        children retain their fork/role label and show
+                        `(parent not shown)`. Open sessions stay listed in the
+                        open-session picker (`<leader>r`).
 
 The history picker (`<leader>y`, `require('harness').history()`)
 shows saved sessions with live state icons; pass `'all'` for every project.
@@ -188,8 +190,11 @@ shows saved sessions with live state icons; pass `'all'` for every project.
 current one, while `require('harness').waiting()` lists those awaiting a
 reply or stopped. Open sessions are unlisted (absent from |:ls|); use
 `<leader>r` to pick one. The open-session picker shows project cwd, status,
-title and model; waiting parent groups sort last and children sit beneath
-their parent. The waiting picker hides the current session unless it has an
+title and model on root rows; child rows show their status, fork/role and
+original task or fork title without repeating the model. Waiting parent
+groups sort last and children sit beneath their parent. Children whose
+parent is not shown become labelled roots. The waiting picker hides the
+current session unless it has an
 open fork or subagent to group; it includes manually stopped sessions and
 children whose turns stopped or failed, but not completed subagents (find
 those in the open-session or saved-session picker). The audit view is also

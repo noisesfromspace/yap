@@ -2961,22 +2961,27 @@ end
 --- Session title for the picker: description when present, filename as
 --- fallback. Subagents and forks are indented under their parent when it
 --- is open. The project cwd is rendered separately by |M.instances|.
-live_session_label = function(buf)
+live_session_label = function(buf, parent)
   local name = vim.api.nvim_buf_get_name(buf)
   local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
   local e = frontmatter_end(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  local label = require("harness.session").label(path, fm and fm.description)
-  local parent = vim.b[buf].yap_subagent_parent
-  if parent and vim.api.nvim_buf_is_valid(parent) and vim.b[parent].yap then
-    local task = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    return "↳ " .. (fm.role or vim.b[buf].yap_role or "subagent") .. " · " .. (task ~= "" and task or label)
+  local session = require("harness.session")
+  local label = session.label(path, fm and fm.description)
+  local role = fm and fm.role or vim.b[buf].yap_role
+  if role then
+    local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    label = role .. " · " .. (task or (fallback ~= "" and fallback) or label)
   end
-  if fm and fm.role then
-    label = label .. "  [subagent: " .. fm.role .. "]"
+  if role and parent then
+    return "↳ " .. label
   end
   if fm and fm.forked_from then
-    return "↳ fork · " .. label
+    return parent and "↳ fork · " .. label or "fork · " .. label .. " (parent not shown)"
+  end
+  if role and (fm and fm.subagent_parent or vim.b[buf].yap_subagent_parent) then
+    return label .. " (parent not shown)"
   end
   return label
 end
@@ -3071,7 +3076,8 @@ local function has_open_child(parent)
       end
       local e = frontmatter_end(buf)
       local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-      if fm and fm.forked_from and vim.fs.normalize(fm.forked_from) == path then
+      if fm and ((fm.forked_from and vim.fs.normalize(fm.forked_from) == path)
+        or (fm.subagent_parent and vim.fs.normalize(fm.subagent_parent) == path)) then
         return true
       end
     end
@@ -3108,22 +3114,25 @@ function M.instances(state)
     local subagent_parent = vim.b[b].yap_subagent_parent
     local e = vim.b[b].yap and frontmatter_end(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
+    subagent_parent = subagent_parent or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
     local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
     local parent = subagent_parent or fork_parent
+    local is_subagent = fm and fm.role or vim.b[b].yap_role
     local include_current = not needs_you or (b == current and has_open_child(b))
-    local child_needs_you = subagent_parent and (stopped[b] or errors[b])
+    local child_needs_you = is_subagent and (stopped[b] or errors[b])
     if
       (b ~= current or include_current)
       and vim.b[b].yap
-      and (not needs_you or not subagent_parent or child_needs_you)
+      and (not needs_you or not is_subagent or child_needs_you)
       and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
     then
       items[#items + 1] = {
         buf = b,
-        text = live_session_label(b),
+        text = live_session_label(b, parent ~= nil),
         path = parent and "" or vim.b[b].yap_project_cwd,
         state = session_state(b),
         model = vim.b[b].yap_model,
+        child = is_subagent or (fm and fm.forked_from),
         group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
         parent = parent,
         forked_from = fm and fm.forked_from,
@@ -3149,14 +3158,15 @@ function M.instances(state)
   end
   local roots = {}
   for _, item in ipairs(items) do
-    if item.forked_from and (not item.parent or not by_buf[item.parent]) then
-      item.text = item.text:sub(#"↳ fork · " + 1)
-    end
     if item.parent and by_buf[item.parent] then
       local siblings = children[item.parent] or {}
       siblings[#siblings + 1] = item
       children[item.parent] = siblings
     else
+      if item.parent then
+        item.path = vim.b[item.buf].yap_project_cwd
+        item.text = item.text:sub(#"↳ " + 1) .. " (parent not shown)"
+      end
       roots[#roots + 1] = item
     end
   end
@@ -3199,7 +3209,7 @@ function M.instances(state)
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
       local prefix = item.path ~= "" and (item.path .. " ") or " "
-      return prefix .. glyph[item.state] .. " " .. item.text .. " (" .. (item.model or item.state) .. ")"
+      return prefix .. glyph[item.state] .. " " .. item.text .. (item.child and "" or " (" .. (item.model or item.state) .. ")")
     end,
     preview_item = function(item)
       return require("harness.session").preview(vim.api.nvim_buf_get_lines(item.buf, 0, -1, false))

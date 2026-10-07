@@ -321,6 +321,15 @@ local function last_block(lines, role)
   return trim_block(acc)
 end
 
+--- First task line for a subagent's stable picker identity, even after follow-ups.
+function M.task(lines)
+  for _, line in ipairs(first_block(lines, "user")) do
+    if line:match("%S") then
+      return line:gsub("^%s+", ""):gsub("%s+$", "")
+    end
+  end
+end
+
 --- Markdown preview of a session: the initial `# @user` message followed by
 --- the last `# @assistant` answer, rendered in a scratch buffer with the
 --- `markdown` filetype so pickers show it with normal syntax highlighting
@@ -410,22 +419,7 @@ function M.list(scope)
           turns = fm and fm.turns,
         }
         if fm and fm.role then
-          local task
-          for i, line in ipairs(lines) do
-            if line == "# @user" then
-              for j = i + 1, #lines do
-                if lines[j]:match("^# @%a+") then
-                  break
-                end
-                if lines[j]:match("%S") then
-                  task = lines[j]:gsub("^%s+", ""):gsub("%s+$", "")
-                  break
-                end
-              end
-              break
-            end
-          end
-          item.text = "↳ " .. fm.role .. " · " .. (description ~= "" and description or task or name)
+          item.text = "↳ " .. fm.role .. " · " .. (M.task(lines) or (description ~= "" and description) or name)
           children[path] = item
         elseif fm and fm.forked_from then
           item.text = "↳ fork · " .. M.label(path, description)
@@ -478,24 +472,25 @@ function M.list(scope)
   for _, item in ipairs(items) do
     add(item, 0)
   end
-  -- Preserve discoverability if a parent was deleted or is hidden by scope.
-  if not renamed_only then
-    local orphans = {}
-    for _, child in pairs(children) do
-      if not shown[child.path] then
-        orphans[#orphans + 1] = child
-      end
+  -- Preserve discoverability when a parent is missing or excluded by scope.
+  -- In renamed history, only custom-named orphans qualify; descendants of
+  -- named roots are already included by add() regardless of their names.
+  local orphans = {}
+  for _, child in pairs(children) do
+    if not shown[child.path] and (not renamed_only or not paths.is_default_name(child.path)) then
+      orphans[#orphans + 1] = child
     end
-    table.sort(orphans, function(a, b)
-      return a.mtime > b.mtime
-    end)
-    for _, child in ipairs(orphans) do
-      if not shown[child.path] then
-        if scope == "all" then
-          child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
-        end
-        add(child, 0)
+  end
+  table.sort(orphans, function(a, b)
+    return a.mtime > b.mtime
+  end)
+  for _, child in ipairs(orphans) do
+    if not shown[child.path] then
+      child.text = child.text:sub(#"↳ " + 1) .. " (parent not shown)"
+      if scope == "all" then
+        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h")) .. "  " .. child.text
       end
+      add(child, 0)
     end
   end
   return result

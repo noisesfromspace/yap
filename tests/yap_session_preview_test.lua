@@ -128,7 +128,8 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("↳ scout · inspect this task", 1, true) and not rendered_child:find(vim.fn.getcwd(), 1, true),
+  rendered_child:find("↳ scout · inspect this task", 1, true) and not rendered_child:find(vim.fn.getcwd(), 1, true)
+    and not rendered_child:find("(m1)", 1, true),
   "child row wastes space: " .. rendered_child
 )
 local state = require("harness.state")
@@ -268,6 +269,47 @@ assert(
   "saved preview wrong: " .. vim.inspect(saved_preview)
 )
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
+
+-- A named parent keeps its auto-named children in renamed history, while a
+-- custom-named orphan child is discoverable as a typed root.
+local dir = require("harness.path").session_dir(vim.fn.getcwd())
+local named_parent = yap.new({ path = dir .. "/named-history-parent.md" })
+local named_parent_path = vim.b[named_parent].yap_path
+local named_child = yap.new({ role = "scout", hidden = true })
+local named_child_path = vim.b[named_child].yap_path
+vim.api.nvim_buf_set_lines(named_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
+vim.api.nvim_buf_set_lines(named_child, 3, 3, false, { "description: Generated follow-up description", "subagent_parent: " .. named_parent_path })
+session.save(named_child)
+vim.api.nvim_buf_set_lines(named_parent, 3, 3, false, { "subagents:", "  - " .. named_child_path })
+session.save(named_parent)
+local orphan = yap.new({ path = dir .. "/named-history-orphan.md", role = "scout", hidden = true })
+local orphan_path = vim.b[orphan].yap_path
+vim.api.nvim_buf_set_lines(orphan, -1, -1, false, { "orphan task" })
+session.save(orphan)
+local renamed = session.list("renamed")
+local positions = {}
+for i, item in ipairs(renamed) do
+  positions[item.path] = i
+end
+assert(positions[named_parent_path] and positions[named_child_path] == positions[named_parent_path] + 1,
+  "renamed parent lost its child: " .. vim.inspect(renamed))
+assert(renamed[positions[named_child_path]].text == "  ↳ scout · original task",
+  "saved child changed identity after follow-up: " .. vim.inspect(renamed))
+vim.api.nvim_set_current_buf(named_parent)
+local live_named
+vim.ui.select = function(items, opts)
+  live_named = { items = items, format = opts.format_item }
+end
+yap.instances()
+vim.ui.select = orig_select
+for _, item in ipairs(live_named.items) do
+  if item.buf == named_child then
+    assert(item.text == "↳ scout · original task", "open child label disagrees with history: " .. item.text)
+    assert(not live_named.format(item):find("(m1)", 1, true), "open subagent row repeats its model")
+  end
+end
+assert(positions[orphan_path] and renamed[positions[orphan_path]].text == "scout · orphan task (parent not shown)",
+  "named orphan subagent missing from renamed history: " .. vim.inspect(renamed))
 
 -- The history picker annotates saved sessions that are open with their live
 -- state, including a manually stopped turn.
