@@ -977,6 +977,13 @@ function M.send(buf)
   -- a previous errored or stopped turn must not close a later turn.
   close_after_turn[buf] = nil
 
+  -- Import standalone photo paths before parsing or starting the turn. The
+  -- resulting reference is visible in the buffer and survives later sends.
+  local imported, attach_err = require("harness.attachment").import_paths(buf)
+  if not imported then
+    vim.notify("yap: " .. attach_err, vim.log.levels.WARN)
+    return false
+  end
   local messages = document.parse_buffer(buf)
   -- The harness always prepends its own boilerplate, then the
   -- request-scoped cwd: neither is stored in the buffer, so the visible

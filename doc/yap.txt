@@ -191,15 +191,16 @@ the current buffer unless otherwise noted.
                         at send time), so `:cd` takes effect on the next send.
                         Not written into the session buffer.
 *:YapAttach*
-:YapAttach            On a line containing only a dropped PNG/JPEG path in a
-                        user message, import up to 10 MiB into Neovim's data
-                        directory and replace the path with
-                        `![FILE: name](file:///...)`. Ghostty pastes paths
-                        into Neovim Insert mode (spaces may be escaped).
-                        On send the backend reads the image and supplies an
-                        image part to the selected model. Keep the asset store
-                        when moving sessions; delete the reference to stop
-                        sending the photo.
+:YapAttach            Optional: on a line containing only a dropped PNG/JPEG
+                        path in a user message, import it immediately into
+                        Neovim's data directory and replace it with a
+                        `![FILE: name](file:///...)` reference. Normally no
+                        command is needed: on :YapSend standalone absolute
+                        PNG/JPEG paths in user messages are imported first.
+                        A typed path has the same effect as a dropped one.
+                        The backend sends the image bytes to the model, up
+                        to 10 MiB. Keep the asset store when moving sessions;
+                        delete the reference to stop sending the photo.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*

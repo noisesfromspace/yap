@@ -33,11 +33,14 @@ this repository MUST keep this section up-to-date.
 Neither the Lua side nor the Go binary may keep message state between turns.
 An explicit `![FILE: name](file:///...)` reference in a user message is an
 image attachment: `:YapAttach` imports the dropped path into a local asset
-store and replaces that line with the reference. Go reads it on each send and
-sends its bytes as an image part. Removing the reference removes the attachment;
-missing/invalid assets fail the send. The asset store must accompany a session
-when moved to another machine. Why: branching by deletion, prefill by editing, and undo-tree navigation only
-work if the buffer is the single source of truth.
+store and replaces that line with the reference. On send, standalone absolute
+PNG/JPEG paths in user messages are imported automatically before parsing;
+this also applies to typed paths and changes only matching user lines. Go reads
+references on each send and sends their bytes as image parts. Removing the
+reference removes the attachment; missing/invalid assets fail the send. The
+asset store must accompany a session when moved to another machine. Why:
+branching by deletion, prefill by editing, and undo-tree navigation only work
+if the buffer is the single source of truth.
 
 #### R-markers-not-sent — `<!-- yap:* -->` marker regions are never sent as buffer text
 
@@ -61,10 +64,12 @@ Why: providers require role alternation.
 
 Structural appends (headings, error markers) go through `append_lines()`,
 which trims trailing blanks and prepends exactly one blank line itself — never
-append a heading with `append_text()`. The binary separates streamed tool
-regions with blank lines. There is no buffer-wide normalize pass: sends never
-rewrite existing lines, so what you see before ctrl-s is byte-identical to
-what gets sent. Binary-emitted regions (thinking, tool regions, error markers)
+append a heading with `append_text()`. Before the append-only send starts,
+standalone image paths in user messages are replaced locally by durable
+references; other existing lines are not rewritten. The binary separates streamed tool
+regions with blank lines. There is no buffer-wide normalize pass: apart from
+those image-path replacements, sends do not rewrite existing lines, so what
+gets sent is visible in the buffer before the request starts. Binary-emitted regions (thinking, tool regions, error markers)
 carry no leading newlines and self-terminate with exactly one blank line; a
 `pad()` in the agent loop bridges the two stateful transitions (heading → first
 message, streamed text → first tool header).

@@ -23,4 +23,24 @@ assert(vim.uv.fs_read(read, #image, 0) == image)
 vim.uv.fs_close(read)
 local messages = yap.parse_buffer(buf)
 assert(messages[#messages].role == "user" and messages[#messages].content == ref)
+
+-- A dropped standalone path is imported automatically by the send preflight.
+local auto = yap.new()
+local last = vim.api.nvim_buf_line_count(auto)
+vim.api.nvim_buf_set_lines(auto, last - 1, last, false, { "Describe this picture", escaped })
+assert(require("harness.attachment").import_paths(auto))
+local lines = vim.api.nvim_buf_get_lines(auto, last - 1, last + 1, false)
+assert(lines[1] == "Describe this picture" and lines[2] == ref, vim.inspect(lines))
+assert(require("harness.attachment").import_paths(auto)) -- subsequent sends do not re-import
+assert(vim.api.nvim_buf_get_lines(auto, last, last + 1, false)[1] == ref)
+
+local other = yap.new()
+local endline = vim.api.nvim_buf_line_count(other)
+vim.api.nvim_buf_set_lines(other, endline - 1, endline, false, {
+  "A path in prose: " .. source,
+  "/missing/file.png",
+})
+local ok, failure = require("harness.attachment").import_paths(other)
+assert(not ok and failure:find("expected a local image", 1, true), tostring(failure))
+assert(vim.api.nvim_buf_get_lines(other, endline - 1, endline, false)[1] == "A path in prose: " .. source)
 print("OK attachment")

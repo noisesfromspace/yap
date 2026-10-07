@@ -3,12 +3,12 @@ local max_bytes = 10 * 1024 * 1024
 
 --- Turn a dropped, shell-escaped image path on the current user line into a
 --- durable local reference. Ghostty pastes paths, not file contents.
-function M.attach()
-  local buf = vim.api.nvim_get_current_buf()
+function M.attach(buf, row)
+  buf = buf or vim.api.nvim_get_current_buf()
+  row = row or vim.api.nvim_win_get_cursor(0)[1]
   if not vim.b[buf].yap then
     return nil, "not a yap session"
   end
-  local row = vim.api.nvim_win_get_cursor(0)[1]
   local role
   for _, heading in ipairs(require("harness.structure").parse(buf).headings) do
     if heading.line > row then
@@ -65,6 +65,30 @@ function M.attach()
   local reference = "![FILE: " .. name .. "](" .. vim.uri_from_fname(dest) .. ")"
   vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { reference })
   return reference
+end
+
+function M.import_paths(buf)
+  local role
+  local headings = require("harness.structure").parse(buf).headings
+  local next_heading = 1
+  for row, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if headings[next_heading] and headings[next_heading].line == row then
+      role = headings[next_heading].role
+      next_heading = next_heading + 1
+    elseif role == "user" then
+      local path = line:match("^%s*(/.-)%s*$")
+      if path then
+        local lower = path:lower()
+        if lower:match("%.png$") or lower:match("%.jpe?g$") then
+          local ref, err = M.attach(buf, row)
+          if not ref then
+            return nil, err
+          end
+        end
+      end
+    end
+  end
+  return true
 end
 
 return M
