@@ -195,6 +195,23 @@ assert(
   captured and #captured.items == 1 and captured.items[1].buf == buf,
   "waiting picker should show the parent but not its completed subagent: " .. vim.inspect(captured and captured.items)
 )
+-- The general picker still lists the completed subagent, but as "done"
+-- rather than "waiting": its answer already went back to the parent.
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.instances()
+vim.ui.select = orig_select
+local done_child
+for _, item in ipairs(captured.items) do
+  if item.buf == child then
+    done_child = item
+  end
+end
+assert(done_child and done_child.state == "done", "completed subagent should be 'done': " .. vim.inspect(done_child))
+assert(captured.opts.format_item(done_child):find("^" .. yap.config.icons.done .. "    ↳") == 1,
+  "completed subagent should use the done icon: " .. captured.opts.format_item(done_child))
 state.stopped[child] = true
 captured = nil
 vim.ui.select = function(items, opts)

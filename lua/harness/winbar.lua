@@ -257,6 +257,8 @@ local function render_winbar(buf)
         icon, icon_group = icons.stopped, "Needs"
       elseif steer[buf] then
         icon, icon_group = icons.steer, "Needs"
+      elseif awaiting[buf] and vim.b[buf].yap_agent then
+        icon, icon_group = icons.done, "Idle"
       elseif awaiting[buf] then
         icon, icon_group = icons.waiting, "Needs"
       else

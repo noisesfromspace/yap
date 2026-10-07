@@ -29,4 +29,13 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @assistant", "", "Done", "", 
 require("harness.winbar").seed_awaiting(buf)
 assert(left():find("%#YapNeeds#" .. icons.waiting, 1, true), "reopened awaiting chat should show a waiting icon")
 state.awaiting[buf] = nil
+-- A finished subagent is done, not waiting: its own state icon is `done`.
+local sub = yap.new({ agent = "scout", hidden = true })
+state.awaiting[sub] = true
+assert(
+  yap.winbar(sub):find("%#YapIdle#" .. icons.done, 1, true) == 1,
+  "finished subagent needs a done icon: " .. yap.winbar(sub)
+)
+state.awaiting[sub] = nil
+vim.api.nvim_buf_delete(sub, { force = true })
 print("OK winbar_done")

@@ -101,7 +101,8 @@ default keeps colors on.
 
 `icons` sets the UI glyphs for the winbar and session picker
 (|yap-winbar|). Keys: `since`, `total`, `running`/`waiting`/`stopped`/
-`error`/`idle`, `steer`, `approval`, and the rounded caps `cap_l`/`cap_r`.
+`error`/`idle`/`done`, `steer`, `approval`, and the rounded caps
+`cap_l`/`cap_r`.
 Defaults are Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode
 icons, the typographic spinner and the block gauge. Explicit `icons`
 overrides still take precedence. Set an individual icon to `""` to drop it.
@@ -594,7 +595,8 @@ resets this window's choices only. Choices last while the buffer is loaded.
 9. WINBAR                                                      *yap-winbar*
 
 The winbar is the session dashboard. Left: the buffer's own state icon —
-idle, awaiting your reply, stopped, error — centered in the line-number
+idle, awaiting your reply, stopped, error, or done (a finished subagent) —
+centered in the line-number
 gutter, or, while streaming, an animated beacon that escalates with how long
 the running tool has been grinding (a typographic sparkle with
 `nerd_font = false`). When the window is inactive the beacon, rollup island

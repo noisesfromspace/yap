@@ -1769,6 +1769,11 @@ local function session_state(buf)
   elseif stopped[buf] then
     return "stopped"
   elseif awaiting[buf] then
+    -- A finished subagent has already reported its answer back to the
+    -- parent; it is done, not waiting for a reply.
+    if vim.b[buf].yap_agent then
+      return "done"
+    end
     return "waiting"
   end
   return "idle"
@@ -1779,7 +1784,7 @@ end
 --- animated spinner; the state word is omitted because the icon conveys it.
 local function session_status(buf)
   local ic = M.config.icons
-  local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, idle = ic.idle }
+  local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, done = ic.done, idle = ic.idle }
   return glyph[session_state(buf)]
 end
 
@@ -1812,16 +1817,17 @@ end
 --- Sort waiting sessions last; their dedicated <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
-  if errors[buf] then
+  local s = session_state(buf)
+  if s == "error" then
     return 1
-  elseif running and running[buf] then
+  elseif s == "running" then
     return 2
-  elseif stopped[buf] then
+  elseif s == "stopped" then
     return 3
-  elseif awaiting[buf] then
+  elseif s == "waiting" then
     return 5
   end
-  return 4
+  return 4 -- idle and done
 end
 
 --- Every open yap session buffer, annotated with its live state and sorted with
@@ -1982,6 +1988,7 @@ function M.instances(state)
     stopped = M.config.icons.stopped,
     error = M.config.icons.error,
     waiting = M.config.icons.waiting,
+    done = M.config.icons.done,
     idle = M.config.icons.idle,
   }
   local icon_width = 0
@@ -2030,6 +2037,7 @@ function M.setup(opts)
       error = "✗",
       waiting = "◉",
       idle = "○",
+      done = "✓",
       steer = "⌁",
       approval = "⚠",
       cap_l = "[",
