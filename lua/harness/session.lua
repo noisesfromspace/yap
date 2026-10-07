@@ -6,7 +6,8 @@
 -- autosaved after every completed reply. Pickers identify sessions by their
 -- chosen name (a :file rename) or generated description; unnamed sessions
 -- (no description, still on the auto-generated filename) are hidden unless
--- they have subagents; open sessions stay visible in the open-session picker via the
+-- they have subagents or hold an unsent `# @user` prompt (a scheduled
+-- prompt); open sessions stay visible in the open-session picker via the
 -- filename fallback. Saved subagents appear beneath their parent in history.
 
 local M = {}
@@ -312,6 +313,21 @@ local function last_block(lines, role)
   return trim_block(acc)
 end
 
+--- True when the trailing `# @user` block holds an unsent prompt. `lines` is
+--- the cheap 200-line slice list() reads for labels; a very long system
+--- prompt can push the trailing prompt past that slice, so re-read the whole
+--- file only in that truncated case. This is what makes a "scheduled" prompt
+--- (typed, not yet sent) discoverable in the history picker.
+local function has_pending_user_text(path, lines)
+  if #last_block(lines, "user") > 0 then
+    return true
+  end
+  if #lines == 200 then
+    return #last_block(vim.fn.readfile(path), "user") > 0
+  end
+  return false
+end
+
 --- First task line for a subagent's stable picker identity, even after follow-ups.
 function M.task(lines)
   for _, line in ipairs(first_block(lines, "user")) do
@@ -421,6 +437,7 @@ function M.list(scope)
             not paths.is_default_name(path)
             or description ~= ""
             or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
+            or has_pending_user_text(path, lines)
           ) and (not renamed_only or not paths.is_default_name(path))
         then
           items[#items + 1] = item

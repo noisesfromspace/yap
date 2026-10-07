@@ -53,6 +53,29 @@ assert(
   "renamed scope should list the :file-named session: " .. vim.inspect(renamed)
 )
 
+-- 3c. a fresh session with an unsent # @user prompt is a "scheduled"
+-- prompt: it stays listed even before a description is generated, so it can
+-- be resumed and sent later. Emptying the prompt hides it again.
+local scheduled = yap.new()
+local scheduled_last = vim.api.nvim_buf_line_count(scheduled) - 1
+vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "scheduled prompt body" })
+session.save(scheduled)
+local scheduled_path = vim.b[scheduled].yap_path
+items = session.list("cwd")
+local scheduled_item
+for _, item in ipairs(items) do
+  if item.path == scheduled_path then
+    scheduled_item = item
+  end
+end
+assert(scheduled_item, "scheduled prompt should be listed: " .. vim.inspect(items))
+vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "" })
+session.save(scheduled)
+items = session.list("cwd")
+for _, item in ipairs(items) do
+  assert(item.path ~= scheduled_path, "empty fresh session should stay hidden: " .. vim.inspect(items))
+end
+
 -- 4. reopen and parse back
 vim.cmd("bwipeout!")
 yap.open(path)

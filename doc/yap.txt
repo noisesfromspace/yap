@@ -186,7 +186,10 @@ argument to pick a model). The choice is persisted to
                         remains available as an orphan root.
                         Sessions still on their auto-generated filename
                         (no description yet) are hidden unless they have
-                        subagents; unnamed forks are also visible. Name one with |:file| or let the first
+                        subagents, are unnamed forks, or hold an unsent
+                        `# @user` prompt — that last case makes a
+                        "scheduled" prompt (typed but not yet sent) easy to
+                        pick up and resume later. Name one with |:file| or let the first
                         reply label it. Saved subagents appear beneath their
                         parent and can be opened for direct follow-up. Orphan
                         children retain their fork/role label and show
