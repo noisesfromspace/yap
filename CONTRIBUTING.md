@@ -36,11 +36,12 @@ image attachment: `:YapAttach` imports the dropped path into a local asset
 store and replaces that line with the reference. On send, standalone absolute
 PNG/JPEG paths in user messages are imported automatically before parsing;
 this also applies to typed paths and changes only matching user lines. Go reads
-references on each send and sends their bytes as image parts. Removing the
-reference removes the attachment; missing/invalid assets fail the send. The
-asset store must accompany a session when moved to another machine. Why:
-branching by deletion, prefill by editing, and undo-tree navigation only work
-if the buffer is the single source of truth.
+references on each send, extracts filename, detected media type, byte size,
+and pixel dimensions when decodable, then sends that metadata as adjacent text
+alongside the image bytes. Removing the reference removes the attachment;
+missing/invalid assets fail the send. The asset store must accompany a session
+when moved to another machine. Why: branching by deletion, prefill by editing,
+and undo-tree navigation only work if the buffer is the single source of truth.
 
 #### R-markers-not-sent — `<!-- yap:* -->` marker regions are never sent as buffer text
 

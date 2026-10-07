@@ -199,9 +199,11 @@ the current buffer unless otherwise noted.
                         command is needed: on :YapSend standalone absolute
                         PNG/JPEG paths in user messages are imported first.
                         A typed path has the same effect as a dropped one.
-                        The backend sends the image bytes to the model, up
-                        to 10 MiB. Keep the asset store when moving sessions;
-                        delete the reference to stop sending the photo.
+                        The backend sends the image bytes (up to 10 MiB) plus
+                        its filename, detected media type, byte size and
+                        pixel dimensions when decodable to the model. Keep the
+                        asset store when moving sessions; delete the reference
+                        to stop sending the photo.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*

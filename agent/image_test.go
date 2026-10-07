@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +15,12 @@ import (
 
 func TestUserPartsImage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "photo with space.png")
-	if err := os.WriteFile(path, append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 32)...), 0o600); err != nil {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
+		t.Fatal(err)
+	}
+	data := encoded.Bytes()
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	text := "What is this?\n![FILE: photo with space.png](file://" + strings.ReplaceAll(path, " ", "%20") + ")\nPlease be brief."
@@ -19,7 +28,7 @@ func TestUserPartsImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 3 || parts[0].Text != "What is this?\n" || parts[1].Type != llm.PartImage || !strings.HasPrefix(parts[1].URL, "data:image/png;base64,") || parts[2].Text != "\nPlease be brief." {
+	if len(parts) != 4 || parts[0].Text != "What is this?\n" || parts[1].Type != llm.PartText || !strings.Contains(parts[1].Text, `filename="photo with space.png"`) || !strings.Contains(parts[1].Text, "media_type=image/png") || !strings.Contains(parts[1].Text, "size="+fmt.Sprint(len(data))+" bytes") || !strings.Contains(parts[1].Text, "dimensions=2x3 pixels") || parts[2].Type != llm.PartImage || !strings.HasPrefix(parts[2].URL, "data:image/png;base64,") || parts[3].Text != "\nPlease be brief." {
 		t.Fatalf("wrong parts: %+v", parts)
 	}
 	if parts, err := userParts("plain /tmp/photo.png and ![ordinary](file:///tmp/photo.png)"); err != nil || len(parts) != 1 || parts[0].Type != llm.PartText {
