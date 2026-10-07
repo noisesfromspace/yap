@@ -292,7 +292,8 @@ model, so they work from any file). Every binding is a `keymaps` config key
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>M             Change the default model for new buffers (picker).
-  <leader>l             Watch the audit view (see |:YapLive|).
+  <leader>l             Watch the audit view (see |:YapLive|). Also mapped
+                        in the scratch queue.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor.

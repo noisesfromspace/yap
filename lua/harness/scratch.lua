@@ -287,6 +287,11 @@ function M.scratch_toggle(buf)
         M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
     end
+    if cfg.keymaps.live ~= "" then
+      vim.keymap.set("n", cfg.keymaps.live, function()
+        harness().live(buf)
+      end, { buffer = scratch, silent = true, desc = "yap: toggle live tool output" })
+    end
     if cfg.keymaps.insert_file ~= "" then
       vim.keymap.set("n", cfg.keymaps.insert_file, function()
         harness().insert_file()

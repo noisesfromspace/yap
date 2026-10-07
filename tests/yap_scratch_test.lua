@@ -100,4 +100,18 @@ yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(reloaded) == 0, "scratch did not close from the vertical split")
 assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing scratch did not refocus chat")
 
+-- <leader>l in the notes opens the session's audit view: the jotter's owner
+-- is the session buffer, so the live toggle targets the session, not the
+-- notes file.
+yap.scratch_toggle()
+assert(vim.api.nvim_get_current_buf() == reloaded, "scratch did not reopen for the live map")
+assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "scratch has no <leader>l map")
+local leader = vim.g.mapleader
+if leader == nil or leader == "" then
+  leader = "\\"
+end
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
+local audit = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "scratch <leader>l did not open the audit view")
+
 print("OK scratch")
