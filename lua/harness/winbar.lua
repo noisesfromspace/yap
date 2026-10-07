@@ -284,7 +284,7 @@ local function render_winbar(buf)
       for _, chip in ipairs(order) do
         if chip[2] > 0 then
           if not first then
-            rollup[#rollup + 1] = seg("  ", nil, true)
+            rollup[#rollup + 1] = seg(" │ ", "Sep", true)
           end
           rollup[#rollup + 1] = seg(chip[1] .. chip[2], chip[3], true)
           first = false
@@ -639,6 +639,9 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
   vim.api.nvim_set_hl(0, "YapIslandCapNC", { fg = bg, bg = inactive_bg })
   vim.api.nvim_set_hl(0, "YapIsland", { fg = fg, bg = bg })
+  -- The rollup chip divider recedes behind the semantic chip colors: the
+  -- same raised surface, but a quiet Comment/NonText foreground.
+  vim.api.nvim_set_hl(0, "YapIslandSep", { fg = attr("Comment", "fg") or attr("NonText", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })

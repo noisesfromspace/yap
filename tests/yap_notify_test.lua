@@ -99,6 +99,14 @@ assert(
   not yap.winbar(buf2):match(icons.waiting .. "2"),
   "stopped session counted as waiting in the rollup: " .. yap.winbar(buf2)
 )
+-- Two chips share the island, divided by a dimmed │ separator (waiting
+-- sorts before stopped).
+local rollup_bar = yap.winbar(buf2)
+local sep_at = rollup_bar:find("│", 1, true)
+local waiting_at = rollup_bar:find(icons.waiting .. "1", 1, true)
+local stopped_at = rollup_bar:find(icons.stopped .. "1", 1, true)
+assert(sep_at and waiting_at and stopped_at and waiting_at < sep_at and sep_at < stopped_at,
+  "rollup chips not separated by │: " .. rollup_bar)
 state.stopped[stopped] = nil
 state.errors[stopped] = "boom"
 assert(

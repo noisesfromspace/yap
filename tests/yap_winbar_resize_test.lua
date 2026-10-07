@@ -152,7 +152,7 @@ local function expected_rollup(running_n, waiting_n, stopped_n, error_n, idle_n)
   add(icons.stopped, stopped_n)
   add(icons.error, error_n)
   add(icons.idle, idle_n)
-  return icons.cap_l .. " " .. table.concat(chips, "  ") .. " " .. icons.cap_r
+  return icons.cap_l .. " " .. table.concat(chips, " │ ") .. " " .. icons.cap_r
 end
 for mask = 0, 15 do
   state.running[target] = mask % 2 == 1 and {} or nil
