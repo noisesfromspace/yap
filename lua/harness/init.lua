@@ -150,6 +150,38 @@ local function system_prompt()
   return M.config.system
 end
 
+--- One-line git state for :pwd, or nil when it is not a git repo. One
+--- cheap synchronous call; the result is capped so a dirty monorepo cannot
+--- flood the prompt. The read-only git tool remains the source for detail.
+local function git_snapshot(cwd)
+  local out = vim.fn.system({ "git", "-C", cwd, "status", "--porcelain", "--branch" })
+  if vim.v.shell_error ~= 0 or out == "" then
+    return nil
+  end
+  local head, changes = nil, {}
+  for line in out:gmatch("[^\n]+") do
+    if not head and line:sub(1, 3) == "## " then
+      head = line:sub(4)
+    elseif line ~= "" then
+      changes[#changes + 1] = line:sub(4) -- strip the XY status + space
+    end
+  end
+  if not head then
+    return nil
+  end
+  if #changes == 0 then
+    return "Git: " .. head .. " (clean)"
+  end
+  local shown, max = {}, 12
+  for i = 1, math.min(#changes, max) do
+    shown[i] = changes[i]
+  end
+  if #changes > max then
+    shown[#shown + 1] = ("+%d more"):format(#changes - max)
+  end
+  return ("Git: %s, %d changed files: %s"):format(head, #changes, table.concat(shown, ", "))
+end
+
 local HEAD = "^# @(%a+)%s*$"
 local document = require("harness.document")
 local fold = require("harness.fold")
@@ -939,6 +971,10 @@ function M.send(buf)
     role = "system",
     content = "Current Neovim working directory: " .. vim.fn.getcwd(),
   })
+  local git = git_snapshot(vim.fn.getcwd())
+  if git then
+    table.insert(messages, 3, { role = "system", content = git })
+  end
   if #messages == 0 then
     vim.notify("yap: no message to send; write under # @user", vim.log.levels.WARN)
     return
