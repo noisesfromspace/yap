@@ -212,8 +212,13 @@ a deterministic network cutoff (no outbound or loopback connectivity) for
 running commands offline — a model-requestable constraint, and the natural
 place for the alert gate to force isolation when it flags an exfiltration.
 curl and fetch deliberately do not: they exist to reach the network, so
-isolating them would only ever fail. bash/python's operational mechanics are
-unchanged: own process
+isolating them would only ever fail. bash, curl and fetch accept an opt-in
+`vpn` flag that runs the command or request inside a VPN network namespace: the
+entry command is the `vpn.command` argv prefix in ~/.config/yap.json (e.g.
+["/run/wrappers/bin/tunnel"], or ["sudo", "-n", "ip", "netns", "exec",
+"mullvad"]), so any VPN setup that can be entered by a command works without
+recompiling. On bash, `vpn` and `isolate_network` are mutually exclusive.
+bash/python's operational mechanics are unchanged: own process
 group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
 
 #### R-live-output-audit — Live tool output never enters the session buffer

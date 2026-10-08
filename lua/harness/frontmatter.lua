@@ -7,7 +7,7 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   created_cwd: /opt/code/yap
+--   created_cwd: ~/code/project
 --   agent: reviewer
 --   tools: read,search,glob
 --   turns: 14
@@ -16,12 +16,12 @@
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
---   forked_from: /home/martijn/.yap/sessions/.../source.md
---   subagent_parent: /home/martijn/.yap/sessions/.../parent.md
+--   forked_from: ~/.yap/sessions/.../source.md
+--   subagent_parent: ~/.yap/sessions/.../parent.md
 --   subagents:
---     - /home/martijn/.yap/sessions/.../session-a1b2c3.md
+--     - ~/.yap/sessions/.../session-a1b2c3.md
 --   forks:
---     - /home/martijn/.yap/sessions/.../branch.md
+--     - ~/.yap/sessions/.../branch.md
 --   assets:
 --     - <sha256>.png
 --   ---

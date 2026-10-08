@@ -153,6 +153,8 @@ Config and runtime data:
                     "model": "typesafe/jev-1.13" },
       "alert": { "approval_prob": 0.7, "advisory_prob": 0.35,
                  "min_confidence": 0.6 },
+      "vpn": { "command": ["/run/wrappers/bin/tunnel"] },
+      "ssh": { "known_hosts": "~/.ssh/known_hosts" },
       "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
     }
 <
@@ -164,7 +166,15 @@ Config and runtime data:
   defaults to Jev via OpenRouter's Decisions API, OPENROUTER_API_KEY, and the
   pinned `typesafe/jev-1.13` release. `alert` tunes the pre-execution alert
   gate: `approval_prob` / `advisory_prob` / `min_confidence` are decision
-  thresholds; any zero value falls back to a conservative default.
+  thresholds; any zero value falls back to a conservative default. `vpn`
+  configures the `vpn` flag on the bash, curl and fetch tools
+  (|yap-tools|): `command` is the argv prefix that enters the VPN network
+  namespace and then execs the tool's command — e.g.
+  ["/run/wrappers/bin/tunnel"] (the setuid wrapper the netns module builds)
+  or ["sudo", "-n", "ip", "netns", "exec", "mullvad"]. When empty, the `vpn`
+  flag is unavailable and fails loudly. `ssh.known_hosts` overrides the file
+  the ssh tool checks hosts against; when empty it auto-detects (the
+  system-wide file when present, else `~/.ssh/known_hosts`).
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
   ~/.yap/sessions/          Autosaved sessions + scratch queues + audit logs
@@ -334,7 +344,7 @@ lives, as YAML frontmatter: >
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
-  created_cwd: /opt/code/yap
+  created_cwd: ~/code/project
   turns: 14
   created_at: 2025-09-29T19:22:33Z
   updated_at: 2025-09-29T19:24:01Z
@@ -342,7 +352,7 @@ lives, as YAML frontmatter: >
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro
   subagents:
-    - /home/martijn/.yap/sessions/.../session-a1b2c3.md
+    - ~/.yap/sessions/.../session-a1b2c3.md
   assets:
     - <sha256>.png
   ---
@@ -811,16 +821,20 @@ Highlights:
     `safety` parameter: when true, the result is scanned by the decision model
     for prompt-injection content and flagged content gets an advisory warning
     line naming the probability (content is still shown, only marked). Each
-    true call costs one extra decision-model round-trip. curl and fetch
-    deliberately do not accept `isolate_network`: they exist to reach the
-    network, so isolating them would only ever fail.
+    true call costs one extra decision-model round-trip. curl and fetch also
+    accept `vpn`: the request runs inside the VPN network namespace entered by
+    the `vpn.command` config prefix (|yap-configuration|). They do not accept
+    `isolate_network` — they exist to reach the network, so isolating them
+    would only ever fail.
   - git runs read-only subcommands (status, diff, log, show, blame) in the
     project root with pager, color and credential prompts disabled.
   - ssh runs non-interactive commands via the system OpenSSH client. A
     ControlMaster per user/host/port is owned by the backend (mode-0700 temp
     dir). ~/.ssh/config is disabled so aliases and proxy commands cannot
-    bypass its trust boundary, and the requested host must be in NixOS's
-    /etc/ssh/ssh_known_hosts. BatchMode disables interactive password/PIN
+    bypass its trust boundary, and the requested host must be in a trusted
+    known_hosts file (the system-wide file when present, else
+    ~/.ssh/known_hosts; override via `ssh.known_hosts` in config). BatchMode
+    disables interactive password/PIN
     prompts. Commands run unsandboxed over your credentials, so a dangerous
     command pauses the turn for Run/Deny.
   - quickfix replaces the quickfix list; each invocation creates a new list on
@@ -843,7 +857,9 @@ Highlights:
     the LAST 2000 lines / 50KB; a non-zero exit is reported, not an error.
     `isolate_network` runs the command in a private network namespace (Linux,
     util-linux `unshare`) with no outbound or loopback connectivity: the
-    command still runs, but any network access fails closed.
+    command still runs, but any network access fails closed. `vpn` runs the
+    command inside the VPN network namespace entered by the `vpn.command`
+    config prefix; the two flags are mutually exclusive.
   - python runs a Python 3 script the same way, as a fresh process (no state
     between calls). It takes exactly one of `code` (inline, run as
     `python3 <file>`) or `file` (a path to an existing script — write it first

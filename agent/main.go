@@ -79,8 +79,8 @@ func main() {
 		}
 	case "fetch-worker":
 		// Internal subcommand: performs a single SSRF-checked GET and writes
-		// the framed result to stdout. Invoked by the fetch tool's
-		// isolate_network path inside `unshare --user --map-root-user --net`.
+		// the framed result to stdout. Invoked by the fetch tool's vpn path,
+		// which re-execs this binary under the `vpn.command` prefix.
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "fetch-worker: missing URL")
 			os.Exit(2)

@@ -253,14 +253,17 @@
                 };
                 websearch.provider = "exa";
                 websearch.api_key_env = "EXA_API_KEY";
+                vpn.command = [ "/run/wrappers/bin/tunnel" ];
               };
               description = ''
                 Agent configuration, written to {file}`~/.config/yap.json`.
                 Keys are `providers` (name → base_url + api_key_env),
                 `websearch` (provider name + api_key_env for the search
-                tool) and `pricing` (model → USD per 1M tokens, an override
-                for the committed catalog in agent/price). API keys themselves
-                are referenced by environment variable name in `api_key_env`.
+                tool), `vpn` (`command` argv prefix that enters a VPN network
+                namespace for the bash/curl/fetch `vpn` flag) and `pricing`
+                (model → USD per 1M tokens, an override for the committed
+                catalog in agent/price). API keys themselves are referenced
+                by environment variable name in `api_key_env`.
               '';
             };
 

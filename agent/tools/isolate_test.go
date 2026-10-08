@@ -8,15 +8,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
 
-// TestMain lets the fetch tool's isolate_network path re-exec this binary as
-// the `fetch-worker` subcommand under `unshare`. os.Executable() points at
-// the test binary during `go test`, so intercepting that argv shape here is
-// what makes the isolated-fetch round trip testable end-to-end.
+// TestMain lets the fetch tool's vpn path re-exec this binary as the
+// `fetch-worker` subcommand under the configured vpn prefix. os.Executable()
+// points at the test binary during `go test`, so intercepting that argv shape
+// here is what makes the fetch round trip testable end-to-end.
 func TestMain(m *testing.M) {
 	if len(os.Args) >= 3 && os.Args[1] == "fetch-worker" {
 		if err := RunFetchWorker(os.Args[2], os.Stdout); err != nil {
@@ -98,6 +99,132 @@ func TestPythonIsolateNetwork(t *testing.T) {
 	}
 	if !strings.Contains(r, "UNREACHED") {
 		t.Fatalf("expected UNREACHED under isolation, got %q", r)
+	}
+}
+
+// canUseVPN reports whether the setuid tunnel wrapper and its Mullvad
+// namespace are live on this host. Tests that need it skip cleanly otherwise.
+func canUseVPN(t *testing.T) bool {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	if _, err := os.Stat("/run/wrappers/bin/tunnel"); err != nil {
+		return false
+	}
+	// The wrapper's setns fails when the namespace is not running.
+	return exec.Command("/run/wrappers/bin/tunnel", "true").Run() == nil
+}
+
+// withVPN sets the vpn prefix for the duration of t and restores it after.
+func withVPN(t *testing.T, prefix []string) {
+	t.Helper()
+	old := vpnPrefix
+	SetVPNCommand(prefix)
+	t.Cleanup(func() { SetVPNCommand(old) })
+}
+
+func TestBashVPN(t *testing.T) {
+	if !canUseVPN(t) {
+		t.Skip("requires /run/wrappers/bin/tunnel with the Mullvad namespace running")
+	}
+	withVPN(t, []string{"/run/wrappers/bin/tunnel"})
+
+	// The host has no tun0; the Mullvad namespace's WireGuard interface does.
+	r, _, err := run(t, "bash", `{"command":"ip link show tun0","vpn":true}`)
+	if err != nil {
+		t.Fatalf("vpn bash: %v", err)
+	}
+	if !strings.Contains(r, "tun0") {
+		t.Fatalf("expected tun0 inside the namespace, got %q", r)
+	}
+}
+
+// fakeVPNWrapper writes an executable that records its argv to a log file
+// and then execs the real command, so tests can verify the vpn prefix is
+// prepended without a live namespace or network.
+func fakeVPNWrapper(t *testing.T) (wrapper, log string) {
+	t.Helper()
+	dir := t.TempDir()
+	wrapper = filepath.Join(dir, "vpn")
+	log = filepath.Join(dir, "argv.log")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" >> " + log + "\nexec \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return wrapper, log
+}
+
+// TestVPNCommandPrefix deterministically checks that each tool prepends the
+// configured vpn prefix (and nothing else) to its own command. A fake wrapper
+// records its argv and execs the real command, so no VPN namespace or network
+// is needed; TestBashVPN covers the real namespace entry end-to-end.
+func TestVPNCommandPrefix(t *testing.T) {
+	wrapper, log := fakeVPNWrapper(t)
+	withVPN(t, []string{wrapper})
+	readLog := func() []string {
+		data, err := os.ReadFile(log)
+		if err != nil {
+			t.Fatalf("read wrapper log: %v", err)
+		}
+		return strings.Fields(string(data))
+	}
+
+	// bash: the prefix runs `bash -c <cmd>`.
+	if r, _, err := run(t, "bash", `{"command":"echo vpnok","vpn":true}`); err != nil || !strings.Contains(r, "vpnok") {
+		t.Fatalf("vpn bash: %q %v", r, err)
+	}
+	if argv := readLog(); len(argv) < 1 || argv[0] != "bash" {
+		t.Fatalf("bash prefix argv wrong: %q", argv)
+	}
+
+	// curl: the prefix runs `curl <args>` against a local server.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("curlvpnok"))
+	}))
+	defer srv.Close()
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	if r, _, err := run(t, "curl", `{"url":"`+srv.URL+`/","vpn":true}`); err != nil || !strings.Contains(r, "curlvpnok") {
+		t.Fatalf("vpn curl: %q %v", r, err)
+	}
+	if argv := readLog(); len(argv) < 1 || argv[0] != "curl" {
+		t.Fatalf("curl prefix argv wrong: %q", argv)
+	}
+
+	// fetch: the prefix runs `<test binary> fetch-worker <url>`.
+	if err := os.Remove(log); err != nil {
+		t.Fatal(err)
+	}
+	if r, _, err := run(t, "fetch", `{"url":"`+srv.URL+`/data","vpn":true}`); err != nil || !strings.Contains(r, "curlvpnok") {
+		t.Fatalf("vpn fetch: %q %v", r, err)
+	}
+	if argv := readLog(); len(argv) < 2 || argv[1] != "fetch-worker" {
+		t.Fatalf("fetch prefix argv wrong: %q", argv)
+	}
+}
+
+func TestVPNExclusiveWithIsolateNetwork(t *testing.T) {
+	withVPN(t, []string{"/run/wrappers/bin/tunnel"})
+	if _, _, err := run(t, "bash", `{"command":"true","vpn":true,"isolate_network":true}`); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("bash: expected mutual-exclusion error, got %v", err)
+	}
+}
+
+func TestVPNRequiresConfig(t *testing.T) {
+	old := vpnPrefix
+	SetVPNCommand(nil)
+	t.Cleanup(func() { SetVPNCommand(old) })
+
+	for _, tc := range []struct{ tool, args string }{
+		{"bash", `{"command":"true","vpn":true}`},
+		{"curl", `{"url":"https://example.com/","vpn":true}`},
+		{"fetch", `{"url":"https://example.com/","vpn":true}`},
+	} {
+		if _, _, err := run(t, tc.tool, tc.args); err == nil || !strings.Contains(err.Error(), "vpn.command") {
+			t.Fatalf("%s: expected vpn config error, got %v", tc.tool, err)
+		}
 	}
 }
 

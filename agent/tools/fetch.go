@@ -8,6 +8,8 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -27,6 +29,7 @@ const (
 type fetchArgs struct {
 	URL    string `json:"url" jsonschema:"description=http(s) URL to fetch"`
 	Safety bool   `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
+	VPN    bool   `json:"vpn,omitempty" jsonschema:"description=run the request inside the VPN network namespace (requires the vpn.command config)"`
 }
 
 func init() {
@@ -43,7 +46,11 @@ func init() {
 				body                    []byte
 				err                     error
 			)
-			status, statusText, contentType, finalURL, body, err = fetchRaw(a.URL)
+			if a.VPN {
+				status, statusText, contentType, finalURL, body, err = fetchVPN(a.URL)
+			} else {
+				status, statusText, contentType, finalURL, body, err = fetchRaw(a.URL)
+			}
 			if err != nil {
 				return "", "", err
 			}
@@ -54,7 +61,8 @@ func init() {
 // fetchRaw performs one SSRF-checked GET (redirects followed; every hop is
 // re-checked by CheckedTransport's dialer) and returns the response status
 // and raw body, capped at the HTML limit. Readability extraction happens
-// later, in fetchProcess.
+// later, in fetchProcess, so this half can run in a private network namespace
+// (see fetchVPN).
 func fetchRaw(rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return 0, "", "", nil, nil, fmt.Errorf("only http(s) URLs supported")
@@ -101,6 +109,37 @@ func fetchProcess(status int, statusText, contentType string, finalURL *url.URL,
 	return utils.SafetyGuarded(decisionModel, safety, capText(text)), "", nil
 }
 
+// fetchVPN runs the GET inside the configured VPN network namespace by
+// re-exec'ing `fetch-worker` under the `vpn.command` prefix.
+func fetchVPN(rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
+	if len(vpnPrefix) == 0 {
+		return 0, "", "", nil, nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap.json)")
+	}
+	return runFetchWorkerCmd(vpnPrefix, "vpn", rawURL)
+}
+
+// runFetchWorkerCmd re-execs this binary as `fetch-worker` under prefix (the
+// namespace-entry argv) and decodes the framed result. label names the
+// namespace in error messages (currently "vpn").
+func runFetchWorkerCmd(prefix []string, label, rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
+	self, err := os.Executable()
+	if err != nil {
+		return 0, "", "", nil, nil, fmt.Errorf("%s fetch: %w", label, err)
+	}
+	argv := append(append([]string(nil), prefix...), self, "fetch-worker", rawURL)
+	cmd := exec.Command(argv[0], argv[1:]...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if s := strings.TrimSpace(stderr.String()); s != "" {
+			return 0, "", "", nil, nil, fmt.Errorf("%s fetch: %v: %s", label, err, s)
+		}
+		return 0, "", "", nil, nil, fmt.Errorf("%s fetch: %w", label, err)
+	}
+	return parseFetchWorker(stdout.Bytes(), rawURL)
+}
+
 // fetchWorkerResult is the framed output of the fetch worker subprocess.
 type fetchWorkerResult struct {
 	Error       string `json:"error,omitempty"`
@@ -113,7 +152,7 @@ type fetchWorkerResult struct {
 
 // RunFetchWorker is the `yap fetch-worker URL` subcommand: one SSRF-checked
 // GET, framed as fetchWorkerResult JSON on stdout for the parent fetch tool
-// to decode. It runs in the caller's network namespace.
+// to decode. It runs inside the caller's chosen network namespace.
 func RunFetchWorker(rawURL string, out io.Writer) error {
 	status, statusText, contentType, finalURL, body, err := fetchRaw(rawURL)
 	res := fetchWorkerResult{}
@@ -132,7 +171,7 @@ func RunFetchWorker(rawURL string, out io.Writer) error {
 }
 
 // parseFetchWorker decodes the worker's framed output into the same shape
-// fetchRaw returns, so the worker path shares fetchProcess.
+// fetchRaw returns, so the vpn path shares fetchProcess.
 func parseFetchWorker(data []byte, fallbackURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
 	var res fetchWorkerResult
 	if err := json.Unmarshal(data, &res); err != nil {

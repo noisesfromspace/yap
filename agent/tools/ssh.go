@@ -20,7 +20,7 @@ import (
 )
 
 type sshArgs struct {
-	Host    string `json:"host" jsonschema:"description=SSH host (must be named in /etc/ssh/ssh_known_hosts)"`
+	Host    string `json:"host" jsonschema:"description=SSH host (must be named in the trusted known_hosts file)"`
 	Command string `json:"command,omitempty" jsonschema:"description=remote command to run"`
 	User    string `json:"user,omitempty" jsonschema:"description=remote user (default local username)"`
 	Port    int    `json:"port,omitempty" jsonschema:"description=SSH port (default 22)"`
@@ -28,7 +28,30 @@ type sshArgs struct {
 	Close   bool   `json:"close,omitempty" jsonschema:"description=close the cached connection instead of running a command"`
 }
 
-var systemKnownHosts = "/etc/ssh/ssh_known_hosts"
+// systemKnownHosts is the known_hosts file hosts are checked against.
+// Empty means "auto": the system-wide file when it exists (NixOS and other
+// shared hosts), else the user's ~/.ssh/known_hosts (the OpenSSH default —
+// ssh never uses XDG for its config). Overridable via config `ssh.known_hosts`.
+var systemKnownHosts = ""
+
+// SetSSHKnownHosts overrides the known_hosts file (config `ssh.known_hosts`).
+func SetSSHKnownHosts(path string) { systemKnownHosts = path }
+
+// knownHostsFile resolves the known_hosts path used for both the trust
+// check and the GlobalKnownHostsFile option.
+func knownHostsFile() string {
+	if systemKnownHosts != "" {
+		return systemKnownHosts
+	}
+	if _, err := os.Stat("/etc/ssh/ssh_known_hosts"); err == nil {
+		return "/etc/ssh/ssh_known_hosts"
+	}
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return filepath.Join(h, ".ssh", "known_hosts")
+	}
+	return "~/.ssh/known_hosts"
+}
+
 var sshBinary = "ssh"
 
 // The directory is private to this backend process. A control socket grants
@@ -48,7 +71,7 @@ type sshMaster struct {
 }
 
 func init() {
-	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Each command requires user approval. Only hosts in /etc/ssh/ssh_known_hosts are trusted. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
+	Register("ssh", "Run commands via OpenSSH using a reused ControlMaster owned by the Yap backend. Each command requires user approval. Only hosts in a trusted known_hosts file (the system-wide file when present, else ~/.ssh/known_hosts) are allowed. Uses OpenSSH default identities and the local ssh-agent (including FIDO keys); ~/.ssh/config is not loaded. close=true disconnects. No agent/X11 forwarding. Non-interactive; no password or PIN prompt.", func(a *sshArgs) (string, string, error) {
 		result, err := runSSH(a)
 		return result, "", err
 	}, CloseSSH)
@@ -57,7 +80,7 @@ func init() {
 // Do not load ~/.ssh/config: aliases, ProxyCommand, HostKeyAlias, and
 // user-specified host key files could bypass the system host allowlist.
 func sshOptions() []string {
-	return []string{"-F", "/dev/null", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=" + systemKnownHosts, "-o", "UserKnownHostsFile=/dev/null", "-o", "CheckHostIP=no", "-o", "UpdateHostKeys=no", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes"}
+	return []string{"-F", "/dev/null", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "GlobalKnownHostsFile=" + knownHostsFile(), "-o", "UserKnownHostsFile=/dev/null", "-o", "CheckHostIP=no", "-o", "UpdateHostKeys=no", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes"}
 }
 
 func sshTarget(a *sshArgs, name string, port int) []string {
@@ -111,7 +134,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if port != 22 {
 		host = fmt.Sprintf("[%s]:%d", host, port)
 	}
-	check := exec.CommandContext(checkCtx, "ssh-keygen", "-F", host, "-f", systemKnownHosts)
+	check := exec.CommandContext(checkCtx, "ssh-keygen", "-F", host, "-f", knownHostsFile())
 	checkErr := check.Run()
 	checkCancel()
 	if checkErr != nil {

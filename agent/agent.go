@@ -415,6 +415,8 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	tools.SetWebsearchProvider(cfg.Websearch.Provider)
 	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
+	tools.SetVPNCommand(cfg.VPN.Command)
+	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	dm := decisionModel(cfg)
 	tools.SetDecisionModel(dm)
 	alertCfg := alertConfig(cfg)

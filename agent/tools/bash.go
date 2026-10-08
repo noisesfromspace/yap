@@ -17,6 +17,7 @@ type bashArgs struct {
 	Timeout        int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
 	Cwd            string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 	IsolateNetwork bool   `json:"isolate_network,omitempty" jsonschema:"description=run the command in a private network namespace with no connectivity (Linux only; requires util-linux unshare)"`
+	VPN            bool   `json:"vpn,omitempty" jsonschema:"description=run the command inside the VPN network namespace (requires the vpn.command config; mutually exclusive with isolate_network)"`
 }
 
 func init() {
@@ -47,6 +48,10 @@ func runBash(a *bashArgs) (string, string, error) {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
+	if a.IsolateNetwork && a.VPN {
+		return "", "", fmt.Errorf("isolate_network and vpn are mutually exclusive")
+	}
+
 	var cmd *exec.Cmd
 	if a.IsolateNetwork {
 		// A fresh user+network namespace cuts every network path (outbound and
@@ -54,6 +59,12 @@ func runBash(a *bashArgs) (string, string, error) {
 		// host-port probe fails closed. --map-root-user keeps uid 0 inside the
 		// namespace mapped back to the real user, preserving file read/write.
 		cmd = exec.Command("unshare", "--user", "--map-root-user", "--net", "bash", "-c", a.Command)
+	} else if a.VPN {
+		argv, err := vpnArgv("bash", "-c", a.Command)
+		if err != nil {
+			return "", "", err
+		}
+		cmd = exec.Command(argv[0], argv[1:]...)
 	} else {
 		cmd = exec.Command("bash", "-c", a.Command)
 	}
