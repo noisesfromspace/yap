@@ -69,12 +69,20 @@ local function parse(buf)
       end
     elseif comment then
       -- Inside a multi-line HTML comment: raw text until a bare `-->`
-      -- (a ``` inside a comment is NOT a fence).
+      -- (a ``` inside a comment is NOT a fence). An unclosed comment
+      -- (thinking/error) must not swallow the next message boundary: bound
+      -- it at the next `# @role` heading, mirroring how tool regions stop
+      -- at a heading. tool_inner comments (multi-line JSON headers) always
+      -- close with `-->` and are left alone.
       if line:match("^%-%->%s*$") then
         if comment.region then
           comment.region.finish = i
         end
         comment = nil
+      elseif comment.region and line:match(HEAD) then
+        comment.region.finish = i - 1
+        comment = nil
+        headings[#headings + 1] = { role = line:match(HEAD), line = i }
       end
     else
       local c, n = fence_run(line)

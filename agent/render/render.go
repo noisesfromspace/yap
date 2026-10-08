@@ -29,8 +29,16 @@ const toolHeaderMaxSingle = 120
 // early for markdown renderers. A space keeps the text readable. (A
 // backslash-escape can't work here: `\-->` still CONTAINS the `-->`
 // sequence a character-based comment scanner looks for.)
+//
+// It also neutralizes a bare role heading (`# @user`): the parsers bound an
+// unclosed comment at the next heading, so a heading the model merely quoted
+// inside its thinking must not read as a real message boundary.
 func escapeComment(s string) string {
-	return strings.ReplaceAll(s, "-->", "-- >")
+	s = strings.ReplaceAll(s, "-->", "-- >")
+	if roleHeadingRe.MatchString(s) {
+		return "\\" + s
+	}
+	return s
 }
 
 // CommentEscaper buffers streamed text to line granularity so dangerous

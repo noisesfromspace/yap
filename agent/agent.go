@@ -107,6 +107,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	inThinking := false
 	sawThinking := false
 	esc := render.NewCommentEscaper(out)
+	prose := render.NewProseEscaper(out)
 	firstWrite := func() {
 		if !wrote {
 			out.WriteString("\n")
@@ -143,12 +144,13 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 				closeThinking()
 			}
 			firstWrite()
-			out.WriteString(ev.Text)
-			out.Flush()
+			prose.WriteString(ev.Text)
 			t.text += ev.Text
 			t.outWrote = true
 		}
 	}
+
+	prose.Flush()
 
 	if inThinking {
 		closeThinking()

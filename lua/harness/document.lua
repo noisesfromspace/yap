@@ -115,8 +115,13 @@ function M.parse_buffer(buf)
     elseif in_marker then
       -- Markers close on a line that is exactly `-->`; content lines
       -- merely containing `-->` (diffs, prose) must not close early.
+      -- An unclosed marker must not swallow the next message boundary.
       if line:match("^%-%->$") then
         in_marker = false
+      elseif header_roles[i] then
+        in_marker = false
+        flush()
+        role = header_roles[i]
       end
     else
       local header = line:match("^<!%-%- yap:tool (.+) %-%->%s*$")
