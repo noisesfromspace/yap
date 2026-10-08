@@ -1,10 +1,9 @@
 :Yap	yap.txt	/*:Yap*
-:YapAlerts	yap.txt	/*:YapAlerts*
-:YapApproval	yap.txt	/*:YapApproval*
 :YapChangeModel	yap.txt	/*:YapChangeModel*
 :YapClear	yap.txt	/*:YapClear*
 :YapCompact	yap.txt	/*:YapCompact*
 :YapFork	yap.txt	/*:YapFork*
+:YapGuard	yap.txt	/*:YapGuard*
 :YapInsert	yap.txt	/*:YapInsert*
 :YapLive	yap.txt	/*:YapLive*
 :YapSend	yap.txt	/*:YapSend*

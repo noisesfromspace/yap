@@ -218,19 +218,18 @@ the current buffer unless otherwise noted.
                         bottom, or focuses the existing window; never opens by
                         itself. It is a rendering, not a second log: rebuilt
                         from the log on reopen, so it survives restarts.
-*:YapAlerts*
-:YapAlerts            Pick an advisory or approval request from this
-                        project's saved sessions and open its entry in
-                        :YapLive. Includes closed sessions; newest first.
-*:YapApproval*
-:YapApproval          Answer a pending approval (|yap-alert-gate|) from a
-                        picker: Run, Deny, or Inspect, with a preview of the
-                        full call. With several sessions parked at once and no
-                        approval under the cursor, pick which to answer first.
-                        Inspect focuses the shield-marked request with the
-                        triggering tool call directly above it and the
-                        conversation alongside. Dismissing the picker defers;
-                        the backend also denies after five minutes.
+*:YapGuard*
+:YapGuard            Open the guard board (yap://guard): one read-only
+                        buffer merging the old :YapAlerts and :YapApproval
+                        pickers. Two sections, newest/open first — Open lists
+                        every parked approval plus recent advisories, History
+                        lists resolved decisions and older advisories. Each
+                        row is one scannable line; `za` expands it to the full
+                        command, reason, severity breakdown and triggering
+                        transcript; <CR> opens a Run/Deny/Inspect/Defer popup
+                        for approvals (Inspect-only for advisories). Opening
+                        the board defers, never denies; the backend also
+                        denies a parked approval after five minutes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -558,8 +557,8 @@ The audit view (|:YapLive|) is the human-readable rendering of these events
 and is rebuilt from the file on reopen. A shell tool call appears before the
 gate's shield-marked approval request, even if it is denied and never
 produces a tool_start; a running shell call also has a `$ command` header when
-execution begins. |:YapAlerts| picks an advisory/approval request and jumps
-straight to its unfolded entry; entries remain available after restarts.
+execution begins. |:YapGuard| lists advisories and approval requests and can
+jump straight to an unfolded entry; entries remain available after restarts.
 Structural lines are highlighted (turn headers, `$ command`, `• tool`,
 timestamps); streamed and returned text stays the default color.
 
@@ -941,14 +940,16 @@ P(harmful) and a 0–3 severity score — and maps the answer to:
   approval   pause the turn for a decision (credential exfiltration,
              severity mean >= 2.5, destructive calls at even odds or low
              confidence, high P(harmful)). The session shows a shield and a
-             distinct notification; |:YapApproval| opens a picker — Run,
-             Deny, or Inspect — with a preview of the reason and full call
+             distinct notification; |:YapGuard| opens a board whose Open
+             section lists the parked approval and whose <CR> popup offers
+             Run, Deny, Inspect and Defer with the reason and full call
              arguments. Never runs on timeout (five minutes) or when the
-             picker is dismissed. Inspect focuses the shield-marked request
-             in the audit; |:YapApproval| can be repeated.
+             board is dismissed. Inspect focuses the shield-marked request
+             in the audit; |:YapGuard| can be repeated.
   advisory   run, but log the call and show a non-blocking warning. The toast
              names the session and gives the P(harmful), severity score, and
-             confidence; |:YapAlerts| shows the full breakdown and call.
+             confidence; |:YapGuard| shows the full breakdown and call in its
+             Open section.
   run        proceed silently.
 
 A decision-model outage never bricks a tool: it degrades to `advisory` (a

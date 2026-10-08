@@ -1,24 +1,20 @@
--- Audit alerts remain reviewable after reopening a session. The picker
--- identifies the session and lands on the selected advisory, even folded.
+-- Advisories and resolved approvals remain reviewable after reopening a
+-- session: the guard board's Open section lists recent advisories, History
+-- lists resolved approvals, and the audit renderer still distinguishes real
+-- review events from output text that merely quotes one.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local first = yap.new()
-local path1 = vim.b[first].yap_path
-local second = yap.new()
-local path2 = vim.b[second].yap_path
 local paths = require("harness.path")
-local function add(buf, id, reason)
+local guard = require("harness.guard")
+
+local function add(buf, id, reason, ts)
   local log = paths.audit_path(buf)
   vim.fn.mkdir(vim.fn.fnamemodify(log, ":h"), "p")
   vim.fn.writefile({
-    vim.json.encode({
-      type = "output",
-      data = 'diff --git a/test b/test\n+if text:find("⚠ alert [", 1, true) or text:find("approval requested [", 1, true) then',
-      ts = "2026-01-01T11:59:59",
-    }),
     vim.json.encode({ type = "tool_call", id = id, name = "bash", args = '{"command":"echo warning"}' }),
     vim.json.encode({
       type = "alert_advisory",
@@ -30,26 +26,16 @@ local function add(buf, id, reason)
       confidence = 0.55,
       severity_category = "reversible",
       severity_category_prob = 0.97,
-      ts = "2026-01-01T12:00:00",
+      ts = ts,
     }),
-    vim.json.encode({
-      type = "turn_end",
-      ts = "2026-01-01T12:00:01",
-      prompt = 1,
-      completion = 1,
-    }),
+    vim.json.encode({ type = "turn_end", ts = ts, prompt = 1, completion = 1 }),
   }, log, "a")
 end
-add(first, "first-id", "first warning")
-add(first, "first-id", "later warning") -- ids can repeat across turns
+add(first, "first-id", "first warning", "2026-01-01T12:00:00")
+add(first, "first-id", "later warning", "2026-01-01T12:00:01")
+-- A denied approval lands in History.
 local log = paths.audit_path(first)
 vim.fn.writefile({
-  vim.json.encode({
-    type = "output",
-    data = 'diff --git a/lua/harness/init.lua b/lua/harness/init.lua\n+if text:find("approval requested [", 1, true) then',
-    ts = "2026-01-02T11:59:59",
-  }),
-  vim.json.encode({ type = "tool_call", id = "approval-call", name = "bash", args = '{"command":"rm -rf important"}' }),
   vim.json.encode({
     type = "approval_request",
     id = "approval-1",
@@ -60,21 +46,7 @@ vim.fn.writefile({
   }),
   vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = "2026-01-02T12:00:01" }),
 }, log, "a")
-add(second, "second-id", "second warning")
--- The real headers may share an ID across turns; quoted headers in prose
--- must not count, and an approval ID differs from its tool call ID.
-vim.fn.writefile({
-  "", "# @assistant", "", "```text",
-  '<!-- yap:tool {"id":"first-id","name":"bash","arguments":{}} -->',
-  "```", "",
-  '<!-- yap:tool {"id":"first-id","name":"bash","arguments":{}} -->',
-  "first result", "<!-- /yap:tool -->", "",
-  '<!-- yap:tool {"id":"first-id","name":"bash","arguments":{}} -->',
-  "later result", "<!-- /yap:tool -->", "",
-  "<!-- yap:tool", "  {", '    "id": "approval-call",', '    "name": "bash"', "  }",
-  "-->", "blocked result", "<!-- /yap:tool -->", "",
-  "reply after the calls", "", "# @user", "",
-}, path1, "a")
+
 -- Rebuild audit buffers from the persisted JSONL, as on a fresh Neovim.
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
   if vim.api.nvim_buf_get_name(b):match("%-audit$") then
@@ -83,77 +55,21 @@ for _, b in ipairs(vim.api.nvim_list_bufs()) do
 end
 vim.cmd("enew")
 vim.api.nvim_buf_delete(first, { force = true })
-vim.api.nvim_buf_delete(second, { force = true })
-local selected, labels
-local old_select = vim.ui.select
-vim.ui.select = function(items, opts, cb)
-  labels = vim.tbl_map(opts.format_item, items)
-  for _, item in ipairs(items) do
-    if item.event.type == "approval_request" then
-      selected = item
-      break
-    end
-  end
-  cb(selected)
-end
-vim.cmd("YapAlerts")
-vim.ui.select = old_select
-assert(selected and #labels == 4, "alerts picker did not list advisories and approvals: " .. vim.inspect(labels))
-assert(table.concat(labels, "\n"):find("approval requested", 1, true), "approval not identified in picker")
-assert(table.concat(labels, "\n"):find(paths.session_name(path1), 1, true), "first session unidentified")
-assert(table.concat(labels, "\n"):find(paths.session_name(path2), 1, true), "second session unidentified")
-local audit = vim.api.nvim_get_current_buf()
-assert(
-  vim.api.nvim_buf_get_name(audit):find(paths.session_name(path1) .. "-audit", 1, true),
-  "wrong session opened"
-)
-local line = vim.api.nvim_win_get_cursor(0)[1]
-assert(
-  vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("approval requested [approval-1]", 1, true),
-  "landed on quoted diff rather than approval event"
-)
-assert(
-  vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("possible data loss", 1, true),
-  "not on chosen approval"
-)
-assert(
-  vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]:find("rm -rf important", 1, true),
-  "full blocked command not shown"
-)
-assert(vim.fn.foldclosed(line) == -1, "approval is still folded")
-local chatwin = vim.fn.win_findbuf(vim.fn.bufnr(path1))[1]
-assert(chatwin, "session not visible beside audit")
-local chatline = vim.api.nvim_win_get_cursor(chatwin)[1]
-assert(vim.api.nvim_buf_get_lines(vim.fn.bufnr(path1), chatline - 1, chatline, false)[1] == "<!-- yap:tool", "approval did not focus its multi-line call")
-vim.api.nvim_win_call(chatwin, function()
-  assert(vim.fn.foldclosed(chatline) == -1, "approval call is still folded")
-end)
--- A quoted alert line must not displace a later advisory either.
-vim.ui.select = function(items, _, cb)
-  for _, item in ipairs(items) do
-    if item.event.reason == "later warning" then
-      cb(item)
-      return
-    end
-  end
-  error("later warning missing")
-end
-vim.cmd("YapAlerts")
-vim.ui.select = old_select
-local n = vim.api.nvim_win_get_cursor(0)[1]
-assert(
-  vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), n - 1, n, false)[1]:find("later warning", 1, true),
-  "later advisory landed on quoted audit output"
-)
-assert(
-  vim.api.nvim_buf_get_lines(vim.api.nvim_get_current_buf(), n - 1, n, false)[1]:find("reversible", 1, true),
-  "advisory did not show its severity category"
-)
-chatwin = vim.fn.win_findbuf(vim.fn.bufnr(path1))[1]
-chatline = vim.api.nvim_win_get_cursor(chatwin)[1]
-local chatlines = vim.api.nvim_buf_get_lines(vim.fn.bufnr(path1), 0, chatline, false)
-assert(chatlines[chatline]:find('"id":"first-id"', 1, true), "advisory did not focus its tool call")
-assert(vim.api.nvim_buf_get_lines(vim.fn.bufnr(path1), chatline, chatline + 1, false)[1] == "later result", "advisory focused wrong occurrence")
+
+guard.toggle()
+local board = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
+-- Recent advisories sit in Open (read-only rows), with their severity badge.
+assert(text:find("▸ Open (2)", 1, true), "Open section should list both advisories: " .. text)
+assert(text:find("first warning", 1, true), "first advisory missing from board")
+assert(text:find("later warning", 1, true), "second advisory missing")
+assert(text:find("reversible", 1, true), "severity badge missing from board")
+-- The denied approval sits in History.
+assert(text:find("▸ History (1)", 1, true), "History section missing denied approval")
+assert(text:find("possible data loss", 1, true), "denied approval reason missing from History")
+guard.toggle() -- close
+
 -- Live append must use the same event positions as replay, regardless of
 -- output text that looks like an alert.
 local view = vim.api.nvim_create_buf(false, true)
@@ -168,18 +84,4 @@ assert(
   vim.api.nvim_buf_get_lines(view, live.reviews[1] - 1, live.reviews[1], false)[1]:find("real warning", 1, true),
   "live review position does not point to its event"
 )
--- A selected call suspends tail-follow even if the window was following
--- before the picker opened (and must not be re-adopted on the next chunk).
-local doc = require("harness.document")
-local chat = vim.fn.bufnr(path1)
-local tail = vim.api.nvim_buf_line_count(chat)
-vim.api.nvim_win_set_cursor(chatwin, { tail, 0 })
-local followers, expected = { chatwin }, { [chatwin] = { tail, 0 } }
-local excluded = { [chatwin] = true }
-doc.sync_followers(chat, followers, expected, excluded)
-assert(#followers == 0, "selected window kept following the stream")
-vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "more streamed text" })
-doc.sync_followers(chat, followers, expected, excluded)
-doc.follow_windows(chat, followers, expected)
-assert(vim.api.nvim_win_get_cursor(chatwin)[1] == tail, "stream pulled the selected window away")
 print("OK alerts")

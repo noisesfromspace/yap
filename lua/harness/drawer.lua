@@ -67,7 +67,7 @@ function M.close(buf, owner)
         vim.api.nvim_win_close(win, true)
       elseif state.pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
         -- Inspect + :only while focused on the audit: keep the review
-        -- visible, not an empty replacement buffer. :YapApproval still
+        -- visible, not an empty replacement buffer. :YapGuard still
         -- works from this window even when the session is hidden.
       else
         -- Keep the drawer buffer available to reopen later.

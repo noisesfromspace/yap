@@ -89,13 +89,10 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 		hardReason = "Python script exceeds the 16 KiB decision window; inspect the full file before approving"
 	}
 	dec := utils.ShouldAlert(context.Background(), dm, cfg, tier, hardReason, state)
+	contextStr := guardContext(call, t, messages)
 	switch dec.Outcome {
 	case utils.OutcomeApproval:
-		reason := dec.Reason
-		if m := dec.Metrics(); m != "" {
-			reason += " (" + m + ")"
-		}
-		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, reason)
+		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason, contextStr, dec)
 		if err != nil {
 			return "error: " + err.Error()
 		}
@@ -110,9 +107,22 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 			"severity": dec.Severity, "confidence": dec.Confidence,
 			"severity_category": category, "severity_category_prob": categoryProb,
 			"severity_breakdown": dec.SeverityBreakdown(),
+			"context": contextStr,
 		})
 	}
 	return ""
+}
+
+// guardContext builds the truncated transcript a guard row expands to: the
+// last user message plus the assistant's tool call, so the decision can be
+// reviewed in place without leaving the board. Bounded like gateState.
+func guardContext(call llm.ToolCall, t *turn, messages []llm.Message) string {
+	var b strings.Builder
+	if u := lastUserText(messages); u != "" {
+		fmt.Fprintf(&b, "# @user\n%s\n", truncateRunes(u, 1000))
+	}
+	fmt.Fprintf(&b, "# @assistant\n(%s) %s", call.Name, utils.Scrub(string(call.Input)))
+	return b.String()
 }
 
 func allowedTool(name string, allowed *[]string) bool {

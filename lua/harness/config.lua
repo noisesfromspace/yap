@@ -86,6 +86,7 @@ M.defaults = {
     sessions = "<leader>r",
     waiting = "<leader>w",
     history = "<leader>y",
+    guard = "<leader>g",
     help = "g?",
 
     next_message = "]m",

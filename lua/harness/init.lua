@@ -27,6 +27,7 @@ local describe = require("harness.describe")
 local subagent = require("harness.subagent")
 local template = require("harness.template")
 local context = require("harness.context")
+local guard = require("harness.guard")
 
 M.winbar = winbar.winbar
 M.overview = winbar.overview
@@ -250,9 +251,8 @@ local stream_flush = {}
 -- Audit lifecycle (log write, live-view buffer, seed usage, drain, poll)
 -- lives in harness.audit.
 
-local follow_override = {} -- session buf -> windows deliberately focused by YapAlerts during a turn
+local follow_override = {} -- session buf -> windows deliberately focused during a turn (paused tail-following)
 local live_session_label
-local inspect_approval
 
 local function answer_approval(buf, approved)
   local ev = pending_approvals[buf]
@@ -260,6 +260,7 @@ local function answer_approval(buf, approved)
     return
   end
   pending_approvals[buf] = nil
+  guard.touch()
   local process = servers[buf]
   if not process then
     return
@@ -270,23 +271,16 @@ local function answer_approval(buf, approved)
     { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
   )
 end
-
--- Render the full call a decision is about, decoded like the old dialog so
--- approval never hides the operation being authorized. SSH sends plain text.
-local function approval_detail(ev)
-  local command = ev.command or ""
-  local ok_args, args = pcall(vim.json.decode, command)
-  return ok_args and vim.inspect(args) or command
-end
+M.answer_approval = answer_approval
 
 -- Approval is a non-blocking notification, not a modal: the turn is parked
 -- (the backend waits up to five minutes) and the user answers deliberately
--- via :YapApproval. Distinct from the advisory toast by level, title and
+-- via :YapGuard. Distinct from the advisory toast by level, title and
 -- shield icon so an action-required pause is never mistaken for a warning
 -- about a call that already ran.
 local function notify_approval(buf, ev)
   vim.notify(
-    ("yap: %s needs approval — %s: %s\n:YapApproval to Run, Deny or Inspect"):format(
+    ("yap: %s needs approval — %s: %s\n:YapGuard to Run, Deny or Inspect"):format(
       live_session_label(buf),
       ev.tool or "tool",
       ev.reason or "review call"
@@ -329,12 +323,15 @@ local function handle_event(buf, json_line)
     audit.append_event(buf, ev)
     pending_approvals[buf] = ev
     notify_approval(buf, ev)
+    guard.touch()
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)
+    guard.touch()
   elseif ev.type == "alert_advisory" then
-    -- Record before notifying: the picker can now navigate to this exact alert.
+    -- Record before notifying: the board can now navigate to this exact alert.
     audit.append_event(buf, ev)
+    guard.touch()
     local parts = {}
     local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
     if p then
@@ -354,9 +351,9 @@ local function handle_event(buf, json_line)
       ),
     }
     if #parts > 0 then
-      lines[#lines + 1] = table.concat(parts, " · ") .. " · :YapAlerts"
+      lines[#lines + 1] = table.concat(parts, " · ") .. " · :YapGuard"
     else
-      lines[#lines + 1] = ":YapAlerts"
+      lines[#lines + 1] = ":YapGuard"
     end
     vim.notify(table.concat(lines, "\n"), vim.log.levels.WARN, { title = "yap alert" })
   elseif ev.type == "tool_call" then
@@ -713,246 +710,19 @@ local function show_audit_event(buf, ordinal)
   end
 end
 
---- Focus the matching tool region in the session without leaving the audit drawer.
---- The audit records calls even if the user later edits their transcript, so
---- a missing region simply leaves the session cursor where it was.
-local function focus_alert_call(buf, call)
-  if not call then
-    return
-  end
-  local win = vim.fn.win_findbuf(buf)[1]
-  if not win then
-    return
-  end
-  local seen = 0
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for _, detail in ipairs(require("harness.structure").parse(buf).regions) do
-    if detail.kind == "tool" then
-      local id
-      for i = detail.start, math.min(detail.start + 4, #lines) do
-        id = lines[i]:match('"id"%s*:%s*"([^"\\]+)"')
-        if id or lines[i]:find("-->", 1, true) then
-          break
-        end
-      end
-      if id == call.id then
-        seen = seen + 1
-        if seen == call.occurrence then
-          -- A picker selection wins over tail-following for this turn.
-          local paused = follow_override[buf]
-          if paused then
-            paused[win] = true
-          end
-          vim.api.nvim_win_call(win, function()
-            vim.api.nvim_win_set_cursor(win, { detail.start, 0 })
-            vim.cmd("normal! zvzz")
-          end)
-          return
-        end
-      end
-    end
-  end
-end
-
-inspect_approval = function(buf, ev)
-  local ordinal = 0
-  local target
-  for _, line in ipairs(vim.fn.readfile(paths.audit_path(buf))) do
-    local ok, entry = pcall(vim.json.decode, line)
-    if ok and type(entry) == "table" and (entry.type == "alert_advisory" or entry.type == "approval_request") then
-      ordinal = ordinal + 1
-      if entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
-        target = ordinal
-      end
-    end
-  end
-  -- Inspect is an audit action: keep the shield-marked request focused,
-  -- with the conversation visible in the other window for context.
-  if target then
-    show_audit_event(buf, target)
-  end
-end
-
---- Markdown preview of a pending approval: the session label, tool, reason
---- and full call, so a picker can communicate everything needed to decide
---- without leaving it. Same shape as session.preview().
-local function approval_preview(buf, ev)
-  local content = {
-    "# Approval required",
-    "",
-    "**Session:** " .. live_session_label(buf),
-    "**Tool:** " .. (ev.tool or "tool"),
-    "**Reason:** " .. (ev.reason or "review call"),
-    "",
-    approval_detail(ev),
-  }
-  -- approval_detail() decodes the call, so it can be multi-line; buffer
-  -- lines must be flattened before nvim_buf_set_lines.
-  local lines = {}
-  for _, s in ipairs(content) do
-    vim.list_extend(lines, vim.split(s, "\n", { plain = true }))
-  end
-  local pb = vim.api.nvim_create_buf(false, true)
-  vim.bo[pb].filetype = "markdown"
-  vim.bo[pb].bufhidden = "wipe"
-  vim.api.nvim_buf_set_lines(pb, 0, -1, false, lines)
-  return { buf = pb, pos = { 1, 0 } }
-end
-
---- Run/Deny/Inspect for one approval. Dismissing the picker (Esc/Ctrl-C)
---- defers: the approval stays pending until the backend's five-minute deny,
---- so cancel never silently rejects a call the way the old confirm() did.
-local function pick_approval_action(buf, ev)
-  vim.ui.select({ "Run", "Deny", "Inspect" }, {
-    prompt = ("yap: %s in %s"):format(ev.tool or "tool", live_session_label(buf)),
-    preview_item = function()
-      return approval_preview(buf, ev)
-    end,
-  }, function(choice)
-    if not choice then
-      return
-    end
-    if choice == "Inspect" then
-      inspect_approval(buf, ev)
-    else
-      answer_approval(buf, choice == "Run")
-    end
-  end)
-end
-
--- Every open session awaiting an approval decision (a turn is parked, so at
--- most one per buffer; several sessions can be parked at once).
-local function approval_items()
-  local items = {}
-  for owner, ev in pairs(pending_approvals) do
-    if vim.api.nvim_buf_is_valid(owner) then
-      items[#items + 1] = { buf = owner, ev = ev }
-    end
-  end
-  return items
-end
-
---- After an approval fires (or after Inspect), answer it deliberately:
---- Run, Deny or Inspect from a picker whose preview shows the full call.
---- Several agents can be parked at once; with more than one pending and no
---- unambiguous session under the cursor, pick which approval to answer first.
---- The backend denies on timeout; dismissing any picker defers.
-function M.approval()
-  local current = vim.api.nvim_get_current_buf()
-  local items = approval_items()
-  if #items == 0 then
-    vim.notify("yap: no pending approval", vim.log.levels.INFO)
-    return
-  end
-  local buf = pending_approvals[current] and current or nil
-  if not buf then
-    for owner, t in pairs(audit.views()) do
-      if t.bufnr == current and pending_approvals[owner] then
-        buf = owner
-        break
-      end
-    end
-  end
-  if buf then
-    pick_approval_action(buf, pending_approvals[buf])
-  elseif #items == 1 then
-    pick_approval_action(items[1].buf, items[1].ev)
+--- Open a session's audit and reveal one reviewable event by its ordinal
+--- (the index among alert_advisory/approval_request entries in that log).
+--- The guard board's Inspect action uses this for rows loaded from disk,
+--- whether or not the session is already open.
+function M.reveal_audit(path, ordinal)
+  local buf = vim.fn.bufnr(path)
+  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
+    vim.api.nvim_set_current_buf(buf)
+    adopt(buf, path)
   else
-    vim.ui.select(items, {
-      prompt = "yap pending approvals",
-      format_item = function(item)
-        return ("%s · %s: %s"):format(
-          live_session_label(item.buf),
-          item.ev.tool or "tool",
-          item.ev.reason or "review call"
-        )
-      end,
-      preview_item = function(item)
-        return approval_preview(item.buf, item.ev)
-      end,
-    }, function(choice)
-      if choice then
-        pick_approval_action(choice.buf, choice.ev)
-      end
-    end)
+    buf = M.open(path)
   end
-end
-
---- Review advisories and approval requests for this project, including sessions
---- no longer open. Each picker item lands on its own unfolded audit entry.
-function M.alerts()
-  local items = {}
-  local session_dir = paths.session_dir(vim.fn.getcwd())
-  local pairs = {}
-  local seen = {}
-  local function add(log, path)
-    if vim.fn.filereadable(path) == 1 and not seen[path] then
-      seen[path] = true
-      pairs[#pairs + 1] = { log = log, path = path }
-    end
-  end
-  -- Audit logs are <dir>/audit.jsonl beside <dir>/session.md, one session
-  -- per directory.
-  for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
-    add(log, vim.fn.fnamemodify(log, ":h") .. "/session.md")
-  end
-  for _, pair in ipairs(pairs) do
-    local log, path = pair.log, pair.path
-    local ordinal = 0
-    local occurrences, last_call = {}, nil
-    for _, line in ipairs(vim.fn.readfile(log)) do
-      local ok, ev = pcall(vim.json.decode, line)
-      if ok and type(ev) == "table" then
-        if ev.type == "tool_call" and ev.id then
-          occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-          last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-        elseif ev.type == "alert_advisory" or ev.type == "approval_request" then
-          ordinal = ordinal + 1
-          -- Advisory IDs identify the call; approval IDs identify the
-          -- approval dialog, so the latter uses the last executed call.
-          local call = last_call
-          if ev.type == "alert_advisory" and ev.id and occurrences[ev.id] then
-            call = { id = ev.id, occurrence = occurrences[ev.id] }
-          end
-          items[#items + 1] = { path = path, event = ev, ordinal = ordinal, call = call }
-        end
-      end
-    end
-  end
-  table.sort(items, function(a, b)
-    return (a.event.ts or "") > (b.event.ts or "")
-  end)
-  if #items == 0 then
-    vim.notify("yap: no alerts or approval requests for this project", vim.log.levels.INFO)
-    return
-  end
-  vim.ui.select(items, {
-    prompt = "yap alerts (newest first)",
-    format_item = function(item)
-      local ev = item.event
-      return ("%s  %s  %s %s: %s"):format(
-        ev.ts or "?",
-        paths.session_name(item.path),
-        ev.type == "approval_request" and "approval requested" or "advisory",
-        ev.tool or ev.name or "tool",
-        ev.reason or "review call"
-      )
-    end,
-  }, function(item)
-    if not item then
-      return
-    end
-    local path = item.path
-    local buf = vim.fn.bufnr(path)
-    if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
-      vim.api.nvim_set_current_buf(buf)
-      adopt(buf, path)
-    else
-      buf = M.open(path)
-    end
-    show_audit_event(buf, item.ordinal)
-    focus_alert_call(buf, item.call)
-  end)
+  show_audit_event(buf, ordinal)
 end
 
 -- The scratch queue and mid-turn steering live in harness.scratch.
@@ -1880,6 +1650,7 @@ live_session_label = function(buf, parent)
   end
   return label
 end
+M.session_label = live_session_label
 
 --- Plain state token for a buffer: the key |M.instances| filters on, and
 --- the word behind each picker status glyph.
@@ -2198,6 +1969,11 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymaps.history, function()
       M.sessions()
     end, { silent = true, desc = "yap: history" })
+  end
+  if M.config.keymaps.guard ~= "" then
+    vim.keymap.set("n", M.config.keymaps.guard, function()
+      guard.toggle()
+    end, { silent = true, desc = "yap: guard board" })
   end
   if M.config.keymaps.change_default_model ~= "" then
     vim.keymap.set("n", M.config.keymaps.change_default_model, function()

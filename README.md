@@ -92,8 +92,7 @@ still notify.
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
-| `:YapAlerts`                              |             | Review advisories and approval requests in their sessions.         |
-| `:YapApproval`                            |             | Answer Run/Deny after inspecting a paused request.                 |
+| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals, advisories and history.    |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |

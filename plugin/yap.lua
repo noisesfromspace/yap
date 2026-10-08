@@ -19,13 +19,9 @@ vim.api.nvim_create_user_command("YapLive", function()
   require("harness").live()
 end, { desc = "Open the session's live audit view" })
 
-vim.api.nvim_create_user_command("YapAlerts", function()
-  require("harness").alerts()
-end, { desc = "Review this project's advisories and approval requests in their sessions" })
-
-vim.api.nvim_create_user_command("YapApproval", function()
-  require("harness").approval()
-end, { desc = "Answer a paused Run/Deny request after inspecting its audit" })
+vim.api.nvim_create_user_command("YapGuard", function()
+  require("harness.guard").toggle()
+end, { desc = "Open the guard board: pending approvals, advisories and history" })
 
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
