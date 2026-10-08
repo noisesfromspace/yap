@@ -260,16 +260,18 @@ local function answer_approval(buf, approved)
     return
   end
   pending_approvals[buf] = nil
-  guard.touch()
   local process = servers[buf]
-  if not process then
-    return
-  end -- backend stopped or timed out; never approve a stale call
-  process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
-  audit.append_event(
-    buf,
-    { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
-  )
+  if process then
+    -- backend stopped or timed out; never approve a stale call
+    process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
+    audit.append_event(
+      buf,
+      { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
+    )
+  end
+  -- Re-render after the result is written (and pending cleared) so an answered
+  -- approval moves from Open to History instead of vanishing from the board.
+  guard.touch()
 end
 M.answer_approval = answer_approval
 
@@ -687,6 +689,9 @@ function M.live(buf)
       audit.unfold_all(t.bufnr)
     end, { buffer = t.bufnr, silent = true, desc = "yap: unfold all turns" })
   end
+  vim.keymap.set("n", "q", function()
+    M.live(t.bufnr)
+  end, { buffer = t.bufnr, silent = true, desc = "yap: close audit view" })
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
   audit.fold(t.bufnr)
 end

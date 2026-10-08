@@ -10,7 +10,10 @@ yap.live()
 local audit = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live did not open the audit view buffer")
 assert(not vim.bo[audit].modifiable, "fresh audit view should be read-only")
-assert(vim.api.nvim_buf_line_count(0) == 1, "fresh audit view should have a single empty line")
+assert(
+  vim.api.nvim_buf_get_lines(audit, 0, 1, false)[1]:match("^Audit · "),
+  "fresh audit view missing header"
+)
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "audit view has no buffer-local live toggle")
 yap.live(audit)
 assert(#vim.fn.win_findbuf(audit) == 0, "live from audit view did not close it")

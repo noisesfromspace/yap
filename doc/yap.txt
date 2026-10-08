@@ -214,17 +214,19 @@ the current buffer unless otherwise noted.
                         audit log as it streams — a `$ command` header per
                         bash call with its drained output, one journal line
                         per non-bash tool call and result, and one journal
-                        line per turn. Opens in a split scrolled to the
-                        bottom, or focuses the existing window; never opens by
-                        itself. It is a rendering, not a second log: rebuilt
-                        from the log on reopen, so it survives restarts.
+                        line per turn, under an "Audit · <session>" header
+                        with a turn count. Opens in a split scrolled to the
+                        bottom, or focuses the existing window; `q` closes
+                        it. Never opens by itself. It is a rendering, not a
+                        second log: rebuilt from the log on reopen, so it
+                        survives restarts.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): one read-only
                         buffer merging the old :YapAlerts and :YapApproval
                         pickers. Two sections, newest/open first — Open lists
                         every parked approval plus advisories from the last
-                        hour, History lists resolved decisions and older
-                        advisories. Each row is one scannable line; <Tab>/`za`
+                        15 minutes, History lists resolved decisions and
+                        advisories up to 3 hours old. Each row is one scannable line; <Tab>/`za`
                         expands it to the full command, reason, severity
                         breakdown and triggering transcript; <CR> opens a
                         Run/Deny/Inspect/Defer popup for approvals

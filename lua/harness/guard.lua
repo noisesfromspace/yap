@@ -20,6 +20,7 @@ local state = require("harness.state")
 local paths = require("harness.path")
 local util = require("harness.util")
 local drawer = require("harness.drawer")
+local view = require("harness.view")
 
 local function harness()
   return require("harness")
@@ -27,12 +28,12 @@ end
 
 local BOARD_NAME = "yap://guard"
 local BOARD_HEIGHT = 12
-local RECENT_MINUTES = 60 -- advisories newer than this stay in Open; older -> History
+local RECENT_MINUTES = 15   -- advisories newer than this stay in Open
+local HISTORY_MINUTES = 180 -- History drops rows older than this
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
 local HL = {
-  header = "YapGuardHeader",
   section = "YapGuardSection",
   approval = "YapGuardApproval",
   advisory = "YapGuardAdvisory",
@@ -47,7 +48,6 @@ local HL = {
 local function link(name, to)
   vim.api.nvim_set_hl(0, name, { link = to, default = true })
 end
-link(HL.header, "Title")
 link(HL.section, "MoreMsg")
 link(HL.approval, "DiagnosticWarn")
 link(HL.advisory, "Comment")
@@ -75,9 +75,8 @@ local function ensure_board()
   return board_buf
 end
 
-local function flat(s)
-  return (s or ""):gsub("[\r\n]+", " ")
-end
+local flat = view.flat
+local clip = view.clip
 
 --- Decode a tool-call argument JSON into the primary target shown in a row:
 --- the command (bash/ssh), path (write/edit/python file), or URL (curl/fetch).
@@ -291,14 +290,17 @@ local function build_sections()
   local open_rows = approvals
   local history_rows = {}
   for _, a in ipairs(advisories) do
-    if minutes_ago(a.ts) <= RECENT_MINUTES then
+    local ago = minutes_ago(a.ts)
+    if ago <= RECENT_MINUTES then
       open_rows[#open_rows + 1] = a
-    else
+    elseif ago <= HISTORY_MINUTES then
       history_rows[#history_rows + 1] = a
     end
   end
   for _, r in ipairs(resolved) do
-    history_rows[#history_rows + 1] = r
+    if minutes_ago(r.ts) <= HISTORY_MINUTES then
+      history_rows[#history_rows + 1] = r
+    end
   end
 
   return {
@@ -309,13 +311,7 @@ end
 
 -- ─── Rendering ─────────────────────────────────────────────────────────────
 
-local function cell(s, width)
-  s = s or ""
-  if #s > width then
-    s = s:sub(1, width)
-  end
-  return s .. string.rep(" ", width - #s)
-end
+local cell = view.cell
 
 local function row_glyph(row)
   local icons = harness().config.icons
@@ -387,7 +383,8 @@ local function detail_lines(row)
   local function add(s)
     out[#out + 1] = s
   end
-  add("   command    " .. (row.command ~= "" and flat(row.command) or "—"))
+  local cmd = row.command ~= "" and flat(row.command) or "—"
+  add("   command    " .. clip(cmd, 160))
   add("   reason     " .. (row.reason ~= "" and flat(row.reason) or "—"))
   if row.severity then
     local parts = {}
@@ -411,8 +408,13 @@ local function detail_lines(row)
   add("   session    " .. flat(row.session) .. (row.kind == "approval" and (when ~= "" and (" · parked " .. when) or "") or ""))
   if row.context ~= "" then
     add("   context")
-    for _, l in ipairs(vim.split(row.context, "\n", { plain = true })) do
-      add("     " .. l)
+    local clines = vim.split(row.context, "\n", { plain = true })
+    for i, l in ipairs(clines) do
+      if i > 4 then
+        add("     …")
+        break
+      end
+      add("     " .. clip(l, 100))
     end
   end
   return out
@@ -440,8 +442,12 @@ local function render()
   end
 
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
-  add(("Guard Board · %s"):format(project), HL.header)
-  add(("  Open %d · History %d"):format(#open_rows, #history_rows), HL.meta)
+  local hdr = view.header_lines(
+    ("Guard Board · %s"):format(project),
+    ("Open %d · History %d"):format(#open_rows, #history_rows)
+  )
+  add(hdr[1], view.hl.header)
+  add(hdr[2], view.hl.meta)
 
   local function emit_section(section)
     add("")

@@ -32,13 +32,13 @@ local function add(buf, id, reason, ts)
   }, log, "a")
 end
 local now = os.time()
-local function ts(delta)
-  return os.date("%Y-%m-%dT%H:%M:%S", now - delta)
+local function ts(mins)
+  return os.date("%Y-%m-%dT%H:%M:%S", now - mins * 60)
 end
 add(first, "first-id", "first warning", ts(10))
 add(first, "first-id", "later warning", ts(0))
 -- An advisory older than the recency window lands in History, not Open.
-add(first, "old-id", "old warning", "2026-01-01T12:00:00")
+add(first, "old-id", "old warning", ts(120))
 -- A denied approval lands in History.
 local log = paths.audit_path(first)
 vim.fn.writefile({
@@ -48,9 +48,9 @@ vim.fn.writefile({
     tool = "bash",
     reason = "possible data loss",
     command = '{"command":"rm -rf important"}',
-    ts = "2026-01-02T12:00:00",
+    ts = ts(90),
   }),
-  vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = "2026-01-02T12:00:01" }),
+  vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = ts(89) }),
 }, log, "a")
 
 -- Rebuild audit buffers from the persisted JSONL, as on a fresh Neovim.

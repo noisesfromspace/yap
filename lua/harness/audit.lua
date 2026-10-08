@@ -10,6 +10,7 @@ local M = {}
 local paths = require("harness.path")
 local util = require("harness.util")
 local state = require("harness.state")
+local view = require("harness.view")
 
 -- Highlight groups: structure is colored, content stays default so
 -- streamed/returned text reads as plain text. Links (not fixed colors) so
@@ -70,9 +71,7 @@ end
 --- containing '\n'). Multi-line tool output already arrives split via
 --- `output`/`tool_result` events; this only guards the one-line annotations
 --- built from model/tool-provided text (bash commands, retry errors, …).
-local function flat(s)
-  return (s or ""):gsub("[\r\n]+", " ")
-end
+local flat = view.flat
 
 --- Render one audit event as live-view lines. Returns (lines, kind)
 --- where each line is { text = string, hl = highlight group|nil } and
@@ -252,16 +251,48 @@ local function render_events(events)
   return lines, hl, reviews
 end
 
+-- The audit view leads with a two-line header mirroring the guard board: a
+-- title ("Audit · <session>") and a turn count. It sits above the event
+-- stream, so review-event lines and per-line highlights shift by HEADER_LINES.
+local HEADER_LINES = 2
+
 --- Rebuild a live-view buffer from the full event list (the reopen path).
---- Returns whether the buffer now has content and the review event line map.
-function M.rebuild(buf, events)
+--- `title` names the session in the header. Returns whether the buffer now
+--- has content, the review event line map, and the completed-turn count.
+function M.rebuild(buf, events, title)
   local lines, hl, reviews = render_events(events)
+  local has_events = #lines > 1 -- render_events always leaves one trailing empty line
+  local turns = 0
+  for _, ev in ipairs(events) do
+    if ev.type == "turn_end" then
+      turns = turns + 1
+    end
+  end
+  local header = view.header_lines(("Audit · %s"):format(title or "session"), ("%d turns"):format(turns))
+  for i = #header, 1, -1 do
+    table.insert(lines, 1, header[i])
+  end
+  -- A blank separator between the header and the event stream, matching the
+  -- live-append spacing. Reviews/highlights shift by the full header height.
+  local shift = HEADER_LINES
+  if has_events then
+    table.insert(lines, HEADER_LINES + 1, "")
+    shift = HEADER_LINES + 1
+  end
+  for i, r in ipairs(reviews) do
+    reviews[i] = r + shift
+  end
+  for _, h in ipairs(hl) do
+    h[1] = h[1] + shift
+  end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, view.hl.header, 0, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, ns, view.hl.meta, 1, 0, -1)
   for _, h in ipairs(hl) do
     vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], 0, -1)
   end
-  return #lines > 1 or lines[1] ~= "", reviews
+  return true, reviews, turns
 end
 
 --- Append one event to a live-view buffer. State `t` is { bufnr, has_content }.
@@ -295,6 +326,10 @@ function M.append(t, ev)
     t.reviews[#t.reviews + 1] = start + lead + 1 -- 1-based buffer line
   end
   t.has_content = true
+  if ev.type == "turn_end" then
+    t.turns = (t.turns or 0) + 1
+    vim.api.nvim_buf_set_lines(buf, 1, 2, false, { ("  %d turns"):format(t.turns) })
+  end
 end
 
 --- Follow only windows already near the bottom: scrolling up to read must
@@ -488,7 +523,14 @@ function M.ensure(buf)
     end
   end
   vim.bo[tbuf].modifiable = true
-  t.has_content, t.reviews = M.rebuild(tbuf, events)
+  local title = paths.session_name(paths.session_path(buf) or vim.api.nvim_buf_get_name(buf))
+  local ok, label = pcall(function()
+    return require("harness").session_label(buf)
+  end)
+  if ok and label and label ~= "" then
+    title = label
+  end
+  t.has_content, t.reviews, t.turns = M.rebuild(tbuf, events, title)
   vim.bo[tbuf].modifiable = false
   return t
 end

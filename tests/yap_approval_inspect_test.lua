@@ -83,5 +83,13 @@ assert(
   end, 50),
   "turn did not continue after denial"
 )
+
+-- The answered approval moves from Open to History, not vanish from the board.
+guard.toggle()
+local bboard = vim.fn.bufnr("yap://guard")
+local btext = table.concat(vim.api.nvim_buf_get_lines(bboard, 0, -1, false), "\n")
+assert(btext:find("▸ History", 1, true), "board missing History after denial: " .. btext)
+assert(btext:find("recursive deletion of critical paths", 1, true), "denied approval vanished from History")
+guard.toggle() -- close
 vim.notify = old_notify
 print("OK approval inspect")
