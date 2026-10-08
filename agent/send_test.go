@@ -487,6 +487,54 @@ func TestModels(t *testing.T) {
 	}
 }
 
+// TestModelsToolInServe: the serve loop hands main's discovery client to the
+// models tool, so a model can list combos without shelling out.
+func TestModelsToolInServe(t *testing.T) {
+	var found bool
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":[{"id":"gpt-5-mini"}]}`)
+			return
+		}
+		calls++
+		if calls == 1 {
+			sse(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"models","arguments":"{\"filter\":\"gpt-5\"}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		for _, m := range body["messages"].([]any) {
+			if mm, ok := m.(map[string]any); ok && mm["role"] == "tool" {
+				result, _ := mm["content"].(string)
+				if !strings.Contains(result, "mock/gpt-5-mini") {
+					t.Errorf("models tool result: %q", result)
+				}
+				if !strings.Contains(result, "in $0.15 · out $0.6 per 1M tokens") {
+					t.Errorf("price hint missing: %q", result)
+				}
+				found = true
+			}
+		}
+		sse(w, `{"choices": [{"delta": {"content": "done"}}]}`)
+	}))
+	defer srv.Close()
+	writeConfigJSON(t, fmt.Sprintf(`{"providers": {"mock": {"base_url": "%s/v1", "api_key_env": "YAP_TEST_KEY"}}, "pricing": {"gpt-5-mini": {"input": 0.15, "output": 0.6}}}`, srv.URL))
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"which model?"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if !found {
+		t.Fatal("no tool result reached the model")
+	}
+}
+
 type retryableNetErr struct{}
 
 func (retryableNetErr) Error() string   { return "i/o timeout" }

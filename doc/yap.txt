@@ -784,15 +784,16 @@ to the model) and optionally a ui payload (display-only yap:ui section,
 bounded at 300 iterations per send.
 
 Built-ins: ls, read, fetch, bash, python, curl, git, write, edit, search,
-glob, websearch, github, playwright, quickfix, ssh, jev, close_session,
-subagent, start_task, wait_tasks.
+glob, websearch, github, playwright, quickfix, ssh, jev, models,
+close_session, subagent, start_task, wait_tasks.
 
 Highlights:
 
   - Multiple independent read-only calls in the same model round (ls, read,
-    search, glob, git, fetch, websearch) execute concurrently, up to four at
-    once. Yap waits for all of them and renders regions/results in call order.
-    Mixed rounds and side-effecting tools retain sequential execution.
+    search, glob, git, fetch, websearch, models) execute concurrently, up to
+    four at once. Yap waits for all of them and renders regions/results in
+    call order. Mixed rounds and side-effecting tools retain sequential
+    execution.
   - start_task starts bash, fetch or websearch in the background after the
     usual tool safety gate, returning a turn-local task ID. The agent can do
     independent work, then use wait_tasks with IDs (or omit IDs for all)
@@ -874,18 +875,33 @@ Highlights:
     as text. `isolate_network` runs the script in a private network namespace
     (Linux, util-linux `unshare`) with no outbound or loopback connectivity:
     the script still runs, but any network access fails closed.
+  - models lists the provider/model combos the picker offers, from the same
+    discovery client (`yap models`) the picker uses, so the two cannot
+    disagree. With no `filter` it returns a summary of the configured
+    providers and how many models each has; with a `filter` (case-insensitive
+    substring, e.g. "gpt-5" or "anthropic/") it lists up to 100 matching
+    combos, each with its price per 1M tokens when known, and providers that
+    do not answer are reported as warnings. The tool exists so a session can
+    choose an appropriate model for a subagent (the subagent `model` argument)
+    without the combo list being injected into every system message.
   - subagent delegates to an agent definition in ~/.yap/agents/<name>.md
     (YAML frontmatter: `name`, `model`, optional `tools`; body = system
     prompt). It creates a child session in the same project; the parent tool
     call waits for the child's answer and session path. Open and saved pickers
     show child rows; opening one lets you inspect it and ask a direct
     follow-up. Follow up through the parent with `subagent` + `session` (the
-    returned path) and `task`. An agent definition without `tools` gets a
-    read-only set (ls, read, search, glob, fetch, git, websearch, quickfix,
-    jev); write/bash/python/curl/ssh must be requested explicitly. Delegation
-    times out after ten minutes; stopping the parent stops its running child
-    (the child's file is kept). There is no background spawn or child-to-child
-    messaging.
+    returned path) and `task`. The `model` argument (provider/model, see
+    models) runs the child on a model the parent chose; it wins over the
+    definition's `model`, and a definition that names none — or only a bare
+    model name, which Yap cannot resolve to a provider — falls back to the
+    parent's combo. A malformed combo fails the delegation with an error
+    instead of spawning; `model` is ignored on follow-ups, where the child
+    keeps the combo in its frontmatter. An agent definition without `tools`
+    gets a read-only set (ls, read, search, glob, fetch, git, websearch,
+    quickfix, jev); write/bash/python/curl/ssh must be requested explicitly.
+    Delegation times out after ten minutes; stopping the parent stops its
+    running child (the child's file is kept). There is no background spawn or
+    child-to-child messaging.
 
 Path fields on write, edit, read, ls, glob, search, git, and python (file and
 cwd) — plus bash's cwd — expand a leading ~ or ~/ to the home directory.

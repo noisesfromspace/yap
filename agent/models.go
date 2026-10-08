@@ -10,19 +10,40 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"boers.email/yap/agent/price"
+	"boers.email/yap/agent/tools"
 )
 
-// models lists the provider/model combos available in the config. GoAI has no
-// model lister, so this small discovery client handles the native providers'
-// model endpoints and the common OpenAI-compatible shape. One
-// "provider/model" is printed per line. A failing provider is skipped with a
-// warning: one down provider must not block the picker.
-//
-// The requests are independent, so they run concurrently.
+// models prints the provider/model combos available in the config, one per
+// line, plus a `yap: <provider>: <err>` warning on stderr for every provider
+// that does not answer. It is the model picker's source of truth and is also
+// handed to the `models` tool (tools.SetModelLister), so the CLI, the picker
+// and the tool cannot disagree.
 func models() error {
-	cfg, err := loadConfig()
+	combos, warnings, err := listCombos()
 	if err != nil {
 		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "yap: "+w)
+	}
+	for _, c := range combos {
+		fmt.Println(c.Name)
+	}
+	return nil
+}
+
+// listCombos discovers the combos in the config. GoAI has no model lister, so
+// this small client handles the native providers' model endpoints and the
+// common OpenAI-compatible shape: sorted "provider/model" pairs (with their
+// price when known) and one warning per provider skipped, because one down
+// provider must not block the picker. The requests are independent, so they
+// run concurrently.
+func listCombos() ([]tools.ModelCombo, []string, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, nil, err
 	}
 	names := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
@@ -31,7 +52,7 @@ func models() error {
 	sort.Strings(names)
 
 	type result struct {
-		lines []string
+		lines []tools.ModelCombo
 		errs  []string
 	}
 	results := make([]result, len(names))
@@ -45,26 +66,38 @@ func models() error {
 			prov := cfg.Providers[name]
 			ids, err := listModels(ctx, name, strings.TrimRight(prov.BaseURL, "/"), os.Getenv(prov.APIKeyEnv))
 			if err != nil {
-				results[i].errs = append(results[i].errs, fmt.Sprintf("yap: %s: %v", name, err))
+				results[i].errs = append(results[i].errs, fmt.Sprintf("%s: %v", name, err))
 				return
 			}
 			sort.Strings(ids)
 			for _, id := range ids {
-				results[i].lines = append(results[i].lines, name+"/"+id)
+				results[i].lines = append(results[i].lines, comboPrice(name, id, cfg))
 			}
 		}(i, name)
 	}
 	wg.Wait()
 
+	var combos []tools.ModelCombo
+	var warnings []string
 	for _, r := range results {
-		for _, e := range r.errs {
-			fmt.Fprintln(os.Stderr, e)
-		}
-		for _, l := range r.lines {
-			fmt.Println(l)
-		}
+		warnings = append(warnings, r.errs...)
+		combos = append(combos, r.lines...)
 	}
-	return nil
+	return combos, warnings, nil
+}
+
+// comboPrice attaches the running price to a combo, mirroring the cost
+// computation: the user's `pricing` block wins, then the committed catalog.
+func comboPrice(provider, model string, cfg *Config) tools.ModelCombo {
+	c := tools.ModelCombo{Name: provider + "/" + model}
+	if p, ok := cfg.Pricing[model]; ok {
+		c.Input, c.Output = p.Input, p.Output
+		return c
+	}
+	if info, ok := price.Lookup(provider, model); ok {
+		c.Input, c.Output = info.Input, info.Output
+	}
+	return c
 }
 
 // listModels queries the provider's native model endpoint. Unknown providers

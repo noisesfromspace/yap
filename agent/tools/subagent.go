@@ -22,6 +22,7 @@ var subagentWait = 10 * time.Minute
 
 type subagentArgs struct {
 	Agent   string `json:"agent,omitempty" jsonschema:"description=name of an agent definition from ~/.yap/agents/*.md (or configured agents_dir); omit when continuing a session"`
+	Model   string `json:"model,omitempty" jsonschema:"description=provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none. Ignored when continuing a session"`
 	Task    string `json:"task" jsonschema:"description=task or follow-up question for the subagent"`
 	Session string `json:"session,omitempty" jsonschema:"description=existing child session path returned by a previous subagent call; omit to start a new session"`
 }
@@ -32,7 +33,7 @@ func init() {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
-		utils.EmitEvent(map[string]any{"type": "subagent_request", "id": id, "agent": a.Agent, "task": a.Task, "session": a.Session})
+		utils.EmitEvent(map[string]any{"type": "subagent_request", "id": id, "agent": a.Agent, "model": a.Model, "task": a.Task, "session": a.Session})
 		timer := time.NewTimer(subagentWait)
 		defer timer.Stop()
 		for {

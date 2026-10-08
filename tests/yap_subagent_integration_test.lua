@@ -26,7 +26,14 @@ for line in sys.stdin:
     if prompt.startswith("delegate"):
         agent = "browser" if "unsupported" in prompt else "scout"
         session = prompt.split("session=", 1)[1].split()[0] if "session=" in prompt else ""
-        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"session":session,"task":"follow up" if session else ("fail" if "failure" in prompt else "succeed")}), file=sys.stderr, flush=True)
+        model = ""
+        if "override" in prompt:
+            model = "other/model-b"
+        elif "badmodel" in prompt:
+            model = "nonsense"
+        elif "followupmodel" in prompt:
+            model = "other/model-c"
+        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in prompt else "succeed")}), file=sys.stderr, flush=True)
         response = json.loads(sys.stdin.readline())
         print('\n' + response['result'] + '\n', flush=True)
     elif "follow up" in prompt:
@@ -95,6 +102,27 @@ local unknown = delegate("delegate session=" .. home .. "/other.md")
 assert(unknown:find("error: subagent session not found", 1, true), unknown)
 local failure = delegate("delegate failure")
 assert(failure:find("error: child model failed", 1, true), failure)
+-- A per-call model wins over the agent definition's `model` header; a
+-- malformed combo fails the delegation instead of spawning a child.
+local overridden = delegate("delegate override")
+assert(overridden:find("child finished", 1, true), overridden)
+local over_path
+for path in overridden:gmatch("Session: %[.-%]%((.-)%)") do
+  over_path = path
+end
+assert(over_path and over_path ~= child_path, "override spawned no new child")
+local over_fm = require("harness.frontmatter").parse(vim.fn.readfile(over_path))
+assert(over_fm.provider == "other" and over_fm.model == "model-b", "per-call model ignored: " .. vim.inspect(over_fm.model))
+-- A follow-up ignores `model`: the child keeps the combo in its frontmatter.
+local followup_model = delegate("delegate session=" .. over_path .. " followupmodel")
+assert(followup_model:find("follow-up answered", 1, true), followup_model)
+local over_after = require("harness.frontmatter").parse(vim.fn.readfile(over_path))
+assert(
+  over_after.provider == "other" and over_after.model == "model-b",
+  "follow-up changed the child's combo: " .. vim.inspect(over_after.provider .. "/" .. over_after.model)
+)
+local bad_model = delegate("delegate badmodel")
+assert(bad_model:find("error: invalid subagent model", 1, true), bad_model)
 local unsupported = delegate("delegate unsupported")
 assert(unsupported:find("error: agent definition browser requires unsupported tool browser_launch", 1, true), unsupported)
 print("OK subagent integration")

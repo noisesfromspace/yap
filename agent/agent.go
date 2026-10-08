@@ -417,6 +417,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	tools.SetVPNCommand(cfg.VPN.Command)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
+	tools.SetModelLister(listCombos)
 	dm := decisionModel(cfg)
 	tools.SetDecisionModel(dm)
 	alertCfg := alertConfig(cfg)

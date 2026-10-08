@@ -238,4 +238,11 @@ function M.current_combo(buf)
   return vim.b[buf].yap_provider or config.provider, vim.b[buf].yap_model or config.model
 end
 
+--- Split a "provider/model" combo into provider, model — or nil, nil when the
+--- string is not well-formed. The one place the combo grammar lives; used by
+--- change_model, change_default_model and the subagent model override.
+function M.parse_combo(combo)
+  return combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+end
+
 return M

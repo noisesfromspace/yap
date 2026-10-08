@@ -163,7 +163,7 @@ For independent slow work, `start_task` can launch bash, fetch, or websearch and
 
 ## Subagents
 
-- `subagent` takes an `agent` (from `agents_dir`, default `~/.yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. A bare model name inherits the parent's provider/model.
+- `subagent` takes an `agent` (from `agents_dir`, default `~/.yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.
 ]]
 end
 
@@ -1799,7 +1799,7 @@ function M.change_model(combo)
     return
   end
   local buf = vim.api.nvim_get_current_buf()
-  local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  local provider, model = config.parse_combo(combo)
   if not provider then
     vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
     return
@@ -1832,7 +1832,7 @@ function M.change_default_model(combo)
     end)
     return
   end
-  if not combo:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+  if not config.parse_combo(combo) then
     vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
     return
   end

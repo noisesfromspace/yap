@@ -131,6 +131,19 @@ function M.start(parent, ev)
     reply("error: invalid subagent request")
     return
   end
+  -- A per-call `model` runs the child on a combo the parent picked. Only a
+  -- full provider/model pair is accepted: a bare name cannot be resolved to a
+  -- provider, and — unlike a definition's `model` header — the override is
+  -- expected to come from the `models` tool, which always returns full combos.
+  -- Validated before the session is created so a typo costs nothing.
+  local override_provider, override_model
+  if type(ev.model) == "string" and ev.model ~= "" then
+    override_provider, override_model = config.parse_combo(ev.model)
+    if not override_provider then
+      reply("error: invalid subagent model '" .. ev.model .. "': expected provider/model (see the models tool)")
+      return
+    end
+  end
   local agent_file = paths.expand(harness().config.agents_dir) .. "/" .. ev.agent .. ".md"
   local ok_lines, lines = pcall(vim.fn.readfile, agent_file)
   if not ok_lines or #lines == 0 or lines[1] ~= "---" then
@@ -155,12 +168,17 @@ function M.start(parent, ev)
   local body = table.concat(vim.list_slice(lines, closing + 1), "\n")
   local provider, model = config.current_combo(parent)
   -- Pi agent definitions commonly use bare model names; Yap cannot infer their provider.
-  -- Only a provider/model pair overrides the known-working parent combo.
+  -- Only a provider/model pair overrides the known-working parent combo, and an
+  -- explicit per-call `model` overrides the definition (follow-ups never get here:
+  -- a resumed child keeps the combo in its frontmatter).
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
     if p then
       provider, model = p, m
     end
+  end
+  if override_provider then
+    provider, model = override_provider, override_model
   end
   local allowed = vim.deepcopy(DEFAULT_SUBAGENT_TOOLS)
   if header.tools and header.tools ~= "" then
