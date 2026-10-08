@@ -78,7 +78,11 @@ Defaults: `~/.yap/agents/`, `~/.yap/sessions/`.
 The harness always prepends its own `# About Yap` boilerplate (buffer
 semantics, marker rules) as the first system message of every turn. It is
 independent of `agents_file` and never written into the session file, so the
-`# @system` message stays clean.
+`# @system` message stays clean. Transient environment context — Neovim's
+working directory and the git snapshot — is not part of the system prefix:
+it is appended to the trailing user message as request-only context (see
+|:YapSend|), so a changing git status never invalidates the prompt cache for
+the stable system prompt and conversation history.
 
 `notify_done` (default true) fires `vim.notify` when a turn completes in a
 buffer not visible in any window. The turn's `turn_end` payload (model,
@@ -196,9 +200,12 @@ the current buffer unless otherwise noted.
 *:YapSend*
 :YapSend              Send the whole buffer to the provider and stream the
                         reply in. Each send also injects Neovim's current
-                        working directory as request-only context (evaluated
-                        at send time), so `:cd` takes effect on the next send.
-                        Not written into the session buffer.
+                        working directory and git snapshot as request-only
+                        context (evaluated at send time), so `:cd` takes
+                        effect on the next send. Appended to the trailing
+                        user message, never the system prefix, so the stable
+                        prompt and history keep their cache. Not written into
+                        the session buffer.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*

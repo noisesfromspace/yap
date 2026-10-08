@@ -26,6 +26,7 @@ local scratchmod = require("harness.scratch")
 local describe = require("harness.describe")
 local subagent = require("harness.subagent")
 local template = require("harness.template")
+local context = require("harness.context")
 
 M.winbar = winbar.winbar
 M.overview = winbar.overview
@@ -177,75 +178,6 @@ local function system_prompt()
     end
   end
   return M.config.system
-end
-
---- Git state for :pwd, or nil when it is not a git repo. A few
---- cheap synchronous calls; the result is capped so a dirty monorepo cannot
---- flood the prompt. The read-only git tool remains the source for detail.
-local function git_snapshot(cwd)
-  local out = vim.fn.system({ "git", "-C", cwd, "status", "--porcelain", "--branch" })
-  if vim.v.shell_error ~= 0 or out == "" then
-    return nil
-  end
-  local head, changes = nil, {}
-  for line in out:gmatch("[^\n]+") do
-    if not head and line:sub(1, 3) == "## " then
-      head = line:sub(4)
-    elseif line ~= "" then
-      changes[#changes + 1] = line:sub(4) -- strip the XY status + space
-    end
-  end
-  if not head then
-    return nil
-  end
-
-  -- fetch recent commits
-  local recent_commits_out = vim.fn.system({ "git", "-C", cwd, "log", "-5", "--pretty=format:%h %s" })
-  local recent_commits = {}
-  if vim.v.shell_error == 0 and recent_commits_out ~= "" then
-    for line in recent_commits_out:gmatch("[^\n]+") do
-      recent_commits[#recent_commits + 1] = line
-    end
-  end
-
-  -- fetch staged files
-  local staged_out = vim.fn.system({ "git", "-C", cwd, "diff", "--cached", "--name-only" })
-  local staged_files = {}
-  if vim.v.shell_error == 0 and staged_out ~= "" then
-    for line in staged_out:gmatch("[^\n]+") do
-      staged_files[#staged_files + 1] = line
-    end
-  end
-
-  local result_lines = {}
-  if #changes == 0 then
-    table.insert(result_lines, "Git: " .. head .. " (clean)")
-  else
-    local shown, max = {}, 12
-    for i = 1, math.min(#changes, max) do
-      shown[i] = changes[i]
-    end
-    if #changes > max then
-      shown[#shown + 1] = ("+%d more"):format(#changes - max)
-    end
-    table.insert(result_lines, ("Git: %s, %d changed files: %s"):format(head, #changes, table.concat(shown, ", ")))
-  end
-
-  if #recent_commits > 0 then
-    table.insert(result_lines, "Recent: " .. table.concat(recent_commits, " | "))
-  end
-  if #staged_files > 0 then
-    local shown_staged, max_staged = {}, 12
-    for i = 1, math.min(#staged_files, max_staged) do
-      shown_staged[i] = staged_files[i]
-    end
-    if #staged_files > max_staged then
-      shown_staged[#shown_staged + 1] = ("+%d more"):format(#staged_files - max_staged)
-    end
-    table.insert(result_lines, "Staged: " .. table.concat(shown_staged, ", "))
-  end
-
-  return table.concat(result_lines, "\n")
 end
 
 local HEAD = "^# @(%a+)%s*$"
@@ -1139,26 +1071,38 @@ function M.send(buf)
     return false
   end
   local messages = document.parse_buffer(buf)
-  -- The harness always prepends its own boilerplate, then the
-  -- request-scoped cwd: neither is stored in the buffer, so the visible
-  -- session stays clean and :cd takes effect on the very next turn.
-  table.insert(messages, 1, { role = "system", content = yap_about() })
-  table.insert(messages, 2, {
-    role = "system",
-    content = "Current Neovim working directory: " .. vim.fn.getcwd(),
-  })
-  local git = git_snapshot(vim.fn.getcwd())
-  if git then
-    table.insert(messages, 3, { role = "system", content = git })
-  end
   if #messages == 0 then
     vim.notify("yap: no message to send; write under # @user", vim.log.levels.WARN)
     return
   end
 
-  -- Label the session from the latest user message immediately (smallest
-  -- model); the final whole-session title arrives after the answer.
+  -- The harness's own boilerplate is a stable system prefix, kept first so
+  -- it never perturbs the prompt cache. Transient environment context (cwd,
+  -- git status) is appended to the trailing user message below instead.
+  table.insert(messages, 1, { role = "system", content = yap_about() })
+
+  -- Label the session from the latest user message before transient context
+  -- is appended, so the title model never sees cwd/git.
   describe.refresh(buf, "user", messages)
+
+  local extra = context.snapshot()
+  if extra then
+    -- Append to the most recent user message: normally the trailing prompt,
+    -- but a hand-written `# @assistant` prefill stays last so its prefill
+    -- semantics survive.
+    local target
+    for i = #messages, 1, -1 do
+      if messages[i].role == "user" then
+        target = messages[i]
+        break
+      end
+    end
+    if target then
+      target.content = target.content .. "\n\n" .. extra
+    else
+      messages[#messages + 1] = { role = "user", content = extra }
+    end
+  end
 
   errors[buf] = nil
   stopped[buf] = nil

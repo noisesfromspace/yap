@@ -64,6 +64,16 @@ first message until this was fixed.)
 
 Why: providers require role alternation.
 
+#### R-request-context-tail — Transient per-send context is appended to the trailing user message
+
+The cwd and git snapshot (and any plugin-registered provider, see
+`harness.context`) are request-only: evaluated at send time and never stored in
+the buffer. They are appended to the most recent user message — normally the
+trailing prompt, but a hand-written `# @assistant` prefill stays last so its
+prefill semantics survive — never the system prefix. Why: a changing git
+status in the system prefix would invalidate the provider's prompt cache for
+the entire stable history and system prompt.
+
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
 Structural appends (headings, error markers) go through `append_lines()`,

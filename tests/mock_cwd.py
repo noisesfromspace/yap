@@ -18,9 +18,12 @@ for instruction in ("## Subagents", "agents_dir", "~/.yap/agents/<agent>.md", "s
     if instruction not in about:
         sys.exit("missing subagent instruction: " + instruction)
 
+# The cwd is request-only context appended to the trailing user message.
 for message in msgs:
-    if message["role"] == "system" and message["content"].startswith("Current Neovim working directory: "):
-        print(message["content"].removeprefix("Current Neovim working directory: "))
-        break
-else:
-    sys.exit("missing Neovim cwd system message")
+    if message["role"] == "user":
+        for line in message["content"].splitlines():
+            if line.startswith("Current Neovim working directory: "):
+                print(line.removeprefix("Current Neovim working directory: "))
+                sys.exit(0)
+
+sys.exit("missing Neovim cwd user-message context")
