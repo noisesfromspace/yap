@@ -77,6 +77,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
+	case "tools":
+		// Print the compiled-in tool names (sorted, one per line) so the
+		// frontend can render a session's `tools` allowlist in frontmatter.
+		for _, t := range tools.All() {
+			fmt.Println(t.Name)
+		}
 	case "fetch-worker":
 		// Internal subcommand: performs a single SSRF-checked GET and writes
 		// the framed result to stdout. Invoked by the fetch tool's vpn path,

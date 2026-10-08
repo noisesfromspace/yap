@@ -360,6 +360,10 @@ lives, as YAML frontmatter: >
     - deepseek/deepseek-v4-pro
   subagents:
     - ~/.yap/sessions/.../session-a1b2c3.md
+  tools:
+    - read
+    - search
+    - glob
   assets:
     - <sha256>.png
   ---
@@ -373,7 +377,10 @@ shown while the title is empty.
 directory the session was created in (the session-dir slug is lossy, so this
 is the only exact record); `models` is the ordered history of every combo
 used (most-recent-last); `subagents` lists subagent session paths
-(most-recent-last); `assets` is the manifest of content-addressed photo files
+(most-recent-last); `tools` is the per-session tool allowlist — a normal
+session lists every compiled-in tool so lines can be removed to retract
+access on the next send, while a subagent lists only its definition's tools;
+`assets` is the manifest of content-addressed photo files
 this session references (see |yap-attach|); `created_at` / `updated_at` are
 timestamps; `turns`
 counts completed `# @assistant` replies so the picker can show depth without

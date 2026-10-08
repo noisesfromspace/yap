@@ -1388,11 +1388,22 @@ function M.send(buf)
   end
 
   running[buf] = process
+  -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
+  -- (remove lines) to retract tools, effective on this send. A missing or
+  -- empty list means unrestricted (all tools).
+  local tools = nil
+  local fm_end = frontmatter.end_line(buf)
+  if fm_end then
+    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, fm_end, false))
+    if fm and fm.tools and #fm.tools > 0 then
+      tools = fm.tools
+    end
+  end
   local payload = vim.json.encode({
     provider = provider,
     model = model,
     messages = messages,
-    tools = vim.b[buf].yap_tools,
+    tools = tools,
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)

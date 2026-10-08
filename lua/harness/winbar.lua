@@ -128,9 +128,9 @@ local function full_title(buf)
     return c.full
   end
   local full
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 30, false)
-  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
-    local fm = frontmatter.parse(lines)
+  local e = frontmatter.end_line(buf)
+  if e then
+    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
     if fm and fm.title and fm.title ~= "" then
       full = fm.title
     elseif fm and fm.description and fm.description ~= "" then

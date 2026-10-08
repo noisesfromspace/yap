@@ -170,6 +170,39 @@ assert(
   "assets not roundtripped: " .. vim.inspect(assets_fm.assets)
 )
 
+-- tools: renders as a YAML list and round-trips; legacy inline form still parses
+local tools_block = frontmatter.render(
+  "zeta",
+  "m1",
+  {},
+  created,
+  nil,
+  nil,
+  nil,
+  { "read", "search", "glob" },
+  {},
+  nil,
+  0,
+  "/tmp/project"
+)
+local tools_idx = nil
+for i, l in ipairs(tools_block) do
+  if l == "tools:" then
+    tools_idx = i
+  end
+end
+assert(tools_idx and tools_block[tools_idx + 1] == "  - read", "tools must render as a YAML list: " .. vim.inspect(tools_block))
+local tools_fm = frontmatter.parse(tools_block)
+assert(
+  vim.deep_equal(tools_fm.tools, { "read", "search", "glob" }),
+  "tools list not roundtripped: " .. vim.inspect(tools_fm.tools)
+)
+local legacy_tools = frontmatter.parse({ "---", "tools: read, search", "---" })
+assert(
+  vim.deep_equal(legacy_tools.tools, { "read", "search" }),
+  "legacy inline tools not parsed: " .. vim.inspect(legacy_tools.tools)
+)
+
 -- 9. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker/session.md"

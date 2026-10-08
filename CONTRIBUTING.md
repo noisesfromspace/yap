@@ -121,7 +121,10 @@ The frontmatter holds `provider`/`model` (the combo to resume with), `created_cw
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped
-on save for the picker), and `assets` (the manifest of content-addressed photo
+on save for the picker), `tools` (the per-session tool allowlist: a normal
+session lists every compiled-in tool so lines can be removed to retract
+access on the next send, while a subagent lists only its definition's tools),
+and `assets` (the manifest of content-addressed photo
 files the session references). yap writes the model fields only on `:Yap` and
 `:YapChangeModel` — never during a send, so the append-only rule holds
 (R-blank-lines) — and

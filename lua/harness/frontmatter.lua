@@ -9,7 +9,10 @@
 --   provider: moonshot
 --   created_cwd: ~/code/project
 --   agent: reviewer
---   tools: read,search,glob
+--   tools:
+--     - read
+--     - search
+--     - glob
 --   turns: 14
 --   created_at: 2025-09-29T19:22:33Z
 --   updated_at: 2025-09-29T19:24:01Z
@@ -31,8 +34,11 @@
 -- summary the picker shows while the title is empty; `model` and
 -- `provider` are the combo to resume with; `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
--- this is the only exact record of where a session ran); `agent`/`tools`
--- mark a subagent session (its agent-definition name and the tools it may call);
+-- this is the only exact record of where a session ran); `agent` marks a
+-- subagent session (its agent-definition name); `tools` is the per-session
+-- tool allowlist — a normal session lists every compiled-in tool so lines can
+-- be removed to retract access on the next send, while a subagent lists only
+-- its definition's tools;
 -- `turns` counts the completed replies (`# @assistant` messages) — a
 -- session-depth summary for the picker, stamped on save with `updated_at`;
 -- `created_at` records when the session was created; `updated_at` records
@@ -103,7 +109,16 @@ function M.parse(lines)
       elseif k == "agent" then
         fm.agent = v
       elseif k == "tools" then
-        fm.tools = vim.split(v, ",", { plain = true })
+        if v ~= "" then
+          -- legacy inline form `tools: a,b,c` (pre-list sessions)
+          local names = {}
+          for name in v:gmatch("[^,%s]+") do
+            names[#names + 1] = name
+          end
+          fm.tools = names
+        else
+          list_key = "tools"
+        end
       elseif is_list_key(k) then
         list_key = k
       end
@@ -118,6 +133,9 @@ function M.parse(lines)
           fm.forks[#fm.forks + 1] = item
         elseif list_key == "assets" then
           fm.assets[#fm.assets + 1] = item
+        elseif list_key == "tools" then
+          fm.tools = fm.tools or {}
+          fm.tools[#fm.tools + 1] = item
         end
       end
     end
@@ -162,9 +180,6 @@ function M.render(
   if agent then
     lines[#lines + 1] = "agent: " .. agent
   end
-  if tools then
-    lines[#lines + 1] = "tools: " .. table.concat(tools, ",")
-  end
   if turns ~= nil then
     lines[#lines + 1] = "turns: " .. turns
   end
@@ -202,6 +217,12 @@ function M.render(
     lines[#lines + 1] = "assets:"
     for _, a in ipairs(assets) do
       lines[#lines + 1] = "  - " .. a
+    end
+  end
+  if tools and #tools > 0 then
+    lines[#lines + 1] = "tools:"
+    for _, t in ipairs(tools) do
+      lines[#lines + 1] = "  - " .. t
     end
   end
   lines[#lines + 1] = "---"
@@ -251,7 +272,7 @@ function M.sync(buf)
     fm and fm.title,
     fm and fm.description,
     fm and fm.agent or vim.b[buf].yap_agent,
-    fm and fm.tools or vim.b[buf].yap_tools,
+    fm and fm.tools or vim.b[buf].yap_tools or config.tool_names(),
     fm and fm.subagents,
     fm and fm.updated_at,
     fm and fm.turns,

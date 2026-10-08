@@ -245,4 +245,24 @@ function M.parse_combo(combo)
   return combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
 end
 
+-- Cache of the compiled-in tool names, used to render the per-session
+-- `tools` allowlist in the frontmatter. `yap tools` prints the registry
+-- (sorted, one per line); nil when the binary cannot be reached, which
+-- leaves a session unrestricted (no `tools:` line).
+local tool_names = nil
+
+--- Names of every tool compiled into the binary, cached from `yap tools`.
+--- Returns nil when the list is unavailable (then no `tools:` line is
+--- written and the backend runs with its full, unrestricted set).
+function M.tool_names()
+  if tool_names ~= nil then
+    return tool_names
+  end
+  local res = vim.fn.systemlist({ require("harness").config.bin, "tools" })
+  if vim.v.shell_error == 0 and res and #res > 0 then
+    tool_names = res
+  end
+  return tool_names
+end
+
 return M
