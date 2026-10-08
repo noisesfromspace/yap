@@ -144,6 +144,7 @@ end
 local function approval_row(buf, ev)
   return {
     kind = "approval",
+    key = "approval:" .. (ev.id or ""),
     buf = buf,
     path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf),
     ordinal = nil, -- filled by approval_ordinal (scans the live audit log)
@@ -165,6 +166,7 @@ end
 local function advisory_row(ev, session_name, path, ordinal, call)
   return {
     kind = "advisory",
+    key = "advisory:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
     buf = nil,
     path = path,
     ordinal = ordinal,
@@ -193,6 +195,7 @@ local function resolved_row(ev, req, session_name, path, ordinal)
   req = req or {}
   return {
     kind = kind,
+    key = "resolved:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
     buf = nil,
     path = path,
     ordinal = ordinal,
@@ -345,29 +348,37 @@ end
 local function summary_segments(row)
   local glyph, glyph_hl = row_glyph(row)
   local badge, badge_hl = severity_badge(row)
+  -- Lead with the reason: it is the most human-meaningful part of an event
+  -- and the one thing a one-line fold must surface. The command follows, then
+  -- the colored severity badge and age. Raw probabilities live in the detail.
+  local reason = flat(row.reason)
+  if reason == "" then
+    reason = row.kind == "advisory" and "advisory" or "approval"
+  end
+  if #reason > 26 then
+    reason = reason:sub(1, 23) .. "…"
+  end
   local tool = (row.tool or "?")
-  if #tool > 8 then
-    tool = tool:sub(1, 8)
+  if #tool > 6 then
+    tool = tool:sub(1, 6)
   end
   local cmd = (row.command or ""):gsub("%s+", " ")
-  if #cmd > 40 then
-    cmd = cmd:sub(1, 37) .. "…"
+  if #cmd > 26 then
+    cmd = cmd:sub(1, 23) .. "…"
   end
-  local p = row.p_alert
-  local p_str = p and ("%.2f"):format(p):sub(2) or "—"
   return {
-    { text = "  " },
+    { text = " " },
     { text = glyph, hl = glyph_hl },
+    { text = " " },
+    { text = cell(reason, 26) },
     { text = "  " },
-    { text = cell(tool, 8) },
+    { text = cell(tool, 6) },
     { text = " " },
-    { text = cell(cmd, 40) },
-    { text = " " },
+    { text = cell(cmd, 26) },
+    { text = "  " },
     { text = cell(badge, 12), hl = badge_hl },
-    { text = " " },
-    { text = cell(p_str, 5), hl = badge_hl },
-    { text = " " },
-    { text = cell(age(row.ts), 6), hl = HL.meta },
+    { text = "  " },
+    { text = cell(age(row.ts), 5), hl = HL.meta },
   }
 end
 
@@ -379,10 +390,17 @@ local function detail_lines(row)
   add("   command    " .. (row.command ~= "" and flat(row.command) or "—"))
   add("   reason     " .. (row.reason ~= "" and flat(row.reason) or "—"))
   if row.severity then
-    local sev = string.format("%.1f/3", row.severity)
-    local conf = row.confidence and string.format(" · %.0f%% confident", row.confidence * 100) or ""
+    local parts = {}
     local cat = row.severity_category ~= "" and row.severity_category or "?"
-    add("   severity   " .. cat .. " · " .. sev .. conf)
+    parts[#parts + 1] = cat
+    parts[#parts + 1] = string.format("severity %.1f/3", row.severity)
+    if row.p_alert then
+      parts[#parts + 1] = string.format("P(harmful)=%.2f", row.p_alert)
+    end
+    if row.confidence then
+      parts[#parts + 1] = string.format("%.0f%% confident", row.confidence * 100)
+    end
+    add("   severity   " .. table.concat(parts, " · "))
   elseif row.kind == "approval" then
     add("   severity   always (no model consulted)")
   end
@@ -411,6 +429,8 @@ local function render()
   local highlights = {}
   local folds = {}
   local row_map = {}
+  local key_lines = {} -- row key -> first summary line (for cursor restore)
+  local first_open_line
 
   local function add(text, hl)
     lines[#lines + 1] = text
@@ -428,6 +448,9 @@ local function render()
     add(("▸ %s (%d)"):format(section.title, #section.rows), HL.section)
     for _, row in ipairs(section.rows) do
       local start = #lines + 1 -- 1-based line of the summary (fold start)
+      if section.title == "Open" and not first_open_line then
+        first_open_line = start
+      end
       local segs = summary_segments(row)
       local text = {}
       local col = 0
@@ -443,7 +466,8 @@ local function render()
       for _, d in ipairs(detail) do
         lines[#lines + 1] = d
       end
-      folds[#folds + 1] = { start, start + #detail }
+      folds[#folds + 1] = { start, start + #detail, row.key }
+      key_lines[row.key] = start
       for ln = start, start + #detail do
         row_map[ln] = row
       end
@@ -464,12 +488,17 @@ local function render()
   vim.bo[buf].modifiable = false
 
   vim.b[buf].yap_guard_rows = row_map
-  return folds
+  return { folds = folds, first_open_line = first_open_line, key_lines = key_lines }
 end
+
+-- Rows the user has expanded; preserved across re-renders so a live update
+-- never collapses what they were reading.
+local expanded = {}
 
 --- Apply manual per-row folds to every window showing the board, collapsing
 --- each row to its summary line (the foldtext) so the queue stays scannable.
-local function apply_folds(buf, folds)
+--- Rows in `expanded` stay open.
+local function apply_folds(buf, result)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_call(win, function()
@@ -477,9 +506,13 @@ local function apply_folds(buf, folds)
         vim.wo.foldminlines = 0
         vim.wo.foldtext = "v:lua.require'harness.guard'.foldtext()"
         vim.cmd("normal! zE")
-        for _, f in ipairs(folds) do
+        for _, f in ipairs(result.folds) do
           vim.cmd(("%d,%dfold"):format(f[1], f[2]))
-          vim.cmd(("%dfoldclose"):format(f[1]))
+          if expanded[f[3]] then
+            vim.cmd(("%dfoldopen"):format(f[1]))
+          else
+            vim.cmd(("%dfoldclose"):format(f[1]))
+          end
         end
       end)
     end
@@ -601,7 +634,16 @@ local function install_keymaps(buf)
     M.toggle()
   end, { buffer = buf, silent = true, desc = "yap: close guard board" })
   local function toggle_row()
+    local line = vim.api.nvim_win_get_cursor(0)[1]
+    local row = vim.b[buf].yap_guard_rows[line]
     vim.cmd("normal! za")
+    if row then
+      if vim.fn.foldclosed(line) == -1 then
+        expanded[row.key] = true
+      else
+        expanded[row.key] = nil
+      end
+    end
   end
   vim.keymap.set("n", "za", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
   vim.keymap.set("n", "<Tab>", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
@@ -627,24 +669,33 @@ function M.toggle()
     drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT)
     return
   end
-  local folds = render()
+  local result = render()
   install_keymaps(buf)
   if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT) then
     return
   end
-  apply_folds(buf, folds)
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  apply_folds(buf, result)
+  -- Land on the first Open row, not the header: that row is the actionable one.
+  vim.api.nvim_win_set_cursor(0, { result.first_open_line or 1, 0 })
 end
 
 --- Re-render the board when an approval/advisory event changes the open set,
 --- but only while it is on screen (a hidden board re-renders on next open).
+--- The cursor and expanded rows survive the refresh.
 function M.touch()
   if not board_buf or not vim.api.nvim_buf_is_valid(board_buf) then
     return
   end
-  if #vim.fn.win_findbuf(board_buf) > 0 then
-    apply_folds(board_buf, render())
+  if #vim.fn.win_findbuf(board_buf) == 0 then
+    return
   end
+  local cur = vim.api.nvim_win_get_cursor(0)[1]
+  local rows = vim.b[board_buf].yap_guard_rows
+  local key = rows and rows[cur] and rows[cur].key
+  local result = render()
+  apply_folds(board_buf, result)
+  local line = (key and result.key_lines[key]) or result.first_open_line or 1
+  vim.api.nvim_win_set_cursor(0, { line, 0 })
 end
 
 return M

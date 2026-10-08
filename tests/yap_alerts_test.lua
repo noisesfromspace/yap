@@ -31,9 +31,12 @@ local function add(buf, id, reason, ts)
     vim.json.encode({ type = "turn_end", ts = ts, prompt = 1, completion = 1 }),
   }, log, "a")
 end
-local now = os.date("%Y-%m-%dT%H:%M:%S")
-add(first, "first-id", "first warning", now)
-add(first, "first-id", "later warning", now)
+local now = os.time()
+local function ts(delta)
+  return os.date("%Y-%m-%dT%H:%M:%S", now - delta)
+end
+add(first, "first-id", "first warning", ts(10))
+add(first, "first-id", "later warning", ts(0))
 -- An advisory older than the recency window lands in History, not Open.
 add(first, "old-id", "old warning", "2026-01-01T12:00:00")
 -- A denied approval lands in History.
@@ -72,6 +75,12 @@ assert(text:find("reversible", 1, true), "severity badge missing from board")
 assert(text:find("▸ History (2)", 1, true), "History section missing denied approval + old advisory: " .. text)
 assert(text:find("possible data loss", 1, true), "denied approval reason missing from History")
 assert(text:find("old warning", 1, true), "old advisory missing from History")
+-- The cursor lands on the first Open row (its summary line leads with the
+-- reason), never on the header.
+local cline = vim.api.nvim_win_get_cursor(0)[1]
+assert(cline > 1, "board cursor stuck on the header line")
+local cl = vim.api.nvim_buf_get_lines(board, cline - 1, cline, false)[1]
+assert(cl:find("later warning", 1, true), "first Open row should be the newest advisory: " .. cl)
 guard.toggle() -- close
 
 -- Live append must use the same event positions as replay, regardless of
