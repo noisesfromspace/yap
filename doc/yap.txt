@@ -811,10 +811,9 @@ Highlights:
     `safety` parameter: when true, the result is scanned by the decision model
     for prompt-injection content and flagged content gets an advisory warning
     line naming the probability (content is still shown, only marked). Each
-    true call costs one extra decision-model round-trip. curl and fetch also
-    accept `isolate_network`: the request runs in a private network namespace
-    (Linux, util-linux `unshare`) with no outbound or loopback connectivity,
-    so an exfiltration attempt fails closed instead of reaching a destination.
+    true call costs one extra decision-model round-trip. curl and fetch
+    deliberately do not accept `isolate_network`: they exist to reach the
+    network, so isolating them would only ever fail.
   - git runs read-only subcommands (status, diff, log, show, blame) in the
     project root with pager, color and credential prompts disabled.
   - ssh runs non-interactive commands via the system OpenSSH client. A
@@ -849,7 +848,9 @@ Highlights:
     between calls). It takes exactly one of `code` (inline, run as
     `python3 <file>`) or `file` (a path to an existing script — write it first
     with the write tool, then run it). A failed script returns its traceback
-    as text.
+    as text. `isolate_network` runs the script in a private network namespace
+    (Linux, util-linux `unshare`) with no outbound or loopback connectivity:
+    the script still runs, but any network access fails closed.
   - subagent delegates to an agent definition in ~/.yap/agents/<name>.md
     (YAML frontmatter: `name`, `model`, optional `tools`; body = system
     prompt). It creates a child session in the same project; the parent tool

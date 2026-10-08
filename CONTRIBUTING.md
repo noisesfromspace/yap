@@ -206,12 +206,14 @@ command executes. Denial, timeout, and the absence of a serve process (yap
 send) all deny. This is a prompt-injection mitigation, NOT a security
 boundary: the denylist is bypassable. A real sandbox, if ever wanted, is
 bubblewrap (Codex's Linux choice), not command-pattern allowlists (documented
-as bypassable). bash, curl and fetch accept an opt-in `isolate_network` flag
-that runs the command or request in a fresh `unshare --user --map-root-user
---net` namespace: it is a deterministic network cutoff (no outbound or
-loopback connectivity), not a filesystem sandbox, and closes the exfiltration
-vector without the decision model having to guess. bash/python's operational
-mechanics are unchanged: own process
+as bypassable). bash and python accept an opt-in `isolate_network` flag that
+runs the command in a fresh `unshare --user --map-root-user --net` namespace:
+a deterministic network cutoff (no outbound or loopback connectivity) for
+running commands offline — a model-requestable constraint, and the natural
+place for the alert gate to force isolation when it flags an exfiltration.
+curl and fetch deliberately do not: they exist to reach the network, so
+isolating them would only ever fail. bash/python's operational mechanics are
+unchanged: own process
 group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
 
 #### R-live-output-audit — Live tool output never enters the session buffer

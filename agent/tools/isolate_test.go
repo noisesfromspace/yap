@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 )
 
@@ -73,26 +72,32 @@ func TestBashIsolateNetwork(t *testing.T) {
 	}
 }
 
-func TestCurlIsolateNetwork(t *testing.T) {
+func TestPythonIsolateNetwork(t *testing.T) {
 	if !canIsolateNetwork(t) {
 		t.Skip("requires linux unshare with user namespaces")
 	}
-	var hits int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
-		_, _ = w.Write([]byte("reached"))
-	}))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()
-
-	r, _, err := run(t, "curl", `{"url":"`+srv.URL+`/","isolate_network":true}`)
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
-		t.Fatalf("isolated curl: %v", err)
+		t.Fatal(err)
 	}
-	if atomic.LoadInt32(&hits) != 0 {
-		t.Fatalf("server reached despite isolation")
+
+	code := fmt.Sprintf("import socket\ntry:\n    s = socket.create_connection((%q, %s), timeout=3)\n    print(\"REACHED\")\nexcept Exception:\n    print(\"UNREACHED\")", host, port)
+
+	plain := fmt.Sprintf(`{"code":%q}`, code)
+	r, _, err := run(t, "python", plain)
+	if err != nil || !strings.Contains(r, "REACHED") {
+		t.Fatalf("control should reach server: %q %v", r, err)
 	}
-	if !strings.Contains(r, "[curl exit code") {
-		t.Fatalf("expected curl failure text, got %q", r)
+
+	isolated := fmt.Sprintf(`{"code":%q,"isolate_network":true}`, code)
+	r, _, err = run(t, "python", isolated)
+	if err != nil {
+		t.Fatalf("isolated python: %v", err)
+	}
+	if !strings.Contains(r, "UNREACHED") {
+		t.Fatalf("expected UNREACHED under isolation, got %q", r)
 	}
 }
 
@@ -124,25 +129,5 @@ func TestParseFetchWorkerError(t *testing.T) {
 	_, _, _, _, _, err := parseFetchWorker([]byte(`{"error":"network unreachable"}`), "http://example.com/")
 	if err == nil || !strings.Contains(err.Error(), "network unreachable") {
 		t.Fatalf("worker error not surfaced: %v", err)
-	}
-}
-
-func TestFetchIsolateNetwork(t *testing.T) {
-	if !canIsolateNetwork(t) {
-		t.Skip("requires linux unshare with user namespaces")
-	}
-	var hits int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hits, 1)
-		_, _ = w.Write([]byte("reached"))
-	}))
-	defer srv.Close()
-
-	_, _, err := run(t, "fetch", `{"url":"`+srv.URL+`/","isolate_network":true}`)
-	if err == nil {
-		t.Fatalf("isolated fetch should fail with no connectivity")
-	}
-	if atomic.LoadInt32(&hits) != 0 {
-		t.Fatalf("server reached despite isolation")
 	}
 }

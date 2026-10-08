@@ -8,8 +8,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -27,9 +25,8 @@ const (
 )
 
 type fetchArgs struct {
-	URL            string `json:"url" jsonschema:"description=http(s) URL to fetch"`
-	Safety         bool   `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
-	IsolateNetwork bool   `json:"isolate_network,omitempty" jsonschema:"description=run the request in a private network namespace with no connectivity (Linux only; requires util-linux unshare)"`
+	URL    string `json:"url" jsonschema:"description=http(s) URL to fetch"`
+	Safety bool   `json:"safety,omitempty" jsonschema:"description=when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 }
 
 func init() {
@@ -46,11 +43,7 @@ func init() {
 				body                    []byte
 				err                     error
 			)
-			if a.IsolateNetwork {
-				status, statusText, contentType, finalURL, body, err = fetchIsolated(a.URL)
-			} else {
-				status, statusText, contentType, finalURL, body, err = fetchRaw(a.URL)
-			}
+			status, statusText, contentType, finalURL, body, err = fetchRaw(a.URL)
 			if err != nil {
 				return "", "", err
 			}
@@ -61,7 +54,7 @@ func init() {
 // fetchRaw performs one SSRF-checked GET (redirects followed; every hop is
 // re-checked by CheckedTransport's dialer) and returns the response status
 // and raw body, capped at the HTML limit. Readability extraction happens
-// later, in fetchProcess, so this half can run in an isolated namespace.
+// later, in fetchProcess.
 func fetchRaw(rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return 0, "", "", nil, nil, fmt.Errorf("only http(s) URLs supported")
@@ -108,28 +101,6 @@ func fetchProcess(status int, statusText, contentType string, finalURL *url.URL,
 	return utils.SafetyGuarded(decisionModel, safety, capText(text)), "", nil
 }
 
-// fetchIsolated runs the GET in a private user+network namespace, so the
-// request has no outbound or loopback connectivity: an exfiltration attempt
-// fails closed instead of reaching a destination. The fetch half runs as the
-// `yap fetch-worker` subcommand; this process only decodes its framed result.
-func fetchIsolated(rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
-	self, err := os.Executable()
-	if err != nil {
-		return 0, "", "", nil, nil, fmt.Errorf("isolated fetch: %w", err)
-	}
-	cmd := exec.Command("unshare", "--user", "--map-root-user", "--net", self, "fetch-worker", rawURL)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if s := strings.TrimSpace(stderr.String()); s != "" {
-			return 0, "", "", nil, nil, fmt.Errorf("isolated fetch: %v: %s", err, s)
-		}
-		return 0, "", "", nil, nil, fmt.Errorf("isolated fetch: %w", err)
-	}
-	return parseFetchWorker(stdout.Bytes(), rawURL)
-}
-
 // fetchWorkerResult is the framed output of the fetch worker subprocess.
 type fetchWorkerResult struct {
 	Error       string `json:"error,omitempty"`
@@ -142,7 +113,7 @@ type fetchWorkerResult struct {
 
 // RunFetchWorker is the `yap fetch-worker URL` subcommand: one SSRF-checked
 // GET, framed as fetchWorkerResult JSON on stdout for the parent fetch tool
-// to decode. It runs inside the isolated network namespace.
+// to decode. It runs in the caller's network namespace.
 func RunFetchWorker(rawURL string, out io.Writer) error {
 	status, statusText, contentType, finalURL, body, err := fetchRaw(rawURL)
 	res := fetchWorkerResult{}
@@ -161,11 +132,11 @@ func RunFetchWorker(rawURL string, out io.Writer) error {
 }
 
 // parseFetchWorker decodes the worker's framed output into the same shape
-// fetchRaw returns, so the isolate_network path shares fetchProcess.
+// fetchRaw returns, so the worker path shares fetchProcess.
 func parseFetchWorker(data []byte, fallbackURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
 	var res fetchWorkerResult
 	if err := json.Unmarshal(data, &res); err != nil {
-		return 0, "", "", nil, nil, fmt.Errorf("isolated fetch: bad worker output: %w", err)
+		return 0, "", "", nil, nil, fmt.Errorf("fetch: bad worker output: %w", err)
 	}
 	if res.Error != "" {
 		return 0, "", "", nil, nil, fmt.Errorf("%s", res.Error)
@@ -175,7 +146,7 @@ func parseFetchWorker(data []byte, fallbackURL string) (status int, statusText, 
 	}
 	u, err := url.Parse(res.FinalURL)
 	if err != nil {
-		return 0, "", "", nil, nil, fmt.Errorf("isolated fetch: bad final URL: %w", err)
+		return 0, "", "", nil, nil, fmt.Errorf("fetch: bad final URL: %w", err)
 	}
 	return res.Status, res.StatusText, res.ContentType, u, res.Body, nil
 }

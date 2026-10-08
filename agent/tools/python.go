@@ -14,10 +14,11 @@ import (
 )
 
 type pythonArgs struct {
-	Code    string `json:"code,omitempty" jsonschema:"description=Python 3 code to run (for small inline scripts; mutually exclusive with file)"`
-	File    string `json:"file,omitempty" jsonschema:"description=path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code; ~ expands to the home directory)"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
-	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	Code           string `json:"code,omitempty" jsonschema:"description=Python 3 code to run (for small inline scripts; mutually exclusive with file)"`
+	File           string `json:"file,omitempty" jsonschema:"description=path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code; ~ expands to the home directory)"`
+	Timeout        int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
+	Cwd            string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	IsolateNetwork bool   `json:"isolate_network,omitempty" jsonschema:"description=run the script in a private network namespace with no connectivity (Linux only; requires util-linux unshare)"`
 }
 
 func init() {
@@ -72,7 +73,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
-	var cmd *exec.Cmd
+	var scriptPath string
 	label := "python3"
 	if hasCode {
 		// Inline: write the script to a temp file. Tracebacks carry a real
@@ -83,7 +84,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
-		scriptPath := script.Name()
+		scriptPath = script.Name()
 		if _, err := script.WriteString(a.Code); err != nil {
 			script.Close()
 			os.Remove(scriptPath)
@@ -94,26 +95,31 @@ func runPython(a *pythonArgs) (string, string, error) {
 			return "", "", err
 		}
 		defer os.Remove(scriptPath)
-		cmd = exec.Command("python3", scriptPath)
 	} else {
 		// File: run the script in place. The path resolves like write's
 		// (relative to the Neovim cwd unless absolute), so
 		// `write script.py` then `python file=script.py` line up.
-		scriptPath, err := filepath.Abs(a.File)
+		absPath, err := filepath.Abs(a.File)
 		if err != nil {
 			return "", "", err
 		}
-		st, err := os.Stat(scriptPath)
+		st, err := os.Stat(absPath)
 		if err != nil {
 			return "", "", fmt.Errorf("script file: %w", err)
 		}
 		if st.IsDir() {
 			return "", "", fmt.Errorf("script path is a directory: %s", a.File)
 		}
-		cmd = exec.Command("python3", scriptPath)
+		scriptPath = absPath
 		label = "python3 " + a.File
 	}
 
+	var cmd *exec.Cmd
+	if a.IsolateNetwork {
+		cmd = exec.Command("unshare", "--user", "--map-root-user", "--net", "python3", scriptPath)
+	} else {
+		cmd = exec.Command("python3", scriptPath)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if a.Cwd != "" {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
