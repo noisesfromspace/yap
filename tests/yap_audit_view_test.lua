@@ -27,6 +27,9 @@ end
 assert(header, "no turn header in audit view")
 assert(vim.fn.foldclosed(header) ~= -1, "turn not folded: " .. vim.fn.foldclosed(header))
 assert(vim.fn.foldclosedend(header) == header, "turn does not fold back to its header")
+-- The two-line header (title + turn count) must stay outside every turn fold.
+assert(vim.fn.foldclosed(1) == -1, "audit header folded into the first turn")
+assert(vim.fn.foldclosed(2) == -1, "audit header folded into the first turn")
 local audit_ns = vim.api.nvim_get_namespaces()["yap.audit.hl"]
 assert(audit_ns, "audit highlight namespace missing")
 local highlighted = false

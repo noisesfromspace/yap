@@ -386,7 +386,9 @@ function M.fold(buf, force, open_new)
       vim.wo.foldminlines = 0
       vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
       vim.cmd("normal! zE")
-      local prev = 0
+      -- The two-line header (title + turn count) must never fold into the
+      -- first turn: start the first fold after it, not at line 1.
+      local prev = HEADER_LINES
       for _, finish in ipairs(ends) do
         local start = prev + 1
         if finish >= start then

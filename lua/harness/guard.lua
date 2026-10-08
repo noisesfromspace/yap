@@ -138,6 +138,14 @@ local function num(v)
   return tonumber(v)
 end
 
+--- A decision metric is "present" only when positive. The deterministic
+--- floor (rm -rf /, sudo, ...) and ssh never consult the model, so they emit
+--- 0 for every field; 0 is truthy in Lua, so a bare `if row.p_alert` would
+--- wrongly take the "has metrics" branch and render "0.0/3 · 0% confident".
+local function has_metrics(row)
+  return (row.p_alert or 0) > 0 or (row.severity or 0) > 0
+end
+
 -- ─── Rows ──────────────────────────────────────────────────────────────────
 
 local function approval_row(buf, ev)
@@ -328,7 +336,7 @@ end
 
 local function severity_badge(row)
   local cat = row.severity_category
-  if row.kind == "approval" and cat == "" and not row.p_alert then
+  if row.kind == "approval" and not has_metrics(row) then
     return "always", HL.destructive
   end
   if cat == "destructive" or cat == "exfiltration" then
@@ -386,7 +394,7 @@ local function detail_lines(row)
   local cmd = row.command ~= "" and flat(row.command) or "—"
   add("   command    " .. clip(cmd, 160))
   add("   reason     " .. (row.reason ~= "" and flat(row.reason) or "—"))
-  if row.severity then
+  if has_metrics(row) then
     local parts = {}
     local cat = row.severity_category ~= "" and row.severity_category or "?"
     parts[#parts + 1] = cat
@@ -554,7 +562,7 @@ local function transient_content(row)
     "```",
     "",
   }
-  if row.p_alert then
+  if has_metrics(row) then
     out[#out + 1] = ("`P(harmful)=%.2f`  `severity=%s(%.1f)`  `conf=%.0f%%`"):format(
       row.p_alert,
       row.severity_category ~= "" and row.severity_category or "?",
@@ -692,16 +700,20 @@ function M.touch()
   if not board_buf or not vim.api.nvim_buf_is_valid(board_buf) then
     return
   end
-  if #vim.fn.win_findbuf(board_buf) == 0 then
+  local wins = vim.fn.win_findbuf(board_buf)
+  if #wins == 0 then
     return
   end
-  local cur = vim.api.nvim_win_get_cursor(0)[1]
+  local win = wins[1]
+  -- Read/write the BOARD window's cursor, not the current window: touch()
+  -- runs from the session's event callback, where window 0 is the session.
+  local cur = vim.api.nvim_win_get_cursor(win)[1]
   local rows = vim.b[board_buf].yap_guard_rows
   local key = rows and rows[cur] and rows[cur].key
   local result = render()
   apply_folds(board_buf, result)
   local line = (key and result.key_lines[key]) or result.first_open_line or 1
-  vim.api.nvim_win_set_cursor(0, { line, 0 })
+  vim.api.nvim_win_set_cursor(win, { line, 0 })
 end
 
 return M
