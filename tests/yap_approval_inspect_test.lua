@@ -20,11 +20,13 @@ end
 local picks = {}
 local actions = { "Inspect", "Inspect", "Inspect", "Deny" }
 local ai = 0
+local action_preview
 local old_select = vim.ui.select
-vim.ui.select = function(items, _, cb)
+vim.ui.select = function(items, opts, cb)
   picks[#picks + 1] = vim.deepcopy(items)
   if type(items[1]) == "string" then
     ai = ai + 1
+    action_preview = opts and opts.preview_item and opts.preview_item()
     cb(actions[ai])
   else
     cb(items[1]) -- multi-approval chooser (not hit here)
@@ -40,8 +42,9 @@ assert(
   "approval did not park the turn"
 )
 
--- The notification must be unmistakable: ERROR level, a dedicated title and
--- shield icon, and the full call — never a modal confirm().
+-- The notification must be unmistakable but lean: ERROR level, a dedicated
+-- title and shield icon, and no full call — that belongs in the picker
+-- preview and audit, never a modal confirm().
 local function approval_notice()
   for _, n in ipairs(notifications) do
     if n.opts and n.opts.title == "yap approval required" then
@@ -53,10 +56,16 @@ local notice = approval_notice()
 assert(notice, "no approval notification fired")
 assert(notice.level == vim.log.levels.ERROR, "approval notification not ERROR level")
 assert(notice.opts.icon == yap.config.icons.approval, "approval notification missing shield icon")
-assert(notice.msg:find("rm -rf /", 1, true), "notification lost the full call")
+assert(not notice.msg:find("rm -rf /", 1, true), "notification should not dump the full call")
 
 vim.cmd("YapApproval") -- Inspect
 assert(vim.deep_equal(picks[1], { "Run", "Deny", "Inspect" }), "picker lacks Run/Deny/Inspect: " .. vim.inspect(picks[1]))
+assert(action_preview and vim.api.nvim_buf_is_valid(action_preview.buf), "action picker preview missing")
+assert(
+  table.concat(vim.api.nvim_buf_get_lines(action_preview.buf, 0, -1, false), "\n"):find("rm -rf /", 1, true),
+  "preview lost the full call"
+)
+vim.api.nvim_buf_delete(action_preview.buf, { force = true })
 local audit = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "Inspect should focus the audit")
 assert(vim.fn.win_findbuf(chat)[1], "conversation should remain visible beside audit")

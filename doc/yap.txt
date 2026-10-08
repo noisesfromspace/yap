@@ -924,9 +924,8 @@ P(harmful) and a 0–3 severity score — and maps the answer to:
              picker is dismissed. Inspect focuses the shield-marked request
              in the audit; |:YapApproval| can be repeated.
   advisory   run, but log the call and show a non-blocking warning. The toast
-             names the session, gives the P(harmful), the severity score
-             with its category breakdown, and the model's confidence, then
-             points to |:YapAlerts| for review.
+             names the session and gives the P(harmful), severity score, and
+             confidence; |:YapAlerts| shows the full breakdown and call.
   run        proceed silently.
 
 A decision-model outage never bricks a tool: it degrades to `advisory` (a

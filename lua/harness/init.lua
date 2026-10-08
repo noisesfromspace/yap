@@ -284,22 +284,16 @@ end
 -- via :YapApproval. Distinct from the advisory toast by level, title and
 -- shield icon so an action-required pause is never mistaken for a warning
 -- about a call that already ran.
-local function notify_approval(buf, ev, detail)
-  local lines = {
-    ("yap: %s needs approval — %s: %s"):format(
+local function notify_approval(buf, ev)
+  vim.notify(
+    ("yap: %s needs approval — %s: %s\n:YapApproval to Run, Deny or Inspect"):format(
       live_session_label(buf),
       ev.tool or "tool",
       ev.reason or "review call"
     ),
-    "",
-    detail,
-    "",
-    ":YapApproval to Run, Deny or Inspect — auto-denies in 5 minutes",
-  }
-  vim.notify(table.concat(lines, "\n"), vim.log.levels.ERROR, {
-    title = "yap approval required",
-    icon = M.config.icons.approval,
-  })
+    vim.log.levels.ERROR,
+    { title = "yap approval required", icon = M.config.icons.approval }
+  )
 end
 
 local function handle_event(buf, json_line)
@@ -334,7 +328,7 @@ local function handle_event(buf, json_line)
   elseif ev.type == "approval_request" then
     audit.append_event(buf, ev)
     pending_approvals[buf] = ev
-    notify_approval(buf, ev, approval_detail(ev))
+    notify_approval(buf, ev)
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)
@@ -353,20 +347,17 @@ local function handle_event(buf, json_line)
       parts[#parts + 1] = ("conf=%.2f"):format(conf)
     end
     local lines = {
-      ("yap: %s (%s) — %s: %s"):format(
+      ("yap: %s — %s: %s"):format(
         live_session_label(buf),
-        paths.session_name(vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)),
         ev.name or "tool",
         ev.reason or "flagged"
       ),
     }
     if #parts > 0 then
-      lines[#lines + 1] = table.concat(parts, " · ")
+      lines[#lines + 1] = table.concat(parts, " · ") .. " · :YapAlerts"
+    else
+      lines[#lines + 1] = ":YapAlerts"
     end
-    if ev.severity_breakdown and ev.severity_breakdown ~= "" then
-      lines[#lines + 1] = "severity: " .. ev.severity_breakdown
-    end
-    lines[#lines + 1] = ":YapAlerts"
     vim.notify(table.concat(lines, "\n"), vim.log.levels.WARN, { title = "yap alert" })
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
@@ -795,10 +786,16 @@ local function approval_preview(buf, ev)
     "",
     approval_detail(ev),
   }
+  -- approval_detail() decodes the call, so it can be multi-line; buffer
+  -- lines must be flattened before nvim_buf_set_lines.
+  local lines = {}
+  for _, s in ipairs(content) do
+    vim.list_extend(lines, vim.split(s, "\n", { plain = true }))
+  end
   local pb = vim.api.nvim_create_buf(false, true)
   vim.bo[pb].filetype = "markdown"
   vim.bo[pb].bufhidden = "wipe"
-  vim.api.nvim_buf_set_lines(pb, 0, -1, false, content)
+  vim.api.nvim_buf_set_lines(pb, 0, -1, false, lines)
   return { buf = pb, pos = { 1, 0 } }
 end
 
@@ -1898,6 +1895,9 @@ end
 --- animated spinner; the state word is omitted because the icon conveys it.
 local function session_status(buf)
   local ic = M.config.icons
+  if pending_approvals[buf] then
+    return ic.approval
+  end
   local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, done = ic.done, idle = ic.idle }
   return glyph[session_state(buf)]
 end
@@ -2028,6 +2028,7 @@ function M.instances(state)
         text = live_session_label(b, parent ~= nil),
         path = parent and "" or vim.b[b].yap_project_cwd,
         state = session_state(b),
+        approval = pending_approvals[b] ~= nil,
         model = vim.b[b].yap_model,
         child = is_subagent or (fm and fm.forked_from),
         group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
@@ -2104,6 +2105,7 @@ function M.instances(state)
     waiting = M.config.icons.waiting,
     done = M.config.icons.done,
     idle = M.config.icons.idle,
+    approval = M.config.icons.approval,
   }
   local icon_width = 0
   for _, icon in pairs(glyph) do
@@ -2113,7 +2115,7 @@ function M.instances(state)
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
-      local icon = glyph[item.state]
+      local icon = (item.approval and glyph.approval) or glyph[item.state]
       return icon
         .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon))
         .. "  "
