@@ -3,8 +3,8 @@ package tools
 // The loop owns task state and dispatch. These registrations supply validated
 // schemas to the model; Run must never execute a task outside that loop.
 type startTaskArgs struct {
-	Tool      string `json:"tool" jsonschema:"description=tool to run in the background: bash, fetch, or websearch"`
-	Arguments string `json:"arguments" jsonschema:"description=arguments for the selected tool, encoded as a JSON object string (e.g. {\"command\":\"ls\"})"`
+	Tool      string `json:"tool" jsonschema_description:"tool to run in the background: bash, fetch, or websearch"`
+	Arguments string `json:"arguments" jsonschema_description:"arguments for the selected tool, encoded as a JSON object string (e.g. {\"command\":\"ls\"})"`
 }
 
 type waitTasksArgs struct {

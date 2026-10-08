@@ -15,7 +15,7 @@ import (
 
 type pythonArgs struct {
 	Code           string `json:"code,omitempty" jsonschema:"description=Python 3 code to run (for small inline scripts; mutually exclusive with file)"`
-	File           string `json:"file,omitempty" jsonschema:"description=path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code; ~ expands to the home directory)"`
+	File           string `json:"file,omitempty" jsonschema_description:"path to a Python script to run (for larger scripts: write the file first with the write tool, then run it; mutually exclusive with code; ~ expands to the home directory)"`
 	Timeout        int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
 	Cwd            string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 	IsolateNetwork bool   `json:"isolate_network,omitempty" jsonschema:"description=run the script in a private network namespace with no connectivity (Linux only; requires util-linux unshare)"`

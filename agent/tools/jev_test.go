@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -108,5 +109,33 @@ func TestJevValidation(t *testing.T) {
 	decisionModel = &fakeDecision{err: context.DeadlineExceeded}
 	if _, _, err := run(t, "jev", `{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":{"true":"y","false":"n"}}]}`); err == nil {
 		t.Fatal("expected backend error to propagate")
+	}
+}
+
+// TestJevSchemaDescriptionsIntact guards against comma-truncation in
+// jsonschema tags: descriptions must be carried verbatim via the
+// jsonschema_description tag, not split on commas inside description=...
+func TestJevSchemaDescriptionsIntact(t *testing.T) {
+	tl, ok := Get("jev")
+	if !ok {
+		t.Fatal("jev not registered")
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(tl.Schema, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	props := doc["properties"].(map[string]any)
+	state := props["state"].(map[string]any)
+	if d := state["description"].(string); !strings.Contains(d, "a JSON array of related context") {
+		t.Fatalf("state description truncated: %q", d)
+	}
+	q := props["questions"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	for field, want := range map[string]string{
+		"instructions": "phrased so the answer is unambiguous",
+		"criteria":     "for score: an array of ordered level labels",
+	} {
+		if d := q[field].(map[string]any)["description"].(string); !strings.Contains(d, want) {
+			t.Fatalf("%s description truncated: %q", field, d)
+		}
 	}
 }

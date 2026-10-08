@@ -30,7 +30,7 @@ func SetModelLister(f func() ([]ModelCombo, []string, error)) { modelLister = f 
 const modelsMax = 100
 
 type modelsArgs struct {
-	Filter string `json:"filter,omitempty" jsonschema:"description=case-insensitive substring matched against the provider/model combos, e.g. \"gpt-5\" or \"anthropic/\"; omit to list the configured providers instead"`
+	Filter string `json:"filter,omitempty" jsonschema_description:"case-insensitive substring matched against the provider/model combos, e.g. \"gpt-5\" or \"anthropic/\"; omit to list the configured providers instead"`
 }
 
 func init() {

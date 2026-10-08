@@ -21,7 +21,7 @@ type gitArgs struct {
 	Command string `json:"command" jsonschema:"description=read-only git subcommand,enum=status,enum=diff,enum=log,enum=show,enum=blame"`
 	Path    string `json:"path,omitempty" jsonschema:"description=file or directory to restrict the command to (required for blame)"`
 	Staged  bool   `json:"staged,omitempty" jsonschema:"description=diff against the index (staged changes) instead of the working tree"`
-	Rev     string `json:"rev,omitempty" jsonschema:"description=commit, ref, or range to show/diff/log from (default HEAD)"`
+	Rev     string `json:"rev,omitempty" jsonschema_description:"commit, ref, or range to show/diff/log from (default HEAD)"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"description=max commits for log (default 10; capped at 100)"`
 	Oneline bool   `json:"oneline,omitempty" jsonschema:"description=log: one line per commit"`
 }

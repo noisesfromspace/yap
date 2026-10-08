@@ -29,12 +29,12 @@ func SetDecisionModel(m decide.Model) {
 type jevQuestionArg struct {
 	Name         string          `json:"name" jsonschema:"description=unique name for this answer"`
 	Type         string          `json:"type" jsonschema:"description=question type,enum=noul,enum=choice,enum=score"`
-	Instructions string          `json:"instructions" jsonschema:"description=what is being decided, phrased so the answer is unambiguous"`
-	Criteria     json.RawMessage `json:"criteria" jsonschema:"description=for noul: an object {true: description, false: description}; for choice: an object mapping each option to a short description; for score: an array of ordered level labels"`
+	Instructions string          `json:"instructions" jsonschema_description:"what is being decided, phrased so the answer is unambiguous"`
+	Criteria     json.RawMessage `json:"criteria" jsonschema_description:"for noul: an object {true: description, false: description}; for choice: an object mapping each option to a short description; for score: an array of ordered level labels"`
 }
 
 type jevArgs struct {
-	State     json.RawMessage  `json:"state" jsonschema:"description=the content to evaluate: a string, a JSON object, or a JSON array of related context"`
+	State     json.RawMessage  `json:"state" jsonschema_description:"the content to evaluate: a string, a JSON object, or a JSON array of related context"`
 	Questions []jevQuestionArg `json:"questions" jsonschema:"description=one or more independent decisions to make about state (answered in parallel)"`
 }
 
