@@ -13,9 +13,10 @@ import (
 )
 
 type bashArgs struct {
-	Command string `json:"command" jsonschema:"description=bash command to execute"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
-	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	Command        string `json:"command" jsonschema:"description=bash command to execute"`
+	Timeout        int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
+	Cwd            string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	IsolateNetwork bool   `json:"isolate_network,omitempty" jsonschema:"description=run the command in a private network namespace with no connectivity (Linux only; requires util-linux unshare)"`
 }
 
 func init() {
@@ -46,7 +47,16 @@ func runBash(a *bashArgs) (string, string, error) {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
-	cmd := exec.Command("bash", "-c", a.Command)
+	var cmd *exec.Cmd
+	if a.IsolateNetwork {
+		// A fresh user+network namespace cuts every network path (outbound and
+		// loopback) deterministically, so a prompt-injected exfiltration or a
+		// host-port probe fails closed. --map-root-user keeps uid 0 inside the
+		// namespace mapped back to the real user, preserving file read/write.
+		cmd = exec.Command("unshare", "--user", "--map-root-user", "--net", "bash", "-c", a.Command)
+	} else {
+		cmd = exec.Command("bash", "-c", a.Command)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
 	if a.Cwd != "" {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
