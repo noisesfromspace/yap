@@ -174,8 +174,8 @@ local function system_prompt()
   return M.config.system
 end
 
---- One-line git state for :pwd, or nil when it is not a git repo. One
---- cheap synchronous call; the result is capped so a dirty monorepo cannot
+--- Git state for :pwd, or nil when it is not a git repo. A few
+--- cheap synchronous calls; the result is capped so a dirty monorepo cannot
 --- flood the prompt. The read-only git tool remains the source for detail.
 local function git_snapshot(cwd)
   local out = vim.fn.system({ "git", "-C", cwd, "status", "--porcelain", "--branch" })
@@ -193,17 +193,54 @@ local function git_snapshot(cwd)
   if not head then
     return nil
   end
+
+  -- fetch recent commits
+  local recent_commits_out = vim.fn.system({ "git", "-C", cwd, "log", "-5", "--pretty=format:%h %s" })
+  local recent_commits = {}
+  if vim.v.shell_error == 0 and recent_commits_out ~= "" then
+    for line in recent_commits_out:gmatch("[^\n]+") do
+      recent_commits[#recent_commits + 1] = line
+    end
+  end
+
+  -- fetch staged files
+  local staged_out = vim.fn.system({ "git", "-C", cwd, "diff", "--cached", "--name-only" })
+  local staged_files = {}
+  if vim.v.shell_error == 0 and staged_out ~= "" then
+    for line in staged_out:gmatch("[^\n]+") do
+      staged_files[#staged_files + 1] = line
+    end
+  end
+
+  local result_lines = {}
   if #changes == 0 then
-    return "Git: " .. head .. " (clean)"
+    table.insert(result_lines, "Git: " .. head .. " (clean)")
+  else
+    local shown, max = {}, 12
+    for i = 1, math.min(#changes, max) do
+      shown[i] = changes[i]
+    end
+    if #changes > max then
+      shown[#shown + 1] = ("+%d more"):format(#changes - max)
+    end
+    table.insert(result_lines, ("Git: %s, %d changed files: %s"):format(head, #changes, table.concat(shown, ", ")))
   end
-  local shown, max = {}, 12
-  for i = 1, math.min(#changes, max) do
-    shown[i] = changes[i]
+
+  if #recent_commits > 0 then
+    table.insert(result_lines, "Recent: " .. table.concat(recent_commits, " | "))
   end
-  if #changes > max then
-    shown[#shown + 1] = ("+%d more"):format(#changes - max)
+  if #staged_files > 0 then
+    local shown_staged, max_staged = {}, 12
+    for i = 1, math.min(#staged_files, max_staged) do
+      shown_staged[i] = staged_files[i]
+    end
+    if #staged_files > max_staged then
+      shown_staged[#shown_staged + 1] = ("+%d more"):format(#staged_files - max_staged)
+    end
+    table.insert(result_lines, "Staged: " .. table.concat(shown_staged, ", "))
   end
-  return ("Git: %s, %d changed files: %s"):format(head, #changes, table.concat(shown, ", "))
+
+  return table.concat(result_lines, "\n")
 end
 
 local HEAD = "^# @(%a+)%s*$"
