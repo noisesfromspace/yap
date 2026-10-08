@@ -206,12 +206,14 @@ the current buffer unless otherwise noted.
                         project's saved sessions and open its entry in
                         :YapLive. Includes closed sessions; newest first.
 *:YapApproval*
-:YapApproval          After choosing Inspect in a Run/Deny dialog, answer
-                        Run, Deny, or Inspect again from the conversation or
-                        audit. Inspect focuses the shield-marked request with
-                        the triggering tool call directly above it and the
-                        conversation alongside. Dismissal denies; the backend
-                        also denies after five minutes.
+:YapApproval          Answer a pending approval (|yap-alert-gate|) from a
+                        picker: Run, Deny, or Inspect, with a preview of the
+                        full call. With several sessions parked at once and no
+                        approval under the cursor, pick which to answer first.
+                        Inspect focuses the shield-marked request with the
+                        triggering tool call directly above it and the
+                        conversation alongside. Dismissing the picker defers;
+                        the backend also denies after five minutes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -889,13 +891,14 @@ shutil.rmtree) always forces approval — the decision model never downgrades a
 fork bomb. Where the floor is silent, jev answers two questions in parallel —
 P(harmful) and a 0–3 severity score — and maps the answer to:
 
-  approval   pause the turn for a Run/Deny/Inspect dialog (credential
-             exfiltration, severity mean >= 2.5, destructive calls at even
-             odds or low confidence, high P(harmful)). Run/Deny shows the
-             reason and full call arguments, defaults to Deny, and never runs
-             on timeout. Inspect focuses the shield-marked request in the
-             audit; |:YapApproval| repeats Inspect or Run/Deny within five
-             minutes.
+  approval   pause the turn for a decision (credential exfiltration,
+             severity mean >= 2.5, destructive calls at even odds or low
+             confidence, high P(harmful)). The session shows a shield and a
+             distinct notification; |:YapApproval| opens a picker — Run,
+             Deny, or Inspect — with a preview of the reason and full call
+             arguments. Never runs on timeout (five minutes) or when the
+             picker is dismissed. Inspect focuses the shield-marked request
+             in the audit; |:YapApproval| can be repeated.
   advisory   run, but log the call and show a non-blocking warning. The toast
              names the session, gives the P(harmful), the severity score
              with its category breakdown, and the model's confidence, then

@@ -19,6 +19,7 @@ local stopped = state.stopped
 local awaiting = state.awaiting
 local steer = state.steer
 local sessions = state.sessions
+local pending_approvals = state.pending_approvals
 
 -- Context meter: a fixed-width, eight-cell bar. Keeping its width
 -- independent of the window layout avoids redraw/reflow surprises.
@@ -60,7 +61,7 @@ end
 -- the winbar cheap on every redraw; stale entries are skipped via the
 -- validity check.
 local function other_session_counts(buf)
-  local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0 }
+  local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0, approval = 0 }
   for b in pairs(sessions) do
     if
       b ~= buf
@@ -68,7 +69,9 @@ local function other_session_counts(buf)
       and vim.b[b].yap
       and not (vim.b[b].yap_subagent_parent or vim.b[b].yap_agent)
     then
-      if running[b] then
+      if pending_approvals[b] then
+        counts.approval = counts.approval + 1
+      elseif running[b] then
         counts.running = counts.running + 1
       elseif errors[b] then
         counts.error = counts.error + 1
@@ -255,7 +258,12 @@ local function render_winbar(buf)
     -- visible at a glance from another window.
     local icon, icon_group = nil, nil
     local busy = running and running[buf]
-    if not inactive and busy then
+    if pending_approvals[buf] then
+      -- A parked approval outranks the busy spinner: the session needs a
+      -- decision, not a "streaming" signal, and must stay visible from an
+      -- inactive window too.
+      icon, icon_group = icons.approval, "Approval"
+    elseif not inactive and busy then
       icon = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
       icon_group = "BusySpin"
     elseif not busy then
@@ -311,6 +319,7 @@ local function render_winbar(buf)
     if not inactive then
       local counts = other_session_counts(buf)
       local order = {
+        { icons.approval, counts.approval, "Approval" },
         { icons.running, counts.running, "Busy" },
         { icons.waiting, counts.waiting, "Needs" },
         { icons.stopped, counts.stopped, "Needs" },
@@ -669,6 +678,7 @@ local function define_winbar_hl()
     Done = "DiagnosticOk",
     Idle = "Comment",
     Error = "DiagnosticError",
+    Approval = "DiagnosticError",
     Needs = "DiagnosticWarn",
     GaugeEmpty = "NonText",
     GaugeLabel = "Keyword",
@@ -725,6 +735,7 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandUprightNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandError", { fg = attr("YapError", "fg"), bg = bg })
+  vim.api.nvim_set_hl(0, "YapIslandApproval", { fg = attr("YapApproval", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandIdle", { fg = attr("YapIdle", "fg") or fg, bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes
   -- stay intact while the session title/model are italic and right-side

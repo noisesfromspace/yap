@@ -112,6 +112,7 @@ run yap_audit_view_test 18135 mock_write.py
 run yap_audit_rename_test 18135 mock_write.py
 run yap_saveas_test 18135 mock_write.py
 run yap_approval_inspect_test 18162 mock_approval.py
+run yap_approval_flow_test 18132
 run yap_follow_test 18152 mock_follow.py
 run yap_picker_test 18137 mock_models.py
 run yap_describe_test 18139 mock_describe.py

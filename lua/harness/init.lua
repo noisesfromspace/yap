@@ -334,6 +334,37 @@ local function answer_approval(buf, approved)
   )
 end
 
+-- Render the full call a decision is about, decoded like the old dialog so
+-- approval never hides the operation being authorized. SSH sends plain text.
+local function approval_detail(ev)
+  local command = ev.command or ""
+  local ok_args, args = pcall(vim.json.decode, command)
+  return ok_args and vim.inspect(args) or command
+end
+
+-- Approval is a non-blocking notification, not a modal: the turn is parked
+-- (the backend waits up to five minutes) and the user answers deliberately
+-- via :YapApproval. Distinct from the advisory toast by level, title and
+-- shield icon so an action-required pause is never mistaken for a warning
+-- about a call that already ran.
+local function notify_approval(buf, ev, detail)
+  local lines = {
+    ("yap: %s needs approval — %s: %s"):format(
+      live_session_label(buf),
+      ev.tool or "tool",
+      ev.reason or "review call"
+    ),
+    "",
+    detail,
+    "",
+    ":YapApproval to Run, Deny or Inspect — auto-denies in 5 minutes",
+  }
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.ERROR, {
+    title = "yap approval required",
+    icon = M.config.icons.approval,
+  })
+end
+
 local function handle_event(buf, json_line)
   local ok, ev = pcall(vim.json.decode, json_line)
   if not ok or type(ev) ~= "table" then
@@ -365,29 +396,8 @@ local function handle_event(buf, json_line)
     end
   elseif ev.type == "approval_request" then
     audit.append_event(buf, ev)
-    local command = ev.command or ""
-    local ok_args, args = pcall(vim.json.decode, command)
-    -- Show every argument, not a truncated 300-character prefix: approval
-    -- must not hide the operation being authorized. SSH sends plain text.
-    local detail = ok_args and vim.inspect(args) or command
     pending_approvals[buf] = ev
-    local choice = vim.fn.confirm(
-      ("yap: approve %s in %s?\nReason: %s\n\n%s\n\nInspect shows the call in its conversation and audit; use :YapApproval to return (5 minute timeout)."):format(
-        ev.tool or "tool",
-        live_session_label(buf),
-        ev.reason or "review call",
-        detail
-      ),
-      "&Run\n&Deny\n&Inspect",
-      2,
-      "Warning"
-    )
-    if choice == 3 then
-      inspect_approval(buf, ev)
-      vim.notify("yap: call paused; :YapApproval to Run, Deny or Inspect again (5 minute timeout)", vim.log.levels.WARN)
-    else
-      answer_approval(buf, choice == 1)
-    end
+    notify_approval(buf, ev, approval_detail(ev))
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)
@@ -835,10 +845,71 @@ inspect_approval = function(buf, ev)
   end
 end
 
---- After inspecting a paused approval, explicitly answer it. The backend
---- denies on timeout; dismissing this dialog also denies.
+--- Markdown preview of a pending approval: the session label, tool, reason
+--- and full call, so a picker can communicate everything needed to decide
+--- without leaving it. Same shape as session.preview().
+local function approval_preview(buf, ev)
+  local content = {
+    "# Approval required",
+    "",
+    "**Session:** " .. live_session_label(buf),
+    "**Tool:** " .. (ev.tool or "tool"),
+    "**Reason:** " .. (ev.reason or "review call"),
+    "",
+    approval_detail(ev),
+  }
+  local pb = vim.api.nvim_create_buf(false, true)
+  vim.bo[pb].filetype = "markdown"
+  vim.bo[pb].bufhidden = "wipe"
+  vim.api.nvim_buf_set_lines(pb, 0, -1, false, content)
+  return { buf = pb, pos = { 1, 0 } }
+end
+
+--- Run/Deny/Inspect for one approval. Dismissing the picker (Esc/Ctrl-C)
+--- defers: the approval stays pending until the backend's five-minute deny,
+--- so cancel never silently rejects a call the way the old confirm() did.
+local function pick_approval_action(buf, ev)
+  vim.ui.select({ "Run", "Deny", "Inspect" }, {
+    prompt = ("yap: %s in %s"):format(ev.tool or "tool", live_session_label(buf)),
+    preview_item = function()
+      return approval_preview(buf, ev)
+    end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+    if choice == "Inspect" then
+      inspect_approval(buf, ev)
+    else
+      answer_approval(buf, choice == "Run")
+    end
+  end)
+end
+
+-- Every open session awaiting an approval decision (a turn is parked, so at
+-- most one per buffer; several sessions can be parked at once).
+local function approval_items()
+  local items = {}
+  for owner, ev in pairs(pending_approvals) do
+    if vim.api.nvim_buf_is_valid(owner) then
+      items[#items + 1] = { buf = owner, ev = ev }
+    end
+  end
+  return items
+end
+
+--- After an approval fires (or after Inspect), answer it deliberately:
+--- Run, Deny or Inspect from a picker whose preview shows the full call.
+--- Several agents can be parked at once; with more than one pending and no
+--- unambiguous session under the cursor, pick which approval to answer first.
+--- The backend denies on timeout; dismissing any picker defers.
 function M.approval()
   local current = vim.api.nvim_get_current_buf()
+  local items = approval_items()
+  if #items == 0 then
+    vim.notify("yap: no pending approval", vim.log.levels.INFO)
+    return
+  end
   local buf = pending_approvals[current] and current or nil
   if not buf then
     for owner, t in pairs(audit.views()) do
@@ -848,35 +919,28 @@ function M.approval()
       end
     end
   end
-  if not buf then
-    for owner in pairs(pending_approvals) do
-      if buf then
-        vim.notify("yap: multiple pending approvals; open the relevant session's audit first", vim.log.levels.WARN)
-        return
-      end
-      buf = owner
-    end
-  end
-  if not buf then
-    vim.notify("yap: no pending approval", vim.log.levels.INFO)
-    return
-  end
-  local ev = pending_approvals[buf]
-  local choice = vim.fn.confirm(
-    ("yap: approve %s in %s?\nReason: %s\n\n%s"):format(
-      ev.tool or "tool",
-      live_session_label(buf),
-      ev.reason or "review call",
-      ev.command or ""
-    ),
-    "&Run\n&Deny\n&Inspect",
-    2,
-    "Warning"
-  )
-  if choice == 3 then
-    inspect_approval(buf, ev)
+  if buf then
+    pick_approval_action(buf, pending_approvals[buf])
+  elseif #items == 1 then
+    pick_approval_action(items[1].buf, items[1].ev)
   else
-    answer_approval(buf, choice == 1)
+    vim.ui.select(items, {
+      prompt = "yap pending approvals",
+      format_item = function(item)
+        return ("%s · %s: %s"):format(
+          live_session_label(item.buf),
+          item.ev.tool or "tool",
+          item.ev.reason or "review call"
+        )
+      end,
+      preview_item = function(item)
+        return approval_preview(item.buf, item.ev)
+      end,
+    }, function(choice)
+      if choice then
+        pick_approval_action(choice.buf, choice.ev)
+      end
+    end)
   end
 end
 
@@ -2140,7 +2204,7 @@ function M.setup(opts)
       idle = "○",
       done = "✓",
       steer = "⌁",
-      approval = "⚠",
+      approval = "⚠", -- plain-Unicode backup for the shield_alert glyph
       cap_l = "[",
       cap_r = "]",
     })

@@ -58,7 +58,7 @@ M.defaults = {
     idle = "󰝦", -- nf-md-circle_outline (picker idle state)
     done = "󰄬", -- nf-md-check (picker: finished subagent)
     steer = "󰇐", -- nf-md-directions (winbar steer state)
-    approval = "󰻌", -- nf-md-shield_alert (approval requested in audit)
+    approval = "󰻌", -- nf-md-shield_alert (winbar gutter + rollup, notification, audit)
     cap_l = "", -- nf-ple-lower_right_triangle (island left cap)
     cap_r = "", -- nf-ple-lower_left_triangle  (island right cap)
   },
