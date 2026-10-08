@@ -354,6 +354,24 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// TestToolSchemasHaveNoRefs guards against emitting $defs/$ref in generated
+// tool schemas: Moonshot's validator rejects a $ref to $defs as "infinite
+// recursion without termination condition". Nested structs must be inlined.
+func TestToolSchemasHaveNoRefs(t *testing.T) {
+	for _, tl := range All() {
+		var doc map[string]any
+		if err := json.Unmarshal(tl.Schema, &doc); err != nil {
+			t.Fatalf("%s: invalid schema: %v", tl.Name, err)
+		}
+		if _, ok := doc["$defs"]; ok {
+			t.Errorf("%s: schema contains $defs; inline nested structs instead", tl.Name)
+		}
+		if bytes.Contains(tl.Schema, []byte(`"$ref"`)) {
+			t.Errorf("%s: schema contains $ref; inline nested structs instead", tl.Name)
+		}
+	}
+}
+
 func TestToolCleanup(t *testing.T) {
 	calls := 0
 	Register("test_cleanup", "test only", func(_ *struct{}) (string, string, error) {

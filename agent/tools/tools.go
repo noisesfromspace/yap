@@ -58,7 +58,10 @@ func (t *Tool) Run(args json.RawMessage) (result, ui string, err error) {
 // optional), jsonschema tags carry descriptions. Stateful tools may pass a
 // cleanup function, which is called on backend shutdown.
 func Register[T any](name, description string, run func(args *T) (result, ui string, err error), cleanup ...func()) {
-	r := &jsonschema.Reflector{ExpandedStruct: true} // inline, no $ref/$defs: providers accept plain schemas
+	// Inline every nested struct; do not emit $defs/$ref. Moonshot's
+	// schema validator rejects $ref to $defs as "infinite recursion
+	// without termination condition".
+	r := &jsonschema.Reflector{ExpandedStruct: true, DoNotReference: true}
 	s := r.Reflect(new(T))
 	s.Version = "" // omit $schema; providers do not need it
 	schemaJSON, err := json.Marshal(s)
