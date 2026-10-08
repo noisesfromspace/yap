@@ -222,14 +222,15 @@ the current buffer unless otherwise noted.
 :YapGuard            Open the guard board (yap://guard): one read-only
                         buffer merging the old :YapAlerts and :YapApproval
                         pickers. Two sections, newest/open first — Open lists
-                        every parked approval plus recent advisories, History
-                        lists resolved decisions and older advisories. Each
-                        row is one scannable line; `za` expands it to the full
-                        command, reason, severity breakdown and triggering
-                        transcript; <CR> opens a Run/Deny/Inspect/Defer popup
-                        for approvals (Inspect-only for advisories). Opening
-                        the board defers, never denies; the backend also
-                        denies a parked approval after five minutes.
+                        every parked approval plus advisories from the last
+                        hour, History lists resolved decisions and older
+                        advisories. Each row is one scannable line; <Tab>/`za`
+                        expands it to the full command, reason, severity
+                        breakdown and triggering transcript; <CR> opens a
+                        Run/Deny/Inspect/Defer popup for approvals
+                        (Inspect-only for advisories). Opening the board
+                        defers, never denies; the backend also denies a
+                        parked approval after five minutes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line

@@ -161,11 +161,18 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 		return d
 	}
 	d.PAlert = harm.Noul
-	d.Confidence = harm.Confidence
+	// The Decisions API returns `confidence` on score answers (the severity
+	// distribution's concentration), not on noul answers, so read it from
+	// severity. Fall back to the noul answer for a backend that reports it
+	// there instead.
+	d.Confidence = sev.Confidence
+	if d.Confidence == 0 {
+		d.Confidence = harm.Confidence
+	}
 	d.Severity = sev.Score
 	d.SeverityProbabilities = sev.Probabilities
 
-	d.Outcome, d.Reason = decideOutcome(harm.Noul, harm.Confidence, sev, cfg)
+	d.Outcome, d.Reason = decideOutcome(harm.Noul, d.Confidence, sev, cfg)
 	return d
 }
 

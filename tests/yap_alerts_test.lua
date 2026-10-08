@@ -31,8 +31,11 @@ local function add(buf, id, reason, ts)
     vim.json.encode({ type = "turn_end", ts = ts, prompt = 1, completion = 1 }),
   }, log, "a")
 end
-add(first, "first-id", "first warning", "2026-01-01T12:00:00")
-add(first, "first-id", "later warning", "2026-01-01T12:00:01")
+local now = os.date("%Y-%m-%dT%H:%M:%S")
+add(first, "first-id", "first warning", now)
+add(first, "first-id", "later warning", now)
+-- An advisory older than the recency window lands in History, not Open.
+add(first, "old-id", "old warning", "2026-01-01T12:00:00")
 -- A denied approval lands in History.
 local log = paths.audit_path(first)
 vim.fn.writefile({
@@ -61,13 +64,14 @@ local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 -- Recent advisories sit in Open (read-only rows), with their severity badge.
-assert(text:find("▸ Open (2)", 1, true), "Open section should list both advisories: " .. text)
+assert(text:find("▸ Open (2)", 1, true), "Open section should list both recent advisories: " .. text)
 assert(text:find("first warning", 1, true), "first advisory missing from board")
 assert(text:find("later warning", 1, true), "second advisory missing")
 assert(text:find("reversible", 1, true), "severity badge missing from board")
--- The denied approval sits in History.
-assert(text:find("▸ History (1)", 1, true), "History section missing denied approval")
+-- The denied approval and the old advisory sit in History.
+assert(text:find("▸ History (2)", 1, true), "History section missing denied approval + old advisory: " .. text)
 assert(text:find("possible data loss", 1, true), "denied approval reason missing from History")
+assert(text:find("old warning", 1, true), "old advisory missing from History")
 guard.toggle() -- close
 
 -- Live append must use the same event positions as replay, regardless of

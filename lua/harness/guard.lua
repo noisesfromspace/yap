@@ -27,7 +27,7 @@ end
 
 local BOARD_NAME = "yap://guard"
 local BOARD_HEIGHT = 12
-local RECENT_ADVISORIES = 20 -- advisories newer than this stay in Open
+local RECENT_MINUTES = 60 -- advisories newer than this stay in Open; older -> History
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -92,16 +92,24 @@ local function decode_target(args)
   return flat(tostring(args))
 end
 
+--- Parse an ISO timestamp into os.time, or nil when unparseable.
+local function ts_time(ts)
+  local y, mo, d, h, mi, s = ts:match("(%d+)%-(%d+)%-(%d+)T(%d+):(%d+):(%d+)")
+  if not y then
+    return nil
+  end
+  return os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s })
+end
+
 --- Human "how long ago" from an ISO timestamp; empty when unparseable.
 local function age(ts)
   if not ts or ts == "" then
     return ""
   end
-  local y, mo, d, h, mi, s = ts:match("(%d+)%-(%d+)%-(%d+)T(%d+):(%d+):(%d+)")
-  if not y then
+  local then_t = ts_time(ts)
+  if not then_t then
     return ""
   end
-  local then_t = os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s })
   local diff = os.difftime(os.time(), then_t)
   if diff < 0 then
     diff = 0
@@ -116,6 +124,15 @@ local function age(ts)
     return string.format("%dh%dm", math.floor(diff / 3600), math.floor(diff % 3600 / 60))
   end
   return string.format("%dd", math.floor(diff / 86400))
+end
+
+--- Minutes since an ISO timestamp; math.huge when unparseable (treated as old).
+local function minutes_ago(ts)
+  local then_t = ts_time(ts)
+  if not then_t then
+    return math.huge
+  end
+  return os.difftime(os.time(), then_t) / 60
 end
 
 local function num(v)
@@ -270,8 +287,8 @@ local function build_sections()
 
   local open_rows = approvals
   local history_rows = {}
-  for i, a in ipairs(advisories) do
-    if i <= RECENT_ADVISORIES then
+  for _, a in ipairs(advisories) do
+    if minutes_ago(a.ts) <= RECENT_MINUTES then
       open_rows[#open_rows + 1] = a
     else
       history_rows[#history_rows + 1] = a
@@ -477,27 +494,45 @@ end
 
 local function transient_content(row)
   local is_approval = row.kind == "approval"
-  local out = {}
-  local title = is_approval and "Approval required" or (row.kind == "advisory" and "Advisory" or "History")
-  out[#out + 1] = (" %s · %s · %s"):format(row.tool, row.session, title)
-  for _, l in ipairs(vim.split(row.command, "\n", { plain = true })) do
-    out[#out + 1] = " $ " .. l
+  local title = is_approval and "Approval required"
+    or (row.kind == "advisory" and "Advisory" or "History")
+  local session = flat(row.session)
+  if #session > 30 then
+    session = session:sub(1, 27) .. "…"
   end
+  local cmd = flat(row.command)
+  if #cmd > 60 then
+    cmd = cmd:sub(1, 57) .. "…"
+  end
+
+  local out = {
+    "# " .. title,
+    "",
+    ("**%s** · %s"):format(row.tool, session),
+    "",
+    "```bash",
+    cmd ~= "" and cmd or "—",
+    "```",
+    "",
+  }
   if row.p_alert then
-    out[#out + 1] = (" P(harmful)=%.2f  severity=%s(%.1f)  conf=%.2f"):format(
-      row.p_alert, row.severity_category ~= "" and row.severity_category or "?", row.severity or 0, row.confidence or 0
+    out[#out + 1] = ("`P(harmful)=%.2f`  `severity=%s(%.1f)`  `conf=%.0f%%`"):format(
+      row.p_alert,
+      row.severity_category ~= "" and row.severity_category or "?",
+      row.severity or 0,
+      (row.confidence or 0) * 100
     )
   elseif is_approval then
-    out[#out + 1] = " always approval (no model consulted)"
+    out[#out + 1] = "`always approval (no model consulted)`"
   end
   out[#out + 1] = ""
-  out[#out + 1] = " Actions"
+  out[#out + 1] = "## Actions"
   if is_approval then
-    out[#out + 1] = "  r  Run"
-    out[#out + 1] = "  x  Deny"
+    out[#out + 1] = "- `r` **Run** — approve this call"
+    out[#out + 1] = "- `x` **Deny** — reject"
   end
-  out[#out + 1] = "  i  Inspect (audit)"
-  out[#out + 1] = is_approval and "  q  Defer (leave parked)" or "  q  Dismiss"
+  out[#out + 1] = "- `i` **Inspect** — open the audit entry"
+  out[#out + 1] = is_approval and "- `q` **Defer** — leave parked" or "- `q` **Dismiss**"
   return out
 end
 
@@ -505,10 +540,14 @@ local function open_transient(row)
   local content = transient_content(row)
   local bufnr = vim.api.nvim_create_buf(false, true)
   vim.bo[bufnr].bufhidden = "wipe"
-  vim.bo[bufnr].filetype = "yapguard"
+  vim.bo[bufnr].filetype = "markdown" -- touchup renders the markdown markup
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, content)
+  vim.bo[bufnr].modifiable = false
 
-  local height = math.min(#content, math.max(6, math.floor(vim.o.lines * 0.4)))
+  -- Fit the window to its (bounded) content: sizing by a fraction of the
+  -- screen hid the action keys whenever the command wrapped. Clip the
+  -- command and disable wrap instead, so the menu always fits.
+  local height = math.min(#content, math.max(1, vim.o.lines - 2))
   local win = vim.api.nvim_open_win(bufnr, true, {
     relative = "editor",
     anchor = "SW",
@@ -519,6 +558,7 @@ local function open_transient(row)
     style = "minimal",
     border = { "─", "─", "─", "", "", "", "", "" },
   })
+  vim.wo[win].wrap = false
 
   local function close()
     if vim.api.nvim_win_is_valid(win) then
@@ -560,9 +600,11 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "q", function()
     M.toggle()
   end, { buffer = buf, silent = true, desc = "yap: close guard board" })
-  vim.keymap.set("n", "za", function()
+  local function toggle_row()
     vim.cmd("normal! za")
-  end, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
+  end
+  vim.keymap.set("n", "za", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
+  vim.keymap.set("n", "<Tab>", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
   vim.keymap.set("n", "]c", function()
     jump_section(1)
   end, { buffer = buf, silent = true, desc = "yap: next guard section" })

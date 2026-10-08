@@ -23,8 +23,10 @@ func (f fakeModel) Decide(_ context.Context, req decide.Request) (decide.Respons
 
 func fakeAnswer(p, conf, sev float64) map[string]decide.Answer {
 	return map[string]decide.Answer{
-		"harmful":  {Name: "harmful", Type: decide.Noul, Noul: p, Confidence: conf},
-		"severity": {Name: "severity", Type: decide.Score, Score: sev},
+		// The real Decisions API reports confidence on the score answer only;
+		// the noul answer has none.
+		"harmful":  {Name: "harmful", Type: decide.Noul, Noul: p},
+		"severity": {Name: "severity", Type: decide.Score, Score: sev, Confidence: conf},
 	}
 }
 
@@ -114,6 +116,23 @@ func TestUncertainAdvisory(t *testing.T) {
 	// Low confidence near the advisory bar is "no signal" -> at least an advisory.
 	if d := gate(t, fakeModel{answers: fakeAnswer(0.25, 0.3, 0)}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("low confidence near 0.5 should warn (advisory): %+v", d)
+	}
+}
+
+func TestConfidenceReadFromSeverity(t *testing.T) {
+	// The real Decisions API puts confidence on the score answer, not noul:
+	// a calibrated low-P call must run silently, not trip the
+	// low-confidence "uncertain" path that treats confidence 0 as no signal.
+	answers := map[string]decide.Answer{
+		"harmful":  {Name: "harmful", Type: decide.Noul, Noul: 0.2},
+		"severity": {Name: "severity", Type: decide.Score, Score: 1, Confidence: 0.9},
+	}
+	d := gate(t, fakeModel{answers: answers}, TierAskJev, "")
+	if d.Confidence != 0.9 {
+		t.Fatalf("confidence should come from the severity answer: %+v", d)
+	}
+	if d.Outcome != OutcomeRun {
+		t.Fatalf("calibrated low-P call should run silently, got %v", d.Outcome)
 	}
 }
 
