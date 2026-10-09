@@ -613,16 +613,22 @@ local function open_transient(row)
   -- Fit the window to its (bounded) content: sizing by a fraction of the
   -- screen hid the action keys whenever the command wrapped. Clip the
   -- command and disable wrap instead, so the menu always fits.
+  -- Anchor the popup to the board window (the current window when <CR>
+  -- fired) so it spans the board's own column — under the guard board, not
+  -- the whole editor. `row` is the float's top-left row relative to the
+  -- board window, so it sits flush against the board's bottom edge.
+  local board_win = vim.api.nvim_get_current_win()
+  local width = vim.api.nvim_win_get_width(board_win)
   local height = math.min(#content, math.max(1, vim.o.lines - 2))
   local win = vim.api.nvim_open_win(bufnr, true, {
-    relative = "editor",
-    anchor = "SW",
-    width = vim.o.columns,
+    relative = "win",
+    win = board_win,
+    width = width,
     height = height,
     col = 0,
-    row = vim.o.lines - 1,
+    row = vim.api.nvim_win_get_height(board_win) - height,
     style = "minimal",
-    border = { "─", "─", "─", "", "", "", "", "" },
+    border = { "", "─", "", "", "", "", "", "" },
   })
   vim.wo[win].wrap = false
 
