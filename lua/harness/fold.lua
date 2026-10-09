@@ -46,6 +46,12 @@ local anchors = vim.api.nvim_create_namespace("yap.fold.regions")
 local sessions = {} -- buf -> fold identities and per-window projections
 local group = vim.api.nvim_create_augroup("YapFolds", { clear = true })
 
+-- User edits/undo reconcile on a pause, not per keystroke: extmarks and
+-- native manual folds already track the edit, so the full O(n) reparse can
+-- wait until typing stops. Stream appends are unaffected (they reconcile
+-- synchronously via after_append before yielding).
+local IDLE_RECONCILE_MS = 150
+
 local function position(buf, id)
   local mark = vim.api.nvim_buf_get_extmark_by_id(buf, anchors, id, { details = true })
   if #mark == 0 or mark[3].invalid then
@@ -92,20 +98,22 @@ local function state(buf)
       end
       -- Arbitrary user edits/undo need reconciliation as well as streaming.
       -- Stream writes call after_append synchronously, before yielding;
-      -- this coalesced callback is the fallback for other buffer mutations.
-      if not s.scheduled then
-        s.scheduled = true
-        vim.schedule(function()
-          s.scheduled = false
-          if
-            sessions[buf] == s
-            and vim.api.nvim_buf_is_valid(buf)
-            and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf)
-          then
-            M.reconcile(buf)
-          end
-        end)
+      -- this debounced callback is the fallback for other buffer mutations.
+      if s.timer then
+        s.timer:stop()
+        s.timer:close()
+        s.timer = nil
       end
+      s.timer = vim.defer_fn(function()
+        s.timer = nil
+        if
+          sessions[buf] == s
+          and vim.api.nvim_buf_is_valid(buf)
+          and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf)
+        then
+          M.reconcile(buf)
+        end
+      end, IDLE_RECONCILE_MS)
     end,
     on_reload = function()
       structure.clear(buf)
@@ -122,6 +130,11 @@ local function state(buf)
       -- An explicit unload discards native folds/extmarks; reinitialize on
       -- load. Merely hiding a session does not detach or discard any state.
       s.detached = true
+      if s.timer then
+        s.timer:stop()
+        s.timer:close()
+        s.timer = nil
+      end
       structure.clear(buf)
     end,
   })

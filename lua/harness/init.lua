@@ -726,19 +726,63 @@ local function show_audit_event(buf, ordinal)
   end
 end
 
+--- Focus the matching tool region in the session without leaving the audit
+--- drawer. The audit records calls even if the user later edits their
+--- transcript, so a missing region simply leaves the session cursor where it
+--- was. `call` is the { id, occurrence } of the tool call to reveal.
+local function focus_alert_call(buf, call)
+  if not call then
+    return
+  end
+  local win = vim.fn.win_findbuf(buf)[1]
+  if not win then
+    return
+  end
+  local seen = 0
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for _, detail in ipairs(require("harness.structure").parse(buf).regions) do
+    if detail.kind == "tool" then
+      local id
+      for i = detail.start, math.min(detail.start + 4, #lines) do
+        id = lines[i]:match('"id"%s*:%s*"([^"\\]+)"')
+        if id or lines[i]:find("-->", 1, true) then
+          break
+        end
+      end
+      if id == call.id then
+        seen = seen + 1
+        if seen == call.occurrence then
+          -- A guard-board inspection wins over tail-following for this turn.
+          local paused = follow_override[buf]
+          if paused then
+            paused[win] = true
+          end
+          vim.api.nvim_win_call(win, function()
+            vim.api.nvim_win_set_cursor(win, { detail.start, 0 })
+            vim.cmd("normal! zvzz")
+          end)
+          return
+        end
+      end
+    end
+  end
+end
+
 --- Open a session's audit and reveal one reviewable event by its ordinal
---- (the index among alert_advisory/approval_request entries in that log).
---- The guard board's Inspect action uses this for rows loaded from disk,
---- whether or not the session is already open.
-function M.reveal_audit(path, ordinal)
+--- (the index among alert_advisory/approval_request entries in that log),
+--- focusing the session's matching tool region when `call` names one. The
+--- guard board's Inspect action uses this for rows loaded from disk, whether
+--- or not the session is already open.
+function M.reveal_audit(path, ordinal, call)
   local buf = vim.fn.bufnr(path)
   if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
-    vim.api.nvim_set_current_buf(buf)
+    focus_buf(buf)
     adopt(buf, path)
   else
     buf = M.open(path)
   end
   show_audit_event(buf, ordinal)
+  focus_alert_call(buf, call)
 end
 
 -- The scratch queue and mid-turn steering live in harness.scratch.

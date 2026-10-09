@@ -88,11 +88,12 @@ vim.cmd("redo")
 fold.after_append(b)
 assert(fn.foldclosed(4) == 4, "redo resurrected deleted pin")
 
--- Ordinary edits reconcile without a stream callback.
+-- Ordinary edits reconcile without a stream callback (debounced, not
+-- synchronous: on_lines reparse waits for a typing pause).
 b = make({ "# @assistant", "prose", "" })
 api.nvim_buf_set_lines(b, -1, -1, false, { tool("typed"), "output", closed })
 assert(
-  vim.wait(100, function()
+  vim.wait(400, function()
     return fn.foldclosed(4) == 4
   end),
   "user edits did not reconcile"
