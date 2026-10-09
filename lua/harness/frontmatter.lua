@@ -26,7 +26,7 @@
 --   forks:
 --     - ~/.yap/sessions/.../branch.md
 --   assets:
---     - <sha256>.png
+--     - ~/.local/share/nvim/yap/assets/<sha256>.png
 --   ---
 --
 -- `title` is always present (empty by default) and wins over `description`
@@ -46,8 +46,9 @@
 -- of every combo actually used (most-recent-last); `forked_from` and
 -- `forks` link copied sessions in both directions; `subagent_parent` points
 -- back to the owner; `subagents` is the ordered list of subagent session
--- paths this session ran (most-recent-last); `assets` is the manifest of
--- content-addressed photo files this session references.
+-- paths this session ran (most-recent-last); `assets` is the manifest of the
+-- absolute paths of the photo files this session references (the shared,
+-- content-addressed store lives under Neovim's data directory).
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.

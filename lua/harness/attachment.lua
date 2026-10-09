@@ -98,11 +98,11 @@ function M.attach(buf, row)
   -- vim.b copies tables on read, so reassign the whole list after mutating.
   local assets = vim.b[buf].yap_assets or {}
   for _, a in ipairs(assets) do
-    if a == hash .. ext then
+    if a == dest then
       return reference
     end
   end
-  assets[#assets + 1] = hash .. ext
+  assets[#assets + 1] = dest
   vim.b[buf].yap_assets = assets
   return reference
 end

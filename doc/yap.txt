@@ -279,7 +279,7 @@ as YAML frontmatter: >
     - search
     - glob
   assets:
-    - <sha256>.png
+    - ~/.local/share/nvim/yap/assets/<sha256>.png
   ---
 <
 
@@ -289,8 +289,9 @@ title is empty. `provider`/`model` is the combo to resume with; `created_cwd`
 the exact working directory the session was created in; `models` the ordered
 history of combos used (most-recent-last); `subagents` the subagent session
 paths; `tools` the per-session tool allowlist — remove a line to retract that
-tool on the next send; `assets` the manifest of content-addressed photo files
-this session references. `turns` counts completed `# @assistant` replies so
+tool on the next send; `assets` the absolute paths of the photo files this
+session references (a shared content-addressed store under Neovim's data
+directory). `turns` counts completed `# @assistant` replies so
 the picker can show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set

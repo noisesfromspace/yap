@@ -163,10 +163,10 @@ assert(
   "links not roundtripped"
 )
 local assets_fm = frontmatter.parse(
-  frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, { "abc123.png", "def456.jpg" })
+  frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, { "/tmp/yap/assets/abc123.png", "/tmp/yap/assets/def456.jpg" })
 )
 assert(
-  vim.deep_equal(assets_fm.assets, { "abc123.png", "def456.jpg" }),
+  vim.deep_equal(assets_fm.assets, { "/tmp/yap/assets/abc123.png", "/tmp/yap/assets/def456.jpg" }),
   "assets not roundtripped: " .. vim.inspect(assets_fm.assets)
 )
 
