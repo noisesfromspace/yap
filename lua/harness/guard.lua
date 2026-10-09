@@ -503,7 +503,7 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  add("<CR> act · za expand · [c/]c section · q close", HL.hint)
+  add("r/x run·deny · i inspect · <CR> menu · za expand · [c/]c section · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -560,6 +560,26 @@ end
 
 function M.foldtext()
   return vim.fn.getline(vim.v.foldstart)
+end
+
+-- ─── Row actions ───────────────────────────────────────────────────────────
+-- Shared by the transient's menu keys and the board's direct keys, so a
+-- shortcut on the cursor row behaves exactly like answering from the popup.
+
+local function approve_row(row)
+  if row.kind == "approval" then
+    harness().answer_approval(row.buf, true)
+  end
+end
+
+local function deny_row(row)
+  if row.kind == "approval" then
+    harness().answer_approval(row.buf, false)
+  end
+end
+
+local function inspect_row(row)
+  harness().reveal_audit(row.path, row.ordinal)
 end
 
 -- ─── Transient (the per-row action popup) ──────────────────────────────────
@@ -638,25 +658,18 @@ local function open_transient(row)
     end
   end
 
-  local function answer(approved)
-    close()
-    harness().answer_approval(row.buf, approved)
-  end
-
-  local function inspect()
-    close()
-    harness().reveal_audit(row.path, row.ordinal)
+  local function with_close(action)
+    return function()
+      close()
+      action(row)
+    end
   end
 
   if row.kind == "approval" then
-    vim.keymap.set("n", "r", function()
-      answer(true)
-    end, { buffer = bufnr, nowait = true, silent = true })
-    vim.keymap.set("n", "x", function()
-      answer(false)
-    end, { buffer = bufnr, nowait = true, silent = true })
+    vim.keymap.set("n", "r", with_close(approve_row), { buffer = bufnr, nowait = true, silent = true })
+    vim.keymap.set("n", "x", with_close(deny_row), { buffer = bufnr, nowait = true, silent = true })
   end
-  vim.keymap.set("n", "i", inspect, { buffer = bufnr, nowait = true, silent = true })
+  vim.keymap.set("n", "i", with_close(inspect_row), { buffer = bufnr, nowait = true, silent = true })
   for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
     vim.keymap.set("n", key, close, { buffer = bufnr, nowait = true, silent = true })
   end
@@ -698,6 +711,21 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "[c", function()
     jump_section(-1)
   end, { buffer = buf, silent = true, desc = "yap: previous guard section" })
+
+  -- Direct action keys on the cursor row, so the common cases skip the
+  -- transient: r/x run/deny an approval, i inspects any row.
+  local function act(action)
+    return function()
+      local row = row_at(buf, vim.api.nvim_win_get_cursor(0)[1])
+      if row then
+        action(row)
+      end
+    end
+  end
+  vim.keymap.set("n", "r", act(approve_row), { buffer = buf, silent = true, desc = "yap: approve guard row" })
+  vim.keymap.set("n", "x", act(deny_row), { buffer = buf, silent = true, desc = "yap: deny guard row" })
+  vim.keymap.set("n", "i", act(inspect_row), { buffer = buf, silent = true, desc = "yap: inspect guard row" })
+
   vim.keymap.set("n", "<CR>", function()
     local row = row_at(buf, vim.api.nvim_win_get_cursor(0)[1])
     if row then

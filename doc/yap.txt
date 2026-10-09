@@ -228,11 +228,13 @@ the current buffer unless otherwise noted.
                         15 minutes, History lists resolved decisions and
                         advisories up to 3 hours old. Each row is one scannable line; <Tab>/`za`
                         expands it to the full command, reason, severity
-                        breakdown and triggering transcript; <CR> opens a
-                        Run/Deny/Inspect/Defer popup for approvals
-                        (Inspect-only for advisories). Opening the board
-                        defers, never denies; the backend also denies a
-                        parked approval after five minutes.
+                        breakdown and triggering transcript. On the row under
+                        the cursor `r`/`x` run/deny an approval directly, `i`
+                        inspects any row, and <CR> opens the same
+                        Run/Deny/Inspect/Defer menu (Inspect-only for
+                        advisories). Opening the board defers, never denies;
+                        the backend also denies a parked approval after five
+                        minutes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
