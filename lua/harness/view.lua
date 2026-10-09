@@ -37,19 +37,34 @@ function M.clip(s, n)
   return s
 end
 
---- Pad or truncate `s` to a fixed `width` so columns align (no ellipsis).
-function M.cell(s, width)
-  s = s or ""
-  if #s > width then
-    s = s:sub(1, width)
-  end
-  return s .. string.rep(" ", width - #s)
-end
-
 --- The two header lines shared by every view: a title and a counts summary.
 --- Highlight line 1 with M.hl.header and line 2 with M.hl.meta.
 function M.header_lines(title, counts)
   return { title, ("  " .. counts) }
+end
+
+--- `<LeftMouse>` expr-map for read-only projection buffers: a click on a
+--- closed fold opens it in place; a click on open content falls through to
+--- Neovim's native click (cursor placement, drag-select). The open path uses
+--- `:foldopen` (not `:normal`), which is allowed inside an expr map. Clicks in
+--- a background split act there without stealing focus.
+function M.mouse_fold()
+  local pos = vim.fn.getmousepos()
+  local win = pos.winid
+  if win == 0 or not vim.api.nvim_win_is_valid(win) or pos.line <= 0 then
+    return "<LeftMouse>"
+  end
+  local closed = vim.api.nvim_win_call(win, function()
+    return vim.fn.foldclosed(pos.line)
+  end)
+  if closed == -1 then
+    return "<LeftMouse>"
+  end
+  vim.api.nvim_win_call(win, function()
+    vim.api.nvim_win_set_cursor(win, { pos.line, 0 })
+    vim.cmd(("%dfoldopen"):format(pos.line))
+  end)
+  return ""
 end
 
 return M

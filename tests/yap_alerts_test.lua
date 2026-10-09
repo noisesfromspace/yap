@@ -81,6 +81,9 @@ local cline = vim.api.nvim_win_get_cursor(0)[1]
 assert(cline > 1, "board cursor stuck on the header line")
 local cl = vim.api.nvim_buf_get_lines(board, cline - 1, cline, false)[1]
 assert(cl:find("later warning", 1, true), "first Open row should be the newest advisory: " .. cl)
+-- Click-to-open: an expr <LeftMouse> map, like the audit view and session.
+local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)
+assert(mouse_map and mouse_map.expr == 1 and mouse_map.buffer == 1, "guard board has no click-to-open fold map")
 guard.toggle() -- close
 
 -- Live append must use the same event positions as replay, regardless of

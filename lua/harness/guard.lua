@@ -42,6 +42,7 @@ local HL = {
   destructive = "YapGuardDestructive",
   reversible = "YapGuardReversible",
   benign = "YapGuardBenign",
+  tool = "YapGuardTool",
   meta = "YapGuardMeta",
   hint = "YapGuardHint",
 }
@@ -56,6 +57,7 @@ link(HL.denied, "DiagnosticError")
 link(HL.destructive, "DiagnosticError")
 link(HL.reversible, "DiagnosticWarn")
 link(HL.benign, "Comment")
+link(HL.tool, "Type")
 link(HL.meta, "Comment")
 link(HL.hint, "Comment")
 
@@ -319,8 +321,6 @@ end
 
 -- ─── Rendering ─────────────────────────────────────────────────────────────
 
-local cell = view.cell
-
 local function row_glyph(row)
   local icons = harness().config.icons
   if row.kind == "approval" then
@@ -349,83 +349,87 @@ local function severity_badge(row)
   return "—", HL.meta
 end
 
-local function summary_segments(row)
+--- The one-line fold title: a glyph, the reason (the most human-meaningful
+--- part of an event), and the age. The command, severity numbers and context
+--- live in the expanded detail below, so the collapsed board is scannable
+--- and the fold bar reads as a proper title rather than a crammed column grid.
+local function title_segments(row)
   local glyph, glyph_hl = row_glyph(row)
-  local badge, badge_hl = severity_badge(row)
-  -- Lead with the reason: it is the most human-meaningful part of an event
-  -- and the one thing a one-line fold must surface. The command follows, then
-  -- the colored severity badge and age. Raw probabilities live in the detail.
+  local _, badge_hl = severity_badge(row)
   local reason = flat(row.reason)
   if reason == "" then
     reason = row.kind == "advisory" and "advisory" or "approval"
   end
-  if #reason > 26 then
-    reason = reason:sub(1, 23) .. "…"
+  if #reason > 64 then
+    reason = reason:sub(1, 61) .. "…"
   end
-  local tool = (row.tool or "?")
-  if #tool > 6 then
-    tool = tool:sub(1, 6)
-  end
-  local cmd = (row.command or ""):gsub("%s+", " ")
-  if #cmd > 26 then
-    cmd = cmd:sub(1, 23) .. "…"
-  end
+  local when = age(row.ts)
   return {
     { text = " " },
     { text = glyph, hl = glyph_hl },
-    { text = " " },
-    { text = cell(reason, 26) },
     { text = "  " },
-    { text = cell(tool, 6) },
-    { text = " " },
-    { text = cell(cmd, 26) },
-    { text = "  " },
-    { text = cell(badge, 12), hl = badge_hl },
-    { text = "  " },
-    { text = cell(age(row.ts), 5), hl = HL.meta },
+    { text = reason, hl = badge_hl },
+    { text = when ~= "" and ("  " .. when) or "", hl = HL.meta },
   }
 end
 
-local function detail_lines(row)
-  local out = {}
-  local function add(s)
-    out[#out + 1] = s
-  end
-  local cmd = row.command ~= "" and flat(row.command) or "—"
-  add("   command    " .. clip(cmd, 160))
-  add("   reason     " .. (row.reason ~= "" and flat(row.reason) or "—"))
+--- The expanded detail, one line per label (like the audit view): structure
+--- colored, content plain. Returns a list of lines, each a list of segments.
+local function detail_segments(row)
+  local lines = {}
+  -- tool + command
+  lines[#lines + 1] = {
+    { text = "   " },
+    { text = row.tool or "?", hl = HL.tool },
+    { text = "  " },
+    { text = clip(row.command ~= "" and row.command or "—", 160) },
+  }
+  -- severity / always
   if has_metrics(row) then
     local parts = {}
     local cat = row.severity_category ~= "" and row.severity_category or "?"
     parts[#parts + 1] = cat
-    parts[#parts + 1] = string.format("severity %.1f/3", row.severity)
-    if row.p_alert then
+    parts[#parts + 1] = string.format("severity %.1f/3", row.severity or 0)
+    if (row.p_alert or 0) > 0 then
       parts[#parts + 1] = string.format("P(harmful)=%.2f", row.p_alert)
     end
-    if row.confidence then
+    if (row.confidence or 0) > 0 then
       parts[#parts + 1] = string.format("%.0f%% confident", row.confidence * 100)
     end
-    add("   severity   " .. table.concat(parts, " · "))
+    lines[#lines + 1] = {
+      { text = "   severity  ", hl = HL.meta },
+      { text = table.concat(parts, " · ") },
+    }
   elseif row.kind == "approval" then
-    add("   severity   always (no model consulted)")
+    lines[#lines + 1] = { { text = "   always (no model consulted)", hl = HL.meta } }
   end
   if row.severity_breakdown ~= "" then
-    add("   breakdown  " .. row.severity_breakdown)
+    lines[#lines + 1] = {
+      { text = "   breakdown  ", hl = HL.meta },
+      { text = row.severity_breakdown },
+    }
   end
   local when = age(row.ts)
-  add("   session    " .. flat(row.session) .. (row.kind == "approval" and (when ~= "" and (" · parked " .. when) or "") or ""))
+  local sess = flat(row.session)
+  if row.kind == "approval" and when ~= "" then
+    sess = sess .. " · parked " .. when
+  end
+  lines[#lines + 1] = {
+    { text = "   session   ", hl = HL.meta },
+    { text = sess },
+  }
   if row.context ~= "" then
-    add("   context")
+    lines[#lines + 1] = { { text = "   context", hl = HL.meta } }
     local clines = vim.split(row.context, "\n", { plain = true })
     for i, l in ipairs(clines) do
       if i > 4 then
-        add("     …")
+        lines[#lines + 1] = { { text = "     …", hl = HL.meta } }
         break
       end
-      add("     " .. clip(l, 100))
+      lines[#lines + 1] = { { text = "     " .. clip(l, 100) } }
     end
   end
-  return out
+  return lines
 end
 
 --- Rebuild the board buffer from live approvals + the project's audit logs.
@@ -457,6 +461,20 @@ local function render()
   add(hdr[1], view.hl.header)
   add(hdr[2], view.hl.meta)
 
+  local function emit_segments(segs)
+    local line = #lines -- 0-based index of the line about to be appended
+    local text = {}
+    local col = 0
+    for _, seg in ipairs(segs) do
+      text[#text + 1] = seg.text
+      if seg.hl then
+        highlights[#highlights + 1] = { line, seg.hl, col, col + #seg.text }
+      end
+      col = col + #seg.text
+    end
+    lines[#lines + 1] = table.concat(text)
+  end
+
   local function emit_section(section)
     add("")
     add(("▸ %s (%d)"):format(section.title, #section.rows), HL.section)
@@ -465,20 +483,10 @@ local function render()
       if section.title == "Open" and not first_open_line then
         first_open_line = start
       end
-      local segs = summary_segments(row)
-      local text = {}
-      local col = 0
-      for _, seg in ipairs(segs) do
-        text[#text + 1] = seg.text
-        if seg.hl then
-          highlights[#highlights + 1] = { start - 1, seg.hl, col, col + #seg.text }
-        end
-        col = col + #seg.text
-      end
-      lines[#lines + 1] = table.concat(text)
-      local detail = detail_lines(row)
-      for _, d in ipairs(detail) do
-        lines[#lines + 1] = d
+      emit_segments(title_segments(row))
+      local detail = detail_segments(row)
+      for _, segs in ipairs(detail) do
+        emit_segments(segs)
       end
       folds[#folds + 1] = { start, start + #detail, row.key }
       key_lines[row.key] = start
@@ -661,6 +669,11 @@ local function install_keymaps(buf)
   end
   vim.keymap.set("n", "za", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
   vim.keymap.set("n", "<Tab>", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
+  -- A click on a closed row opens it; open content keeps native mouse
+  -- behavior (matches the session buffer and the audit view).
+  vim.keymap.set("n", "<LeftMouse>", view.mouse_fold, {
+    buffer = buf, expr = true, silent = true, desc = "yap: open guard row on click",
+  })
   vim.keymap.set("n", "]c", function()
     jump_section(1)
   end, { buffer = buf, silent = true, desc = "yap: next guard section" })

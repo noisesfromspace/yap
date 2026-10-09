@@ -692,6 +692,11 @@ function M.live(buf)
   vim.keymap.set("n", "q", function()
     M.live(t.bufnr)
   end, { buffer = t.bufnr, silent = true, desc = "yap: close audit view" })
+  -- A click on a closed turn opens it in place (matches the guard board and
+  -- the session buffer).
+  vim.keymap.set("n", "<LeftMouse>", require("harness.view").mouse_fold, {
+    buffer = t.bufnr, expr = true, silent = true, desc = "yap: open turn on click",
+  })
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
   audit.fold(t.bufnr)
 end

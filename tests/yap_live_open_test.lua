@@ -15,6 +15,9 @@ assert(
   "fresh audit view missing header"
 )
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "audit view has no buffer-local live toggle")
+-- Click-to-open: an expr <LeftMouse> map, like the guard board and session.
+local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)
+assert(mouse_map and mouse_map.expr == 1 and mouse_map.buffer == 1, "audit view has no click-to-open fold map")
 yap.live(audit)
 assert(#vim.fn.win_findbuf(audit) == 0, "live from audit view did not close it")
 vim.api.nvim_set_current_win(chat_win)
