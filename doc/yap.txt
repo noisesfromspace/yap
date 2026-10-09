@@ -20,17 +20,19 @@ CONTENTS                                                     *yap-contents*
 
 yap is an LLM chat plugin where the conversation lives in a plain, editable
 markdown buffer. A small Go binary (`yap`) handles provider requests and the
-agent/tool loop: it reads the message array on stdin and streams the reply
-to stdout. There is no TUI, and no hidden conversation state between turns.
+agent/tool loop: it reads the messages on stdin and streams the reply to
+stdout. There is no TUI and no hidden conversation state between turns.
 
 To install: build the binary and put it on Neovim's PATH (see the README),
 configure a provider in ~/.config/yap.json, then
 `require("harness").setup({...})` and run `:Yap`.
 
-- Deleting a region removes it from the conversation: that is branching.
+Because the buffer is the conversation, ordinary editing changes it:
+
+- Deleting a region removes it from the conversation (branching).
 - Editing an assistant reply changes what the model "said".
 - Writing your own `# @assistant` message steers the model (prefill).
-- Yanking, undo, folds and rendering are just Neovim. `:undotree` is a
+- Yanking, undo, folds and rendering are just Neovim; `:undotree` is a
   branch navigator.
 
 Contributors: the Lua <-> Go wire protocol and the numbered design rules
@@ -53,97 +55,55 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     system = "You are a helpful coding assistant. Answer concisely.",
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     agents_dir = "~/.yap/agents",       -- subagent definitions
-    sessions_dir = "~/.yap/sessions",   -- autosaved sessions + scratch queues + audit logs
+    sessions_dir = "~/.yap/sessions",   -- sessions + scratch + audit logs
+    templates_dir = vim.fn.expand("~/.config/yap/templates"), -- :YapInsert files
+    skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
+    skills_intro = true,          -- list skills in new sessions
     notify_done = true,           -- vim.notify when a hidden turn finishes
     description_model = "openai/gpt-5-nano",       -- on-send label
     description_answer_model = "openai/gpt-5-mini", -- final session title
-    syntax_highlight = true,      -- keep markdown syntax colors (default)
+    syntax_highlight = true,      -- keep markdown syntax colors
     nerd_font = true,             -- false for plain-Unicode icons
     icons = { since = "󰅐", total = "󰆼" }, -- winbar/picker glyph overrides
     keymaps = { stop = "<C-c>" }, -- override any key; "" disables it
   })
 <
 
-`agents_file` is the system prompt for new buffers and is read per buffer, so
-edits apply to the next session. When missing or empty, `system` is used. The
-path is used verbatim (no `~` expansion); the default is
-`$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
+`agents_file` is the system prompt for new buffers, read per buffer (edits
+apply to the next session). When missing or empty, `system` is used. The path
+is used verbatim (no `~` expansion); the default is `$XDG_CONFIG_HOME/yap/AGENTS.md`
+(or `~/.config/yap/AGENTS.md`).
 
-`agents_dir` and `sessions_dir` locate yap's data under `~/.yap/`. A leading `~`
-is resolved against the real home directory — never the current working
-directory — and an absolute path is used verbatim, so an unset, empty, or
-relative `$HOME` must not make yap write its `.yap` folder into the project.
-Defaults: `~/.yap/agents/`, `~/.yap/sessions/`.
-
-The harness always prepends its own `# About Yap` boilerplate (buffer
-semantics, marker rules) as the first system message of every turn. It is
-independent of `agents_file` and never written into the session file, so the
-`# @system` message stays clean. Transient environment context — Neovim's
-working directory and the git snapshot — is not part of the system prefix:
-it is appended to the trailing user message as request-only context (see
-|:YapSend|), so a changing git status never invalidates the prompt cache for
-the stable system prompt and conversation history.
+`agents_dir` and `sessions_dir` locate yap's data under `~/.yap/`; a leading
+`~` resolves to your home directory, an absolute path is used verbatim.
 
 `notify_done` (default true) fires `vim.notify` when a turn completes in a
 buffer not visible in any window. The turn's `turn_end` payload (model,
-tokens, cost, ms) is attached to the `User YapTurnDone` autocmd so other
-plugins can hook completion (noice/nf-notify rendering, chaining a next
-send). Delegated children report to their running parent instead of producing
-duplicate toasts; a direct follow-up in a child still notifies when hidden.
-Disable with `notify_done = false` and hook the same event yourself.
+tokens, cost, ms) is also emitted on the `User YapTurnDone` autocmd so other
+plugins can hook completion (e.g. noice/nf-notify rendering, or chaining a
+next send). Disable with `notify_done = false` and hook that event yourself.
 
-`syntax_highlight` (default true) keeps tree-sitter's markdown syntax
-highlighting on session buffers; set false to drop syntax colors. The
-highlighter is incremental and measured to be effectively free, so the
-default keeps colors on.
+`syntax_highlight` (default true) keeps tree-sitter markdown highlighting;
+set false to drop syntax colors.
 
-`icons` sets the UI glyphs for the winbar and session picker
-(|yap-winbar|). Keys: `since`, `total`, `running`/`waiting`/`stopped`/
-`error`/`idle`/`done`, `steer`, `approval`, and the rounded caps
-`cap_l`/`cap_r`.
-Defaults are Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode
-icons, the typographic spinner and the block gauge. Explicit `icons`
-overrides still take precedence. Set an individual icon to `""` to drop it.
+`nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
+Icon keys include `since`, `total`, `running`, `waiting`, `stopped`, `error`,
+`idle`, `done`, `steer`, `approval`, `cap_l`, `cap_r`. Defaults are Nerd Font
+v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the typographic
+spinner and the block gauge. Explicit `icons` entries win; set one to `""` to
+drop it.
 
-`relativenumber` is left alone: session buffers keep your setting. yap sets
-the buffer-local `minidiff_disable` flag (and detaches mini.diff if it already
-attached) so diff hunks — meaningless on a transcript — don't re-render the
-gutter on every redraw.
+`description_model` (default `openai/gpt-5-nano`) labels a session from the
+first request as soon as you send, so the picker has a title before the agent
+answers. `description_answer_model` (default `openai/gpt-5-mini`) writes an
+overall title after each completed turn. Set either to `""` to disable that
+stage. A `title:` you type in the frontmatter wins over both.
 
-`keymaps` maps each action to its key sequence, so any binding in
-|yap-keymaps| can be rebound from `setup()`. Keys: `send`, `stop`,
-`change_model`, `change_default_model` (global), `live`, `scratch`, `insert`,
-`insert_here`, `insert_file`, `sessions` (global), `waiting` (global),
-`history` (global), `help`,
-`next_message`/`prev_message`, `next_user`/`prev_user`,
-`next_assistant`/`prev_assistant`, `next_tool`/`prev_tool`,
-`next_think`/`prev_think`, `next_error`/`prev_error`, `view_1`..`view_3`,
-`toggle_fold`, `inner_message`, `around_message`, `inner_region`,
-`around_region`. Buffer-local keys apply when a session opens (and on resume);
-the global ones are installed once by `setup()`. Set an entry to `""` to
-disable it.
+`keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
+disable it. `templates_dir`/`skills_dir`/`skills_intro` configure
+|yap-templates|.
 
-The session name shown in the winbar (|yap-winbar|) and session picker
-comes from a frontmatter `title:` when one is typed in (the field is
-always present, empty by default), otherwise from the generated
-`description:`. The description is produced in two stages
-sharing one `description:` frontmatter key.
-`description_model` (default `openai/gpt-5-nano`) supplies an instant label
-from the first useful request when you start a session; it does not relabel
-every follow-up. `description_answer_model` (default `openai/gpt-5-mini`)
-writes an overall title after each completed turn, based on the user's
-requests in order, with the first request anchoring the session goal. Routine
-commit/close requests are excluded, and assistant/tool output is never title
-context. Set either to "" to disable that stage; the description survives in
-the frontmatter either way. A `title:` typed in the frontmatter wins over the
-generated description.
-
-`templates_dir` and `skills_dir` (defaults `~/.config/yap/templates/` and
-`~/.config/yap/skills/`) hold the plain-markdown files inserted by
-|:YapInsert|; `skills_intro` (default true) adds a `## Skills` list of
-name + description to new sessions for discoverability. See |yap-templates|.
-
-Config and runtime data:
+Config and data files:
 
   ~/.config/yap.json   Providers and optional pricing: >json
 
@@ -162,36 +122,26 @@ Config and runtime data:
       "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
     }
 <
-  Any OpenAI-compatible /chat/completions endpoint works. API keys come from
-  the named env vars. `pricing` (USD per 1M tokens) overrides the embedded
-  catalog for a model — needed only for models the catalog misses or a
-  provider whose price differs. `decision` configures the decision-model
-  backend behind the jev tool and the alert gate (|yap-alert-gate|); it
-  defaults to Jev via OpenRouter's Decisions API, OPENROUTER_API_KEY, and the
-  pinned `typesafe/jev-1.13` release. `alert` tunes the pre-execution alert
-  gate: `approval_prob` / `advisory_prob` / `min_confidence` are decision
-  thresholds; any zero value falls back to a conservative default. `vpn`
-  configures the `vpn` flag on the bash, curl and fetch tools
-  (|yap-tools|): `command` is the argv prefix that enters the VPN network
-  namespace and then execs the tool's command — e.g.
-  ["/run/wrappers/bin/tunnel"] (the setuid wrapper the netns module builds)
-  or ["sudo", "-n", "ip", "netns", "exec", "mullvad"]. When empty, the `vpn`
-  flag is unavailable and fails loudly. `ssh.known_hosts` overrides the file
-  the ssh tool checks hosts against; when empty it auto-detects (the
-  system-wide file when present, else `~/.ssh/known_hosts`).
+  Any OpenAI-compatible /chat/completions endpoint works; API keys come from
+  the named env vars. `pricing` (USD per 1M tokens) overrides the built-in
+  catalog for a model. `decision` configures the decision-model backend
+  behind the jev tool and the alert gate (|yap-alert-gate|). `alert` tunes
+  the gate thresholds (|yap-alert-gate|). `vpn.command` is the argv prefix
+  that enters the VPN network namespace for the bash/curl/fetch `vpn` flag;
+  when empty the flag is unavailable. `ssh.known_hosts` overrides the file
+  the ssh tool checks hosts against.
 
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
-  ~/.yap/sessions/          Autosaved sessions + scratch queues + audit logs
-                            (|yap-sessions| |yap-audit|).
+  ~/.config/yap/templates/  |:YapInsert| template files (|yap-templates|).
+  ~/.config/yap/skills/     |:YapInsert| skill files (|yap-templates|).
+  ~/.yap/sessions/          Autosaved sessions + scratch queues + audit logs.
   ~/.yap/agents/            Subagent definitions (|yap-tools|).
 
 ==============================================================================
 3. COMMANDS                                                  *yap-commands*
 
-Commands are intentionally quiet on success: visible edits, the winbar and
-pickers confirm ordinary actions. Warnings and errors still notify; actions
-that need a decision (such as |:YapCompact|) still prompt. All commands act on
-the current buffer unless otherwise noted.
+Commands act on the current buffer unless otherwise noted. They are quiet on
+success: visible edits, the winbar and pickers confirm ordinary actions.
 
 *:Yap*
 :Yap                  Open a new session buffer with a system message and an
@@ -199,57 +149,37 @@ the current buffer unless otherwise noted.
                         there and |:YapSend|.
 *:YapSend*
 :YapSend              Send the whole buffer to the provider and stream the
-                        reply in. Each send also injects Neovim's current
-                        working directory and git snapshot as request-only
-                        context (evaluated at send time), so `:cd` takes
-                        effect on the next send. Appended to the trailing
-                        user message, never the system prefix, so the stable
-                        prompt and history keep their cache. Not written into
-                        the session buffer.
+                        reply in. Also appends Neovim's current working
+                        directory and git snapshot as request-only context
+                        (evaluated at send time), so `:cd` takes effect on
+                        the next send.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*
 :YapLive              Open this session's audit view (|yap-audit|): one
-                        persistent yap://<session>-audit buffer rendering the
-                        audit log as it streams — a `$ command` header per
-                        bash call with its drained output, one journal line
-                        per non-bash tool call and result, and one journal
-                        line per turn, under an "Audit · <session>" header
-                        with a turn count. Opens in a split scrolled to the
-                        bottom, or focuses the existing window; `q` closes
-                        it. Never opens by itself. It is a rendering, not a
-                        second log: rebuilt from the log on reopen, so it
-                        survives restarts.
+                        persistent buffer rendering the audit log as it
+                        streams — a `$ command` header per bash call with its
+                        output, plus one journal line per tool call/result
+                        and per turn. Opens scrolled to the bottom (or focuses
+                        the existing window); `q` closes it.
 *:YapGuard*
-:YapGuard            Open the guard board (yap://guard): one read-only
-                        buffer merging the old :YapAlerts and :YapApproval
-                        pickers. Two sections, newest/open first — Open lists
-                        every parked approval plus advisories from the last
-                        15 minutes, History lists resolved decisions and
-                        advisories up to 3 hours old. Each row is one scannable line; <Tab>/`za`
-                        expands it to the full command, reason, severity
-                        breakdown and triggering transcript. On the row under
-                        the cursor `r`/`x` run/deny an approval directly, `i`
-                        inspects any row, and <CR> opens the same
-                        Run/Deny/Inspect/Defer menu (Inspect-only for
-                        advisories). Opening the board defers, never denies;
-                        the backend also denies a parked approval after five
-                        minutes.
+:YapGuard            Open the guard board (yap://guard): a read-only board of
+                        pending approvals and recent advisories
+                        (|yap-alert-gate|). <Tab>/`za` expand a row; on the
+                        row under the cursor `r`/`x` run/deny an approval, `i`
+                        inspects, <CR> opens the same Run/Deny/Inspect/Defer
+                        menu.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
-                        placeholder naming the exact audit-log lines
+                        placeholder naming the audit-log lines
                         (path:line-range) where the removed output lives.
-                        Headers and yap:ui diffs stay; the full output is in
-                        the audit log (|yap-audit|). The cheap alternative to
-                        compacting the conversation.
+                        Full output stays in the audit log (|yap-audit|).
 *:YapCompact*
-:YapCompact           Compaction as one command: insert the compact prompt (a
-                        `compact` template in templates_dir, or a built-in
-                        prompt), send, and — once the summary has streamed in
-                        — offer to delete the superseded history. The summary
-                        stays a visible # @assistant turn; deletion is an
-                        undoable buffer edit (|yap-compact|).
+:YapCompact           Insert the compact prompt (a `compact` template, or a
+                        built-in prompt), send, and — once the summary has
+                        streamed in — offer to delete the superseded history
+                        (|yap-compact|).
 *:YapInsert*
 :YapInsert [name]     Insert a template or skill (|yap-templates|). With no
                         argument, pick from a combined list. At the cursor,
@@ -257,62 +187,42 @@ the current buffer unless otherwise noted.
 *:YapChangeModel*
 :YapChangeModel {provider/model}
                         Change this buffer's provider/model combo. Without an
-                        argument, pick a combo via vim.ui.select, filled from
-                        setup({ models = ... }) when configured, else by
-                        querying every provider in config.json (cached for
-                        the session). Mid-turn, the new combo takes effect at
-                        the next model boundary and leaves a
-                        `<!-- yap:model ... -->` marker; native tool history
-                        is kept, so no stop-and-resend happens. A combo that
-                        fails to resolve becomes a `<!-- yap:error -->` marker
-                        and the turn keeps its current model. To change the
-                        default for new buffers, use `<leader>M`.
+                        argument, pick from a list. Mid-turn, the new combo
+                        takes effect at the next model boundary. To change
+                        the default for new buffers, use `<leader>M`.
 *:YapFork*
-:YapFork [name]       Copy the current in-memory conversation (including
-                        unsaved edits) into a new, independent session in the
-                        same project, regardless of |:pwd|. The original
+:YapFork [name]       Copy the current in-memory conversation into a new,
+                        independent session in the same project. The original
                         buffer, file and running state stay attached to the
                         original; the copy opens in the current window. No
                         name generates a filename; a name uses `name.md`.
-                        Existing files are never replaced. Mid-turn, only
-                        through the last completed reply is copied. To branch
-                        from an earlier turn, fork first, then delete the
-                        later turns before sending. The source's `forks` and
-                        the copy's `forked_from` frontmatter link them.
+                        Existing files are never replaced.
 *:YapSessions*
 :YapSessions [scope]  Pick a saved session to resume. scope is `cwd` (the
                         default, current project) or `all` (every project).
-                        Sessions without a `title:` or `description:` are
-                        hidden unless they have subagents, are unnamed forks,
-                        or hold an unsent `# @user` prompt. Saved subagents
-                        appear beneath their parent; orphan children show
-                        `(parent not shown)`. Open sessions are unlisted
-                        (absent from |:ls|); use `<leader>r`.
+                        Open sessions are unlisted (use `<leader>r`).
 
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>w, <leader>y
-and <leader>M, which are global (they list sessions or change the default
-model, so they work from any file). Every binding is a `keymaps` config key
+Set only in yap buffers, except <leader>r, <leader>w, <leader>y, <leader>g
+and <leader>M, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
   <C-c>                 Kill the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>M             Change the default model for new buffers (picker).
-  <leader>l             Watch the audit view (see |:YapLive|). Also mapped
-                        in the scratch queue.
+  <leader>g             Open/close the guard board (see |:YapGuard|).
+  <leader>l             Watch the audit view (see |:YapLive|).
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor.
   <leader>i (n)         Pick a file under the current |:pwd| and insert an
-                        `@path` reference at the cursor. Also mapped in the
-                        scratch queue.
-  <leader>r             Pick an open session (instances()).
-  <leader>w             Pick a session awaiting a reply or manually stopped
-                        (waiting()).
-  <leader>y             Pick a saved session to resume (history()).
+                        `@path` reference at the cursor.
+  <leader>r             Pick an open session.
+  <leader>w             Pick a session awaiting a reply or manually stopped.
+  <leader>y             Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
   <Tab>                 Toggle the fold under the cursor.
@@ -331,11 +241,10 @@ model, so they work from any file). Every binding is a `keymaps` config key
                         heading, or the whole message. `cim` replaces a
                         message body; `dam` drops a message.
     it / at             inner / a thinking, tool or error region — the content
-                        without its markers, or the whole region. `dit` clears
-                        a region, `dat` removes it.
+                        without its markers, or the whole region.
 
-View 2 is the default for opened session buffers; the system prompt stays
-folded in views 1 and 2. See |yap-folding|.
+View 2 is the default; the system prompt stays folded in views 1 and 2
+(|yap-folding|).
 
 ==============================================================================
 5. BUFFER FORMAT                                                *yap-buffer*
@@ -345,10 +254,11 @@ A yap buffer is plain markdown. Headings delimit messages: >
   # @system
   # @user
   # @assistant
+<
 
 Everything between headings is message content. Everything before the first
-heading is ignored by the parser — that is where the session's model state
-lives, as YAML frontmatter: >
+heading is ignored by the parser — that is where the session's state lives,
+as YAML frontmatter: >
 
   ---
   title: Fix the session picker
@@ -373,50 +283,31 @@ lives, as YAML frontmatter: >
   ---
 <
 
-`title` is always present (empty by default); typing a value after it wins
-over `description` as the session's display name, and leaving it empty keeps
-the generated `description` in charge. `description` is the generated summary
-shown while the title is empty.
-`provider`/`model` is the combo to resume with; `created_cwd` is the exact working
-directory the session was created in (the session-dir slug is lossy, so this
-is the only exact record); `models` is the ordered history of every combo
-used (most-recent-last); `subagents` lists subagent session paths
-(most-recent-last); `tools` is the per-session tool allowlist — a normal
-session lists every compiled-in tool so lines can be removed to retract
-access on the next send, while a subagent lists only its definition's tools;
-`assets` is the manifest of content-addressed photo files
-this session references (see |yap-attach|); `created_at` / `updated_at` are
-timestamps; `turns`
-counts completed `# @assistant` replies so the picker can show depth without
-opening the file. The frontmatter is the ONLY durable session state: yap
-writes the model fields on :Yap and |:YapChangeModel|, stamps `updated_at` on
-every save, reads it on open, and sends never rewrite it mid-turn. Token/cost
-totals are NOT stored here — the winbar accumulates them per-buffer
-(|yap-winbar|) and the durable session total is derived from the audit log
-(|yap-audit|). Legacy files without frontmatter keep the setup() default
-combo.
+`title` (always present, empty by default) overrides `description` as the
+session's display name. `description` is the generated summary shown while the
+title is empty. `provider`/`model` is the combo to resume with; `created_cwd`
+the exact working directory the session was created in; `models` the ordered
+history of combos used (most-recent-last); `subagents` the subagent session
+paths; `tools` the per-session tool allowlist — remove a line to retract that
+tool on the next send; `assets` the manifest of content-addressed photo files
+this session references. `turns` counts completed `# @assistant` replies so
+the picker can show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set
 by |:YapChangeModel|, then the persisted default, then setup() defaults.
-
-A yap buffer never attaches a language server: the buffer is the conversation,
-and a markdown LSP's semantic-token/inlay-hint stream is pure per-redraw cost
-on a large session; an LspAttach guard stops any markdown client.
+Legacy files without frontmatter keep the setup() default combo.
 
 ==============================================================================
 6. MARKERS & TOOL REGIONS                                      *yap-markers*
 
-HTML comment regions of the form `<!-- yap:<word>` ... `-->` are shown in the
-buffer but NEVER sent to the provider as buffer text; the parser skips them
-(one exception: yap:tool, which is FLATTENED into assistant transcript text).
+HTML comment regions of the form `<!-- yap:<word>` ... `-->` appear in the
+buffer but are never sent to the provider as buffer text:
 
-  <!-- yap:thinking   Provider-exposed reasoning (or reasoning summaries)
-                        streamed by GoAI. Folded away with the assistant
-                        message and never persisted in history.
+  <!-- yap:thinking   Provider-exposed reasoning (or summaries), streamed in.
+                        Folded away with the assistant message.
   <!-- yap:error      Backend error record, left after a failed send.
-  <!-- yap:usage      Token usage reported at end of stream. Consumed
-                        immediately: folded into the winbar totals and the
-                        line removed.
+  <!-- yap:usage      Token usage at end of stream; consumed into the winbar
+                        totals and removed.
 
 Tool regions                                                *yap-tool-region*
 
@@ -434,222 +325,128 @@ A tool call and its result are ONE region inside an assistant message: >
   <!-- /yap:tool -->
 <
 
-  Header          The complete call as JSON. Single-line when short (≤ 120
-                  chars); otherwise pretty-printed multi-line JSON between
-                  `<!-- yap:tool` and `-->`. Multi-line headers fold closed by
-                  default (a `▸ tool: <name>` foldtext) since the yap:ui diff
-                  below is the visual record.
+  Header          The call as JSON. Short headers are single-line; longer
+                  ones are pretty-printed between `<!-- yap:tool` and `-->`
+                  and fold closed by default.
 
-  Result text     Exactly what the model received. edit/write tools return
-                  short confirmations; read-like tools return (truncated)
-                  content. Normally the header lands BEFORE the tool runs,
-                  so its arguments are visible during execution. In a
-                  parallel read-only round, calls run together and their
-                  completed regions are emitted in original call order.
-                  Live bash output is followed via |:YapLive|, never written
-                  into the buffer.
+  Result text     What the model received. edit/write tools return short
+                  confirmations; read-like tools return (truncated) content.
+                  The header normally lands BEFORE the tool runs, so its
+                  arguments are visible during execution. Live bash output is
+                  followed via |:YapLive|, never written into the buffer.
 
-  <!-- yap:ui   Optional display-only payload: a rendered unified diff for
-                  edits and writes (creates included, as an all-`+` diff),
-                  fenced as ```diff between paired one-line markers. Block
-                  level — unlike thinking, not an HTML comment — so treesitter
-                  injects the diff parser for real +/-/@ highlighting.
-                  Parse-excluded like thinking: editing or deleting it changes
-                  nothing. Pure decoration.
+  <!-- yap:ui   Optional display-only diff for edits and writes, fenced as
+                  ```diff between paired one-line markers. It is pure
+                  decoration — editing or deleting it changes nothing.
 
-parse_buffer flattens the region into ordinary assistant transcript text: the
-tool name, its JSON arguments, and the result — never native
-tool-call/tool-result messages. Editing or deleting the visible markdown
-changes the transcript directly. A region outside an assistant message is
-skipped; a missing/empty result yields an empty labelled result; a malformed
-header skips the region with a notification.
+The region is flattened into assistant transcript text (tool name, JSON
+arguments, result) when the buffer is sent. Editing or deleting the visible
+markdown changes the transcript directly; a region outside an assistant
+message is skipped.
 
-Marker regions close on a line that is exactly `-->`; content merely
-containing it never closes early for OUR parser, but markdown renderers are
-character-based and would, so the binary neutralizes every `-->` to `-- >`
-inside comment regions. Elsewhere, a tool-result line starting with a yap
-marker opener becomes `\<!-- yap:…`, and `<style>`/`<script>` open tags become
-`\<style` / `\<script` — renderers show the literal text and the
-line-start-anchored parser never matches.
-
-Tool RESULTS from content-bearing tools (read, bash, ls, fetch, curl, git,
+Tool results from content-bearing tools (read, bash, ls, fetch, curl, git,
 search, glob) are wrapped in a fenced code block — read with a language info
-string detected from the path, fetch as ```markdown, the rest as a plain
-fence. The fence is one backtick longer than any run inside the result, so a
-``` line in the content can't close it early; the same fenced string goes to
-the model, so the buffer and the replayed history stay identical across turns.
+string detected from the path, fetch as ```markdown, the rest plain.
 write/edit return short confirmations and stay bare.
 
 ==============================================================================
 7. SESSIONS                                                  *yap-sessions*
 
-A session is the conversation markdown written to a file, plus a small set
-of sibling sidecar files that carry what the conversation does not: an
-append-only audit log, an optional scratch notes file, and any photo
-attachments in a shared asset store. The markdown file IS the conversation —
-the buffer is the only serialization of the message history — but a session
-is a small file set, not a single file. Each session has its own directory,
+A session is the conversation markdown file plus a few sidecar files: an
+append-only audit log, an optional scratch notes file, and photo attachments
+in a shared asset store. Each session lives in its own directory,
 ~/.yap/sessions/<cwd-slug>/<session>/, containing session.md (the
-conversation), audit.jsonl (the audit log), and notes.md (the scratch jotter).
-The session's display name is its frontmatter `title:` when set, else its
-generated `description:`; the directory is only a fallback identifier. Sessions are saved after every turn exit, including
-backend errors and stops. The file is created when the buffer opens, so a
-fresh session is file-backed from the start; every save goes through
-|:write|, so 'modified', |:w| and the exit prompt behave like any normal
-file buffer. Photo attachments live in a content-addressed asset store under
-Neovim's data directory; the frontmatter `assets` list records which assets
-a session references.
+conversation), audit.jsonl (the audit log) and notes.md (the scratch jotter).
+Sessions are saved after every turn; the file is created when the buffer
+opens, and every save goes through |:write| so 'modified', |:w| and the exit
+prompt behave normally.
 
-Opening a session file directly — plain |:edit| or `nvim <file>.md` — is
-recognized and adopted as a managed session (unlisted, keymapped, audit view
-attached), the same as |:YapSessions| resume.
+Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
+it as a managed session (unlisted, keymapped, audit view attached), the same
+as |:YapSessions| resume.
 
 File operations are the session operations:
 
   edit the `title:` line  Type a value after the always-present, empty
-                         `title:` frontmatter key to name the session; leave
-                         it empty for the generated description to win.
-  |:YapFork|              Copy the current conversation into a new session
-                          directory and continue in a separate buffer. The
-                          source is left unchanged and its audit log is
-                          COPIED (not moved) to the new directory.
+                         `title:` key to name the session; leave it empty for
+                         the generated description to win.
+  |:YapFork|              Copy the conversation into a new session directory.
   delete a region + send  Branch the conversation within the active session.
 
 SCRATCH BUFFER
 
-<leader>s toggles the scratch buffer — a file-backed sibling
-(`notes.md`) with three independently foldable sections:
+<leader>s toggles the scratch buffer — a file-backed sibling (`notes.md`)
+with three independently foldable sections:
 
   # @notes    An inert backlog; never sent.
   # @steer    A replaceable pending message for the RUNNING turn. <C-s>
               submits it; it stays until delivered and can be revised or
               canceled. If it misses the last model boundary or the turn is
-              stopped, it remains a draft with a warning (never auto-sent).
-  # @queue    Sent whole as one message on <C-s> while idle, and cleared only
-              after the send starts. Queued work never auto-dispatches after
-              a turn.
-
-Consumption reads and edits the live buffer, then saves the result to the
-sidecar file. Steering inserted from a template without a scratch buffer is
-left in the user prompt if it was not delivered.
+              stopped, it remains a draft (never auto-sent).
+  # @queue    Sent whole as one message on <C-s> while idle, cleared only
+              after the send starts. Never auto-dispatches after a turn.
 
 AUDIT LOG                                                        *yap-audit*
 
-The session file holds the context; the audit log holds everything the
-context doesn't carry. audit.jsonl beside the session file — append-only,
-survives restarts, one JSON object per line (JSON Lines), timestamped by the
-Lua side as each event arrives:
+audit.jsonl beside the session file is an append-only, JSON Lines record that
+survives restarts: every tool call (full arguments), streamed bash/python
+output, full tool results, image attachments, approval/advisory decisions, a
+retry line for each transient generation error, and one `turn_end` line per
+completed send (model, prompt, completion, cost, ms).
 
-  tool_call       every tool before it runs, FULL arguments (id matches the
-                  buffer's tool header)
-  tool_start      bash/python's temp log path (`command` is secret-scrubbed)
-  output          streamed bash/python output chunks (synthesized as drained)
-  tool_result     full result
-  attachment      an image import on |:YapSend| (source,
-                  asset path, size, format, sha256) or a failed import
-                  (error plus the attempted source)
-  approval_request / approval_result / approval_timeout
-                  the alert gate paused a call for approval; the human's
-                  answer. `reason` names the deterministic category or carries
-                  the jev verdict so false positives can be identified.
-  alert_advisory  the gate ran a call with a warning (reason, P(harmful),
-                  categorized severity, and confidence)
-  retry           a transient generation error (429/5xx/network) was retried
-                  before any output was emitted
-  turn_end        model, prompt, completion, cost, ms — one per completed send
-
-The audit view (|:YapLive|) is the human-readable rendering of these events
-and is rebuilt from the file on reopen. A shell tool call appears before the
-gate's shield-marked approval request, even if it is denied and never
-produces a tool_start; a running shell call also has a `$ command` header when
-execution begins. |:YapGuard| lists advisories and approval requests and can
-jump straight to an unfolded entry; entries remain available after restarts.
-Structural lines are highlighted (turn headers, `$ command`, `• tool`,
-timestamps); streamed and returned text stays the default color.
+The audit view (|:YapLive|) is the human-readable rendering of these events,
+rebuilt from the file on reopen. |:YapGuard| lists advisories and approval
+requests and can jump to an unfolded entry. |:YapClear| placeholders point
+back at the exact audit-log lines they replaced.
 
 Each completed turn folds back to its header line — a table of contents —
 while the open turn stays expanded so live output is visible. `<Tab>` toggles
-a folded turn; `<leader>1`/`<leader>2` fold/unfold all completed turns. The
-view only follows new output when already near the bottom. |:YapClear|
-placeholders correlate a region's tool-call id with its
-tool_call..tool_result line range, so a cleared body points back to exactly
-what it replaced.
+a folded turn; `<leader>1`/`<leader>2` fold/unfold all completed turns.
 
-This is what makes the slimmed write/edit headers and |:YapClear| lossless:
-anything removed from the context exists here verbatim, machine-readable. The
-session directory is kept mode 0700 and the audit log, session markdown, and
-notes files mode 0600 — transcripts and tool output routinely contain secrets.
+The session directory is kept mode 0700 and its files mode 0600 — transcripts
+and tool output routinely contain secrets.
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
 
 `# @role` headings are folds; a closed fold shows the role and the first
-content line. A whole yap:tool region (header, result and ui diff, both header
-forms) folds to one `▸ tool: <name>` line; thinking and error comment regions
-fold likewise.
+content line. A whole yap:tool region folds to one `▸ tool: <name>` line;
+thinking and error comment regions fold likewise.
 
-Three views, bound to <leader>1..3, each applied unconditionally so a
-keypress always lands on the same state:
+Three views, bound to <leader>1..3:
 
   <leader>1   only user prompts stay open
   <leader>2   conversation open, tool calls and thinking folded (default)
   <leader>3   everything unfolded
 
-The system prompt is reference material: it stays folded in views 1 and 2 and
-opens with everything else in view 3 (or earlier with za). View 2 is the
-initial default. Each window owns its selected view and open/closed choices.
-View 1 folds assistant messages and the system prompt; view 2 folds regions
-and the system prompt; view 3 removes all folds. Opening an assistant in view
-1 reveals its entire contents (no nested folds). The parser respects fenced
-code and multiline comments.
+The system prompt stays folded in views 1 and 2 and opens with everything
+else in view 3 (or earlier with za). Each window owns its selected view and
+open/closed choices; a view keypress resets this window's choices only.
 
 <Tab> toggles the region under the cursor. ]t/[t, ]c/[c and ]e/[e jump to and
 open a region without closing earlier ones. Clicking a closed fold opens it
-(the same choice as <Tab>); clicks elsewhere keep their normal mouse behavior.
-Native za/zo/zc, zA/zO/zC and zR/zM/zr/zm update the same state; closing a
-previously opened region is just as persistent as opening it. ]m/]u/]a only
-navigate. Message navigation and
-the message text objects follow the same structural parse as folding, so a
-`# @user` line inside a fenced tool result is literal content, never a message
-boundary; region navigation does the same for `<!-- yap:tool` or
-`<!-- yap:thinking` lines inside a fenced result.
-
-A view supplies defaults; your choices override them for individual regions.
-An open region stays open while its own contents grow, and new regions follow
-the view, not the state of their neighbours. Region identity uses moving
-extmark anchors rather than line numbers, so inserting lines above a region
-cannot transfer its choice to another region; deletion invalidates the
-identity and undo restores it. Folds are installed synchronously on returning
-to a hidden session; new hidden output still follows its view. A view keypress
-resets this window's choices only. Choices last while the buffer is loaded.
+(the same choice as <Tab>); native za/zo/zc, zA/zO/zC and zR/zM/zr/zm share
+the same state. ]m/]u/]a only navigate. Message navigation and the message
+text objects follow the same structural parse as folding, so a `# @user` line
+inside a fenced tool result is literal content, never a message boundary.
 
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
 The winbar is the session dashboard. Left: the buffer's own state icon —
-idle, awaiting your reply, stopped, error, or done (a finished subagent) —
-centered in the line-number
-gutter, or, while streaming, an animated beacon that escalates with how long
-the running tool has been grinding (a typographic sparkle with
-`nerd_font = false`). When the window is inactive the beacon, rollup island
-and title disappear; the state icon remains, so a session awaiting your
-reply or stuck in an error is still visible from another window.
+idle, awaiting your reply, stopped, error, or done (a finished subagent) — in
+the line-number gutter; while streaming, an animated beacon that escalates
+with how long the running tool has been grinding. When the window is inactive
+the beacon and title disappear; the state icon remains.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
-(`bash 12s`); a pending `# @steer` adds a steer icon to the model island. A
-three-stop fold-view switch (`1  2  3`) highlights the selected preset for
-this window; click a stop to select it, or use <leader>1..3. In the active
-bar it sits to the right of the centered model island (the model name stays
-centered); in an inactive bar it stays on the left. Individual folds can
-still be toggled independently (|yap-folding|). Then a rollup island totals
-ALL OTHER yap sessions by state: streaming, awaiting you, stopped, errored,
-idle. It never counts the current buffer and folds subagents into their
-parent. After the island: the session title (a `title:` frontmatter value
-when set, else the generated description), truncated to 40 display columns.
-A provider/model island sits centered in the bar; the steer icon
-sits immediately left of the model name, with a matching blank on the right
-so the name stays centered. Right: two usage chips and a context-fill meter
-(|yap-winbar-numbers|).
+(`bash 12s`); a pending `# @steer` adds a steer icon. A three-stop fold-view
+switch (`1  2  3`) highlights the selected preset; click a stop or use
+<leader>1..3. Then a rollup island totals ALL OTHER yap sessions by state
+(streaming, awaiting you, stopped, errored, idle). After the island: the
+session title (the `title:` frontmatter value when set, else the generated
+description), truncated to 40 display columns. A provider/model island sits
+centered in the bar. Right: two usage chips and a context-fill meter.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -659,47 +456,37 @@ Reading the numbers                                    *yap-winbar-numbers*
   󰆼 N        All-time: total tokens and cost for the whole session file,
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
-  P% █▍░░░░  Context fill: the last turn's full prompt (including cached
-             input) as a percentage of the model's context window. Colored
-             green below 70%, amber 70–90%, red at 90%+.
+  P% █▍░░░░  Context fill: the last turn's full prompt as a percentage of the
+             model's context window. Green below 70%, amber 70–90%, red 90%+.
 
-Suffixes are compact: `k` = thousands, `m` = millions. Costs are USD, computed
-as `in × input price + out × output price` (USD per 1M tokens) — your
-`pricing` overrides first, then the embedded catalog (|yap-configuration|). On
-a freshly opened session the two chips are equal; after a reopen they diverge.
+Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from your
+`pricing` overrides first, then the built-in catalog. On a freshly opened
+session the two chips are equal; after a reopen they diverge. The bar is
+width-aware and drops parts as the window shrinks.
 
-The bar is width-aware and drops parts as the window shrinks (provider/model
-island first, then the fold-view switch, then chip costs, chip tokens, then
-costs and gauge percentage), re-laying out on `WinResized`. The rollup island appears whenever at least one other
-session is open. For a global segment independent of yap buffers, use
+For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
 
 ==============================================================================
 10. TEMPLATES & SKILLS                                      *yap-templates*
 
-The generic mechanism behind compaction, snippets and skills is one command:
-insert a text file into the buffer. A template or a skill is just a markdown
-file — the filename (minus `.md`) is the name in the picker, and the body is
-what gets inserted. There is no separate serializer; the only frontmatter
-schema is the optional `description:` key.
-
-Where they live: >
+A template or skill is just a markdown file — the filename (minus `.md`) is
+the name in the picker, the body is what gets inserted. They live in:
 
   ~/.config/yap/templates/     generic text (|:YapInsert|)
   ~/.config/yap/skills/        system-prompt material (|:YapInsert|)
-<
-Both are configurable (`templates_dir`, `skills_dir`). Create the directory,
+
+Both configurable via `templates_dir` / `skills_dir`. Create the directory,
 drop a file in, then `<C-t>` (or `:YapInsert <name>`) to insert it;
 `<leader>T` inserts the raw file at the cursor.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
 
-A template is generic text you want injected as a message. One rule:
+A template is generic text you want injected as a message:
 
-  - A leading `# @role` heading (`# @user`, `# @assistant`, ...) is used as-is
-    to set the role. `:Yap` already leaves an empty `# @user` prompt at the
-    bottom of a session, so a template with its own `# @user` heading reuses
-    that heading instead of adding a second one.
+  - A leading `# @role` heading (`# @user`, `# @assistant`, ...) sets the
+    role and is used as-is (a `# @user` heading reuses the existing trailing
+    prompt instead of adding a second one).
   - Otherwise the body is wrapped in `# @user` and appended at the end.
 
 A prompt you reach for often, as a template: >
@@ -712,15 +499,12 @@ A prompt you reach for often, as a template: >
 
   Be concise; reference file:line for each finding.
 <
-The body is wrapped in `# @user` for you, so you can leave the heading out. A
-plain template is sent immediately after insertion. To prefill an assistant
+A plain template is sent immediately after insertion. To prefill an assistant
 reply instead, start the file with `# @assistant`.
 
 A template containing LSP snippet syntax is expanded as a native Neovim
-snippet: `$1`/`${1:placeholder}` become tabstops the cursor lands on, and
-`<Tab>`/`<S-Tab>` jump between them. Snippet templates are not sent
-automatically, so you can fill in the placeholders before sending with
-`<C-s>`.
+snippet: `$1`/`${1:placeholder}` become tabstops, `<Tab>`/`<S-Tab>` jump
+between them. Snippet templates are not sent automatically.
 
 HOW TO WRITE A SKILL                                          *yap-skill*
 
@@ -745,33 +529,28 @@ sessions and is stripped before merging: >
 <
 Everything after the second `---` is the body. Omitting the frontmatter is
 fine. Do not include a `# @user` (or `# @assistant`) heading in a skill — it
-would start a new message and split the instructions. The one exception is an
-agent skill that documents the message format and quotes the headings.
+would start a new message and split the instructions.
 
 WHAT INSERT DOES
 
   :YapInsert <template>   wrap in `# @user` and append at the end, then send
-                            (unless it is a snippet; a leading `# @role`
-                            heading sets the role and is never duplicated)
+                            (unless a snippet; a leading `# @role` heading
+                            sets the role and is never duplicated)
   :YapInsert <skill>      merge the body into `# @system`
   require('harness').insert(name, { at_cursor = true })
                             raw file above the cursor, no role logic
 
-All insert modes go through the normal append paths; insertion never touches
-existing lines. Plain templates send immediately; snippets, skills and raw
-at-cursor inserts do not. While a send is in flight a template steers instead:
-its body (a leading `# @role` heading stripped) is injected at the running
-turn's next tool boundary as a `# @user` message, exactly like a <C-s> steer
-(|yap-sessions|). Skills and raw insertion at the cursor are refused mid-turn
-— they edit the buffer, which a streaming turn must not be disturbed. The
-`## Skills` intro is discoverability only (names + descriptions, never skill
-bodies); toggle it off with `skills_intro = false`.
+Plain templates send immediately; snippets, skills and raw at-cursor inserts
+do not. While a send is in flight a template steers instead: its body (a
+leading `# @role` heading stripped) is injected at the running turn's next
+tool boundary as a `# @user` message, exactly like a <C-s> steer
+(|yap-sessions|). Skills and raw insertion at the cursor are refused mid-turn.
+The `## Skills` intro lists names + descriptions only; disable it with
+`skills_intro = false`.
 
 COMPACTION RECIPE                                           *yap-compact*
 
-Compaction is the template mechanism applied to a long conversation — the
-summary stays a visible, editable turn, never an invisible rewrite.
-|:YapCompact| automates the steps (insert, send, then offer to delete); the
+|:YapCompact| automates compaction (insert, send, then offer to delete); the
 manual recipe:
 
   1. `<C-t>` and pick `compact` — if you have not created one in templates_dir
@@ -779,140 +558,64 @@ manual recipe:
      hand-written prompt needs `<C-s>`.
   2. Delete the history above the summary (deletion = branching,
      |yap-introduction|). The summary message is the new context.
-<
-The archive-marker idea (folding old messages away) is deliberately NOT part
-of this: the buffer is the truth, so old text is either in context or gone —
-folding it away would be hidden state.
 
 ==============================================================================
 11. TOOLS & SAFETY                                              *yap-tools*
 
-Tools are NOT configured anywhere — they are Go files in agent/tools/, one
-file per tool, each self-registering in init(). Adding or changing a tool =
-editing a file and recompiling (CGO_ENABLED=0). A tool returns a result (sent
-to the model) and optionally a ui payload (display-only yap:ui section,
-|yap-tool-region|). The binary runs the whole agent loop in one process,
-bounded at 300 iterations per send.
+Built-in tools: ls, read, fetch, bash, python, curl, git, write, edit,
+search, glob, websearch, github, playwright, quickfix, ssh, jev, models,
+close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
+300 iterations per send.
 
-Built-ins: ls, read, fetch, bash, python, curl, git, write, edit, search,
-glob, websearch, github, playwright, quickfix, ssh, jev, models,
-close_session, subagent, start_task, wait_tasks.
-
-Highlights:
-
-  - Multiple independent read-only calls in the same model round (ls, read,
-    search, glob, git, fetch, websearch, models) execute concurrently, up to
-    four at once. Yap waits for all of them and renders regions/results in
-    call order. Mixed rounds and side-effecting tools retain sequential
-    execution.
-  - start_task starts bash, fetch or websearch in the background after the
-    usual tool safety gate, returning a turn-local task ID. The agent can do
-    independent work, then use wait_tasks with IDs (or omit IDs for all)
-    to block until results are ready. At most four tasks may be outstanding.
-    Do not infer success from a launch acknowledgment. Tasks cannot outlive
-    the current turn: if the model tries to finish with tasks pending, Yap
-    waits and gives the results to the model before the final reply. Stopping
-    the turn stops tool subprocesses. The session shows launch/wait regions;
-    :YapLive shows live bash output and task start/end events. Tasks do not
-    persist across reopened sessions; edits and subagents cannot be started
-    in the background.
-
-  - search and glob shell out to ripgrep (rg): search returns
-    path:line:content matches, glob lists files (gitignore-aware); both
-    truncate to 2000 lines / 50KB.
-  - websearch queries a pluggable search provider and returns up to N
-    results as markdown. The provider is `websearch.provider` in
-    ~/.config/yap.json (default `exa`); Exa's key is the env var named by
-    `websearch.api_key_env` (default `EXA_API_KEY`). Adding a provider is
-    one self-registering file in agent/tools.
-  - jev is a decision model, not a language model: it answers calibrated,
-    typed questions — P(yes) for yes/no, a winner + probabilities for
-    pick-one, a weighted position for a scale — as probabilities, not prose.
-    It backs the alert gate below and the jev tool; `decision.*` in
-    ~/.config/yap.json sets its backend.
-  - curl shells out to the system curl binary (method, headers, user-agent,
-    body, redirects, timeout and extra flags are settable) and sends a browser
-    User-Agent by default. Redirects are re-checked hop-by-hop against the
-    SSRF guard; flags that could make curl a file-writer or SSRF vector
-    (--unix-socket, --config/-K, -o/-O, --resolve, --connect-to, --trace*,
-    --interface, ...) are refused. fetch extracts the main content as
-    Markdown; curl returns the raw body and runs no JavaScript. Both accept a
-    `safety` parameter: when true, the result is scanned by the decision model
-    for prompt-injection content and flagged content gets an advisory warning
-    line naming the probability (content is still shown, only marked). Each
-    true call costs one extra decision-model round-trip. curl and fetch also
-    accept `vpn`: the request runs inside the VPN network namespace entered by
-    the `vpn.command` config prefix (|yap-configuration|). They do not accept
-    `isolate_network` — they exist to reach the network, so isolating them
-    would only ever fail.
-  - git runs read-only subcommands (status, diff, log, show, blame) in the
-    project root with pager, color and credential prompts disabled.
-  - ssh runs non-interactive commands via the system OpenSSH client. A
-    ControlMaster per user/host/port is owned by the backend (mode-0700 temp
-    dir). ~/.ssh/config is disabled so aliases and proxy commands cannot
-    bypass its trust boundary, and the requested host must be in a trusted
-    known_hosts file (the system-wide file when present, else
-    ~/.ssh/known_hosts; override via `ssh.known_hosts` in config). BatchMode
-    disables interactive password/PIN
-    prompts. Commands run unsandboxed over your credentials, so a dangerous
-    command pauses the turn for Run/Deny.
-  - quickfix replaces the quickfix list; each invocation creates a new list on
-    the stack (previous reachable with |:colder| / |:cnewer|). Historical tool
-    regions do not execute, so reopening a saved session never replays the
-    side effect.
+  - Independent read-only calls in the same round (ls, read, search, glob,
+    git, fetch, websearch, models) execute concurrently, up to four at once.
+  - start_task runs bash, fetch or websearch in the background and returns a
+    task ID; wait_tasks blocks until results are ready. At most four tasks
+    may be outstanding; tasks cannot outlive the current turn.
+  - search/glob shell out to ripgrep and truncate to 2000 lines / 50KB.
+  - websearch returns up to N results as markdown (provider `websearch.provider`
+    in config.json, default `exa`).
+  - jev is a decision model (|yap-glossary|) that answers calibrated, typed
+    questions as probabilities; it backs the alert gate and the jev tool.
+    Configure via `decision.*` in config.json.
+  - fetch extracts the main content of a page as Markdown; curl returns the
+    raw body (no JavaScript). curl refuses flags that could make it a
+    file-writer or SSRF vector and re-checks redirects hop-by-hop. Both
+    accept a `safety` parameter (prompt-injection scan, advisory on flag) and
+    a `vpn` flag (|yap-configuration|).
+  - git runs read-only subcommands (status, diff, log, show, blame).
+  - ssh runs non-interactive commands; the host must be in a trusted
+    known_hosts file and dangerous commands pause for Run/Deny.
+  - quickfix replaces the quickfix list (previous lists reachable with
+    |:colder| / |:cnewer|).
   - close_session asks Neovim to close the session buffer once the turn
-    finishes and the file is saved. The session file is untouched, so the
-    conversation stays resumable. Subagents do not get this tool.
-  - write creates or overwrites files (creating parent directories); edit does
-    exact-text replacement — every edits[].oldText is matched against the
-    ORIGINAL file, must occur exactly once, and must not overlap another edit.
-    Both return short confirmations and attach a unified diff as a
-    display-only yap:ui section.
+    finishes and the file is saved.
+  - write creates/overwrites files; edit does exact-text replacement. Both
+    return short confirmations and attach a unified diff as a yap:ui section.
   - bash runs commands non-interactively (stdin is /dev/null) in their own
-    process group: on timeout (default 120s, model-adjustable) the whole group
-    is SIGKILLed, and :YapStop takes in-flight commands down with the binary.
-    Output streams into a temp file and is drained into the audit view
-    (|:YapLive|) — never into the session buffer. The result is truncated to
-    the LAST 2000 lines / 50KB; a non-zero exit is reported, not an error.
-    `isolate_network` runs the command in a private network namespace (Linux,
-    util-linux `unshare`) with no outbound or loopback connectivity: the
-    command still runs, but any network access fails closed. `vpn` runs the
-    command inside the VPN network namespace entered by the `vpn.command`
-    config prefix; the two flags are mutually exclusive.
-  - python runs a Python 3 script the same way, as a fresh process (no state
-    between calls). It takes exactly one of `code` (inline, run as
-    `python3 <file>`) or `file` (a path to an existing script — write it first
-    with the write tool, then run it). A failed script returns its traceback
-    as text. `isolate_network` runs the script in a private network namespace
-    (Linux, util-linux `unshare`) with no outbound or loopback connectivity:
-    the script still runs, but any network access fails closed.
+    process group; on timeout (default 120s) the whole group is killed, and
+    :YapStop takes in-flight commands down with the binary. Live output goes
+    to the audit view (|:YapLive|), never the buffer; the result is truncated
+    to the LAST 2000 lines / 50KB. `isolate_network` runs the command with no
+    network access; `vpn` runs it inside the VPN namespace. The two flags are
+    mutually exclusive.
+  - python runs a Python 3 script the same way, as a fresh process; pass
+    exactly one of `code` (inline) or `file` (a path). Same truncation,
+    `isolate_network` and timeout behavior as bash.
   - models lists the provider/model combos the picker offers, from the same
-    discovery client (`yap models`) the picker uses, so the two cannot
-    disagree. With no `filter` it returns a summary of the configured
-    providers and how many models each has; with a `filter` (case-insensitive
-    substring, e.g. "gpt-5" or "anthropic/") it lists up to 100 matching
-    combos, each with its price per 1M tokens when known, and providers that
-    do not answer are reported as warnings. The tool exists so a session can
-    choose an appropriate model for a subagent (the subagent `model` argument)
-    without the combo list being injected into every system message.
+    discovery client the picker uses; `filter` narrows it, no filter
+    summarizes providers.
   - subagent delegates to an agent definition in ~/.yap/agents/<name>.md
     (YAML frontmatter: `name`, `model`, optional `tools`; body = system
-    prompt). It creates a child session in the same project; the parent tool
-    call waits for the child's answer and session path. Open and saved pickers
-    show child rows; opening one lets you inspect it and ask a direct
-    follow-up. Follow up through the parent with `subagent` + `session` (the
-    returned path) and `task`. The `model` argument (provider/model, see
-    models) runs the child on a model the parent chose; it wins over the
-    definition's `model`, and a definition that names none — or only a bare
-    model name, which Yap cannot resolve to a provider — falls back to the
-    parent's combo. A malformed combo fails the delegation with an error
-    instead of spawning; `model` is ignored on follow-ups, where the child
-    keeps the combo in its frontmatter. An agent definition without `tools`
-    gets a read-only set (ls, read, search, glob, fetch, git, websearch,
-    quickfix, jev); write/bash/python/curl/ssh must be requested explicitly.
-    Delegation times out after ten minutes; stopping the parent stops its
-    running child (the child's file is kept). There is no background spawn or
-    child-to-child messaging.
+    prompt). It creates a child session in the same project and waits for the
+    child's answer and session path. Follow up through the parent with
+    `subagent` + `session` (the returned path) and `task`. The `model`
+    argument runs the child on a model the parent chose; a definition naming
+    none falls back to the parent's combo; `model` is ignored on follow-ups.
+    Without `tools` a definition gets a read-only set (ls, read, search, glob,
+    fetch, git, websearch, quickfix, jev); write/bash/python/curl/ssh must be
+    requested explicitly. Delegation times out after ten minutes; stopping the
+    parent stops its running child.
 
 Path fields on write, edit, read, ls, glob, search, git, and python (file and
 cwd) — plus bash's cwd — expand a leading ~ or ~/ to the home directory.
@@ -922,47 +625,34 @@ repo) so they stay out of git.
 write/edit tool headers in the buffer are SLIMMED: the arguments show
 `[N lines]` / `[N edits, +A/-B lines]` instead of the content — the yap:ui
 diff below shows the change, the file on disk is the ground truth, and the
-full arguments are in the audit log (|yap-audit|). Every tool call and result
-is also emitted as a yap:event and persisted there.
+full arguments are in the audit log (|yap-audit|).
 
 THE ALERT GATE                                        *yap-alert-gate*
 
-Every tool call passes a pre-execution gate before it runs. Three tiers:
+Every tool call passes a pre-execution gate. Three tiers:
 
-  silent       read, ls, glob, search, git, github, fetch, websearch, jev,
-               quickfix, close_session, write, edit — run immediately.
-  ask-jev      bash, python, curl, subagent, playwright — one batched
-               decision-model pass decides the outcome.
-  always-approval  ssh — always pauses for a Run/Deny confirmation (it keeps
-               its own known-hosts check).
+  silent           read, ls, glob, search, git, github, fetch, websearch, jev,
+                   quickfix, close_session, write, edit — run immediately.
+  ask-jev          bash, python, curl, subagent, playwright — a decision-model
+                   pass decides the outcome.
+  always-approval  ssh — always pauses for a Run/Deny confirmation.
 
-For `ask-jev` tools a cheap deterministic floor (destructive or high-blast-
-radius commands such as `rm -rf /`, `sudo`, `curl | sh`, subprocess/os.system,
-shutil.rmtree) always forces approval — the decision model never downgrades a
-fork bomb. Where the floor is silent, jev answers two questions in parallel —
-P(harmful) and a 0–3 severity score — and maps the answer to:
+For `ask-jev` tools a deterministic floor (destructive or high-blast-radius
+commands such as `rm -rf /`, `sudo`, `curl | sh`, `subprocess`/`os.system`,
+`shutil.rmtree`) always forces approval. Where the floor is silent, jev
+answers P(harmful) and a 0–3 severity score and maps the result to:
 
-  approval   pause the turn for a decision (credential exfiltration,
-             severity mean >= 2.5, destructive calls at even odds or low
-             confidence, high P(harmful)). The session shows a shield and a
-             distinct notification; |:YapGuard| opens a board whose Open
-             section lists the parked approval and whose <CR> popup offers
-             Run, Deny, Inspect and Defer with the reason and full call
-             arguments. Never runs on timeout (five minutes) or when the
-             board is dismissed. Inspect focuses the shield-marked request
-             in the audit; |:YapGuard| can be repeated.
-  advisory   run, but log the call and show a non-blocking warning. The toast
-             names the session and gives the P(harmful), severity score, and
-             confidence; |:YapGuard| shows the full breakdown and call in its
-             Open section.
+  approval   pause the turn for a Run/Deny/Inspect decision (|:YapGuard|).
+             Never runs on timeout (five minutes) or when the board is
+             dismissed.
+  advisory   run, but log the call and show a non-blocking warning naming
+             P(harmful), severity and confidence.
   run        proceed silently.
 
-A decision-model outage never bricks a tool: it degrades to `advisory` (a
-loud warning) rather than requiring approval or running silently. Thresholds
-live in the `alert` section of ~/.config/yap.json (|yap-configuration|);
-defaults are conservative and tuned from the audit log. The gate is a
-steerable safety net, not a security boundary: bash is unsandboxed by design —
-the denylist is bypassable.
+A decision-model outage degrades to `advisory` rather than blocking. Thresholds
+live in the `alert` section of config.json (|yap-configuration|). The gate is
+a steerable safety net, not a security boundary: bash is unsandboxed by
+design — the denylist is bypassable.
 
 ==============================================================================
 12. GLOSSARY                                                *yap-glossary*

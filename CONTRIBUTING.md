@@ -54,6 +54,12 @@ arguments and result — the raw region text is still never sent). Why: thinking
 or display payloads re-sent to the API pollute or break the conversation.
 (Bug of record: the first error comment WAS sent back as assistant content.)
 
+Marker regions close on a line that is exactly `-->`. The binary neutralizes
+any `-->` inside a comment region to `-- >`, escapes a tool-result line that
+starts with a yap marker opener as `\<!-- yap:…`, and escapes `<style>` /
+`<script>` open tags, so character-based markdown renderers show the literal
+text and the line-start-anchored parser never matches.
+
 #### R-pre-heading-ignored — Lines before the first heading are ignored
 
 The session header lives there. The parser's flush must clear the accumulator
@@ -72,7 +78,10 @@ the buffer. They are appended to the most recent user message — normally the
 trailing prompt, but a hand-written `# @assistant` prefill stays last so its
 prefill semantics survive — never the system prefix. Why: a changing git
 status in the system prefix would invalidate the provider's prompt cache for
-the entire stable history and system prompt.
+the entire stable history and system prompt. The `# About Yap` boilerplate is
+prepended as the first system message of every turn — independent of
+`agents_file` and never written into the session file, so the `# @system`
+message stays clean.
 
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
@@ -115,6 +124,15 @@ serialization format to keep in sync. Session buffers (and their audit view
 buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
 `<leader>r`, and a session's audit view opens with `:YapLive`.
 
+#### R-data-paths — Data directories resolve against the real home directory, never the project
+
+`agents_dir` and `sessions_dir` accept a leading `~` (resolved against the
+real home directory — `$HOME` when it is a non-empty absolute path, else the
+passwd entry) or an absolute path; relative paths are refused. Why: an unset,
+empty, or relative `$HOME` must never make yap write its `.yap` folder into
+the project directory (`vim.fn.expand("~")` silently falls back to cwd in
+those cases).
+
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
 The frontmatter holds `provider`/`model` (the combo to resume with), `created_cwd` (the
@@ -150,7 +168,10 @@ Nothing is auto-loaded and nothing is hidden: the inserted text is visible,
 editable buffer content like any other, and the intro is a short visible list,
 never injected bodies. Why: the buffer stays the only state (R-buffer-only-state), and
 templates/skills are just text, so one insert command covers compaction,
-snippets and skills.
+snippets and skills. Compaction folds the history into a visible summary,
+never an invisible rewrite: the archive-marker idea (folding old messages
+away) is deliberately rejected because the buffer is the truth — old text is
+either in context or gone, and folding it away would be hidden state.
 
 #### R-scratch-sections — Scratch sections are parsed from the live `notes.md` buffer, never re-read from the saved file during dispatch
 
@@ -194,7 +215,10 @@ edits): the header is the tool name and JSON arguments the model sees flattened
 into its history, and kilobytes of file content there buy nothing the yap:ui
 diff and the file on disk don't already show (Anthropic's clear_tool_inputs is
 the same idea); the full arguments are in the audit log. Old result bodies can
-be cleared explicitly with `:YapClear`.
+be cleared explicitly with `:YapClear`. Content-bearing results are fenced
+with a backtick run one longer than any run inside the result, so an embedded
+fence line cannot close it early; the same fenced string is replayed to the
+model across turns.
 
 #### R-no-mcp — No MCP
 
@@ -279,6 +303,15 @@ its own history. This is what makes slimmed headers
 `vim.notify` (transient), winbar error state (persistent until next send), and
 a parse-excluded buffer marker (record). Spawn failures of the binary are
 caught and reported the same way.
+
+#### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
+
+Session buffers set `minidiff_disable` (and detach an already-attached
+mini.diff) and an LspAttach guard stops any markdown LSP client, so diff hunks
+and semantic-token/inlay-hint streams — meaningless on a transcript — don't
+pay per-redraw cost. Tree-sitter markdown highlighting stays on by default
+(`syntax_highlight`): the highlighter is incremental and measured to be
+effectively free.
 
 #### R-folding — Folding is a projection of anchored structural units
 
