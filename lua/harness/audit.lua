@@ -563,7 +563,7 @@ function M.ensure(buf)
   vim.bo[tbuf].modifiable = false
   vim.bo[tbuf].filetype = "markdown" -- touchup/treesitter render the fenced bash/output
 
-  t = { bufnr = tbuf, offset = 0, has_content = false }
+  t = { bufnr = tbuf, offset = 0, has_content = false, reviews = {}, turns = 0, output_open = false }
   audits[buf] = t
 
   -- Replay the audit log so the live view survives restarts.

@@ -59,7 +59,13 @@ function M.shell_lines(cmd, indent)
   local function emit(s)
     s = s:gsub("%s+$", "")
     if s ~= "" then
-      lines[#lines + 1] = s
+      -- A quoted span may cross physical lines (e.g. a double-quoted
+      -- `"$(cat <<'EOF' … EOF)"`); the quote handlers copy it verbatim, so
+      -- split it here to guarantee every returned entry is a single line
+      -- (nvim_buf_set_lines rejects strings containing '\n').
+      for _, part in ipairs(vim.split(s, "\n", { plain = true })) do
+        lines[#lines + 1] = part
+      end
     end
   end
 

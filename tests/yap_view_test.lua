@@ -54,4 +54,19 @@ eq(view.shell_lines("x=${a:-b;c}", "  "), { "x=${a:-b;c}" }, "${} protects ;")
 -- A lone `&` (redirection 2>&1) must not break.
 eq(view.shell_lines("cmd 2>&1 && other", "  "), { "cmd 2>&1", "  && other" }, "redirect & intact")
 
+-- A quoted span that crosses physical lines (a double-quoted command
+-- substitution wrapping a heredoc) must never leak an embedded newline into
+-- a returned line: nvim_buf_set_lines rejects any string containing '\n'.
+local multiline = view.shell_lines("cd /x && git commit -q -m \"$(cat <<'EOF'\nmsg line\nEOF\n)\"", "  ")
+eq(multiline, {
+  "cd /x",
+  "  && git commit -q -m \"$(cat <<'EOF'",
+  "msg line",
+  "EOF",
+  ")\"",
+}, "multi-line quoted span splits cleanly")
+for _, l in ipairs(multiline) do
+  assert(not l:find("\n", 1, true), "line still contains a newline: " .. vim.inspect(l))
+end
+
 print("OK view")
