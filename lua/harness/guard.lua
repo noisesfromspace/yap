@@ -19,7 +19,6 @@ local M = {}
 local state = require("harness.state")
 local paths = require("harness.path")
 local util = require("harness.util")
-local drawer = require("harness.drawer")
 local view = require("harness.view")
 
 local function harness()
@@ -27,7 +26,7 @@ local function harness()
 end
 
 local BOARD_NAME = "yap://guard"
-local BOARD_HEIGHT = 12
+local BOARD_WIDTH = 88 -- vertical split width, capped to the screen
 local RECENT_MINUTES = 15   -- advisories newer than this stay in Open
 local HISTORY_MINUTES = 180 -- History drops rows older than this
 
@@ -63,6 +62,10 @@ local ns = vim.api.nvim_create_namespace("yap.guard.hl")
 
 -- The one global board buffer, created lazily.
 local board_buf
+
+-- The session window the board was toggled from, so closing it returns the
+-- cursor there (never stranded on a dead window).
+local board_anchor
 
 local function ensure_board()
   if board_buf and vim.api.nvim_buf_is_valid(board_buf) then
@@ -698,18 +701,31 @@ local function install_keymaps(buf)
 end
 
 --- Open (or focus) the board, or close it when already open. The board is a
---- global bottom drawer anchored to the window it was toggled from.
+--- global vertical split anchored to the window it was toggled from, so it
+--- opens beside the session (not below it) and closing returns the cursor.
 function M.toggle()
   local buf = ensure_board()
-  if #vim.fn.win_findbuf(buf) > 0 then
-    drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT)
+  local wins = vim.fn.win_findbuf(buf)
+  if #wins > 0 then
+    for _, win in ipairs(wins) do
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+    end
+    if board_anchor and vim.api.nvim_win_is_valid(board_anchor) then
+      vim.api.nvim_set_current_win(board_anchor)
+    end
+    board_anchor = nil
     return
   end
   local result = render()
   install_keymaps(buf)
-  if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT) then
-    return
-  end
+
+  -- Anchor to the window the user toggled from (their session window).
+  board_anchor = vim.api.nvim_get_current_win()
+  local width = math.min(BOARD_WIDTH, vim.o.columns - 1)
+  vim.cmd(("vert belowright %dsplit"):format(width))
+  vim.api.nvim_win_set_buf(0, buf)
   apply_folds(buf, result)
   -- Land on the first Open row, not the header: that row is the actionable one.
   vim.api.nvim_win_set_cursor(0, { result.first_open_line or 1, 0 })
