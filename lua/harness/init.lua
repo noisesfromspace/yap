@@ -679,7 +679,10 @@ function M.live(buf)
   end
   if M.config.keymaps.toggle_fold ~= "" then
     vim.keymap.set("n", M.config.keymaps.toggle_fold, function()
-      vim.cmd("normal! za")
+      -- za raises E490 "No fold found" off a fold (header/blank); silent!
+      -- keeps that a no-op rather than an E5108 Lua stack trace (matches
+      -- the session buffer's fold handler).
+      vim.cmd("silent! normal! za")
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle turn fold" })
   end
   if M.config.keymaps.view_1 ~= "" then

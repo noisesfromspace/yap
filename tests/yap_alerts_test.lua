@@ -84,6 +84,19 @@ assert(cl:find("later warning", 1, true), "first Open row should be the newest a
 -- Click-to-open: an expr <LeftMouse> map, like the audit view and session.
 local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)
 assert(mouse_map and mouse_map.expr == 1 and mouse_map.buffer == 1, "guard board has no click-to-open fold map")
+-- Tab on a section header (not a fold) is a no-op, not E490/E5108.
+local hist_line
+for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do
+  if l:find("▸ History", 1, true) then
+    hist_line = i
+    break
+  end
+end
+assert(hist_line, "History header not found")
+vim.api.nvim_win_set_cursor(0, { hist_line, 0 })
+local tab = vim.api.nvim_replace_termcodes("<Tab>", true, false, true)
+vim.api.nvim_feedkeys(tab, "mtx", false)
+assert(vim.fn.foldlevel(hist_line) == 0, "History header is unexpectedly a fold")
 guard.toggle() -- close
 
 -- Live append must use the same event positions as replay, regardless of

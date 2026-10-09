@@ -666,13 +666,14 @@ local function install_keymaps(buf)
   local function toggle_row()
     local line = vim.api.nvim_win_get_cursor(0)[1]
     local row = row_at(buf, line)
+    if not row then
+      return -- header/blank/hint lines aren't folds; za would raise E490
+    end
     vim.cmd("normal! za")
-    if row then
-      if vim.fn.foldclosed(line) == -1 then
-        expanded[row.key] = true
-      else
-        expanded[row.key] = nil
-      end
+    if vim.fn.foldclosed(line) == -1 then
+      expanded[row.key] = true
+    else
+      expanded[row.key] = nil
     end
   end
   vim.keymap.set("n", "za", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
