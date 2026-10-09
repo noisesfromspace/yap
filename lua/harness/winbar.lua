@@ -546,7 +546,7 @@ local function render_winbar(buf)
   -- The state icon now lives on the left (see left_segments); the right
   -- side keeps only the usage counters and the context meter.
 
-  local function render(left, center, usage, left_width, right_width)
+  local function render(left, center, usage, left_width, right_width, centered)
     local parts = {}
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
@@ -554,8 +554,11 @@ local function render_winbar(buf)
     -- `%=` centers the island between the two side clusters, not at the
     -- window's midpoint, so an asymmetric pair (a fresh session has no
     -- gauge yet) drifts off center. Pad the narrower side so both are
-    -- equal width and the island lands on the true midpoint.
-    if center and left_width < right_width then
+    -- equal width and the island lands on the true midpoint. Only the model
+    -- island (or an inactive session's label) needs that true centering: a
+    -- lone fold-view switch floats in whatever gap remains, so padding a
+    -- side for it wastes width and clips the title on a narrow bar.
+    if centered and left_width < right_width then
       parts[#parts + 1] = string.rep(" ", right_width - left_width)
     end
     parts[#parts + 1] = "%="
@@ -564,7 +567,7 @@ local function render_winbar(buf)
         parts[#parts + 1] = render_seg(s, true)
       end
       parts[#parts + 1] = "%="
-      if right_width < left_width then
+      if centered and right_width < left_width then
         parts[#parts + 1] = string.rep(" ", left_width - right_width)
       end
     end
@@ -598,7 +601,7 @@ local function render_winbar(buf)
         and right_width <= math.floor((width - center_width) / 2)
     end
     if fits then
-      return render(left, center, usage, left_width, right_width)
+      return render(left, center, usage, left_width, right_width, show_model)
     end
     if show_model then
       show_model = false
@@ -613,7 +616,7 @@ local function render_winbar(buf)
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
-      return render(left, nil, usage, left_width, right_width) -- smallest layout; let it clip
+      return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
     end
   end
 end

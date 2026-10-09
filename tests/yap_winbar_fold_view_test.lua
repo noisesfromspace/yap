@@ -71,4 +71,41 @@ vim.api.nvim_win_set_width(right_win, 25)
 local narrow = bar(right_win)
 assert(narrow:find("1.1k", 1, true) and narrow:find("2.6k", 1, true), narrow)
 assert(not narrow:find("YapViewActive", 1, true), "switch crowded out usage: " .. narrow)
+
+-- A lone fold switch must not reserve centering padding that clips the
+-- title: once the model island drops, the switch floats in the gap between
+-- the title and the usage cluster, so a long title stays fully visible at
+-- every width the switch survives. (The bar only reaches these widths after
+-- `columns` is raised and applied by returning to a single window.)
+do
+  local icons = yap.config.icons
+  vim.o.columns = 200
+  vim.cmd("close") -- drop the narrow right split so `columns` applies
+  vim.cmd("vsplit")
+  local win = vim.api.nvim_get_current_win()
+  vim.wo[win].number = false
+  vim.wo[win].signcolumn = "no"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    "---",
+    "provider: mock",
+    "model: m1",
+    "description: A session title long enough to truncate at forty columns",
+    "---",
+    "",
+  })
+  vim.b[buf].yap_usage = { prompt = 1500, completion = 42, cost = 0.00342 }
+  vim.b[buf].yap_session_usage = { prompt = 999, completion = 99, cost = 0.51 }
+  for cols = 110, 85, -1 do
+    vim.api.nvim_win_set_width(win, cols)
+    local rendered =
+      vim.api.nvim_eval_statusline(bar(win), { winid = win, use_winbar = true, maxwidth = cols }).str
+    if rendered:find(" 1  2  3 ", 1, true) then
+      assert(
+        rendered:find(icons.idle, 1, true) and rendered:find("A session title long enough to truncate", 1, true),
+        "switch clipped the title at " .. cols .. " cols: " .. rendered
+      )
+    end
+  end
+end
+
 print("OK winbar_fold_view")
