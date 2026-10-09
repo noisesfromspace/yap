@@ -561,33 +561,27 @@ local function transient_content(row)
   end
 
   local out = {
-    "# " .. title,
-    "",
-    ("**%s** · %s"):format(row.tool, session),
-    "",
-    "```bash",
-    cmd ~= "" and cmd or "—",
-    "```",
-    "",
+    (" %s · %s · %s"):format(row.tool, session, title),
+    " $ " .. (cmd ~= "" and cmd or "—"),
   }
   if has_metrics(row) then
-    out[#out + 1] = ("`P(harmful)=%.2f`  `severity=%s(%.1f)`  `conf=%.0f%%`"):format(
+    out[#out + 1] = (" P(harmful)=%.2f  severity=%s(%.1f)  conf=%.0f%%"):format(
       row.p_alert,
       row.severity_category ~= "" and row.severity_category or "?",
       row.severity or 0,
       (row.confidence or 0) * 100
     )
   elseif is_approval then
-    out[#out + 1] = "`always approval (no model consulted)`"
+    out[#out + 1] = " always approval (no model consulted)"
   end
   out[#out + 1] = ""
-  out[#out + 1] = "## Actions"
+  out[#out + 1] = " Actions"
   if is_approval then
-    out[#out + 1] = "- `r` **Run** — approve this call"
-    out[#out + 1] = "- `x` **Deny** — reject"
+    out[#out + 1] = "  r  Run — approve this call"
+    out[#out + 1] = "  x  Deny — reject"
   end
-  out[#out + 1] = "- `i` **Inspect** — open the audit entry"
-  out[#out + 1] = is_approval and "- `q` **Defer** — leave parked" or "- `q` **Dismiss**"
+  out[#out + 1] = "  i  Inspect — open the audit entry"
+  out[#out + 1] = is_approval and "  q  Defer — leave parked" or "  q  Dismiss"
   return out
 end
 
@@ -595,7 +589,7 @@ local function open_transient(row)
   local content = transient_content(row)
   local bufnr = vim.api.nvim_create_buf(false, true)
   vim.bo[bufnr].bufhidden = "wipe"
-  vim.bo[bufnr].filetype = "markdown" -- touchup renders the markdown markup
+  vim.bo[bufnr].filetype = "yapguard"
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, content)
   vim.bo[bufnr].modifiable = false
 

@@ -423,6 +423,9 @@ local function handle_event(buf, json_line)
     if t then
       audit.fold(t.bufnr, false, true)
     end
+    -- An advisory that fired mid-turn is on disk now; re-render the board so
+    -- it reflects the settled turn even if its own touch() raced the event.
+    guard.touch()
   end
 end
 
