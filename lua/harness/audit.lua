@@ -17,7 +17,6 @@ local view = require("harness.view")
 -- every colorscheme renders them; `default` keeps user overrides.
 local HL = {
   turn = "YapAuditTurn",
-  command = "YapAuditCommand",
   tool = "YapAuditTool",
   meta = "YapAuditMeta",
   warn = "YapAuditWarn",
@@ -26,7 +25,6 @@ local function link(name, to)
   vim.api.nvim_set_hl(0, name, { link = to, default = true })
 end
 link(HL.turn, "Title")
-link(HL.command, "Function")
 link(HL.tool, "Type")
 link(HL.meta, "Comment")
 link(HL.warn, "WarningMsg")
@@ -80,7 +78,12 @@ local flat = view.flat
 local function render_event(ev)
   local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" then
-    return { { text = "$ " .. flat(ev.command or ev.name or "tool"), hl = HL.command } }, "section"
+    local out = { { text = "```bash", hl = HL.meta } }
+    for _, l in ipairs(view.shell_lines(ev.command or ev.name or "tool", "  ")) do
+      out[#out + 1] = { text = l }
+    end
+    out[#out + 1] = { text = "```", hl = HL.meta }
+    return out, "section"
   elseif ev.type == "task_start" then
     return { { text = ("%s task %s started (%s)"):format(ts, flat(ev.id), flat(ev.name)), hl = HL.meta } }, "section"
   elseif ev.type == "task_end" then
@@ -90,7 +93,7 @@ local function render_event(ev)
     for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
       out[#out + 1] = { text = l }
     end
-    return out, "stream"
+    return out, "output"
   elseif ev.type == "tool_call" then
     -- Record the requested command before the gate decides whether it runs;
     -- approval-paused bash/python calls never emit tool_start, so otherwise their
@@ -98,9 +101,14 @@ local function render_event(ev)
     local target = ""
     local ok, a = pcall(vim.json.decode, ev.args or "")
     if ok and type(a) == "table" then
-      target = flat(a.path or a.url or a.command or "")
+      target = a.path or a.url or a.command or ""
     end
-    return { { text = ("• %s%s"):format(ev.name, target ~= "" and (" " .. target) or ""), hl = HL.tool } }, "section"
+    local tlines = view.shell_lines(target, "  ")
+    local out = { { text = ("• %s%s"):format(ev.name, tlines[1] ~= "" and (" " .. tlines[1]) or ""), hl = HL.tool } }
+    for i = 2, #tlines do
+      out[#out + 1] = { text = tlines[i] }
+    end
+    return out, "section"
   elseif ev.type == "attachment" then
     if ev.error then
       local src = flat(ev.source)
@@ -221,31 +229,54 @@ local function review_event(ev)
 end
 
 --- Rebuild the live view from a list of events: the full line list plus the
---- per-line highlights to reapply. Stream chunks append verbatim; section
---- events join with one blank line; the buffer keeps one trailing empty
---- line (the append invariant).
+--- per-line highlights to reapply. Stream chunks append verbatim (wrapped in
+--- a ```text fence so markdown never mis-parses tool output); section events
+--- join with one blank line; the buffer keeps one trailing empty line.
+local OUTPUT_OPEN = "```text"
+local OUTPUT_CLOSE = "```"
+
 local function render_events(events)
   local lines, hl, has, reviews = {}, {}, false, {}
+  local in_output = false
   for _, ev in ipairs(events) do
     local ev_lines, kind = render_event(ev)
     if ev_lines then
-      if kind == "section" and has then
-        lines[#lines + 1] = ""
-      end
-      local start = #lines
-      if review_event(ev) then
-        reviews[#reviews + 1] = start + 1 -- 1-based buffer line
-      end
-      for _, l in ipairs(ev_lines) do
-        lines[#lines + 1] = l.text
-      end
-      for i, l in ipairs(ev_lines) do
-        if l.hl then
-          hl[#hl + 1] = { start + i - 1, l.hl }
+      if ev.type == "output" then
+        if not in_output then
+          lines[#lines + 1] = OUTPUT_OPEN
+          in_output = true
         end
+        for _, l in ipairs(ev_lines) do
+          lines[#lines + 1] = l.text
+          if l.hl then
+            hl[#hl + 1] = { #lines - 1, l.hl }
+          end
+        end
+        has = true
+      else
+        if in_output then
+          lines[#lines + 1] = OUTPUT_CLOSE
+          in_output = false
+        end
+        if kind == "section" and has then
+          lines[#lines + 1] = ""
+        end
+        local start = #lines
+        if review_event(ev) then
+          reviews[#reviews + 1] = start + 1 -- 1-based buffer line
+        end
+        for _, l in ipairs(ev_lines) do
+          lines[#lines + 1] = l.text
+          if l.hl then
+            hl[#hl + 1] = { #lines - 1, l.hl }
+          end
+        end
+        has = true
       end
-      has = true
     end
+  end
+  if in_output then
+    lines[#lines + 1] = OUTPUT_CLOSE
   end
   lines[#lines + 1] = ""
   return lines, hl, reviews
@@ -297,7 +328,9 @@ end
 
 --- Append one event to a live-view buffer. State `t` is { bufnr, has_content }.
 --- Section events get a blank line before them (unless the view is empty);
---- stream events append directly. Per-line highlights are applied here.
+--- streamed output is wrapped in a ```text fence so markdown never mis-parses
+--- it. Per-line highlights and review positions are tracked against the actual
+--- inserted lines (fence open/close lines included).
 function M.append(t, ev)
   local lines, kind = render_event(ev)
   if not lines then
@@ -307,23 +340,44 @@ function M.append(t, ev)
   remember(buf)
   local count = vim.api.nvim_buf_line_count(buf)
   local start = count - 1 -- 0-based index of the trailing empty line
-  local lead = (kind == "section" and t.has_content) and 1 or 0
   local text = {}
-  if lead == 1 then
-    text[#text + 1] = ""
-  end
-  for _, l in ipairs(lines) do
-    text[#text + 1] = l.text
-  end
-  text[#text + 1] = "" -- restore the trailing empty line
-  vim.api.nvim_buf_set_lines(buf, start, start + 1, false, text)
-  for i, l in ipairs(lines) do
-    if l.hl then
-      vim.api.nvim_buf_add_highlight(buf, ns, l.hl, start + lead + i - 1, 0, -1)
+  local adds = {} -- { 0-based line, hl }
+  local function push(s, hl_group)
+    text[#text + 1] = s
+    if hl_group then
+      adds[#adds + 1] = { #text - 1, hl_group }
     end
   end
-  if review_event(ev) then
-    t.reviews[#t.reviews + 1] = start + lead + 1 -- 1-based buffer line
+
+  if ev.type == "output" then
+    if not t.output_open then
+      push(OUTPUT_OPEN, HL.meta)
+      t.output_open = true
+    end
+    for _, l in ipairs(lines) do
+      push(l.text, l.hl)
+    end
+  else
+    if t.output_open then
+      push(OUTPUT_CLOSE, HL.meta)
+      t.output_open = false
+    end
+    local lead = (kind == "section" and t.has_content) and 1 or 0
+    if lead == 1 then
+      push("")
+    end
+    if review_event(ev) then
+      t.reviews[#t.reviews + 1] = start + #text + 1 -- 1-based buffer line
+    end
+    for _, l in ipairs(lines) do
+      push(l.text, l.hl)
+    end
+  end
+  push("") -- restore the trailing empty line
+
+  vim.api.nvim_buf_set_lines(buf, start, start + 1, false, text)
+  for _, a in ipairs(adds) do
+    vim.api.nvim_buf_add_highlight(buf, ns, a[2], start + a[1], 0, -1)
   end
   t.has_content = true
   if ev.type == "turn_end" then
@@ -507,6 +561,7 @@ function M.ensure(buf)
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
+  vim.bo[tbuf].filetype = "markdown" -- touchup/treesitter render the fenced bash/output
 
   t = { bufnr = tbuf, offset = 0, has_content = false }
   audits[buf] = t

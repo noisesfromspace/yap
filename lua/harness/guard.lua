@@ -42,7 +42,6 @@ local HL = {
   destructive = "YapGuardDestructive",
   reversible = "YapGuardReversible",
   benign = "YapGuardBenign",
-  tool = "YapGuardTool",
   meta = "YapGuardMeta",
   hint = "YapGuardHint",
 }
@@ -57,7 +56,6 @@ link(HL.denied, "DiagnosticError")
 link(HL.destructive, "DiagnosticError")
 link(HL.reversible, "DiagnosticWarn")
 link(HL.benign, "Comment")
-link(HL.tool, "Type")
 link(HL.meta, "Comment")
 link(HL.hint, "Comment")
 
@@ -73,24 +71,28 @@ local function ensure_board()
   board_buf = util.find_or_create_buffer(BOARD_NAME, false, true)
   vim.bo[board_buf].bufhidden = "hide"
   vim.bo[board_buf].modifiable = false
-  vim.bo[board_buf].filetype = "yapguard"
+  vim.bo[board_buf].filetype = "markdown" -- touchup/treesitter render the markdown
   return board_buf
 end
 
 local flat = view.flat
-local clip = view.clip
 
---- Decode a tool-call argument JSON into the primary target shown in a row:
---- the command (bash/ssh), path (write/edit/python file), or URL (curl/fetch).
-local function decode_target(args)
+--- Decode a tool-call argument JSON into the primary target, raw (newlines
+--- and heredocs preserved) so the detail can break it at operators.
+local function decode_raw(args)
   if not args or args == "" then
     return ""
   end
   local ok, a = pcall(vim.json.decode, args)
   if ok and type(a) == "table" then
-    return flat(a.command or a.path or a.url or a.file or vim.inspect(a))
+    return a.command or a.path or a.url or a.file or vim.inspect(a)
   end
-  return flat(tostring(args))
+  return tostring(args)
+end
+
+--- The same target, flattened to one line (for the summary/transient).
+local function decode_target(args)
+  return flat(decode_raw(args))
 end
 
 --- Parse an ISO timestamp into os.time, or nil when unparseable.
@@ -161,6 +163,7 @@ local function approval_row(buf, ev)
     ev = ev,
     tool = ev.tool or "tool",
     command = decode_target(ev.command),
+    raw_command = decode_raw(ev.command),
     reason = ev.reason or "",
     p_alert = num(ev.p_alert),
     severity = num(ev.severity),
@@ -183,6 +186,7 @@ local function advisory_row(ev, session_name, path, ordinal, call)
     ev = ev,
     tool = ev.name or "tool",
     command = decode_target(call and call.args),
+    raw_command = decode_raw(call and call.args),
     reason = ev.reason or "",
     p_alert = num(ev.p_alert),
     severity = num(ev.severity),
@@ -212,6 +216,7 @@ local function resolved_row(ev, req, session_name, path, ordinal)
     ev = ev,
     tool = req.tool or "tool",
     command = decode_target(req.command),
+    raw_command = decode_raw(req.command),
     reason = req.reason or "",
     p_alert = num(req.p_alert),
     severity = num(req.severity),
@@ -373,18 +378,20 @@ local function title_segments(row)
   }
 end
 
---- The expanded detail, one line per label (like the audit view): structure
---- colored, content plain. Returns a list of lines, each a list of segments.
-local function detail_segments(row)
-  local lines = {}
-  -- tool + command
-  lines[#lines + 1] = {
-    { text = "   " },
-    { text = row.tool or "?", hl = HL.tool },
-    { text = "  " },
-    { text = clip(row.command ~= "" and row.command or "—", 160) },
-  }
-  -- severity / always
+--- The expanded detail, rendered as markdown (the board buffer is filetype
+--- markdown): the command in a ```bash fence broken at operators, metrics as
+--- a bullet list, and the triggering transcript as raw markdown so touchup
+--- colors its # @user / # @assistant headings like the session buffer.
+--- Returns a list of plain lines.
+local function detail_lines(row)
+  local out = {}
+  out[#out + 1] = ("**%s**"):format(row.tool or "?")
+  out[#out + 1] = "```bash"
+  for _, l in ipairs(view.shell_lines(row.raw_command or "", "  ")) do
+    out[#out + 1] = l
+  end
+  out[#out + 1] = "```"
+
   if has_metrics(row) then
     local parts = {}
     local cat = row.severity_category ~= "" and row.severity_category or "?"
@@ -396,40 +403,34 @@ local function detail_segments(row)
     if (row.confidence or 0) > 0 then
       parts[#parts + 1] = string.format("%.0f%% confident", row.confidence * 100)
     end
-    lines[#lines + 1] = {
-      { text = "   severity  ", hl = HL.meta },
-      { text = table.concat(parts, " · ") },
-    }
+    out[#out + 1] = "- **severity** " .. table.concat(parts, " · ")
   elseif row.kind == "approval" then
-    lines[#lines + 1] = { { text = "   always (no model consulted)", hl = HL.meta } }
+    out[#out + 1] = "- **severity** always (no model consulted)"
   end
   if row.severity_breakdown ~= "" then
-    lines[#lines + 1] = {
-      { text = "   breakdown  ", hl = HL.meta },
-      { text = row.severity_breakdown },
-    }
+    out[#out + 1] = "- **breakdown** " .. row.severity_breakdown
   end
   local when = age(row.ts)
   local sess = flat(row.session)
   if row.kind == "approval" and when ~= "" then
     sess = sess .. " · parked " .. when
   end
-  lines[#lines + 1] = {
-    { text = "   session   ", hl = HL.meta },
-    { text = sess },
-  }
+  out[#out + 1] = "- **session** " .. sess
+
   if row.context ~= "" then
-    lines[#lines + 1] = { { text = "   context", hl = HL.meta } }
+    out[#out + 1] = ""
+    out[#out + 1] = "**context**"
+    out[#out + 1] = ""
     local clines = vim.split(row.context, "\n", { plain = true })
     for i, l in ipairs(clines) do
-      if i > 4 then
-        lines[#lines + 1] = { { text = "     …", hl = HL.meta } }
+      if i > 6 then
+        out[#out + 1] = "…"
         break
       end
-      lines[#lines + 1] = { { text = "     " .. clip(l, 100) } }
+      out[#out + 1] = l
     end
   end
-  return lines
+  return out
 end
 
 --- Rebuild the board buffer from live approvals + the project's audit logs.
@@ -484,9 +485,9 @@ local function render()
         first_open_line = start
       end
       emit_segments(title_segments(row))
-      local detail = detail_segments(row)
-      for _, segs in ipairs(detail) do
-        emit_segments(segs)
+      local detail = detail_lines(row)
+      for _, d in ipairs(detail) do
+        add(d)
       end
       folds[#folds + 1] = { start, start + #detail, row.key }
       key_lines[row.key] = start
@@ -511,6 +512,19 @@ local function render()
 
   vim.b[buf].yap_guard_rows = row_map
   return { folds = folds, first_open_line = first_open_line, key_lines = key_lines }
+end
+
+--- The row under a board buffer line, or nil. `row_map` is a sparse map keyed
+--- by line number; storing it in `vim.b` makes Neovim convert it to a list
+--- with `vim.NIL` filling the gaps (header/section/blank lines), so reads
+--- must treat `vim.NIL` as "no row here".
+local function row_at(buf, line)
+  local rows = vim.b[buf].yap_guard_rows
+  local row = type(rows) == "table" and rows[line] or nil
+  if row == vim.NIL then
+    return nil
+  end
+  return row
 end
 
 -- Rows the user has expanded; preserved across re-renders so a live update
@@ -651,7 +665,7 @@ local function install_keymaps(buf)
   end, { buffer = buf, silent = true, desc = "yap: close guard board" })
   local function toggle_row()
     local line = vim.api.nvim_win_get_cursor(0)[1]
-    local row = vim.b[buf].yap_guard_rows[line]
+    local row = row_at(buf, line)
     vim.cmd("normal! za")
     if row then
       if vim.fn.foldclosed(line) == -1 then
@@ -675,7 +689,7 @@ local function install_keymaps(buf)
     jump_section(-1)
   end, { buffer = buf, silent = true, desc = "yap: previous guard section" })
   vim.keymap.set("n", "<CR>", function()
-    local row = vim.b[buf].yap_guard_rows[vim.api.nvim_win_get_cursor(0)[1]]
+    local row = row_at(buf, vim.api.nvim_win_get_cursor(0)[1])
     if row then
       open_transient(row)
     end
@@ -715,8 +729,8 @@ function M.touch()
   -- Read/write the BOARD window's cursor, not the current window: touch()
   -- runs from the session's event callback, where window 0 is the session.
   local cur = vim.api.nvim_win_get_cursor(win)[1]
-  local rows = vim.b[board_buf].yap_guard_rows
-  local key = rows and rows[cur] and rows[cur].key
+  local row = row_at(board_buf, cur)
+  local key = row and row.key
   local result = render()
   apply_folds(board_buf, result)
   local line = (key and result.key_lines[key]) or result.first_open_line or 1
