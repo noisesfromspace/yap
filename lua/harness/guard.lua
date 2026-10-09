@@ -709,7 +709,22 @@ function M.toggle()
   if #wins > 0 then
     for _, win in ipairs(wins) do
       if vim.api.nvim_win_is_valid(win) then
-        vim.api.nvim_win_close(win, true)
+        -- Closing the board when it is the tab's last window raises E444
+        -- (:bd on the anchored session collapses its split, leaving the
+        -- board alone). Close the tab instead, exactly like native :q on a
+        -- last window.
+        local tab = vim.api.nvim_win_get_tabpage(win)
+        local normals = 0
+        for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+          if vim.api.nvim_win_get_config(w).relative == "" then
+            normals = normals + 1
+          end
+        end
+        if normals == 1 then
+          vim.cmd("q")
+        else
+          vim.api.nvim_win_close(win, true)
+        end
       end
     end
     if board_anchor and vim.api.nvim_win_is_valid(board_anchor) then
