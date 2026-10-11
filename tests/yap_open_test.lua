@@ -18,4 +18,14 @@ assert(vim.api.nvim_get_current_buf() == buf, "open did not focus the existing b
 assert(vim.bo[buf].modified, "unsaved changes were discarded")
 assert(vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "unsaved", "unsaved line lost")
 
+-- A loaded session whose 'modified' flag is false (while it still holds text
+-- that diverges from the file on disk) must also be reused in place: `:edit`
+-- would re-read the stale file and silently drop the in-memory text.
+vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "diverged" })
+vim.bo[buf].modified = false
+local ok2, err2 = pcall(yap.open, path)
+assert(ok2, "open on an unmodified loaded session raised: " .. tostring(err2))
+assert(vim.api.nvim_get_current_buf() == buf, "open did not reuse the loaded buffer")
+assert(vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "diverged", "in-memory text lost to :edit")
+
 print("OK open")

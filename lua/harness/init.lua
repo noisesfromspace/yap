@@ -1618,9 +1618,12 @@ end
 --- Open a saved session file as a yap buffer.
 function M.open(path)
   local buf = vim.fn.bufnr(vim.fn.fnamemodify(path, ":p"))
-  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].modified then
-    -- Reuse the in-memory buffer with its unsaved changes; `:edit` would
-    -- refuse to discard them (E37).
+  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
+    -- The in-memory buffer is the source of truth: reuse it even when it is
+    -- not flagged 'modified'. `:edit` would re-read the file from disk and
+    -- discard text typed but not yet persisted — and 'modified' can be false
+    -- while the buffer still holds such text (the flag does not capture every
+    -- in-memory-vs-disk divergence a session can reach).
     focus_buf(buf)
     return adopt(buf, path)
   end
@@ -2093,6 +2096,22 @@ function M.setup(opts)
           close_session_drawers(buf, scratch, audit_buf)
         end
       end)
+    end,
+  })
+  -- Persist a session as soon as it leaves every window, so the file on disk
+  -- never trails the in-memory buffer. Neovim reloads an unmodified,
+  -- file-backed buffer from disk when it is re-entered; if that file is
+  -- stale (text typed but not yet saved), the reload silently drops the
+  -- in-memory text. Saving on hide keeps the file current, so any
+  -- reload/`:edit`/reopen is lossless. Only session buffers are saved —
+  -- the audit view and scratch queue have no yap_path.
+  vim.api.nvim_create_autocmd("BufHidden", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if vim.b[buf].yap and vim.b[buf].yap_path then
+        require("harness.session").save(buf)
+      end
     end,
   })
   -- Record focus order so closing a session can land on a waiting session,
