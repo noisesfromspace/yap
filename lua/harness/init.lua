@@ -2129,6 +2129,20 @@ function M.setup(opts)
       end
     end,
   })
+  -- A session's in-memory buffer is the source of truth: the file is only a
+  -- serialization and can trail the buffer (or be written by another
+  -- instance). When Neovim detects the file changed outside the buffer, keep
+  -- the buffer and suppress the "file has changed" prompt/reload — the next
+  -- save re-serializes whatever is in memory.
+  vim.api.nvim_create_autocmd("FileChangedShell", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap then
+        vim.v.fcs_choice = ""
+      end
+    end,
+  })
   -- Record focus order so closing a session can land on a waiting session,
   -- then a running session, else the last file buffer (unlisted sessions are
   -- invisible to Neovim's own replacement-buffer search).
