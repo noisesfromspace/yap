@@ -11,8 +11,8 @@
 --   Advisory  advisories (calls that ran with a non-blocking warning)
 --
 -- Rows are one scannable line, collapsed by default; `za` expands a row to
--- its full context (command, reason, severity breakdown, triggering user
--- message). The trust ledger (guard.json) is intentionally NOT read or
+-- its full context (command, reason, severity breakdown). The trust ledger
+-- (guard.json) is intentionally NOT read or
 -- written yet — the surface ships first, `always` rules land later.
 
 local M = {}
@@ -90,11 +90,6 @@ local function decode_raw(args)
   return tostring(args)
 end
 
---- The same target, flattened to one line (for the summary row).
-local function decode_target(args)
-  return flat(decode_raw(args))
-end
-
 --- Parse an ISO timestamp into os.time, or nil when unparseable.
 local function ts_time(ts)
   local y, mo, d, h, mi, s = ts:match("(%d+)%-(%d+)%-(%d+)T(%d+):(%d+):(%d+)")
@@ -154,7 +149,6 @@ local function approval_row(buf, ev)
     session = harness().session_label(buf),
     ev = ev,
     tool = ev.tool or "tool",
-    command = decode_target(ev.command),
     raw_command = decode_raw(ev.command),
     reason = ev.reason or "",
     p_alert = num(ev.p_alert),
@@ -162,7 +156,6 @@ local function approval_row(buf, ev)
     confidence = num(ev.confidence),
     severity_category = ev.severity_category or "",
     severity_breakdown = ev.severity_breakdown or "",
-    context = ev.context or "",
     ts = ev.ts or "",
   }
 end
@@ -178,7 +171,6 @@ local function advisory_row(ev, session_name, path, ordinal, call, call_ref)
     session = session_name,
     ev = ev,
     tool = ev.name or "tool",
-    command = decode_target(call and call.args),
     raw_command = decode_raw(call and call.args),
     reason = ev.reason or "",
     p_alert = num(ev.p_alert),
@@ -186,7 +178,6 @@ local function advisory_row(ev, session_name, path, ordinal, call, call_ref)
     confidence = num(ev.confidence),
     severity_category = ev.severity_category or "",
     severity_breakdown = ev.severity_breakdown or "",
-    context = ev.context or "",
     ts = ev.ts or "",
   }
 end
@@ -209,7 +200,6 @@ local function resolved_row(ev, req, session_name, path, ordinal, call_ref)
     session = session_name,
     ev = ev,
     tool = req.tool or "tool",
-    command = decode_target(req.command),
     raw_command = decode_raw(req.command),
     reason = req.reason or "",
     p_alert = num(req.p_alert),
@@ -217,7 +207,6 @@ local function resolved_row(ev, req, session_name, path, ordinal, call_ref)
     confidence = num(req.confidence),
     severity_category = req.severity_category or "",
     severity_breakdown = req.severity_breakdown or "",
-    context = req.context or "",
     ts = ev.ts or "",
   }
 end
@@ -391,11 +380,8 @@ local function title_segments(row)
 end
 
 --- The expanded detail, rendered as markdown (the board buffer is filetype
---- markdown): the command in a ```bash fence broken at operators, metrics as
---- a bullet list, and the triggering context as two plain labelled lines
---- (`user:` and `tool call:`) — not the session's # @user / # @assistant
---- headings, which would mislabel the tool call as an assistant message.
---- Returns a list of plain lines.
+--- markdown): the command in a ```bash fence broken at operators and metrics
+--- as a bullet list. Returns a list of plain lines.
 local function detail_lines(row)
   local out = {}
   out[#out + 1] = ("**%s**"):format(row.tool or "?")
@@ -430,20 +416,6 @@ local function detail_lines(row)
   end
   out[#out + 1] = "- **session** " .. sess
 
-  if row.context ~= "" then
-    out[#out + 1] = ""
-    out[#out + 1] = "**context**"
-    out[#out + 1] = ""
-    local clines = vim.split(row.context, "\n", { plain = true })
-    for i, l in ipairs(clines) do
-      if i > 5 then
-        out[#out + 1] = "…"
-        break
-      end
-      out[#out + 1] = (i == 1 and "user: " or "") .. l
-    end
-    out[#out + 1] = "tool call: " .. row.tool .. (row.command ~= "" and (" " .. row.command) or "")
-  end
   return out
 end
 

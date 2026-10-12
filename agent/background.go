@@ -89,10 +89,9 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 		hardReason = "Python script exceeds the 16 KiB decision window; inspect the full file before approving"
 	}
 	dec := utils.ShouldAlert(context.Background(), dm, cfg, tier, hardReason, state)
-	contextStr := guardContext(call, t, messages)
 	switch dec.Outcome {
 	case utils.OutcomeApproval:
-		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason, contextStr, dec)
+		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason, dec)
 		if err != nil {
 			return "error: " + err.Error()
 		}
@@ -107,19 +106,9 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 			"severity": dec.Severity, "confidence": dec.Confidence,
 			"severity_category": category, "severity_category_prob": categoryProb,
 			"severity_breakdown": dec.SeverityBreakdown(),
-			"context": contextStr,
 		})
 	}
 	return ""
-}
-
-// guardContext carries the part of a guard row's context the frontend cannot
-// already derive: the last user message that prompted the tool call. The Lua
-// board renders it as a plain `user:` line and adds its own `tool call:` line
-// from the decoded row, so the block is never mistaken for the session's
-// # @user / # @assistant transcript headings. Bounded like gateState.
-func guardContext(_ llm.ToolCall, _ *turn, messages []llm.Message) string {
-	return truncateRunes(lastUserText(messages), 1000)
 }
 
 func allowedTool(name string, allowed *[]string) bool {

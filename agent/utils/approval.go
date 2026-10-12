@@ -28,15 +28,13 @@ var approvalTimeout = 5 * time.Minute
 // RequestApproval pauses the turn and asks the user to approve running
 // `command` (shown verbatim; the Lua side truncates for display). The tool
 // and reason are recorded with the request so audit history explains why
-// the dialog appeared, alongside the decision model's numbers (dec) and the
-// triggering user message `context` — the same fields alert_advisory carries,
-// so the frontend can render a complete event without re-deriving anything.
+// the dialog appeared, alongside the decision model's numbers (dec).
 // `dec` is zero-valued for the deterministic floor and always-approval tiers
 // (no model consulted); the frontend renders those rows as `always`. It
 // returns (true, nil) when approved, (false, nil) when denied, and an error
 // when there is no serve process to ask or the user never answers. Denial
 // and timeout are surfaced to the model as a tool error.
-func RequestApproval(command, tool, reason, context string, dec Decision) (bool, error) {
+func RequestApproval(command, tool, reason string, dec Decision) (bool, error) {
 	if ApprovalReplies == nil {
 		return false, fmt.Errorf("approval requires yap serve")
 	}
@@ -48,7 +46,6 @@ func RequestApproval(command, tool, reason, context string, dec Decision) (bool,
 		"p_alert": dec.PAlert, "severity": dec.Severity, "confidence": dec.Confidence,
 		"severity_category": category, "severity_category_prob": categoryProb,
 		"severity_breakdown": dec.SeverityBreakdown(),
-		"context": context,
 	})
 	timer := time.NewTimer(approvalTimeout)
 	defer timer.Stop()

@@ -1,5 +1,5 @@
 -- A parked approval is non-blocking: it notifies (distinctly) instead of
--- popping a modal, the guard board shows it with full context, Inspect
+-- popping a modal, the guard board shows it, Inspect
 -- focuses the audit entry, and Deny (the board's answer path) continues the
 -- turn.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
