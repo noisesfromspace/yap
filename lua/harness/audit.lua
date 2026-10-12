@@ -1,9 +1,18 @@
--- The session's audit log, rendered live.
+-- The session's audit log, and the live tool tail that follows it.
 --
--- The live view (:YapLive) is a human-readable, highlighted, folded
--- projection of the JSON Lines audit log, rebuilt from it on reopen. This
--- module owns the rendering; the buffer lifecycle (create, replay on
--- reopen, the audit-log write) stays in harness.
+-- Two responsibilities, kept apart:
+--
+--   audit.jsonl is the append-only durable record (R-audit-log): every tool
+--   call, result, attachment, approval/advisory decision, retry, steer,
+--   model change and turn journal. `append_event` writes it; `:YapClear`
+--   placeholders and the guard board read it. Nothing here renders it.
+--
+--   The live view (`:YapLive`) is a plain tail of the running tool's output:
+--   one unlisted buffer per session that shows a `$ command` header per bash
+--   call followed by that call's streamed bytes, newest at the bottom. It is
+--   never replayed from the audit log — a stopped tool leaves an empty tail,
+--   and the full output lives in the tool's temp log (and, for the result,
+--   in the audit log's tool_result entry).
 
 local M = {}
 
@@ -12,428 +21,33 @@ local util = require("harness.util")
 local state = require("harness.state")
 local view = require("harness.view")
 
--- Highlight groups: structure is colored, content stays default so
--- streamed/returned text reads as plain text. Links (not fixed colors) so
--- every colorscheme renders them; `default` keeps user overrides.
-local HL = {
-  turn = "YapAuditTurn",
-  tool = "YapAuditTool",
-  meta = "YapAuditMeta",
-  warn = "YapAuditWarn",
-}
-local function link(name, to)
-  vim.api.nvim_set_hl(0, name, { link = to, default = true })
-end
-link(HL.turn, "Title")
-link(HL.tool, "Type")
-link(HL.meta, "Comment")
-link(HL.warn, "WarningMsg")
+-- The tail keeps at most this many lines, always the newest: old lines are
+-- dropped from the top, so a runaway command cannot balloon the buffer.
+local MAX_TAIL_LINES = 5000
 
--- Namespace for the live view's per-line highlights.
-local ns = vim.api.nvim_create_namespace("yap.audit.hl")
+-- Per-session tail state: session buf -> { bufnr }.
+local tails = {}
+local audit_poll_timer
 
--- A turn journal line (the live view's section header):
--- `# <ts> turn: <in> in · <out> out · <s>s`.
-local TURN = "^# %d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d turn:"
-
--- An append can invalidate a native manual fold before turn_end projects the
--- next one. Remember the window's choices while its old folds still exist.
-local turn_open = {} -- win -> { [header line] = open }
-local function headers(buf)
-  local result = {}
-  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match(TURN) then
-      result[#result + 1] = i
-    end
+--- The session's tail buffer, created on first use. Empty until a tool runs.
+function M.ensure(buf)
+  local t = tails[buf]
+  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
+    return t
   end
-  return result
+  local name = paths.audit_buf_name(buf)
+  local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
+  vim.bo[tbuf].bufhidden = "hide"
+  vim.bo[tbuf].modifiable = false
+  t = { bufnr = tbuf }
+  tails[buf] = t
+  return t
 end
 
-local function remember(buf)
-  local ends = headers(buf)
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    vim.api.nvim_win_call(win, function()
-      local open = turn_open[win] or {}
-      for _, finish in ipairs(ends) do
-        if vim.fn.foldlevel(finish) > 0 then
-          open[finish] = vim.fn.foldclosed(finish) == -1
-        end
-      end
-      turn_open[win] = open
-    end)
-  end
-end
-
---- Flatten embedded newlines in a free-text field so a single audit field
---- can never inject a new buffer line (nvim_buf_set_lines rejects strings
---- containing '\n'). Multi-line tool output already arrives split via
---- `output`/`tool_result` events; this only guards the one-line annotations
---- built from model/tool-provided text (bash commands, retry errors, …).
-local flat = view.flat
-
---- A single text segment (possibly highlighted) within a rendered line.
-local function seg(text, hl)
-  return { text = text, hl = hl }
-end
-
---- One ledger row: a fixed-width timestamp column (ISO 8601 local time, the
---- same stamp every event already carries), a kind glyph, then the body.
-local function row(ts, glyph, glyph_hl, body, body_hl)
-  local segs = { seg(ts, HL.meta), seg("  ") }
-  if glyph and glyph ~= "" then
-    segs[#segs + 1] = seg(glyph, glyph_hl)
-    segs[#segs + 1] = seg("  ")
-  end
-  if body and body ~= "" then
-    segs[#segs + 1] = seg(body, body_hl)
-  end
-  return segs
-end
-
---- Flatten segment lines (each a list of { text, hl }) into (texts, highlights).
---- Highlight line indices are 0-based within the returned block; callers
---- rebase them onto their buffer.
-local function flatten(seglines)
-  local texts, highlights = {}, {}
-  for _, segs in ipairs(seglines) do
-    local line = #texts
-    local parts, col = {}, 0
-    for _, s in ipairs(segs) do
-      parts[#parts + 1] = s.text
-      if s.hl then
-        highlights[#highlights + 1] = { line, s.hl, col, col + #s.text }
-      end
-      col = col + #s.text
-    end
-    texts[#texts + 1] = table.concat(parts)
-  end
-  return texts, highlights
-end
-
---- Render one audit event as live-view lines. Returns (lines, kind) where
---- each line is a list of { text = string, hl = highlight group|nil } segments
---- and kind is "section" (blank-line separated) or "output" (appended verbatim —
---- streamed bash output chunks), or nil to render nothing.
-local function render_event(ev)
-  local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
-
-  if ev.type == "tool_call" then
-    -- Streamed tools (bash/python) render their command via tool_start, which
-    -- follows immediately; drawing tool_call here too would show the call
-    -- twice. Approval-paused calls never emit tool_start, but their
-    -- approval_request line already shows the command. (tool_call stays in
-    -- the JSONL — the guard board navigates by it.)
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local target = ""
-    local ok, a = pcall(vim.json.decode, ev.args or "")
-    if ok and type(a) == "table" then
-      target = flat(a.path or a.url or a.command or "")
-    end
-    local body = flat(ev.name)
-    if target ~= "" then
-      body = body .. " " .. target
-    end
-    return { row(ts, "▸", HL.tool, body, HL.tool) }, "section"
-
-  elseif ev.type == "tool_start" then
-    local lines = { row(ts, "▸", HL.tool, flat(ev.name or "tool"), HL.tool) }
-    lines[#lines + 1] = { seg("```bash", HL.meta) }
-    for _, l in ipairs(view.shell_lines(ev.command or ev.name or "tool", "  ")) do
-      lines[#lines + 1] = { seg(l) }
-    end
-    lines[#lines + 1] = { seg("```", HL.meta) }
-    return lines, "section"
-
-  elseif ev.type == "task_start" then
-    return { row(ts, "↯", HL.meta, ("task %s started (%s)"):format(flat(ev.id), flat(ev.name))) }, "section"
-
-  elseif ev.type == "task_end" then
-    return { row(ts, "↯", HL.meta, ("task %s %s (%s)"):format(flat(ev.id), flat(ev.status or "settled"), flat(ev.name))) }, "section"
-
-  elseif ev.type == "output" then
-    local out = {}
-    for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
-      out[#out + 1] = { seg(l) }
-    end
-    return out, "output"
-
-  elseif ev.type == "attachment" then
-    if ev.error then
-      local src = flat(ev.source)
-      if src == "" then
-        src = flat(ev.name) ~= "" and flat(ev.name) or "photo"
-      end
-      return { row(ts, "⇗", HL.warn, ("%s: %s"):format(src, flat(ev.error)), HL.warn) }, "section"
-    end
-    return {
-      row(ts, "⇗", HL.meta, ("%s (%d bytes, %s) → %s"):format(flat(ev.source), ev.bytes or 0, flat(ev.format or "?"), flat(ev.asset))),
-    },
-      "section"
-
-  elseif ev.type == "tool_result" then
-    -- bash/python output already streamed via output events; don't duplicate it.
-    if ev.name == "bash" or ev.name == "python" then
-      return nil
-    end
-    local lines = {}
-    if ev.result and ev.result ~= "" then
-      for _, l in ipairs(vim.split(ev.result:gsub("\n$", ""), "\n", { plain = true })) do
-        lines[#lines + 1] = { seg(l) }
-      end
-    end
-    lines[#lines + 1] = row(ts, "▾", HL.meta, ("%s (%s bytes)"):format(flat(ev.name), ev.bytes or "?"))
-    return lines, "section"
-
-  elseif ev.type == "alert_advisory" then
-    local parts = { flat(ev.reason) }
-    local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
-    if p then
-      parts[#parts + 1] = ("P(harmful)=%.2f"):format(p)
-    end
-    if sev then
-      local label = ("severity=%.2f"):format(sev)
-      local cat = flat(ev.severity_category)
-      if cat ~= "" then
-        local prob = tonumber(ev.severity_category_prob)
-        label = label .. (prob and (" %s (%.0f%%)"):format(cat, prob * 100) or (" " .. cat))
-      end
-      parts[#parts + 1] = label
-    end
-    if conf then
-      parts[#parts + 1] = ("conf=%.2f"):format(conf)
-    end
-    local text = ("%s: %s"):format(flat(ev.name), table.concat(parts, " · "))
-    local id = flat(ev.id)
-    if id ~= "" then
-      text = text .. (" [%s]"):format(id)
-    end
-    return { row(ts, "⚠", HL.warn, text, HL.warn) }, "section"
-
-  elseif ev.type == "retry" then
-    return {
-      row(ts, "⟳", HL.warn, ("retry #%d after %dms: %s"):format(ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)), HL.warn),
-    },
-      "section"
-
-  elseif ev.type == "tool_text_warning" then
-    local detail = flat(ev.detail)
-    if detail == "" then
-      detail = "model emitted a tool call as text"
-    end
-    return { row(ts, "⚠", HL.warn, "unexecuted tool call: " .. detail, HL.warn) }, "section"
-
-  elseif ev.type == "steer" then
-    return { row(ts, "⌁", HL.warn, "steer: " .. flat(ev.text), HL.warn) }, "section"
-
-  elseif ev.type == "model_change" then
-    if ev.error then
-      return { row(ts, "⇄", HL.warn, ("model switch to %s failed: %s"):format(flat(ev.to), flat(ev.error)), HL.warn) }, "section"
-    end
-    return { row(ts, "⇄", HL.meta, ("model: %s → %s"):format(flat(ev.from), flat(ev.to))) }, "section"
-
-  elseif ev.type == "approval_request" then
-    local tool, reason = flat(ev.tool), flat(ev.reason)
-    local context = tool
-    if reason ~= "" then
-      context = context ~= "" and (context .. ": " .. reason) or reason
-    end
-    local label = context ~= "" and (" (" .. context .. ")") or ""
-    local body = ("approval requested [%s]%s: %s"):format(flat(ev.id), label, flat(ev.command))
-    return { row(ts, require("harness").config.icons.approval, HL.warn, body, HL.warn) }, "section"
-
-  elseif ev.type == "approval_result" then
-    return { row(ts, ev.approved and "✓" or "✗", HL.warn, (ev.approved and "granted" or "denied") .. " approval", HL.warn) }, "section"
-
-  elseif ev.type == "approval_timeout" then
-    return { row(ts, "⏱", HL.warn, "approval timed out (denied)", HL.warn) }, "section"
-
-  elseif ev.type == "turn_end" then
-    return {
-      {
-        seg(("# %s turn: %d in · %d out · %.1fs"):format(
-          ts,
-          ev.prompt or 0,
-          ev.completion or 0,
-          (ev.ms or 0) / 1000
-        ), HL.turn),
-      },
-    },
-      "section"
-  end
-end
-
-local function review_event(ev)
-  return ev.type == "alert_advisory" or ev.type == "approval_request"
-end
-
---- Rebuild the live view from a list of events: the full line list plus the
---- per-line highlights to reapply. Stream chunks append verbatim (wrapped in
---- a ```text fence so markdown never mis-parses tool output); section events
---- join with one blank line; the buffer keeps one trailing empty line.
-local OUTPUT_OPEN = "```text"
-local OUTPUT_CLOSE = "```"
-
-local function render_events(events)
-  local lines, highlights, has, reviews = {}, {}, false, {}
-  local in_output = false
-
-  -- Append segment lines to `lines`, recording per-segment highlights at
-  -- absolute (0-based) buffer lines.
-  local function emit(segs)
-    local base = #lines
-    local texts, hs = flatten(segs)
-    for _, t in ipairs(texts) do
-      lines[#lines + 1] = t
-    end
-    for _, h in ipairs(hs) do
-      highlights[#highlights + 1] = { base + h[1], h[2], h[3], h[4] }
-    end
-  end
-
-  for _, ev in ipairs(events) do
-    local ev_lines, kind = render_event(ev)
-    if ev_lines then
-      if ev.type == "output" then
-        if not in_output then
-          emit({ { seg(OUTPUT_OPEN, HL.meta) } })
-          in_output = true
-        end
-        emit(ev_lines)
-        has = true
-      else
-        if in_output then
-          emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
-          in_output = false
-        end
-        if kind == "section" and has then
-          lines[#lines + 1] = ""
-        end
-        if review_event(ev) then
-          reviews[#reviews + 1] = #lines + 1 -- 1-based buffer line
-        end
-        emit(ev_lines)
-        has = true
-      end
-    end
-  end
-  if in_output then
-    emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
-  end
-  lines[#lines + 1] = ""
-  return lines, highlights, reviews
-end
-
--- The audit view leads with a two-line header mirroring the guard board: a
--- title ("Audit · <session>") and a turn count. It sits above the event
--- stream, so review-event lines and per-line highlights shift by HEADER_LINES.
-local HEADER_LINES = 2
-
---- Rebuild a live-view buffer from the full event list (the reopen path).
---- `title` names the session in the header. Returns whether the buffer now
---- has content, the review event line map, and the completed-turn count.
-function M.rebuild(buf, events, title)
-  local lines, hl, reviews = render_events(events)
-  local has_events = #lines > 1 -- render_events always leaves one trailing empty line
-  local turns = 0
-  for _, ev in ipairs(events) do
-    if ev.type == "turn_end" then
-      turns = turns + 1
-    end
-  end
-  local header = view.header_lines(("Audit · %s"):format(title or "session"), ("%d turns"):format(turns))
-  for i = #header, 1, -1 do
-    table.insert(lines, 1, header[i])
-  end
-  -- A blank separator between the header and the event stream, matching the
-  -- live-append spacing. Reviews/highlights shift by the full header height.
-  local shift = HEADER_LINES
-  if has_events then
-    table.insert(lines, HEADER_LINES + 1, "")
-    shift = HEADER_LINES + 1
-  end
-  for i, r in ipairs(reviews) do
-    reviews[i] = r + shift
-  end
-  for _, h in ipairs(hl) do
-    h[1] = h[1] + shift
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, view.hl.header, 0, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, ns, view.hl.meta, 1, 0, -1)
-  for _, h in ipairs(hl) do
-    vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], h[3], h[4])
-  end
-  return true, reviews, turns
-end
-
---- Append one event to a live-view buffer. State `t` is { bufnr, has_content }.
---- Section events get a blank line before them (unless the view is empty);
---- streamed output is wrapped in a ```text fence so markdown never mis-parses
---- it. Per-line highlights and review positions are tracked against the actual
---- inserted lines (fence open/close lines included).
-function M.append(t, ev)
-  local lines, kind = render_event(ev)
-  if not lines then
-    return
-  end
-  local buf = t.bufnr
-  remember(buf)
-  local count = vim.api.nvim_buf_line_count(buf)
-  local start = count - 1 -- 0-based index of the trailing empty line
-  local text = {}
-  local adds = {} -- { 0-based line offset, hl, col_start, col_end }
-
-  local function emit(segs)
-    local rel = #text
-    local texts, hs = flatten(segs)
-    for _, s in ipairs(texts) do
-      text[#text + 1] = s
-    end
-    for _, h in ipairs(hs) do
-      adds[#adds + 1] = { rel + h[1], h[2], h[3], h[4] }
-    end
-  end
-
-  if ev.type == "output" then
-    if not t.output_open then
-      emit({ { seg(OUTPUT_OPEN, HL.meta) } })
-      t.output_open = true
-    end
-    emit(lines)
-  else
-    if t.output_open then
-      emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
-      t.output_open = false
-    end
-    local lead = (kind == "section" and t.has_content) and 1 or 0
-    if lead == 1 then
-      text[#text + 1] = ""
-    end
-    if review_event(ev) then
-      t.reviews[#t.reviews + 1] = start + #text + 1 -- 1-based buffer line
-    end
-    emit(lines)
-  end
-  text[#text + 1] = "" -- restore the trailing empty line
-
-  vim.api.nvim_buf_set_lines(buf, start, start + 1, false, text)
-  for _, a in ipairs(adds) do
-    vim.api.nvim_buf_add_highlight(buf, ns, a[2], start + a[1], a[3], a[4])
-  end
-  t.has_content = true
-  if ev.type == "turn_end" then
-    t.turns = (t.turns or 0) + 1
-    vim.api.nvim_buf_set_lines(buf, 1, 2, false, { ("  %d turns"):format(t.turns) })
-  end
-end
-
---- Follow only windows already near the bottom: scrolling up to read must
---- not be yanked back down by each streaming chunk.
+-- Follow only windows already near the bottom: scrolling up to read must not
+-- be yanked back down by each streaming chunk.
 local AUTOSCROLL_THRESHOLD = 10
-function M.scroll(buf)
+local function follow(buf)
   local total = vim.api.nvim_buf_line_count(buf)
   for _, w in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(w) then
@@ -447,127 +61,103 @@ function M.scroll(buf)
   end
 end
 
---- Fold completed turns. The turn journal line is written on completion, so
---- it closes its turn: a turn folds from the line after the previous header
---- through its own header. The foldtext shows that header, so every completed
---- turn collapses to a summary line. The open turn after the last header stays
---- expanded so live output remains visible. Manual folds, applied from a
---- window showing the buffer; a hidden view folds the next time it is shown.
-function M.fold(buf, force, open_new)
-  local wins = vim.fn.win_findbuf(buf)
-  if #wins == 0 then
+--- Append lines to the tail, trimming old ones to keep only the newest.
+local function append_lines(t, lines)
+  if #lines == 0 then
     return
   end
-  local ends = headers(buf)
-  for _, win in ipairs(wins) do
-    vim.api.nvim_win_call(win, function()
-      if vim.api.nvim_win_get_buf(win) ~= buf then
-        return
-      end
-      -- Preserve existing manual choices. A turn that just completed was
-      -- visible while it streamed, so leave its new fold open in a live view;
-      -- replay/reopen still starts with completed turns collapsed.
-      local open = {}
-      if not force then
-        for _, finish in ipairs(ends) do
-          if open_new and turn_open[win] and turn_open[win][finish] ~= nil then
-            open[finish] = turn_open[win][finish]
-          elseif vim.fn.foldlevel(finish) > 0 and vim.fn.foldclosed(finish) == -1 then
-            open[finish] = true
-          end
-        end
-        if open_new then
-          open[ends[#ends]] = true
-        end
-      end
-      vim.wo.foldmethod = "manual"
-      vim.wo.foldminlines = 0
-      vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
-      vim.cmd("normal! zE")
-      -- The two-line header (title + turn count) must never fold into the
-      -- first turn: start the first fold after it, not at line 1.
-      local prev = HEADER_LINES
-      for _, finish in ipairs(ends) do
-        local start = prev + 1
-        if finish >= start then
-          vim.cmd(("%d,%dfold"):format(start, finish))
-          vim.cmd(("%dfold%s"):format(start, open[finish] and "open" or "close"))
-        end
-        prev = finish
-      end
-      turn_open[win] = nil
-    end)
+  local buf = t.bufnr
+  vim.bo[buf].modifiable = true
+  local cur = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if #cur == 1 and cur[1] == "" then
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, lines) -- replace the fresh empty line
+  else
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, lines)
   end
-end
-
---- <leader>1: fold everything — collapse every completed turn, closing any
---- the user had left open. Same projection as M.fold but unconditional.
-function M.fold_all(buf)
-  M.fold(buf, true)
-end
-
---- <leader>2: unfold everything — open every turn fold.
-function M.unfold_all(buf)
-  local wins = vim.fn.win_findbuf(buf)
-  for _, win in ipairs(wins) do
-    vim.api.nvim_win_call(win, function()
-      if vim.api.nvim_win_get_buf(win) ~= buf then
-        return
-      end
-      vim.wo.foldmethod = "manual"
-      vim.wo.foldminlines = 0
-      vim.wo.foldtext = "v:lua.require'harness.audit'.foldtext()"
-      vim.cmd("normal! zR")
-      turn_open[win] = nil
-    end)
+  local count = vim.api.nvim_buf_line_count(buf)
+  if count > MAX_TAIL_LINES then
+    vim.api.nvim_buf_set_lines(buf, 0, count - MAX_TAIL_LINES, false, {})
   end
+  vim.bo[buf].modifiable = false
+  follow(buf)
 end
 
---- Foldtext: a completed turn's header is its last line, so the closed fold
---- shows that summary line rather than the first tool/output line.
-function M.foldtext()
-  return vim.fn.getline(vim.v.foldend)
+--- Start a tool run in the tail: a `$ command` header (wrapped at shell
+--- operators), blank-separated from any earlier output.
+function M.tool_start(buf, command)
+  local t = M.ensure(buf)
+  local cmd = view.shell_lines(command or "", "  ")
+  local lines = {}
+  if vim.api.nvim_buf_line_count(t.bufnr) > 1 or vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)[1] ~= "" then
+    lines[#lines + 1] = ""
+  end
+  lines[#lines + 1] = "$ " .. cmd[1]
+  for i = 2, #cmd do
+    lines[#lines + 1] = cmd[i]
+  end
+  append_lines(t, lines)
 end
 
--- ─── Lifecycle ─────────────────────────────────────────────────────────────
--- Per-session-buffer persistent audit view: every audit event is rendered
--- into ONE unlisted buffer, yap://<session>-audit, opened by :YapLive. The
--- audit view is not a second log — it is the live, human-readable rendering
--- of the JSON Lines audit log, rebuilt from it on reopen. Only the audit log
--- is persisted.
-local audits = {} -- session buf → { bufnr, offset, has_content, reviews, audit }
-local audit_poll_timer
-
---- Cap the raw tool output streamed into the live audit view (and audit
---- log) per tool run. The returned tool result is already tail-truncated
---- to 50KB; the live audit view must not accumulate the full log — a
---- runaway command writing gigabytes would otherwise balloon the audit
---- view buffer (and audit log) and OOM the editor. 256KB is ample for
---- watching progress while keeping memory bounded.
-local LIVE_OUTPUT_CAP = 256 * 1024
-
---- Append one event as a JSON object to the session's audit log.
-local function write_log(buf, ev)
-  local t = audits[buf]
-  if not t then
+--- Follow new bytes of each running tool's temp log into the tail. A line not
+--- yet newline-terminated is buffered in the log state and only emitted once
+--- it completes, so a partial write is never split across two fake lines.
+function M.drain(buf)
+  local t = tails[buf]
+  local logs = state.live_logs[buf]
+  if not t or not logs then
     return
   end
-  if not t.audit then
-    t.audit = paths.audit_path(buf)
-    -- The jsonl holds full tool args and results (potentially secrets); keep
-    -- it 0600. The parent (the sessions <cwd-slug>/ dir) is created by save().
-    paths.ensure_session_dir(vim.fn.fnamemodify(t.audit, ":h"))
+  for _, l in pairs(logs) do
+    local fd = vim.uv.fs_open(l.log, "r", 438)
+    if fd then
+      local stat = vim.uv.fs_fstat(fd)
+      if stat and stat.size > (l.offset or 0) then
+        local data = vim.uv.fs_read(fd, stat.size - (l.offset or 0), l.offset or 0)
+        l.offset = stat.size
+        if data and #data > 0 then
+          local text = (l.pending or "") .. data
+          local lines = vim.split(text, "\n", { plain = true })
+          l.pending = table.remove(lines)
+          append_lines(t, lines)
+        end
+      end
+      vim.uv.fs_close(fd)
+    end
   end
+end
+
+--- Emit any unterminated tail line (e.g. a command's final write without a
+--- trailing newline). `log` names one log to flush; nil flushes every log
+--- (used on process exit / stop, when all logs are torn down).
+function M.flush(buf, log)
+  local t = tails[buf]
+  local logs = state.live_logs[buf]
+  if not t or not logs then
+    return
+  end
+  for _, l in pairs(logs) do
+    if (not log or l.log == log) and l.pending and l.pending ~= "" then
+      append_lines(t, { l.pending })
+      l.pending = ""
+    end
+  end
+end
+
+--- Append one event as a JSON object to the session's audit log. The log is
+--- the durable record; the tail view renders none of these events.
+function M.append_event(buf, ev)
+  local path = paths.audit_path(buf)
+  paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
   -- Create the log 0600 before the first append so it is never briefly
   -- world-readable: writefile() would create it 0644 under a permissive umask.
-  if vim.fn.filereadable(t.audit) == 0 then
-    local fd = vim.uv.fs_open(t.audit, "wx", 384) -- 0600
+  if vim.fn.filereadable(path) == 0 then
+    local fd = vim.uv.fs_open(path, "wx", 384) -- 0600
     if fd then
       vim.uv.fs_close(fd)
     end
   end
-  vim.fn.writefile({ vim.json.encode(ev) }, t.audit, "a")
-  vim.fn.setfperm(t.audit, "rw-------") -- also tighten a legacy 0644 log
+  vim.fn.writefile({ vim.json.encode(ev) }, path, "a")
+  vim.fn.setfperm(path, "rw-------") -- also tighten a legacy 0644 log
 end
 
 --- Seed the all-time session usage from the audit log: sum every turn_end
@@ -593,96 +183,6 @@ function M.seed_session_usage(buf)
     end
   end
   vim.b[buf].yap_session_usage = su
-end
-
---- The session buffer's audit-view state (and buffer), created on first use.
-function M.ensure(buf)
-  local t = audits[buf]
-  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
-    return t
-  end
-  local name = paths.audit_buf_name(buf)
-  local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls or buffer pickers
-  vim.bo[tbuf].bufhidden = "hide"
-  vim.bo[tbuf].modifiable = false
-  vim.bo[tbuf].filetype = "markdown" -- touchup/treesitter render the fenced bash/output
-
-  t = { bufnr = tbuf, offset = 0, has_content = false, reviews = {}, turns = 0, output_open = false }
-  audits[buf] = t
-
-  -- Replay the audit log so the live view survives restarts.
-  local events = {}
-  local path = paths.audit_path(buf)
-  if vim.fn.filereadable(path) == 1 then
-    for _, line in ipairs(vim.fn.readfile(path)) do
-      if line ~= "" then
-        local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" then
-          events[#events + 1] = ev
-        end
-      end
-    end
-  end
-  vim.bo[tbuf].modifiable = true
-  local title = paths.session_name(paths.session_path(buf) or vim.api.nvim_buf_get_name(buf))
-  local ok, label = pcall(function()
-    return require("harness").session_label(buf)
-  end)
-  if ok and label and label ~= "" then
-    title = label
-  end
-  t.has_content, t.reviews, t.turns = M.rebuild(tbuf, events, title)
-  vim.bo[tbuf].modifiable = false
-  return t
-end
-
---- Append an event to the audit log and render it into the audit view.
-function M.append_event(buf, ev)
-  local t = M.ensure(buf)
-  write_log(buf, ev)
-  vim.bo[t.bufnr].modifiable = true
-  M.append(t, ev)
-  vim.bo[t.bufnr].modifiable = false
-  M.scroll(t.bufnr)
-end
-
---- Append newly written bytes of the running tool's log to the audit
---- view buffer (called on the spinner tick, on tool_end, and on process
---- exit).
-function M.drain(buf)
-  local t, logs = audits[buf], state.live_logs[buf]
-  if not t or not logs then
-    return
-  end
-  for _, l in pairs(logs) do
-    local fd = vim.uv.fs_open(l.log, "r", 438)
-    if fd then
-      local stat = vim.uv.fs_fstat(fd)
-      if stat then
-        local data
-        local room = LIVE_OUTPUT_CAP - (l.out or 0)
-        if stat.size > (l.offset or 0) and room > 0 then
-          data = vim.uv.fs_read(fd, math.min(stat.size - (l.offset or 0), room), l.offset or 0)
-          if data then
-            l.out = (l.out or 0) + #data
-          end
-        end
-        l.offset = stat.size
-        if data and #data > 0 then
-          M.append_event(buf, { type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"), data = data })
-        elseif room <= 0 and stat.size > 0 and not l.truncated then
-          l.truncated = true
-          M.append_event(buf, {
-            type = "output", name = l.name, ts = os.date("%Y-%m-%dT%H:%M:%S"),
-            data = ("[live output truncated at %d bytes; remaining %d bytes not shown]\n"):format(
-              LIVE_OUTPUT_CAP, stat.size - LIVE_OUTPUT_CAP
-            ),
-          })
-        end
-      end
-      vim.uv.fs_close(fd)
-    end
-  end
 end
 
 -- Poll tool logs independently of the visual spinner. Direct drains on
@@ -712,15 +212,14 @@ function M.poll_start()
   )
 end
 
---- The session buffer's audit-view state, or nil (for callers that need the
---- view buffer or review line map).
+--- The session buffer's tail-view state, or nil.
 function M.view(buf)
-  return audits[buf]
+  return tails[buf]
 end
 
---- Every session buffer's audit-view state, keyed by session buffer.
+--- Every session buffer's tail-view state, keyed by session buffer.
 function M.views()
-  return audits
+  return tails
 end
 
 return M

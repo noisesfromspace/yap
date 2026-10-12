@@ -1,5 +1,5 @@
 -- Fixed-height bottom drawers: the ONE window pattern shared by every Yap
--- panel — the audit view (:YapLive), the guard board (:YapGuard) and the
+-- panel — the live tool tail (:YapLive), the guard board (:YapGuard) and the
 -- scratch queue (<leader>s). A single persistent buffer per panel, never
 -- duplicated, always a bottom split under the panel's own anchor window,
 -- closed back to the window it was toggled from. All three share the same

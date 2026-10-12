@@ -116,8 +116,8 @@ function M.session_name(path)
   return vim.fn.fnamemodify(path, ":h:t")
 end
 
---- The audit view buffer's name; mirrors the session directory name so a
---- renamed directory keeps its audit view.
+--- The live tool tail buffer's name; mirrors the session directory name so a
+--- renamed directory keeps its tail buffer.
 function M.audit_buf_name(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
   return "yap://" .. M.session_name(path) .. "-audit"

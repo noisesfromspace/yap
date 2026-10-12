@@ -1,9 +1,9 @@
 -- Shared presentation primitives for Yap's read-only "board" buffers: the
--- guard board (yap://guard), the audit view (yap://<session>-audit), and any
--- future projection. Both are rebuilt-from-events buffers opened as a bottom
--- drawer with a two-line header (title + counts), linked highlight groups,
--- and manual folds. New views reuse these so they look and behave alike;
--- view-specific highlight groups stay in the view's own module.
+-- guard board (yap://guard), the live tool tail (yap://<session>-audit), and
+-- any future projection. Both are rebuilt-from-events buffers opened as a
+-- bottom drawer with a two-line header (title + counts), linked highlight
+-- groups, and manual folds. New views reuse these so they look and behave
+-- alike; view-specific highlight groups stay in the view's own module.
 
 local M = {}
 

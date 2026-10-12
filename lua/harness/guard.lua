@@ -1,9 +1,8 @@
 -- The guard board (yap://guard): one read-only, global projection of every
 -- parked approval and recent advisory, plus resolved history. It merges the
 -- old :YapApproval and :YapAlerts pickers into a single re-enterable buffer
--- modeled on the audit view (a projection rebuilt from events). It opens as
--- the same bottom drawer as the audit view; actions are direct keys on the
--- cursor row.
+-- modeled on the live tool tail. It opens as the same bottom drawer as the
+-- live tail; actions are direct keys on the cursor row.
 --
 -- Two sections, newest first:
 --   Guard     every approval — parked (needs Run/Deny) and settled
@@ -143,8 +142,7 @@ local function approval_row(buf, ev)
     key = "approval:" .. (ev.id or ""),
     buf = buf,
     path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf),
-    ordinal = nil, -- filled by approval_meta (scans the live audit log)
-    call = nil, -- filled by approval_meta: the { id, occurrence } to reveal
+    call = nil, -- filled by approval_call: the { id, occurrence } to focus
     session = harness().session_label(buf),
     ev = ev,
     tool = ev.tool or "tool",
@@ -159,13 +157,12 @@ local function approval_row(buf, ev)
   }
 end
 
-local function advisory_row(ev, session_name, path, ordinal, call, call_ref)
+local function advisory_row(ev, session_name, path, call, call_ref)
   return {
     kind = "advisory",
     key = "advisory:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
     buf = nil,
     path = path,
-    ordinal = ordinal,
     call = call_ref, -- { id, occurrence } of the flagged tool call (or nil)
     session = session_name,
     ev = ev,
@@ -181,7 +178,7 @@ local function advisory_row(ev, session_name, path, ordinal, call, call_ref)
   }
 end
 
-local function resolved_row(ev, req, session_name, path, ordinal, call_ref)
+local function resolved_row(ev, req, session_name, path, call_ref)
   local kind
   if ev.type == "approval_result" then
     kind = ev.approved and "granted" or "denied"
@@ -194,7 +191,6 @@ local function resolved_row(ev, req, session_name, path, ordinal, call_ref)
     key = "resolved:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
     buf = nil,
     path = path,
-    ordinal = ordinal,
     call = call_ref, -- { id, occurrence } of the gated tool call (or nil)
     session = session_name,
     ev = ev,
@@ -210,32 +206,25 @@ local function resolved_row(ev, req, session_name, path, ordinal, call_ref)
   }
 end
 
--- The review-event ordinal of a live parked approval — its index among the
--- session's alert_advisory/approval_request entries — and the tool call that
--- triggered it, so Inspect can focus both the audit entry and the session's
--- matching tool region.
-local function approval_meta(buf, ev)
+-- The tool call that triggered a live parked approval — { id, occurrence } —
+-- so Inspect can focus the session's matching tool region.
+local function approval_call(buf, ev)
   local path = paths.audit_path(buf)
   if vim.fn.filereadable(path) ~= 1 then
     return nil
   end
-  local ordinal, occurrences, last_call = 0, {}, nil
-  local target
+  local occurrences, last_call = {}, nil
   for _, line in ipairs(vim.fn.readfile(path)) do
     local ok, entry = pcall(vim.json.decode, line)
     if ok and type(entry) == "table" then
       if entry.type == "tool_call" and entry.id then
         occurrences[entry.id] = (occurrences[entry.id] or 0) + 1
         last_call = { id = entry.id, occurrence = occurrences[entry.id] }
-      elseif entry.type == "alert_advisory" or entry.type == "approval_request" then
-        ordinal = ordinal + 1
-        if entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
-          target = { ordinal = ordinal, call = last_call }
-        end
+      elseif entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
+        return last_call
       end
     end
   end
-  return target
 end
 
 --- Scan the current project's audit logs for advisories and resolved
@@ -247,7 +236,7 @@ local function scan_project()
     if vim.fn.filereadable(log) == 1 then
       local path = vim.fn.fnamemodify(log, ":h") .. "/session.md"
       local session_name = paths.session_name(path)
-      local ordinal, calls, occurrences, requests, last_call = 0, {}, {}, {}, nil
+      local calls, occurrences, requests, last_call = {}, {}, {}, nil
       for _, line in ipairs(vim.fn.readfile(log)) do
         if line ~= "" then
           local ok, ev = pcall(vim.json.decode, line)
@@ -257,15 +246,13 @@ local function scan_project()
               calls[ev.id] = ev
               last_call = { id = ev.id, occurrence = occurrences[ev.id] }
             elseif ev.type == "alert_advisory" then
-              ordinal = ordinal + 1
               local call_ref = ev.id and occurrences[ev.id] and { id = ev.id, occurrence = occurrences[ev.id] } or nil
-              advisories[#advisories + 1] = advisory_row(ev, session_name, path, ordinal, calls[ev.id], call_ref)
+              advisories[#advisories + 1] = advisory_row(ev, session_name, path, calls[ev.id], call_ref)
             elseif ev.type == "approval_request" and ev.id then
-              ordinal = ordinal + 1
-              requests[ev.id] = { ev = ev, ordinal = ordinal, call = last_call }
+              requests[ev.id] = { ev = ev, call = last_call }
             elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
               local req = requests[ev.id]
-              resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.ordinal, req and req.call)
+              resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
             end
           end
         end
@@ -297,11 +284,7 @@ local function build_sections()
   for owner, ev in pairs(state.pending_approvals) do
     if vim.api.nvim_buf_is_valid(owner) then
       local row = approval_row(owner, ev)
-      local meta = approval_meta(owner, ev)
-      if meta then
-        row.ordinal = meta.ordinal
-        row.call = meta.call
-      end
+      row.call = approval_call(owner, ev)
       approvals[#approvals + 1] = row
     end
   end
@@ -560,7 +543,7 @@ local function deny_row(row)
 end
 
 local function inspect_row(row)
-  harness().reveal_audit(row.path, row.ordinal, row.call)
+  harness().reveal_call(row.path, row.call)
 end
 
 -- ─── Board lifecycle ───────────────────────────────────────────────────────
@@ -589,7 +572,7 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "za", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
   vim.keymap.set("n", "<Tab>", toggle_row, { buffer = buf, silent = true, desc = "yap: expand/collapse guard row" })
   -- A click on a closed row opens it; open content keeps native mouse
-  -- behavior (matches the session buffer and the audit view).
+  -- behavior (matches the session buffer).
   vim.keymap.set("n", "<LeftMouse>", view.mouse_fold, {
     buffer = buf, expr = true, silent = true, desc = "yap: open guard row on click",
   })

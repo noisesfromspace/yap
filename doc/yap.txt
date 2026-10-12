@@ -165,12 +165,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
 *:YapStop*
 :YapStop              Kill the in-flight request for the current buffer.
 *:YapLive*
-:YapLive              Open this session's audit view (|yap-audit|): one
-                        persistent buffer rendering the audit log as it
-                        streams — a `$ command` header per bash call with its
-                        output, plus one journal line per tool call/result
-                        and per turn. Opens scrolled to the bottom (or focuses
-                        the existing window); `q` closes it.
+:YapLive              Open this session's live tool tail (|yap-audit|): one
+                        persistent, read-only buffer following the running
+                        tool's output — a `$ command` header per bash call with
+                        its streamed output. Opens scrolled to the bottom (or
+                        focuses the existing window); `q` closes it.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): a read-only bottom
                         drawer of approvals and advisories (|yap-alert-gate|).
@@ -222,7 +221,7 @@ and <leader>M, which are global. Every binding is a `keymaps` config key
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>M             Change the default model for new buffers (picker).
   <leader>g             Open/close the guard board (see |:YapGuard|).
-  <leader>l             Watch the audit view (see |:YapLive|).
+  <leader>l             Watch the live tool tail (see |:YapLive|).
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor.
@@ -376,7 +375,7 @@ opens, and every save goes through |:write| so 'modified', |:w| and the exit
 prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
-it as a managed session (unlisted, keymapped, audit view attached), the same
+it as a managed session (unlisted, keymapped, live tool tail attached), the same
 as |:YapSessions| resume.
 
 File operations are the session operations:
@@ -403,19 +402,18 @@ with three independently foldable sections:
 AUDIT LOG                                                        *yap-audit*
 
 audit.jsonl beside the session file is an append-only, JSON Lines record that
-survives restarts: every tool call (full arguments), streamed bash/python
-output, full tool results, image attachments, approval/advisory decisions, a
-retry line for each transient generation error, and one `turn_end` line per
-completed send (model, prompt, completion, cost, ms).
+survives restarts: every tool call (full arguments), full tool results, image
+attachments, approval/advisory decisions, a retry line for each transient
+generation error, and one `turn_end` line per completed send (model, prompt,
+completion, cost, ms).
 
-The audit view (|:YapLive|) is the human-readable rendering of these events,
-rebuilt from the file on reopen. |:YapGuard| lists advisories and approval
-requests and can jump to an unfolded entry. |:YapClear| placeholders point
-back at the exact audit-log lines they replaced.
-
-Each completed turn folds back to its header line — a table of contents —
-while the open turn stays expanded so live output is visible. `<Tab>` toggles
-a folded turn; `<leader>1`/`<leader>2` fold/unfold all completed turns.
+The live tool tail (|:YapLive|) is a separate, plain buffer that follows the
+running tool's output — a `$ command` header per bash call plus its streamed
+bytes. It is never rebuilt from the audit log; the full streamed output lives
+in the tool's temp log, and the audit log carries the tail-truncated result.
+|:YapGuard| lists advisories and approval requests and jumps to the matching
+tool region in the session. |:YapClear| placeholders point back at the exact
+audit-log lines they replaced.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
 and tool output routinely contain secrets.
@@ -609,7 +607,7 @@ close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
   - bash runs commands non-interactively (stdin is /dev/null) in their own
     process group; on timeout (default 120s) the whole group is killed, and
     :YapStop takes in-flight commands down with the binary. Live output goes
-    to the audit view (|:YapLive|), never the buffer; the result is truncated
+    to the live tool tail (|:YapLive|), never the buffer; the result is truncated
     to the LAST 2000 lines / 50KB. `isolate_network` runs the command with no
     network access; `vpn` runs it inside the VPN namespace. The two flags are
     mutually exclusive.
@@ -709,8 +707,9 @@ replaces.
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.
-  audit view          The rendered buffer `:YapLive` rebuilds from the audit
-                      log. (Not "live view", "audit drawer".)
+  audit view          The live tool tail `:YapLive` opens: one read-only
+                      buffer per session following the running tool's output.
+                      (Not "live view", "audit drawer".)
   advisory            The gate outcome that runs a call and logs a
                       non-blocking warning. (Not "advice", "advise".)
   approval            The gate outcome that pauses a turn for a Run/Deny/

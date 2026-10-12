@@ -248,8 +248,8 @@ end
 -- per token (O(n) per edit on large sessions).
 local stream_flush = {}
 
--- Audit lifecycle (log write, live-view buffer, seed usage, drain, poll)
--- lives in harness.audit.
+-- The audit log write, live tool tail, session-usage seed, and log drain
+-- all live in harness.audit.
 
 local follow_override = {} -- session buf -> windows deliberately focused during a turn (paused tail-following)
 local live_session_label
@@ -302,11 +302,12 @@ local function handle_event(buf, json_line)
   if ev.type == "tool_start" and ev.log then
     local logs = state.live_logs[buf] or {}
     state.live_logs[buf] = logs
-    logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), out = 0, offset = 0 }
+    logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), offset = 0, pending = "" }
     live[buf] = logs[ev.log]
-    audit.append_event(buf, ev)
+    audit.tool_start(buf, ev.command or ev.name or "tool")
   elseif ev.type == "tool_end" then
     audit.drain(buf) -- the log is complete; capture the final bytes
+    audit.flush(buf, ev.log) -- emit any unterminated final line
     local logs = state.live_logs[buf] or {}
     logs[ev.log] = nil
     live[buf] = next(logs) and select(2, next(logs)) or nil
@@ -420,10 +421,6 @@ local function handle_event(buf, json_line)
     end
     vim.b[buf].yap_session_usage = su
     audit.append_event(buf, ev)
-    local t = audit.view(buf)
-    if t then
-      audit.fold(t.bufnr, false, true)
-    end
     -- An advisory that fired mid-turn is on disk now; re-render the board so
     -- it reflects the settled turn even if its own touch() raced the event.
     guard.touch()
@@ -658,9 +655,9 @@ local function close_session_drawers(buf, scratch, audit_buf)
   end
 end
 
---- Open the session's audit view (:YapLive): one persistent rendering
---- of the audit log, not a new terminal per call. Opens even before any
---- tool has run (an empty audit view that fills as tools execute).
+--- Open the session's live tool tail (:YapLive): one persistent read-only
+--- buffer that follows the running tool's output. Opens even before any tool
+--- has run (an empty tail that fills as tools execute).
 function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for owner, t in pairs(audit.views()) do
@@ -678,59 +675,16 @@ function M.live(buf)
       M.live(t.bufnr)
     end, { buffer = t.bufnr, silent = true, desc = "yap: toggle live tool output" })
   end
-  if M.config.keymaps.toggle_fold ~= "" then
-    vim.keymap.set("n", M.config.keymaps.toggle_fold, function()
-      -- za raises E490 "No fold found" off a fold (header/blank); silent!
-      -- keeps that a no-op rather than an E5108 Lua stack trace (matches
-      -- the session buffer's fold handler).
-      vim.cmd("silent! normal! za")
-    end, { buffer = t.bufnr, silent = true, desc = "yap: toggle turn fold" })
-  end
-  if M.config.keymaps.view_1 ~= "" then
-    vim.keymap.set("n", M.config.keymaps.view_1, function()
-      audit.fold_all(t.bufnr)
-    end, { buffer = t.bufnr, silent = true, desc = "yap: fold all turns" })
-  end
-  if M.config.keymaps.view_2 ~= "" then
-    vim.keymap.set("n", M.config.keymaps.view_2, function()
-      audit.unfold_all(t.bufnr)
-    end, { buffer = t.bufnr, silent = true, desc = "yap: unfold all turns" })
-  end
   vim.keymap.set("n", "q", function()
     M.live(t.bufnr)
-  end, { buffer = t.bufnr, silent = true, desc = "yap: close audit view" })
-  -- A click on a closed turn opens it in place (matches the guard board and
-  -- the session buffer).
-  vim.keymap.set("n", "<LeftMouse>", require("harness.view").mouse_fold, {
-    buffer = t.bufnr, expr = true, silent = true, desc = "yap: open turn on click",
-  })
+  end, { buffer = t.bufnr, silent = true, desc = "yap: close live view" })
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
-  audit.fold(t.bufnr)
 end
 
---- Open a session's audit and reveal one reviewable event (ordinal in its log).
-local function show_audit_event(buf, ordinal)
-  if vim.api.nvim_get_current_buf() ~= buf then
-    vim.api.nvim_set_current_buf(buf)
-  end
-  local t = audit.ensure(buf)
-  local wins = vim.fn.win_findbuf(t.bufnr)
-  if wins[1] then
-    vim.api.nvim_set_current_win(wins[1])
-  else
-    M.live(buf)
-  end
-  local n = t.reviews[ordinal]
-  if n then
-    vim.api.nvim_win_set_cursor(0, { n, 0 })
-    vim.cmd("normal! zvzz") -- unfold the turn and center the request with its surrounding events
-  end
-end
-
---- Focus the matching tool region in the session without leaving the audit
---- drawer. The audit records calls even if the user later edits their
---- transcript, so a missing region simply leaves the session cursor where it
---- was. `call` is the { id, occurrence } of the tool call to reveal.
+--- Focus the matching tool region in the session. The audit records calls
+--- even if the user later edits their transcript, so a missing region simply
+--- leaves the session cursor where it was. `call` is the { id, occurrence }
+--- of the tool call to reveal.
 local function focus_alert_call(buf, call)
   if not call then
     return
@@ -769,17 +723,16 @@ local function focus_alert_call(buf, call)
   end
 end
 
--- Forward-declared: M.reveal_audit below calls focus_buf before its
+-- Forward-declared: M.reveal_call below calls focus_buf before its
 -- definition later in this file (a Lua local is only visible after its
 -- declaration, so without this the call would resolve to a nil global).
 local focus_buf
 
---- Open a session's audit and reveal one reviewable event by its ordinal
---- (the index among alert_advisory/approval_request entries in that log),
---- focusing the session's matching tool region when `call` names one. The
+--- Open a session and focus the tool region a guard row points at. `call` is
+--- the { id, occurrence } of the tool call (nil for rows without one). The
 --- guard board's Inspect action uses this for rows loaded from disk, whether
 --- or not the session is already open.
-function M.reveal_audit(path, ordinal, call)
+function M.reveal_call(path, call)
   local buf = vim.fn.bufnr(path)
   if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
     focus_buf(buf)
@@ -787,7 +740,6 @@ function M.reveal_audit(path, ordinal, call)
   else
     buf = M.open(path)
   end
-  show_audit_event(buf, ordinal)
   focus_alert_call(buf, call)
 end
 
@@ -1050,6 +1002,7 @@ function M.send(buf)
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
       audit.drain(buf) -- final bytes; a killed tool never sent tool_end
+      audit.flush(buf) -- emit any unterminated final line
       for path in pairs(state.live_logs[buf] or {}) do
         vim.npcall(os.remove, path)
       end
@@ -1279,6 +1232,7 @@ function M.stop(buf)
     spinner.stop_if_idle()
     audit.poll_stop_if_idle()
     audit.drain(buf)
+    audit.flush(buf) -- emit any unterminated final line
     for path in pairs(state.live_logs[buf] or {}) do
       vim.npcall(os.remove, path)
     end
@@ -1518,9 +1472,8 @@ function M.new(opts)
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
   -- regardless of the .md extension.
   require("harness.session").save(buf)
-  -- The audit view is a rendering of the audit log: create its live-view buffer
-  -- now (empty — the audit log is written on the first event), before any
-  -- :file rename or tool run.
+  -- Create the session's live tool tail now (empty until a tool runs), before
+  -- any :file rename or tool run.
   audit.ensure(buf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
 
@@ -1537,7 +1490,7 @@ end
 
 --- Open a saved session file as a yap buffer.
 --- Turn a session-file buffer into a managed yap buffer: unlisted,
---- keymapped, audit view attached, model combo resumed from
+--- keymapped, live tool tail attached, model combo resumed from
 --- frontmatter. Shared by :YapSessions resume and by directly opening
 --- a file under ~/.yap/sessions/.
 adopt = function(buf, path)
@@ -1567,7 +1520,7 @@ adopt = function(buf, path)
   -- seed the overview hint so it counts before its first send here.
   winbar.seed_awaiting(buf)
   setup_buffer(buf)
-  audit.ensure(buf) -- restore the live view from the audit log (create if missing)
+  audit.ensure(buf) -- the live tool tail (empty until a tool runs)
   audit.seed_session_usage(buf) -- durable all-time totals from the audit log
   return buf
 end
@@ -2120,7 +2073,7 @@ function M.setup(opts)
   -- stale (text typed but not yet saved), the reload silently drops the
   -- in-memory text. Saving on hide keeps the file current, so any
   -- reload/`:edit`/reopen is lossless. Only session buffers are saved —
-  -- the audit view and scratch queue have no yap_path.
+  -- the live tool tail and scratch queue have no yap_path.
   vim.api.nvim_create_autocmd("BufHidden", {
     group = adopt_group,
     callback = function(args)

@@ -74,7 +74,7 @@ local mid_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n
 assert(not mid_text:match("\nl1\n"), "output streamed into the buffer (should stay in the log)")
 assert(not mid_text:match("stream done"), "turn completed before mid-run check could run")
 
--- the audit view buffer IS filling while the tool runs
+-- the tail view buffer IS filling while the tool runs
 local tb1
 local audit_filling = vim.wait(10000, function()
   tb1 = audit_buf(buf)
@@ -111,29 +111,13 @@ assert(
 -- winbar back to idle
 assert(not yap.winbar():match("bash"), "winbar still shows the tool after completion")
 
--- the audit view holds the FULL output (tool_end drains before the temp log
--- of an untruncated run is deleted), with the command fenced as bash
+-- the tail view holds the FULL output (tool_end drains before the temp log
+-- of an untruncated run is deleted), with the command as a `$` header
 local audit_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
-assert(audit_text:match("```bash\nprintf"), "no fenced command in audit view: " .. audit_text)
+assert(audit_text:match("%$ printf"), "no command header in the tail view: " .. audit_text)
 assert(
   audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"),
-  "audit view incomplete: " .. audit_text
-)
-
--- the audit log records the streamed output as JSON output events
-local audit_file = require("harness.path").audit_path(buf)
-assert(audit_file and vim.fn.filereadable(audit_file) == 1, "audit log missing")
-local streamed_parts = {}
-for _, line in ipairs(vim.fn.readfile(audit_file)) do
-  local ok, ev = pcall(vim.json.decode, line)
-  if ok and ev.type == "output" then
-    streamed_parts[#streamed_parts + 1] = ev.data
-  end
-end
-local streamed = table.concat(streamed_parts, "")
-assert(
-  streamed:match("l1\nl2\n") and streamed:match("tail%-without%-newline"),
-  "streamed output missing from audit: " .. streamed
+  "tail view incomplete: " .. audit_text
 )
 
 -- the parsed assistant message carries the flattened result, marker line excluded
@@ -186,7 +170,9 @@ assert(
 )
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "audit view window not at the bottom")
 
-vim.api.nvim_set_current_buf(buf2) -- stop() works on the current buffer
+-- The live view is a winfixbuf drawer; switching its buffer would raise
+-- E1513. Return focus to the session window, where stop() acts.
+vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf2)[1])
 vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- park away from the stream tail
 local stop_row = vim.api.nvim_win_get_cursor(0)[1]
 yap.stop()

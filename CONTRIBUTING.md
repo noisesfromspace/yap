@@ -120,9 +120,9 @@ message history, but a session is a small set of sibling files: the audit log
 sidecars lazily (audit at the next turn, notes at the next scratch toggle),
 while a `:saveas` copy rehomes them eagerly so the original session keeps its
 own files and the copy continues with full history. Why: no second
-serialization format to keep in sync. Session buffers (and their audit view
+serialization format to keep in sync. Session buffers (and their live tail
 buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
-`<leader>r`, and a session's audit view opens with `:YapLive`.
+`<leader>r`, and a session's tool tail opens with `:YapLive`.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -265,38 +265,37 @@ group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
-each session has ONE persistent audit view (yap://<session>-audit): bash/python
+each session has ONE persistent live tail (yap://<session>-audit): bash/python
 announce their temp log via a yap:event stderr line, the Lua side drains new
-bytes into the audit view (a `$ command` header per call), and `:YapLive` opens
-it. The drained bytes are recorded in the audit log as `output` events, and the
-audit view is rebuilt from that log on reopen — there is no separate audit-view
-file. The session buffer only gets one-shot, append-only writes: the tool
-header when the call commits, the result when it finishes. Normal streaming is
-append-only; explicit document operations may rewrite existing content:
-`:YapClear` replaces old tool result bodies with a pointer to the audit log
-(path plus the exact line range holding that call's record), `:YapCompact` can
-delete superseded history after confirmation, frontmatter changes with the
-selected model, and the transient yap:usage marker is consumed into in-memory
-totals. Why: output exists in exactly one place at any moment, and the buffer
-format has no transient states to repair.
+bytes into the tail (a `$ command` header per call), and `:YapLive` opens it.
+The tail is a plain text buffer, never replayed from the audit log — the full
+streamed output lives in the tool's temp log, and the audit log carries the
+tail-truncated result. The session buffer only gets one-shot, append-only
+writes: the tool header when the call commits, the result when it finishes.
+Normal streaming is append-only; explicit document operations may rewrite
+existing content: `:YapClear` replaces old tool result bodies with a pointer
+to the audit log (path plus the exact line range holding that call's record),
+`:YapCompact` can delete superseded history after confirmation, frontmatter
+changes with the selected model, and the transient yap:usage marker is
+consumed into in-memory totals. Why: output exists in exactly one place at any
+moment, and the buffer format has no transient states to repair.
 
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
 `audit.jsonl` beside the session markdown (in its own
 `<cwd-slug>/<session>/` directory, `<session>/session.md`), JSON Lines (one timestamped JSON object per line),
-append-only, written by the Lua side from yap:event lines plus synthesized
-`output` events for streamed bash/python output: full tool arguments, streamed
-bash/python output, full results, `attachment` events for image imports
-(success metadata or the failure), and one journal line per turn (model,
-tokens, cost, ms). The per-session directory is kept mode 0700 and
+append-only, written by the Lua side from yap:event lines: full tool arguments,
+full results, `attachment` events for image imports (success metadata or the
+failure), approval/advisory decisions, and one journal line per turn (model,
+tokens, cost, ms). Streamed bash/python output is NOT duplicated here — it
+lives in the tool's temp log and is followed live by the tool tail
+(R-live-output-audit). The per-session directory is kept mode 0700 and
 the session markdown, notes, and audit log files mode 0600 — transcripts and
 tool output routinely contain secrets, so nothing in the session directory is
-world-readable. The audit view (`:YapLive`) renders these
-events and is rebuilt from the file on reopen; the audit file is the
-authoritative record and survives restarts. A `:file` rename moves the log to
-match the new name; a `:saveas` copy copies it, so the original session keeps
-its own history. This is what makes slimmed headers
-(R-tool-region) and `:YapClear` lossless.
+world-readable. The audit file is the authoritative record and survives
+restarts. A `:file` rename moves the log to match the new name; a `:saveas`
+copy copies it, so the original session keeps its own history. This is what
+makes slimmed headers (R-tool-region) and `:YapClear` lossless.
 
 ### Neovim presentation and turn lifecycle
 
@@ -384,11 +383,11 @@ effect.
   --model MODEL` remains available for one-off calls (e.g. generating a
   session description).
 - **stderr** — error message, exit 1. Also carries `yap:event {json}` progress
-  lines; the Lua side timestamps each one, appends it to the audit log, and
-  renders it into the audit view:
+  lines; the Lua side timestamps each one, appends it to the audit log, and —
+  for streamed tools — follows the output in the live tool tail:
 
   - `tool_start` `{"type","name":"bash"|"python","log","command"}` — the tool's
-    output streams into `log`; the audit view follows it for live output.
+    output streams into `log`; the live tail follows it for live output.
   - `tool_end` `{"type","name":"bash"|"python","log","truncated"}` — the
     tool's log is complete; the Lua side drains the final bytes and removes
     the untruncated temp log.
@@ -404,9 +403,9 @@ effect.
   - `turn_end` `{"type","model","prompt","completion","context_prompt",?,"cost",?,"context_window",?,"ms"}`
     — one per completed send.
 
-  The Lua side also synthesizes `output` events (streamed bash/python output
-  chunks) as it drains the temp log, so the audit log carries live output, not
-  just the final result. The rest is error text.
+  Streamed bash/python output is not re-recorded in the audit log — it lives
+  in the tool's temp log and is followed by the live tail; the audit log
+  carries the tail-truncated result instead. The rest is error text.
 
 The binary runs the agent loop internally: when the model requests tool calls
 it executes them (compiled-in tools), emits one yap:tool region per pair, and

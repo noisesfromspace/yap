@@ -56,26 +56,21 @@ assert(text:find("recursive deletion of critical paths", 1, true), "board missin
 assert(text:find("always (no model consulted)", 1, true), "deterministic-floor approval not marked 'always'")
 guard.toggle() -- close (defer)
 
--- Inspect focuses the shield-marked audit entry.
-local paths = require("harness.path")
-local ordinal = 0
-local target
-for _, line in ipairs(vim.fn.readfile(paths.audit_path(chat))) do
-  local ok, ev = pcall(vim.json.decode, line)
-  if ok and type(ev) == "table" and (ev.type == "alert_advisory" or ev.type == "approval_request") then
-    ordinal = ordinal + 1
-    if ev.type == "approval_request" then
-      target = ordinal
-    end
+-- Inspect focuses the session's tool region without touching the parked
+-- approval: it navigates the session, never a modal or the audit log.
+guard.toggle()
+local board = vim.fn.bufnr("yap://guard")
+local row_line
+for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do
+  if l:find("recursive deletion of critical paths", 1, true) then
+    row_line = i
+    break
   end
 end
-assert(target, "no approval_request in audit log")
-yap.reveal_audit(paths.session_path(chat), target)
-local audit = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "Inspect should focus the audit")
-local line = vim.api.nvim_win_get_cursor(0)[1]
-local entry = vim.api.nvim_buf_get_lines(audit, line - 1, line, false)[1]
-assert(entry:find("approval requested", 1, true), "Inspect did not show blocked call")
+assert(row_line, "approval row not found on the board")
+vim.api.nvim_win_set_cursor(0, { row_line, 0 })
+vim.api.nvim_feedkeys("i", "mtx", false)
+assert(vim.api.nvim_get_current_buf() == chat, "Inspect did not focus the session")
 assert(state.pending_approvals[chat] ~= nil, "Inspect cleared the pending approval")
 
 -- Deny continues the turn.

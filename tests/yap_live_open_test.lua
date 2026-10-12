@@ -4,51 +4,44 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
--- :YapLive opens the audit view even before any tool has run (empty, fills
--- later as tools execute)
+-- :YapLive opens the live tool tail even before any tool has run (empty,
+-- fills as tools execute)
 yap.live()
 local audit = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live did not open the audit view buffer")
-assert(not vim.bo[audit].modifiable, "fresh audit view should be read-only")
-assert(
-  vim.api.nvim_buf_get_lines(audit, 0, 1, false)[1]:match("^Audit · "),
-  "fresh audit view missing header"
-)
+assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live did not open the tail buffer")
+assert(not vim.bo[audit].modifiable, "fresh tail view should be read-only")
 assert(
   vim.api.nvim_win_get_height(0) == math.max(1, math.floor(vim.o.lines / 2)),
-  "audit drawer is not half the screen: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(vim.o.lines / 2)
+  "tail drawer is not half the screen: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(vim.o.lines / 2)
 )
-assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "audit view has no buffer-local live toggle")
--- Click-to-open: an expr <LeftMouse> map, like the guard board and session.
-local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)
-assert(mouse_map and mouse_map.expr == 1 and mouse_map.buffer == 1, "audit view has no click-to-open fold map")
+assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "tail view has no buffer-local live toggle")
 yap.live(audit)
-assert(#vim.fn.win_findbuf(audit) == 0, "live from audit view did not close it")
+assert(#vim.fn.win_findbuf(audit) == 0, "live from tail view did not close it")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
-assert(#vim.fn.win_findbuf(audit) == 1, "live did not reopen audit view")
+assert(#vim.fn.win_findbuf(audit) == 1, "live did not reopen tail view")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
-assert(#vim.fn.win_findbuf(audit) == 0, "live from chat did not toggle visible audit view closed")
+assert(#vim.fn.win_findbuf(audit) == 0, "live from chat did not toggle visible tail view closed")
 -- the session buffer is untouched and still parseable
 assert(#yap.parse_buffer(buf) == 1, "session buffer changed")
 
--- The audit view is a drawer too: under the session's own column, and
+-- The tail view is a drawer too: under the session's own column, and
 -- closing it from the chat refocuses the session window.
 vim.cmd("vsplit")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
-assert(vim.api.nvim_get_current_buf() == audit, "audit view did not reopen beside the vertical split")
+assert(vim.api.nvim_get_current_buf() == audit, "tail view did not reopen beside the vertical split")
 assert(
   vim.api.nvim_win_get_width(0) == vim.api.nvim_win_get_width(chat_win),
-  "audit view drawer is not under the session column: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.api.nvim_win_get_width(chat_win)
+  "tail view drawer is not under the session column: " .. vim.api.nvim_win_get_width(0) .. " vs " .. vim.api.nvim_win_get_width(chat_win)
 )
 assert(
   vim.api.nvim_win_get_position(0)[2] == vim.api.nvim_win_get_position(chat_win)[2],
-  "audit view drawer is not aligned with the session column"
+  "tail view drawer is not aligned with the session column"
 )
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
-assert(#vim.fn.win_findbuf(audit) == 0, "audit view did not close from the vertical split")
-assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing audit view did not refocus the chat")
+assert(#vim.fn.win_findbuf(audit) == 0, "tail view did not close from the vertical split")
+assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing tail view did not refocus the chat")
 print("OK live-open")

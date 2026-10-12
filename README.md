@@ -91,7 +91,7 @@ still notify.
 | `:YapSend`                                | `<C-s>`     | Send the transcript.                                               |
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
-| `:YapLive`                                | `<leader>l` | Open the live tool/audit view.                                     |
+| `:YapLive`                                | `<leader>l` | Open the live tool tail (streaming output).                        |
 | `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals, advisories and history.    |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
@@ -149,7 +149,7 @@ adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
 | steer               | mid-turn injection of a `# @steer` body at a model boundary           |
 | advisory / approval | the alert gate's run-with-warning / pause-for-approval outcomes       |
 | agent definition    | a `~/.yap/agents/<name>.md` file describing a subagent (not a “role”) |
-| audit log / view    | the append-only `.jsonl` record, and the rendered `:YapLive` buffer   |
+| audit log / view    | the append-only `.jsonl` record, and the `:YapLive` tool-tail buffer |
 
 The full vocabulary is in `:help yap-glossary`.
 

@@ -19,9 +19,9 @@ var eventMu sync.Mutex
 
 // EmitEvent writes one yap:event line (JSON) to eventOut.
 func EmitEvent(v any) {
-	// Events land in the JSONL audit log and the plain-text audit view buffer,
-	// never inside an HTML comment, so HTML-escaping only mangles the raw
-	// log (`&&` -> `\u0026`). Skip it; keep `&`/`<`/`>` readable.
+	// Events land in the JSONL audit log, never inside an HTML comment, so
+	// HTML-escaping only mangles the raw log (`&&` -> `\u0026`). Skip it;
+	// keep `&`/`<`/`>` readable.
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)

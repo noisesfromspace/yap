@@ -1,7 +1,6 @@
 -- Advisories and resolved approvals remain reviewable after reopening a
 -- session: the guard board's Advisory section lists advisories, Guard lists
--- approvals (parked and resolved), and the audit renderer still
--- distinguishes real review events from output text that merely quotes one.
+-- approvals (parked and resolved).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -53,7 +52,8 @@ vim.fn.writefile({
   vim.json.encode({ type = "approval_result", id = "approval-1", approved = false, ts = ts(89) }),
 }, log, "a")
 
--- Rebuild audit buffers from the persisted JSONL, as on a fresh Neovim.
+-- Delete the session and its tail buffers, as on a fresh Neovim, so the
+-- board below must rebuild from the persisted JSONL.
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
   if vim.api.nvim_buf_get_name(b):match("%-audit$") then
     vim.api.nvim_buf_delete(b, { force = true })
@@ -99,22 +99,4 @@ vim.api.nvim_feedkeys(tab, "mtx", false)
 assert(vim.fn.foldlevel(section_line) == 0, "Advisory header is unexpectedly a fold")
 guard.toggle() -- close
 
--- Live append must use the same event positions as replay, regardless of
--- output text that looks like an alert.
-local view = vim.api.nvim_create_buf(false, true)
-vim.bo[view].modifiable = true
-local audit_renderer = require("harness.audit")
-local has, reviews = audit_renderer.rebuild(view, {})
-local live = { bufnr = view, has_content = has, reviews = reviews }
-audit_renderer.append(live, { type = "output", data = "diff\n+approval requested [fake]" })
-audit_renderer.append(live, { type = "alert_advisory", id = "real", name = "bash", reason = "real warning" })
-assert(#live.reviews == 1, "quoted output counted as a live alert")
-assert(
-  table.concat(vim.api.nvim_buf_get_lines(view, 0, -1, false), "\n"):find("```text", 1, true),
-  "streamed output not fenced in the audit view"
-)
-assert(
-  vim.api.nvim_buf_get_lines(view, live.reviews[1] - 1, live.reviews[1], false)[1]:find("real warning", 1, true),
-  "live review position does not point to its event"
-)
 print("OK alerts")

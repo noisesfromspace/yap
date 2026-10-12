@@ -761,7 +761,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		pad()
 		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
 		out.Flush() // session state must precede the corresponding audit event
-		// Audit: one turn journal line (audit view + audit log).
+		// Audit: one turn journal line (audit log).
 		m["type"] = "turn_end"
 		m["model"] = model
 		m["ms"] = time.Since(start).Milliseconds()

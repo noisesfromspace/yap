@@ -108,7 +108,6 @@ run yap_close_session_picker_test 18142 mock_close.py dofile
 run yap_e2e_livetool 18141 mock_stream.py
 run yap_e2e_streamfold 18135 mock_write.py
 run yap_audit_test 18135 mock_write.py
-run yap_audit_view_test 18135 mock_write.py
 run yap_audit_rename_test 18135 mock_write.py
 run yap_saveas_test 18135 mock_write.py
 run yap_approval_inspect_test 18162 mock_approval.py
