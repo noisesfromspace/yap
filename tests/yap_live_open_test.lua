@@ -14,6 +14,10 @@ assert(
   vim.api.nvim_buf_get_lines(audit, 0, 1, false)[1]:match("^Audit · "),
   "fresh audit view missing header"
 )
+assert(
+  vim.api.nvim_win_get_height(0) == math.max(1, math.floor(vim.o.lines / 2)),
+  "audit drawer is not half the screen: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(vim.o.lines / 2)
+)
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "audit view has no buffer-local live toggle")
 -- Click-to-open: an expr <LeftMouse> map, like the guard board and session.
 local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)

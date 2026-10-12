@@ -53,6 +53,13 @@ local function close_win(win)
   end
 end
 
+--- Half the screen height, for the large read-only panels (guard, audit).
+--- Split heights are row counts, so a bottom drawer at this height fills the
+--- bottom half of the tab while the anchor keeps the top half.
+function M.half_screen()
+  return math.max(1, math.floor(vim.o.lines / 2))
+end
+
 --- Open or close a fixed-height drawer below the session window. Anchoring the
 --- split to a window showing `owner` keeps the drawer in the session's own
 --- column when the session shares a vertical split — splitting the anchor

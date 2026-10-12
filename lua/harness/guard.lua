@@ -28,7 +28,6 @@ local function harness()
 end
 
 local BOARD_NAME = "yap://guard"
-local BOARD_HEIGHT = 12 -- bottom drawer height, shared with the audit view
 local MAX_SECTION_ROWS = 100 -- cap each section, newest first
 
 -- Highlight groups: structure is colored, content stays default. Linked
@@ -622,7 +621,7 @@ end
 --- opens under the session (not beside it) and closing returns the cursor.
 function M.toggle()
   local buf = ensure_board()
-  if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT) then
+  if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, drawer.half_screen()) then
     return
   end
   local result = render()

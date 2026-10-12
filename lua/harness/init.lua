@@ -665,12 +665,12 @@ function M.live(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   for owner, t in pairs(audit.views()) do
     if t.bufnr == buf then
-      drawer.toggle(owner, buf, 12)
+      drawer.toggle(owner, buf, drawer.half_screen())
       return
     end
   end
   local t = audit.ensure(buf)
-  if not drawer.toggle(buf, t.bufnr, 12) then
+  if not drawer.toggle(buf, t.bufnr, drawer.half_screen()) then
     return
   end
   if M.config.keymaps.live ~= "" then
