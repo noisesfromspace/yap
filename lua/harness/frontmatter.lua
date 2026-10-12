@@ -35,8 +35,9 @@
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
 -- `provider` are the combo to resume with; `temperature` (a float) and
--- `reasoning_level` (low|medium|high) are optional per-session sampling
--- knobs the user can hand-edit like `tools` — read on every send;
+-- `reasoning_level` (low|medium|high) are per-session sampling knobs,
+-- seeded from the config defaults on new sessions and hand-editable like
+-- `tools` — read on every send;
 -- `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
@@ -282,6 +283,13 @@ function M.sync(buf)
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local created_cwd = (fm and fm.created_cwd) or vim.b[buf].yap_project_cwd
+  -- Seed the sampling knobs from config defaults only when creating a
+  -- session (no frontmatter yet); an existing session keeps whatever the
+  -- user left in the buffer — deleting the line restores the provider
+  -- default.
+  local defaults = require("harness").config
+  local temperature = (not fm and defaults.temperature) or (fm and fm.temperature)
+  local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
   local block = M.render(
     provider,
     model,
@@ -299,8 +307,8 @@ function M.sync(buf)
     fm and fm.forks,
     fm and fm.subagent_parent,
     fm and fm.assets,
-    fm and fm.temperature,
-    fm and fm.reasoning_level
+    temperature,
+    reasoning_level
   )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)

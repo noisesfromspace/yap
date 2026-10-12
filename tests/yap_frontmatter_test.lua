@@ -14,6 +14,8 @@ assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid
 local fm = frontmatter.parse(lines)
 assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
+assert(fm.temperature == 0.7, "new session should seed default temperature: " .. vim.inspect(fm.temperature))
+assert(fm.reasoning_level == "medium", "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.created_cwd))

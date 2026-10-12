@@ -11,6 +11,12 @@ M.defaults = {
   bin = "yap", -- path to the yap binary
   provider = "moonshot",
   model = "kimi-k3",
+  -- Per-session sampling knobs, seeded into a new session's frontmatter so
+  -- they are visible and hand-editable from the first line. Delete a line in
+  -- a session (or set the default to nil) to fall back to the provider's own
+  -- default.
+  temperature = 0.7,
+  reasoning_level = "medium",
   -- Optional override list of "provider/model" combos for
   -- :YapChangeModel. When unset, the picker queries every provider
   -- in config.json for its model list (GET /models).
