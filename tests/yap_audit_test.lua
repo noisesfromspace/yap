@@ -63,7 +63,10 @@ end
 assert(audit, "no audit view buffer")
 assert(not vim.bo[audit].modifiable, "audit view should be read-only")
 local text = table.concat(vim.api.nvim_buf_get_lines(audit, 0, -1, false), "\n")
-assert(text:match("• write /tmp/ml%-test%.md"), "no tool journal line in audit view: " .. text)
+assert(
+  text:match("%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d  ▸  write /tmp/ml%-test%.md"),
+  "no tool journal line in audit view: " .. text
+)
 assert(text:match("Successfully wrote 250 bytes"), "tool result not rendered in audit view: " .. text)
 assert(not vim.bo[audit].modifiable, "audit view should remain read-only after updates")
 assert(

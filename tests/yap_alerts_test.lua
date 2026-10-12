@@ -110,6 +110,10 @@ audit_renderer.append(live, { type = "output", data = "diff\n+approval requested
 audit_renderer.append(live, { type = "alert_advisory", id = "real", name = "bash", reason = "real warning" })
 assert(#live.reviews == 1, "quoted output counted as a live alert")
 assert(
+  table.concat(vim.api.nvim_buf_get_lines(view, 0, -1, false), "\n"):find("```text", 1, true),
+  "streamed output not fenced in the audit view"
+)
+assert(
   vim.api.nvim_buf_get_lines(view, live.reviews[1] - 1, live.reviews[1], false)[1]:find("real warning", 1, true),
   "live review position does not point to its event"
 )

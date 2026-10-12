@@ -71,59 +71,107 @@ end
 --- built from model/tool-provided text (bash commands, retry errors, …).
 local flat = view.flat
 
---- Render one audit event as live-view lines. Returns (lines, kind)
---- where each line is { text = string, hl = highlight group|nil } and
---- kind is "section" (blank-line separated) or "stream" (appended verbatim —
+--- A single text segment (possibly highlighted) within a rendered line.
+local function seg(text, hl)
+  return { text = text, hl = hl }
+end
+
+--- One ledger row: a fixed-width timestamp column (ISO 8601 local time, the
+--- same stamp every event already carries), a kind glyph, then the body.
+local function row(ts, glyph, glyph_hl, body, body_hl)
+  local segs = { seg(ts, HL.meta), seg("  ") }
+  if glyph and glyph ~= "" then
+    segs[#segs + 1] = seg(glyph, glyph_hl)
+    segs[#segs + 1] = seg("  ")
+  end
+  if body and body ~= "" then
+    segs[#segs + 1] = seg(body, body_hl)
+  end
+  return segs
+end
+
+--- Flatten segment lines (each a list of { text, hl }) into (texts, highlights).
+--- Highlight line indices are 0-based within the returned block; callers
+--- rebase them onto their buffer.
+local function flatten(seglines)
+  local texts, highlights = {}, {}
+  for _, segs in ipairs(seglines) do
+    local line = #texts
+    local parts, col = {}, 0
+    for _, s in ipairs(segs) do
+      parts[#parts + 1] = s.text
+      if s.hl then
+        highlights[#highlights + 1] = { line, s.hl, col, col + #s.text }
+      end
+      col = col + #s.text
+    end
+    texts[#texts + 1] = table.concat(parts)
+  end
+  return texts, highlights
+end
+
+--- Render one audit event as live-view lines. Returns (lines, kind) where
+--- each line is a list of { text = string, hl = highlight group|nil } segments
+--- and kind is "section" (blank-line separated) or "output" (appended verbatim —
 --- streamed bash output chunks), or nil to render nothing.
 local function render_event(ev)
   local ts = ev.ts or os.date("%Y-%m-%dT%H:%M:%S")
-  if ev.type == "tool_start" then
-    local out = { { text = "```bash", hl = HL.meta } }
-    for _, l in ipairs(view.shell_lines(ev.command or ev.name or "tool", "  ")) do
-      out[#out + 1] = { text = l }
+
+  if ev.type == "tool_call" then
+    -- Streamed tools (bash/python) render their command via tool_start, which
+    -- follows immediately; drawing tool_call here too would show the call
+    -- twice. Approval-paused calls never emit tool_start, but their
+    -- approval_request line already shows the command. (tool_call stays in
+    -- the JSONL — the guard board navigates by it.)
+    if ev.name == "bash" or ev.name == "python" then
+      return nil
     end
-    out[#out + 1] = { text = "```", hl = HL.meta }
-    return out, "section"
-  elseif ev.type == "task_start" then
-    return { { text = ("%s task %s started (%s)"):format(ts, flat(ev.id), flat(ev.name)), hl = HL.meta } }, "section"
-  elseif ev.type == "task_end" then
-    return { { text = ("%s task %s %s (%s)"):format(ts, flat(ev.id), flat(ev.status or "settled"), flat(ev.name)), hl = HL.meta } }, "section"
-  elseif ev.type == "output" then
-    local out = {}
-    for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
-      out[#out + 1] = { text = l }
-    end
-    return out, "output"
-  elseif ev.type == "tool_call" then
-    -- Record the requested command before the gate decides whether it runs;
-    -- approval-paused bash/python calls never emit tool_start, so otherwise their
-    -- approval request would have no preceding call in the audit view.
     local target = ""
     local ok, a = pcall(vim.json.decode, ev.args or "")
     if ok and type(a) == "table" then
-      target = a.path or a.url or a.command or ""
+      target = flat(a.path or a.url or a.command or "")
     end
-    local tlines = view.shell_lines(target, "  ")
-    local out = { { text = ("• %s%s"):format(ev.name, tlines[1] ~= "" and (" " .. tlines[1]) or ""), hl = HL.tool } }
-    for i = 2, #tlines do
-      out[#out + 1] = { text = tlines[i] }
+    local body = flat(ev.name)
+    if target ~= "" then
+      body = body .. " " .. target
     end
-    return out, "section"
+    return { row(ts, "▸", HL.tool, body, HL.tool) }, "section"
+
+  elseif ev.type == "tool_start" then
+    local lines = { row(ts, "▸", HL.tool, flat(ev.name or "tool"), HL.tool) }
+    lines[#lines + 1] = { seg("```bash", HL.meta) }
+    for _, l in ipairs(view.shell_lines(ev.command or ev.name or "tool", "  ")) do
+      lines[#lines + 1] = { seg(l) }
+    end
+    lines[#lines + 1] = { seg("```", HL.meta) }
+    return lines, "section"
+
+  elseif ev.type == "task_start" then
+    return { row(ts, "↯", HL.meta, ("task %s started (%s)"):format(flat(ev.id), flat(ev.name))) }, "section"
+
+  elseif ev.type == "task_end" then
+    return { row(ts, "↯", HL.meta, ("task %s %s (%s)"):format(flat(ev.id), flat(ev.status or "settled"), flat(ev.name))) }, "section"
+
+  elseif ev.type == "output" then
+    local out = {}
+    for _, l in ipairs(vim.split(ev.data or "", "\n", { plain = true })) do
+      out[#out + 1] = { seg(l) }
+    end
+    return out, "output"
+
   elseif ev.type == "attachment" then
     if ev.error then
       local src = flat(ev.source)
       if src == "" then
         src = flat(ev.name) ~= "" and flat(ev.name) or "photo"
       end
-      return { { text = ("%s ⇗ %s: %s"):format(ts, src, flat(ev.error)), hl = HL.warn } }, "section"
+      return { row(ts, "⇗", HL.warn, ("%s: %s"):format(src, flat(ev.error)), HL.warn) }, "section"
     end
     return {
-      {
-        text = ("%s ⇗ %s (%d bytes, %s) → %s"):format(ts, flat(ev.source), ev.bytes or 0, flat(ev.format or "?"), flat(ev.asset)),
-        hl = HL.meta,
-      },
+      row(ts, "⇗", HL.meta, ("%s (%d bytes, %s) → %s"):format(flat(ev.source), ev.bytes or 0, flat(ev.format or "?"), flat(ev.asset))),
     },
       "section"
+
   elseif ev.type == "tool_result" then
     -- bash/python output already streamed via output events; don't duplicate it.
     if ev.name == "bash" or ev.name == "python" then
@@ -132,13 +180,14 @@ local function render_event(ev)
     local lines = {}
     if ev.result and ev.result ~= "" then
       for _, l in ipairs(vim.split(ev.result:gsub("\n$", ""), "\n", { plain = true })) do
-        lines[#lines + 1] = { text = l }
+        lines[#lines + 1] = { seg(l) }
       end
     end
-    lines[#lines + 1] = { text = ("--- %s %s (%s bytes)"):format(ts, ev.name, ev.bytes or "?"), hl = HL.meta }
+    lines[#lines + 1] = row(ts, "▾", HL.meta, ("%s (%s bytes)"):format(flat(ev.name), ev.bytes or "?"))
     return lines, "section"
+
   elseif ev.type == "alert_advisory" then
-    local parts = { (flat(ev.reason)) }
+    local parts = { flat(ev.reason) }
     local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
     if p then
       parts[#parts + 1] = ("P(harmful)=%.2f"):format(p)
@@ -155,35 +204,35 @@ local function render_event(ev)
     if conf then
       parts[#parts + 1] = ("conf=%.2f"):format(conf)
     end
-    local text = ("%s ⚠ %s: %s"):format(ts, flat(ev.name), table.concat(parts, " · "))
+    local text = ("%s: %s"):format(flat(ev.name), table.concat(parts, " · "))
     local id = flat(ev.id)
     if id ~= "" then
       text = text .. (" [%s]"):format(id)
     end
-    return { { text = text, hl = HL.warn } }, "section"
+    return { row(ts, "⚠", HL.warn, text, HL.warn) }, "section"
+
   elseif ev.type == "retry" then
     return {
-      {
-        text = ("%s retry #%d after %dms: %s"):format(ts, ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)),
-        hl = HL.warn,
-      },
+      row(ts, "⟳", HL.warn, ("retry #%d after %dms: %s"):format(ev.attempt or 0, ev.delay_ms or 0, flat(ev.error)), HL.warn),
     },
       "section"
+
   elseif ev.type == "tool_text_warning" then
     local detail = flat(ev.detail)
     if detail == "" then
       detail = "model emitted a tool call as text"
     end
-    return { { text = ("%s unexecuted tool call: %s"):format(ts, detail), hl = HL.warn } }, "section"
+    return { row(ts, "⚠", HL.warn, "unexecuted tool call: " .. detail, HL.warn) }, "section"
+
   elseif ev.type == "steer" then
-    local text = flat(ev.text)
-    return { { text = ("%s ⌁ steer: %s"):format(ts, text), hl = HL.warn } }, "section"
+    return { row(ts, "⌁", HL.warn, "steer: " .. flat(ev.text), HL.warn) }, "section"
+
   elseif ev.type == "model_change" then
     if ev.error then
-      return { { text = ("%s model switch to %s failed: %s"):format(ts, flat(ev.to), flat(ev.error)), hl = HL.warn } },
-        "section"
+      return { row(ts, "⇄", HL.warn, ("model switch to %s failed: %s"):format(flat(ev.to), flat(ev.error)), HL.warn) }, "section"
     end
-    return { { text = ("%s ⇄ model: %s → %s"):format(ts, flat(ev.from), flat(ev.to)), hl = HL.meta } }, "section"
+    return { row(ts, "⇄", HL.meta, ("model: %s → %s"):format(flat(ev.from), flat(ev.to))) }, "section"
+
   elseif ev.type == "approval_request" then
     local tool, reason = flat(ev.tool), flat(ev.reason)
     local context = tool
@@ -191,33 +240,24 @@ local function render_event(ev)
       context = context ~= "" and (context .. ": " .. reason) or reason
     end
     local label = context ~= "" and (" (" .. context .. ")") or ""
-    return {
-      {
-        text = ("%s %s approval requested [%s]%s: %s"):format(
-          ts,
-          require("harness").config.icons.approval,
-          flat(ev.id),
-          label,
-          flat(ev.command)
-        ),
-        hl = HL.warn,
-      },
-    },
-      "section"
+    local body = ("approval requested [%s]%s: %s"):format(flat(ev.id), label, flat(ev.command))
+    return { row(ts, require("harness").config.icons.approval, HL.warn, body, HL.warn) }, "section"
+
   elseif ev.type == "approval_result" then
-    return { { text = ("%s %s approval"):format(ts, ev.approved and "granted" or "denied"), hl = HL.warn } }, "section"
+    return { row(ts, ev.approved and "✓" or "✗", HL.warn, (ev.approved and "granted" or "denied") .. " approval", HL.warn) }, "section"
+
   elseif ev.type == "approval_timeout" then
-    return { { text = ("%s approval timed out (denied)"):format(ts), hl = HL.warn } }, "section"
+    return { row(ts, "⏱", HL.warn, "approval timed out (denied)", HL.warn) }, "section"
+
   elseif ev.type == "turn_end" then
     return {
       {
-        text = ("# %s turn: %d in · %d out · %.1fs"):format(
+        seg(("# %s turn: %d in · %d out · %.1fs"):format(
           ts,
           ev.prompt or 0,
           ev.completion or 0,
           (ev.ms or 0) / 1000
-        ),
-        hl = HL.turn,
+        ), HL.turn),
       },
     },
       "section"
@@ -236,50 +276,53 @@ local OUTPUT_OPEN = "```text"
 local OUTPUT_CLOSE = "```"
 
 local function render_events(events)
-  local lines, hl, has, reviews = {}, {}, false, {}
+  local lines, highlights, has, reviews = {}, {}, false, {}
   local in_output = false
+
+  -- Append segment lines to `lines`, recording per-segment highlights at
+  -- absolute (0-based) buffer lines.
+  local function emit(segs)
+    local base = #lines
+    local texts, hs = flatten(segs)
+    for _, t in ipairs(texts) do
+      lines[#lines + 1] = t
+    end
+    for _, h in ipairs(hs) do
+      highlights[#highlights + 1] = { base + h[1], h[2], h[3], h[4] }
+    end
+  end
+
   for _, ev in ipairs(events) do
     local ev_lines, kind = render_event(ev)
     if ev_lines then
       if ev.type == "output" then
         if not in_output then
-          lines[#lines + 1] = OUTPUT_OPEN
+          emit({ { seg(OUTPUT_OPEN, HL.meta) } })
           in_output = true
         end
-        for _, l in ipairs(ev_lines) do
-          lines[#lines + 1] = l.text
-          if l.hl then
-            hl[#hl + 1] = { #lines - 1, l.hl }
-          end
-        end
+        emit(ev_lines)
         has = true
       else
         if in_output then
-          lines[#lines + 1] = OUTPUT_CLOSE
+          emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
           in_output = false
         end
         if kind == "section" and has then
           lines[#lines + 1] = ""
         end
-        local start = #lines
         if review_event(ev) then
-          reviews[#reviews + 1] = start + 1 -- 1-based buffer line
+          reviews[#reviews + 1] = #lines + 1 -- 1-based buffer line
         end
-        for _, l in ipairs(ev_lines) do
-          lines[#lines + 1] = l.text
-          if l.hl then
-            hl[#hl + 1] = { #lines - 1, l.hl }
-          end
-        end
+        emit(ev_lines)
         has = true
       end
     end
   end
   if in_output then
-    lines[#lines + 1] = OUTPUT_CLOSE
+    emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
   end
   lines[#lines + 1] = ""
-  return lines, hl, reviews
+  return lines, highlights, reviews
 end
 
 -- The audit view leads with a two-line header mirroring the guard board: a
@@ -321,7 +364,7 @@ function M.rebuild(buf, events, title)
   vim.api.nvim_buf_add_highlight(buf, ns, view.hl.header, 0, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, ns, view.hl.meta, 1, 0, -1)
   for _, h in ipairs(hl) do
-    vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, ns, h[2], h[1], h[3], h[4])
   end
   return true, reviews, turns
 end
@@ -341,43 +384,44 @@ function M.append(t, ev)
   local count = vim.api.nvim_buf_line_count(buf)
   local start = count - 1 -- 0-based index of the trailing empty line
   local text = {}
-  local adds = {} -- { 0-based line, hl }
-  local function push(s, hl_group)
-    text[#text + 1] = s
-    if hl_group then
-      adds[#adds + 1] = { #text - 1, hl_group }
+  local adds = {} -- { 0-based line offset, hl, col_start, col_end }
+
+  local function emit(segs)
+    local rel = #text
+    local texts, hs = flatten(segs)
+    for _, s in ipairs(texts) do
+      text[#text + 1] = s
+    end
+    for _, h in ipairs(hs) do
+      adds[#adds + 1] = { rel + h[1], h[2], h[3], h[4] }
     end
   end
 
   if ev.type == "output" then
     if not t.output_open then
-      push(OUTPUT_OPEN, HL.meta)
+      emit({ { seg(OUTPUT_OPEN, HL.meta) } })
       t.output_open = true
     end
-    for _, l in ipairs(lines) do
-      push(l.text, l.hl)
-    end
+    emit(lines)
   else
     if t.output_open then
-      push(OUTPUT_CLOSE, HL.meta)
+      emit({ { seg(OUTPUT_CLOSE, HL.meta) } })
       t.output_open = false
     end
     local lead = (kind == "section" and t.has_content) and 1 or 0
     if lead == 1 then
-      push("")
+      text[#text + 1] = ""
     end
     if review_event(ev) then
       t.reviews[#t.reviews + 1] = start + #text + 1 -- 1-based buffer line
     end
-    for _, l in ipairs(lines) do
-      push(l.text, l.hl)
-    end
+    emit(lines)
   end
-  push("") -- restore the trailing empty line
+  text[#text + 1] = "" -- restore the trailing empty line
 
   vim.api.nvim_buf_set_lines(buf, start, start + 1, false, text)
   for _, a in ipairs(adds) do
-    vim.api.nvim_buf_add_highlight(buf, ns, a[2], start + a[1], 0, -1)
+    vim.api.nvim_buf_add_highlight(buf, ns, a[2], start + a[1], a[3], a[4])
   end
   t.has_content = true
   if ev.type == "turn_end" then
