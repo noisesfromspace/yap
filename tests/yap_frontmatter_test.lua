@@ -203,6 +203,28 @@ assert(
   "legacy inline tools not parsed: " .. vim.inspect(legacy_tools.tools)
 )
 
+-- temperature + reasoning_level: per-session sampling knobs, round-trip and
+-- render as bare scalars (no key emitted when unset)
+local knobs_block = frontmatter.render(
+  "zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, {}, 0.7, "high"
+)
+local knobs_fm = frontmatter.parse(knobs_block)
+assert(knobs_fm.temperature == 0.7, "temperature not roundtripped: " .. vim.inspect(knobs_fm.temperature))
+assert(knobs_fm.reasoning_level == "high", "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level))
+local saw_temp, saw_level = false, false
+for _, l in ipairs(knobs_block) do
+  if l == "temperature: 0.7" then
+    saw_temp = true
+  end
+  if l == "reasoning_level: high" then
+    saw_level = true
+  end
+end
+assert(saw_temp, "temperature line missing: " .. vim.inspect(knobs_block))
+assert(saw_level, "reasoning_level line missing: " .. vim.inspect(knobs_block))
+local plain_fm = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project"))
+assert(plain_fm.temperature == nil and plain_fm.reasoning_level == nil, "absent knobs should parse as nil: " .. vim.inspect(plain_fm))
+
 -- 9. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.
 local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker/session.md"

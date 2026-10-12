@@ -134,11 +134,13 @@ type modelImpl struct {
 }
 
 // providerOptions returns the per-provider request options that make visible
-// reasoning work. They are confined to this adapter; the agent never sees
-// them. Google already defaults includeThoughts=true for thinking-capable
-// models and DeepSeek streams reasoning_content natively (its provider is
-// built with IncludeReasoningContent), so both need no request option.
-func (m *modelImpl) providerOptions() map[string]any {
+// reasoning work, plus the user's reasoning_level mapped to each provider's
+// native knob. They are confined to this adapter; the agent never sees them.
+// Google already defaults includeThoughts=true for thinking-capable models and
+// DeepSeek streams reasoning_content natively (its provider is built with
+// IncludeReasoningContent), so those need no request option unless a level is
+// requested. An empty level means "provider default".
+func (m *modelImpl) providerOptions(level string) map[string]any {
 	id := strings.ToLower(m.model.ModelID())
 	switch m.name {
 	case "openai":
@@ -146,23 +148,55 @@ func (m *modelImpl) providerOptions() map[string]any {
 		// preserve encrypted reasoning items for tool continuation. Do not
 		// send reasoning options to non-reasoning models: they reject them.
 		if isOpenAIReasoningModel(id) {
-			return map[string]any{"reasoning_summary": "auto"}
+			opts := map[string]any{"reasoning_summary": "auto"}
+			if level != "" {
+				opts["reasoning_effort"] = level
+			}
+			return opts
 		}
 	case "anthropic":
 		// Current adaptive-thinking models can return a visible summary.
 		if supportsAnthropicAdaptiveThinking(id) {
-			return map[string]any{"thinking": map[string]any{"type": "adaptive", "display": "summarized"}}
+			opts := map[string]any{"thinking": map[string]any{"type": "adaptive", "display": "summarized"}}
+			if level != "" {
+				opts["effort"] = level
+			}
+			return opts
 		}
 		// Older thinking-capable Claude models require a token budget rather
-		// than adaptive mode. Leave still older models untouched.
+		// than adaptive mode; a higher level buys a bigger budget. Leave still
+		// older models untouched.
 		if supportsAnthropicExtendedThinking(id) {
-			return map[string]any{"thinking": map[string]any{"type": "enabled", "budgetTokens": 4096}}
+			budget := 4096
+			switch level {
+			case "low":
+				budget = 1024
+			case "high":
+				budget = 16384
+			}
+			return map[string]any{"thinking": map[string]any{"type": "enabled", "budgetTokens": budget}}
+		}
+	case "google", "gemini":
+		// Thinking is on by default for thinking models; the only user-facing
+		// level is thinkingLevel (low|high), so medium/max collapse to high.
+		if level != "" {
+			gl := level
+			if gl == "medium" || gl == "max" {
+				gl = "high"
+			}
+			return map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": gl}}
 		}
 	case "deepseek":
 		// DeepSeek V4 and reasoning models require thinking to be enabled;
 		// the native adapter also replays their reasoning_content unchanged.
 		if strings.Contains(id, "v4") || strings.Contains(id, "reasoner") || strings.Contains(id, "r1") {
 			return map[string]any{"thinking": map[string]any{"type": "enabled"}}
+		}
+	default:
+		// OpenAI-compatible endpoints (compat): forward the effort verbatim;
+		// most reasoning endpoints accept a top-level reasoning_effort.
+		if level != "" {
+			return map[string]any{"reasoning_effort": level}
 		}
 	}
 	return nil
@@ -223,7 +257,10 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))
 	}
-	if po := m.providerOptions(); po != nil {
+	if params.Temperature != nil {
+		opts = append(opts, sdk.WithTemperature(*params.Temperature))
+	}
+	if po := m.providerOptions(params.ReasoningLevel); po != nil {
 		opts = append(opts, sdk.WithProviderOptions(po))
 	}
 

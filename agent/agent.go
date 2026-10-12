@@ -39,6 +39,10 @@ type Message struct {
 type Request struct {
 	Messages []Message `json:"messages"`
 	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
+	// Temperature overrides sampling randomness when set (nil = provider default).
+	Temperature *float64 `json:"temperature,omitempty"`
+	// ReasoningLevel is the cross-provider reasoning-effort knob (low|medium|high).
+	ReasoningLevel string `json:"reasoning_level,omitempty"`
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -97,8 +101,8 @@ type boundary struct {
 // markers and streams assistant prose live. Prose from a tool-bearing round
 // stays where it streamed (before the tool regions), matching the model's
 // part order: preamble text precedes the calls it introduces.
-func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string) (*turn, error) {
-	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed)})
+func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string, temperature *float64, reasoningLevel string) (*turn, error) {
+	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed), Temperature: temperature, ReasoningLevel: reasoningLevel})
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +602,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				})
 			}
 		}
-		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
+		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools, req.Temperature, req.ReasoningLevel)
 		if err != nil {
 			// Retry transient errors (429/5xx, network) only while the failed
 			// step emitted nothing to the buffer: a mid-stream failure after
@@ -618,7 +622,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 					return ctx.Err()
 				case <-time.After(delay):
 				}
-				t, err = streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
+				t, err = streamStep(ctx, modelImpl, messages, out, wrote, req.Tools, req.Temperature, req.ReasoningLevel)
 			}
 			if err != nil {
 				return err

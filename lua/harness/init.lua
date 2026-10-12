@@ -1220,13 +1220,21 @@ function M.send(buf)
   running[buf] = process
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
-  -- empty list means unrestricted (all tools).
+  -- empty list means unrestricted (all tools). `temperature` and
+  -- `reasoning_level` are the same live-editable shape: read on every send
+  -- so a hand-edited value takes effect without a :Yap rewrite.
   local tools = nil
+  local temperature = nil
+  local reasoning_level = nil
   local fm_end = frontmatter.end_line(buf)
   if fm_end then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, fm_end, false))
-    if fm and fm.tools and #fm.tools > 0 then
-      tools = fm.tools
+    if fm then
+      if fm.tools and #fm.tools > 0 then
+        tools = fm.tools
+      end
+      temperature = fm.temperature
+      reasoning_level = fm.reasoning_level
     end
   end
   local payload = vim.json.encode({
@@ -1234,6 +1242,8 @@ function M.send(buf)
     model = model,
     messages = messages,
     tools = tools,
+    temperature = temperature,
+    reasoning_level = reasoning_level,
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)

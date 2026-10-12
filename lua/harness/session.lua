@@ -104,7 +104,9 @@ local function stamp_updated_at(buf)
     fm.forked_from,
     fm.forks,
     fm.subagent_parent,
-    assets
+    assets,
+    fm.temperature,
+    fm.reasoning_level
   )
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
@@ -226,7 +228,9 @@ function M.fork(buf, name, running)
         vim.b[buf].yap_path,
         {},
         nil,
-        fm.assets
+        fm.assets,
+        fm.temperature,
+        fm.reasoning_level
       )
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block
@@ -300,7 +304,9 @@ function M.fork(buf, name, running)
       source_fm.forked_from,
       forks,
       source_fm.subagent_parent,
-      source_fm.assets
+      source_fm.assets,
+      source_fm.temperature,
+      source_fm.reasoning_level
     )
     vim.api.nvim_buf_set_lines(buf, 0, ending, false, block)
   end

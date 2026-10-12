@@ -265,6 +265,8 @@ as YAML frontmatter: >
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
+  temperature: 0.7
+  reasoning_level: high
   created_cwd: ~/code/project
   turns: 14
   created_at: 2025-09-29T19:22:33Z
@@ -285,7 +287,9 @@ as YAML frontmatter: >
 
 `title` (always present, empty by default) overrides `description` as the
 session's display name. `description` is the generated summary shown while the
-title is empty. `provider`/`model` is the combo to resume with; `created_cwd`
+title is empty. `provider`/`model` is the combo to resume with; `temperature`
+(a float) and `reasoning_level` (`low`/`medium`/`high`) are optional sampling
+knobs, hand-editable like `tools` and read on every send; `created_cwd`
 the exact working directory the session was created in; `models` the ordered
 history of combos used (most-recent-last); `subagents` the subagent session
 paths; `tools` the per-session tool allowlist — remove a line to retract that

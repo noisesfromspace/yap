@@ -7,6 +7,8 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
+--   temperature: 0.7
+--   reasoning_level: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
 --   tools:
@@ -32,7 +34,10 @@
 -- `title` is always present (empty by default) and wins over `description`
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
--- `provider` are the combo to resume with; `created_cwd` is the exact working
+-- `provider` are the combo to resume with; `temperature` (a float) and
+-- `reasoning_level` (low|medium|high) are optional per-session sampling
+-- knobs the user can hand-edit like `tools` — read on every send;
+-- `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
 -- subagent session (its agent-definition name); `tools` is the per-session
@@ -109,6 +114,10 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
+      elseif k == "temperature" then
+        fm.temperature = tonumber(v)
+      elseif k == "reasoning_level" then
+        fm.reasoning_level = v
       elseif k == "tools" then
         if v ~= "" then
           -- legacy inline form `tools: a,b,c` (pre-list sessions)
@@ -162,7 +171,9 @@ function M.render(
   forked_from,
   forks,
   subagent_parent,
-  assets
+  assets,
+  temperature,
+  reasoning_level
 )
   local lines = { "---" }
   -- `title` is always written (empty by default) so a hand-edited value sits
@@ -175,6 +186,12 @@ function M.render(
   end
   lines[#lines + 1] = "model: " .. model
   lines[#lines + 1] = "provider: " .. provider
+  if temperature ~= nil then
+    lines[#lines + 1] = "temperature: " .. temperature
+  end
+  if reasoning_level and reasoning_level ~= "" then
+    lines[#lines + 1] = "reasoning_level: " .. reasoning_level
+  end
   if created_cwd and created_cwd ~= "" then
     lines[#lines + 1] = "created_cwd: " .. created_cwd
   end
@@ -281,7 +298,9 @@ function M.sync(buf)
     fm and fm.forked_from,
     fm and fm.forks,
     fm and fm.subagent_parent,
-    fm and fm.assets
+    fm and fm.assets,
+    fm and fm.temperature,
+    fm and fm.reasoning_level
   )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
@@ -326,7 +345,9 @@ function M.record_subagent(parent, child_path)
     fm.forked_from,
     fm.forks,
     fm.subagent_parent,
-    fm.assets
+    fm.assets,
+    fm.temperature,
+    fm.reasoning_level
   )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end

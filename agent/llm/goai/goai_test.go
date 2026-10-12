@@ -79,7 +79,7 @@ func TestProviderOptionsAreModelGated(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name+"/"+tt.model, func(t *testing.T) {
 			m := &modelImpl{model: &fakeModel{id: tt.model}, name: tt.name}
-			opts := m.providerOptions()
+			opts := m.providerOptions("")
 			switch tt.want {
 			case "":
 				if opts != nil {
@@ -97,6 +97,72 @@ func TestProviderOptionsAreModelGated(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProviderOptionsReasoningLevel(t *testing.T) {
+	// OpenAI reasoning model: level -> reasoning_effort, summary preserved.
+	oai := (&modelImpl{model: &fakeModel{id: "gpt-6-sol"}, name: "openai"}).providerOptions("high")
+	if oai["reasoning_effort"] != "high" || oai["reasoning_summary"] != "auto" {
+		t.Fatalf("openai: %#v", oai)
+	}
+	// Anthropic adaptive: level -> effort, adaptive thinking preserved.
+	ad := (&modelImpl{model: &fakeModel{id: "claude-opus-4-8"}, name: "anthropic"}).providerOptions("high")
+	if ad["effort"] != "high" {
+		t.Fatalf("anthropic adaptive effort: %#v", ad)
+	}
+	if th, _ := ad["thinking"].(map[string]any); th["type"] != "adaptive" {
+		t.Fatalf("anthropic adaptive thinking lost: %#v", ad)
+	}
+	// Anthropic extended: level scales the thinking budget.
+	ex := (&modelImpl{model: &fakeModel{id: "claude-sonnet-4-6"}, name: "anthropic"}).providerOptions("high")
+	if th, _ := ex["thinking"].(map[string]any); th["budgetTokens"] != 16384 {
+		t.Fatalf("anthropic extended budget: %#v", ex)
+	}
+	// Google: level -> thinkingLevel.
+	gl := (&modelImpl{model: &fakeModel{id: "gemini-3-pro"}, name: "google"}).providerOptions("low")
+	if tc, _ := gl["thinkingConfig"].(map[string]any); tc["thinkingLevel"] != "low" {
+		t.Fatalf("google: %#v", gl)
+	}
+	// DeepSeek: level is a no-op; thinking stays enabled.
+	ds := (&modelImpl{model: &fakeModel{id: "deepseek-v4-pro"}, name: "deepseek"}).providerOptions("high")
+	if th, _ := ds["thinking"].(map[string]any); th["type"] != "enabled" {
+		t.Fatalf("deepseek: %#v", ds)
+	}
+	// OpenAI-compatible: level forwarded verbatim.
+	cp := (&modelImpl{model: &fakeModel{id: "kimi-k3"}, name: "compat"}).providerOptions("medium")
+	if cp["reasoning_effort"] != "medium" {
+		t.Fatalf("compat: %#v", cp)
+	}
+	// Empty level -> no effort knob on a compat provider.
+	if none := (&modelImpl{model: &fakeModel{id: "kimi-k3"}, name: "compat"}).providerOptions(""); none != nil {
+		t.Fatalf("compat empty level: %#v", none)
+	}
+}
+
+func TestDoStreamForwardsTemperatureAndReasoning(t *testing.T) {
+	fake := &fakeModel{}
+	m := &modelImpl{model: fake, name: "compat"}
+	temp := 0.7
+	msgs := []llm.Message{{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: "go"}}}}
+	s, err := m.DoStream(context.Background(), llm.Params{Messages: msgs, Temperature: &temp, ReasoningLevel: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range s.Events {
+	}
+	if r := s.Result(); r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if len(fake.gotParams) != 1 {
+		t.Fatalf("expected 1 generation call, got %d", len(fake.gotParams))
+	}
+	got := fake.gotParams[0]
+	if got.Temperature == nil || *got.Temperature != temp {
+		t.Fatalf("temperature not forwarded: %+v", got.Temperature)
+	}
+	if got.ProviderOptions["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning effort not forwarded: %#v", got.ProviderOptions)
 	}
 }
 
