@@ -14,6 +14,9 @@ func TestBacktickFence(t *testing.T) {
 		{"```\ncode", "````"},
 		{"`````\nx", "``````"},
 		{"~~~\nnot backticks", "```"}, // tildes never close a backtick fence
+		{"    ```\ncode", "````"},     // >3-space indent: CommonMark content, but the markdown grammar yap renders with closes on it
+		{"          ```\nx", "````"},  // deeply indented sample (Nix description string)
+		{"\t```\nx", "````"},          // tab indent: same grammar quirk
 	}
 	for _, c := range cases {
 		if got := backtickFence(c.in); got != c.want {

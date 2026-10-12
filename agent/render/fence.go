@@ -165,10 +165,26 @@ func unclosedFence(lines []string) string {
 
 // backtickFence returns a run of backticks one longer than any run in s
 // (min 3), so s can be embedded in a fenced block it cannot close early.
+//
+// It counts a leading backtick run on any line regardless of indentation.
+// CommonMark treats a fence indented more than 3 spaces as literal content,
+// but the tree-sitter-markdown grammar yap renders with closes the fence on
+// it anyway (an upstream bug), so the outer fence must also out-last those
+// indented fences — a read/bash result containing a ``` code sample at
+// column >3 (as in a Nix description string) would otherwise close the
+// wrapper early and swallow the rest of the buffer as one code block.
 func backtickFence(s string) string {
 	max := 0
 	for _, l := range strings.Split(s, "\n") {
-		if c, k, _, ok := fenceLine(l); ok && c == '`' && k > max {
+		t := strings.TrimLeft(l, " \t")
+		if t == "" || t[0] != '`' {
+			continue
+		}
+		k := 0
+		for k < len(t) && t[k] == '`' {
+			k++
+		}
+		if k > max {
 			max = k
 		}
 	}
