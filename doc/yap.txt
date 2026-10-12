@@ -172,12 +172,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         and per turn. Opens scrolled to the bottom (or focuses
                         the existing window); `q` closes it.
 *:YapGuard*
-:YapGuard            Open the guard board (yap://guard): a read-only board of
-                        pending approvals and recent advisories
+:YapGuard            Open the guard board (yap://guard): a read-only bottom
+                        drawer of pending approvals and recent advisories
                         (|yap-alert-gate|). <Tab>/`za` expand a row; on the
                         row under the cursor `r`/`x` run/deny an approval, `i`
-                        inspects, <CR> opens the same Run/Deny/Inspect/Defer
-                        menu.
+                        inspects, `q` closes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line

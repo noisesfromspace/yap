@@ -1,9 +1,9 @@
 -- The guard board (yap://guard): one read-only, global projection of every
 -- parked approval and recent advisory, plus resolved history. It merges the
 -- old :YapApproval and :YapAlerts pickers into a single re-enterable buffer
--- modeled on the audit view (a projection rebuilt from events) and on
--- Neogit/Magit's "status buffer + transient" split: the board is where you
--- look, a per-row floating popup is where you act.
+-- modeled on the audit view (a projection rebuilt from events). It opens as
+-- the same bottom drawer as the audit view; actions are direct keys on the
+-- cursor row.
 --
 -- Two sections, newest/open first:
 --   Open     parked approvals (live, cross-project) + recent advisories
@@ -20,13 +20,14 @@ local state = require("harness.state")
 local paths = require("harness.path")
 local util = require("harness.util")
 local view = require("harness.view")
+local drawer = require("harness.drawer")
 
 local function harness()
   return require("harness")
 end
 
 local BOARD_NAME = "yap://guard"
-local BOARD_WIDTH = 88 -- vertical split width, capped to the screen
+local BOARD_HEIGHT = 12 -- bottom drawer height, shared with the audit view
 local RECENT_MINUTES = 15   -- advisories newer than this stay in Open
 local HISTORY_MINUTES = 180 -- History drops rows older than this
 
@@ -63,10 +64,6 @@ local ns = vim.api.nvim_create_namespace("yap.guard.hl")
 -- The one global board buffer, created lazily.
 local board_buf
 
--- The session window the board was toggled from, so closing it returns the
--- cursor there (never stranded on a dead window).
-local board_anchor
-
 local function ensure_board()
   if board_buf and vim.api.nvim_buf_is_valid(board_buf) then
     return board_buf
@@ -93,7 +90,7 @@ local function decode_raw(args)
   return tostring(args)
 end
 
---- The same target, flattened to one line (for the summary/transient).
+--- The same target, flattened to one line (for the summary row).
 local function decode_target(args)
   return flat(decode_raw(args))
 end
@@ -521,7 +518,7 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  add("r/x run·deny · i inspect · <CR> menu · za expand · [c/]c section · q close", HL.hint)
+  add("r/x run·deny · i inspect · za expand · [c/]c section · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -581,9 +578,8 @@ function M.foldtext()
 end
 
 -- ─── Row actions ───────────────────────────────────────────────────────────
--- Shared by the transient's menu keys and the board's direct keys, so a
--- shortcut on the cursor row behaves exactly like answering from the popup.
-
+-- Shared by every row action below, so a shortcut on the cursor row
+-- behaves exactly like answering directly.
 local function approve_row(row)
   if row.kind == "approval" then
     harness().answer_approval(row.buf, true)
@@ -598,99 +594,6 @@ end
 
 local function inspect_row(row)
   harness().reveal_audit(row.path, row.ordinal, row.call)
-end
-
--- ─── Transient (the per-row action popup) ──────────────────────────────────
-
-local function transient_content(row)
-  local is_approval = row.kind == "approval"
-  local title = is_approval and "Approval required"
-    or (row.kind == "advisory" and "Advisory" or "History")
-  local session = flat(row.session)
-  if #session > 30 then
-    session = session:sub(1, 27) .. "…"
-  end
-  local cmd = flat(row.command)
-  if #cmd > 60 then
-    cmd = cmd:sub(1, 57) .. "…"
-  end
-
-  local out = {
-    (" %s · %s · %s"):format(row.tool, session, title),
-    " $ " .. (cmd ~= "" and cmd or "—"),
-  }
-  if has_metrics(row) then
-    out[#out + 1] = (" P(harmful)=%.2f  severity=%s(%.1f)  conf=%.0f%%"):format(
-      row.p_alert,
-      row.severity_category ~= "" and row.severity_category or "?",
-      row.severity or 0,
-      (row.confidence or 0) * 100
-    )
-  elseif is_approval then
-    out[#out + 1] = " always approval (no model consulted)"
-  end
-  out[#out + 1] = ""
-  out[#out + 1] = " Actions"
-  if is_approval then
-    out[#out + 1] = "  r  Run — approve this call"
-    out[#out + 1] = "  x  Deny — reject"
-  end
-  out[#out + 1] = "  i  Inspect — open the audit entry"
-  out[#out + 1] = is_approval and "  q  Defer — leave parked" or "  q  Dismiss"
-  return out
-end
-
-local function open_transient(row)
-  local content = transient_content(row)
-  local bufnr = vim.api.nvim_create_buf(false, true)
-  vim.bo[bufnr].bufhidden = "wipe"
-  vim.bo[bufnr].filetype = "yapguard"
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, content)
-  vim.bo[bufnr].modifiable = false
-
-  -- Fit the window to its (bounded) content: sizing by a fraction of the
-  -- screen hid the action keys whenever the command wrapped. Clip the
-  -- command and disable wrap instead, so the menu always fits.
-  -- Anchor the popup to the board window (the current window when <CR>
-  -- fired) so it spans the board's own column — under the guard board, not
-  -- the whole editor. `row` is the float's top-left row relative to the
-  -- board window, so it sits flush against the board's bottom edge.
-  local board_win = vim.api.nvim_get_current_win()
-  local width = vim.api.nvim_win_get_width(board_win)
-  local height = math.min(#content, math.max(1, vim.o.lines - 2))
-  local win = vim.api.nvim_open_win(bufnr, true, {
-    relative = "win",
-    win = board_win,
-    width = width,
-    height = height,
-    col = 0,
-    row = vim.api.nvim_win_get_height(board_win) - height,
-    style = "minimal",
-    border = { "", "─", "", "", "", "", "", "" },
-  })
-  vim.wo[win].wrap = false
-
-  local function close()
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
-    end
-  end
-
-  local function with_close(action)
-    return function()
-      close()
-      action(row)
-    end
-  end
-
-  if row.kind == "approval" then
-    vim.keymap.set("n", "r", with_close(approve_row), { buffer = bufnr, nowait = true, silent = true })
-    vim.keymap.set("n", "x", with_close(deny_row), { buffer = bufnr, nowait = true, silent = true })
-  end
-  vim.keymap.set("n", "i", with_close(inspect_row), { buffer = bufnr, nowait = true, silent = true })
-  for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
-    vim.keymap.set("n", key, close, { buffer = bufnr, nowait = true, silent = true })
-  end
 end
 
 -- ─── Board lifecycle ───────────────────────────────────────────────────────
@@ -730,8 +633,8 @@ local function install_keymaps(buf)
     jump_section(-1)
   end, { buffer = buf, silent = true, desc = "yap: previous guard section" })
 
-  -- Direct action keys on the cursor row, so the common cases skip the
-  -- transient: r/x run/deny an approval, i inspects any row.
+  -- Direct action keys on the cursor row: r/x run/deny an approval, i
+  -- inspects any row.
   local function act(action)
     return function()
       local row = row_at(buf, vim.api.nvim_win_get_cursor(0)[1])
@@ -744,55 +647,18 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "x", act(deny_row), { buffer = buf, silent = true, desc = "yap: deny guard row" })
   vim.keymap.set("n", "i", act(inspect_row), { buffer = buf, silent = true, desc = "yap: inspect guard row" })
 
-  vim.keymap.set("n", "<CR>", function()
-    local row = row_at(buf, vim.api.nvim_win_get_cursor(0)[1])
-    if row then
-      open_transient(row)
-    end
-  end, { buffer = buf, silent = true, desc = "yap: act on guard row" })
 end
 
 --- Open (or focus) the board, or close it when already open. The board is a
---- global vertical split anchored to the window it was toggled from, so it
---- opens beside the session (not below it) and closing returns the cursor.
+--- global bottom drawer anchored to the window it was toggled from, so it
+--- opens under the session (not beside it) and closing returns the cursor.
 function M.toggle()
   local buf = ensure_board()
-  local wins = vim.fn.win_findbuf(buf)
-  if #wins > 0 then
-    for _, win in ipairs(wins) do
-      if vim.api.nvim_win_is_valid(win) then
-        -- Closing the board when it is the tab's last window raises E444
-        -- (:bd on the anchored session collapses its split, leaving the
-        -- board alone). Close the tab instead, exactly like native :q on a
-        -- last window.
-        local tab = vim.api.nvim_win_get_tabpage(win)
-        local normals = 0
-        for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-          if vim.api.nvim_win_get_config(w).relative == "" then
-            normals = normals + 1
-          end
-        end
-        if normals == 1 then
-          vim.cmd("q")
-        else
-          vim.api.nvim_win_close(win, true)
-        end
-      end
-    end
-    if board_anchor and vim.api.nvim_win_is_valid(board_anchor) then
-      vim.api.nvim_set_current_win(board_anchor)
-    end
-    board_anchor = nil
+  if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, BOARD_HEIGHT) then
     return
   end
   local result = render()
   install_keymaps(buf)
-
-  -- Anchor to the window the user toggled from (their session window).
-  board_anchor = vim.api.nvim_get_current_win()
-  local width = math.min(BOARD_WIDTH, vim.o.columns - 1)
-  vim.cmd(("vert belowright %dsplit"):format(width))
-  vim.api.nvim_win_set_buf(0, buf)
   apply_folds(buf, result)
   -- Land on the first Open row, not the header: that row is the actionable one.
   vim.api.nvim_win_set_cursor(0, { result.first_open_line or 1, 0 })

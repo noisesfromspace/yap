@@ -768,6 +768,11 @@ local function focus_alert_call(buf, call)
   end
 end
 
+-- Forward-declared: M.reveal_audit below calls focus_buf before its
+-- definition later in this file (a Lua local is only visible after its
+-- declaration, so without this the call would resolve to a nil global).
+local focus_buf
+
 --- Open a session's audit and reveal one reviewable event by its ordinal
 --- (the index among alert_advisory/approval_request entries in that log),
 --- focusing the session's matching tool region when `call` names one. The
@@ -1579,7 +1584,7 @@ end
 
 --- Focus an already-loaded buffer: jump to an existing window, otherwise
 --- show it in the current one (unlisted sessions have no other way back).
-local function focus_buf(buf)
+focus_buf = function(buf)
   local wins = vim.fn.win_findbuf(buf)
   if wins[1] then
     vim.api.nvim_set_current_win(wins[1])

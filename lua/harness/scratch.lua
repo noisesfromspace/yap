@@ -305,11 +305,9 @@ function M.scratch_toggle(buf)
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens
   -- full-width below it (see harness.drawer).
-  if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT) then
+  if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT, { editable = true }) then
     return
   end
-  vim.wo.winfixheight = true
-  vim.wo.winbar = "" -- a plain jotter, not a yap dashboard
   vim.wo.foldmethod = "expr"
   vim.wo.foldexpr = "v:lua.require'harness'.scratch_foldexpr(v:lnum)"
   vim.wo.foldtext = ""
