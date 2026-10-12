@@ -28,8 +28,8 @@ var approvalTimeout = 5 * time.Minute
 // RequestApproval pauses the turn and asks the user to approve running
 // `command` (shown verbatim; the Lua side truncates for display). The tool
 // and reason are recorded with the request so audit history explains why
-// the dialog appeared, alongside the decision model's numbers (dec) and a
-// truncated transcript `context` — the same fields alert_advisory carries,
+// the dialog appeared, alongside the decision model's numbers (dec) and the
+// triggering user message `context` — the same fields alert_advisory carries,
 // so the frontend can render a complete event without re-deriving anything.
 // `dec` is zero-valued for the deterministic floor and always-approval tiers
 // (no model consulted); the frontend renders those rows as `always`. It

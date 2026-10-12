@@ -113,16 +113,13 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 	return ""
 }
 
-// guardContext builds the truncated transcript a guard row expands to: the
-// last user message plus the assistant's tool call, so the decision can be
-// reviewed in place without leaving the board. Bounded like gateState.
-func guardContext(call llm.ToolCall, t *turn, messages []llm.Message) string {
-	var b strings.Builder
-	if u := lastUserText(messages); u != "" {
-		fmt.Fprintf(&b, "# @user\n%s\n", truncateRunes(u, 1000))
-	}
-	fmt.Fprintf(&b, "# @assistant\n(%s) %s", call.Name, utils.Scrub(string(call.Input)))
-	return b.String()
+// guardContext carries the part of a guard row's context the frontend cannot
+// already derive: the last user message that prompted the tool call. The Lua
+// board renders it as a plain `user:` line and adds its own `tool call:` line
+// from the decoded row, so the block is never mistaken for the session's
+// # @user / # @assistant transcript headings. Bounded like gateState.
+func guardContext(_ llm.ToolCall, _ *turn, messages []llm.Message) string {
+	return truncateRunes(lastUserText(messages), 1000)
 }
 
 func allowedTool(name string, allowed *[]string) bool {

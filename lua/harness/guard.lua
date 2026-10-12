@@ -5,13 +5,14 @@
 -- the same bottom drawer as the audit view; actions are direct keys on the
 -- cursor row.
 --
--- Two sections, newest/open first:
---   Open     parked approvals (live, cross-project) + recent advisories
---   History  resolved approvals (granted/denied/timed-out) + older advisories
+-- Two sections, newest first:
+--   Guard     every approval — parked (needs Run/Deny) and settled
+--             (granted/denied/timed-out); the glyph shows the state
+--   Advisory  advisories (calls that ran with a non-blocking warning)
 --
 -- Rows are one scannable line, collapsed by default; `za` expands a row to
--- its full context (command, reason, severity breakdown, triggering
--- transcript). The trust ledger (guard.json) is intentionally NOT read or
+-- its full context (command, reason, severity breakdown, triggering user
+-- message). The trust ledger (guard.json) is intentionally NOT read or
 -- written yet — the surface ships first, `always` rules land later.
 
 local M = {}
@@ -28,8 +29,7 @@ end
 
 local BOARD_NAME = "yap://guard"
 local BOARD_HEIGHT = 12 -- bottom drawer height, shared with the audit view
-local RECENT_MINUTES = 15   -- advisories newer than this stay in Open
-local HISTORY_MINUTES = 180 -- History drops rows older than this
+local MAX_SECTION_ROWS = 100 -- cap each section, newest first
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -127,15 +127,6 @@ local function age(ts)
     return string.format("%dh%dm", math.floor(diff / 3600), math.floor(diff % 3600 / 60))
   end
   return string.format("%dd", math.floor(diff / 86400))
-end
-
---- Minutes since an ISO timestamp; math.huge when unparseable (treated as old).
-local function minutes_ago(ts)
-  local then_t = ts_time(ts)
-  if not then_t then
-    return math.huge
-  end
-  return os.difftime(os.time(), then_t) / 60
 end
 
 local function num(v)
@@ -300,6 +291,18 @@ local function newest_first(a, b)
   return (a.ts or "") > (b.ts or "")
 end
 
+--- Cap a section to the newest rows (rows are already sorted newest first).
+local function cap(rows)
+  if #rows <= MAX_SECTION_ROWS then
+    return rows
+  end
+  local out = {}
+  for i = 1, MAX_SECTION_ROWS do
+    out[i] = rows[i]
+  end
+  return out
+end
+
 --- Build the two sections as an ordered list of { title, rows }.
 local function build_sections()
   local approvals = {}
@@ -314,31 +317,22 @@ local function build_sections()
       approvals[#approvals + 1] = row
     end
   end
-  table.sort(approvals, newest_first)
 
   local advisories, resolved = scan_project()
   table.sort(advisories, newest_first)
   table.sort(resolved, newest_first)
 
-  local open_rows = approvals
-  local history_rows = {}
-  for _, a in ipairs(advisories) do
-    local ago = minutes_ago(a.ts)
-    if ago <= RECENT_MINUTES then
-      open_rows[#open_rows + 1] = a
-    elseif ago <= HISTORY_MINUTES then
-      history_rows[#history_rows + 1] = a
-    end
-  end
+  -- Guard holds every approval — parked and settled — so a denied/timed-out
+  -- approval stays visible beside the parked ones; the glyph states which.
+  local guard_rows = approvals
   for _, r in ipairs(resolved) do
-    if minutes_ago(r.ts) <= HISTORY_MINUTES then
-      history_rows[#history_rows + 1] = r
-    end
+    guard_rows[#guard_rows + 1] = r
   end
+  table.sort(guard_rows, newest_first)
 
   return {
-    { title = "Open", rows = open_rows },
-    { title = "History", rows = history_rows },
+    { title = "Guard", rows = cap(guard_rows) },
+    { title = "Advisory", rows = cap(advisories) },
   }
 end
 
@@ -398,8 +392,9 @@ end
 
 --- The expanded detail, rendered as markdown (the board buffer is filetype
 --- markdown): the command in a ```bash fence broken at operators, metrics as
---- a bullet list, and the triggering transcript as raw markdown so touchup
---- colors its # @user / # @assistant headings like the session buffer.
+--- a bullet list, and the triggering context as two plain labelled lines
+--- (`user:` and `tool call:`) — not the session's # @user / # @assistant
+--- headings, which would mislabel the tool call as an assistant message.
 --- Returns a list of plain lines.
 local function detail_lines(row)
   local out = {}
@@ -441,12 +436,13 @@ local function detail_lines(row)
     out[#out + 1] = ""
     local clines = vim.split(row.context, "\n", { plain = true })
     for i, l in ipairs(clines) do
-      if i > 6 then
+      if i > 5 then
         out[#out + 1] = "…"
         break
       end
-      out[#out + 1] = l
+      out[#out + 1] = (i == 1 and "user: " or "") .. l
     end
+    out[#out + 1] = "tool call: " .. row.tool .. (row.command ~= "" and (" " .. row.command) or "")
   end
   return out
 end
@@ -455,15 +451,15 @@ end
 local function render()
   local buf = ensure_board()
   local sections = build_sections()
-  local open_rows = sections[1].rows
-  local history_rows = sections[2].rows
+  local guard_rows = sections[1].rows
+  local advisory_rows = sections[2].rows
 
   local lines = {}
   local highlights = {}
   local folds = {}
   local row_map = {}
   local key_lines = {} -- row key -> first summary line (for cursor restore)
-  local first_open_line
+  local first_row_line
 
   local function add(text, hl)
     lines[#lines + 1] = text
@@ -475,7 +471,7 @@ local function render()
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
   local hdr = view.header_lines(
     ("Guard Board · %s"):format(project),
-    ("Open %d · History %d"):format(#open_rows, #history_rows)
+    ("Guard %d · Advisory %d"):format(#guard_rows, #advisory_rows)
   )
   add(hdr[1], view.hl.header)
   add(hdr[2], view.hl.meta)
@@ -499,8 +495,8 @@ local function render()
     add(("▸ %s (%d)"):format(section.title, #section.rows), HL.section)
     for _, row in ipairs(section.rows) do
       local start = #lines + 1 -- 1-based line of the summary (fold start)
-      if section.title == "Open" and not first_open_line then
-        first_open_line = start
+      if section.title == "Guard" and not first_row_line then
+        first_row_line = start
       end
       emit_segments(title_segments(row))
       local detail = detail_lines(row)
@@ -529,7 +525,7 @@ local function render()
   vim.bo[buf].modifiable = false
 
   vim.b[buf].yap_guard_rows = row_map
-  return { folds = folds, first_open_line = first_open_line, key_lines = key_lines }
+  return { folds = folds, first_row_line = first_row_line, key_lines = key_lines }
 end
 
 --- The row under a board buffer line, or nil. `row_map` is a sparse map keyed
@@ -660,8 +656,8 @@ function M.toggle()
   local result = render()
   install_keymaps(buf)
   apply_folds(buf, result)
-  -- Land on the first Open row, not the header: that row is the actionable one.
-  vim.api.nvim_win_set_cursor(0, { result.first_open_line or 1, 0 })
+  -- Land on the first Guard row, not the header: that row is the actionable one.
+  vim.api.nvim_win_set_cursor(0, { result.first_row_line or 1, 0 })
 end
 
 --- Re-render the board when an approval/advisory event changes the open set,
@@ -683,7 +679,7 @@ function M.touch()
   local key = row and row.key
   local result = render()
   apply_folds(board_buf, result)
-  local line = (key and result.key_lines[key]) or result.first_open_line or 1
+  local line = (key and result.key_lines[key]) or result.first_row_line or 1
   vim.api.nvim_win_set_cursor(win, { line, 0 })
 end
 

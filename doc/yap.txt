@@ -173,8 +173,8 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         the existing window); `q` closes it.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): a read-only bottom
-                        drawer of pending approvals and recent advisories
-                        (|yap-alert-gate|). <Tab>/`za` expand a row; on the
+                        drawer of approvals and advisories (|yap-alert-gate|).
+                        <Tab>/`za` expand a row; on the
                         row under the cursor `r`/`x` run/deny an approval, `i`
                         inspects, `q` closes.
 *:YapClear*

@@ -270,7 +270,8 @@ local function answer_approval(buf, approved)
     )
   end
   -- Re-render after the result is written (and pending cleared) so an answered
-  -- approval moves from Open to History instead of vanishing from the board.
+  -- approval re-renders as settled (granted/denied) in Guard instead of
+  -- vanishing from the board.
   guard.touch()
 end
 M.answer_approval = answer_approval

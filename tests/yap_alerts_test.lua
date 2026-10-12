@@ -1,7 +1,7 @@
 -- Advisories and resolved approvals remain reviewable after reopening a
--- session: the guard board's Open section lists recent advisories, History
--- lists resolved approvals, and the audit renderer still distinguishes real
--- review events from output text that merely quotes one.
+-- session: the guard board's Advisory section lists advisories, Guard lists
+-- approvals (parked and resolved), and the audit renderer still
+-- distinguishes real review events from output text that merely quotes one.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -37,9 +37,9 @@ local function ts(mins)
 end
 add(first, "first-id", "first warning", ts(10))
 add(first, "first-id", "later warning", ts(0))
--- An advisory older than the recency window lands in History, not Open.
+-- An old advisory stays in Advisory (no recency drop, only a row cap).
 add(first, "old-id", "old warning", ts(120))
--- A denied approval lands in History.
+-- A denied approval lands in Guard.
 local log = paths.audit_path(first)
 vim.fn.writefile({
   vim.json.encode({
@@ -66,37 +66,37 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
--- Recent advisories sit in Open (read-only rows), with their severity badge.
-assert(text:find("▸ Open (2)", 1, true), "Open section should list both recent advisories: " .. text)
+-- All three advisories sit in Advisory (read-only rows), with their badge.
+assert(text:find("▸ Advisory (3)", 1, true), "Advisory section missing the three advisories: " .. text)
 assert(text:find("first warning", 1, true), "first advisory missing from board")
 assert(text:find("later warning", 1, true), "second advisory missing")
+assert(text:find("old warning", 1, true), "old advisory missing from board")
 assert(text:find("reversible", 1, true), "severity badge missing from board")
--- The denied approval and the old advisory sit in History.
-assert(text:find("▸ History (2)", 1, true), "History section missing denied approval + old advisory: " .. text)
-assert(text:find("possible data loss", 1, true), "denied approval reason missing from History")
-assert(text:find("old warning", 1, true), "old advisory missing from History")
--- The cursor lands on the first Open row (its summary line leads with the
+-- The denied approval sits in Guard.
+assert(text:find("▸ Guard (1)", 1, true), "Guard section missing denied approval: " .. text)
+assert(text:find("possible data loss", 1, true), "denied approval reason missing from Guard")
+-- The cursor lands on the first Guard row (its summary line leads with the
 -- reason), never on the header.
 local cline = vim.api.nvim_win_get_cursor(0)[1]
 assert(cline > 1, "board cursor stuck on the header line")
 local cl = vim.api.nvim_buf_get_lines(board, cline - 1, cline, false)[1]
-assert(cl:find("later warning", 1, true), "first Open row should be the newest advisory: " .. cl)
+assert(cl:find("possible data loss", 1, true), "first Guard row should be the denied approval: " .. cl)
 -- Click-to-open: an expr <LeftMouse> map, like the audit view and session.
 local mouse_map = vim.fn.maparg("<LeftMouse>", "n", false, true)
 assert(mouse_map and mouse_map.expr == 1 and mouse_map.buffer == 1, "guard board has no click-to-open fold map")
 -- Tab on a section header (not a fold) is a no-op, not E490/E5108.
-local hist_line
+local section_line
 for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do
-  if l:find("▸ History", 1, true) then
-    hist_line = i
+  if l:find("▸ Advisory", 1, true) then
+    section_line = i
     break
   end
 end
-assert(hist_line, "History header not found")
-vim.api.nvim_win_set_cursor(0, { hist_line, 0 })
+assert(section_line, "Advisory header not found")
+vim.api.nvim_win_set_cursor(0, { section_line, 0 })
 local tab = vim.api.nvim_replace_termcodes("<Tab>", true, false, true)
 vim.api.nvim_feedkeys(tab, "mtx", false)
-assert(vim.fn.foldlevel(hist_line) == 0, "History header is unexpectedly a fold")
+assert(vim.fn.foldlevel(section_line) == 0, "Advisory header is unexpectedly a fold")
 guard.toggle() -- close
 
 -- Live append must use the same event positions as replay, regardless of

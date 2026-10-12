@@ -48,7 +48,7 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("▸ Open (1)", 1, true), "board Open section missing approval")
+assert(text:find("▸ Guard (1)", 1, true), "board Guard section missing approval")
 assert(text:find("recursive deletion of critical paths", 1, true), "board missing approval reason")
 -- Deterministic floor (no jev consult) must render "always", not a bogus
 -- "0.0/3 · 0% confident" (0 is truthy in Lua, so the metric fields need an
@@ -88,12 +88,12 @@ assert(
   "turn did not continue after denial"
 )
 
--- The answered approval moves from Open to History, not vanish from the board.
+-- The answered approval stays in Guard (now settled/denied), not vanish.
 guard.toggle()
 local bboard = vim.fn.bufnr("yap://guard")
 local btext = table.concat(vim.api.nvim_buf_get_lines(bboard, 0, -1, false), "\n")
-assert(btext:find("▸ History", 1, true), "board missing History after denial: " .. btext)
-assert(btext:find("recursive deletion of critical paths", 1, true), "denied approval vanished from History")
+assert(btext:find("▸ Guard (1)", 1, true), "board missing Guard after denial: " .. btext)
+assert(btext:find("recursive deletion of critical paths", 1, true), "denied approval vanished from Guard")
 guard.toggle() -- close
 vim.notify = old_notify
 print("OK approval inspect")
