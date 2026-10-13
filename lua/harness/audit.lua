@@ -33,9 +33,11 @@ vim.api.nvim_set_hl(0, HL_CMD, { link = "Title", default = true })
 -- dropped from the top, so a runaway command cannot balloon the buffer.
 local MAX_TAIL_LINES = 5000
 
--- Per-session tail state: session buf -> { bufnr }.
+-- Per-session tail state: session buf -> { bufnr, rules }.
 local tails = {}
 local audit_poll_timer
+local resize_autocmd = false
+local resync -- defined after the rule helpers; used by the resize autocmd
 
 --- The session's tail buffer, created on first use. Empty until a tool runs.
 function M.ensure(buf)
@@ -47,8 +49,18 @@ function M.ensure(buf)
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
-  t = { bufnr = tbuf }
+  t = { bufnr = tbuf, rules = {} }
   tails[buf] = t
+  if not resize_autocmd then
+    resize_autocmd = true
+    vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
+      callback = function()
+        for _, tt in pairs(tails) do
+          resync(tt)
+        end
+      end,
+    })
+  end
   return t
 end
 
@@ -70,37 +82,54 @@ local function follow(buf)
 end
 
 --- Append lines to the tail, trimming old ones to keep only the newest.
+--- Returns the 0-based row where `lines[1]` landed (after any trim), or nil
+--- when nothing was appended.
 local function append_lines(t, lines)
   if #lines == 0 then
-    return
+    return nil
   end
   local buf = t.bufnr
   vim.bo[buf].modifiable = true
   local cur = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local start_row
   if #cur == 1 and cur[1] == "" then
     vim.api.nvim_buf_set_lines(buf, 0, 1, false, lines) -- replace the fresh empty line
+    start_row = 0
   else
+    start_row = #cur
     vim.api.nvim_buf_set_lines(buf, -1, -1, false, lines)
   end
   local count = vim.api.nvim_buf_line_count(buf)
   if count > MAX_TAIL_LINES then
-    vim.api.nvim_buf_set_lines(buf, 0, count - MAX_TAIL_LINES, false, {})
+    local drop = count - MAX_TAIL_LINES
+    vim.api.nvim_buf_set_lines(buf, 0, drop, false, {})
+    start_row = start_row - drop
+    local shifted = {}
+    for row in pairs(t.rules) do
+      if row >= drop then
+        shifted[row - drop] = true
+      end
+    end
+    t.rules = shifted
   end
   vim.bo[buf].modifiable = false
   follow(buf)
+  return start_row
 end
 
---- A horizontal rule spanning the tail window, so one command's output ends
---- in a visible boundary before the next `$ command` header. The tail is
---- often filled in the background while no window shows it, so the width is
---- unknowable there and falls back to a generous fixed rule.
-local function rule(buf)
+--- The width a rule should span: the first window showing the tail, or a
+--- generous fallback while the tail fills in the background (no window).
+local function rule_width(buf)
   for _, w in ipairs(vim.fn.win_findbuf(buf)) do
     if vim.api.nvim_win_is_valid(w) then
-      return ("─"):rep(math.max(20, vim.api.nvim_win_get_width(w)))
+      return vim.api.nvim_win_get_width(w)
     end
   end
-  return ("─"):rep(80)
+  return 80
+end
+
+local function rule_line(width)
+  return ("─"):rep(math.max(20, width))
 end
 
 --- Start a tool run in the tail: a `$ command` header (wrapped at shell
@@ -109,16 +138,21 @@ end
 function M.tool_start(buf, command)
   local t = M.ensure(buf)
   local cmd = view.shell_lines(command or "", "  ")
+  local has_prior = vim.api.nvim_buf_line_count(t.bufnr) > 1
+    or vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)[1] ~= ""
   local lines = {}
-  if vim.api.nvim_buf_line_count(t.bufnr) > 1 or vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)[1] ~= "" then
+  if has_prior then
     lines[#lines + 1] = ""
-    lines[#lines + 1] = rule(t.bufnr)
+    lines[#lines + 1] = rule_line(rule_width(t.bufnr))
   end
   lines[#lines + 1] = "$ " .. cmd[1]
   for i = 2, #cmd do
     lines[#lines + 1] = cmd[i]
   end
-  append_lines(t, lines)
+  local start_row = append_lines(t, lines)
+  if has_prior then
+    t.rules[start_row + 1] = true -- lines[2] is the rule separator
+  end
   -- Highlight the trailing `$ command` header (possibly multi-line after
   -- shell-operator wrapping) so it stands apart from the output below.
   local head = vim.api.nvim_buf_line_count(t.bufnr) - #cmd
@@ -130,6 +164,28 @@ function M.tool_start(buf, command)
       right_gravity = false,
     })
   end
+end
+
+--- Re-render every rule separator to the tail's current window width, so a
+--- rule drawn while the tail filled in the background (or before a resize)
+--- always spans the view. Only separator lines (all ─) are touched.
+resync = function(t)
+  if not t or not t.rules or next(t.rules) == nil or not vim.api.nvim_buf_is_valid(t.bufnr) then
+    return
+  end
+  local want = rule_line(rule_width(t.bufnr))
+  vim.bo[t.bufnr].modifiable = true
+  for row in pairs(t.rules) do
+    local cur = vim.api.nvim_buf_get_lines(t.bufnr, row, row + 1, false)[1]
+    if cur and cur ~= "" and cur:gsub("─", "") == "" and cur ~= want then
+      vim.api.nvim_buf_set_lines(t.bufnr, row, row + 1, false, { want })
+    end
+  end
+  vim.bo[t.bufnr].modifiable = false
+end
+
+function M.refresh(buf)
+  resync(tails[buf])
 end
 
 --- Follow new bytes of each running tool's temp log into the tail. A line not

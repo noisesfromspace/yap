@@ -670,6 +670,7 @@ function M.live(buf)
   if not drawer.toggle(buf, t.bufnr, drawer.half_screen()) then
     return
   end
+  audit.refresh(buf) -- a rule drawn while hidden may not match this window's width
   if M.config.keymaps.live ~= "" then
     vim.keymap.set("n", M.config.keymaps.live, function()
       M.live(t.bufnr)

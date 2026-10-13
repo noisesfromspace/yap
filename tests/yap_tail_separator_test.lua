@@ -40,4 +40,12 @@ assert(hl_on(2), "first header continuation not highlighted")
 assert(not hl_on(4), "rule separator should not be highlighted")
 assert(hl_on(5), "second header not highlighted")
 
+-- A rule drawn with no window uses the background fallback width; once a
+-- window shows the tail, refresh() re-renders it to that window's width.
+assert(vim.fn.strchars(lines[4]) == 80, "expected the background fallback width, got: " .. vim.fn.strchars(lines[4]))
+vim.api.nvim_open_win(tail, false, { relative = "editor", width = 40, height = 5, row = 0, col = 0 })
+audit.refresh(buf)
+local resized = vim.api.nvim_buf_get_lines(tail, 0, -1, false)
+assert(vim.fn.strchars(resized[4]) == 40, "rule did not resize to the window width: " .. vim.fn.strchars(resized[4]))
+
 print("OK tail separator")
