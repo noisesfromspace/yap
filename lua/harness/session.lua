@@ -115,6 +115,12 @@ function M.save(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  -- A session buffer is a normal file-backed buffer; a nofile/scratch buffer
+  -- carrying yap_path (e.g. a test fixture) cannot be :write'd and must be
+  -- skipped rather than erroring E382.
+  if vim.bo[buf].buftype ~= "" then
+    return
+  end
   local path = vim.b[buf].yap_path
   if not path then
     local dir = paths.session_dir(vim.fn.getcwd())
