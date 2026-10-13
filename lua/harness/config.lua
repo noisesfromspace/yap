@@ -265,8 +265,11 @@ function M.tool_names()
   if tool_names ~= nil then
     return tool_names
   end
-  local res = vim.fn.systemlist({ require("harness").config.bin, "tools" })
-  if vim.v.shell_error == 0 and res and #res > 0 then
+  -- With a list argument, systemlist raises E475 when the binary is not
+  -- executable (unlike the string form, which reports shell_error). pcall
+  -- keeps the documented contract: nil when the binary is unreachable.
+  local ok, res = pcall(vim.fn.systemlist, { require("harness").config.bin, "tools" })
+  if ok and vim.v.shell_error == 0 and res and #res > 0 then
     tool_names = res
   end
   return tool_names
