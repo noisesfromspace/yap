@@ -258,19 +258,19 @@ func stopMaster(m *sshMaster) {
 	// Graceful mux shutdown when possible; always reap the foreground child.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	exec.CommandContext(ctx, sshBinary, "-S", m.socket, "-O", "exit", "--", "localhost").Run()
+	_ = exec.CommandContext(ctx, sshBinary, "-S", m.socket, "-O", "exit", "--", "localhost").Run()
 	select {
 	case <-m.done:
 	case <-time.After(time.Second):
-		syscall.Kill(-m.cmd.Process.Pid, syscall.SIGKILL)
+		_ = syscall.Kill(-m.cmd.Process.Pid, syscall.SIGKILL)
 		<-m.done
 	}
-	os.Remove(m.socket)
+	_ = os.Remove(m.socket)
 }
 
 func removeSSHDirIfEmpty() {
 	if sshMasters.dir != "" && len(sshMasters.clients) == 0 {
-		os.Remove(sshMasters.dir)
+		_ = os.Remove(sshMasters.dir)
 		sshMasters.dir = ""
 	}
 }

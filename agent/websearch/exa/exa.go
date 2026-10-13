@@ -100,7 +100,7 @@ func (provider) Search(p tools.WebsearchParams) ([]tools.WebsearchResult, error)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort: close on read
 
 	var data struct {
 		Results []struct {
@@ -116,7 +116,7 @@ func (provider) Search(p tools.WebsearchParams) ([]tools.WebsearchResult, error)
 			Detail  string `json:"detail"`
 			Message string `json:"message"`
 		}
-		json.NewDecoder(resp.Body).Decode(&e)
+		_ = json.NewDecoder(resp.Body).Decode(&e)
 		msg := strings.TrimSpace(strings.TrimSpace(e.Detail) + " " + strings.TrimSpace(e.Message))
 		if msg == "" {
 			msg = resp.Status

@@ -33,11 +33,11 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	cmd.Stderr = out
 
 	if err := cmd.Start(); err != nil {
-		out.Close()
-		os.Remove(outPath)
+		_ = out.Close()
+		_ = os.Remove(outPath)
 		return "", err
 	}
-	out.Close()             // the child has its own fd
+	_ = out.Close()         // the child has its own fd
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	Track(pgid)
 	defer Untrack(pgid)
@@ -50,7 +50,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	case err = <-done:
 	case <-time.After(timeout):
 		timedOut = true
-		syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
+		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
 	// Let the Lua side drain the final bytes before an untruncated log is
@@ -66,7 +66,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	if ee, ok := err.(*exec.ExitError); ok {
 		exit = ee.ExitCode() // -1 when killed by signal
 	} else if err != nil {
-		os.Remove(outPath)
+		_ = os.Remove(outPath)
 		return "", fmt.Errorf("run: %w", err)
 	}
 
@@ -93,7 +93,7 @@ func readToolTail(path string, size int64) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only: close on return
 	truncated := false
 	if size > toolMaxBytes {
 		if _, err := f.Seek(size-toolMaxBytes, io.SeekStart); err == nil {

@@ -101,7 +101,7 @@ func runPW(a *playwrightArgs) (string, string, error) {
 		}
 		return withChallenge(s), "", nil
 	case "text":
-		s, err := page.InnerText("body")
+		s, err := page.Locator("body").InnerText()
 		if err != nil {
 			return "", "", err
 		}

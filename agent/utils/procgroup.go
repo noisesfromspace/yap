@@ -24,6 +24,6 @@ func KillAll() {
 	runningMu.Lock()
 	defer runningMu.Unlock()
 	for pgid := range running {
-		syscall.Kill(-pgid, syscall.SIGKILL)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 }

@@ -86,15 +86,15 @@ func runPython(a *pythonArgs) (string, string, error) {
 		}
 		scriptPath = script.Name()
 		if _, err := script.WriteString(a.Code); err != nil {
-			script.Close()
-			os.Remove(scriptPath)
+			_ = script.Close()
+			_ = os.Remove(scriptPath)
 			return "", "", err
 		}
 		if err := script.Close(); err != nil {
-			os.Remove(scriptPath)
+			_ = os.Remove(scriptPath)
 			return "", "", err
 		}
-		defer os.Remove(scriptPath)
+		defer os.Remove(scriptPath) //nolint:errcheck // best-effort cleanup
 	} else {
 		// File: run the script in place. The path resolves like write's
 		// (relative to the Neovim cwd unless absolute), so

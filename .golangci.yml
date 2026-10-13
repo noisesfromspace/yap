@@ -1,0 +1,42 @@
+# golangci-lint configuration for the yap agent.
+#
+# A minimal, high-signal set: errcheck (unchecked errors), govet (go vet),
+# ineffassign (dead assignments), staticcheck (SA: real bugs, not QF style
+# nits), and unused (dead code). Style/opinion linters are deliberately off:
+# gosec would flag the intentionally-unsandboxed exec surface
+# (R-compiled-tools), and staticcheck's QF ("quickfix") checks are taste, not
+# correctness.
+#
+# errcheck noise is tamed two ways:
+#   - test files are exempt: handler writes (fmt.Fprint(w, ...)) and
+#     json.Decoder.Decode() calls in fixtures are idiomatic and never checked.
+#   - buffered/stream writers are exempt: render writes to a *bufio.Writer
+#     over the stdout pipe and events go to stderr — a failed write there has
+#     no recovery path, so those calls stay unchecked by design.
+# Every other ignored error must be explicit (`_ =`) or carry a
+# `//nolint:errcheck` reason, so a genuinely forgotten check still fails CI.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*bufio.Writer).Flush
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteString
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck

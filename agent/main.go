@@ -56,7 +56,7 @@ func main() {
 		fs := flag.NewFlagSet("send", flag.ExitOnError)
 		provider := fs.String("provider", "", "provider name from config.json")
 		model := fs.String("model", "", "model name")
-		fs.Parse(os.Args[2:])
+		_ = fs.Parse(os.Args[2:]) // ExitOnError: Parse exits on bad flags
 		if *provider == "" || *model == "" {
 			fmt.Fprintln(os.Stderr, "send: --provider and --model are required")
 			os.Exit(2)
@@ -177,7 +177,7 @@ func serve(in io.Reader, out io.Writer) error {
 						ID       string `json:"id"`
 						Approved bool   `json:"approved"`
 					}
-					json.Unmarshal(line, &ar)
+					_ = json.Unmarshal(line, &ar)
 					utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}
 					continue
 				case "steer", "unsteer":

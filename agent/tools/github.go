@@ -67,7 +67,7 @@ func githubRequest(method, endpoint string, payload []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort: close on read
 	body, err := io.ReadAll(io.LimitReader(resp.Body, githubMaxBody+1))
 	if err != nil {
 		return nil, err

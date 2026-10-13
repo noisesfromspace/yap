@@ -1,0 +1,25 @@
+name: test
+
+# Runs on the hadouken Forgejo Actions runner (label `native`, host
+# execution, no container). The devShell (flake.nix) provides the full
+# environment — Go, Neovim 0.13 (built from master, nixpkgs ships 0.12),
+# python3+msgpack, mini.nvim, ripgrep, and golangci-lint — so the job is
+# self-contained on the NixOS host.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: native
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Lint
+        run: nix develop --command bash -c 'CGO_ENABLED=0 golangci-lint run ./...'
+
+      - name: Build and test
+        run: nix develop --command tests/run.sh

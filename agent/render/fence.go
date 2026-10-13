@@ -20,7 +20,7 @@ func resultFence(name, argsJSON string) (lang string, ok bool) {
 		var a struct {
 			Path string `json:"path"`
 		}
-		json.Unmarshal([]byte(argsJSON), &a)
+		_ = json.Unmarshal([]byte(argsJSON), &a) // best-effort: fall back to ""
 		return langForPath(a.Path), true
 	case "fetch":
 		return "markdown", true

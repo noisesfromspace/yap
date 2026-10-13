@@ -356,7 +356,7 @@ func gateState(name string, input json.RawMessage, t *turn, messages []llm.Messa
 				// A large script should not dominate the Jev request. Mark the
 				// omitted tail explicitly rather than implying a complete scan.
 				data, err := io.ReadAll(io.LimitReader(f, 16*1024+1))
-				f.Close()
+				_ = f.Close()
 				if err != nil {
 					state["file_source"] = "unreadable: " + err.Error()
 				} else {

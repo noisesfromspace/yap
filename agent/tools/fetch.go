@@ -73,7 +73,7 @@ func fetchRaw(rawURL string) (status int, statusText, contentType string, finalU
 	if err != nil {
 		return 0, "", "", nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort: close on read
 	body, err = io.ReadAll(io.LimitReader(resp.Body, int64(fetchMaxHTMLBytes)+1))
 	if err != nil {
 		return 0, "", "", nil, nil, err

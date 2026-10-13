@@ -141,8 +141,8 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 		return "", "", err
 	}
 	hdrPath := hdr.Name()
-	hdr.Close()
-	defer os.Remove(hdrPath)
+	_ = hdr.Close()
+	defer os.Remove(hdrPath) //nolint:errcheck // best-effort cleanup
 	args = append(args, "-D", hdrPath)
 
 	if a.Method != "" {

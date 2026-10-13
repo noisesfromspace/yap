@@ -51,9 +51,10 @@ func Lookup(provider, model string) (Info, bool) {
 	candidates = append(candidates, model)
 	if provider != "" {
 		candidates = append(candidates, provider+"/"+model)
-		if provider == "google" {
+		switch provider {
+		case "google":
 			candidates = append(candidates, "gemini/"+model)
-		} else if provider == "gemini" {
+		case "gemini":
 			candidates = append(candidates, "google/"+model)
 		}
 	}

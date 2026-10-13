@@ -402,7 +402,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	after := strings.Index(s, "after")
 	finalUsage := strings.Index(s, `"type":"turn_end"`)
 	if usage < 0 || header < 0 || event < 0 || result < 0 || after < 0 || finalUsage < 0 ||
-		!(usage < header && header < event && event < result && result < after && after < finalUsage) ||
+		usage >= header || header >= event || event >= result || result >= after || after >= finalUsage ||
 		!strings.Contains(s, `"completion":30,"context_prompt":200,"cost":0.00033,"model":"m1","ms":`) ||
 		!strings.Contains(s, `"prompt":300,"type":"turn_end"`) {
 		t.Fatalf("usage should update after each model step and before tool execution; final event should carry cumulative usage:\n%s", s)

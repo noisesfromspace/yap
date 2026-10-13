@@ -102,7 +102,7 @@ func (c *client) Decide(ctx context.Context, req decide.Request) (decide.Respons
 	if err != nil {
 		return decide.Response{}, fmt.Errorf("jev: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort: close on read
 
 	if resp.StatusCode != http.StatusOK {
 		return decide.Response{}, decodeError(resp)
@@ -180,7 +180,7 @@ func decodeError(resp *http.Response) error {
 		} `json:"error"`
 		Message string `json:"message"`
 	}
-	json.Unmarshal(body, &e)
+	_ = json.Unmarshal(body, &e)
 	msg := strings.TrimSpace(strings.TrimSpace(e.Error.Message) + " " + strings.TrimSpace(e.Message))
 	if msg == "" {
 		msg = strings.TrimSpace(string(body))

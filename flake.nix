@@ -219,6 +219,10 @@
               # it shells out to the Node driver and drives nixpkgs chromium).
               pkgs.nodejs
               pkgs.chromium
+              # Test/lint tooling the suite shells out to: ripgrep backs the
+              # search/glob tools' tests; golangci-lint enforces .golangci.yml.
+              pkgs.ripgrep
+              pkgs.golangci-lint
               yap-nvim
               yap-nvim-treesitter
               yap-nvim-touchup
@@ -235,7 +239,7 @@
                 export YAP_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/yap"
                 export YAP_BIN="$YAP_CACHE/bin/yap"
                 mkdir -p "$YAP_CACHE/bin"
-                if ( cd "$YAP_ROOT" && ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
+                if ( cd "$YAP_ROOT" && CGO_ENABLED=0 ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
                   echo "yap: built agent -> $YAP_BIN"
                 else
                   echo "yap: agent build failed (see above); Neovim still usable, :YapSend will not work" >&2

@@ -157,7 +157,7 @@ func listModels(ctx context.Context, providerName, baseURL, apiKey string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort: close on read
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("list models: HTTP %s", resp.Status)
 	}
