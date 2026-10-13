@@ -27,7 +27,7 @@ local function harness()
 end
 
 local BOARD_NAME = "yap://guard"
-local MAX_TOTAL_ROWS = 30 -- cap the board to 30 events across both sections
+local MAX_SECTION_ROWS = 30 -- cap each section (Guard, Advisory) to 30 rows
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -301,15 +301,11 @@ local function build_sections()
   end
   table.sort(guard_rows, newest_first)
 
-  -- Guard (approvals) takes priority: it may use the whole cap, and
-  -- Advisory fills whatever remains, so the two sections together never
-  -- exceed MAX_TOTAL_ROWS rows.
-  guard_rows = cap(guard_rows, MAX_TOTAL_ROWS)
-  local advisory_rows = cap(advisories, math.max(0, MAX_TOTAL_ROWS - #guard_rows))
-
+  -- Cap each section independently: Guard's settled history must not starve
+  -- Advisory (a shared budget let Guard's 30 approvals push advisories to 0).
   return {
-    { title = "Guard", rows = guard_rows },
-    { title = "Advisory", rows = advisory_rows },
+    { title = "Guard", rows = cap(guard_rows, MAX_SECTION_ROWS) },
+    { title = "Advisory", rows = cap(advisories, MAX_SECTION_ROWS) },
   }
 end
 
