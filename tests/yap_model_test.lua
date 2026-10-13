@@ -28,4 +28,19 @@ assert(vim.b[buf].yap_model == "m2", "command failed")
 -- invalid argument keeps the old combo
 yap.change_model("garbage")
 assert(vim.b[buf].yap_model == "m2", "invalid combo clobbered state")
+
+-- A combo may carry slashes and ~ in the model part: `yap models` prints
+-- provider + "/" + model, and openrouter publishes ids like
+-- "openrouter/anthropic/claude-sonnet-5".
+local config = require("harness.config")
+local provider, model = config.parse_combo("openrouter/anthropic/claude-sonnet-5")
+assert(provider == "openrouter" and model == "anthropic/claude-sonnet-5", "nested combo not parsed")
+provider, model = config.parse_combo("openrouter/~deepseek/deepseek-flash-latest")
+assert(provider == "openrouter" and model == "~deepseek/deepseek-flash-latest", "~ combo not parsed")
+assert(config.parse_combo("nope") == nil, "schemeless combo should not parse")
+yap.change_model("openrouter/anthropic/claude-sonnet-5")
+assert(
+  vim.b[buf].yap_provider == "openrouter" and vim.b[buf].yap_model == "anthropic/claude-sonnet-5",
+  "nested combo not applied: " .. tostring(vim.b[buf].yap_model)
+)
 print("OK model")

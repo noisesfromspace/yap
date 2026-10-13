@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"boers.email/yap/agent/utils"
 )
@@ -38,6 +39,14 @@ func runSearch(a *searchArgs) (string, string, error) {
 		return "", "", fmt.Errorf("empty pattern")
 	}
 	a.Path = utils.ExpandHome(a.Path)
+	if a.Path != "" {
+		// Same guard as read: `path` can point anywhere, so an explicit
+		// secret directory must not be searchable just because rg is the
+		// one looking inside it.
+		if err := utils.GuardReadPath(a.Path); err != nil {
+			return "", "", err
+		}
+	}
 	max := a.MaxCount
 	if max <= 0 {
 		max = searchMaxCount
@@ -86,8 +95,29 @@ func truncateHead(s string) (string, bool) {
 	}
 	s = strings.Join(lines, "\n")
 	if len(s) > readMaxBytes {
-		s = s[:readMaxBytes]
+		s = capBytes(s, readMaxBytes)
 		truncated = true
 	}
 	return s, truncated
+}
+
+// capBytes cuts s to at most n bytes, backing off to the last rune boundary
+// so a multi-byte character is never split. The result is always valid UTF-8:
+// a tool result with half a rune in it makes Neovim read the transcript back
+// as latin1 ('fileencodings' falls back there) and re-encode it on :write.
+func capBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[:n]
+	// DecodeLastRuneInString reports (RuneError, 1) for a truncated trailing
+	// sequence; drop those bytes until the tail is a whole rune.
+	for len(s) > 0 {
+		if r, size := utf8.DecodeLastRuneInString(s); r == utf8.RuneError && size <= 1 {
+			s = s[:len(s)-1]
+			continue
+		}
+		break
+	}
+	return s
 }

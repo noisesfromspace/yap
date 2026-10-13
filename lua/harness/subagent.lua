@@ -52,18 +52,29 @@ local function subagent_result(parent, child, child_path, reply)
     local result = "error: " .. (errors[child] or "subagent stopped without a result")
     if success then
       -- Only final prose, not the child's tool history, belongs in the parent.
-      local text, in_comment = {}, false
+      local text, in_comment, in_ui = {}, false, false
       for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
         if line == "# @assistant" then
-          text, in_comment = {}, false
+          text, in_comment, in_ui = {}, false, false
         elseif line:match("^<!%-%- /yap:tool") then
           text = {}
+          in_comment, in_ui = false, false
+        elseif in_ui then
+          -- Display-only diff between the paired yap:ui markers.
+          if line == "-->" or line:match("^<!%-%- /yap:ui") then
+            in_ui = false
+          end
+        elseif line:match("^<!%-%- yap:ui") then
+          in_ui = true
+          in_comment = not line:match("%-%->$")
         elseif line:match("^<!%-%- yap:") then
           in_comment = not line:match("%-%->$")
         elseif in_comment then
           if line == "-->" then
             in_comment = false
           end
+        elseif line:match("^<!%-%- /yap:") then
+          -- Orphan region closer: a marker line is never part of the answer.
         elseif line ~= "# @user" then
           text[#text + 1] = line
         end

@@ -149,3 +149,25 @@ func TestResolvePath(t *testing.T) {
 		t.Fatalf("resolve tail: got %q want %q", got, want)
 	}
 }
+
+// `/run/agenix` is a symlink to `/run/agenix.d/<n>`, and the resolved path is
+// not under it — so both must be listed or the guard the comment describes
+// does not actually hold for the path it names.
+func TestAgenixResolvedDirIsSecret(t *testing.T) {
+	for _, p := range []string{
+		"/run/agenix",
+		"/run/agenix.d",
+		"/run/agenix.d/184/secrets/x",
+		"/etc/agenix/y",
+	} {
+		if !isSecretPath(p) {
+			t.Errorf("%s should be a secret path", p)
+		}
+	}
+	if err := GuardReadPath("/run/agenix.d/184/secrets/x"); err == nil {
+		t.Error("GuardReadPath should refuse the resolved agenix directory")
+	}
+	if _, err := GuardWritePath("/run/agenix.d/184/secrets/x"); err == nil {
+		t.Error("GuardWritePath should refuse the resolved agenix directory")
+	}
+}

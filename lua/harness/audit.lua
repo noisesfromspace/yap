@@ -201,10 +201,18 @@ function M.drain(buf)
     local fd = vim.uv.fs_open(l.log, "r", 438)
     if fd then
       local stat = vim.uv.fs_fstat(fd)
-      if stat and stat.size > (l.offset or 0) then
-        local data = vim.uv.fs_read(fd, stat.size - (l.offset or 0), l.offset or 0)
-        l.offset = stat.size
+      local offset = l.offset or 0
+      if stat and stat.size < offset then
+        -- The log was replaced or truncated under us; follow it from the top
+        -- instead of stalling on an offset it will never reach again.
+        offset = 0
+      end
+      if stat and stat.size > offset then
+        local data = vim.uv.fs_read(fd, stat.size - offset, offset)
+        -- Advance by what was actually read: assigning stat.size first made a
+        -- failed read skip that byte range for good.
         if data and #data > 0 then
+          l.offset = offset + #data
           local text = (l.pending or "") .. data
           local lines = vim.split(text, "\n", { plain = true })
           l.pending = table.remove(lines)

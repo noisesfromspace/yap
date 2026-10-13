@@ -40,4 +40,27 @@ func TestSlimArgs(t *testing.T) {
 	if _, ok = SlimArgs("write", `{not json`); ok {
 		t.Fatal("malformed write args should not be slimmed")
 	}
+
+	// a trailing newline terminates the last line instead of starting an
+	// empty one: "a\nb\nc\n" is a 3-line file, not 4
+	args, ok = SlimArgs("write", `{"path":"/tmp/x","content":"a\nb\nc\n"}`)
+	if !ok {
+		t.Fatal("write with trailing newline not slimmed")
+	}
+	b, _ = json.Marshal(args)
+	if s := string(b); !strings.Contains(s, `"content":"[3 lines]"`) {
+		t.Fatalf("trailing newline miscounted: %s", s)
+	}
+
+	// arguments that parse but do not carry the summarized fields keep the
+	// verbatim header instead of a confidently wrong "[0 lines]"
+	if _, ok = SlimArgs("write", `{"path":"/tmp/x"}`); ok {
+		t.Fatal("write without content should not be slimmed")
+	}
+	if _, ok = SlimArgs("edit", `{"path":"/tmp/x","edits":[{"oldText":"a"}]}`); ok {
+		t.Fatal("edit without newText should not be slimmed")
+	}
+	if _, ok = SlimArgs("edit", `{"path":"/tmp/x"}`); ok {
+		t.Fatal("edit without edits should not be slimmed")
+	}
 }

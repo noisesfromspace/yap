@@ -12,10 +12,18 @@ import (
 // below the header, so the header — which parse_buffer flattens into
 // the model's transcript on later sends — keeps only the shape
 // ("[N lines]"); the file on disk is the ground truth and the full
-// arguments are in the audit log (yap:event tool_call). ok is false
-// for tools whose arguments are small enough to keep verbatim.
+// arguments are in the audit log (yap:event tool_call). ok is false when the
+// tool is not slimmed, when the arguments do not parse, or when they do not
+// carry the exact fields being summarized — a confidently wrong header
+// ("[0 lines]" for a call that did write content) is worse than the raw
+// arguments, which the caller then keeps verbatim.
 func SlimArgs(name, argsJSON string) (args any, ok bool) {
+	// lineCount reports the line count of a text block the way an editor
+	// shows it: a single trailing newline terminates the last line instead
+	// of starting an empty one, so "a\nb\nc\n" is 3 lines, matching the
+	// yap:ui diff below the header.
 	lineCount := func(s string) int {
+		s = strings.TrimSuffix(s, "\n")
 		if s == "" {
 			return 0
 		}
@@ -24,34 +32,52 @@ func SlimArgs(name, argsJSON string) (args any, ok bool) {
 	switch name {
 	case "write":
 		var a struct {
-			Path    string `json:"path"`
-			Content string `json:"content"`
+			Path    json.RawMessage `json:"path"`
+			Content json.RawMessage `json:"content"`
 		}
-		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil {
+		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil || a.Content == nil {
+			return nil, false
+		}
+		var path, content string
+		if err := json.Unmarshal(a.Path, &path); err != nil {
+			return nil, false
+		}
+		if err := json.Unmarshal(a.Content, &content); err != nil {
 			return nil, false
 		}
 		return map[string]any{
-			"path":    a.Path,
-			"content": fmt.Sprintf("[%d lines]", lineCount(a.Content)),
+			"path":    path,
+			"content": fmt.Sprintf("[%d lines]", lineCount(content)),
 		}, true
 	case "edit":
 		var a struct {
-			Path  string `json:"path"`
+			Path  json.RawMessage `json:"path"`
 			Edits []struct {
-				OldText string `json:"oldText"`
-				NewText string `json:"newText"`
+				OldText json.RawMessage `json:"oldText"`
+				NewText json.RawMessage `json:"newText"`
 			} `json:"edits"`
 		}
-		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil {
+		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil || a.Edits == nil {
+			return nil, false
+		}
+		var path string
+		if err := json.Unmarshal(a.Path, &path); err != nil {
 			return nil, false
 		}
 		add, del := 0, 0
 		for _, e := range a.Edits {
-			add += lineCount(e.NewText)
-			del += lineCount(e.OldText)
+			var oldText, newText string
+			if err := json.Unmarshal(e.OldText, &oldText); err != nil {
+				return nil, false
+			}
+			if err := json.Unmarshal(e.NewText, &newText); err != nil {
+				return nil, false
+			}
+			add += lineCount(newText)
+			del += lineCount(oldText)
 		}
 		return map[string]any{
-			"path":  a.Path,
+			"path":  path,
 			"edits": fmt.Sprintf("[%d edits, +%d/-%d lines]", len(a.Edits), add, del),
 		}, true
 	}

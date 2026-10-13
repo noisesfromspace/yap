@@ -235,7 +235,7 @@ func extractMarkdown(body []byte, pageURL *url.URL) (string, error) {
 
 func capText(s string) string {
 	if len(s) > fetchMaxBytes {
-		return s[:fetchMaxBytes] + "\n[truncated at 50KB]"
+		return capBytes(s, fetchMaxBytes) + "\n[truncated at 50KB]"
 	}
 	return s
 }

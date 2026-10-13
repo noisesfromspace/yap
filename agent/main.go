@@ -170,7 +170,13 @@ func serve(in io.Reader, out io.Writer) error {
 			if json.Unmarshal(line, &reply) == nil {
 				switch reply.Type {
 				case "subagent_result":
-					tools.SubagentReplies <- reply.SubagentReply
+					// Never block the stdin reader: this channel also carries
+					// approvals and steering, and a reply can arrive for a call
+					// that already timed out with nobody waiting.
+					select {
+					case tools.SubagentReplies <- reply.SubagentReply:
+					default:
+					}
 					continue
 				case "approval_result":
 					var ar struct {
@@ -178,7 +184,10 @@ func serve(in io.Reader, out io.Writer) error {
 						Approved bool   `json:"approved"`
 					}
 					_ = json.Unmarshal(line, &ar)
-					utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}
+					select {
+					case utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}:
+					default:
+					}
 					continue
 				case "steer", "unsteer":
 					updateMu.Lock()

@@ -112,6 +112,11 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	// Providers are asked for `limit` results; trim anyway so a backend that
+	// ignores numResults cannot flood the transcript.
+	if len(results) > a.Limit {
+		results = results[:a.Limit]
+	}
 
 	// Format as markdown — token-cheaper and easier for LLMs than JSON.
 	var b strings.Builder
@@ -136,5 +141,11 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 			}
 		}
 	}
-	return utils.SafetyGuarded(decisionModel, a.Safety, b.String()), "", nil
+	// Cap the assembled result: 25 results in contentMode=text can carry
+	// hundreds of KB, and every byte of it lands in the transcript.
+	out := b.String()
+	if len(out) > readMaxBytes {
+		out = capBytes(out, readMaxBytes) + "\n[truncated at 50KB: lower limit or use contentMode=highlights]"
+	}
+	return utils.SafetyGuarded(decisionModel, a.Safety, out), "", nil
 }

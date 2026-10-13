@@ -1201,6 +1201,10 @@ function M.send(buf)
     messages = messages,
     tools = tools,
     reasoning_level = reasoning_level,
+    -- Request-only (like the context tail): the backend's own cwd is fixed
+    -- when the buffer spawns it, so the live cwd is what keeps the tools'
+    -- "default: the Neovim cwd" true after a :cd.
+    cwd = vim.fn.getcwd(),
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)
@@ -1227,6 +1231,10 @@ function M.stop(buf)
     handle:kill(15) -- the exit callback closes the interrupted turn
     servers[buf] = nil
     running[buf] = nil
+    -- servers[buf] is already nil, so the process exit callback's
+    -- `servers[buf] ~= handle` guard returns early and never reaches its own
+    -- cleanup: release the per-turn UI state it would have released here.
+    pending_approvals[buf] = nil
     spinner.stop_if_idle()
     audit.poll_stop_if_idle()
     audit.drain(buf)
@@ -1447,7 +1455,7 @@ function M.new(opts)
   end
   local provider, model = M.config.provider, M.config.model
   if config.default_combo then
-    provider, model = config.default_combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+    provider, model = config.parse_combo(config.default_combo)
   end
   vim.b[buf].yap_provider = opts.provider or provider
   vim.b[buf].yap_model = opts.model or model
@@ -1992,7 +2000,17 @@ function M.setup(opts)
     config.load_models_cache()
     config.refresh_models()
   end
-  -- Propagate the (possibly overridden) data roots to the path resolver.
+  -- Resolve every data path — defaults included — against the real home
+  -- directory (R-data-paths): a relative or unset $HOME must never make yap
+  -- read or write inside the project. `~` expands; a relative override is
+  -- refused by paths.expand rather than silently resolved against the cwd.
+  for _, key in ipairs({ "agents_file", "templates_dir", "skills_dir", "agents_dir", "sessions_dir" }) do
+    local v = M.config[key]
+    if type(v) == "string" and v ~= "" then
+      M.config[key] = paths.expand(v)
+    end
+  end
+  -- Propagate the (possibly overridden) data root to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
 
   -- <leader>r, <leader>w, <leader>y, <leader>R and <leader>M are global:
@@ -2042,6 +2060,9 @@ function M.setup(opts)
       end
       servers[args.buf] = nil
       running[args.buf] = nil
+      pending_approvals[args.buf] = nil
+      stream_flush[args.buf] = nil
+      follow_override[args.buf] = nil
       -- Release the per-buffer UI state so the winbar's rollup and cache
       -- don't iterate/retain entries for buffers that are gone.
       live[args.buf] = nil

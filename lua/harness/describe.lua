@@ -6,6 +6,7 @@ local M = {}
 
 local frontmatter = require("harness.frontmatter")
 local document = require("harness.document")
+local config = require("harness.config")
 
 local function harness()
   return require("harness")
@@ -133,7 +134,7 @@ Return only the title.]]
   if not combo or combo == "" then
     return
   end
-  local provider, model = combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  local provider, model = config.parse_combo(combo)
   if not provider then
     return
   end
@@ -171,8 +172,10 @@ Return only the title.]]
       -- still return a paragraph; hard-cap it so the frontmatter and
       -- picker stay readable. (No max_tokens cap: reasoning models spend
       -- the whole budget on reasoning and return an empty completion.)
-      if #description > 60 then
-        description = description:sub(1, 59):gsub("%s+%S*$", "") .. "…"
+      -- Counted in characters, not bytes: the `–` normalized above is
+      -- multi-byte, and a byte slice can split it.
+      if vim.fn.strchars(description) > 60 then
+        description = vim.fn.strcharpart(description, 0, 59):gsub("%s+%S*$", "") .. "…"
       end
       local e = frontmatter.end_line(buf)
       if not e then

@@ -25,6 +25,11 @@ func TestIsDangerousCommand(t *testing.T) {
 		"git reset --hard HEAD~1",
 		"git clean -fd",
 		"git push --force origin main",
+		// --force after the refspec used to slip past the anchored pattern
+		"git push origin main --force",
+		"git push origin main -f",
+		"git push --force-with-lease origin main",
+		"git push --mirror origin",
 		"git push --delete origin branch",
 		"chmod -R 777 /srv",
 		"chown -R root:root /etc",

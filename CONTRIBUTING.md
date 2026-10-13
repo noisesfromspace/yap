@@ -174,7 +174,10 @@ buffers) are unlisted — never in `:ls` or buffer pickers — so navigation use
 (`$XDG_CONFIG_HOME/yap/...`, falling back to `~/.config/yap/...`) and
 accept a leading `~` (resolved against the real home directory — `$HOME` when
 it is a non-empty absolute path, else the passwd entry) or an absolute path;
-relative paths are refused. Why: an unset, empty, or relative `$HOME` must
+relative paths are refused. The other data settings (`agents_file`,
+`templates_dir`, `skills_dir`) resolve the same way in `setup()`, so no
+configured data path is ever resolved against the project directory. Why: an
+unset, empty, or relative `$HOME` must
 never make yap write its data folder into the project directory
 (`vim.fn.expand("~")` silently falls back to cwd in those cases).
 
@@ -417,9 +420,14 @@ effect.
 
 ## Lua <-> Go protocol (implementation reference)
 
-- **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...]}`
+- **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
-  as assistant transcript text). Explicit user `![FILE: name](file:///...)`
+  as assistant transcript text). `cwd` is request-only, like the context tail:
+  the serve process's own working directory is fixed when the buffer spawns it,
+  so this is what keeps bash/python's documented "default: the Neovim cwd" (and
+  the project root in the outside-root write note) true after a `:cd`; absent
+  for a one-shot `yap send`, whose tools then use the process cwd.
+  Explicit user `![FILE: name](file:///...)`
   references stay in Markdown and Go converts them into ordered image parts
   when sending; binary data is never in the session or stdin.
 - **argv** — `yap serve` (one persistent process per session buffer).

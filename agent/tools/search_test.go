@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestTruncateHead(t *testing.T) {
@@ -63,5 +64,37 @@ func TestSearchNoMatches(t *testing.T) {
 	r, _, err := run(t, "search", `{"pattern":"definitely-not-here-xyz","path":"`+dir+`"}`)
 	if err != nil || r != "(no matches)" {
 		t.Fatalf("no matches: %q %v", r, err)
+	}
+}
+
+// `path` can point anywhere, so searching a secret directory must hit the
+// same guard read does.
+func TestSearchRefusesSecretPaths(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not available")
+	}
+	_, _, err := run(t, "search", `{"pattern":"x","path":"~/.ssh"}`)
+	if err == nil || !strings.Contains(err.Error(), "secret path") {
+		t.Fatalf("search into a secret path should be refused: %v", err)
+	}
+	_, _, err = run(t, "search", `{"pattern":"x","path":"/run/agenix.d"}`)
+	if err == nil || !strings.Contains(err.Error(), "secret path") {
+		t.Fatalf("search into the resolved agenix dir should be refused: %v", err)
+	}
+}
+
+// The byte cap must not split a multi-byte character: half a rune in a tool
+// result makes Neovim read the transcript back as latin1 and re-encode it.
+func TestCapBytesKeepsRuneBoundary(t *testing.T) {
+	s := strings.Repeat("日", 10) // 30 bytes, 3 bytes per rune
+	got := capBytes(s, 5)
+	if len(got) > 5 {
+		t.Fatalf("capBytes returned %d bytes, want <= 5", len(got))
+	}
+	if !utf8.ValidString(got) || got != "日" {
+		t.Fatalf("capBytes split a rune: %q", got)
+	}
+	if capBytes("abc", 5) != "abc" {
+		t.Fatal("capBytes should pass short input through")
 	}
 }

@@ -23,12 +23,12 @@ M.defaults = {
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
-  agents_file = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/AGENTS.md",
+  agents_file = paths.config_home() .. "/yap/AGENTS.md",
   -- Templates are text files inserted into the context by :YapInsert
   -- (a compaction prompt, a snippet, ...); skills are the same but
   -- system-prompt material, merged into the `# @system` message.
-  templates_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/templates",
-  skills_dir = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. "/.config")) .. "/yap/skills",
+  templates_dir = paths.config_home() .. "/yap/templates",
+  skills_dir = paths.config_home() .. "/yap/skills",
   agents_dir = paths.dirs.agents_dir, -- agent-definition files (subagents)
   -- Session data root. Defaults mirror harness.path (the XDG config home,
   -- resolved against the real home directory, never the project cwd);
@@ -145,7 +145,7 @@ function M.read_default_combo()
   local path = default_combo_path()
   if vim.fn.filereadable(path) == 1 then
     local lines = vim.fn.readfile(path)
-    if #lines == 1 and lines[1]:match("^[%w_.:%-]+/[%w_.:%-]+$") then
+    if #lines == 1 and M.parse_combo(lines[1]) then
       return lines[1]
     end
   end
@@ -247,9 +247,13 @@ end
 
 --- Split a "provider/model" combo into provider, model — or nil, nil when the
 --- string is not well-formed. The one place the combo grammar lives; used by
---- change_model, change_default_model and the subagent model override.
+--- change_model, change_default_model, the persisted default and the subagent
+--- model override. The provider is the first segment; the model may itself
+--- contain `/` and `~`, because `yap models` prints provider + "/" + model and
+--- ids like `openrouter/anthropic/claude-sonnet-5` or
+--- `openrouter/~deepseek/deepseek-flash-latest` are published combos.
 function M.parse_combo(combo)
-  return combo:match("^([%w_.:%-]+)/([%w_.:%-]+)$")
+  return combo:match("^([%w_.:%-]+)/([%w_.:~/-]+)$")
 end
 
 -- Cache of the compiled-in tool names, used to render the per-session

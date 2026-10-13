@@ -59,3 +59,51 @@ func TestScrub(t *testing.T) {
 		t.Fatalf("benign changed: %q", Scrub(benign))
 	}
 }
+
+// A word boundary never exists between `_` and a letter, so a key written
+// behind a prefix (the normal environment-variable shape) used to slip past
+// the assignment scan entirely.
+func TestScrubPrefixedKeys(t *testing.T) {
+	for _, key := range []string{
+		"OPENAI_API_KEY",
+		"AWS_SECRET_ACCESS_KEY",
+		"AWS_SECRET_KEY",
+		"POSTGRES_PASSWORD",
+		"MY_ACCESS_TOKEN",
+		"DEPLOY_PRIVATE_KEY",
+	} {
+		got := Scrub(key + "=super-secret-value")
+		if strings.Contains(got, "super-secret-value") {
+			t.Errorf("%s: value leaked: %q", key, got)
+		}
+		if !strings.Contains(got, key) {
+			t.Errorf("%s: key name should survive: %q", key, got)
+		}
+		if !strings.Contains(got, redacted) {
+			t.Errorf("%s: no redaction marker: %q", key, got)
+		}
+	}
+}
+
+// Tokens that identify themselves need no key name; without these a secret
+// pasted on its own (a diff, a log line, a shell trace) stayed in context.
+func TestScrubVendorTokens(t *testing.T) {
+	for _, in := range []string{
+		"token ghp_" + strings.Repeat("a", 36),
+		"key sk-" + strings.Repeat("b", 32),
+		"bot xoxb-1234567890-abcdefghij",
+		"google AIza" + strings.Repeat("c", 35),
+		"jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+	} {
+		if got := Scrub(in); !strings.Contains(got, redacted) {
+			t.Errorf("token not redacted: %q -> %q", in, got)
+		}
+	}
+}
+
+func TestScrubBracedValue(t *testing.T) {
+	got := Scrub("password={hunter2}")
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("braced value leaked: %q", got)
+	}
+}

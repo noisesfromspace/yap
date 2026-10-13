@@ -41,7 +41,7 @@ var dangerousShellPatterns = []dangerousPattern{
 	{"sudo", regexp.MustCompile(`(?i)\bsudo\b`)},
 
 	// Irreversible git history / remote rewrites.
-	{"irreversible git operation", regexp.MustCompile(`\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*|push\s+(?:-f\b|--force|--delete|--force-with-lease))`)},
+	{"irreversible git operation", regexp.MustCompile(`\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*|push\b[^\n;&|]*(?:--force|--delete|--mirror|\s-f\b|\s-d\b))`)},
 
 	// Recursive ownership / permission changes.
 	{"broad permission change", regexp.MustCompile(`(?i)\b(?:sudo\s+)?chmod\b[ \t]+(?:-R|--recursive|777|a\+w|u?g?o?\+w)(?:[ \t]|$)`)},

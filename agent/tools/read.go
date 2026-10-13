@@ -53,7 +53,7 @@ func init() {
 			}
 			text := strings.Join(lines, "\n")
 			if len(text) > readMaxBytes {
-				text = text[:readMaxBytes]
+				text = capBytes(text, readMaxBytes)
 				truncated = true
 			}
 			if truncated {

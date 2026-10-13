@@ -25,11 +25,24 @@ var scrubWhole = []*regexp.Regexp{
 	regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
 	// Bearer tokens (including shorter opaque tokens).
 	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9_\-\.~+/=]{8,}`),
+	// Vendor token prefixes: shapes that identify themselves, so no key name
+	// is needed. These are the leaks a plain `KEY=value` scan misses when the
+	// secret is pasted on its own (a diff, a log line, a shell trace).
+	regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{20,}`),                                    // GitHub PAT/app/refresh/server/user
+	regexp.MustCompile(`\bsk-[A-Za-z0-9_\-]{20,}`),                                        // OpenAI/Anthropic-style
+	regexp.MustCompile(`\bxox[baprs]-[A-Za-z0-9\-]{10,}`),                                 // Slack
+	regexp.MustCompile(`\bAIza[0-9A-Za-z_\-]{35}\b`),                                      // Google API key
+	regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}`), // JWT
 }
 
 // scrubAssign matches named secret assignments, including JSON string values.
-// Groups: 1 = key name, 2 = operator + optional opening quote, 3 = value.
-var scrubAssign = regexp.MustCompile(`(?i)\b(api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;}{]+)`)
+// The key may carry an identifier prefix (`AWS_SECRET_ACCESS_KEY`, `MY_API_KEY`),
+// so it is matched from the start of the identifier run instead of behind a
+// `\b` — a word boundary never exists between `_` and a letter, so the common
+// `OPENAI_API_KEY=` shape slipped through unredacted. Groups: 1 = key name
+// (with any prefix), 2 = operator + optional opening quote, 3 = value (a
+// `{...}` object counts as one value so `password={x}` is not skipped).
+var scrubAssign = regexp.MustCompile(`(?i)([A-Za-z0-9_]*(?:api[_-]?key|apikey|secret[_-]?(?:access[_-]?)?key|access[_-]?key|private[_-]?key|client[_-]?secret|api[_-]?secret|access[_-]?token|auth[_-]?token|refresh[_-]?token|password|passwd|authorization))(["']?\s*[:=]\s*["']?)([^\s"',;}{]+|\{[^{}]*\})`)
 
 // Scrub redacts obvious secrets from s and repairs bytes that are not valid
 // UTF-8 to U+FFFD. Tool output is where raw bytes enter the session, which is

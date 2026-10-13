@@ -70,8 +70,16 @@ var (
 		"--trace", "--trace-ascii", "--resolve", "--connect-to", "--interface",
 		"--location", "--location-trusted", "--url", "--next", "--proxy", "--preproxy",
 		"--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--proto-redir",
+		// Local-file reads and writes: a path in a request turns curl into an
+		// unguarded reader (past GuardReadPath) or an arbitrary file writer.
+		"--upload-file", "--stderr", "--cookie", "--cookie-jar", "--form",
+		"--form-string", "--data", "--data-ascii", "--data-binary", "--data-raw",
+		"--data-urlencode", "--json", "--netrc", "--netrc-file", "--write-out",
 	}
-	curlDenyShort = []string{"-K", "-o", "-O", "-D", "-L", "-x"}
+	// Short options as a letter set, because curl clusters them: `-So/path`
+	// is `-S -o /path`, so testing only the first letter misses the -o.
+	// -H stays allowed (its value is where headers without spaces go).
+	curlDenyShort = "dFKbcoODLTwx"
 )
 
 func rejectCurlFlags(flags string) error {
@@ -81,8 +89,25 @@ func rejectCurlFlags(flags string) error {
 				return fmt.Errorf("curl flag %q is not allowed", f)
 			}
 		}
-		for _, d := range curlDenyShort {
-			if strings.HasPrefix(f, d) {
+		if !strings.HasPrefix(f, "-") {
+			// A value for the preceding flag. curl reads a local file wherever
+			// a value is a bare `@path` (-H @file, -d @file, -F @file), which
+			// would walk past GuardReadPath; the dedicated url/headers/data
+			// args carry those values without touching the filesystem.
+			if strings.HasPrefix(f, "@") {
+				return fmt.Errorf("curl argument %q is not allowed: an '@' value reads a local file", f)
+			}
+			continue
+		}
+		// The same marker glued onto a flag (-d@file, -w@file).
+		if strings.ContainsRune(f, '@') {
+			return fmt.Errorf("curl flag %q is not allowed: an '@' value reads a local file", f)
+		}
+		if strings.HasPrefix(f, "--") {
+			continue
+		}
+		for _, c := range f[1:] {
+			if strings.ContainsRune(curlDenyShort, c) {
 				return fmt.Errorf("curl flag %q is not allowed", f)
 			}
 		}

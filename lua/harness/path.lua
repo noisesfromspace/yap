@@ -48,6 +48,14 @@ M.dirs = {
   sessions_dir = config_home() .. "/yap/sessions",
 }
 
+--- The XDG config home (see config_home above), exported so every default
+--- that points into yap's config directory resolves against the real home
+--- directory. A relative or unset `$HOME` must never collapse a data path
+--- into the project (R-data-paths).
+function M.config_home()
+  return config_home()
+end
+
 --- Expand a data-path setting: a leading `~` resolves against home(), an
 --- absolute path passes through. A relative path is refused — yap's data
 --- directories must never be resolved against the project directory.

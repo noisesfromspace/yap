@@ -119,10 +119,15 @@ func Get(name string) (*Tool, bool) {
 // gets; preflight (optional) runs deterministic checks and returns a
 // non-empty reason to hard-block the call regardless of the decision model.
 func Gate(name string, tier utils.Tier, preflight func(args json.RawMessage) string) {
-	if t, ok := registry[name]; ok {
-		t.gateTier = tier
-		t.preflight = preflight
+	t, ok := registry[name]
+	if !ok {
+		// Called from the same init() that registered the tool: a miss means
+		// the name is misspelled, and the tool would silently run at
+		// TierSilent — an ungated curl or bash. Fail loudly instead.
+		panic(fmt.Sprintf("tools: Gate(%q): tool is not registered", name))
 	}
+	t.gateTier = tier
+	t.preflight = preflight
 }
 
 // Assess runs a tool's deterministic preflight and returns its tier plus any

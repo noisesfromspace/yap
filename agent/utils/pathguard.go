@@ -25,7 +25,11 @@ var secretPaths = func() []string {
 			filepath.Join(h, ".config", "sops"),
 		)
 	}
-	return append(paths, "/etc/ssh", "/run/agenix", "/etc/agenix")
+	// `/run/agenix` is itself a symlink to `/run/agenix.d/<n>`, and the
+	// resolved path does not sit under it, so both directories must be
+	// listed or a read of the resolved path (or of `/run/agenix.d` itself)
+	// walks straight past the guard.
+	return append(paths, "/etc/ssh", "/run/agenix", "/run/agenix.d", "/etc/agenix")
 }()
 
 // resolvePath returns the absolute, cleaned path with symlinks resolved in
@@ -90,6 +94,31 @@ func isWithin(root, p string) bool {
 	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
 }
 
+// frontendCwd is the frontend's working directory for the turn in progress.
+// The backend process's own cwd is fixed when the buffer spawns it, so a
+// `:cd` in Neovim is invisible here: without this the documented default for
+// bash/python ("the Neovim cwd") and the project root used by the
+// outside-root write note would both be stale.
+var frontendCwd string
+
+// SetFrontendCwd records the cwd the frontend sent with this turn.
+func SetFrontendCwd(dir string) { frontendCwd = dir }
+
+// FrontendCwd returns the cwd reported with this turn, or "" when the
+// frontend sent none (a one-shot `yap send`). Callers then keep the process
+// cwd (cmd.Dir unset), which is where they already are.
+func FrontendCwd() string { return frontendCwd }
+
+// projectRoot is the directory writes are compared against: the frontend's
+// cwd when it reported one, else this process's own cwd.
+func projectRoot() string {
+	if frontendCwd != "" {
+		return frontendCwd
+	}
+	root, _ := os.Getwd()
+	return root
+}
+
 // GuardReadPath blocks reads of secret paths. Both the literal path and the
 // symlink-resolved path are checked. A non-existent path is left for the
 // caller's normal not-found error.
@@ -128,7 +157,7 @@ func GuardWritePath(p string) (note string, err error) {
 	if isSecretPath(resolved) {
 		return "", fmt.Errorf("refusing to write %s: secret path", p)
 	}
-	if root, err := os.Getwd(); err == nil && root != "" && !isWithin(root, resolved) {
+	if root := projectRoot(); root != "" && !isWithin(root, resolved) {
 		note = fmt.Sprintf("note: writing outside project root %s: %s", root, resolved)
 	}
 	return note, nil

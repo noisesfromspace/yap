@@ -121,6 +121,11 @@ func runPython(a *pythonArgs) (string, string, error) {
 		cmd = exec.Command("python3", scriptPath)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// "default: the Neovim cwd" in the schema is a request-time value, not
+	// this process's cwd (which is fixed at spawn and goes stale after :cd).
+	if a.Cwd == "" {
+		a.Cwd = utils.FrontendCwd()
+	}
 	if a.Cwd != "" {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
 			return "", "", fmt.Errorf("working directory does not exist: %s", a.Cwd)

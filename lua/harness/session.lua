@@ -138,6 +138,15 @@ function M.save(buf)
   end
   stamp_updated_at(buf)
   paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
+  -- Pre-create the file 0600: `:write!` would create it 0644 under the umask
+  -- and only the chmod below would narrow it, leaving a fresh transcript
+  -- briefly world-readable. An existing file keeps its own mode.
+  if vim.uv.fs_stat(path) == nil then
+    local fd = vim.uv.fs_open(path, "wx", 384) -- 0600
+    if fd then
+      vim.uv.fs_close(fd)
+    end
+  end
   local view = vim.api.nvim_get_current_buf() == buf and vim.fn.winsaveview() or nil
   vim.api.nvim_buf_call(buf, function()
     vim.cmd("silent noautocmd keepjumps write!")

@@ -78,6 +78,7 @@ function M.parse_buffer(buf)
       if line:match("^<!%-%- /yap:tool") then
         flush_tool()
         ui_paired = false
+        in_marker = false -- a legacy yap:ui comment cannot outlive its region
       elseif line:match("^<!%-%- /yap:ui") then
         ui_paired = false
       elseif ui_paired then
@@ -141,6 +142,11 @@ function M.parse_buffer(buf)
         -- Single-line markers (`<!-- yap:usage {...} -->`) close on the
         -- same line; otherwise the next content line would be swallowed.
         in_marker = not line:match("%-%->")
+      elseif line:match("^<!%-%- /yap:") then
+        -- Orphan region closer (its opener was edited or deleted): a marker
+        -- line must never become message text (R-markers-not-sent).
+        in_marker = false
+        ui_paired = false
       else
         local r = header_roles[i]
         if r then

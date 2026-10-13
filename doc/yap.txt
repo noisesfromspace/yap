@@ -12,7 +12,7 @@ CONTENTS                                                     *yap-contents*
   8. Folding & navigation . |yap-folding|
   9. Winbar ............... |yap-winbar|
  10. Templates & skills ... |yap-templates|
- 11. Tools & safety ....... |yap-tools|
+ 11. The alert gate ....... |yap-alert-gate|
  12. Glossary ............. |yap-glossary|
 
 ==============================================================================
@@ -34,9 +34,6 @@ Because the buffer is the conversation, ordinary editing changes it:
 - Writing your own `# @assistant` message steers the model (prefill).
 - Yanking, undo, folds and rendering are just Neovim; `:undotree` is a
   branch navigator.
-
-Contributors: the Lua <-> Go wire protocol and the numbered design rules
-live in CONTRIBUTING.md, not here.
 
 ==============================================================================
 2. SETUP & CONFIGURATION                                *yap-configuration*
@@ -118,20 +115,38 @@ and each path is configurable via `setup()` / the Nix module options):
 
   ~/.config/yap/settings.json   Providers and optional pricing: >json
 
-    {
-      "providers": {
-        "moonshot": { "base_url": "https://api.moonshot.ai/v1",
-                      "api_key_env": "MOONSHOT_API_KEY" }
-      },
-      "decision": { "base_url": "https://openrouter.ai/api/alpha/decisions",
-                    "api_key_env": "OPENROUTER_API_KEY",
-                    "model": "typesafe/jev-1.13" },
-      "alert": { "approval_prob": 0.7, "advisory_prob": 0.35,
-                 "min_confidence": 0.6 },
-      "vpn": { "command": ["/run/wrappers/bin/tunnel"] },
-      "ssh": { "known_hosts": "~/.ssh/known_hosts" },
-      "pricing": { "kimi-k3": { "input": 0.60, "output": 2.50 } }
+  {
+    "providers": {
+      "moonshot": {
+	"base_url": "https://api.moonshot.ai/v1",
+	"api_key_env": "MOONSHOT_API_KEY"
+      }
+    },
+    "decision": {
+      "base_url": "https://openrouter.ai/api/alpha/decisions",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "model": "typesafe/jev-1.13"
+    },
+    "alert": {
+      "approval_prob": 0.7,
+      "advisory_prob": 0.35,
+      "min_confidence": 0.6
+    },
+    "vpn": {
+      "command": [
+	"/run/wrappers/bin/tunnel"
+      ]
+    },
+    "ssh": {
+      "known_hosts": "~/.ssh/known_hosts"
+    },
+    "pricing": {
+      "kimi-k3": {
+	"input": 0.60,
+	"output": 2.50
+      }
     }
+  }
 <
   Any OpenAI-compatible /chat/completions endpoint works; API keys come from
   the named env vars. `pricing` (USD per 1M tokens) overrides the built-in
@@ -146,7 +161,7 @@ and each path is configurable via `setup()` / the Nix module options):
   ~/.config/yap/templates/ |:YapInsert| template files (|yap-templates|).
   ~/.config/yap/skills/    |:YapInsert| skill files (|yap-templates|).
   ~/.config/yap/sessions/  Autosaved sessions + scratch queues + audit logs.
-  ~/.config/yap/agents/    Subagent definitions (|yap-tools|).
+  ~/.config/yap/agents/    Subagent definitions.
 
 ==============================================================================
 3. COMMANDS                                                  *yap-commands*
@@ -573,74 +588,7 @@ manual recipe:
      |yap-introduction|). The summary message is the new context.
 
 ==============================================================================
-11. TOOLS & SAFETY                                              *yap-tools*
-
-Built-in tools: ls, read, fetch, bash, python, curl, git, write, edit,
-search, glob, websearch, github, playwright, quickfix, ssh, decision, models,
-close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
-300 iterations per send.
-
-  - Independent read-only calls in the same round (ls, read, search, glob,
-    git, fetch, websearch, models) execute concurrently, up to four at once.
-  - start_task runs bash, fetch or websearch in the background and returns a
-    task ID; wait_tasks blocks until results are ready. At most four tasks
-    may be outstanding; tasks cannot outlive the current turn.
-  - search/glob shell out to ripgrep and truncate to 2000 lines / 50KB.
-  - websearch returns up to N results as markdown (provider `websearch.provider`
-    in config.json, default `exa`).
-  - decision is a decision model (|yap-glossary|) that answers calibrated, typed
-    questions as probabilities; it backs the alert gate and the decision tool.
-    Configure via `decision.*` in config.json.
-  - fetch extracts the main content of a page as Markdown; curl returns the
-    raw body (no JavaScript). curl refuses flags that could make it a
-    file-writer or SSRF vector and re-checks redirects hop-by-hop. Both
-    accept a `safety` parameter (prompt-injection scan, advisory on flag) and
-    a `vpn` flag (|yap-configuration|).
-  - git runs read-only subcommands (status, diff, log, show, blame).
-  - ssh runs non-interactive commands; the host must be in a trusted
-    known_hosts file and dangerous commands pause for Run/Deny.
-  - quickfix replaces the quickfix list (previous lists reachable with
-    |:colder| / |:cnewer|).
-  - close_session asks Neovim to close the session buffer once the turn
-    finishes and the file is saved.
-  - write creates/overwrites files; edit does exact-text replacement. Both
-    return short confirmations and attach a unified diff as a yap:ui section.
-  - bash runs commands non-interactively (stdin is /dev/null) in their own
-    process group; on timeout (default 120s) the whole group is killed, and
-    :YapStop takes in-flight commands down with the binary. Live output goes
-    to the live tool tail (|:YapLive|), never the buffer; the result is truncated
-    to the LAST 2000 lines / 50KB. `isolate_network` runs the command with no
-    network access; `vpn` runs it inside the VPN namespace. The two flags are
-    mutually exclusive.
-  - python runs a Python 3 script the same way, as a fresh process; pass
-    exactly one of `code` (inline) or `file` (a path). Same truncation,
-    `isolate_network` and timeout behavior as bash.
-  - models lists the provider/model combos the picker offers, from the same
-    discovery client the picker uses; `filter` narrows it, no filter
-    summarizes providers.
-  - subagent delegates to an agent definition in ~/.config/yap/agents/<name>.md
-    (YAML frontmatter: `name`, `model`, optional `tools`; body = system
-    prompt). It creates a child session in the same project and waits for the
-    child's answer and session path. Follow up through the parent with
-    `subagent` + `session` (the returned path) and `task`. The `model`
-    argument runs the child on a model the parent chose; a definition naming
-    none falls back to the parent's combo; `model` is ignored on follow-ups.
-    Without `tools` a definition gets a read-only set (ls, read, search, glob,
-    fetch, git, websearch, quickfix, decision); write/bash/python/curl/ssh must be
-    requested explicitly. Delegation times out after ten minutes; stopping the
-    parent stops its running child.
-
-Path fields on write, edit, read, ls, glob, search, git, and python (file and
-cwd) — plus bash's cwd — expand a leading ~ or ~/ to the home directory.
-Write larger generated scripts under ~/.local/share/yap/scratch/ (outside any project
-repo) so they stay out of git.
-
-write/edit tool headers in the buffer are SLIMMED: the arguments show
-`[N lines]` / `[N edits, +A/-B lines]` instead of the content — the yap:ui
-diff below shows the change, the file on disk is the ground truth, and the
-full arguments are in the audit log (|yap-audit|).
-
-THE ALERT GATE                                        *yap-alert-gate*
+11. THE ALERT GATE                                        *yap-alert-gate*
 
 Every tool call passes a pre-execution gate. Three tiers:
 

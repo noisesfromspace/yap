@@ -42,6 +42,13 @@ type Request struct {
 	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
 	// ReasoningLevel is the cross-provider reasoning-effort knob (low|medium|high).
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
+	// Cwd is the frontend's working directory at send time. Request-only,
+	// like the context tail: the serve process's own cwd is fixed when the
+	// buffer spawns it, so without this a `:cd` in Neovim would leave the
+	// documented "default: the Neovim cwd" of bash/python (and the project
+	// root in the outside-root write note) pointing at the directory the
+	// session was started in. Empty for a one-shot `yap send`.
+	Cwd string `json:"cwd,omitempty"`
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -415,6 +422,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	if err != nil {
 		return err
 	}
+	utils.SetFrontendCwd(req.Cwd)
 	tools.SetWebsearchProvider(cfg.Websearch.Provider)
 	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)

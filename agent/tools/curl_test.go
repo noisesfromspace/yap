@@ -116,6 +116,12 @@ func TestCurlRedirectsAndFlags(t *testing.T) {
 		t.Fatalf("flags: %q %v", r, err)
 	}
 
+	// a cluster with no denied letter still passes through
+	r, _, err = run(t, "curl", `{"url":"`+srv.URL+`/end","flags":"-sS --http1.1"}`)
+	if err != nil || !strings.Contains(r, "end:") {
+		t.Fatalf("benign flags: %q %v", r, err)
+	}
+
 	// malformed flag is a curl error, reported with the exit code, not a panic.
 	r, _, err = run(t, "curl", `{"url":"`+srv.URL+`/end","flags":"--definitely-not-a-flag"}`)
 	if err != nil || !strings.Contains(r, "[curl exit code") {
@@ -152,6 +158,20 @@ func TestCurlFlagDeny(t *testing.T) {
 		"--connect-to example.com:80:127.0.0.1:80",
 		"--dump-header /tmp/h",
 		"--trace-ascii /tmp/t",
+		// curl clusters short options, so `-So/path` is `-S -o /path`
+		"-so /tmp/out",
+		"-So/tmp/out",
+		"-sSL",
+		// '@' values read a local file past GuardReadPath
+		"-H @/etc/hostname",
+		"-d @/etc/hostname",
+		"--data @/etc/hostname",
+		"-d@/etc/hostname",
+		"-T /etc/hostname",
+		"--upload-file /etc/hostname",
+		"-c /tmp/jar",
+		"--netrc-file /tmp/n",
+		"--write-out @/etc/hostname",
 	} {
 		if _, _, err := run(t, "curl", `{"url":"`+srv.URL+`/","flags":"`+flag+`"}`); err == nil || !strings.Contains(err.Error(), "not allowed") {
 			t.Fatalf("flag %q should be refused: %v", flag, err)
