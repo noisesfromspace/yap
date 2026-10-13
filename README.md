@@ -45,6 +45,10 @@ first. See `:help yap-tools`.
 
 ## First run
 
+Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`). nixpkgs still
+ships 0.12.x, so `nix develop` builds Neovim from upstream master for the dev
+shell; outside it, install 0.13+ yourself.
+
 1. Build the backend and put `yap` on Neovim's `PATH`:
 
    ```sh
@@ -164,6 +168,8 @@ The full vocabulary is in `:help yap-glossary`.
 
 The full reference is in `:help yap` (`doc/yap.txt`). The contributor-facing
 contract — the Lua \<-> Go wire protocol and the numbered business rules —
-lives in [`CONTRIBUTING.md`](CONTRIBUTING.md). AI assistants (and any human
+lives in [`CONTRIBUTING.md`](CONTRIBUTING.md), together with how to run the
+test suite (`tests/run.sh`, or `nix develop --command tests/run.sh` for the
+whole environment). AI assistants (and any human
 contributor) editing this repository MUST read `CONTRIBUTING.md` before
 changing behavior, and update it when they do.
