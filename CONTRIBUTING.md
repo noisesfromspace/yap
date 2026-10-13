@@ -16,9 +16,53 @@ ordinal numbers), so they can move between sections and new ones can be added
 without renumbering anything. Code, tests, and discussions refer to them by
 slug. For a behavior change, find the relevant rule, update it with the
 implementation, and add or adjust the corresponding tests. Preserve the reason
-for the rule, not just the current mechanics. For verification, run
-`CGO_ENABLED=0 go test ./...` for Go changes or `tests/run.sh` for the full
-Go + Neovim suite.
+for the rule, not just the current mechanics.
+
+## Running the tests
+
+Yap requires Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`), which
+nixpkgs does not ship yet, so the flake's devShell builds Neovim from upstream
+master (`devPkgs` in `flake.nix`, pinned by `rev`; bump it to update) together
+with everything else the suite needs: Go, a python3 with `msgpack`, and
+mini.nvim. That is the fast path:
+
+```sh
+nix develop                         # builds Neovim and the agent
+nix develop --command tests/run.sh  # Go tests, fold-UI test, Lua suite
+```
+
+`tests/run.sh` also works outside the devShell — it builds the agent itself
+and resolves what the ambient environment lacks from nixpkgs — but it then
+runs whatever `nvim` is on `PATH`, so that one must be 0.13+ as well. A full
+run takes about a minute; a subset is much faster:
+
+```sh
+CGO_ENABLED=0 go test ./...          # Go only, no nix and no Neovim needed
+YAP_TEST_FILTER=winbar tests/run.sh  # one Lua case (substring of its name)
+```
+
+The tests spawn `./yap`, a symlink to the agent built by `run.sh`, so build
+once after changing Go code. `nix develop` does that for you, and exports
+`YAP_MINI_NVIM`, which saves `run.sh` a nixpkgs lookup.
+
+The harness is [mini.test]:
+
+- `tests/run.sh` — the entry point: Go tests, the attached-UI fold test, then
+  the Lua suite.
+- `tests/minitest.lua` — mini.test config; fails fast on the first failure.
+- `tests/suite.lua` — one case per `tests/yap_<name>_test.lua` script. Add a
+  case by adding its `{ name, port, mock }` row; nothing needs renumbering.
+- `tests/yap_fold_ui_test.py` — drives an attached Neovim over msgpack RPC;
+  runs on its own before the Lua batch.
+
+Each case runs its script in a fresh child Neovim with its own `$HOME`,
+`$XDG_CONFIG_HOME` and `$XDG_CACHE_HOME`, so session files, audit logs and the
+mock provider config cannot bleed between tests. Mock providers
+(`tests/mock_*.py`) start on demand, one server per `mock:port`. A failing case
+prints the child's assertion and keeps its session home directory for
+inspection; a passing one deletes it.
+
+[mini.test]: https://nvim-mini.org/mini.nvim/TESTING.html
 
 ## Business rules
 
