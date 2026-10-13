@@ -32,8 +32,8 @@ func init() {
 			if err != nil {
 				return "", "", err
 			}
-			total := len(strings.Split(string(data), "\n"))
 			lines := strings.Split(string(data), "\n")
+			total := len(lines)
 			start := a.Offset - 1
 			if start < 0 {
 				start = 0

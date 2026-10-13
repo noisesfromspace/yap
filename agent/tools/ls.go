@@ -33,6 +33,11 @@ func init() {
 				names = append(names, n)
 			}
 			sort.Strings(names)
-			return strings.Join(names, "\n"), "", nil
+			text := strings.Join(names, "\n")
+			text, truncated := truncateHead(text)
+			if truncated {
+				text += "\n[truncated: narrow the path or use glob]"
+			}
+			return text, "", nil
 		})
 }

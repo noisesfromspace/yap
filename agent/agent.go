@@ -25,6 +25,7 @@ import (
 	"boers.email/yap/agent/render"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/websearch/exa"
 )
 
 // ─── Wire types (stdin) ────────────────────────────────────────────────────
@@ -298,7 +299,7 @@ var providerFactory = func(name string, prov Provider) (llm.Provider, error) {
 	})
 }
 
-// decisionModel builds the backend for the jev tool from config, defaulting
+// decisionModel builds the backend for the decision tool from config, defaulting
 // to Jev via OpenRouter's Decisions API. OPENROUTER_API_KEY authenticates
 // both the chat and decisions surfaces.
 func decisionModel(cfg *Config) decide.Model {
@@ -417,7 +418,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		return err
 	}
 	tools.SetWebsearchProvider(cfg.Websearch.Provider)
-	tools.SetWebsearchAPIKeyEnv(cfg.Websearch.APIKeyEnv)
+	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	tools.SetVPNCommand(cfg.VPN.Command)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)

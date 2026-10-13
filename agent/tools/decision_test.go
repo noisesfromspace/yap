@@ -20,7 +20,7 @@ func (f *fakeDecision) Decide(_ context.Context, req decide.Request) (decide.Res
 	return f.resp, f.err
 }
 
-func TestJev(t *testing.T) {
+func TestDecision(t *testing.T) {
 	old := decisionModel
 	defer func() { decisionModel = old }()
 
@@ -38,13 +38,13 @@ func TestJev(t *testing.T) {
 	}}
 	decisionModel = f
 
-	r, _, err := run(t, "jev", `{"state":"checkout page blank after Pay","questions":[
+	r, _, err := run(t, "decision", `{"state":"checkout page blank after Pay","questions":[
 		{"name":"is_bug","type":"noul","instructions":"Is this a bug?","criteria":{"true":"broken","false":"feature"}},
 		{"name":"team","type":"choice","instructions":"Which team?","criteria":{"payments":"checkout"}},
 		{"name":"urgency","type":"score","instructions":"How urgent?","criteria":["Can wait","This week","Blocking"]}
 	]}`)
 	if err != nil {
-		t.Fatalf("jev: %v", err)
+		t.Fatalf("decision: %v", err)
 	}
 
 	// answers render sorted by name, with the typed values the model needs
@@ -80,13 +80,13 @@ func TestJev(t *testing.T) {
 	}
 }
 
-func TestJevValidation(t *testing.T) {
+func TestDecisionValidation(t *testing.T) {
 	old := decisionModel
 	defer func() { decisionModel = old }()
 
 	// no backend configured
 	decisionModel = nil
-	if _, _, err := run(t, "jev", `{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":{"true":"y","false":"n"}}]}`); err == nil || !strings.Contains(err.Error(), "no decision model") {
+	if _, _, err := run(t, "decision", `{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":{"true":"y","false":"n"}}]}`); err == nil || !strings.Contains(err.Error(), "no decision model") {
 		t.Fatalf("no model: %v", err)
 	}
 	decisionModel = &fakeDecision{}
@@ -100,25 +100,25 @@ func TestJevValidation(t *testing.T) {
 		{`{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":null}]}`, "must be an object"},
 	}
 	for _, c := range cases {
-		if _, _, err := run(t, "jev", c.args); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, _, err := run(t, "decision", c.args); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("case %q: got %v, want %q", c.args, err, c.want)
 		}
 	}
 
 	// backend errors propagate
 	decisionModel = &fakeDecision{err: context.DeadlineExceeded}
-	if _, _, err := run(t, "jev", `{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":{"true":"y","false":"n"}}]}`); err == nil {
+	if _, _, err := run(t, "decision", `{"state":"x","questions":[{"name":"q","type":"noul","instructions":"?","criteria":{"true":"y","false":"n"}}]}`); err == nil {
 		t.Fatal("expected backend error to propagate")
 	}
 }
 
-// TestJevSchemaDescriptionsIntact guards against comma-truncation in
+// TestDecisionSchemaDescriptionsIntact guards against comma-truncation in
 // jsonschema tags: descriptions must be carried verbatim via the
 // jsonschema_description tag, not split on commas inside description=...
-func TestJevSchemaDescriptionsIntact(t *testing.T) {
-	tl, ok := Get("jev")
+func TestDecisionSchemaDescriptionsIntact(t *testing.T) {
+	tl, ok := Get("decision")
 	if !ok {
-		t.Fatal("jev not registered")
+		t.Fatal("decision not registered")
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(tl.Schema, &doc); err != nil {

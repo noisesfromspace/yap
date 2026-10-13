@@ -1,4 +1,10 @@
-package tools
+// Package exa implements the Exa websearch provider for the websearch
+// tool — a port of pi's Exa search extension
+// (~/.pi/agent/extensions/search.ts). The API key is read from an env var
+// at call time; SetAPIKeyEnv names the variable (set from config), and the
+// key VALUE itself lives in the agenix-secret env file sourced by the
+// wrapper before exec.
+package exa
 
 import (
 	"bytes"
@@ -8,40 +14,39 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"boers.email/yap/agent/tools"
 )
 
-// Exa search provider — a port of pi's Exa search extension
-// (~/.pi/agent/extensions/search.ts). The API key is read from an env
-// var at call time: exaAPIKeyEnv names the variable (set from config via
-// SetWebsearchAPIKeyEnv; the value itself comes from the agenix-secret
-// env file sourced by the wrapper before exec).
+// endpoint is the Exa API URL. A var so tests can point it at a local
+// server.
+var endpoint = "https://api.exa.ai/search"
 
-// exaURL is the Exa endpoint. A var so tests can point it at a local
-// server (same pattern as utils.eventOut).
-var exaURL = "https://api.exa.ai/search"
+// apiKeyEnv names the env var holding the Exa API key.
+var apiKeyEnv = "EXA_API_KEY"
 
-// exaAPIKeyEnv names the env var holding the Exa API key.
-var exaAPIKeyEnv = "EXA_API_KEY"
+// SetEndpoint overrides the API endpoint (tests).
+func SetEndpoint(url string) { endpoint = url }
 
-// SetWebsearchAPIKeyEnv overrides the env var name from config.
-func SetWebsearchAPIKeyEnv(name string) {
+// SetAPIKeyEnv overrides the env var name from config.
+func SetAPIKeyEnv(name string) {
 	if name != "" {
-		exaAPIKeyEnv = name
+		apiKeyEnv = name
 	}
 }
 
-type exaProvider struct{}
+type provider struct{}
 
 func init() {
-	registerWebsearchProvider("exa", exaProvider{})
+	tools.RegisterWebsearchProvider("exa", provider{})
 }
 
-func (exaProvider) search(a *websearchArgs) ([]websearchResult, error) {
-	searchType := a.Type
+func (provider) Search(p tools.WebsearchParams) ([]tools.WebsearchResult, error) {
+	searchType := p.Type
 	if searchType == "" {
 		searchType = "auto"
 	}
-	contentMode := a.ContentMode
+	contentMode := p.ContentMode
 	if contentMode == "" {
 		contentMode = "highlights"
 	}
@@ -59,31 +64,31 @@ func (exaProvider) search(a *websearchArgs) ([]websearchResult, error) {
 	}
 
 	body := map[string]any{
-		"query":      a.Query,
+		"query":      p.Query,
 		"type":       searchType,
-		"numResults": a.Limit,
+		"numResults": p.Limit,
 		"contents":   contents,
 	}
-	if len(a.IncludeDomains) > 0 {
-		body["includeDomains"] = a.IncludeDomains
+	if len(p.IncludeDomains) > 0 {
+		body["includeDomains"] = p.IncludeDomains
 	}
-	if len(a.ExcludeDomains) > 0 {
-		body["excludeDomains"] = a.ExcludeDomains
+	if len(p.ExcludeDomains) > 0 {
+		body["excludeDomains"] = p.ExcludeDomains
 	}
-	if a.MaxAgeHours != nil && *a.MaxAgeHours >= -1 {
-		body["maxAgeHours"] = *a.MaxAgeHours
+	if p.MaxAgeHours != nil && *p.MaxAgeHours >= -1 {
+		body["maxAgeHours"] = *p.MaxAgeHours
 	}
 
-	apiKey := os.Getenv(exaAPIKeyEnv)
+	apiKey := os.Getenv(apiKeyEnv)
 	if apiKey == "" {
-		return nil, fmt.Errorf("env var %s is not set", exaAPIKeyEnv)
+		return nil, fmt.Errorf("env var %s is not set", apiKeyEnv)
 	}
 
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPost, exaURL, bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +127,7 @@ func (exaProvider) search(a *websearchArgs) ([]websearchResult, error) {
 		return nil, err
 	}
 
-	results := make([]websearchResult, 0, len(data.Results))
+	results := make([]tools.WebsearchResult, 0, len(data.Results))
 	for _, r := range data.Results {
 		snippet := ""
 		switch {
@@ -133,7 +138,7 @@ func (exaProvider) search(a *websearchArgs) ([]websearchResult, error) {
 		case r.Text != "":
 			snippet = r.Text
 		}
-		results = append(results, websearchResult{Title: r.Title, URL: r.URL, Snippet: snippet})
+		results = append(results, tools.WebsearchResult{Title: r.Title, URL: r.URL, Snippet: snippet})
 	}
 	return results, nil
 }

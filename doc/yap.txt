@@ -135,7 +135,7 @@ Config and data files:
   Any OpenAI-compatible /chat/completions endpoint works; API keys come from
   the named env vars. `pricing` (USD per 1M tokens) overrides the built-in
   catalog for a model. `decision` configures the decision-model backend
-  behind the jev tool and the alert gate (|yap-alert-gate|). `alert` tunes
+  behind the decision tool and the alert gate (|yap-alert-gate|). `alert` tunes
   the gate thresholds (|yap-alert-gate|). `vpn.command` is the argv prefix
   that enters the VPN network namespace for the bash/curl/fetch `vpn` flag;
   when empty the flag is unavailable. `ssh.known_hosts` overrides the file
@@ -576,7 +576,7 @@ manual recipe:
 11. TOOLS & SAFETY                                              *yap-tools*
 
 Built-in tools: ls, read, fetch, bash, python, curl, git, write, edit,
-search, glob, websearch, github, playwright, quickfix, ssh, jev, models,
+search, glob, websearch, github, playwright, quickfix, ssh, decision, models,
 close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
 300 iterations per send.
 
@@ -588,8 +588,8 @@ close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
   - search/glob shell out to ripgrep and truncate to 2000 lines / 50KB.
   - websearch returns up to N results as markdown (provider `websearch.provider`
     in config.json, default `exa`).
-  - jev is a decision model (|yap-glossary|) that answers calibrated, typed
-    questions as probabilities; it backs the alert gate and the jev tool.
+  - decision is a decision model (|yap-glossary|) that answers calibrated, typed
+    questions as probabilities; it backs the alert gate and the decision tool.
     Configure via `decision.*` in config.json.
   - fetch extracts the main content of a page as Markdown; curl returns the
     raw body (no JavaScript). curl refuses flags that could make it a
@@ -626,7 +626,7 @@ close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
     argument runs the child on a model the parent chose; a definition naming
     none falls back to the parent's combo; `model` is ignored on follow-ups.
     Without `tools` a definition gets a read-only set (ls, read, search, glob,
-    fetch, git, websearch, quickfix, jev); write/bash/python/curl/ssh must be
+    fetch, git, websearch, quickfix, decision); write/bash/python/curl/ssh must be
     requested explicitly. Delegation times out after ten minutes; stopping the
     parent stops its running child.
 
@@ -644,7 +644,7 @@ THE ALERT GATE                                        *yap-alert-gate*
 
 Every tool call passes a pre-execution gate. Three tiers:
 
-  silent           read, ls, glob, search, git, github, fetch, websearch, jev,
+  silent           read, ls, glob, search, git, github, fetch, websearch, decision,
                    quickfix, close_session, write, edit — run immediately.
   ask-jev          bash, python, curl, subagent, playwright — a decision-model
                    pass decides the outcome.
@@ -721,7 +721,7 @@ replaces.
   subagent            A child session spawned by the `subagent` tool from an
                       agent definition.
   decision model      The jev-style typed-probability backend behind the alert
-                      gate and the `jev` tool.
+                      gate and the `decision` tool.
 
 "Block" survives only in standard Markdown/Vim senses unrelated to yap's
 structure: code block, block-level, block comment, block device, block

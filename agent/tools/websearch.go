@@ -8,33 +8,48 @@ import (
 )
 
 // Websearch is a thin dispatcher over pluggable search providers. Each
-// provider (websearch_exa.go, ...) implements websearchProvider and
-// self-registers in init(), so adding a provider is one new file plus a
-// registerWebsearchProvider("name", ...) call. The active provider is
-// selected per turn by SetWebsearchProvider (default "exa", from config).
+// provider lives outside this package (e.g. agent/websearch/exa) and
+// self-registers via RegisterWebsearchProvider in init(). The active
+// provider is selected per turn by SetWebsearchProvider (default "exa",
+// from config).
 
 const (
 	websearchLimitDefault = 8
 	websearchLimitMax     = 25
 )
 
-// websearchProvider is one search backend. It maps the common tool args
-// onto its own API and returns results normalized to websearchResult;
-// provider-specific args are ignored (or mapped) by the provider itself.
-type websearchProvider interface {
-	search(args *websearchArgs) ([]websearchResult, error)
+// WebsearchParams is the provider-facing subset of the tool's args. The
+// dispatcher maps the full tool args onto this shape, so a provider need
+// know nothing about the tool's JSON schema or safety handling.
+type WebsearchParams struct {
+	Query          string
+	Limit          int
+	Type           string
+	ContentMode    string
+	IncludeDomains []string
+	ExcludeDomains []string
+	MaxAgeHours    *int
 }
 
-// websearchResult is the normalized shape shared by all providers.
-type websearchResult struct {
+// WebsearchProvider is one search backend. It maps the common tool args
+// onto its own API and returns results normalized to WebsearchResult;
+// provider-specific args are ignored (or mapped) by the provider itself.
+type WebsearchProvider interface {
+	Search(p WebsearchParams) ([]WebsearchResult, error)
+}
+
+// WebsearchResult is the normalized shape shared by all providers.
+type WebsearchResult struct {
 	Title   string
 	URL     string
 	Snippet string
 }
 
-var websearchProviders = map[string]websearchProvider{}
+var websearchProviders = map[string]WebsearchProvider{}
 
-func registerWebsearchProvider(name string, p websearchProvider) {
+// RegisterWebsearchProvider adds a search backend; called from the
+// provider package's init().
+func RegisterWebsearchProvider(name string, p WebsearchProvider) {
 	websearchProviders[name] = p
 }
 
@@ -85,7 +100,15 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 		return "", "", fmt.Errorf("websearch provider %q is not registered", websearchProviderName)
 	}
 
-	results, err := p.search(a)
+	results, err := p.Search(WebsearchParams{
+		Query:          a.Query,
+		Limit:          a.Limit,
+		Type:           a.Type,
+		ContentMode:    a.ContentMode,
+		IncludeDomains: a.IncludeDomains,
+		ExcludeDomains: a.ExcludeDomains,
+		MaxAgeHours:    a.MaxAgeHours,
+	})
 	if err != nil {
 		return "", "", err
 	}

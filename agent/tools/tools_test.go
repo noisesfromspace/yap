@@ -261,7 +261,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "close_session", "curl", "edit", "fetch", "glob", "jev", "ls", "models", "python", "quickfix", "read", "search", "websearch", "write"} {
+	for _, name := range []string{"bash", "close_session", "curl", "decision", "edit", "fetch", "glob", "ls", "models", "python", "quickfix", "read", "search", "websearch", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)
@@ -391,9 +391,11 @@ func TestToolCleanup(t *testing.T) {
 }
 
 // TestToolsOnlyToolFiles guards the package layout: every non-test .go file
-// except tools.go (the registry) must self-register — a tool via Register,
-// or a websearch provider via registerWebsearchProvider. Helpers that tools
-// need belong in agent/utils, not here.
+// except tools.go (the registry) must define exactly one tool and
+// self-register via Register. Tool providers (websearch backends, the
+// decision model) live outside this directory and register through
+// RegisterWebsearchProvider. Helpers that tools need belong in agent/utils,
+// not here.
 func TestToolsOnlyToolFiles(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -408,9 +410,7 @@ func TestToolsOnlyToolFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		isTool := strings.Contains(string(data), "Register(")
-		isProvider := strings.Contains(string(data), "registerWebsearchProvider(")
-		if !isTool && !isProvider {
+		if !strings.Contains(string(data), "Register(") {
 			t.Errorf("%s: non-tool file in agent/tools — helpers belong in agent/utils", name)
 		}
 	}

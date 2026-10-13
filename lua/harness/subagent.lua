@@ -37,14 +37,14 @@ local ALLOWED_TOOLS = {
   "websearch",
   "quickfix",
   "ssh",
-  "jev",
+  "decision",
 }
 
 -- An agent definition with no `tools:` header gets this read-only set: a subagent is one
 -- prompt-injection hop removed from the user's attention, so it must opt into
 -- write/bash/python/curl/ssh explicitly. Any agent definition may still request the full
 -- set (minus recursive `subagent`) via its `tools:` header.
-local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "git", "websearch", "quickfix", "jev" }
+local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "git", "websearch", "quickfix", "decision" }
 
 local function subagent_result(parent, child, child_path, reply)
   return function(success)

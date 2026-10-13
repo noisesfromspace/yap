@@ -28,20 +28,19 @@ func SetGitHubAPIKeyEnv(name string) {
 }
 
 type githubArgs struct {
-	Action string `json:"action" jsonschema:"description=GitHub read operation,enum=search_code,enum=search_issues,enum=search_repos,enum=read_file,enum=read_issue,enum=read_pr,enum=list_projects,enum=read_project"`
-	Query  string `json:"query,omitempty" jsonschema:"description=GitHub search query (supports repo: owner: is:pr etc); for list_projects optional title filter"`
-	Owner  string `json:"owner,omitempty" jsonschema:"description=repository or project owner"`
+	Action string `json:"action" jsonschema:"description=GitHub read operation,enum=search_code,enum=search_issues,enum=search_repos,enum=read_file,enum=read_issue,enum=read_pr"`
+	Query  string `json:"query,omitempty" jsonschema:"description=GitHub search query (supports repo: owner: is:pr etc)"`
+	Owner  string `json:"owner,omitempty" jsonschema:"description=repository owner"`
 	Repo   string `json:"repo,omitempty" jsonschema:"description=repository name"`
-	Number int    `json:"number,omitempty" jsonschema:"description=issue PR or project number"`
+	Number int    `json:"number,omitempty" jsonschema:"description=issue or PR number"`
 	Path   string `json:"path,omitempty" jsonschema:"description=path within repository for read_file"`
 	Ref    string `json:"ref,omitempty" jsonschema:"description=branch tag or commit for read_file (default repository default branch)"`
 	Page   int    `json:"page,omitempty" jsonschema:"description=REST search page (default 1; max 10)"`
-	Cursor string `json:"cursor,omitempty" jsonschema:"description=GraphQL cursor for project list or items"`
 	Safety bool   `json:"safety,omitempty" jsonschema:"description=run an optional jev prompt-injection check on untrusted GitHub content"`
 }
 
 func init() {
-	Register("github", "Search and read GitHub (read-only). Use this instead of curl, fetch, websearch or gh for GitHub code, repositories, issues, PRs, files and Projects v2. Search queries accept GitHub qualifiers. Results are bounded; pass page or cursor for more. Uses the configured token environment variable when set; public REST reads also work without one (with lower rate limits). Projects v2 may require a token.", func(a *githubArgs) (string, string, error) { return runGitHub(a) })
+	Register("github", "Search and read GitHub (read-only). Use this instead of curl, fetch, websearch or gh for GitHub code, repositories, issues, PRs and files. Search queries accept GitHub qualifiers. Results are bounded; pass page for more. Uses the configured token environment variable when set; public REST reads also work without one (with lower rate limits).", func(a *githubArgs) (string, string, error) { return runGitHub(a) })
 }
 
 const githubMaxBody = 512 * 1024
@@ -128,49 +127,6 @@ func githubRepo(a *githubArgs) (string, error) {
 		return "", fmt.Errorf("owner and repo are required (without slashes)")
 	}
 	return "/repos/" + githubSegment(a.Owner) + "/" + githubSegment(a.Repo), nil
-}
-
-const githubProjectsQuery = `query($owner:String!, $number:Int!, $cursor:String, $filter:String!) {
- repositoryOwner(login:$owner) {
-  ... on Organization { projectV2(number:$number) { ...ProjectDetails } }
-  ... on User { projectV2(number:$number) { ...ProjectDetails } }
- }
-}
-fragment ProjectDetails on ProjectV2 { number title url shortDescription items(first:20, after:$cursor, query:$filter) { pageInfo { hasNextPage endCursor } nodes { id type content { ... on Issue { number title url state } ... on PullRequest { number title url state } ... on DraftIssue { title } } } } }`
-
-const githubListProjectsQuery = `query($owner:String!, $cursor:String) {
- repositoryOwner(login:$owner) {
-  ... on Organization { projectsV2(first:20, after:$cursor) { pageInfo { hasNextPage endCursor } nodes { number title url shortDescription } } }
-  ... on User { projectsV2(first:20, after:$cursor) { pageInfo { hasNextPage endCursor } nodes { number title url shortDescription } } }
- }
-}`
-
-func githubGraphQL(query string, vars map[string]any) (any, error) {
-	payload, err := json.Marshal(map[string]any{"query": query, "variables": vars})
-	if err != nil {
-		return nil, err
-	}
-	b, err := githubRequest(http.MethodPost, "/graphql", payload)
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Data   any `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := json.Unmarshal(b, &result); err != nil {
-		return nil, err
-	}
-	if len(result.Errors) != 0 {
-		return nil, fmt.Errorf("GitHub GraphQL: %s", result.Errors[0].Message)
-	}
-	owner := githubFields(result.Data, "repositoryOwner")["repositoryOwner"]
-	if owner == nil {
-		return nil, fmt.Errorf("GitHub owner not found or inaccessible")
-	}
-	return owner, nil
 }
 
 func runGitHub(a *githubArgs) (string, string, error) {
@@ -320,42 +276,6 @@ func runGitHub(a *githubArgs) (string, string, error) {
 			}
 		}
 		result = m
-	case "list_projects", "read_project":
-		if strings.TrimSpace(a.Owner) == "" || strings.Contains(a.Owner, "/") {
-			return "", "", fmt.Errorf("owner is required (without slashes)")
-		}
-		vars := map[string]any{"owner": a.Owner, "cursor": nil}
-		if a.Cursor != "" {
-			vars["cursor"] = a.Cursor
-		}
-		if a.Action == "list_projects" {
-			result, err = githubGraphQL(githubListProjectsQuery, vars)
-			if err == nil && a.Query != "" { // title filter is local to the current page
-				projects := githubFields(result, "projectsV2")["projectsV2"]
-				list := githubFields(projects, "nodes")["nodes"]
-				filtered := []any{}
-				for _, p := range githubItems(list, "number", "title", "url", "shortDescription") {
-					title, _ := p.(map[string]any)["title"].(string)
-					if strings.Contains(strings.ToLower(title), strings.ToLower(a.Query)) {
-						filtered = append(filtered, p)
-					}
-				}
-				result = map[string]any{"projects": filtered, "pageInfo": githubFields(projects, "pageInfo")["pageInfo"]}
-			}
-		} else {
-			if a.Number <= 0 {
-				return "", "", fmt.Errorf("number must be positive")
-			}
-			vars["number"] = a.Number
-			vars["filter"] = a.Query
-			result, err = githubGraphQL(githubProjectsQuery, vars)
-			if err == nil {
-				result = githubFields(result, "projectV2")["projectV2"]
-				if result == nil {
-					err = fmt.Errorf("project not found or inaccessible")
-				}
-			}
-		}
 	default:
 		return "", "", fmt.Errorf("unknown GitHub action %q", a.Action)
 	}

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -41,22 +40,6 @@ func TestGitHub(t *testing.T) {
 			fmt.Fprint(w, `[{"body":"LGTM","state":"APPROVED"}]`)
 		case "/repos/o/r/pulls/7/comments":
 			fmt.Fprint(w, `[{"path":"a.go","body":"review comment"}]`)
-		case "/graphql":
-			var body struct {
-				Query     string         `json:"query"`
-				Variables map[string]any `json:"variables"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Error(err)
-			}
-			if body.Variables["owner"] != "o" {
-				t.Errorf("wrong owner: %v", body.Variables)
-			}
-			if strings.Contains(body.Query, "projectV2(number:") {
-				fmt.Fprint(w, `{"data":{"repositoryOwner":{"projectV2":{"number":3,"title":"Roadmap","items":{"pageInfo":{"hasNextPage":false},"nodes":[{"content":{"title":"task"}}]}}}}}`)
-			} else {
-				fmt.Fprint(w, `{"data":{"repositoryOwner":{"projectsV2":{"pageInfo":{"hasNextPage":true,"endCursor":"next"},"nodes":[{"title":"Roadmap","number":3},{"title":"Other","number":4}]}}}}`)
-			}
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 			w.WriteHeader(404)
@@ -75,8 +58,6 @@ func TestGitHub(t *testing.T) {
 		{`{"action":"read_file","owner":"o","repo":"r","path":"dir/a.go","ref":"main"}`, `"content": "hello\n"`},
 		{`{"action":"read_issue","owner":"o","repo":"r","number":7}`, `issue comment`},
 		{`{"action":"read_pr","owner":"o","repo":"r","number":7}`, `review comment`},
-		{`{"action":"list_projects","owner":"o","query":"road"}`, `"title": "Roadmap"`},
-		{`{"action":"read_project","owner":"o","number":3,"cursor":"next"}`, `"title": "task"`},
 	} {
 		result, _, err := run(t, "github", tc.args)
 		if err != nil || !strings.Contains(result, tc.want) || strings.Contains(result, "secret") {
@@ -111,7 +92,7 @@ func TestGitHubAnonymous(t *testing.T) {
 }
 
 func TestGitHubValidationAndErrors(t *testing.T) {
-	for _, args := range []string{`{"action":"search_code"}`, `{"action":"read_file","owner":"o","repo":"r","path":"../bad"}`, `{"action":"read_pr","owner":"o","repo":"r","number":0}`, `{"action":"read_project","owner":"o"}`, `{"action":"search_code","query":"x","page":11}`} {
+	for _, args := range []string{`{"action":"search_code"}`, `{"action":"read_file","owner":"o","repo":"r","path":"../bad"}`, `{"action":"read_pr","owner":"o","repo":"r","number":0}`, `{"action":"list_projects","owner":"o"}`, `{"action":"search_code","query":"x","page":11}`} {
 		if _, _, err := run(t, "github", args); err == nil {
 			t.Errorf("accepted %s", args)
 		}

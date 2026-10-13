@@ -11,43 +11,43 @@ import (
 	"boers.email/yap/agent/decide"
 )
 
-// The jev tool is the agent's calibrated-decision primitive. It is NOT
+// The decision tool is the agent's calibrated-decision primitive. It is NOT
 // wired to Jev directly: it calls the decide.Model installed by the
 // agent loop (SetDecisionModel). The default backend is Jev via
 // OpenRouter's Decisions API (agent/decide/jev), but any decide.Model
 // with the same typed surface can be swapped in without touching this file.
 
-// decisionModel is the backend the jev tool calls; set once per turn by
+// decisionModel is the backend the decision tool calls; set once per turn by
 // the agent loop before the model can call tools.
 var decisionModel decide.Model
 
-// SetDecisionModel installs the decision backend for the jev tool.
+// SetDecisionModel installs the decision backend for the decision tool.
 func SetDecisionModel(m decide.Model) {
 	decisionModel = m
 }
 
-type jevQuestionArg struct {
+type decisionQuestionArg struct {
 	Name         string          `json:"name" jsonschema:"description=unique name for this answer"`
 	Type         string          `json:"type" jsonschema:"description=question type,enum=noul,enum=choice,enum=score"`
 	Instructions string          `json:"instructions" jsonschema_description:"what is being decided, phrased so the answer is unambiguous"`
 	Criteria     json.RawMessage `json:"criteria" jsonschema_description:"for noul: an object {true: description, false: description}; for choice: an object mapping each option to a short description; for score: an array of ordered level labels"`
 }
 
-type jevArgs struct {
-	State     json.RawMessage  `json:"state" jsonschema_description:"the content to evaluate: a string, a JSON object, or a JSON array of related context"`
-	Questions []jevQuestionArg `json:"questions" jsonschema:"description=one or more independent decisions to make about state (answered in parallel)"`
+type decisionArgs struct {
+	State     json.RawMessage       `json:"state" jsonschema_description:"the content to evaluate: a string, a JSON object, or a JSON array of related context"`
+	Questions []decisionQuestionArg `json:"questions" jsonschema:"description=one or more independent decisions to make about state (answered in parallel)"`
 }
 
 func init() {
-	Register("jev",
+	Register("decision",
 		"Ask a decision model for typed, calibrated answers about a state. Returns probabilities, not prose: "+
 			"noul gives P(yes), choice picks a labelled option with per-option probabilities and confidence, "+
 			"score gives a probability-weighted position on an ordered scale. Use when reasoning or code needs a "+
 			"probability to branch on (gates, classification, yes/no checks).",
-		func(a *jevArgs) (string, string, error) { return runJev(a) })
+		func(a *decisionArgs) (string, string, error) { return runDecision(a) })
 }
 
-func runJev(a *jevArgs) (string, string, error) {
+func runDecision(a *decisionArgs) (string, string, error) {
 	if decisionModel == nil {
 		return "", "", fmt.Errorf("no decision model configured")
 	}
@@ -90,7 +90,7 @@ func unmarshalState(raw json.RawMessage, dst *any) error {
 	return nil
 }
 
-func unmarshalCriteria(q jevQuestionArg) (any, error) {
+func unmarshalCriteria(q decisionQuestionArg) (any, error) {
 	var crit any
 	if err := json.Unmarshal(q.Criteria, &crit); err != nil {
 		return nil, fmt.Errorf("question %q: criteria: %w", q.Name, err)

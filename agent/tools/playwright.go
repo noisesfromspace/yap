@@ -43,7 +43,7 @@ func init() {
 			"(no vision model needed). The browser persists across calls and keeps login state in a per-session profile. "+
 			"Commands: goto <url> | snapshot [ref] | text | click <ref> | dblclick <ref> | fill <ref> <text> | "+
 			"type <text> | press <key> | check <ref> | uncheck <ref> | select <ref> <value> | hover <ref> | "+
-			"url | title | go-back | go-forward | reload | eval <js> | screenshot | close. "+
+			"url | title | go-back | go-forward | reload | eval <js> | close. "+
 			"After navigation and interactions the tool returns the page snapshot with [ref=..] handles; act on them by ref. "+
 			"To hand control to the human (logins, Cloudflare/Turnstile, captcha), set handover=true; the window opens for manual use, then resume with command snapshot.",
 		func(a *playwrightArgs) (string, string, error) { return runPW(a) }, ClosePlaywright)
@@ -157,21 +157,6 @@ func runPW(a *playwrightArgs) (string, string, error) {
 			return "", "", err
 		}
 		return capPW(formatEval(res)), "", nil
-	case "screenshot":
-		f, err := os.CreateTemp("", "yap-playwright-*.png")
-		if err != nil {
-			return "", "", err
-		}
-		path := f.Name()
-		f.Close()
-		if _, err := page.Screenshot(playwright.PageScreenshotOptions{
-			Path:     playwright.String(path),
-			FullPage: playwright.Bool(true),
-		}); err != nil {
-			os.Remove(path)
-			return "", "", err
-		}
-		return "screenshot saved to " + path, "", nil
 	case "close":
 		browser.reset()
 		return "browser closed", "", nil
