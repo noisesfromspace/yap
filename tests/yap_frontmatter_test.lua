@@ -4,6 +4,7 @@ vim.cmd("runtime! plugin/yap.lua")
 local yap = require("harness")
 local session = require("harness.session")
 local frontmatter = require("harness.frontmatter")
+local paths = require("harness.path")
 yap.setup({ bin = ROOT .. "/yap", provider = "def", model = "default-m" })
 
 -- 1. new() writes the frontmatter with the initial combo + history
@@ -94,7 +95,7 @@ assert(
 )
 local all_items = session.list("all")
 assert(
-  all_items[1].text == "/opt/code/yap  Implement session descriptions",
+  all_items[1].text == paths.project_cwd(path) .. "  Implement session descriptions",
   "all-project label should show decoded cwd: " .. all_items[1].text
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))

@@ -218,11 +218,11 @@ assert(items[1].state == "idle", "idle state missing: " .. vim.inspect(items[1])
 assert(items[1].model == "m1", "idle model missing: " .. vim.inspect(items[1]))
 assert(items[2].buf == buf, "waiting session should sort last")
 assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(items[2]))
-assert(items[2].path == "/opt/code/yap", "project cwd missing: " .. vim.inspect(items[2]))
+assert(items[2].path == vim.fs.normalize(vim.fn.getcwd()), "project cwd missing: " .. vim.inspect(items[2]))
 assert(items[2].text == require("harness.path").session_name(vim.b[buf].yap_path), "name fallback: " .. items[2].text)
 local rendered = fmt(items[2])
 assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: " .. rendered)
-assert(not rendered:find("(m1)", 1, true) and not rendered:find("/opt/code/yap", 1, true),
+assert(not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize(vim.fn.getcwd()), 1, true),
   "single-project open picker should show neither model nor cwd: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
