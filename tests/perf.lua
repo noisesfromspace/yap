@@ -23,12 +23,12 @@
 -- Run headless (faithful compute timings):
 --   PARSERS=/nix/store/d62hq0xl9nf3vsvx52z2h4fs0z7mzp2d-nvim-treesitter-grammars
 --   nvim --headless -u NONE -i NONE \
---     --cmd "set rtp^=/opt/code/yap,/opt/code/touchup.nvim,$PARSERS" \
+--     --cmd "set rtp^=$PWD,/opt/code/touchup.nvim,$PARSERS" \
 --     -l tests/perf.lua
 --
 -- Run interactively (adds real UI paint to the redraw numbers):
 --   nvim -u NONE -i NONE \
---     --cmd "set rtp^=/opt/code/yap,/opt/code/touchup.nvim,$PARSERS" \
+--     --cmd "set rtp^=$PWD,/opt/code/touchup.nvim,$PARSERS" \
 --     -l tests/perf.lua
 --
 -- Tunables:

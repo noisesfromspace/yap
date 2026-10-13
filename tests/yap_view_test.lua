@@ -15,8 +15,8 @@ local function eq(got, want, msg)
 end
 
 -- Operator breaking (leading operator on indented continuation lines).
-eq(view.shell_lines("cd /opt/code/yap && echo hi", "  "), {
-  "cd /opt/code/yap",
+eq(view.shell_lines("cd /srv/app && echo hi", "  "), {
+  "cd /srv/app",
   "  && echo hi",
 }, "&& break")
 

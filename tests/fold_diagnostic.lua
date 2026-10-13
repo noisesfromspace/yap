@@ -1,4 +1,4 @@
--- Run in a flickering window: :luafile /opt/code/yap/tests/fold_diagnostic.lua
+-- Run in a flickering window: :luafile tests/fold_diagnostic.lua
 -- While output streams, leave that window open. Then run :FoldDiagStop.
 -- A scratch report opens; it contains fold metadata, not buffer text.
 -- Run again in an ordinary file to compare. :FoldDiagReport previews without stopping.

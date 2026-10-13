@@ -244,9 +244,9 @@ assert(
   "directory name should be the fallback: " .. session.label(named_path, nil, nil)
 )
 assert(
-  session.label(named_path, "Pinned title", "Generated description", "/opt/code/yap") == "/opt/code/yap  Pinned title",
+  session.label(named_path, "Pinned title", "Generated description", "/srv/app") == "/srv/app  Pinned title",
   "title label should keep the cwd prefix: "
-    .. session.label(named_path, "Pinned title", "Generated description", "/opt/code/yap")
+    .. session.label(named_path, "Pinned title", "Generated description", "/srv/app")
 )
 
 -- 10. save stamps a turn count from the `# @user` headings
