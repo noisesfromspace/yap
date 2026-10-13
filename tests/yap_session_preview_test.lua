@@ -488,7 +488,7 @@ for _, item in ipairs(captured.items) do
   if item.path == other_dir .. "/other-project/session.md" then other_row = row end
 end
 assert(all_parent and all_parent:find("^   Preview test") == 1
-  and all_parent:find(vim.fn.getcwd(), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
+  and all_parent:find(paths.project_cwd(path), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
 assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
   and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
 assert(other_row and other_row:find("^   Preview test") == 1
