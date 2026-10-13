@@ -119,7 +119,7 @@ func TestPythonWriteFileRoundtrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	script := "~/.yap/scratch/gen.py"
+	script := "~/.local/share/yap/scratch/gen.py"
 	if _, _, err := run(t, "write", `{"path":"`+script+`","content":"print('from-file')\n"}`); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestPythonWriteFileRoundtrip(t *testing.T) {
 		t.Fatalf("run: %q %v", r, err)
 	}
 	// the script landed under $HOME, not a literal ~/ dir in the project
-	if _, err := os.Stat(filepath.Join(home, ".yap", "scratch", "gen.py")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".local", "share", "yap", "scratch", "gen.py")); err != nil {
 		t.Fatalf("script not under $HOME: %v", err)
 	}
 }

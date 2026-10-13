@@ -4,14 +4,6 @@
 
 local M = {}
 
--- The .yap data root. This is the DEFAULT; yap.setup() may override it via
--- `sessions_dir`. A leading `~` is resolved against the real home directory
--- (see home()), never the current working directory, so yap's data can never
--- land inside the project.
-M.dirs = {
-  sessions_dir = "~/.yap/sessions",
-}
-
 local cached_home
 
 --- The user's home directory, resolved so it can never collapse to the
@@ -35,6 +27,26 @@ local function home()
   end
   error("yap: cannot resolve home directory (HOME is unset, empty, or relative)")
 end
+
+--- The XDG config home: `$XDG_CONFIG_HOME` when it is a non-empty absolute path
+--- (the XDG spec ignores relative paths in these variables), otherwise the
+--- standard `home()/.config`.
+local function config_home()
+  local xdg = vim.env.XDG_CONFIG_HOME
+  if xdg and xdg ~= "" and vim.fn.isabsolutepath(xdg) == 1 then
+    return vim.fs.normalize(xdg)
+  end
+  return home() .. "/.config"
+end
+
+-- The yap data root. These are DEFAULTS; yap.setup() may override them via
+-- `agents_dir` / `sessions_dir`. A leading `~` is resolved against the real
+-- home directory (see home()), never the current working directory, so yap's
+-- data can never land inside the project.
+M.dirs = {
+  agents_dir = config_home() .. "/yap/agents",
+  sessions_dir = config_home() .. "/yap/sessions",
+}
 
 --- Expand a data-path setting: a leading `~` resolves against home(), an
 --- absolute path passes through. A relative path is refused — yap's data

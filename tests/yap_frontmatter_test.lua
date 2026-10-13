@@ -229,7 +229,7 @@ assert(plain_fm.temperature == nil and plain_fm.reasoning_level == nil, "absent 
 
 -- 9. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.
-local named_path = vim.fn.expand("~") .. "/.yap/sessions/-opt-code-yap/fix-picker/session.md"
+local named_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/session.md"
 assert(
   session.label(named_path, "Pinned title", "Generated description") == "Pinned title",
   "title should win over description: " .. session.label(named_path, "Pinned title", "Generated description")

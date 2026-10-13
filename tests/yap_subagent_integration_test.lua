@@ -2,16 +2,16 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local home = vim.fn.tempname()
-vim.fn.mkdir(home .. "/.yap/agents", "p")
+vim.fn.mkdir(home .. "/.config/yap/agents", "p")
 vim.env.HOME = home
 assert(vim.fn.expand("~") == home, "test HOME not isolated")
 vim.fn.writefile(
   { "---", "name: scout", "model: pi-only-model", "tools: read, grep", "---", "Scout agent" },
-  home .. "/.yap/agents/scout.md"
+  home .. "/.config/yap/agents/scout.md"
 )
 vim.fn.writefile(
   { "---", "name: browser", "tools: browser_launch", "---", "Browser agent" },
-  home .. "/.yap/agents/browser.md"
+  home .. "/.config/yap/agents/browser.md"
 )
 local script = home .. "/backend"
 vim.fn.writefile(
@@ -60,7 +60,7 @@ yap.setup({
   model = "working",
   description_model = "",
   description_answer_model = "",
-  agents_dir = home .. "/.yap/agents",
+  agents_dir = home .. "/.config/yap/agents",
 })
 local parent = yap.new()
 local function delegate(task)

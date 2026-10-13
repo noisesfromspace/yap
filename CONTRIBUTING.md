@@ -170,12 +170,13 @@ buffers) are unlisted — never in `:ls` or buffer pickers — so navigation use
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
-`agents_dir` and `sessions_dir` accept a leading `~` (resolved against the
-real home directory — `$HOME` when it is a non-empty absolute path, else the
-passwd entry) or an absolute path; relative paths are refused. Why: an unset,
-empty, or relative `$HOME` must never make yap write its `.yap` folder into
-the project directory (`vim.fn.expand("~")` silently falls back to cwd in
-those cases).
+`agents_dir` and `sessions_dir` default to the XDG config home
+(`$XDG_CONFIG_HOME/yap/...`, falling back to `~/.config/yap/...`) and
+accept a leading `~` (resolved against the real home directory — `$HOME` when
+it is a non-empty absolute path, else the passwd entry) or an absolute path;
+relative paths are refused. Why: an unset, empty, or relative `$HOME` must
+never make yap write its data folder into the project directory
+(`vim.fn.expand("~")` silently falls back to cwd in those cases).
 
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 

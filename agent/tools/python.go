@@ -26,7 +26,7 @@ func init() {
 		"Run a Python 3 script. Each call is a fresh process with no state carried between "+
 			"calls. Pass exactly one of code (a small inline script) or file (a script path written "+
 			"with the write tool) — use file for larger scripts so the code lives in a real, editable file. "+
-			"Write larger scripts under ~/.yap/scratch/ (outside the repo, gitignored); ~ is expanded "+
+			"Write larger scripts under ~/.local/share/yap/scratch/ (outside the repo, gitignored); ~ is expanded "+
 			"to the home directory in path fields. Returns combined stdout/stderr and the exit "+
 			"code (a non-zero exit is reported, not an error); a failed script returns its traceback "+
 			"as text. Output is truncated to the LAST 2000 lines / 50KB; when truncated, the full "+

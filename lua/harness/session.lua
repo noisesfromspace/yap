@@ -2,7 +2,7 @@
 --
 -- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
--- Sessions live under ~/.yap/sessions/<cwd-slug>/ and are
+-- Sessions live under ~/.config/yap/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. Pickers identify sessions by their
 -- frontmatter `title` (always present, empty by default; a typed value wins)
 -- or generated `description`;

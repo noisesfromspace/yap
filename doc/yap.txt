@@ -56,8 +56,8 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     },
     system = "You are a helpful coding assistant. Answer concisely.",
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
-    agents_dir = "~/.yap/agents",       -- subagent definitions
-    sessions_dir = "~/.yap/sessions",   -- sessions + scratch + audit logs
+    agents_dir = "~/.config/yap/agents",       -- subagent definitions
+    sessions_dir = "~/.config/yap/sessions",   -- sessions + scratch + audit logs
     templates_dir = vim.fn.expand("~/.config/yap/templates"), -- :YapInsert files
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
     skills_intro = true,          -- list skills in new sessions
@@ -76,8 +76,9 @@ apply to the next session). When missing or empty, `system` is used. The path
 is used verbatim (no `~` expansion); the default is `$XDG_CONFIG_HOME/yap/AGENTS.md`
 (or `~/.config/yap/AGENTS.md`).
 
-`agents_dir` and `sessions_dir` locate yap's data under `~/.yap/`; a leading
-`~` resolves to your home directory, an absolute path is used verbatim.
+`agents_dir` and `sessions_dir` locate yap's data under the XDG config home —
+`$XDG_CONFIG_HOME/yap/` (default `~/.config/yap/`); a leading `~` resolves
+to your home directory, an absolute path is used verbatim.
 
 `notify_done` (default true) fires `vim.notify` when a turn completes in a
 buffer not visible in any window. The turn's `turn_end` payload (model,
@@ -143,8 +144,8 @@ Config and data files:
   ~/.config/yap/AGENTS.md   Default system prompt (see above).
   ~/.config/yap/templates/  |:YapInsert| template files (|yap-templates|).
   ~/.config/yap/skills/     |:YapInsert| skill files (|yap-templates|).
-  ~/.yap/sessions/          Autosaved sessions + scratch queues + audit logs.
-  ~/.yap/agents/            Subagent definitions (|yap-tools|).
+  ~/.config/yap/sessions/  Autosaved sessions + scratch queues + audit logs.
+  ~/.config/yap/agents/    Subagent definitions (|yap-tools|).
 
 ==============================================================================
 3. COMMANDS                                                  *yap-commands*
@@ -282,7 +283,7 @@ as YAML frontmatter: >
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro
   subagents:
-    - ~/.yap/sessions/.../session-a1b2c3.md
+    - ~/.config/yap/sessions/.../session-a1b2c3.md
   tools:
     - read
     - search
@@ -368,7 +369,7 @@ write/edit return short confirmations and stay bare.
 A session is the conversation markdown file plus a few sidecar files: an
 append-only audit log, an optional scratch notes file, and photo attachments
 in a shared asset store. Each session lives in its own directory,
-~/.yap/sessions/<cwd-slug>/<session>/, containing session.md (the
+~/.config/yap/sessions/<cwd-slug>/<session>/, containing session.md (the
 conversation), audit.jsonl (the audit log) and notes.md (the scratch jotter).
 Sessions are saved after every turn; the file is created when the buffer
 opens, and every save goes through |:write| so 'modified', |:w| and the exit
@@ -617,7 +618,7 @@ close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
   - models lists the provider/model combos the picker offers, from the same
     discovery client the picker uses; `filter` narrows it, no filter
     summarizes providers.
-  - subagent delegates to an agent definition in ~/.yap/agents/<name>.md
+  - subagent delegates to an agent definition in ~/.config/yap/agents/<name>.md
     (YAML frontmatter: `name`, `model`, optional `tools`; body = system
     prompt). It creates a child session in the same project and waits for the
     child's answer and session path. Follow up through the parent with
@@ -631,7 +632,7 @@ close_session, subagent, start_task, wait_tasks. The agent loop is bounded at
 
 Path fields on write, edit, read, ls, glob, search, git, and python (file and
 cwd) — plus bash's cwd — expand a leading ~ or ~/ to the home directory.
-Write larger generated scripts under ~/.yap/scratch/ (outside any project
+Write larger generated scripts under ~/.local/share/yap/scratch/ (outside any project
 repo) so they stay out of git.
 
 write/edit tool headers in the buffer are SLIMMED: the arguments show
@@ -714,7 +715,7 @@ replaces.
                       non-blocking warning. (Not "advice", "advise".)
   approval            The gate outcome that pauses a turn for a Run/Deny/
                       Inspect decision. (Not "blocked request".)
-  agent definition    A `~/.yap/agents/<name>.md` file describing a subagent
+  agent definition    A `~/.config/yap/agents/<name>.md` file describing a subagent
                       (name, model, tools, system prompt). (Not "role",
                       "subagent role".)
   subagent            A child session spawned by the `subagent` tool from an

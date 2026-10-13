@@ -305,10 +305,11 @@
                 Path to the system-prompt file for new buffers, passed to
                 the harness as `agents_file`. The file is user-managed;
                 point it at a file outside the Nix store (for example
-                {file}`~/.yap/AGENTS.md`). When null the harness falls back
-                to its default and then to `system`. The harness always
-                prepends its own `# About Yap` boilerplate to every turn,
-                independent of this file.
+                {file}`~/.config/yap/AGENTS.md`). When null the harness falls
+                back to its default ({file}`$XDG_CONFIG_HOME/yap/AGENTS.md`)
+                and then to `system`. The harness always prepends its own
+                `# About Yap` boilerplate to every turn, independent of this
+                file.
               '';
             };
 
@@ -338,7 +339,7 @@
               description = ''
                 Directory of agent-definition files (subagents), passed to the harness
                 as `agents_dir`. When null the harness default
-                ({file}`~/.yap/agents`) is used.
+                ({file}`~/.config/yap/agents`) is used.
               '';
             };
 
@@ -348,17 +349,7 @@
               description = ''
                 Directory where yap autosaves sessions and their scratch
                 queues, passed to the harness as `sessions_dir`. When null
-                the harness default ({file}`~/.yap/sessions`) is used.
-              '';
-            };
-
-            auditDir = mkOption {
-              type = types.nullOr types.str;
-              default = null;
-              description = ''
-                Directory where yap writes audit logs, passed to the harness
-                as `audit_dir`. When null the harness default
-                ({file}`~/.yap/audit`) is used.
+                the harness default ({file}`~/.config/yap/sessions`) is used.
               '';
             };
 

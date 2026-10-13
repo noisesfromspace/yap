@@ -90,7 +90,7 @@ func TestExpandHome(t *testing.T) {
 	if got := ExpandHome("~"); got != h {
 		t.Fatalf("bare ~: got %q want %q", got, h)
 	}
-	if got := ExpandHome("~/.yap/scratch/x.py"); got != filepath.Join(h, ".yap", "scratch", "x.py") {
+	if got := ExpandHome("~/.local/share/yap/scratch/x.py"); got != filepath.Join(h, ".local", "share", "yap", "scratch", "x.py") {
 		t.Fatalf("~/path: got %q", got)
 	}
 

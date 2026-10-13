@@ -164,7 +164,7 @@ For independent slow work, `start_task` can launch bash, fetch, or websearch and
 
 ## Subagents
 
-- `subagent` takes an `agent` (from `agents_dir`, default `~/.yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.
+- `subagent` takes an `agent` (from `agents_dir`, default `~/.config/yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.
 ]]
 end
 
@@ -1493,7 +1493,7 @@ end
 --- Turn a session-file buffer into a managed yap buffer: unlisted,
 --- keymapped, live tool tail attached, model combo resumed from
 --- frontmatter. Shared by :YapSessions resume and by directly opening
---- a file under ~/.yap/sessions/.
+--- a file under ~/.config/yap/sessions/.
 adopt = function(buf, path)
   if vim.b[buf].yap then
     return buf
@@ -2028,7 +2028,7 @@ function M.setup(opts)
     end, { silent = true, desc = "yap: change default model" })
   end
 
-  -- Opening a file under ~/.yap/sessions/ directly (e.g. from a file
+  -- Opening a file under ~/.config/yap/sessions/ directly (e.g. from a file
   -- explorer) adopts it as a managed yap session. Session buffers stay
   -- out of :ls no matter how they got in: BufAdd fires whenever a buffer
   -- enters the buffer list (new buffers, :badd, :args/:next, and plugins

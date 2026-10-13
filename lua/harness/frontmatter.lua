@@ -21,12 +21,12 @@
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
---   forked_from: ~/.yap/sessions/.../source.md
---   subagent_parent: ~/.yap/sessions/.../parent.md
+--   forked_from: ~/.config/yap/sessions/.../source.md
+--   subagent_parent: ~/.config/yap/sessions/.../parent.md
 --   subagents:
---     - ~/.yap/sessions/.../session-a1b2c3.md
+--     - ~/.config/yap/sessions/.../session-a1b2c3.md
 --   forks:
---     - ~/.yap/sessions/.../branch.md
+--     - ~/.config/yap/sessions/.../branch.md
 --   assets:
 --     - ~/.local/share/nvim/yap/assets/<sha256>.png
 --   ---

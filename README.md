@@ -10,7 +10,7 @@ So the buffer is the conversation. Delete a message and the next request
 won't include it. Edit a reply and the model continues from your version.
 Branching, prefill, and undo navigation are just editing.
 
-A session lives in its own `~/.yap/sessions/<project>/<name>/` directory: the
+A session lives in its own `~/.config/yap/sessions/<project>/<name>/` directory: the
 conversation Markdown (`session.md`), its append-only audit log
 (`audit.jsonl`), and an optional scratch notes file (`notes.md`). Photo
 attachments remain in a shared content-addressed asset store, referenced by
@@ -152,7 +152,7 @@ adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
 | prefill             | hand-writing an `# @assistant` message to continue from it            |
 | steer               | mid-turn injection of a `# @steer` body at a model boundary           |
 | advisory / approval | the alert gate's run-with-warning / pause-for-approval outcomes       |
-| agent definition    | a `~/.yap/agents/<name>.md` file describing a subagent (not a “role”) |
+| agent definition    | a `~/.config/yap/agents/<name>.md` file describing a subagent (not a “role”) |
 | audit log / view    | the append-only `.jsonl` record, and the `:YapLive` tool-tail buffer |
 
 The full vocabulary is in `:help yap-glossary`.
