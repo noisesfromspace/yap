@@ -1,4 +1,4 @@
-name: test
+name: ci
 
 # Runs on the hadouken Forgejo Actions runner (label `native`, host
 # execution, no container). The devShell (flake.nix) provides the full
