@@ -40,10 +40,28 @@ func TestGuardReadPath(t *testing.T) {
 		t.Fatalf("direct secret path: %v", err)
 	}
 
-	// a symlink into a secret directory is blocked
-	dir := t.TempDir()
-	link := filepath.Join(dir, "link")
-	if err := os.Symlink(filepath.Join(h, ".ssh"), link); err != nil {
+}
+
+// TestGuardReadPathSymlink checks that a symlink into a secret directory is
+// blocked. It overrides secretPaths with a temp home so the test does not
+// depend on ~/.ssh existing (the CI runner has none), which would leave the
+// symlink dangling and unresolvable by EvalSymlinks.
+func TestGuardReadPathSymlink(t *testing.T) {
+	home := t.TempDir()
+	ssh := filepath.Join(home, ".ssh")
+	if err := os.Mkdir(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ssh, "id_ed25519"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	old := secretPaths
+	secretPaths = []string{ssh, "/etc/ssh", "/run/agenix", "/etc/agenix"}
+	t.Cleanup(func() { secretPaths = old })
+
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(ssh, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	if err := GuardReadPath(filepath.Join(link, "id_ed25519")); err == nil || !strings.Contains(err.Error(), "secret path") {

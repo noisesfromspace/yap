@@ -112,6 +112,11 @@ func canUseVPN(t *testing.T) bool {
 	if _, err := os.Stat("/run/wrappers/bin/tunnel"); err != nil {
 		return false
 	}
+	// TestBashVPN inspects tun0 with ip(8); skip when it is not installed
+	// (the CI runner does not carry iproute2).
+	if _, err := exec.LookPath("ip"); err != nil {
+		return false
+	}
 	// The wrapper's setns fails when the namespace is not running.
 	return exec.Command("/run/wrappers/bin/tunnel", "true").Run() == nil
 }
