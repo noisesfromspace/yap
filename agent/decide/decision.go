@@ -49,6 +49,9 @@ type Request struct {
 type Response struct {
 	Answers map[string]Answer
 	Model   string
+	// Cost is the backend-reported USD cost of the decision pass (0 when the
+	// backend does not report one). The agent folds it into the turn total.
+	Cost float64
 }
 
 // Model is the Yap-owned decision-model surface: one parallel pass over

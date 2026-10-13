@@ -139,7 +139,7 @@ function M.parse_buffer(buf)
       elseif line:match("^<!%-%- yap:tool") then
         skipping = true -- region outside an assistant message: orphan, skip
       elseif line:match("^<!%-%- yap:%a+") then
-        -- Single-line markers (`<!-- yap:usage {...} -->`) close on the
+        -- Single-line markers (`<!-- yap:model {...} -->`) close on the
         -- same line; otherwise the next content line would be swallowed.
         in_marker = not line:match("%-%->")
       elseif line:match("^<!%-%- /yap:") then

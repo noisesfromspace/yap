@@ -258,11 +258,31 @@ function M.append_event(buf, ev)
   vim.fn.setfperm(path, "rw-------") -- also tighten a legacy 0644 log
 end
 
+--- Fold one turn_end event's usage into a {prompt, completion, cost} table.
+local function fold_usage(t, ev)
+  t.prompt = (t.prompt or 0) + (ev.prompt or 0)
+  t.completion = (t.completion or 0) + (ev.completion or 0)
+  if ev.cost then
+    t.cost = (t.cost or 0) + ev.cost
+  end
+  return t
+end
+
+--- The audit log is the single source of truth for usage totals. A turn_end
+--- journal line is the terminal record of one turn's usage; both the
+--- since-open total (yap_usage, resets on reopen) and the all-time session
+--- total (yap_session_usage) are advanced from it here, so the two counters
+--- can never drift apart.
+function M.apply_turn_end(buf, ev)
+  M.append_event(buf, ev)
+  vim.b[buf].yap_usage = fold_usage(vim.b[buf].yap_usage or { prompt = 0, completion = 0 }, ev)
+  vim.b[buf].yap_session_usage = fold_usage(vim.b[buf].yap_session_usage or { prompt = 0, completion = 0 }, ev)
+end
+
 --- Seed the all-time session usage from the audit log: sum every turn_end
 --- journal entry so a reopened session shows its full historical cost
---- immediately. yap_usage is per-buffer and resets on reopen; this is its
---- durable per-session counterpart (the audit log, not the session file,
---- is the source of truth).
+--- immediately. yap_usage is the since-open total and resets on reopen; the
+--- audit log (not the session file) is the durable source of truth.
 function M.seed_session_usage(buf)
   local su = { prompt = 0, completion = 0 }
   local path = paths.audit_path(buf)
@@ -271,16 +291,13 @@ function M.seed_session_usage(buf)
       if line ~= "" then
         local ok, ev = pcall(vim.json.decode, line)
         if ok and type(ev) == "table" and ev.type == "turn_end" then
-          su.prompt = su.prompt + (ev.prompt or 0)
-          su.completion = su.completion + (ev.completion or 0)
-          if ev.cost then
-            su.cost = (su.cost or 0) + ev.cost
-          end
+          fold_usage(su, ev)
         end
       end
     end
   end
   vim.b[buf].yap_session_usage = su
+  vim.b[buf].yap_usage = nil
 end
 
 -- Poll tool logs independently of the visual spinner. Direct drains on

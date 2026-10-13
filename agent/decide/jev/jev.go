@@ -117,6 +117,9 @@ func (c *client) Decide(ctx context.Context, req decide.Request) (decide.Respons
 	var wire struct {
 		Model   string                `json:"model"`
 		Answers map[string]answerJSON `json:"answers"`
+		Usage   struct {
+			Cost float64 `json:"cost"`
+		} `json:"usage"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return decide.Response{}, fmt.Errorf("jev: decode response: %w", err)
@@ -125,6 +128,7 @@ func (c *client) Decide(ctx context.Context, req decide.Request) (decide.Respons
 	out := decide.Response{
 		Answers: make(map[string]decide.Answer, len(wire.Answers)),
 		Model:   wire.Model,
+		Cost:    wire.Usage.Cost,
 	}
 	for name, a := range wire.Answers {
 		ans, err := a.toAnswer(name)

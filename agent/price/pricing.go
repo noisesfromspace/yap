@@ -18,9 +18,14 @@ import (
 )
 
 // Info is one model's catalog entry. Input/Output are USD per 1M tokens.
+// CacheRead/CacheWrite are USD per 1M cached-input tokens (0 when the
+// upstream catalog lists no separate cache rate); a zero rate falls back to
+// the input rate in Cost so cached tokens are never silently free.
 type Info struct {
 	Input         float64 `json:"input"`
 	Output        float64 `json:"output"`
+	CacheRead     float64 `json:"cache_read,omitempty"`
+	CacheWrite    float64 `json:"cache_write,omitempty"`
 	ContextWindow int     `json:"context,omitempty"`
 }
 
@@ -38,6 +43,25 @@ var catalog = func() map[string]Info {
 	}
 	return m
 }()
+
+// Cost prices one generation step. prompt is uncached input, cacheRead and
+// cacheWrite are the cached-input portions (cacheWrite is Anthropic's cache
+// creation), and completion is output tokens (reasoning included). A missing
+// cache rate falls back to the input rate so cache traffic is never free.
+func Cost(info Info, prompt, cacheRead, cacheWrite, completion int) float64 {
+	read := info.CacheRead
+	if read <= 0 {
+		read = info.Input
+	}
+	write := info.CacheWrite
+	if write <= 0 {
+		write = info.Input
+	}
+	return float64(prompt)/1e6*info.Input +
+		float64(cacheRead)/1e6*read +
+		float64(cacheWrite)/1e6*write +
+		float64(completion)/1e6*info.Output
+}
 
 // Lookup returns the catalog entry for a provider/model combo. It tries the
 // model id verbatim, then prefixed with the provider, then the bare id when

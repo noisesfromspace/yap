@@ -249,3 +249,23 @@ func TestDoStreamPreservesOrderedPartsAcrossToolResult(t *testing.T) {
 		t.Fatalf("tool result message wrong: %+v", tool)
 	}
 }
+
+// TestToLLMUsage pins the provider-specific normalization: Google folds
+// thinking into completion, OpenAI keeps output_tokens as-is (reasoning
+// already included), and Anthropic's cache-creation tokens survive.
+func TestToLLMUsage(t *testing.T) {
+	g := toLLMUsage("google", provider.Usage{InputTokens: 100, OutputTokens: 20, ReasoningTokens: 30, CacheReadTokens: 40})
+	if g.CompletionTokens != 50 || g.CacheReadTokens != 40 || g.CacheWriteTokens != 0 {
+		t.Fatalf("google usage: %+v", g)
+	}
+
+	o := toLLMUsage("openai", provider.Usage{InputTokens: 100, OutputTokens: 50, ReasoningTokens: 30, CacheReadTokens: 10})
+	if o.CompletionTokens != 50 || o.CacheReadTokens != 10 {
+		t.Fatalf("openai usage: %+v", o)
+	}
+
+	a := toLLMUsage("anthropic", provider.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 100, CacheWriteTokens: 50})
+	if a.CompletionTokens != 5 || a.CacheReadTokens != 100 || a.CacheWriteTokens != 50 {
+		t.Fatalf("anthropic usage: %+v", a)
+	}
+}

@@ -64,13 +64,13 @@ type Tool struct {
 type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
-	// CacheReadTokens is the portion of PromptTokens served from the
-	// provider's prompt cache. It is kept separate because some providers
-	// (OpenAI, OpenAI-compatible, Google) already subtract it from
-	// PromptTokens while others (Anthropic) leave it included; the agent
-	// reconstructs the full prompt size for the context-fill gauge from
-	// these two fields.
-	CacheReadTokens int
+	// CacheReadTokens and CacheWriteTokens are the cached-input portions:
+	// tokens served from the provider's prompt cache, and (Anthropic only)
+	// tokens written to a new cache entry. PromptTokens already excludes
+	// both for every provider, so the full prompt the model saw is
+	// PromptTokens + CacheReadTokens + CacheWriteTokens.
+	CacheReadTokens  int
+	CacheWriteTokens int
 }
 
 type EventType string

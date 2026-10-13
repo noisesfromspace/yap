@@ -1,5 +1,5 @@
 // Package render turns the agent's tool activity into markdown for the
-// session buffer: the yap:tool / yap:usage markers, HTML-comment escaping for
+// session buffer: the yap:tool markers, HTML-comment escaping for
 // thinking text and tool headers/results, and the fenced-code-block logic.
 // These concerns used to be split between package main and package utils;
 // keeping them in one package gives the Lua parser and the markdown
@@ -94,7 +94,7 @@ func (l *CommentEscaper) LastNL() bool {
 }
 
 // MarshalCommentJSON renders v as JSON safe to embed inside an HTML
-// comment (`<!-- yap:tool … -->`, `<!-- yap:usage … -->`). json.Marshal's
+// comment (`<!-- yap:tool … -->`, `<!-- yap:model … -->`). json.Marshal's
 // default HTML-escaping turns `&`, `<` and `>` into `\u0026` etc.; those
 // sequences then sit in the buffer as literal backslash text and read like
 // a mangled command. Only two constructs are load-bearing, and both are

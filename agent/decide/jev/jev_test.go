@@ -76,6 +76,9 @@ func TestDecide(t *testing.T) {
 	if a := resp.Answers["urgency"]; a.Score != 1.99 || a.Legend["2"] != "Blocking" {
 		t.Fatalf("score answer: %+v", a)
 	}
+	if resp.Cost != 0.000019992 {
+		t.Fatalf("decision cost not decoded: %v", resp.Cost)
+	}
 }
 
 func TestDecideError(t *testing.T) {

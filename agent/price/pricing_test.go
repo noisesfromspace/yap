@@ -1,6 +1,9 @@
 package price
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // The catalog is generated and committed; these tests pin the lookups the
 // agent actually relies on so a bad regeneration fails loudly.
@@ -15,12 +18,14 @@ func TestLookup(t *testing.T) {
 		provider, model string
 		wantInput       float64
 		wantOutput      float64
+		wantCacheRead   float64
+		wantCacheWrite  float64
 		wantCtx         int
 	}{
-		{"openai", "gpt-4o", 2.5, 10, 128000},
-		{"moonshot", "kimi-k3", 3, 15, 1048576},
-		{"deepseek", "deepseek-chat", 0.28, 0.42, 131072},
-		{"", "claude-sonnet-4-5", 3, 15, 1000000},
+		{"openai", "gpt-4o", 2.5, 10, 1.25, 0, 128000},
+		{"moonshot", "kimi-k3", 3, 15, 0.3, 0, 1048576},
+		{"deepseek", "deepseek-chat", 0.28, 0.42, 0.028, 0, 131072},
+		{"", "claude-sonnet-4-5", 3, 15, 0.3, 3.75, 200000},
 	}
 	for _, c := range cases {
 		info, ok := Lookup(c.provider, c.model)
@@ -31,6 +36,10 @@ func TestLookup(t *testing.T) {
 		if info.Input != c.wantInput || info.Output != c.wantOutput || info.ContextWindow != c.wantCtx {
 			t.Errorf("Lookup(%q, %q) = %+v, want {%v %v %d}",
 				c.provider, c.model, info, c.wantInput, c.wantOutput, c.wantCtx)
+		}
+		if info.CacheRead != c.wantCacheRead || info.CacheWrite != c.wantCacheWrite {
+			t.Errorf("Lookup(%q, %q) cache = {read %v write %v}, want {read %v write %v}",
+				c.provider, c.model, info.CacheRead, info.CacheWrite, c.wantCacheRead, c.wantCacheWrite)
 		}
 	}
 }
@@ -50,5 +59,24 @@ func TestLookupBareFallback(t *testing.T) {
 func TestLookupMiss(t *testing.T) {
 	if _, ok := Lookup("nonexistent", "not-a-real-model-xyz"); ok {
 		t.Fatal("expected a miss for an unknown model")
+	}
+}
+
+// TestCost pins the per-step pricing math: uncached input, cache reads and
+// writes, and output each at their own rate, with cache falling back to the
+// input rate when the catalog has no separate cache price.
+func TestCost(t *testing.T) {
+	info := Info{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75}
+	// 1000 uncached + 2000 read + 500 write + 100 output.
+	want := (1000*3 + 2000*0.3 + 500*3.75 + 100*15) / 1e6
+	if got := Cost(info, 1000, 2000, 500, 100); math.Abs(got-want) > 1e-12 {
+		t.Fatalf("Cost = %v, want %v", got, want)
+	}
+
+	// No cache rates: cached tokens bill at the input rate, never free.
+	plain := Info{Input: 2, Output: 8}
+	wantPlain := (1000*2 + 500*2 + 100*8) / 1e6
+	if got := Cost(plain, 1000, 500, 0, 100); math.Abs(got-wantPlain) > 1e-12 {
+		t.Fatalf("Cost(fallback) = %v, want %v", got, wantPlain)
 	}
 }

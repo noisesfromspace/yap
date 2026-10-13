@@ -313,6 +313,8 @@ func TestUsageCostFromCatalog(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
+	old := utils.SetEventWriter(&out)
+	defer utils.SetEventWriter(old)
 	if err := send("mock", "gpt-4o", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -323,6 +325,31 @@ func TestUsageCostFromCatalog(t *testing.T) {
 	}
 	if !strings.Contains(s, `"context_window":128000`) {
 		t.Fatalf("catalog context window missing:\n%s", s)
+	}
+}
+
+// TestUsageCostIncludesCacheRead: cached input is billed at the cache-read
+// rate, not dropped. gpt-4o is $2.5 in / $1.25 cache-read / $10 out per 1M
+// tokens, so 200 uncached + 800 cached in and 100 out costs $0.0025.
+func TestUsageCostIncludesCacheRead(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sse(w,
+			`{"choices":[{"delta":{"content":"ok"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":100,"prompt_tokens_details":{"cached_tokens":800}}}`,
+		)
+	}))
+	defer srv.Close()
+	writeConfigJSON(t, `{"providers": {"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}}}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	old := utils.SetEventWriter(&out)
+	defer utils.SetEventWriter(old)
+	if err := send("mock", "gpt-4o", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if !strings.Contains(out.String(), `"cost":0.0025`) {
+		t.Fatalf("cache-read cost missing or wrong:\n%s", out.String())
 	}
 }
 
@@ -343,6 +370,8 @@ func TestContextPromptIncludesCachedTokens(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
+	old := utils.SetEventWriter(&out)
+	defer utils.SetEventWriter(old)
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}

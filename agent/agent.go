@@ -85,6 +85,7 @@ type turn struct {
 	finishReason       string
 	prompt, completion int
 	cacheRead          int
+	cacheWrite         int
 	// Buffer-write state at return, for block spacing in the agent loop.
 	outWrote bool // anything was written (false: cursor still on the empty line)
 	outTrail int  // trailing newlines of everything written
@@ -191,6 +192,7 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	t.prompt = res.Usage.PromptTokens
 	t.completion = res.Usage.CompletionTokens
 	t.cacheRead = res.Usage.CacheReadTokens
+	t.cacheWrite = res.Usage.CacheWriteTokens
 	t.responseMessages = res.ResponseMessages
 
 	if t.text != "" {
@@ -319,6 +321,43 @@ func decisionModel(cfg *Config) decide.Model {
 	})
 }
 
+// costTotal is the turn's running dollar total. Model steps add on the agent
+// goroutine; decision round-trips (including fetch/curl safety scans) add from
+// parallel tool goroutines, so it is mutex-guarded.
+type costTotal struct {
+	mu    sync.Mutex
+	total float64
+}
+
+func (c *costTotal) Add(v float64) {
+	c.mu.Lock()
+	c.total += v
+	c.mu.Unlock()
+}
+
+func (c *costTotal) Load() float64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total
+}
+
+// costTrackingModel wraps the decision backend so every decision round-trip
+// (the alert gate, the decision tool, and fetch/curl safety scans) folds its
+// backend-reported cost into the turn's running total. Safety scans can run
+// concurrently (parallel read-only tools), so the total is mutex-guarded.
+type costTrackingModel struct {
+	inner decide.Model
+	total *costTotal
+}
+
+func (m *costTrackingModel) Decide(ctx context.Context, req decide.Request) (decide.Response, error) {
+	resp, err := m.inner.Decide(ctx, req)
+	if err == nil && resp.Cost > 0 {
+		m.total.Add(resp.Cost)
+	}
+	return resp, err
+}
+
 // alertConfig merges the `alert` config block over DefaultAlertConfig. A
 // zero threshold means "not set"; use the default.
 func alertConfig(cfg *Config) utils.AlertConfig {
@@ -429,7 +468,13 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	tools.SetVPNCommand(cfg.VPN.Command)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	tools.SetModelLister(listCombos)
+	// totCost accumulates every paid round-trip in a turn — model steps and
+	// decision-model calls — so one number lands in the usage event and the
+	// audit log. The decision backend adds to it through costTrackingModel;
+	// it is mutex-guarded because fetch/curl safety scans can run in parallel.
+	var totCost costTotal
 	dm := decisionModel(cfg)
+	dm = &costTrackingModel{inner: dm, total: &totCost}
 	tools.SetDecisionModel(dm)
 	alertCfg := alertConfig(cfg)
 	// resolveModel builds the provider + model for a combo. It is re-run on
@@ -494,36 +539,31 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		messages = append(messages, llm.Message{Role: role, Content: content})
 	}
 	var totPrompt, totCompletion int
-	var totCost float64
 	lastPrompt := 0
 	// contextPromptTokens is the full size of the prompt the model saw on a
-	// step, including cached input. The SDK normalizes InputTokens to exclude
-	// cache reads for most providers, but the context-fill gauge needs the
-	// full window occupancy. Anthropic is the exception: its InputTokens
-	// already includes cache reads.
+	// step, including cached input. The SDK reports uncached input in
+	// PromptTokens and the cached portions separately, so the full window
+	// occupancy is their sum for every provider.
 	contextPromptTokens := func(t *turn) int {
-		if providerName == "anthropic" {
-			return t.prompt
-		}
-		return t.prompt + t.cacheRead
+		return t.prompt + t.cacheRead + t.cacheWrite
 	}
 	// stepCost prices one step at the model that produced it; the running
 	// total keeps a mid-turn switch honest (each segment billed at its own
 	// provider/model rate). Prices come from the committed catalog only.
-	stepCost := func(prompt, completion int) float64 {
+	stepCost := func(t *turn) float64 {
 		info, ok := price.Lookup(providerName, model)
 		if !ok {
 			return 0
 		}
-		return float64(prompt)/1e6*info.Input + float64(completion)/1e6*info.Output
+		return price.Cost(info, t.prompt, t.cacheRead, t.cacheWrite, t.completion)
 	}
 	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
 		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
 		if info, ok := price.Lookup(providerName, model); ok && info.ContextWindow > 0 {
 			m["context_window"] = info.ContextWindow
 		}
-		if totCost > 0 {
-			m["cost"] = totCost
+		if c := totCost.Load(); c > 0 {
+			m["cost"] = c
 		}
 		return m
 	}
@@ -627,7 +667,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
-		totCost += stepCost(t.prompt, t.completion)
+		totCost.Add(stepCost(t))
 		lastPrompt = contextPromptTokens(t)
 		if t.prompt+t.completion > 0 {
 			m := usagePayload(totPrompt, totCompletion, lastPrompt)
@@ -751,13 +791,12 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 
 	if totPrompt+totCompletion > 0 {
-		// Reported as a parse-excluded marker; the Lua side folds it into
-		// the session totals and removes the line.
+		// End the turn with a blank line (the marker the harness used to
+		// consume is gone: the turn_end audit event below is the single
+		// carrier of usage, folded by the Lua side).
 		m := usagePayload(totPrompt, totCompletion, lastPrompt)
-		b := render.MarshalCommentJSON(m, "")
 		pad()
-		fmt.Fprintf(out, "<!-- yap:usage %s -->\n", b)
-		out.Flush() // session state must precede the corresponding audit event
+		out.Flush()
 		// Audit: one turn journal line (audit log).
 		m["type"] = "turn_end"
 		m["model"] = model

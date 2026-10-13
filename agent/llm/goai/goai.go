@@ -291,15 +291,30 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 		r.Text = res.Text
 		r.ToolCalls = toLLMToolCalls(res.ToolCalls)
 		r.FinishReason = string(res.FinishReason)
-		r.Usage = llm.Usage{
-			PromptTokens:     res.TotalUsage.InputTokens,
-			CompletionTokens: res.TotalUsage.OutputTokens,
-			CacheReadTokens:  res.TotalUsage.CacheReadTokens,
-		}
+		r.Usage = toLLMUsage(m.name, res.TotalUsage)
 		r.ResponseMessages = toLLMMessages(res.ResponseMessages)
 		stream.SetResult(r)
 	}()
 	return stream, nil
+}
+
+// toLLMUsage maps the SDK's per-provider usage onto Yap's normalized shape.
+// Google reports visible output (candidatesTokenCount) and thinking
+// (thoughtsTokenCount) separately; both are billed at the output rate, so
+// thinking is folded into completion. OpenAI and Anthropic already include
+// reasoning inside output_tokens. CacheWriteTokens is Anthropic's cache
+// creation (0 for providers that do not report it).
+func toLLMUsage(name string, u provider.Usage) llm.Usage {
+	completion := u.OutputTokens
+	if name == "google" || name == "gemini" {
+		completion += u.ReasoningTokens
+	}
+	return llm.Usage{
+		PromptTokens:     u.InputTokens,
+		CompletionTokens: completion,
+		CacheReadTokens:  u.CacheReadTokens,
+		CacheWriteTokens: u.CacheWriteTokens,
+	}
 }
 
 func partsText(parts []llm.Part) string {

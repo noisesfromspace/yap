@@ -193,29 +193,6 @@ local audit = require("harness.audit")
 
 -- Templates and skills live in harness.template.
 
---- Find the yap:usage marker the binary appended for this turn, fold its
---- numbers into the buffer's session totals (winbar), and remove the marker.
-local function consume_usage(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i = #lines, 1, -1 do
-    local json = lines[i]:match("^<!%-%- yap:usage (.+) %-%->$")
-    if json then
-      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
-      local ok, data = pcall(vim.json.decode, json)
-      if ok and type(data) == "table" then
-        local u = vim.b[buf].yap_usage or { prompt = 0, completion = 0 }
-        u.prompt = u.prompt + (data.prompt or 0)
-        u.completion = u.completion + (data.completion or 0)
-        if data.cost then
-          u.cost = (u.cost or 0) + data.cost
-        end
-        vim.b[buf].yap_usage = u
-      end
-      return
-    end
-  end
-end
-
 function M.parse_buffer(buf)
   return document.parse_buffer(buf)
 end
@@ -411,16 +388,9 @@ local function handle_event(buf, json_line)
   elseif ev.type == "turn_end" then
     state.live_usage[buf] = nil
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
-    -- Fold this turn into the session's all-time totals (seeded from the
-    -- audit log on open; this keeps the in-memory copy in step with it).
-    local su = vim.b[buf].yap_session_usage or { prompt = 0, completion = 0 }
-    su.prompt = su.prompt + (ev.prompt or 0)
-    su.completion = su.completion + (ev.completion or 0)
-    if ev.cost then
-      su.cost = (su.cost or 0) + ev.cost
-    end
-    vim.b[buf].yap_session_usage = su
-    audit.append_event(buf, ev)
+    -- The audit log is the single source of truth for usage: this folds the
+    -- turn into both the since-open and all-time totals (see audit.lua).
+    audit.apply_turn_end(buf, ev)
     -- An advisory that fired mid-turn is on disk now; re-render the board so
     -- it reflects the settled turn even if its own touch() raced the event.
     guard.touch()
@@ -1020,7 +990,6 @@ function M.send(buf)
         close_if_requested(buf)
         return
       end
-      consume_usage(buf)
       -- The binary can complete "successfully" with an embedded error
       -- marker (e.g. empty completion, max tool iterations): surface it.
       do
