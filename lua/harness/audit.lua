@@ -21,6 +21,14 @@ local util = require("harness.util")
 local state = require("harness.state")
 local view = require("harness.view")
 
+-- The `$ command` header is highlighted so it reads as a section marker
+-- against streamed output; a horizontal rule separates consecutive commands.
+-- Linked (not a fixed color) so every colorscheme renders it; `default`
+-- keeps user overrides.
+local ns = vim.api.nvim_create_namespace("yap.audit.hl")
+local HL_CMD = "YapAuditCommand"
+vim.api.nvim_set_hl(0, HL_CMD, { link = "Title", default = true })
+
 -- The tail keeps at most this many lines, always the newest: old lines are
 -- dropped from the top, so a runaway command cannot balloon the buffer.
 local MAX_TAIL_LINES = 5000
@@ -82,20 +90,46 @@ local function append_lines(t, lines)
   follow(buf)
 end
 
+--- A horizontal rule spanning the tail window, so one command's output ends
+--- in a visible boundary before the next `$ command` header. The tail is
+--- often filled in the background while no window shows it, so the width is
+--- unknowable there and falls back to a generous fixed rule.
+local function rule(buf)
+  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(w) then
+      return ("─"):rep(math.max(20, vim.api.nvim_win_get_width(w)))
+    end
+  end
+  return ("─"):rep(80)
+end
+
 --- Start a tool run in the tail: a `$ command` header (wrapped at shell
---- operators), blank-separated from any earlier output.
+--- operators), preceded by a blank line and a rule separator once the tail
+--- already holds an earlier command's output.
 function M.tool_start(buf, command)
   local t = M.ensure(buf)
   local cmd = view.shell_lines(command or "", "  ")
   local lines = {}
   if vim.api.nvim_buf_line_count(t.bufnr) > 1 or vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)[1] ~= "" then
     lines[#lines + 1] = ""
+    lines[#lines + 1] = rule(t.bufnr)
   end
   lines[#lines + 1] = "$ " .. cmd[1]
   for i = 2, #cmd do
     lines[#lines + 1] = cmd[i]
   end
   append_lines(t, lines)
+  -- Highlight the trailing `$ command` header (possibly multi-line after
+  -- shell-operator wrapping) so it stands apart from the output below.
+  local head = vim.api.nvim_buf_line_count(t.bufnr) - #cmd
+  for i = 0, #cmd - 1 do
+    local text = vim.api.nvim_buf_get_lines(t.bufnr, head + i, head + i + 1, false)[1] or ""
+    vim.api.nvim_buf_set_extmark(t.bufnr, ns, head + i, 0, {
+      hl_group = HL_CMD,
+      end_col = #text,
+      right_gravity = false,
+    })
+  end
 end
 
 --- Follow new bytes of each running tool's temp log into the tail. A line not
