@@ -1,11 +1,11 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "gpt-4o" })
 
 -- A fresh session has no audit log yet, so no session total until a turn
 -- completes and its turn_end journal lands.
-local buf = yap.new({ provider = "mock", model = "m1" })
+local buf = yap.new({ provider = "mock", model = "gpt-4o" })
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "hello" })
 yap.send()
 local ok = vim.wait(10000, function()

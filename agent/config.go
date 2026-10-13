@@ -71,14 +71,6 @@ type Config struct {
 	Alert     Alert               `json:"alert"`
 	VPN       VPN                 `json:"vpn"`
 	SSH       SSH                 `json:"ssh"`
-	// Optional per-model pricing in USD per 1M tokens; used to compute the
-	// cost field in the yap:usage marker.
-	Pricing map[string]Pricing `json:"pricing"`
-}
-
-type Pricing struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
 }
 
 func configPath() string {

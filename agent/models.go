@@ -71,7 +71,7 @@ func listCombos() ([]tools.ModelCombo, []string, error) {
 			}
 			sort.Strings(ids)
 			for _, id := range ids {
-				results[i].lines = append(results[i].lines, comboPrice(name, id, cfg))
+				results[i].lines = append(results[i].lines, comboPrice(name, id))
 			}
 		}(i, name)
 	}
@@ -87,13 +87,9 @@ func listCombos() ([]tools.ModelCombo, []string, error) {
 }
 
 // comboPrice attaches the running price to a combo, mirroring the cost
-// computation: the user's `pricing` block wins, then the committed catalog.
-func comboPrice(provider, model string, cfg *Config) tools.ModelCombo {
+// computation: the committed catalog is the single source of truth.
+func comboPrice(provider, model string) tools.ModelCombo {
 	c := tools.ModelCombo{Name: provider + "/" + model}
-	if p, ok := cfg.Pricing[model]; ok {
-		c.Input, c.Output = p.Input, p.Output
-		return c
-	}
 	if info, ok := price.Lookup(provider, model); ok {
 		c.Input, c.Output = info.Input, info.Output
 	}

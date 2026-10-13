@@ -33,11 +33,10 @@ func writeConfigJSON(t *testing.T, cfg string) {
 	}
 }
 
-// writeConfig points the binary at a temp HOME with the given providers and
-// an explicit config override for the mock model (m1).
+// writeConfig points the binary at a temp HOME with the given providers.
 func writeConfig(t *testing.T, providers string) {
 	t.Helper()
-	writeConfigJSON(t, fmt.Sprintf(`{"providers": {%s}, "pricing": {"m1": {"input": 1.0, "output": 1.0}}}`, providers))
+	writeConfigJSON(t, fmt.Sprintf(`{"providers": {%s}}`, providers))
 }
 
 func sse(w http.ResponseWriter, chunks ...string) {
@@ -299,10 +298,9 @@ func TestAssistantDeltasAreEmittedOnce(t *testing.T) {
 	}
 }
 
-// TestUsageCostFromCatalog: with no `pricing` block in config, the committed
-// catalog supplies both the cost and the context window for a known model.
-// The model id is tried verbatim first, so an OpenAI-compatible provider name
-// (mock) still resolves "gpt-4o".
+// TestUsageCostFromCatalog: the committed catalog supplies both the cost and
+// the context window for a known model. The model id is tried verbatim first,
+// so an OpenAI-compatible provider name (mock) still resolves "gpt-4o".
 func TestUsageCostFromCatalog(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sse(w,
@@ -395,7 +393,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	s := journal.String()
-	usage := strings.Index(s, `yap:event {"completion":10,"context_prompt":100,"cost":0.00011,"prompt":100,"type":"usage"}`)
+	usage := strings.Index(s, `yap:event {"completion":10,"context_prompt":100,"prompt":100,"type":"usage"}`)
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
 	event := strings.Index(s, `yap:event {"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
@@ -403,7 +401,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	finalUsage := strings.Index(s, `"type":"turn_end"`)
 	if usage < 0 || header < 0 || event < 0 || result < 0 || after < 0 || finalUsage < 0 ||
 		usage >= header || header >= event || event >= result || result >= after || after >= finalUsage ||
-		!strings.Contains(s, `"completion":30,"context_prompt":200,"cost":0.00033,"model":"m1","ms":`) ||
+		!strings.Contains(s, `"completion":30,"context_prompt":200,"model":"m1","ms":`) ||
 		!strings.Contains(s, `"prompt":300,"type":"turn_end"`) {
 		t.Fatalf("usage should update after each model step and before tool execution; final event should carry cumulative usage:\n%s", s)
 	}
@@ -514,7 +512,7 @@ func TestModelsToolInServe(t *testing.T) {
 				if !strings.Contains(result, "mock/gpt-5-mini") {
 					t.Errorf("models tool result: %q", result)
 				}
-				if !strings.Contains(result, "in $0.15 · out $0.6 per 1M tokens") {
+				if !strings.Contains(result, "in $0.25 · out $2 per 1M tokens") {
 					t.Errorf("price hint missing: %q", result)
 				}
 				found = true
@@ -523,7 +521,7 @@ func TestModelsToolInServe(t *testing.T) {
 		sse(w, `{"choices": [{"delta": {"content": "done"}}]}`)
 	}))
 	defer srv.Close()
-	writeConfigJSON(t, fmt.Sprintf(`{"providers": {"mock": {"base_url": "%s/v1", "api_key_env": "YAP_TEST_KEY"}}, "pricing": {"gpt-5-mini": {"input": 0.15, "output": 0.6}}}`, srv.URL))
+	writeConfigJSON(t, fmt.Sprintf(`{"providers": {"mock": {"base_url": "%s/v1", "api_key_env": "YAP_TEST_KEY"}}}`, srv.URL))
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer

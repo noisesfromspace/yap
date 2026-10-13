@@ -509,23 +509,13 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 	// stepCost prices one step at the model that produced it; the running
 	// total keeps a mid-turn switch honest (each segment billed at its own
-	// provider/model rate).
+	// provider/model rate). Prices come from the committed catalog only.
 	stepCost := func(prompt, completion int) float64 {
-		input, output := 0.0, 0.0
-		havePricing := false
-		if prices, ok := cfg.Pricing[model]; ok {
-			input, output = prices.Input, prices.Output
-			havePricing = true
+		info, ok := price.Lookup(providerName, model)
+		if !ok {
+			return 0
 		}
-		if info, ok := price.Lookup(providerName, model); ok {
-			if !havePricing {
-				input, output = info.Input, info.Output
-			}
-		}
-		if havePricing || input > 0 || output > 0 {
-			return float64(prompt)/1e6*input + float64(completion)/1e6*output
-		}
-		return 0
+		return float64(prompt)/1e6*info.Input + float64(completion)/1e6*info.Output
 	}
 	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
 		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}

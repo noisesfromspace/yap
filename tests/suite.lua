@@ -161,7 +161,6 @@ local function write_config(case, dir)
   end
   local config = {
     providers = providers,
-    pricing = { m1 = { input = 2.0, output = 10.0 } },
   }
   vim.fn.mkdir(dir .. "/.config/yap", "p")
   vim.fn.writefile({ vim.json.encode(config) }, dir .. "/.config/yap/settings.json")

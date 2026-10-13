@@ -2,7 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
-local buf = yap.new({ provider = "mock", model = "m1" })
+local buf = yap.new({ provider = "mock", model = "gpt-4o" })
 yap.send()
 local ok = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):match("File written%.") ~= nil
@@ -48,7 +48,7 @@ for _, e in ipairs(events) do
   end
 end
 assert(
-  turn and turn.model == "m1" and turn.prompt > 0 and turn.completion > 0 and turn.cost,
+  turn and turn.model == "gpt-4o" and turn.prompt > 0 and turn.completion > 0 and turn.cost,
   "no turn journal: " .. vim.inspect(turn)
 )
 

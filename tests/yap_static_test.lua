@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "gpt-4o" })
 local src = vim.fn.tempname() .. ".md"
 vim.fn.writefile({
   "# @system",
@@ -69,5 +69,5 @@ assert(lines[1] == "# @system", "buffer should start with a heading: " .. lines[
 assert(not joined:match("yap:usage"), "usage marker left behind")
 local u = vim.b[buf].yap_usage
 assert(u and u.prompt == 1500 and u.completion == 42, "usage: " .. vim.inspect(u))
-assert(math.abs(u.cost - 0.00342) < 1e-9, "cost: " .. tostring(u.cost))
+assert(math.abs(u.cost - 0.00417) < 1e-9, "cost: " .. tostring(u.cost))
 print("OK static")

@@ -1,7 +1,7 @@
-// Package price bundles a committed per-model catalog so cost and
-// context-window display work without per-model entries in
-// ~/.config/yap/settings.json. Prices are USD per 1M tokens (matching the config's
-// `pricing` block); `context` is the model's context window in tokens.
+// Package price bundles a committed per-model catalog (pricing.json) so cost
+// and context-window display work without per-model entries in
+// ~/.config/yap/settings.json. Prices are USD per 1M tokens; `context` is the
+// model's context window in tokens.
 //
 // The catalog is generated from LiteLLM's community-maintained
 // model_prices_and_context_window.json (direct-provider pricing), trimmed

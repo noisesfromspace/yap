@@ -113,7 +113,7 @@ Config and data files (defaults shown; the config home is
 `$XDG_CONFIG_HOME/yap` — `~/.config/yap` unless `$XDG_CONFIG_HOME` is set —
 and each path is configurable via `setup()` / the Nix module options):
 
-  ~/.config/yap/settings.json   Providers and optional pricing: >json
+  ~/.config/yap/settings.json   Providers: >json
 
   {
     "providers": {
@@ -139,19 +139,14 @@ and each path is configurable via `setup()` / the Nix module options):
     },
     "ssh": {
       "known_hosts": "~/.ssh/known_hosts"
-    },
-    "pricing": {
-      "kimi-k3": {
-	"input": 0.60,
-	"output": 2.50
-      }
     }
   }
 <
   Any OpenAI-compatible /chat/completions endpoint works; API keys come from
-  the named env vars. `pricing` (USD per 1M tokens) overrides the built-in
-  catalog for a model. `decision` configures the decision-model backend
-  behind the decision tool and the alert gate (|yap-alert-gate|). `alert` tunes
+  the named env vars. Model prices come from the committed catalog
+  (`agent/price/pricing.json`). `decision` configures the decision-model
+  backend behind the decision tool and the alert gate (|yap-alert-gate|).
+  `alert` tunes
   the gate thresholds (|yap-alert-gate|). `vpn.command` is the argv prefix
   that enters the VPN network namespace for the bash/curl/fetch `vpn` flag;
   when empty the flag is unavailable. `ssh.known_hosts` overrides the file
@@ -488,10 +483,10 @@ Reading the numbers                                    *yap-winbar-numbers*
   P% █▍░░░░  Context fill: the last turn's full prompt as a percentage of the
              model's context window. Green below 70%, amber 70–90%, red 90%+.
 
-Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from your
-`pricing` overrides first, then the built-in catalog. On a freshly opened
-session the two chips are equal; after a reopen they diverge. The bar is
-width-aware and drops parts as the window shrinks.
+Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
+committed catalog (`agent/price/pricing.json`). On a freshly opened session
+the two chips are equal; after a reopen they diverge. The bar is width-aware
+and drops parts as the window shrinks.
 
 For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
