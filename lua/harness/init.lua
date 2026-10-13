@@ -148,7 +148,9 @@ local yap_install_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2),
 -- message on every send. It is independent of agents_file (the user's
 -- rules) and lives here so session files never store it.
 local function yap_about()
-  return [[# About Yap
+  local skills = template.skills_intro_lines()
+  local agents = template.agents_intro_lines()
+  local about = [[# About Yap
 
 You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply; indent or fence it instead.
 
@@ -158,14 +160,23 @@ For GitHub searches and reading GitHub code, repositories, issues, pull requests
 
 ## Skills
 
-Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). The `## Skills` list in the system message names them. Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.
+Skills are reusable on-demand instructions in Markdown files under ]] .. M.config.skills_dir .. [[ (`<name>.md`). Before working in a listed domain, `read` the matching skill file and follow it; read only what you need.]]
+  if skills then
+    about = about .. "\n\n" .. table.concat(skills, "\n")
+  end
+  about = about .. "\n\n" .. [[## Parallelism and background work
 
-For independent slow work, `start_task` can launch bash, fetch, or websearch and return a task ID. Continue unrelated work, then call `wait_tasks` once to get the result before claiming success. If nothing useful can overlap, use the ordinary tool directly. Tasks end within this turn; do not start conflicting commands in parallel. Multiple independent read-only calls in one model response run concurrently automatically.
+When you need several independent read-only results (read, search, glob, git, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
+
+For independent slow work, `start_task` launches bash, fetch, or websearch in the background and returns a task ID. Launch the slow call, do other useful work, then call `wait_tasks` once to collect the result before relying on it. For example, start a long test run or build, then read files or research meanwhile. Tasks end within this turn; do not start commands that conflict with ongoing work.
 
 ## Subagents
 
-- `subagent` takes an `agent` (from `agents_dir`, default `~/.config/yap/agents/<agent>.md`) and a self-contained `task`. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.
-]]
+Use `subagent` to delegate a self-contained subtask that is large or independent enough to benefit from an isolated context or a different model. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. The `agent` argument names an agent from the `## Agents` list (definition files in `agents_dir`, default `~/.config/yap/agents/<agent>.md`). To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.]]
+  if agents then
+    about = about .. "\n## Agents\n\nThe `agent` argument accepts one of:\n\n" .. table.concat(agents, "\n")
+  end
+  return about
 end
 
 local function system_prompt()
@@ -1432,13 +1443,6 @@ function M.new(opts)
 
   local lines = { "# @system", "" }
   vim.list_extend(lines, vim.split(vim.b[buf].yap_system or system_prompt(), "\n", { plain = true }))
-  if opts.skills_intro or M.config.skills_intro then
-    local intro = template.skills_intro_lines()
-    if intro then
-      vim.list_extend(lines, { "", "## Skills" })
-      vim.list_extend(lines, intro)
-    end
-  end
   vim.list_extend(lines, { "", "# @user", "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   frontmatter.sync(buf) -- prepend the session's model state (R-buffer-only-state: it lives in the buffer)

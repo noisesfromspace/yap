@@ -15,19 +15,35 @@ w(tmp .. "/templates/compact.md", "Summarize the conversation above.\n")
 w(tmp .. "/templates/snip.md", "Investigate ${1:topic}\n")
 w(tmp .. "/templates/empty.md", "\n")
 w(tmp .. "/skills/frontend.md", "---\ndescription: Review frontend code\n---\nUse semantic HTML.\n")
+vim.fn.mkdir(tmp .. "/agents", "p")
+w(tmp .. "/agents/implementer.md", "---\nname: implementer\ndescription: Focused Yap implementation subagent.\n---\nImplement it.\n")
+w(tmp .. "/agents/audit.md", "---\nmodel: deepseek/deepseek-flash\n---\nAudit it.\n")
 
 yap.setup({
   bin = ROOT .. "/yap",
   templates_dir = tmp .. "/templates",
   skills_dir = tmp .. "/skills",
-  skills_intro = true,
+  agents_dir = tmp .. "/agents",
 })
 
--- a new chat lists skills in its system block
+-- the skill/agent lists for the About Yap prefix resolve name + description,
+-- falling back to the filename when a definition omits `name`
+local skills = require("harness.template").skills_intro_lines()
+assert(
+  vim.deep_equal(skills, { "- frontend: Review frontend code" }),
+  "skills intro: " .. vim.inspect(skills)
+)
+local agents = require("harness.template").agents_intro_lines()
+assert(
+  vim.deep_equal(agents, { "- audit", "- implementer: Focused Yap implementation subagent." }),
+  "agents intro: " .. vim.inspect(agents)
+)
+
+-- a new buffer's system block holds only the user's system prompt: skills and
+-- agents are injected in the About Yap prefix on send, not baked in here
 local buf = yap.new()
 local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-assert(text:match("## Skills"), "skills intro missing: " .. text)
-assert(text:match("frontend: Review frontend code"), "skill description missing: " .. text)
+assert(not text:match("frontend: Review frontend code"), "skills list leaked into buffer: " .. text)
 
 -- a skill merges into the system block, not a new # @user
 yap.insert("frontend")

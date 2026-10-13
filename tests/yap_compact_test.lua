@@ -17,7 +17,6 @@ yap.setup({
   bin = ROOT .. "/yap",
   templates_dir = tmp .. "/templates",
   skills_dir = tmp .. "/skills",
-  skills_intro = false,
 })
 
 -- ── compact_delete: deterministic, no mock ──────────────────────────────

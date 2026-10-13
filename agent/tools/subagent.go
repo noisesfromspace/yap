@@ -21,14 +21,14 @@ var subagentID atomic.Uint64
 var subagentWait = 10 * time.Minute
 
 type subagentArgs struct {
-	Agent   string `json:"agent,omitempty" jsonschema:"description=name of an agent definition from ~/.config/yap/agents/*.md (or configured agents_dir); omit when continuing a session"`
+	Agent   string `json:"agent,omitempty" jsonschema:"description=name of an agent definition from the ## Agents list in your system prompt (definition files in ~/.config/yap/agents/*.md); omit when continuing a session"`
 	Model   string `json:"model,omitempty" jsonschema_description:"provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none. Ignored when continuing a session"`
 	Task    string `json:"task" jsonschema:"description=task or follow-up question for the subagent"`
 	Session string `json:"session,omitempty" jsonschema:"description=existing child session path returned by a previous subagent call; omit to start a new session"`
 }
 
 func init() {
-	Register("subagent", "Delegate to an agent definition in an isolated, saved Yap Markdown session, or continue a previous child using session. Wait for its answer; returns the session path and result.", func(a *subagentArgs) (string, string, error) {
+	Register("subagent", "Delegate a self-contained subtask to a saved agent definition and wait for its answer. Use when a task is large or independent enough to benefit from its own context or a different (often cheaper) model; see the ## Agents list for the available agents and what each is for. Returns the child's answer and session path. Pass `session` to continue a previous child instead of starting a new one.", func(a *subagentArgs) (string, string, error) {
 		if SubagentReplies == nil {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}

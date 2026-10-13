@@ -56,7 +56,6 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     sessions_dir = "~/.config/yap/sessions",   -- sessions + scratch + audit logs
     templates_dir = vim.fn.expand("~/.config/yap/templates"), -- :YapInsert files
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
-    skills_intro = true,          -- list skills in new sessions
     notify_done = true,           -- vim.notify when a hidden turn finishes
     description_model = "openai/gpt-5-nano",       -- on-send label
     description_answer_model = "openai/gpt-5-mini", -- final session title
@@ -106,7 +105,7 @@ it maps to OpenAI's `reasoning.effort`, Anthropic's `effort`/thinking budget,
 Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
-disable it. `templates_dir`/`skills_dir`/`skills_intro` configure
+disable it. `templates_dir`/`skills_dir` configure
 |yap-templates|.
 
 Config and data files (defaults shown; the config home is
@@ -534,8 +533,8 @@ HOW TO WRITE A SKILL                                          *yap-skill*
 
 A skill is instructions for the system prompt, not the message history. Its
 body merges into the `# @system` message. Optional YAML frontmatter
-contributes one `description:` line to the `## Skills` intro list shown in new
-sessions and is stripped before merging: >
+contributes one `description:` line to the `## Skills` list in the About Yap
+prefix (refreshed on every send) and is stripped before merging: >
 
   ---
   description: Review frontend code for accessibility and semantics
@@ -569,8 +568,8 @@ do not. While a send is in flight a template steers instead: its body (a
 leading `# @role` heading stripped) is injected at the running turn's next
 tool boundary as a `# @user` message, exactly like a <C-s> steer
 (|yap-sessions|). Skills and raw insertion at the cursor are refused mid-turn.
-The `## Skills` intro lists names + descriptions only; disable it with
-`skills_intro = false`.
+The `## Skills` section of the About Yap prefix lists names + descriptions,
+refreshed on every send.
 
 COMPACTION RECIPE                                           *yap-compact*
 

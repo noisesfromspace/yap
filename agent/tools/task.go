@@ -12,10 +12,10 @@ type waitTasksArgs struct {
 }
 
 func init() {
-	Register("start_task", "Start a long-running bash, fetch, or websearch call and return a task ID immediately. Use when there is independent work to do while it runs; call wait_tasks before relying on its result. The normal safety gate and approval still apply before launch. Tasks are scoped to this turn and cannot survive a final answer or stop. Do not use for edits or commands that conflict with ongoing work.", func(*startTaskArgs) (string, string, error) {
+	Register("start_task", "Start a long-running bash, fetch, or websearch call in the background and return a task ID immediately. Use it when you can overlap slow work: launch the slow call, do other useful work, then call wait_tasks once to collect the result before relying on it. For example, start a test run or build, then read files or research meanwhile. The normal safety gate and approval still apply before launch. Tasks are scoped to this turn and cannot survive a final answer or stop. Do not start commands that conflict with ongoing work.", func(*startTaskArgs) (string, string, error) {
 		return "error: start_task requires the agent loop", "", nil
 	})
-	Register("wait_tasks", "Wait efficiently for background tasks to finish and return their results. Omit ids to wait for all; do not repeatedly poll. Use before reporting success or relying on a background result. Any remaining tasks are automatically waited for before a final answer.", func(*waitTasksArgs) (string, string, error) {
+	Register("wait_tasks", "Wait for background tasks to finish and return their results. Omit ids to wait for all outstanding tasks; do not poll repeatedly. Call once before relying on a background result or reporting success; any remaining tasks are waited for automatically before a final answer.", func(*waitTasksArgs) (string, string, error) {
 		return "error: wait_tasks requires the agent loop", "", nil
 	})
 }

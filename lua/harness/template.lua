@@ -68,6 +68,28 @@ local function skill_parts(text)
   return description, lines
 end
 
+--- Split an agent definition's frontmatter and return its `name` and
+--- `description` keys. Unlike a skill, `name` is optional and defaults to the
+--- file's base name (what `subagent` takes as its `agent` argument).
+local function agent_parts(text, fallback)
+  local name, description = fallback, nil
+  local lines = vim.split(text, "\n", { plain = true })
+  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
+    for i = 2, #lines do
+      if lines[i]:match("^%-%-%-%s*$") then
+        break
+      end
+      local key, value = lines[i]:match("^(%w+):%s*(.-)%s*$")
+      if key == "name" and value ~= "" then
+        name = value
+      elseif key == "description" and value ~= "" then
+        description = value
+      end
+    end
+  end
+  return name, description
+end
+
 local function trim_blank(lines)
   while #lines > 0 and lines[1]:match("^%s*$") do
     table.remove(lines, 1)
@@ -200,6 +222,22 @@ function M.skills_intro_lines()
     if text then
       local description = skill_parts(text)
       lines[#lines + 1] = "- " .. s.name .. (description and (": " .. description) or "")
+    end
+  end
+  return #lines > 0 and lines or nil
+end
+
+--- Agents intro for the harness boilerplate: a short `## Agents` list (name +
+--- frontmatter description) so the model can delegate without first guessing
+--- or listing the directory. Falls back to the filename when a definition
+--- omits `name`. Returns nil when there are no agents.
+function M.agents_intro_lines()
+  local lines = {}
+  for _, a in ipairs(list_md(config().agents_dir)) do
+    local text = read_file(a.path)
+    if text then
+      local name, description = agent_parts(text, a.name)
+      lines[#lines + 1] = "- " .. name .. (description and (": " .. description) or "")
     end
   end
   return #lines > 0 and lines or nil

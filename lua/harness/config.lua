@@ -35,9 +35,6 @@ M.defaults = {
   -- override in setup() to relocate it. The audit log and notes live beside
   -- each session.
   sessions_dir = paths.dirs.sessions_dir,
-  -- List available skills (name + description) in new sessions' system message
-  -- so they are discoverable; bodies are only ever inserted manually.
-  skills_intro = true,
   -- vim.notify for a completed turn when its buffer is not visible
   -- (delegated child results go to the running parent instead).
   notify_done = true,
