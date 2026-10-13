@@ -11,7 +11,7 @@
 //
 // request.json: {"messages":[{"role":"system|user|assistant","content":"..."}]}
 //
-// Providers and pricing live in ~/.config/yap.json. Tools are Go files
+// Providers and pricing live in ~/.config/yap/settings.json. Tools are Go files
 // in the agent/tools/ package (one file per tool, self-registering) — edit and
 // recompile to change them. Native providers (OpenAI Responses, Anthropic,
 // Google/Gemini, DeepSeek) and any OpenAI-compatible /chat/completions

@@ -18,17 +18,17 @@ import (
 	"boers.email/yap/agent/utils"
 )
 
-// writeConfigJSON writes a full yap.json into a temp config home.
+// writeConfigJSON writes a full settings.json into a temp config home.
 func writeConfigJSON(t *testing.T, cfg string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	xdg := filepath.Join(home, ".config")
 	t.Setenv("XDG_CONFIG_HOME", xdg)
-	if err := os.MkdirAll(xdg, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(xdg, "yap"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(xdg, "yap.json"), []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(xdg, "yap", "settings.json"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

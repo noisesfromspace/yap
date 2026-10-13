@@ -24,7 +24,7 @@ agent/tool loop: it reads the messages on stdin and streams the reply to
 stdout. There is no TUI and no hidden conversation state between turns.
 
 To install: build the binary and put it on Neovim's PATH (see the README),
-configure a provider in ~/.config/yap.json, then
+configure a provider in ~/.config/yap/settings.json, then
 `require("harness").setup({...})` and run `:Yap`.
 
 Because the buffer is the conversation, ordinary editing changes it:
@@ -113,9 +113,11 @@ Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
 disable it. `templates_dir`/`skills_dir`/`skills_intro` configure
 |yap-templates|.
 
-Config and data files:
+Config and data files (defaults shown; the config home is
+`$XDG_CONFIG_HOME/yap` — `~/.config/yap` unless `$XDG_CONFIG_HOME` is set —
+and each path is configurable via `setup()` / the Nix module options):
 
-  ~/.config/yap.json   Providers and optional pricing: >json
+  ~/.config/yap/settings.json   Providers and optional pricing: >json
 
     {
       "providers": {
@@ -141,9 +143,9 @@ Config and data files:
   when empty the flag is unavailable. `ssh.known_hosts` overrides the file
   the ssh tool checks hosts against.
 
-  ~/.config/yap/AGENTS.md   Default system prompt (see above).
-  ~/.config/yap/templates/  |:YapInsert| template files (|yap-templates|).
-  ~/.config/yap/skills/     |:YapInsert| skill files (|yap-templates|).
+  ~/.config/yap/AGENTS.md  Default system prompt (see above).
+  ~/.config/yap/templates/ |:YapInsert| template files (|yap-templates|).
+  ~/.config/yap/skills/    |:YapInsert| skill files (|yap-templates|).
   ~/.config/yap/sessions/  Autosaved sessions + scratch queues + audit logs.
   ~/.config/yap/agents/    Subagent definitions (|yap-tools|).
 

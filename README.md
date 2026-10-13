@@ -59,7 +59,7 @@ shell; outside it, install 0.13+ yourself.
    to run. With Nix, `nix develop` builds the agent into
    `$XDG_CACHE_HOME/yap/bin/yap` (default `~/.cache/yap/bin/yap`) and puts it
    on `PATH`.
-2. Configure a provider in `~/.config/yap.json`:
+2. Configure a provider in `~/.config/yap/settings.json`:
 
    ```json
    {
@@ -108,8 +108,9 @@ still notify.
 | Lua: `history()`                          | `<leader>y` | Pick a saved session with live status.                             |
 | Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new sessions.                           |
 
-Templates and skills live in `~/.config/yap/templates/` and
-`~/.config/yap/skills/`. The scratch buffer (`<leader>s`) holds notes,
+Templates and skills live in `$XDG_CONFIG_HOME/yap/templates/` and
+`$XDG_CONFIG_HOME/yap/skills/` (default `~/.config/yap/templates/` and
+`~/.config/yap/skills/`; relocate them via `setup()`). The scratch buffer (`<leader>s`) holds notes,
 steering text for the running turn, and queued prompts. Steering delivered
 at a model boundary is removed from scratch; steering that misses the last
 boundary or is stopped remains a draft, with a warning, for an explicit

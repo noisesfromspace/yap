@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// ─── Config (~/.config/yap.json) ───────────────────────────────────────────
+// ─── Config (~/.config/yap/settings.json) ──────────────────────────────────
 
 type Provider struct {
 	BaseURL   string `json:"base_url"`
@@ -83,10 +83,10 @@ type Pricing struct {
 
 func configPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "yap.json")
+		return filepath.Join(xdg, "yap", "settings.json")
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "yap.json")
+	return filepath.Join(home, ".config", "yap", "settings.json")
 }
 
 func loadConfig() (*Config, error) {

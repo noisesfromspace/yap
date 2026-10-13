@@ -113,7 +113,7 @@ func fetchProcess(status int, statusText, contentType string, finalURL *url.URL,
 // re-exec'ing `fetch-worker` under the `vpn.command` prefix.
 func fetchVPN(rawURL string) (status int, statusText, contentType string, finalURL *url.URL, body []byte, err error) {
 	if len(vpnPrefix) == 0 {
-		return 0, "", "", nil, nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap.json)")
+		return 0, "", "", nil, nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap/settings.json)")
 	}
 	return runFetchWorkerCmd(vpnPrefix, "vpn", rawURL)
 }

@@ -14,7 +14,7 @@
 --
 -- Case fields:
 --   name      the script: tests/<name>.lua
---   port      port the mock provider listens on; the base_url in yap.json
+--   port      port the mock provider listens on; the base_url in settings.json
 --   mock      tests/<mock>.py to start first (nil: no provider traffic)
 --   providers explicit name -> base_url map, for cases that pick a provider
 local MiniTest = require("mini.test")
@@ -161,7 +161,8 @@ local function write_config(case, dir)
     providers = providers,
     pricing = { m1 = { input = 2.0, output = 10.0 } },
   }
-  vim.fn.writefile({ vim.json.encode(config) }, dir .. "/.config/yap.json")
+  vim.fn.mkdir(dir .. "/.config/yap", "p")
+  vim.fn.writefile({ vim.json.encode(config) }, dir .. "/.config/yap/settings.json")
 end
 
 -- ---------------------------------------------------------------------------

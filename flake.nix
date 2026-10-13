@@ -287,7 +287,9 @@
                 vpn.command = [ "/run/wrappers/bin/tunnel" ];
               };
               description = ''
-                Agent configuration, written to {file}`~/.config/yap.json`.
+                Agent configuration, written to
+                {file}`$XDG_CONFIG_HOME/yap/settings.json` (default
+                {file}`~/.config/yap/settings.json`).
                 Keys are `providers` (name → base_url + api_key_env),
                 `websearch` (provider name + api_key_env for the search
                 tool), `vpn` (`command` argv prefix that enters a VPN network
@@ -319,7 +321,8 @@
               description = ''
                 Directory of `:YapInsert` templates, passed to the harness
                 as `templates_dir`. When null the harness default
-                ({file}`~/.config/yap/templates`) is used.
+                ({file}`$XDG_CONFIG_HOME/yap/templates`, default
+                {file}`~/.config/yap/templates`) is used.
               '';
             };
 
@@ -329,7 +332,8 @@
               description = ''
                 Directory of skill files merged into the system message,
                 passed to the harness as `skills_dir`. When null the
-                harness default ({file}`~/.config/yap/skills`) is used.
+                harness default ({file}`$XDG_CONFIG_HOME/yap/skills`, default
+                {file}`~/.config/yap/skills`) is used.
               '';
             };
 
@@ -339,7 +343,8 @@
               description = ''
                 Directory of agent-definition files (subagents), passed to the harness
                 as `agents_dir`. When null the harness default
-                ({file}`~/.config/yap/agents`) is used.
+                ({file}`$XDG_CONFIG_HOME/yap/agents`, default
+                {file}`~/.config/yap/agents`) is used.
               '';
             };
 
@@ -349,7 +354,8 @@
               description = ''
                 Directory where yap autosaves sessions and their scratch
                 queues, passed to the harness as `sessions_dir`. When null
-                the harness default ({file}`~/.config/yap/sessions`) is used.
+                the harness default ({file}`$XDG_CONFIG_HOME/yap/sessions`,
+                default {file}`~/.config/yap/sessions`) is used.
               '';
             };
 
@@ -382,8 +388,8 @@
           };
 
           config = lib.mkIf cfg.enable {
-            home.file.".config/yap.json" = lib.mkIf (cfg.settings != { }) {
-              source = json.generate "yap.json" cfg.settings;
+            xdg.configFile."yap/settings.json" = lib.mkIf (cfg.settings != { }) {
+              source = json.generate "settings.json" cfg.settings;
             };
           };
         };

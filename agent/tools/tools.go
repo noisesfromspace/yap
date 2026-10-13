@@ -175,7 +175,7 @@ func SetVPNCommand(prefix []string) { vpnPrefix = append([]string(nil), prefix..
 // silently falls back to the host network.
 func vpnArgv(base ...string) ([]string, error) {
 	if len(vpnPrefix) == 0 {
-		return nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap.json)")
+		return nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap/settings.json)")
 	}
 	return append(append([]string(nil), vpnPrefix...), base...), nil
 }

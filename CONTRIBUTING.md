@@ -301,7 +301,7 @@ place for the alert gate to force isolation when it flags an exfiltration.
 curl and fetch deliberately do not: they exist to reach the network, so
 isolating them would only ever fail. bash, curl and fetch accept an opt-in
 `vpn` flag that runs the command or request inside a VPN network namespace: the
-entry command is the `vpn.command` argv prefix in ~/.config/yap.json (e.g.
+entry command is the `vpn.command` argv prefix in ~/.config/yap/settings.json (e.g.
 ["/run/wrappers/bin/tunnel"], or ["sudo", "-n", "ip", "netns", "exec",
 "mullvad"]), so any VPN setup that can be entered by a command works without
 recompiling. On bash, `vpn` and `isolate_network` are mutually exclusive.

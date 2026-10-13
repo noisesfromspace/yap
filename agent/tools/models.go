@@ -16,7 +16,7 @@ type ModelCombo struct {
 }
 
 // modelLister is main's discovery client (the `yap models` command), which
-// knows the providers in ~/.config/yap.json and cannot be imported from here.
+// knows the providers in ~/.config/yap/settings.json and cannot be imported from here.
 // The serve loop installs it with SetModelLister, so the tool, the picker and
 // the CLI list exactly the same combos from one implementation.
 var modelLister func() (combos []ModelCombo, warnings []string, err error)
