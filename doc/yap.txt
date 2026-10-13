@@ -192,7 +192,8 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         drawer of approvals and advisories (|yap-alert-gate|).
                         <Tab>/`za` expand a row; on the
                         row under the cursor `r`/`x` run/deny an approval, `i`
-                        inspects, `q` closes.
+                        inspects, `c` clears every guard and advisory item,
+                        `q` closes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line

@@ -10,9 +10,8 @@
 --   Advisory  advisories (calls that ran with a non-blocking warning)
 --
 -- Rows are one scannable line, collapsed by default; `za` expands a row to
--- its full context (command, reason, severity breakdown). The trust ledger
--- (guard.json) is intentionally NOT read or
--- written yet — the surface ships first, `always` rules land later.
+-- its full context (command, reason, severity breakdown). guard.json stores
+-- the project's clear watermark; `always` trust rules land later.
 
 local M = {}
 
@@ -227,9 +226,46 @@ local function approval_call(buf, ev)
   end
 end
 
+-- The clear watermark lives in guard.json beside the project's session
+-- directories. It is a project-scoped timestamp: advisory and resolved
+-- approval events at or before it are hidden from the board, but stay in the
+-- append-only audit log. Parked approvals are live state and are denied
+-- directly by clear(), never filtered here.
+local function guard_file()
+  return paths.session_dir(vim.fn.getcwd()) .. "/guard.json"
+end
+
+local function read_cleared_time()
+  local p = guard_file()
+  if vim.fn.filereadable(p) ~= 1 then
+    return nil
+  end
+  local ok, data = pcall(vim.json.decode, vim.fn.readfile(p)[1] or "")
+  if ok and type(data) == "table" then
+    return ts_time(data.cleared_ts or "")
+  end
+  return nil
+end
+
+local function write_cleared_time(ts)
+  local p = guard_file()
+  paths.ensure_session_dir(vim.fn.fnamemodify(p, ":h"))
+  vim.fn.writefile({ vim.json.encode({ cleared_ts = ts }) }, p)
+  vim.fn.setfperm(p, "rw-------")
+end
+
+local function is_cleared(ev, cleared)
+  if not cleared then
+    return false
+  end
+  local t = ts_time(ev.ts)
+  return t ~= nil and t <= cleared
+end
+
 --- Scan the current project's audit logs for advisories and resolved
---- approvals. Returns (advisories, resolved), each a list of rows.
-local function scan_project()
+--- approvals. Returns (advisories, resolved), each a list of rows. Events at
+--- or before `cleared` (an os.time) are skipped.
+local function scan_project(cleared)
   local advisories, resolved = {}, {}
   local session_dir = paths.session_dir(vim.fn.getcwd())
   for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
@@ -246,13 +282,17 @@ local function scan_project()
               calls[ev.id] = ev
               last_call = { id = ev.id, occurrence = occurrences[ev.id] }
             elseif ev.type == "alert_advisory" then
-              local call_ref = ev.id and occurrences[ev.id] and { id = ev.id, occurrence = occurrences[ev.id] } or nil
-              advisories[#advisories + 1] = advisory_row(ev, session_name, path, calls[ev.id], call_ref)
+              if not is_cleared(ev, cleared) then
+                local call_ref = ev.id and occurrences[ev.id] and { id = ev.id, occurrence = occurrences[ev.id] } or nil
+                advisories[#advisories + 1] = advisory_row(ev, session_name, path, calls[ev.id], call_ref)
+              end
             elseif ev.type == "approval_request" and ev.id then
               requests[ev.id] = { ev = ev, call = last_call }
             elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
-              local req = requests[ev.id]
-              resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
+              if not is_cleared(ev, cleared) then
+                local req = requests[ev.id]
+                resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
+              end
             end
           end
         end
@@ -289,7 +329,7 @@ local function build_sections()
     end
   end
 
-  local advisories, resolved = scan_project()
+  local advisories, resolved = scan_project(read_cleared_time())
   table.sort(advisories, newest_first)
   table.sort(resolved, newest_first)
 
@@ -474,7 +514,7 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  add("r/x run·deny · i inspect · za expand · [c/]c section · q close", HL.hint)
+  add("r/x run·deny · i inspect · c clear · za expand · [c/]c section · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -602,6 +642,11 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "r", act(approve_row), { buffer = buf, silent = true, desc = "yap: approve guard row" })
   vim.keymap.set("n", "x", act(deny_row), { buffer = buf, silent = true, desc = "yap: deny guard row" })
   vim.keymap.set("n", "i", act(inspect_row), { buffer = buf, silent = true, desc = "yap: inspect guard row" })
+  -- `c` is board-wide, not a cursor-row action: deny every parked approval
+  -- and clear advisories/settled history.
+  vim.keymap.set("n", "c", function()
+    M.clear()
+  end, { buffer = buf, silent = true, desc = "yap: clear guard board" })
 
 end
 
@@ -618,6 +663,24 @@ function M.toggle()
   apply_folds(buf, result)
   -- Land on the first Guard row, not the header: that row is the actionable one.
   vim.api.nvim_win_set_cursor(0, { result.first_row_line or 1, 0 })
+end
+
+--- Clear every item on the board: deny each parked approval (the safe,
+--- non-running answer that releases its turn) and hide all advisories and
+--- settled history at or before now. The audit log is left intact; the
+--- project watermark makes the clear persist across reopens.
+function M.clear()
+  local owners = {}
+  for owner in pairs(state.pending_approvals) do
+    if vim.api.nvim_buf_is_valid(owner) then
+      owners[#owners + 1] = owner
+    end
+  end
+  for _, owner in ipairs(owners) do
+    harness().answer_approval(owner, false)
+  end
+  write_cleared_time(os.date("%Y-%m-%dT%H:%M:%S"))
+  M.touch()
 end
 
 --- Re-render the board when an approval/advisory event changes the open set,
