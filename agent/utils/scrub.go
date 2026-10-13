@@ -31,8 +31,13 @@ var scrubWhole = []*regexp.Regexp{
 // Groups: 1 = key name, 2 = operator + optional opening quote, 3 = value.
 var scrubAssign = regexp.MustCompile(`(?i)\b(api[_-]?key|apikey|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd|authorization)(["']?\s*[:=]\s*["']?)([^\s"',;}{]+)`)
 
-// Scrub redacts obvious secrets from s.
+// Scrub redacts obvious secrets from s and repairs bytes that are not valid
+// UTF-8 to U+FFFD. Tool output is where raw bytes enter the session, which is
+// UTF-8: a stray byte in it makes Nvim read the whole transcript back as
+// latin1 ('fileencodings' falls back there) and re-encode it on the next
+// :write — one 0xBF per character outside latin1.
 func Scrub(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	for _, re := range scrubWhole {
 		s = re.ReplaceAllString(s, redacted)
 	}

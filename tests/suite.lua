@@ -108,6 +108,7 @@ local CASES = {
   { name = "yap_winbar_steer_test", port = 18132 },
   { name = "yap_bd_test", port = 18132 },
   { name = "yap_open_test", port = 18132 },
+  { name = "yap_encoding_test", port = 18132 },
   { name = "yap_hide_save_test", port = 18132 },
   { name = "yap_fcs_test", port = 18132 },
   { name = "yap_help_test", port = 18132 },

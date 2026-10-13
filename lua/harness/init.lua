@@ -1550,11 +1550,25 @@ end
 
 --- Load `path` into the current window, briefly clearing `winfixbuf` so a
 --- window fixed to its buffer can still be redirected by `:edit` (E1513).
+---
+--- The read is forced to utf-8. A session file is UTF-8, but one stray byte
+--- in it (a tool result that dumped binary) makes 'fileencodings' fall back to
+--- latin1, and from then on every :write re-encodes the WHOLE transcript to
+--- latin1 — one 0xBF per character outside latin1. Forcing the encoding on
+--- read keeps writes utf-8 and repairs the stray byte to `?` instead.
 local function edit_buf(path)
   local win = vim.api.nvim_get_current_win()
   local fixed = vim.wo[win].winfixbuf
   vim.wo[win].winfixbuf = false
-  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  vim.cmd("edit ++enc=utf-8 " .. vim.fn.fnameescape(path))
+  local buf = vim.api.nvim_get_current_buf()
+  -- A lossy read (that stray byte became `?`) makes Vim mark the buffer
+  -- 'readonly' to protect the file. Repairing it is the point here, and yap
+  -- saves sessions with :write!, which would otherwise warn W10 on every save.
+  -- A file that really is unwritable keeps its flag.
+  if vim.bo[buf].readonly and vim.fn.filewritable(path) == 1 then
+    vim.bo[buf].readonly = false
+  end
   vim.wo[win].winfixbuf = fixed
 end
 
