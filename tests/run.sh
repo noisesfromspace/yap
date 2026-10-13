@@ -17,6 +17,10 @@ cd "$ROOT" || exit 1
 YAP_BIN="${XDG_CACHE_HOME:-$HOME/.cache}/yap/bin/yap"
 mkdir -p "$(dirname "$YAP_BIN")"
 CGO_ENABLED=0 go build -o "$YAP_BIN" ./agent || exit 1
+# The Lua tests invoke the agent as "$ROOT/yap" (a gitignored path). Point it
+# at the freshly built binary so the suite is self-contained and does not
+# depend on a pre-existing symlink in the checkout.
+ln -sf "$YAP_BIN" "$ROOT/yap"
 CGO_ENABLED=0 go test ./... || exit 1
 export PATH="$(dirname "$YAP_BIN"):$PATH"
 # yap_fold_ui_test drives an attached Neovim over msgpack RPC. The devShell's
