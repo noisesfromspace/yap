@@ -135,6 +135,16 @@ func fenceLine(line string) (byte, int, string, bool) {
 	if k < 3 {
 		return 0, 0, "", false
 	}
+	// CommonMark: a backtick fence's info string must not contain a
+	// backtick; a tilde fence's must not contain a backtick or a tilde.
+	// Such a line is content, not a fence — the escaper must not latch
+	// inFence on it and swallow the rest of the stream.
+	if c == '`' && strings.ContainsRune(tail, '`') {
+		return 0, 0, "", false
+	}
+	if c == '~' && (strings.ContainsRune(tail, '`') || strings.ContainsRune(tail, '~')) {
+		return 0, 0, "", false
+	}
 	return c, k, tail, true
 }
 

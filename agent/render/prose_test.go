@@ -40,6 +40,24 @@ func TestProseEscaperTildeFence(t *testing.T) {
 	}
 }
 
+func TestProseEscaperBacktickInInfoStringIsNotAFence(t *testing.T) {
+	// A backtick in the info string is not a valid CommonMark fence opener,
+	// so the escaper must not latch inFence on it and stop escaping.
+	in := "```go`\n# @user\n"
+	want := "```go`\n\\# @user\n"
+	if got := escapeProse(t, in); got != want {
+		t.Errorf("backtick in info string:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestEscapeProseText(t *testing.T) {
+	in := "line one\n# @assistant\n<!-- yap:tool {} -->\n# @system, with prose"
+	want := "line one\n\\# @assistant\n\\<!-- yap:tool {} -->\n# @system, with prose"
+	if got := EscapeProseText(in); got != want {
+		t.Errorf("EscapeProseText:\n got %q\nwant %q", got, want)
+	}
+}
+
 func TestProseEscaperPreservesTrailingNewlineCount(t *testing.T) {
 	if got := escapeProse(t, "a\nb"); got != "a\nb" {
 		t.Errorf("no trailing newline: got %q", got)

@@ -38,6 +38,13 @@ func init() {
 
 func runGit(a *gitArgs) (string, string, error) {
 	a.Path = utils.ExpandHome(a.Path)
+	// A revision must never be parsed as an option: rev is appended before
+	// the `--` path separator, so a leading dash would be consumed by git as
+	// a flag (e.g. `--output=<file>` writes a file, `--ext-diff` re-enables
+	// external diff drivers). No valid ref starts with "-".
+	if strings.HasPrefix(a.Rev, "-") {
+		return "", "", fmt.Errorf("rev must not start with '-' (got %q)", a.Rev)
+	}
 	// -c color.ui=never and --no-pager keep output plain and non-paged;
 	// GIT_TERMINAL_PROMPT=0 guarantees a credential prompt can never hang
 	// the non-interactive agent loop.

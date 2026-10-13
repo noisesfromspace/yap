@@ -30,6 +30,19 @@ func escapeProseLine(line string) string {
 	return rawTextTagRe.ReplaceAllString(line, "\\<$1$2")
 }
 
+// EscapeProseText neutralizes structural tokens in a block of plain text
+// written verbatim into the session buffer under a `# @user` heading (user
+// steering). A steer that itself contains a role heading or yap marker would
+// otherwise split the message or close a region early; escaping keeps the
+// block one message while the model still receives the raw text.
+func EscapeProseText(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = escapeProseLine(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // ProseEscaper buffers streamed assistant prose to line granularity and
 // neutralizes structural tokens (yap markers, role headings, raw
 // style/script tags) on complete lines outside a fenced code block. Inside a

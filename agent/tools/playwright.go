@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -75,6 +76,9 @@ func runPW(a *playwrightArgs) (string, string, error) {
 	session := a.Session
 	if session == "" {
 		session = "yap"
+	}
+	if err := validateSession(session); err != nil {
+		return "", "", err
 	}
 	if err := browser.ensure(session, headed); err != nil {
 		return "", "", err
@@ -357,6 +361,23 @@ func resolveChromium() *string {
 		if p, err := exec.LookPath(name); err == nil {
 			return &p
 		}
+	}
+	return nil
+}
+
+// sessionNameRe is the shape a persistent-profile name may take. It must
+// not be able to escape the yap-playwright cache directory: no path
+// separators and no leading dot (so ".", "..", and hidden dirs like ".ssh"
+// are all rejected). Playwright writes a full Chromium profile into
+// <cache>/yap-playwright/<session>, so an untrusted name is a write
+// primitive.
+var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// validateSession rejects a session name that could traverse out of the
+// profile cache directory.
+func validateSession(s string) error {
+	if !sessionNameRe.MatchString(s) {
+		return fmt.Errorf("invalid session name %q (use letters, digits, dot, underscore or dash)", s)
 	}
 	return nil
 }

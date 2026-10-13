@@ -182,4 +182,37 @@ do
   assert(got:find("Answer.", 1, true), "answer deleted with tool")
 end
 
+-- A non-literal (keycode) lhs must still work: the op-pending mapping
+-- re-enters visual mode via feedkeys + replace_termcodes, which translates
+-- <C-a>; `:normal` typed it literally and never reached the visual mapping.
+do
+  local textobj = require("harness.textobj")
+  local buf = fresh({
+    "# @system",
+    "",
+    "You are helpful.",
+    "",
+    "# @user",
+    "",
+    "Question one.",
+    "",
+    "# @assistant",
+    "",
+    "The answer.",
+    "",
+  })
+  textobj.setup_buffer(buf, {
+    inner_message = "<C-a>",
+    around_message = "am",
+    inner_region = "it",
+    around_region = "at",
+  })
+  at(buf, 7, 3) -- on "Question one."
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("d<C-a>", true, false, true), "x", false)
+  local got = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  assert(not vim.tbl_contains(got, "Question one."), "inner message body not deleted: " .. vim.inspect(got))
+  assert(got[5] == "# @user", "user heading lost: " .. vim.inspect(got))
+  assert(got[9] == "# @assistant", "assistant heading lost: " .. vim.inspect(got))
+end
+
 print("OK textobj")

@@ -591,7 +591,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 				}
 			}
 			if b.steer != "" {
-				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", b.steer)
+				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", render.EscapeProseText(b.steer))
 				out.Flush()
 				wrote, trail = true, 2
 				utils.EmitEvent(map[string]any{"type": "steer", "text": b.steer})

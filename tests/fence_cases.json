@@ -20,5 +20,11 @@
   {"line": "   \t```", "null": true},
   {"line": "   ~~~x", "char": "~", "run": 3, "tail": "x"},
   {"line": "```+", "char": "`", "run": 3, "tail": "+"},
-  {"line": "~~~~~ ", "char": "~", "run": 5, "tail": " "}
+  {"line": "~~~~~ ", "char": "~", "run": 5, "tail": " "},
+  {"line": "```go`", "null": true},
+  {"line": "```a`b", "null": true},
+  {"line": "~~~a`b", "null": true},
+  {"line": "~~~a~b", "null": true},
+  {"line": "```a~b", "char": "`", "run": 3, "tail": "a~b"},
+  {"line": "~~~a-b", "char": "~", "run": 3, "tail": "a-b"}
 ]

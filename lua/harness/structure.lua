@@ -29,7 +29,18 @@ local function fence_run(line)
   if n < 3 then
     return nil
   end
-  return c, n, rest:sub(n + 1)
+  local tail = rest:sub(n + 1)
+  -- CommonMark: a backtick fence's info string cannot contain a backtick;
+  -- a tilde fence's cannot contain a backtick or a tilde. Such a line is
+  -- content, not a fence (kept in sync with Go's render.fenceLine via
+  -- tests/fence_cases.json).
+  if c == "`" and tail:find("`", 1, true) then
+    return nil
+  end
+  if c == "~" and (tail:find("`", 1, true) or tail:find("~", 1, true)) then
+    return nil
+  end
+  return c, n, tail
 end
 
 -- One O(n) forward pass over the buffer produces the structural units the

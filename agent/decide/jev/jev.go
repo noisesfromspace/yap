@@ -24,6 +24,12 @@ const (
 	// DefaultModel is the pinned Jev release. Pin this (not
 	// ~typesafe/jev-latest) when thresholds are tuned against a version.
 	DefaultModel = "typesafe/jev-1.13"
+	// requestTimeout bounds a single Decisions API round-trip. ShouldAlert
+	// runs on the hot path of every gated tool call, so a hung backend must
+	// not stall the turn for a full request budget; on error the caller
+	// fail-closes to an advisory (never a silent run), so a short ceiling is
+	// strictly better than a long hang.
+	requestTimeout = 5 * time.Second
 )
 
 // Config builds a Jev-backed decide.Model. Zero values fall back to
@@ -53,7 +59,7 @@ func New(cfg Config) decide.Model {
 		baseURL: cfg.BaseURL,
 		apiKey:  cfg.APIKey,
 		model:   cfg.Model,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: requestTimeout},
 	}
 }
 

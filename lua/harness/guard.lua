@@ -295,16 +295,20 @@ local function build_sections()
 
   -- Guard holds every approval — parked and settled — so a denied/timed-out
   -- approval stays visible beside the parked ones; the glyph states which.
+  -- Parked approvals are the actionable rows (r/x act on them): cap only
+  -- the settled history so a backlog of resolved rows can never push a
+  -- pending approval off the board.
   local guard_rows = approvals
-  for _, r in ipairs(resolved) do
+  for _, r in ipairs(cap(resolved, MAX_SECTION_ROWS)) do
     guard_rows[#guard_rows + 1] = r
   end
   table.sort(guard_rows, newest_first)
 
-  -- Cap each section independently: Guard's settled history must not starve
-  -- Advisory (a shared budget let Guard's 30 approvals push advisories to 0).
+  -- Cap only the settled history (already done above): parked approvals are
+  -- never capped away. Advisory keeps its own independent budget so a large
+  -- Guard section cannot starve it to zero.
   return {
-    { title = "Guard", rows = cap(guard_rows, MAX_SECTION_ROWS) },
+    { title = "Guard", rows = guard_rows },
     { title = "Advisory", rows = cap(advisories, MAX_SECTION_ROWS) },
   }
 end

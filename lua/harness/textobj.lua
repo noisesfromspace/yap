@@ -141,13 +141,16 @@ function M.setup_buffer(buf, keys)
 
   -- Operator-pending mappings re-enter visual mode (charwise for inner,
   -- linewise for outer); the pending operator then applies to the
-  -- selection. Re-entry goes through the configured visual lhs.
+  -- selection. Re-entry goes through the configured visual lhs, fed via
+  -- nvim_feedkeys + nvim_replace_termcodes so a non-literal keycode
+  -- (e.g. <leader>m) is translated — `:normal` would type it literally.
   local op = function(lhs, visual_lhs, linewise, desc)
     if lhs == "" then
       return
     end
+    local keys = (linewise and "V" or "v") .. visual_lhs
     vim.keymap.set("o", lhs, function()
-      vim.cmd.normal((linewise and "V" or "v") .. visual_lhs)
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "x", false)
     end, { buffer = buf, silent = true, desc = desc })
   end
   op(keys.inner_message, keys.inner_message, false, "yap: inner message")

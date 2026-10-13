@@ -109,6 +109,24 @@ func TestGit(t *testing.T) {
 	}
 }
 
+func TestGitRevRejectsOption(t *testing.T) {
+	chdirGit(t, newGitRepo(t))
+
+	// A rev with a leading dash would be parsed as a git option (and, for
+	// diff, is a write/exec primitive: --output writes a file, --ext-diff
+	// re-enables external diff drivers). It must be rejected before argv.
+	for _, cmd := range []string{"diff", "log", "show"} {
+		_, _, err := run(t, "git", `{"command":"`+cmd+`","rev":"--output=/tmp/yap-inject"}`)
+		if err == nil || !strings.Contains(err.Error(), "must not start with '-'") {
+			t.Fatalf("%s: rev option not rejected: %v", cmd, err)
+		}
+	}
+	// blame takes a rev too and requires a path.
+	if _, _, err := run(t, "git", `{"command":"blame","rev":"--ext-diff","path":"a.go"}`); err == nil || !strings.Contains(err.Error(), "must not start with '-'") {
+		t.Fatalf("blame: rev option not rejected: %v", err)
+	}
+}
+
 func TestGitCleanStatus(t *testing.T) {
 	dir := newGitRepo(t)
 	chdirGit(t, dir)
