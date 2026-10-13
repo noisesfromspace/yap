@@ -23,3 +23,42 @@ jobs:
 
       - name: Build and test
         run: nix develop --command tests/run.sh
+
+  publish:
+    # Packages are owner-scoped and a version cannot be re-published, so
+    # publish only from the default branch and tags — never from PRs (which
+    # also don't get repository secrets).
+    if: ${{ forgejo.event_name == 'push' && (forgejo.ref == 'refs/heads/main' || startsWith(forgejo.ref, 'refs/tags/')) }}
+    needs: test
+    runs-on: native
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build static binary
+        run: nix develop --command bash -c 'CGO_ENABLED=0 go build -o yap ./agent'
+
+      - name: Publish to Forgejo Packages
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Tags become their own version ("v1.2.3"); branch pushes use the
+          # short commit SHA so every publish is unique.
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            version="${GITHUB_REF#refs/tags/}"
+          else
+            version="${GITHUB_SHA:0:12}"
+          fi
+          # Basic-auth credentials for the generic package registry, kept out
+          # of argv (and thus `ps`) via a netrc file. The automatic
+          # GITHUB_TOKEN/FORGEJO_TOKEN cannot write packages, hence the PAT.
+          netrc="$(mktemp)"
+          trap 'rm -f "$netrc"' EXIT
+          umask 077
+          cat > "$netrc" <<EOF
+          machine git.boers.email login martijn password ${PACKAGES_TOKEN}
+          EOF
+          chmod 600 "$netrc"
+          curl --fail-with-body --netrc-file "$netrc" --upload-file yap \
+            "https://git.boers.email/api/packages/martijn/generic/yap/${version}/yap"
