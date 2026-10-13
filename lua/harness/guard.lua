@@ -27,7 +27,7 @@ local function harness()
 end
 
 local BOARD_NAME = "yap://guard"
-local MAX_SECTION_ROWS = 100 -- cap each section, newest first
+local MAX_TOTAL_ROWS = 30 -- cap the board to 30 events across both sections
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -266,13 +266,13 @@ local function newest_first(a, b)
   return (a.ts or "") > (b.ts or "")
 end
 
---- Cap a section to the newest rows (rows are already sorted newest first).
-local function cap(rows)
-  if #rows <= MAX_SECTION_ROWS then
+--- Cap a list to the newest `n` rows (rows are already sorted newest first).
+local function cap(rows, n)
+  if #rows <= n then
     return rows
   end
   local out = {}
-  for i = 1, MAX_SECTION_ROWS do
+  for i = 1, n do
     out[i] = rows[i]
   end
   return out
@@ -301,9 +301,15 @@ local function build_sections()
   end
   table.sort(guard_rows, newest_first)
 
+  -- Guard (approvals) takes priority: it may use the whole cap, and
+  -- Advisory fills whatever remains, so the two sections together never
+  -- exceed MAX_TOTAL_ROWS rows.
+  guard_rows = cap(guard_rows, MAX_TOTAL_ROWS)
+  local advisory_rows = cap(advisories, math.max(0, MAX_TOTAL_ROWS - #guard_rows))
+
   return {
-    { title = "Guard", rows = cap(guard_rows) },
-    { title = "Advisory", rows = cap(advisories) },
+    { title = "Guard", rows = guard_rows },
+    { title = "Advisory", rows = advisory_rows },
   }
 end
 
