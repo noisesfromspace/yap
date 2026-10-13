@@ -7,7 +7,6 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   temperature: 0.7
 --   reasoning_level: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
@@ -34,10 +33,10 @@
 -- `title` is always present (empty by default) and wins over `description`
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
--- `provider` are the combo to resume with; `temperature` (a float) and
--- `reasoning_level` (low|medium|high) are per-session sampling knobs,
--- seeded from the config defaults on new sessions and hand-editable like
--- `tools` — read on every send;
+-- `provider` are the combo to resume with; `reasoning_level`
+-- (low|medium|high) is a per-session sampling knob, seeded from the config
+-- default on new sessions and hand-editable like `tools` — read on every
+-- send;
 -- `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
@@ -115,8 +114,6 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
-      elseif k == "temperature" then
-        fm.temperature = tonumber(v)
       elseif k == "reasoning_level" then
         fm.reasoning_level = v
       elseif k == "tools" then
@@ -173,7 +170,6 @@ function M.render(
   forks,
   subagent_parent,
   assets,
-  temperature,
   reasoning_level
 )
   local lines = { "---" }
@@ -187,9 +183,6 @@ function M.render(
   end
   lines[#lines + 1] = "model: " .. model
   lines[#lines + 1] = "provider: " .. provider
-  if temperature ~= nil then
-    lines[#lines + 1] = "temperature: " .. temperature
-  end
   if reasoning_level and reasoning_level ~= "" then
     lines[#lines + 1] = "reasoning_level: " .. reasoning_level
   end
@@ -283,12 +276,11 @@ function M.sync(buf)
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local created_cwd = (fm and fm.created_cwd) or vim.b[buf].yap_project_cwd
-  -- Seed the sampling knobs from config defaults only when creating a
+  -- Seed the sampling knob from config defaults only when creating a
   -- session (no frontmatter yet); an existing session keeps whatever the
   -- user left in the buffer — deleting the line restores the provider
   -- default.
   local defaults = require("harness").config
-  local temperature = (not fm and defaults.temperature) or (fm and fm.temperature)
   local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
   local block = M.render(
     provider,
@@ -307,7 +299,6 @@ function M.sync(buf)
     fm and fm.forks,
     fm and fm.subagent_parent,
     fm and fm.assets,
-    temperature,
     reasoning_level
   )
   if e then
@@ -354,7 +345,6 @@ function M.record_subagent(parent, child_path)
     fm.forks,
     fm.subagent_parent,
     fm.assets,
-    fm.temperature,
     fm.reasoning_level
   )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)

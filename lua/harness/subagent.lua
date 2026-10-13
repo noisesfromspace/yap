@@ -246,7 +246,6 @@ function M.start(parent, ev)
       child_fm.forks,
       parent_path,
       child_fm.assets,
-      child_fm.temperature,
       child_fm.reasoning_level
     )
   )

@@ -1180,11 +1180,10 @@ function M.send(buf)
   running[buf] = process
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
-  -- empty list means unrestricted (all tools). `temperature` and
-  -- `reasoning_level` are the same live-editable shape: read on every send
-  -- so a hand-edited value takes effect without a :Yap rewrite.
+  -- empty list means unrestricted (all tools). `reasoning_level` is the
+  -- same live-editable shape: read on every send so a hand-edited value
+  -- takes effect without a :Yap rewrite.
   local tools = nil
-  local temperature = nil
   local reasoning_level = nil
   local fm_end = frontmatter.end_line(buf)
   if fm_end then
@@ -1193,7 +1192,6 @@ function M.send(buf)
       if fm.tools and #fm.tools > 0 then
         tools = fm.tools
       end
-      temperature = fm.temperature
       reasoning_level = fm.reasoning_level
     end
   end
@@ -1202,7 +1200,6 @@ function M.send(buf)
     model = model,
     messages = messages,
     tools = tools,
-    temperature = temperature,
     reasoning_level = reasoning_level,
   }) .. "\n"
   local ok, err = pcall(function()

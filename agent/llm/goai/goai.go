@@ -257,9 +257,6 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))
 	}
-	if params.Temperature != nil {
-		opts = append(opts, sdk.WithTemperature(*params.Temperature))
-	}
 	if po := m.providerOptions(params.ReasoningLevel); po != nil {
 		opts = append(opts, sdk.WithProviderOptions(po))
 	}

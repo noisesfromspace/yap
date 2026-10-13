@@ -17,7 +17,7 @@ vim.api.nvim_buf_set_lines(
   frontmatter.render(
     fm.provider, fm.model, fm.models, fm.created_at, fm.title, fm.description,
     fm.agent, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.created_cwd,
-    fm.forked_from, fm.forks, fm.subagent_parent, fm.assets, 0.7, "high"
+    fm.forked_from, fm.forks, fm.subagent_parent, fm.assets, "high"
   )
 )
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "hi" })
@@ -25,8 +25,7 @@ yap.send()
 assert(
   vim.wait(3000, function()
     local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-    return text:find("received-temperature:0.7", 1, true) ~= nil
-      and text:find("received-reasoning:high", 1, true) ~= nil
+    return text:find("received-reasoning:high", 1, true) ~= nil
   end, 25),
   "frontmatter knobs did not reach the binary"
 )

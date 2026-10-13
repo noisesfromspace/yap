@@ -199,7 +199,6 @@ Return only the title.]]
         fm.forks,
         fm.subagent_parent,
         fm.assets,
-        fm.temperature,
         fm.reasoning_level
       )
       vim.api.nvim_buf_set_lines(buf, 0, e, false, block)

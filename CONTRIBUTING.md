@@ -181,8 +181,8 @@ never make yap write its data folder into the project directory
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
 The frontmatter holds `provider`/`model` (the combo to resume with),
-`temperature`/`reasoning_level` (optional per-session sampling knobs,
-hand-editable like `tools` and read on every send), `created_cwd` (the
+`reasoning_level` (an optional per-session sampling knob, hand-editable
+like `tools` and read on every send), `created_cwd` (the
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped

@@ -140,12 +140,11 @@ func TestProviderOptionsReasoningLevel(t *testing.T) {
 	}
 }
 
-func TestDoStreamForwardsTemperatureAndReasoning(t *testing.T) {
+func TestDoStreamForwardsReasoning(t *testing.T) {
 	fake := &fakeModel{}
 	m := &modelImpl{model: fake, name: "compat"}
-	temp := 0.7
 	msgs := []llm.Message{{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: "go"}}}}
-	s, err := m.DoStream(context.Background(), llm.Params{Messages: msgs, Temperature: &temp, ReasoningLevel: "high"})
+	s, err := m.DoStream(context.Background(), llm.Params{Messages: msgs, ReasoningLevel: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,9 +157,6 @@ func TestDoStreamForwardsTemperatureAndReasoning(t *testing.T) {
 		t.Fatalf("expected 1 generation call, got %d", len(fake.gotParams))
 	}
 	got := fake.gotParams[0]
-	if got.Temperature == nil || *got.Temperature != temp {
-		t.Fatalf("temperature not forwarded: %+v", got.Temperature)
-	}
 	if got.ProviderOptions["reasoning_effort"] != "high" {
 		t.Fatalf("reasoning effort not forwarded: %#v", got.ProviderOptions)
 	}

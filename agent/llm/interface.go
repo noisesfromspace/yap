@@ -104,8 +104,6 @@ type Result struct {
 type Params struct {
 	Messages []Message
 	Tools    []Tool
-	// Temperature overrides sampling randomness; nil means provider default.
-	Temperature *float64
 	// ReasoningLevel is the cross-provider reasoning-effort knob
 	// (low|medium|high), mapped to each provider's native option.
 	ReasoningLevel string

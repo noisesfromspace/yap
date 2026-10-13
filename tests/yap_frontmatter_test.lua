@@ -15,7 +15,6 @@ assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid
 local fm = frontmatter.parse(lines)
 assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
-assert(fm.temperature == 0.7, "new session should seed default temperature: " .. vim.inspect(fm.temperature))
 assert(fm.reasoning_level == "medium", "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
@@ -206,27 +205,22 @@ assert(
   "legacy inline tools not parsed: " .. vim.inspect(legacy_tools.tools)
 )
 
--- temperature + reasoning_level: per-session sampling knobs, round-trip and
--- render as bare scalars (no key emitted when unset)
+-- reasoning_level: per-session sampling knob, round-trips and renders as a
+-- bare scalar (no key emitted when unset)
 local knobs_block = frontmatter.render(
-  "zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, {}, 0.7, "high"
+  "zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, {}, "high"
 )
 local knobs_fm = frontmatter.parse(knobs_block)
-assert(knobs_fm.temperature == 0.7, "temperature not roundtripped: " .. vim.inspect(knobs_fm.temperature))
 assert(knobs_fm.reasoning_level == "high", "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level))
-local saw_temp, saw_level = false, false
+local saw_level = false
 for _, l in ipairs(knobs_block) do
-  if l == "temperature: 0.7" then
-    saw_temp = true
-  end
   if l == "reasoning_level: high" then
     saw_level = true
   end
 end
-assert(saw_temp, "temperature line missing: " .. vim.inspect(knobs_block))
 assert(saw_level, "reasoning_level line missing: " .. vim.inspect(knobs_block))
 local plain_fm = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project"))
-assert(plain_fm.temperature == nil and plain_fm.reasoning_level == nil, "absent knobs should parse as nil: " .. vim.inspect(plain_fm))
+assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
 -- 9. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.
