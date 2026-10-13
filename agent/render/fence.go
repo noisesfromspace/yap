@@ -166,25 +166,19 @@ func unclosedFence(lines []string) string {
 // backtickFence returns a run of backticks one longer than any run in s
 // (min 3), so s can be embedded in a fenced block it cannot close early.
 //
-// It counts a leading backtick run on any line regardless of indentation.
-// CommonMark treats a fence indented more than 3 spaces as literal content,
-// but the tree-sitter-markdown grammar yap renders with closes the fence on
-// it anyway (an upstream bug), so the outer fence must also out-last those
-// indented fences — a read/bash result containing a ``` code sample at
-// column >3 (as in a Nix description string) would otherwise close the
-// wrapper early and swallow the rest of the buffer as one code block.
+// It counts any backtick run followed only by whitespace to end of line,
+// regardless of what precedes it on the line. CommonMark only closes a fence
+// on a run at the start of a line (up to 3 spaces of indent), but the
+// tree-sitter-markdown grammar yap renders with closes on a run preceded by
+// any single token too — `$._line` lexes that leading token as content and
+// the scanner then treats the following backticks as the closing delimiter.
+// A yap:ui diff line `+``` (the file being written contains a ``` fence) or
+// an indented ``` code sample in a read/bash result would otherwise close
+// the wrapper early and swallow the rest of the buffer as one code block.
 func backtickFence(s string) string {
 	max := 0
 	for _, l := range strings.Split(s, "\n") {
-		t := strings.TrimLeft(l, " \t")
-		if t == "" || t[0] != '`' {
-			continue
-		}
-		k := 0
-		for k < len(t) && t[k] == '`' {
-			k++
-		}
-		if k > max {
+		if k := closingBacktickRun(l); k > max {
 			max = k
 		}
 	}
@@ -193,6 +187,30 @@ func backtickFence(s string) string {
 		n = 3
 	}
 	return strings.Repeat("`", n)
+}
+
+// closingBacktickRun returns the length of the longest run of backticks in
+// line that is followed only by spaces/tabs to end of line — the run shape
+// that closes a backtick fence. A run followed by more text (an info string)
+// keeps the fence open and is not counted. The run may be preceded by any
+// content: the grammar closes on it regardless of the leading token.
+func closingBacktickRun(line string) int {
+	best := 0
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(line) && line[j] == '`' {
+			j++
+		}
+		if k := j - i; k > best && strings.Trim(line[j:], " \t") == "" {
+			best = k
+		}
+		i = j
+	}
+	return best
 }
 
 // FenceResult wraps a content-bearing tool result in a fenced code

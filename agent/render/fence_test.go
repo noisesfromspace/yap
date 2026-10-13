@@ -17,6 +17,11 @@ func TestBacktickFence(t *testing.T) {
 		{"    ```\ncode", "````"},     // >3-space indent: CommonMark content, but the markdown grammar yap renders with closes on it
 		{"          ```\nx", "````"},  // deeply indented sample (Nix description string)
 		{"\t```\nx", "````"},          // tab indent: same grammar quirk
+		{"+```\ncode", "````"},        // diff-added fence (yap:ui line) closes the wrapper early
+		{"-```\ncode", "````"},        // diff-removed fence
+		{"+````\nx", "`````"},         // longer diff-added fence
+		{"abc ```\n", "````"},         // run after a word token, whitespace to EOL
+		{"text ``` more", "```"},      // run followed by an info string: keeps the fence open, not counted
 	}
 	for _, c := range cases {
 		if got := backtickFence(c.in); got != c.want {
