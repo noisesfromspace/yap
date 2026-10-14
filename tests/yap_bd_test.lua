@@ -155,4 +155,23 @@ assert(
   "closing a session whose fallback is already visible should collapse the split, not duplicate"
 )
 
+-- A forced reload unloads and re-reads the file-backed buffer too, but is
+-- not a session close: the session must remain current and usable afterward.
+local reloaded = yap.new()
+local reloaded_path = vim.b[reloaded].yap_path
+vim.fn.writefile({ "reloaded from disk" }, reloaded_path)
+vim.cmd("edit!")
+assert(
+  vim.wait(2000, function()
+    return current() == reloaded and vim.api.nvim_buf_is_loaded(reloaded)
+  end),
+  "`:edit!` incorrectly redirected away from the reloaded session"
+)
+assert(vim.api.nvim_buf_is_valid(reloaded), "`:edit!` deleted the session buffer")
+assert(vim.api.nvim_buf_get_name(reloaded) == reloaded_path, "`:edit!` changed the session path")
+assert(
+  vim.tbl_contains(vim.api.nvim_buf_get_lines(reloaded, 0, -1, false), "reloaded from disk"),
+  "`:edit!` did not reload the session file"
+)
+
 print("OK bd")

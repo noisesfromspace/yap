@@ -2139,6 +2139,12 @@ function M.setup(opts)
       end
       local target = focus_fallback(buf)
       vim.schedule(function()
+        -- `:edit!` (and any reload) unloads then reloads the same buffer, so
+        -- it is loaded again by the time this runs: that is a reload, not a
+        -- close. Leave the session in place instead of redirecting it away.
+        if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
+          return
+        end
         local win = vim.api.nvim_get_current_win()
         local cur = vim.api.nvim_get_current_buf()
         if not target or not vim.api.nvim_buf_is_valid(target) then
