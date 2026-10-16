@@ -30,7 +30,13 @@ end
 function M.style(win, opts)
   opts = opts or {}
   vim.wo[win].winfixheight = true
-  vim.wo[win].winfixbuf = true -- pinned: a stray :e must not clobber the panel
+  -- Pinned by default: a stray :e must not clobber the panel. The live tool
+  -- tail opts out (pinned = false) so it can be reused as a plain window to
+  -- peek at files; its buffer survives (bufhidden = hide) and reopens via
+  -- :YapLive / <leader>l.
+  if opts.pinned ~= false then
+    vim.wo[win].winfixbuf = true
+  end
   vim.wo[win].winbar = "" -- the yap winbar is for sessions, not panels
   if not opts.editable then
     vim.wo[win].number = false
