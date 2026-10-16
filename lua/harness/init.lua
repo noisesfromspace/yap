@@ -316,8 +316,12 @@ local function handle_event(buf, json_line)
   elseif ev.type == "approval_request" then
     audit.append_event(buf, ev)
     pending_approvals[buf] = ev
-    notify_approval(buf, ev)
-    guard.touch()
+    if state.auto_accept then
+      answer_approval(buf, true)
+    else
+      notify_approval(buf, ev)
+      guard.touch()
+    end
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)

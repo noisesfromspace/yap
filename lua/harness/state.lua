@@ -19,6 +19,7 @@ local M = {
   subagent_children = {}, -- parent buf -> child buf (the running subagent)
   subagent_done = {}, -- child buf -> function(success) to report its result
   pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer
+  auto_accept = false, -- approve incoming approval requests (guard board toggle)
 }
 
 function M.is_running(buf)

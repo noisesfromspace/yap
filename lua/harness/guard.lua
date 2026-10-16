@@ -463,10 +463,11 @@ local function render()
   end
 
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
-  local hdr = view.header_lines(
-    ("Guard Board · %s"):format(project),
-    ("Guard %d · Advisory %d"):format(#guard_rows, #advisory_rows)
-  )
+  local counts = ("Guard %d · Advisory %d"):format(#guard_rows, #advisory_rows)
+  if state.auto_accept then
+    counts = counts .. " · auto-accept on"
+  end
+  local hdr = view.header_lines(("Guard Board · %s"):format(project), counts)
   add(hdr[1], view.hl.header)
   add(hdr[2], view.hl.meta)
 
@@ -508,7 +509,7 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  add("r/x run·deny · i inspect · c clear · za expand · [c/]c section · q close", HL.hint)
+  add("a auto-accept · r/x run·deny · i inspect · c clear · za expand · [c/]c section · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -636,6 +637,9 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "r", act(approve_row), { buffer = buf, silent = true, desc = "yap: approve guard row" })
   vim.keymap.set("n", "x", act(deny_row), { buffer = buf, silent = true, desc = "yap: deny guard row" })
   vim.keymap.set("n", "i", act(inspect_row), { buffer = buf, silent = true, desc = "yap: inspect guard row" })
+  vim.keymap.set("n", "a", function()
+    M.toggle_auto_accept()
+  end, { buffer = buf, silent = true, desc = "yap: toggle auto-accept" })
   -- `c` is board-wide, not a cursor-row action: deny every parked approval
   -- and clear advisories/settled history.
   vim.keymap.set("n", "c", function()
@@ -657,6 +661,25 @@ function M.toggle()
   apply_folds(buf, result)
   -- Land on the first Guard row, not the header: that row is the actionable one.
   vim.api.nvim_win_set_cursor(0, { result.first_row_line or 1, 0 })
+end
+
+--- Toggle auto-accept: while on, incoming approval requests are answered Run
+--- immediately, and any currently parked approvals are swept as Run too.
+--- Session-lifetime only (never persisted).
+function M.toggle_auto_accept()
+  state.auto_accept = not state.auto_accept
+  if state.auto_accept then
+    local owners = {}
+    for owner in pairs(state.pending_approvals) do
+      if vim.api.nvim_buf_is_valid(owner) then
+        owners[#owners + 1] = owner
+      end
+    end
+    for _, owner in ipairs(owners) do
+      harness().answer_approval(owner, true)
+    end
+  end
+  M.touch()
 end
 
 --- Clear every item on the board: deny each parked approval (the safe,

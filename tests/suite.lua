@@ -41,6 +41,7 @@ local CASES = {
   { name = "yap_audit_rename_test", port = 18135, mock = "mock_write.py" },
   { name = "yap_saveas_test", port = 18135, mock = "mock_write.py" },
   { name = "yap_approval_inspect_test", port = 18162, mock = "mock_approval.py" },
+  { name = "yap_guard_auto_accept_test", port = 18163, mock = "mock_approval_safe.py" },
   { name = "yap_approval_flow_test", port = 18132 },
   { name = "yap_guard_keys_test", port = 18132 },
   { name = "yap_guard_close_test", port = 18132 },
