@@ -246,10 +246,12 @@ of turns collapses to a summary, like compaction scoped to a range); in any
 other buffer it is plain text (refactor a function in place). The replacement
 is an ordinary, undoable buffer edit, applied only when the selected lines are
 unchanged since the call started. With no range, the output is inserted at the
-cursor as new lines instead (generate content into a fresh buffer); `eval_model`
-defaults to `""`, which inherits the buffer's current combo. Why: an eval is a
-stateless filter (`!`-semantics), not a conversation, so it must not accumulate
-tool state or history.
+cursor as new lines instead (generate content into a fresh buffer); a selection
+with no instruction is transformed with a default instruction (the selection is
+the input, so a visual-mode `:YapEval` never prompts), while generate mode still
+prompts. `eval_model` defaults to `""`, which inherits the buffer's current
+combo. Why: an eval is a stateless filter (`!`-semantics), not a conversation,
+so it must not accumulate tool state or history.
 
 ### Backend and wire protocol
 

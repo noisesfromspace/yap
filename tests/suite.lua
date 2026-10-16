@@ -72,6 +72,7 @@ local CASES = {
   -- Buffer semantics, folds, winbar and parsing: no provider traffic.
   { name = "yap_fold_contract_test", port = 18132 },
   { name = "yap_fold_test", port = 18132 },
+  { name = "yap_fold_frontmatter_test", port = 18132 },
   { name = "yap_detailfold_test", port = 18132 },
   { name = "yap_fold_peek_test", port = 18132 },
   { name = "yap_fold_za_test", port = 18132 },

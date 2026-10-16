@@ -175,6 +175,9 @@ local function identify(buf, s, p)
     end
     all[#all + 1] = { id = id, kind = kind, start = start, finish = finish }
   end
+  if p.frontmatter then
+    add("message:frontmatter", 1, p.frontmatter)
+  end
   for i, h in ipairs(p.headings) do
     add("message:" .. h.role, h.line, p.headings[i + 1] and p.headings[i + 1].line - 1 or p.count)
   end
@@ -191,7 +194,7 @@ end
 local function intended(all, level)
   local list, finish = {}, 0
   for _, b in ipairs(all) do
-    local include = level ~= 3 and b.kind == "message:system"
+    local include = level ~= 3 and (b.kind == "message:system" or b.kind == "message:frontmatter")
       or level == 1 and b.kind == "message:assistant"
       or level == 2 and b.kind:sub(1, 7) == "region:"
     -- System material may itself contain regions. Never install overlapping
@@ -471,7 +474,9 @@ function M.text(start, finish)
   local first = vim.fn.getline(start)
   local text
 
-  if first:match(TOOL_OPEN) then
+  if first:match("^%-%-%-%s*$") then
+    text = string.format("▸ options (%d lines)", finish - start + 1)
+  elseif first:match(TOOL_OPEN) then
     -- The name is on the opener line (single-line header) or in the
     -- pretty JSON below (multi-line header).
     local name = first:match('"name":%s*"([^"]+)"')

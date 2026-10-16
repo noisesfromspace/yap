@@ -62,6 +62,17 @@ local function parse(buf)
   end
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  -- YAML frontmatter (`---` ... `---`) precedes the first heading. Fold it
+  -- as its own unit so session options can collapse in views 1 and 2.
+  local frontmatter
+  if lines[1] and lines[1]:match("^%-%-%-%s*$") then
+    for i = 2, #lines do
+      if lines[i]:match("^%-%-%-%s*$") then
+        frontmatter = i
+        break
+      end
+    end
+  end
   local headings, regions = {}, {}
   local region, fence, comment = nil, nil, nil
   local tool
@@ -134,7 +145,7 @@ local function parse(buf)
     end
   end
 
-  local p = { headings = headings, regions = regions, count = #lines }
+  local p = { headings = headings, regions = regions, count = #lines, frontmatter = frontmatter }
   model_cache[buf] = { tick = tick, parse = p }
   return p
 end

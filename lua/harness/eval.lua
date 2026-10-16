@@ -20,6 +20,10 @@ end
 
 local EVAL_SYSTEM = [[You follow the instruction exactly and return ONLY the result: the replacement text when transforming the provided text, the new content when generating. Do not add any explanation, preamble, sign-off, Markdown code fence, or message heading.]]
 
+--- Instruction applied when :YapEval gets a selection but no instruction: the
+--- selection itself is the input, so a visual-mode eval just filters it.
+local DEFAULT_INSTRUCTION = "Improve this text"
+
 --- Strip `<!-- yap:* -->` marker regions (thinking/model/error) from a
 --- one-shot `yap send` response, preserving any other HTML in the answer.
 --- Exported for tests.
@@ -132,7 +136,8 @@ end
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
 --- current buffer): replace them with the model's output for `instruction`.
 --- With no line range, generate instead: insert the output at the cursor.
---- When `instruction` is empty or omitted, ask for it with vim.ui.input.
+--- When `instruction` is empty or omitted, a selection is transformed with a
+--- default instruction; with no selection it is asked for via vim.ui.input.
 function M.eval(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -192,6 +197,10 @@ function M.eval(opts)
 
   if opts.instruction and opts.instruction ~= "" then
     run(opts.instruction)
+  elseif replace then
+    -- A selection with no instruction: read the selection and transform it
+    -- with a default, so a visual-mode :YapEval does not prompt.
+    run(DEFAULT_INSTRUCTION)
   else
     vim.ui.input({ prompt = "yap eval: " }, function(input)
       if input and input ~= "" then

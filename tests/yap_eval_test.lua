@@ -54,6 +54,21 @@ assert(ok, "plain eval did not complete")
 lines = vim.api.nvim_buf_get_lines(plain, 0, -1, false)
 assert(#lines == 1 and lines[1] == "summarized output", "plain eval added a heading or wrong body: " .. vim.inspect(lines))
 
+-- Selection with no instruction: the selection itself is the input, so it
+-- applies a default transform instead of prompting (visual-mode :YapEval).
+local implied = vim.api.nvim_create_buf(true, false)
+vim.bo[implied].filetype = "go"
+vim.api.nvim_buf_set_lines(implied, 0, -1, false, {
+  "func add(a, b int) int {", "  return a + b", "}",
+})
+yap.eval({ buf = implied, line1 = 1, line2 = 3 })
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(implied, 0, -1, false), "\n"):find("summarized output") ~= nil
+end, 100)
+assert(ok, "no-instruction eval did not complete")
+lines = vim.api.nvim_buf_get_lines(implied, 0, -1, false)
+assert(#lines == 1 and lines[1] == "summarized output", "no-instruction eval wrong body: " .. vim.inspect(lines))
+
 -- Generate mode: no line range — the output is inserted at the cursor as new
 -- lines (the "generate content into a fresh buffer" path).
 local gen = vim.api.nvim_create_buf(true, false)
