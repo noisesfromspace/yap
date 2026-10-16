@@ -281,6 +281,11 @@ function M.scratch_toggle(buf)
         harness().live(buf)
       end, { buffer = scratch, silent = true, desc = "yap: toggle live tool output" })
     end
+    if cfg.keymaps.guard ~= "" then
+      vim.keymap.set("n", cfg.keymaps.guard, function()
+        require("harness.guard").toggle()
+      end, { buffer = scratch, silent = true, desc = "yap: guard board" })
+    end
     if cfg.keymaps.insert_file ~= "" then
       vim.keymap.set("n", cfg.keymaps.insert_file, function()
         harness().insert_file()

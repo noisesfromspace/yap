@@ -60,49 +60,88 @@ function M.half_screen()
   return math.max(1, math.floor(vim.o.lines / 2))
 end
 
+--- Close every window showing `bufnr`, restoring focus to the window the
+--- drawer was toggled from (its stored anchor). Returns true when a window
+--- was closed.
+local function close_windows(bufnr)
+  local closed = false
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    if vim.api.nvim_win_is_valid(win) then
+      close_win(win)
+      closed = true
+    end
+  end
+  local anchor = drawer_anchor[bufnr]
+  if anchor and vim.api.nvim_win_is_valid(anchor) then
+    vim.api.nvim_set_current_win(anchor)
+  end
+  drawer_anchor[bufnr] = nil
+  return closed
+end
+
+--- First window in `tab` showing `buf`, or nil. Restricts the search to one
+--- tabpage so the guard board and live tail stay stacked in the same tab even
+--- when the same (global) buffer is shown elsewhere.
+function M.win_in_tab(buf, tab)
+  if not buf then
+    return nil
+  end
+  tab = tab or vim.api.nvim_get_current_tabpage()
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_tabpage(win) == tab then
+      return win
+    end
+  end
+  return nil
+end
+
+--- The window a drawer splits under by default: the current window when it
+--- shows `owner` (stay where the user toggled from), else the first window
+--- showing `owner`, else nil (split the current window).
+function M.owner_window(owner)
+  local wins = vim.fn.win_findbuf(owner)
+  local cur = vim.api.nvim_get_current_win()
+  if vim.tbl_contains(wins, cur) then
+    return cur
+  elseif #wins > 0 and vim.api.nvim_win_is_valid(wins[1]) then
+    return wins[1]
+  end
+  return nil
+end
+
 --- Open or close a fixed-height drawer below the session window. Anchoring the
 --- split to a window showing `owner` keeps the drawer in the session's own
 --- column when the session shares a vertical split — splitting the anchor
---- window means the drawer never spans the whole tab. Returns true when the
---- drawer was opened, false when it was closed.
+--- window means the drawer never spans the whole tab. Returns the new window
+--- when opened, nil when closed.
 function M.toggle(owner, bufnr, height, opts)
-  opts = opts or {}
-  local wins = vim.fn.win_findbuf(bufnr)
-  if #wins > 0 then
-    for _, win in ipairs(wins) do
-      if vim.api.nvim_win_is_valid(win) then
-        close_win(win)
-      end
-    end
-    local anchor = drawer_anchor[bufnr]
-    if anchor and vim.api.nvim_win_is_valid(anchor) then
-      vim.api.nvim_set_current_win(anchor)
-    end
-    drawer_anchor[bufnr] = nil
-    return false
-  end
+  return M.open_at(bufnr, height, opts, "below", M.owner_window(owner))
+end
 
-  local owner_wins = vim.fn.win_findbuf(owner)
-  local cur = vim.api.nvim_get_current_win()
-  local anchor
-  if vim.tbl_contains(owner_wins, cur) then
-    anchor = cur -- stay where the user toggled from
-  elseif #owner_wins > 0 and vim.api.nvim_win_is_valid(owner_wins[1]) then
-    anchor = owner_wins[1]
+--- Open `bufnr` as a drawer at an explicit anchor, or close it when already
+--- visible (toggle). `split` is "below" (default) or "above"; `anchor` is the
+--- window to split. The guard board passes the live tail's window to stack
+--- above it; the live tail passes the guard window to stack below it — both
+--- sides of the one canonical session → guard → log column.
+function M.open_at(bufnr, height, opts, split, anchor)
+  opts = opts or {}
+  split = split or "below"
+  if close_windows(bufnr) then
+    return nil
   end
 
   -- nvim_open_win with an explicit split/win is deterministic: it splits the
   -- anchor window itself (no :belowright + current-window dance) and no
   -- autocommands can reshuffle the fresh layout mid-open.
   local win = vim.api.nvim_open_win(bufnr, true, {
-    split = "below",
+    split = split,
     win = anchor or 0,
     height = height,
     noautocmd = true,
   })
   M.style(win, opts)
   drawer_anchor[bufnr] = anchor
-  return true
+  return win
 end
 
 --- Close every window showing `buf`, keeping the drawer buffer itself so it

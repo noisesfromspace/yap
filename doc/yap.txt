@@ -234,6 +234,12 @@ and <leader>M, which are global. Every binding is a `keymaps` config key
   <leader>M             Change the default model for new buffers (picker).
   <leader>g             Open/close the guard board (see |:YapGuard|).
   <leader>l             Watch the live tool tail (see |:YapLive|).
+
+Inside the guard board, <leader>l opens the live tail directly below it;
+inside the live tail, <leader>g opens the guard board directly above it.
+Both bindings are present in every yap panel (session, guard, live tail and
+scratch), so the two stay stacked in the fixed session → guard → log order
+regardless of which one you open first.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor.

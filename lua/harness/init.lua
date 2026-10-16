@@ -642,22 +642,59 @@ local function close_session_drawers(buf, scratch, audit_buf)
   end
 end
 
---- Open the session's live tool tail (:YapLive): one persistent read-only
---- buffer that follows the running tool's output. Opens even before any tool
---- has run (an empty tail that fills as tools execute).
-function M.live(buf)
-  buf = buf or vim.api.nvim_get_current_buf()
+--- The session buffer a yap panel belongs to: a session buffer itself, the
+--- live tail's owning session, or the scratch/guard board's recorded
+--- `yap_owner`. Returns nil for a buffer that is not part of any session.
+function M.session_of(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+  if vim.b[buf].yap then
+    return buf
+  end
   for owner, t in pairs(audit.views()) do
     if t.bufnr == buf then
-      drawer.toggle(owner, buf, drawer.half_screen())
-      return
+      return owner
     end
   end
-  local t = audit.ensure(buf)
-  if not drawer.toggle(buf, t.bufnr, drawer.half_screen()) then
+  local owner = vim.b[buf].yap_owner
+  if owner and vim.api.nvim_buf_is_valid(owner) and vim.b[owner].yap then
+    return owner
+  end
+  return nil
+end
+
+--- The session's live tail buffer, or nil before it has been created (used to
+--- detect whether the tail is on screen without forcing it into existence).
+function M.tail_buffer(buf)
+  local t = audit.view(buf)
+  return t and t.bufnr or nil
+end
+
+--- Open the session's live tool tail (:YapLive): one persistent read-only
+--- buffer that follows the running tool's output. Opens even before any tool
+--- has run (an empty tail that fills as tools execute). The tail stacks below
+--- the guard board when it is open in this tab, else below the session window
+--- — the canonical session → guard → log column.
+function M.live(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local owner = M.session_of(buf)
+  if not owner then
+    vim.notify("yap: live tool tail needs a yap session", vim.log.levels.WARN)
     return
   end
-  audit.refresh(buf) -- a rule drawn while hidden may not match this window's width
+
+  local t = audit.ensure(owner)
+  local anchor = drawer.win_in_tab(guard.buf(), vim.api.nvim_get_current_tabpage())
+  local split = "below"
+  if not anchor then
+    anchor = drawer.owner_window(owner)
+  end
+
+  if not drawer.open_at(t.bufnr, drawer.half_screen(), nil, split, anchor) then
+    return
+  end
+  audit.refresh(owner) -- a rule drawn while hidden may not match this window's width
   if M.config.keymaps.live ~= "" then
     vim.keymap.set("n", M.config.keymaps.live, function()
       M.live(t.bufnr)
@@ -666,6 +703,11 @@ function M.live(buf)
   vim.keymap.set("n", "q", function()
     M.live(t.bufnr)
   end, { buffer = t.bufnr, silent = true, desc = "yap: close live view" })
+  if M.config.keymaps.guard ~= "" then
+    vim.keymap.set("n", M.config.keymaps.guard, function()
+      guard.toggle()
+    end, { buffer = t.bufnr, silent = true, desc = "yap: guard board" })
+  end
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 

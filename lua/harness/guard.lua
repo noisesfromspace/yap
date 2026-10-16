@@ -69,6 +69,15 @@ local function ensure_board()
   return board_buf
 end
 
+--- The board buffer, or nil before it is created (used to detect whether the
+--- board is on screen without forcing it into existence).
+function M.buf()
+  if board_buf and vim.api.nvim_buf_is_valid(board_buf) then
+    return board_buf
+  end
+  return nil
+end
+
 local flat = view.flat
 
 --- Decode a tool-call argument JSON into the primary target, raw (newlines
@@ -509,7 +518,9 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  add("a auto-accept · r/x run·deny · i inspect · c clear · za expand · [c/]c section · q close", HL.hint)
+  local live_key = harness().config.keymaps.live
+  local live_hint = live_key ~= "" and (" · " .. live_key .. " log") or ""
+  add("a auto-accept · r/x run·deny · i inspect · c clear · za expand · [c/]c section" .. live_hint .. " · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -594,9 +605,20 @@ local function jump_section(dir)
 end
 
 local function install_keymaps(buf)
+  local cfg = harness().config
   vim.keymap.set("n", "q", function()
     M.toggle()
   end, { buffer = buf, silent = true, desc = "yap: close guard board" })
+  if cfg.keymaps.live ~= "" then
+    vim.keymap.set("n", cfg.keymaps.live, function()
+      harness().live()
+    end, { buffer = buf, silent = true, desc = "yap: toggle live tool output" })
+  end
+  if cfg.keymaps.guard ~= "" then
+    vim.keymap.set("n", cfg.keymaps.guard, function()
+      M.toggle()
+    end, { buffer = buf, silent = true, desc = "yap: guard board" })
+  end
   local function toggle_row()
     local line = vim.api.nvim_win_get_cursor(0)[1]
     local row = row_at(buf, line)
@@ -649,11 +671,30 @@ local function install_keymaps(buf)
 end
 
 --- Open (or focus) the board, or close it when already open. The board is a
---- global bottom drawer anchored to the window it was toggled from, so it
---- opens under the session (not beside it) and closing returns the cursor.
+--- global bottom drawer anchored to the session it was toggled from, stacked
+--- above that session's live tail when it is open (the canonical session →
+--- guard → log order), otherwise directly below the session window. Closing
+--- returns the cursor to the window it was toggled from.
 function M.toggle()
   local buf = ensure_board()
-  if not drawer.toggle(vim.api.nvim_get_current_buf(), buf, drawer.half_screen()) then
+  local cur = vim.api.nvim_get_current_buf()
+
+  local owner = harness().session_of(cur)
+  local split, anchor
+  if owner then
+    vim.b[buf].yap_owner = owner
+    local tail = harness().tail_buffer(owner)
+    local log_win = drawer.win_in_tab(tail, vim.api.nvim_get_current_tabpage())
+    if log_win then
+      split, anchor = "above", log_win
+    else
+      split, anchor = "below", drawer.owner_window(owner)
+    end
+  else
+    split, anchor = "below", vim.api.nvim_get_current_win()
+  end
+
+  if not drawer.open_at(buf, drawer.half_screen(), nil, split, anchor) then
     return
   end
   local result = render()
