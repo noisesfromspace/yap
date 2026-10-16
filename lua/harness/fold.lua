@@ -310,11 +310,17 @@ function M.set_view_level(level)
   apply(buf, win, w, intended(identify(buf, s, parse(buf)), level))
 end
 
-local function act(lnum, action)
+--- Apply an open/close choice to the fold containing `lnum`, using the
+--- already-reconciled projection. Runs no `:normal` (only `:foldopen`/
+--- `:foldclose`), so it is safe inside an expr map — the mouse handler relies
+--- on this. Returns true when a matching fold was changed.
+local function choose(lnum, action)
   local buf, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
-  M.reconcile(buf)
   local s = sessions[buf]
-  local w = window(s, win)
+  local w = s and s.windows[win]
+  if not (w and s.folds) then
+    return false
+  end
   for _, b in ipairs(intended(s.folds, w.view)) do
     if lnum >= b.start and lnum <= b.finish then
       local open = action == "open" or action == "toggle" and vim.fn.foldclosed(b.start) ~= -1
@@ -322,9 +328,16 @@ local function act(lnum, action)
       local saved = vim.fn.winsaveview()
       vim.cmd(("%dfold%s"):format(b.start, open and "open" or "close"))
       vim.fn.winrestview(saved)
-      return
+      return true
     end
   end
+  return false
+end
+
+local function act(lnum, action)
+  local buf = vim.api.nvim_get_current_buf()
+  M.reconcile(buf)
+  choose(lnum, action)
 end
 
 function M.open(lnum)
@@ -340,9 +353,10 @@ end
 --- open lines; returning "" consumes the click after opening a closed fold
 --- in place. The open path must not run `:normal` (forbidden inside an expr
 --- map), so it relies on the buffer already being reconciled — which it is
---- between stream flushes and the scheduled edit reconcile. Clicks in a
---- background split open the fold there without stealing focus (no WinEnter),
---- matching the winbar switch's window handling.
+--- between stream flushes and the scheduled edit reconcile — and applies the
+--- open directly from the reconciled projection. Clicks in a background split
+--- open the fold there without stealing focus (no WinEnter), matching the
+--- winbar switch's window handling.
 function M.mouse_left()
   local pos = vim.fn.getmousepos()
   local win = pos.winid
@@ -356,7 +370,7 @@ function M.mouse_left()
     return "<LeftMouse>"
   end
   vim.api.nvim_win_call(win, function()
-    M.open(pos.line)
+    choose(pos.line, "open")
     vim.api.nvim_win_set_cursor(win, { pos.line, 0 })
   end)
   return ""

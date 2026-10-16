@@ -58,9 +58,16 @@ vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "# @user", "", "next", "" })
 fold.after_append(buf, { "# @user", "" })
 assert(vim.fn.foldclosed(think) == -1, "append lost the click-opened pin")
 
--- The other fold opens independently, and a further click on open text defers.
+-- The other fold opens independently. The mouse path must NOT reconcile:
+-- reconcile runs `:normal zE`, which is forbidden inside an expr map (E523),
+-- so the click must open from the already-reconciled projection.
+local real_reconcile = fold.reconcile
+fold.reconcile = function()
+  error("mouse open must not reconcile")
+end
 assert(click(tool) == "", "second fold click should open")
 assert(vim.fn.foldclosed(tool) == -1, "click did not open the tool fold")
+fold.reconcile = real_reconcile
 assert(click(4) == "<LeftMouse>", "open-content click should defer")
 
 vim.fn.getmousepos = real_getmousepos
