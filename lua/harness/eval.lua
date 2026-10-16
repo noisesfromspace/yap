@@ -3,10 +3,14 @@
 -- text replaces the selection in place (`!`-semantics, but asynchronous and
 -- undoable like any other buffer edit).
 --
--- In a yap session buffer the replacement is wrapped as a single
--- `# @assistant` message, so a selection of turns collapses to a summary;
--- in any other buffer it is plain text, so the same command refactors a
--- function without leaving a stray heading behind.
+-- With a linewise range (a visual selection or an explicit `:1,5`):
+--   - In a yap session buffer the replacement is wrapped as a single
+--     `# @assistant` message, so a selection of turns collapses to a summary.
+--   - In any other buffer it is plain text, so the same command refactors a
+--     function without leaving a stray heading behind.
+--
+-- With no range, the model's output is inserted at the cursor as new lines —
+-- "generate three fake addresses" fills a fresh, empty (No Name) buffer.
 
 local M = {}
 
@@ -14,7 +18,7 @@ local function config()
   return require("harness").config
 end
 
-local EVAL_SYSTEM = [[You transform the provided text exactly as instructed and return ONLY the replacement text. Do not add any explanation, preamble, sign-off, Markdown code fence, or message heading.]]
+local EVAL_SYSTEM = [[You follow the instruction exactly and return ONLY the result: the replacement text when transforming the provided text, the new content when generating. Do not add any explanation, preamble, sign-off, Markdown code fence, or message heading.]]
 
 --- Strip `<!-- yap:* -->` marker regions (thinking/model/error) from a
 --- one-shot `yap send` response, preserving any other HTML in the answer.
@@ -39,7 +43,8 @@ function M.strip_markers(text)
 end
 
 --- The provider/model combo for an eval: the dedicated `eval_model` when
---- configured, else the buffer's current combo.
+--- configured, else the buffer's current combo (a session's model, or the
+--- setup() default for a plain buffer).
 function M.combo(buf)
   local cfg = config()
   local provider, model = require("harness.config").parse_combo(cfg.eval_model or "")
@@ -69,20 +74,31 @@ function M.build_user(buf, instruction, selected)
   return table.concat(parts, "\n\n")
 end
 
+--- Decode a completed `yap send` result into body lines, or nil after
+--- surfacing the failure (error / empty output). Marker stripping and
+--- trimming are shared by both the replace and insert paths.
+function M.decode(result)
+  if result.code ~= 0 then
+    vim.notify("yap eval: " .. ((result.stderr or ""):gsub("%s+$", "")), vim.log.levels.ERROR)
+    return nil
+  end
+  local text = M.strip_markers(result.stdout or "")
+  text = text:gsub("^\n+", ""):gsub("\n+$", "")
+  if text == "" then
+    vim.notify("yap eval: the model returned no output", vim.log.levels.WARN)
+    return nil
+  end
+  return vim.split(text, "\n", { plain = true })
+end
+
 --- Replace the selection with the completed response, guarding against the
 --- selection having changed while the eval was in flight.
 function M.finish(buf, line1, line2, sent, result)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  if result.code ~= 0 then
-    vim.notify("yap eval: " .. ((result.stderr or ""):gsub("%s+$", "")), vim.log.levels.ERROR)
-    return
-  end
-  local text = M.strip_markers(result.stdout or "")
-  text = text:gsub("^\n+", ""):gsub("\n+$", "")
-  if text == "" then
-    vim.notify("yap eval: the model returned no output", vim.log.levels.WARN)
+  local body = M.decode(result)
+  if not body then
     return
   end
   local now = vim.api.nvim_buf_get_lines(buf, line1 - 1, line2, false)
@@ -90,7 +106,6 @@ function M.finish(buf, line1, line2, sent, result)
     vim.notify("yap eval: selection changed while it ran; result not applied", vim.log.levels.WARN)
     return
   end
-  local body = vim.split(text, "\n", { plain = true })
   local replacement
   if vim.b[buf].yap then
     replacement = { "# @assistant", "" }
@@ -102,8 +117,21 @@ function M.finish(buf, line1, line2, sent, result)
   vim.api.nvim_buf_set_lines(buf, line1 - 1, line2, false, replacement)
 end
 
+--- Insert the completed response as new lines before `row` (0-based).
+function M.insert(buf, row, result)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local body = M.decode(result)
+  if not body then
+    return
+  end
+  vim.api.nvim_buf_set_lines(buf, row, row, false, body)
+end
+
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
 --- current buffer): replace them with the model's output for `instruction`.
+--- With no line range, generate instead: insert the output at the cursor.
 --- When `instruction` is empty or omitted, ask for it with vim.ui.input.
 function M.eval(opts)
   opts = opts or {}
@@ -111,16 +139,26 @@ function M.eval(opts)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local line1, line2 = opts.line1, opts.line2
-  if not line1 or not line2 then
-    vim.notify("yap eval: needs a line range (select lines first)", vim.log.levels.WARN)
-    return
+
+  local replace = opts.line1 and opts.line2
+  local line1, line2, sent, insert_row
+  if replace then
+    line1, line2 = opts.line1, opts.line2
+    if line1 > line2 then
+      line1, line2 = line2, line1
+    end
+    sent = vim.api.nvim_buf_get_lines(buf, line1 - 1, line2, false)
+  else
+    -- Insert at the cursor line when the window shows this buffer, else
+    -- append at the end (a plain Lua call against a background buffer).
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_get_buf(win) == buf then
+      insert_row = vim.api.nvim_win_get_cursor(win)[1] - 1
+    else
+      insert_row = vim.api.nvim_buf_line_count(buf)
+    end
   end
-  if line1 > line2 then
-    line1, line2 = line2, line1
-  end
-  local sent = vim.api.nvim_buf_get_lines(buf, line1 - 1, line2, false)
-  local selected = table.concat(sent, "\n")
+  local selected = replace and table.concat(sent, "\n") or ""
 
   local function run(instruction)
     if instruction == "" then
@@ -138,11 +176,16 @@ function M.eval(opts)
       },
       tools = {},
     }) .. "\n"
+    vim.notify("running…", vim.log.levels.INFO, { title = "yap eval" })
     vim.system(
       { config().bin, "send", "--provider", provider, "--model", model },
       { stdin = payload, text = true },
       vim.schedule_wrap(function(result)
-        M.finish(buf, line1, line2, sent, result)
+        if replace then
+          M.finish(buf, line1, line2, sent, result)
+        else
+          M.insert(buf, insert_row, result)
+        end
       end)
     )
   end

@@ -74,9 +74,11 @@ M.defaults = {
   -- story so the session is easy to find in the picker later.
   description_answer_model = "openai/gpt-5-mini",
   -- One-shot, no-tools model behind :YapEval — the filter that replaces a
-  -- visual selection with the model's output. A dedicated cheap combo like
-  -- the description models; "" falls back to the buffer's current combo.
-  eval_model = "openai/gpt-5-mini",
+  -- selection (or generates at the cursor) with the model's output. Empty
+  -- inherits the buffer's current combo (a session's model, or the setup()
+  -- default for a plain buffer); set a dedicated cheap combo like the
+  -- description models to override it.
+  eval_model = "",
   -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
   -- to disable it. Buffer-local maps are applied when a session opens;
   -- `sessions` and `waiting` are global (installed by setup()).

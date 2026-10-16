@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 package.loaded.harness = nil
 local yap = require("harness")
+assert(yap.config.eval_model == "", "eval_model should default to inherit (empty)")
 yap.setup({
   bin = ROOT .. "/yap",
   eval_model = "mock/m1",
@@ -52,6 +53,23 @@ end, 100)
 assert(ok, "plain eval did not complete")
 lines = vim.api.nvim_buf_get_lines(plain, 0, -1, false)
 assert(#lines == 1 and lines[1] == "summarized output", "plain eval added a heading or wrong body: " .. vim.inspect(lines))
+
+-- Generate mode: no line range — the output is inserted at the cursor as new
+-- lines (the "generate content into a fresh buffer" path).
+local gen = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_set_current_buf(gen)
+vim.api.nvim_buf_set_lines(gen, 0, -1, false, { "before", "after" })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+yap.eval({ buf = gen, instruction = "generate three addresses" })
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(gen, 0, -1, false), "\n"):find("summarized output") ~= nil
+end, 100)
+assert(ok, "generate eval did not complete")
+lines = vim.api.nvim_buf_get_lines(gen, 0, -1, false)
+assert(#lines == 3, "generate eval wrong length: " .. vim.inspect(lines))
+assert(lines[1] == "before", "generate eval clobbered earlier line: " .. vim.inspect(lines))
+assert(lines[2] == "summarized output", "generate eval did not insert at cursor: " .. vim.inspect(lines))
+assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")

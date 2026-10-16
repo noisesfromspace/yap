@@ -234,7 +234,7 @@ and saved to the sidecar. The three sections fold independently. Why: pending
 work is retractable, and the visible buffer — not a stale disk snapshot — is
 the control surface.
 
-#### R-eval — A visual selection can be replaced by a one-shot, no-tools model call
+#### R-eval — A selection can be replaced (or content generated) by a one-shot, no-tools model call
 
 `:YapEval` sends the selected lines to `eval_model` through the one-shot
 `yap send` path (`tools: []`, so the model cannot call tools or touch other
@@ -245,9 +245,11 @@ the replacement is wrapped as a single `# @assistant` message (so a selection
 of turns collapses to a summary, like compaction scoped to a range); in any
 other buffer it is plain text (refactor a function in place). The replacement
 is an ordinary, undoable buffer edit, applied only when the selected lines are
-unchanged since the call started. Why: an eval is a stateless filter
-(`!`-semantics), not a conversation, so it must not accumulate tool state or
-history.
+unchanged since the call started. With no range, the output is inserted at the
+cursor as new lines instead (generate content into a fresh buffer); `eval_model`
+defaults to `""`, which inherits the buffer's current combo. Why: an eval is a
+stateless filter (`!`-semantics), not a conversation, so it must not accumulate
+tool state or history.
 
 ### Backend and wire protocol
 
