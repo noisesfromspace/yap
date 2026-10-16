@@ -59,6 +59,7 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     notify_done = true,           -- vim.notify when a hidden turn finishes
     description_model = "openai/gpt-5-nano",       -- on-send label
     description_answer_model = "openai/gpt-5-mini", -- final session title
+    eval_model = "openai/gpt-5-mini",              -- :YapEval model
     syntax_highlight = true,      -- keep markdown syntax colors
     nerd_font = true,             -- false for plain-Unicode icons
     icons = { since = "󰅐", total = "󰆼" }, -- winbar/picker glyph overrides
@@ -96,6 +97,9 @@ first request as soon as you send, so the picker has a title before the agent
 answers. `description_answer_model` (default `openai/gpt-5-mini`) writes an
 overall title after each completed turn. Set either to `""` to disable that
 stage. A `title:` you type in the frontmatter wins over both.
+
+`eval_model` (default `openai/gpt-5-mini`) is the one-shot, no-tools model
+behind |:YapEval|. Set it to `""` to reuse the current buffer's combo instead.
 
 `reasoning_level` (`low`/`medium`/`high`) is seeded into every new
 session's frontmatter so it is visible and hand-editable from the first
@@ -199,6 +203,17 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         built-in prompt), send, and — once the summary has
                         streamed in — offer to delete the superseded history
                         (|yap-compact|).
+*:YapEval*
+:YapEval [instruction]
+                        Replace the selected lines with the model's output: a
+                        one-shot, no-tools call to `eval_model`. Acts on a
+                        linewise range (a visual selection via `:'<,'>` or an
+                        explicit `:1,5`); with no instruction it prompts for
+                        one. In a yap buffer the replacement is wrapped as a
+                        single `# @assistant` message (select a run of turns
+                        to summarize them); in any other buffer it is plain
+                        text (refactor a function in place). No default
+                        keymap.
 *:YapInsert*
 :YapInsert [name]     Insert a template or skill (|yap-templates|). With no
                         argument, pick from a combined list. At the cursor,
@@ -243,8 +258,8 @@ regardless of which one you open first.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
   <leader>T             Insert a template or skill at the cursor.
-  <leader>i (n)         Pick a file under the current |:pwd| and insert an
-                        `@path` reference at the cursor.
+  <C-f> (i)             Pick a file under the current |:pwd| and insert an
+                        `@path` reference at the cursor (resumes insert mode).
   <leader>r             Pick an open session.
   <leader>w             Pick a session awaiting a reply or manually stopped.
   <leader>y             Pick a saved session to resume.
@@ -257,6 +272,8 @@ regardless of which one you open first.
   ]t  [t                Next / previous tool call or thinking region (opens it).
   ]c  [c                Next / previous thinking region (opens it).
   ]e  [e                Next / previous error region (opens it).
+  ]]  [[		Next # heading (default Neovim markdown behavior)
+
   <leader>1             Fold all agent messages; user prompts stay open.
   <leader>2             Fold all tool calls and thinking regions.
   <leader>3             Unfold everything.

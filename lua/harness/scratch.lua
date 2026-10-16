@@ -287,8 +287,8 @@ function M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: guard board" })
     end
     if cfg.keymaps.insert_file ~= "" then
-      vim.keymap.set("n", cfg.keymaps.insert_file, function()
-        harness().insert_file()
+      vim.keymap.set("i", cfg.keymaps.insert_file, function()
+        harness().insert_file({ from_insert = true })
       end, { buffer = scratch, silent = true, desc = "yap: insert file reference" })
     end
     if cfg.keymaps.send ~= "" then

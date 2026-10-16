@@ -215,8 +215,14 @@ end
 function M.template_names()
   return template.template_names()
 end
-function M.insert_file()
-  return template.insert_file()
+function M.insert_file(opts)
+  return template.insert_file(opts)
+end
+
+--- Evaluate a visual selection through the model (one-shot, no tools): the
+--- selected lines are replaced by the model's output. See |:YapEval|.
+function M.eval(opts)
+  return require("harness.eval").eval(opts)
 end
 
 function M.is_running(buf)
@@ -1438,8 +1444,8 @@ local function setup_buffer(buf)
     vim.cmd.stopinsert()
     M.insert()
   end, "yap: insert template or skill")
-  map("n", keys.insert_file, function()
-    M.insert_file()
+  map("i", keys.insert_file, function()
+    M.insert_file({ from_insert = true })
   end, "yap: insert file reference")
   map("n", keys.insert_here, function()
     M.insert(nil, { at_cursor = true })

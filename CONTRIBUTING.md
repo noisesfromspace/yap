@@ -234,6 +234,21 @@ and saved to the sidecar. The three sections fold independently. Why: pending
 work is retractable, and the visible buffer — not a stale disk snapshot — is
 the control surface.
 
+#### R-eval — A visual selection can be replaced by a one-shot, no-tools model call
+
+`:YapEval` sends the selected lines to `eval_model` through the one-shot
+`yap send` path (`tools: []`, so the model cannot call tools or touch other
+files) and replaces the selection with the response. It never runs the agent
+loop, the alert gate, or a serve process. `<!-- yap:* -->` markers and the
+binary's framing newlines are stripped from the response. In a session buffer
+the replacement is wrapped as a single `# @assistant` message (so a selection
+of turns collapses to a summary, like compaction scoped to a range); in any
+other buffer it is plain text (refactor a function in place). The replacement
+is an ordinary, undoable buffer edit, applied only when the selected lines are
+unchanged since the call started. Why: an eval is a stateless filter
+(`!`-semantics), not a conversation, so it must not accumulate tool state or
+history.
+
 ### Backend and wire protocol
 
 #### R-plain-text-only — The binary emits plain text and yap markers only

@@ -391,14 +391,24 @@ local function file_items(cwd)
   return items
 end
 
---- Pick a file under the current :pwd and insert an @path reference at the cursor.
-function M.insert_file()
+--- Pick a file under the current :pwd and insert an @path reference at the
+--- cursor. From insert mode (`opts.from_insert`, or detected) it resumes
+--- insert mode after the picker closes, with the cursor past the reference.
+function M.insert_file(opts)
+  opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
   if not (vim.b[buf].yap or vim.b[buf].yap_owner) then
     return
   end
+  local from_insert = opts.from_insert or vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
   local win = vim.api.nvim_get_current_win()
+  -- Capture the cursor before leaving insert mode: an insert-mode cursor
+  -- points at the insertion point (one past the last typed char), which is
+  -- the byte offset the reference belongs at.
   local cursor = vim.api.nvim_win_get_cursor(win)
+  if from_insert then
+    vim.cmd.stopinsert()
+  end
   local cwd = vim.fn.getcwd()
 
   local function insert(path)
@@ -409,9 +419,24 @@ function M.insert_file()
     relative = relative:gsub("\\\\", "/")
     local reference = relative:find("%s") and ('@"' .. relative .. '"') or ("@" .. relative)
     local text = reference .. " "
+    local col = cursor[2]
+    if from_insert then
+      col = col + #text
+    end
     vim.api.nvim_buf_set_text(buf, cursor[1] - 1, cursor[2], cursor[1] - 1, cursor[2], { text })
-    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
-      vim.api.nvim_win_set_cursor(win, { cursor[1], cursor[2] })
+    local function place()
+      if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+        vim.api.nvim_win_set_cursor(win, { cursor[1], col })
+      end
+    end
+    place()
+    if from_insert then
+      vim.schedule(function()
+        place()
+        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+          vim.cmd("startinsert")
+        end
+      end)
     end
   end
 

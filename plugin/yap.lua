@@ -36,6 +36,14 @@ end, {
   desc = "Summarize the conversation into a compact context: insert the compact prompt, send, then offer to delete the superseded history",
 })
 
+vim.api.nvim_create_user_command("YapEval", function(cmd)
+  require("harness").eval({ line1 = cmd.line1, line2 = cmd.line2, instruction = cmd.args })
+end, {
+  range = true,
+  nargs = "?",
+  desc = "Replace the selected lines with the model's output (one-shot, no tools)",
+})
+
 vim.api.nvim_create_user_command("YapInsert", function(cmd)
   require("harness").insert(cmd.fargs[1], {})
 end, {
