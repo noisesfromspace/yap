@@ -7,6 +7,7 @@ local M = {}
 local frontmatter = require("harness.frontmatter")
 local document = require("harness.document")
 local config = require("harness.config")
+local view = require("harness.view")
 
 local function harness()
   return require("harness")
@@ -34,7 +35,7 @@ local function title_messages(messages)
 
   local latest = user_indices[#user_indices]
   local earlier_user = #user_indices > 1
-  local text = messages[latest].content:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  local text = view.collapse(messages[latest].content)
   local lower = text:lower()
   local replacement
   local housekeeping_only = false
@@ -159,12 +160,8 @@ Return only the title.]]
       if result.code ~= 0 then
         return
       end
-      local description = (result.stdout or "")
-        :gsub("<!%-%-.-%-%->", "")
-        :gsub("%s+", " ")
-        :gsub("^%s+", "")
-        :gsub("%s+$", "")
-        :gsub(":%s+", " – ")
+      local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", "")
+      description = view.collapse(description):gsub(":%s+", " – ")
       if description == "" or description:find("`", 1, true) then
         return
       end

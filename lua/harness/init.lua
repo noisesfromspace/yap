@@ -14,6 +14,8 @@ local M = {}
 
 local paths = require("harness.path")
 local config = require("harness.config")
+local picker = require("harness.picker")
+local view = require("harness.view")
 
 M.config = config.defaults
 
@@ -1659,10 +1661,8 @@ live_session_label = function(buf, parent)
   local role = fm and fm.agent or vim.b[buf].yap_agent
   if role then
     local task = session.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
-    local fallback = (vim.b[buf].yap_subagent_task or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    label = role
-      .. " · "
-      .. ((fm and fm.title ~= "" and fm.title) or (fm and fm.description ~= "" and fm.description) or task or (fallback ~= "" and fallback) or label)
+    local fallback = view.collapse(vim.b[buf].yap_subagent_task or "")
+    label = session.agent_label(role, fm and fm.title, fm and fm.description, task, fallback, label)
   end
   if role and parent then
     return "↳ " .. label
@@ -1677,48 +1677,16 @@ live_session_label = function(buf, parent)
 end
 M.session_label = live_session_label
 
---- Plain state token for a buffer: the key |M.instances| filters on, and
---- the word behind each picker status glyph.
-local function session_state(buf)
-  if running and running[buf] then
-    return "running"
-  elseif errors[buf] then
-    return "error"
-  elseif stopped[buf] then
-    return "stopped"
-  elseif awaiting[buf] then
-    -- A finished subagent has already reported its answer back to the
-    -- parent; it is done, not waiting for a reply.
-    if vim.b[buf].yap_agent then
-      return "done"
-    end
-    return "waiting"
-  end
-  return "idle"
-end
-
---- State glyph for the session picker, mirroring the winbar state chips.
---- The picker is static, so a fixed glyph stands in for the winbar's
---- animated spinner; the state word is omitted because the icon conveys it.
-local function session_status(buf)
-  local ic = M.config.icons
-  if pending_approvals[buf] then
-    return ic.approval
-  end
-  local glyph = { running = ic.running, stopped = ic.stopped, error = ic.error, waiting = ic.waiting, done = ic.done, idle = ic.idle }
-  return glyph[session_state(buf)]
-end
-
 --- Find an open buffer for a saved session and return its live picker status.
 local function saved_session_status(path)
   local normalized = vim.fs.normalize(path)
   -- An open history row has a state icon, even when idle; closed rows have
-  -- a blank status column so their titles still align.
+  -- no status column, so they sit flush against the picker's left edge.
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[buf].yap then
       local name = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
       if name ~= "" and vim.fs.normalize(name) == normalized then
-        return session_status(buf)
+        return picker.status(buf)
       end
     end
   end
@@ -1738,7 +1706,7 @@ end
 --- Sort waiting sessions last; their dedicated <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)
-  local s = session_state(buf)
+  local s = picker.state(buf)
   if s == "error" then
     return 1
   elseif s == "running" then
@@ -1828,13 +1796,13 @@ function M.instances(state)
       (b ~= current or include_current)
       and vim.b[b].yap
       and (not needs_you or not is_subagent or child_needs_you)
-      and (states == nil or states[session_state(b)] or (needs_you and (child_needs_you or attention_child[b])))
+      and (states == nil or states[picker.state(b)] or (needs_you and (child_needs_you or attention_child[b])))
     then
       items[#items + 1] = {
         buf = b,
         text = live_session_label(b, parent ~= nil),
         path = parent and "" or vim.b[b].yap_project_cwd,
-        state = session_state(b),
+        state = picker.state(b),
         approval = pending_approvals[b] ~= nil,
         model = vim.b[b].yap_model,
         child = is_subagent or (fm and fm.forked_from),
@@ -1847,7 +1815,7 @@ function M.instances(state)
   if #items == 0 then
     if needs_you then
       local message = "yap: no conversations need a reply"
-      if vim.b[current].yap and states[session_state(current)] then
+      if vim.b[current].yap and states[picker.state(current)] then
         message = "yap: this conversation is already open and waiting for your reply"
       end
       vim.notify(message, vim.log.levels.INFO)
@@ -1905,27 +1873,14 @@ function M.instances(state)
     projects[vim.b[item.buf].yap_project_cwd or ""] = true
   end
   local multiple_projects = vim.tbl_count(projects) > 1
-  local glyph = {
-    running = M.config.icons.running,
-    stopped = M.config.icons.stopped,
-    error = M.config.icons.error,
-    waiting = M.config.icons.waiting,
-    done = M.config.icons.done,
-    idle = M.config.icons.idle,
-    approval = M.config.icons.approval,
-  }
-  local icon_width = 0
-  for _, icon in pairs(glyph) do
-    icon_width = math.max(icon_width, vim.fn.strdisplaywidth(icon))
-  end
+  local glyph = picker.glyphs()
+  local icon_width = picker.icon_width(glyph)
   vim.ui.select(items, {
     prompt = needs_you and "yap waiting" or "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
       local icon = (item.approval and glyph.approval) or glyph[item.state]
-      return icon
-        .. string.rep(" ", icon_width - vim.fn.strdisplaywidth(icon))
-        .. "  "
+      return picker.prefix(icon, icon_width)
         .. string.rep("  ", item.depth)
         .. item.text
         .. suffix

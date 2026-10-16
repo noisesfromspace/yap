@@ -15,6 +15,7 @@ local M = {}
 
 local frontmatter = require("harness.frontmatter")
 local paths = require("harness.path")
+local picker = require("harness.picker")
 
 --- Write the buffer to its session file, creating one (named after the
 --- current time) on first save. Also called when a buffer is opened so
@@ -438,16 +439,36 @@ local function slug_cwd(dir)
   return paths.slug_cwd(dir)
 end
 
+--- The first non-empty of title, description, then name — or nil when all
+--- are empty. Shared by |M.label| and the winbar's session title, so the
+--- title-wins-over-description precedence lives once.
+function M.identity(title, description, name)
+  return (title and title ~= "" and title)
+    or (description and description ~= "" and description)
+    or (name and name ~= "" and name)
+    or nil
+end
+
+--- "agent · <identity>" for a subagent row. The identity is the first
+--- non-empty of title, description, task, fallback and fallback_label, so
+--- the open picker and the saved history list build the same chain.
+function M.agent_label(agent, title, description, task, fallback, fallback_label)
+  local identity = (title and title ~= "" and title)
+    or (description and description ~= "" and description)
+    or (task and task ~= "" and task)
+    or (fallback and fallback ~= "" and fallback)
+    or fallback_label
+    or ""
+  return agent .. " · " .. identity
+end
+
 --- Shared picker identity. A non-empty frontmatter `title` wins over the
 --- generated `description`; otherwise the description wins, and the
 --- directory name is only the final fallback. Project overviews prefix the
 --- cwd so sessions from different worktrees are obvious.
 function M.label(path, title, description, project_cwd)
   local name = path and path ~= "" and paths.session_name(path) or nil
-  local identity = (title and title ~= "" and title)
-    or (description and description ~= "" and description)
-    or name
-    or "session"
+  local identity = M.identity(title, description, name) or "session"
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
@@ -487,7 +508,7 @@ function M.list(scope)
         turns = fm and fm.turns,
       }
       if fm and fm.agent then
-        item.text = "↳ " .. fm.agent .. " · " .. ((title ~= "" and title) or (description ~= "" and description) or M.task(lines) or name)
+        item.text = "↳ " .. M.agent_label(fm.agent, title, description, M.task(lines), nil, name)
         children[path] = item
       elseif fm and fm.forked_from then
         item.text = "↳ fork · " .. M.label(path, title, description)
@@ -575,15 +596,15 @@ function M.pick(opts, on_choice)
     return
   end
   local scope_label = scope == "all" and "all projects" or "cwd project"
-  local projects = {}
-  local icon_width = 1
+  local projects, statuses = {}, {}
   for _, item in ipairs(items) do
     projects[vim.fn.fnamemodify(item.path, ":h:h")] = true
     local status = opts.status and opts.status(item.path)
     if status then
-      icon_width = math.max(icon_width, vim.fn.strdisplaywidth(status))
+      statuses[#statuses + 1] = status
     end
   end
+  local icon_width = picker.icon_width(statuses)
   local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
@@ -597,8 +618,7 @@ function M.pick(opts, on_choice)
       if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
         label = label:sub(#project + 3)
       end
-      local prefix = (icon or "") .. string.rep(" ", icon_width - (icon and vim.fn.strdisplaywidth(icon) or 0))
-      label = prefix .. "  " .. label
+      label = picker.prefix(icon, icon_width) .. label
       if item.turns then
         label = label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
       end

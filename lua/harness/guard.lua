@@ -42,19 +42,16 @@ local HL = {
   meta = "YapGuardMeta",
   hint = "YapGuardHint",
 }
-local function link(name, to)
-  vim.api.nvim_set_hl(0, name, { link = to, default = true })
-end
-link(HL.section, "MoreMsg")
-link(HL.approval, "DiagnosticWarn")
-link(HL.advisory, "Comment")
-link(HL.granted, "DiagnosticOk")
-link(HL.denied, "DiagnosticError")
-link(HL.destructive, "DiagnosticError")
-link(HL.reversible, "DiagnosticWarn")
-link(HL.benign, "Comment")
-link(HL.meta, "Comment")
-link(HL.hint, "Comment")
+view.link(HL.section, "MoreMsg")
+view.link(HL.approval, "DiagnosticWarn")
+view.link(HL.advisory, "Comment")
+view.link(HL.granted, "DiagnosticOk")
+view.link(HL.denied, "DiagnosticError")
+view.link(HL.destructive, "DiagnosticError")
+view.link(HL.reversible, "DiagnosticWarn")
+view.link(HL.benign, "Comment")
+view.link(HL.meta, "Comment")
+view.link(HL.hint, "Comment")
 
 local ns = vim.api.nvim_create_namespace("yap.guard.hl")
 
@@ -390,12 +387,9 @@ end
 local function title_segments(row)
   local glyph, glyph_hl = row_glyph(row)
   local _, badge_hl = severity_badge(row)
-  local reason = flat(row.reason)
+  local reason = view.clip(row.reason, 62)
   if reason == "" then
     reason = row.kind == "advisory" and "advisory" or "approval"
-  end
-  if #reason > 64 then
-    reason = reason:sub(1, 61) .. "…"
   end
   local when = age(row.ts)
   return {

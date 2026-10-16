@@ -37,6 +37,27 @@ function M.clip(s, n)
   return s
 end
 
+--- Collapse runs of whitespace (including newlines) to single spaces and
+--- trim the ends — the one canonical "single line" normalization for labels.
+function M.collapse(s)
+  return (s or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+--- Truncate `text` to at most `max` display columns, appending an ellipsis
+--- when cut. Character-aware so multi-byte text (CJK, emoji) is never split.
+function M.truncate_display(text, max)
+  if vim.fn.strdisplaywidth(text) <= max then
+    return text
+  end
+  local chars = math.min(vim.fn.strchars(text), math.max(1, max - 1))
+  local truncated = vim.fn.strcharpart(text, 0, chars)
+  while vim.fn.strdisplaywidth(truncated .. "…") > max and chars > 1 do
+    chars = chars - 1
+    truncated = vim.fn.strcharpart(text, 0, chars)
+  end
+  return truncated .. "…"
+end
+
 --- The two header lines shared by every view: a title and a counts summary.
 --- Highlight line 1 with M.hl.header and line 2 with M.hl.meta.
 function M.header_lines(title, counts)

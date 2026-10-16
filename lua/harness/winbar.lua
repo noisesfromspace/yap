@@ -11,6 +11,9 @@ local util = require("harness.util")
 local config = require("harness.config")
 local frontmatter = require("harness.frontmatter")
 local spinner = require("harness.spinner")
+local view = require("harness.view")
+local picker = require("harness.picker")
+local session = require("harness.session")
 
 local running = state.running
 local live = state.live
@@ -71,16 +74,19 @@ local function other_session_counts(buf)
     then
       if pending_approvals[b] then
         counts.approval = counts.approval + 1
-      elseif running[b] then
-        counts.running = counts.running + 1
-      elseif errors[b] then
-        counts.error = counts.error + 1
-      elseif stopped[b] then
-        counts.stopped = counts.stopped + 1
-      elseif awaiting[b] then
-        counts.waiting = counts.waiting + 1
       else
-        counts.idle = counts.idle + 1
+        local s = picker.state(b)
+        if s == "running" then
+          counts.running = counts.running + 1
+        elseif s == "error" then
+          counts.error = counts.error + 1
+        elseif s == "stopped" then
+          counts.stopped = counts.stopped + 1
+        elseif s == "waiting" then
+          counts.waiting = counts.waiting + 1
+        else
+          counts.idle = counts.idle + 1
+        end
       end
     end
   end
@@ -131,27 +137,12 @@ local function full_title(buf)
   local e = frontmatter.end_line(buf)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
-    if fm and fm.title and fm.title ~= "" then
-      full = fm.title
-    elseif fm and fm.description and fm.description ~= "" then
-      full = fm.description
+    if fm then
+      full = session.identity(fm.title, fm.description)
     end
   end
   title_cache[buf] = { tick = tick, full = full }
   return full
-end
-
-local function truncate_display(text, max)
-  if vim.fn.strdisplaywidth(text) <= max then
-    return text
-  end
-  local chars = math.min(vim.fn.strchars(text), math.max(1, max - 1))
-  local truncated = vim.fn.strcharpart(text, 0, chars)
-  while vim.fn.strdisplaywidth(truncated .. "…") > max and chars > 1 do
-    chars = chars - 1
-    truncated = vim.fn.strcharpart(text, 0, chars)
-  end
-  return truncated .. "…"
 end
 
 --- The session title for the winbar, truncated to `max` display columns so
@@ -160,7 +151,7 @@ end
 --- runs per call.
 local function winbar_title(buf, max)
   local d = full_title(buf)
-  return d and truncate_display(d, max or 40) or nil
+  return d and view.truncate_display(d, max or 40) or nil
 end
 
 -- Layout: a spinner beacon on the left (this buffer streaming, plus the
@@ -511,8 +502,8 @@ local function render_winbar(buf)
     if show_model then
       local text = provider .. "/" .. model
       if inactive then
-        local label = require("harness.session").label(vim.b[buf].yap_path, nil, full_title(buf))
-        text = truncate_display(label, 40)
+        local label = session.label(vim.b[buf].yap_path, nil, full_title(buf))
+        text = view.truncate_display(label, 40)
       end
       local show_steer = not inactive and steer[buf] ~= nil
       if switch_segs then
@@ -690,7 +681,7 @@ local function define_winbar_hl()
     GaugeHigh = "DiagnosticError",
   }
   for name, link in pairs(links) do
-    vim.api.nvim_set_hl(0, "Yap" .. name, { default = true, link = link })
+    view.link("Yap" .. name, link)
   end
   -- The busy beacon and its tool text share one live-updated color, so the
   -- animated face and "bash 12s" tint in lockstep; the tick re-tints both.

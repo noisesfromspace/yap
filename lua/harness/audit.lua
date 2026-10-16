@@ -27,7 +27,7 @@ local view = require("harness.view")
 -- keeps user overrides.
 local ns = vim.api.nvim_create_namespace("yap.audit.hl")
 local HL_CMD = "YapAuditCommand"
-vim.api.nvim_set_hl(0, HL_CMD, { link = "Title", default = true })
+view.link(HL_CMD, "Title")
 
 -- The tail keeps at most this many lines, always the newest: old lines are
 -- dropped from the top, so a runaway command cannot balloon the buffer.

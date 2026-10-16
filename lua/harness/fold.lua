@@ -7,6 +7,7 @@
 local M = {}
 
 local structure = require("harness.structure")
+local view = require("harness.view")
 local HEAD = structure.HEAD
 local TOOL_OPEN = structure.TOOL_OPEN
 local TOOL_CLOSE = structure.TOOL_CLOSE
@@ -25,10 +26,6 @@ M.views = {
   { key = "2", label = "tools & thinking folded" },
   { key = "3", label = "everything open" },
 }
-
-local function compact(s)
-  return (s or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-end
 
 -- One O(n) forward pass over the buffer produces the structural units the
 -- three views fold. Fences and multi-line HTML comments are tracked so a
@@ -479,14 +476,14 @@ function M.text(start, finish)
       local role = first:match(HEAD) or "?"
       local preview = ""
       for lnum = start + 1, finish do
-        local s = compact(vim.fn.getline(lnum))
+        local s = view.collapse(vim.fn.getline(lnum))
         if s ~= "" then
           preview = s
           break
         end
       end
       if #preview > 60 then
-        preview = preview:sub(1, 60) .. "…"
+        preview = view.clip(preview, 61)
       elseif preview == "" then
         preview = "(empty)"
       end

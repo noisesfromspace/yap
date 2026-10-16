@@ -450,8 +450,8 @@ for _, item in ipairs(captured.items) do
 end
 assert(idle_row and idle_row:find("^" .. icons.idle .. "  ") == 1,
   "open idle history session needs a live icon: " .. tostring(idle_row))
--- A closed session keeps the status column blank, while the parent and
--- children still form a tree under that fixed column.
+-- A closed session has no status column; open children still carry their
+-- icon and indented title beneath it.
 vim.api.nvim_buf_delete(saved, { force = true })
 captured = nil
 vim.ui.select = function(items, opts)
@@ -462,7 +462,7 @@ vim.ui.select = orig_select
 for _, item in ipairs(captured.items) do
   local row = captured.opts.format_item(item)
   if item.path == path then
-    assert(row:find("^   Preview test") == 1, "closed history row should have blank status: " .. row)
+    assert(row:find("^Preview test") == 1, "closed history row should have no status column: " .. row)
   elseif item.path == saved_child_path then
     assert(row:find("^" .. icons.idle .. "    ↳") == 1, "history child title should be indented after status: " .. row)
   end
@@ -487,11 +487,11 @@ for _, item in ipairs(captured.items) do
   if item.path == saved_child_path then all_child = row end
   if item.path == other_dir .. "/other-project/session.md" then other_row = row end
 end
-assert(all_parent and all_parent:find("^   Preview test") == 1
+assert(all_parent and all_parent:find("^Preview test") == 1
   and all_parent:find(paths.project_cwd(path), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
 assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
   and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
-assert(other_row and other_row:find("^   Preview test") == 1
+assert(other_row and other_row:find("^Preview test") == 1
   and other_row:find("/tmp/yap/other/project", 1, true), "other project prefix missing: " .. tostring(other_row))
 
 print("OK session_preview")
