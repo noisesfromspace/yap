@@ -10,7 +10,7 @@ local paths = require("harness.path")
 M.defaults = {
   bin = "yap", -- path to the yap binary
   provider = "anthropic",
-  model = "claude-sonnet-5.5",
+  model = "claude-sonnet-5-5",
   -- Per-session sampling knob, seeded into a new session's frontmatter so
   -- it is visible and hand-editable from the first line. Delete the line in
   -- a session (or set the default to nil) to fall back to the provider's

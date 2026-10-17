@@ -374,7 +374,7 @@
             };
             defaultModel = mkOption {
               type = types.str;
-              default = "claude-sonnet-5.5";
+              default = "claude-sonnet-5-5";
               description = "Default model for new session buffers.";
             };
             system = mkOption {

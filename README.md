@@ -77,7 +77,7 @@ Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`).
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
 
    ```lua
-   require("harness").setup({ provider = "anthropic", model = "claude-sonnet-5.5" })
+   require("harness").setup({ provider = "anthropic", model = "claude-sonnet-5-5" })
    ```
 
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
