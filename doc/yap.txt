@@ -221,7 +221,7 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         streamed in — offer to delete the superseded history
                         (|yap-compact|).
 *:YapEval*
-:YapEval [instruction]
+:YapEval[!] [instruction]
                         Replace the selected lines with the model's output: a
                         one-shot, no-tools call to `eval_model`. Acts on a
                         linewise range (a visual selection via `:'<,'>` or an
@@ -233,7 +233,10 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         to summarize them); in any other buffer it is plain
                         text (refactor a function in place). With no range,
                         the output is inserted at the cursor as new lines
-                        (generate content into a fresh, empty buffer). No
+                        (generate content into a fresh, empty buffer). With
+                        [!], the raw response (thinking and markers included)
+                        streams into a scratch split as it arrives; the
+                        cleaned answer is still applied as usual. No
                         default keymap.
 *:YapInsert*
 :YapInsert [name]     Insert a template or skill (|yap-templates|). With no

@@ -37,7 +37,7 @@ end, {
 })
 
 vim.api.nvim_create_user_command("YapEval", function(cmd)
-  local opts = { instruction = cmd.args }
+  local opts = { instruction = cmd.args, show = cmd.bang }
   -- range == 0 means no range was given: generate at the cursor instead of
   -- replacing a selection.
   if cmd.range > 0 then
@@ -48,7 +48,8 @@ vim.api.nvim_create_user_command("YapEval", function(cmd)
 end, {
   range = true,
   nargs = "?",
-  desc = "Replace the selection with the model's output, or generate at the cursor (one-shot, no tools)",
+  bang = true,
+  desc = "Replace the selection with the model's output, or generate at the cursor (one-shot, no tools); ! streams the full response into a split",
 })
 
 vim.api.nvim_create_user_command("YapInsert", function(cmd)

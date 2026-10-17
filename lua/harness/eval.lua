@@ -133,11 +133,38 @@ function M.insert(buf, row, result)
   vim.api.nvim_buf_set_lines(buf, row, row, false, body)
 end
 
+--- Open a scratch split that receives the raw `yap send` stream (thinking,
+--- model and error markers included). Returns the buffer and an append
+--- function that handles chunks ending mid-line.
+function M.open_stream()
+  local sbuf = vim.api.nvim_create_buf(false, true)
+  vim.bo[sbuf].bufhidden = "wipe"
+  vim.bo[sbuf].filetype = "markdown"
+  local cur = vim.api.nvim_get_current_win()
+  vim.cmd("botright split")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, sbuf)
+  vim.api.nvim_set_current_win(cur)
+  local function append(chunk)
+    if not vim.api.nvim_buf_is_valid(sbuf) then
+      return
+    end
+    local last = vim.api.nvim_buf_line_count(sbuf)
+    local tail = vim.api.nvim_buf_get_lines(sbuf, last - 1, last, false)[1] or ""
+    vim.api.nvim_buf_set_lines(sbuf, last - 1, last, false, vim.split(tail .. chunk, "\n", { plain = true }))
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == sbuf then
+      vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(sbuf), 0 })
+    end
+  end
+  return sbuf, append
+end
+
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
 --- current buffer): replace them with the model's output for `instruction`.
 --- With no line range, generate instead: insert the output at the cursor.
 --- When `instruction` is empty or omitted, a selection is transformed with a
 --- default instruction; with no selection it is asked for via vim.ui.input.
+--- With `show`, the raw response streams into a scratch split as it arrives.
 function M.eval(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -182,10 +209,29 @@ function M.eval(opts)
       tools = {},
     }) .. "\n"
     vim.notify("running…", vim.log.levels.INFO, { title = "yap eval" })
+    local sys_opts = { stdin = payload, text = true }
+    local chunks
+    if opts.show then
+      -- A stdout callback means result.stdout is nil, so collect the chunks
+      -- for the replace/insert step as well as streaming them.
+      chunks = {}
+      local _, append = M.open_stream()
+      sys_opts.stdout = function(_, data)
+        if data then
+          chunks[#chunks + 1] = data
+          vim.schedule(function()
+            append(data)
+          end)
+        end
+      end
+    end
     vim.system(
       { config().bin, "send", "--provider", provider, "--model", model },
-      { stdin = payload, text = true },
+      sys_opts,
       vim.schedule_wrap(function(result)
+        if chunks then
+          result.stdout = table.concat(chunks)
+        end
         if replace then
           M.finish(buf, line1, line2, sent, result)
         else

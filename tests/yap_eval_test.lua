@@ -86,6 +86,31 @@ assert(lines[1] == "before", "generate eval clobbered earlier line: " .. vim.ins
 assert(lines[2] == "summarized output", "generate eval did not insert at cursor: " .. vim.inspect(lines))
 assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
+-- show (:YapEval!): the raw response streams into a scratch split, and the
+-- marker-stripped answer still replaces the selection.
+local shown = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_set_current_buf(shown)
+vim.api.nvim_buf_set_lines(shown, 0, -1, false, { "some text" })
+local wins_before = #vim.api.nvim_tabpage_list_wins(0)
+yap.eval({ buf = shown, line1 = 1, line2 = 1, instruction = "rewrite", show = true })
+assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "show did not open a split")
+assert(vim.api.nvim_get_current_buf() == shown, "show moved focus away from the source buffer")
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(shown, 0, -1, false), "\n"):find("summarized output") ~= nil
+end, 100)
+assert(ok, "show eval did not complete")
+lines = vim.api.nvim_buf_get_lines(shown, 0, -1, false)
+assert(#lines == 1 and lines[1] == "summarized output", "show eval wrong body: " .. vim.inspect(lines))
+local stream
+for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+  local b = vim.api.nvim_win_get_buf(w)
+  if b ~= shown then
+    stream = b
+  end
+end
+local streamed = table.concat(vim.api.nvim_buf_get_lines(stream, 0, -1, false), "\n")
+assert(streamed:find("summarized output"), "stream buffer missing output: " .. streamed)
+
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")
 assert(log, "eval mock log missing")

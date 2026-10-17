@@ -102,7 +102,7 @@ same buffer. Every send uses Neovim's current working directory as request-only 
 | `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals, advisories and history.    |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
-| `:YapEval [instruction]`                  |             | Replace the selection with the model's output, or generate at the cursor (one-shot, no tools). |
+| `:YapEval[!] [instruction]`               |             | Replace the selection with the model's output, or generate at the cursor (one-shot, no tools). `!` streams the full response into a split. |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
 | `:YapSessions [scope]`                    |             | Resume a saved session (`cwd`, `all`).                             |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
