@@ -173,4 +173,22 @@ local colon_fm = table.concat(vim.api.nvim_buf_get_lines(colon_buf, 0, 8, false)
 assert(colon_fm:match("description: Neovim 0%.13 %– API migrations"), "colon title not sanitized: " .. colon_fm)
 assert(not colon_fm:match("0%.13: API"), "unsanitized colon reached frontmatter: " .. colon_fm)
 
+-- A failing title/summary model (out of credits, …) must surface an error
+-- notification instead of silently leaving the session untitled.
+local notices = {}
+local orig_notify = vim.notify
+vim.notify = function(msg, level)
+  notices[#notices + 1] = { msg = msg, level = level }
+end
+local credit_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(credit_buf, -1, -1, false, { "Out of credits trigger" })
+yap.send(credit_buf)
+ok = vim.wait(10000, function()
+  return #notices > 0
+end, 100)
+vim.notify = orig_notify
+assert(ok, "no notification for a failed title request")
+assert(notices[1].level == vim.log.levels.ERROR, "title failure notify level not ERROR")
+assert(notices[1].msg:match("insufficient_quota"), "unexpected title failure notify: " .. tostring(notices[1].msg))
+
 print("OK describe")

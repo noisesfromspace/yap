@@ -16,6 +16,19 @@ class H(BaseHTTPRequestHandler):
         is_title = any("Write a short session title" in m.get("content", "") for m in messages)
         has_fence_case = any("Fence regression trigger" in m.get("content", "") for m in messages)
         has_colon_case = any("Colon regression trigger" in m.get("content", "") for m in messages)
+        has_credit_case = any("Out of credits trigger" in m.get("content", "") for m in messages)
+        if is_title and has_credit_case:
+            self.send_response(402)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "error": {
+                    "message": "insufficient_quota: You exceeded your current quota",
+                    "type": "insufficient_quota",
+                    "code": "insufficient_quota",
+                },
+            }).encode())
+            return
         if is_title and has_fence_case:
             answer = "``` [main deadbee] git status ```"
         elif is_title and has_colon_case:

@@ -158,6 +158,13 @@ Return only the title.]]
         return
       end
       if result.code ~= 0 then
+        -- A title/summary model failure (out of credits, bad provider, …)
+        -- must not fail silently: surface it like the eval and send paths do.
+        local err = (result.stderr or ""):gsub("%s+$", "")
+        if err == "" then
+          err = "exit " .. tostring(result.code)
+        end
+        vim.notify(err, vim.log.levels.ERROR)
         return
       end
       local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", "")
