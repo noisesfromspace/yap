@@ -86,8 +86,8 @@ assert(lines[1] == "before", "generate eval clobbered earlier line: " .. vim.ins
 assert(lines[2] == "summarized output", "generate eval did not insert at cursor: " .. vim.inspect(lines))
 assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
--- :YapEval (no bang): an interactive session in a split under the hidden
--- .eval/ folder. The selection is fenced context, nothing is sent without an
+-- :YapEval (no bang): an interactive, regular session in a split, listed in
+-- :YapHistory. The selection is fenced context, nothing is sent without an
 -- instruction, and the source buffer is left alone.
 local src = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(src)
@@ -107,12 +107,12 @@ assert(stext:find("\n```go\nx := `y`\n```\n\n$"), "selection not fenced at the e
 assert(not stext:find("# @assistant"), "eval session sent without an instruction: " .. stext)
 assert(not stext:find("return ONLY the result", 1, true), "eval session kept the one-shot system prompt")
 local spath = vim.b[sbuf].yap_path
-assert(spath and spath:find("/%.eval/[^/]+/session%.md$"), "eval session not under .eval/: " .. tostring(spath))
-assert(vim.fn.filereadable(spath) == 1, "eval session not saved: " .. spath)
-assert(require("harness.path").project_cwd(spath) == vim.fs.normalize(vim.fn.getcwd()), "eval session project_cwd wrong")
+assert(spath and vim.fn.filereadable(spath) == 1, "eval session not saved: " .. tostring(spath))
+local listed = false
 for _, item in ipairs(require("harness.session").list()) do
-  assert(item.path ~= spath, "eval session listed in :YapSessions")
+  listed = listed or item.path == spath
 end
+assert(listed, "eval session missing from :YapHistory")
 
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")

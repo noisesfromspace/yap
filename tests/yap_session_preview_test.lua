@@ -1,4 +1,4 @@
--- Session picker previews: open-session picker and :YapSessions
+-- Session picker previews: open-session picker and :YapHistory
 -- (saved files) preview the same two excerpts — the initial # @user
 -- message and the last # @assistant answer — instead of the raw item.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -287,7 +287,7 @@ assert(waiting_other and waiting_other:find(" (" .. other_project .. ")", 1, tru
 state.awaiting[buf], state.awaiting[picker] = nil, nil
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 
--- :YapSessions previews the saved file with the same excerpts.
+-- :YapHistory previews the saved file with the same excerpts.
 local saved = yap.new()
 vim.api.nvim_buf_set_lines(saved, 0, -1, false, {
   "---",

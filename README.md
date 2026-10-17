@@ -102,9 +102,9 @@ same buffer. Every send uses Neovim's current working directory as request-only 
 | `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals, advisories and history.    |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
-| `:YapEval[!] [instruction]`               |             | Discuss the selection in a hidden eval session (follow-ups, source untouched). `!` replaces the selection with the model's output, or generates at the cursor (one-shot, no tools). |
+| `:YapEval[!] [instruction]`               |             | Discuss the selection in a new session (follow-ups, source untouched). `!` replaces the selection with the model's output, or generates at the cursor (one-shot, no tools). |
 | `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                |
-| `:YapSessions [scope]`                    |             | Resume a saved session (`cwd`, `all`).                             |
+| `:YapHistory [scope]`                     |             | Resume a saved session (`cwd`, `all`).                             |
 | `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch. |
 | Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                          |
 | Lua: `instances()`                        | `<leader>r` | Pick another open session.                                         |

@@ -21,7 +21,7 @@ assert(has_map("yap: stop in-flight request", "<C-C>"), "stop mapping is not <C-
 vim.cmd("runtime plugin/yap.lua")
 for _, name in ipairs({
   "YapInsertHere",
-  "YapHistory",
+  "YapSessions",
   "YapInstances",
   "YapWaiting",
   "YapChangeDefaultModel",
@@ -29,7 +29,7 @@ for _, name in ipairs({
 }) do
   assert(vim.fn.exists(":" .. name) == 0, name .. " should not be an Ex command")
 end
-for _, name in ipairs({ "YapInsert", "YapSessions", "YapGuard", "YapChangeModel", "YapEval" }) do
+for _, name in ipairs({ "YapInsert", "YapHistory", "YapGuard", "YapChangeModel", "YapEval" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
 for _, name in ipairs({ "insert", "history", "instances", "waiting", "change_default_model" }) do

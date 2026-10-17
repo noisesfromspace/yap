@@ -198,7 +198,7 @@ files the session references). yap writes the model fields only on `:Yap` and
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
 metadata). It reads the frontmatter on open and surfaces it in the
-`:YapSessions` picker. Token/cost totals are deliberately NOT frontmatter:
+`:YapHistory` picker. Token/cost totals are deliberately NOT frontmatter:
 they accumulate in per-buffer memory for the winbar and reset on reopen. The
 earlier frontmatter design got this wrong by folding per-reply usage into the
 header, which made every metadata update a non-local buffer edit that fought
@@ -254,9 +254,9 @@ combo. Why: an eval is a stateless filter (`!`-semantics), not a conversation,
 so it must not accumulate tool state or history.
 
 Plain `:YapEval` is the interactive counterpart and does not fall under the
-one-shot rule: it opens a real session (default system prompt, tools) under the
-hidden `<project>/.eval/` folder, out of the session picker, with the selection
-quoted as context. It never edits the source buffer.
+one-shot rule: it opens a regular session (default system prompt, tools,
+listed in `:YapHistory`) with the selection quoted as context. It never edits
+the source buffer.
 
 ### Backend and wire protocol
 

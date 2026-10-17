@@ -2,12 +2,13 @@
 :YapChangeModel	yap.txt	/*:YapChangeModel*
 :YapClear	yap.txt	/*:YapClear*
 :YapCompact	yap.txt	/*:YapCompact*
+:YapEval	yap.txt	/*:YapEval*
 :YapFork	yap.txt	/*:YapFork*
 :YapGuard	yap.txt	/*:YapGuard*
+:YapHistory	yap.txt	/*:YapHistory*
 :YapInsert	yap.txt	/*:YapInsert*
 :YapLive	yap.txt	/*:YapLive*
 :YapSend	yap.txt	/*:YapSend*
-:YapSessions	yap.txt	/*:YapSessions*
 :YapStop	yap.txt	/*:YapStop*
 yap-alert-gate	yap.txt	/*yap-alert-gate*
 yap-audit	yap.txt	/*yap-audit*

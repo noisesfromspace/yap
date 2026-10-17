@@ -224,11 +224,9 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
 :YapEval [instruction]
                         Open an interactive eval session in a split about
                         the selected lines (or about the current file with no
-                        range). It is a real session (default system prompt,
-                        tools, follow-ups) saved under the hidden
-                        `<project>/.eval/` folder, so it stays out of
-                        |:YapSessions|; |:YapFork| copies it into a listed
-                        session. The selection is quoted as context and the
+                        range). It is a regular session (default system
+                        prompt, tools, follow-ups), listed in |:YapHistory|.
+                        The selection is quoted as context and the
                         source buffer is never changed. With an instruction
                         the first turn is sent at once; without one the
                         cursor waits in the user turn for your question.
@@ -263,8 +261,8 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         original; the copy opens in the current window. No
                         name generates a filename; a name uses `name.md`.
                         Existing files are never replaced.
-*:YapSessions*
-:YapSessions [scope]  Pick a saved session to resume. scope is `cwd` (the
+*:YapHistory*
+:YapHistory [scope]   Pick a saved session to resume. scope is `cwd` (the
                         default, current project) or `all` (every project).
                         Open sessions are unlisted (use `<leader>r`).
 
@@ -442,7 +440,7 @@ prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (unlisted, keymapped, live tool tail attached), the same
-as |:YapSessions| resume.
+as |:YapHistory| resume.
 
 File operations are the session operations:
 

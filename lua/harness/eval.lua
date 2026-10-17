@@ -169,13 +169,11 @@ function M.session_user(buf, line1, line2, instruction)
   return parts
 end
 
---- :YapEval — open an interactive eval session in a split: a real yap
---- session (default system prompt, tools, follow-ups) kept out of the
---- :YapSessions picker by living under the hidden `<project>/.eval/` folder
---- (the picker globs `*/session.md` one level deep). The selection is
---- context only; the source buffer is never changed. With an instruction
---- the first turn is sent immediately, otherwise the cursor waits at the end
---- of the user turn. :YapFork copies it into a listed session.
+--- :YapEval — open an interactive eval session in a split: a regular yap
+--- session (default system prompt, tools, follow-ups, listed in
+--- :YapHistory). The selection is context only; the source buffer is never
+--- changed. With an instruction the first turn is sent immediately,
+--- otherwise the cursor waits at the end of the user turn.
 function M.session(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -193,15 +191,16 @@ function M.session(opts)
   end
   local instruction = opts.instruction ~= "" and opts.instruction or nil
   local user = M.session_user(buf, line1, line2, instruction)
-  local paths = require("harness.path")
   local yap = require("harness")
   local sbuf = yap.new({
     provider = provider,
     model = model,
-    path = paths.new_session_path(paths.session_dir(vim.fn.getcwd()) .. "/.eval"),
     hidden = true,
   })
   vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
+  -- Save the quoted selection now so the session is listed in :YapHistory
+  -- before its first send.
+  require("harness.session").save(sbuf)
   vim.cmd("botright split")
   vim.api.nvim_win_set_buf(0, sbuf)
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(sbuf), 0 })

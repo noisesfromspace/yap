@@ -86,12 +86,12 @@ end, {
   desc = "Copy this conversation into a new independent session and open it",
 })
 
-vim.api.nvim_create_user_command("YapSessions", function(cmd)
+vim.api.nvim_create_user_command("YapHistory", function(cmd)
   require("harness").sessions(cmd.fargs[1])
 end, {
   nargs = "?",
   complete = function()
     return { "all" }
   end,
-  desc = "Pick a saved yap session to resume (:YapSessions all for every project)",
+  desc = "Pick a saved yap session to resume (:YapHistory all for every project)",
 })
