@@ -17,9 +17,11 @@ local function pick(t)
   return t[rng_state % #t + 1]
 end
 
--- Mood ring: solid single-cell Font Awesome faces grouped by emotion, so the
--- Ember tint still applies (the hollow smile/frown/meh triad is deliberately
--- omitted). The beacon picks a random group, then a random face from it.
+-- Mood ring: every single-cell smiley Nerd Fonts ships, grouped by emotion so
+-- the Ember tint still applies. Font Awesome solid faces, the hollow
+-- smile/frown/meh triad, the Material Design emoticon set, and the lone
+-- Codicon + Octicon smileys are all included. The beacon picks a random group,
+-- then a random face from it.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
@@ -36,8 +38,11 @@ local NF_MOOD_RING = {
       nf(0xEE63),
       nf(0xEE64),
       nf(0xEE65),
+      nf(0xF118),
+      nf(0xEB54),
+      nf(0xF4A2),
     },
-  }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink
+  }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink, smile, cod-smiley, oct-smiley
   {
     faces = {
       nf(0xEE4A),
@@ -53,10 +58,32 @@ local NF_MOOD_RING = {
       nf(0xEE4F),
     },
   }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
-  { faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank
+  { faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D), nf(0xF11A) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank, meh
   { faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
-  { faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C) } }, -- tired, grimace, frown-open, angry, sad-tear
+  { faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C), nf(0xF119) } }, -- tired, grimace, frown-open, angry, sad-tear, frown
   { faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
+  {
+    faces = {
+      nf(0xF0C71), nf(0xF01F5), nf(0xF0C70), nf(0xF069C),
+      nf(0xF0C6B), nf(0xF01F3), nf(0xF0C78), nf(0xF0C79),
+      nf(0xF0C72), nf(0xF0C73), nf(0xF1214), nf(0xF1215),
+      nf(0xF01F9), nf(0xF0C77), nf(0xF0C6F), nf(0xF01F4),
+    },
+  }, -- md-emoticon-happy, happy-outline, excited, excited-outline, cool, cool-outline, wink, wink-outline, kiss, kiss-outline, lol, lol-outline, tongue, tongue-outline, devil, devil-outline
+  {
+    faces = {
+      nf(0xF0C69), nf(0xF0C6A), nf(0xF0C6C), nf(0xF0C6D),
+      nf(0xF0C6E), nf(0xF069B), nf(0xF0F4C), nf(0xF0F4D),
+      nf(0xF0C76), nf(0xF01F8), nf(0xF157C), nf(0xF157D),
+      nf(0xF10DE), nf(0xF10DF),
+    },
+  }, -- md-emoticon-angry, angry-outline, cry, cry-outline, dead, dead-outline, frown, frown-outline, sad, sad-outline, sick, sick-outline, confused, confused-outline
+  {
+    faces = {
+      nf(0xF0C68), nf(0xF01F2), nf(0xF0C74), nf(0xF01F6),
+      nf(0xF01F7), nf(0xF0C75),
+    },
+  }, -- md-emoticon, outline, neutral, neutral-outline, poop, poop-outline
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 
