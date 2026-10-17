@@ -1,17 +1,18 @@
 -- Busy beacon animation, extracted from the winbar: the smiley faces, the
 -- plain-unicode fallback glyphs and the Ember hue tween that tints them. The
--- beacon walks the size tiers in order — every same-size (light) face is shown
--- once before the bigger (filled) ones start — so a turn never jumps between
--- small and big faces at random. The hue tween is independent of the face, so
--- it keeps cycling amber → coral → rose the whole time a turn runs.
+-- beacon picks a random face but stays in one size tier — the same-size
+-- (light) faces first — for as many ticks as the tier has faces, then moves to
+-- the bigger (filled) tier even if randomness skipped some. The hue tween is
+-- independent of the face, so it keeps cycling amber → coral → rose the whole
+-- time a turn runs.
 
 local M = {}
 
 local state = require("harness.state")
 local running = state.running
 
--- Local LCG so the plain fallback shimmer never reseeds the global math.random
--- other plugins rely on; seeded from the monotonic clock at load.
+-- Local LCG so the face and plain-fallback picks never reseed the global
+-- math.random other plugins rely on; seeded from the monotonic clock at load.
 local rng_state = math.floor(vim.uv.hrtime() % 2 ^ 31) + 1
 local function pick(t)
   rng_state = (rng_state * 1664525 + 1013904223) % 2 ^ 32
@@ -21,8 +22,8 @@ end
 -- Size tiers: the light smileys (Font Awesome faces, Material Design outline
 -- emoticons, and the lone Codicon + Octicon smileys) all render at one size;
 -- the filled Material Design emoticons render noticeably bigger. The beacon
--- shows every glyph of the first tier, then every glyph of the second, then
--- wraps around.
+-- picks randomly within a tier, and switches tiers after as many ticks as the
+-- tier has faces.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
@@ -156,18 +157,24 @@ end
 
 local spinner_timer = nil
 local spin_tick = 0
-local cursor = 0 -- index of the next face, advanced once per tick
+local tier_index = 1 -- current size tier
+local tier_ticks = 0 -- ticks spent in the current tier
 local glyph_cache = { tick = -1, glyph = nil, plain = nil }
 
--- Walk the size-ordered tiers deterministically: one face per tick, all of a
--- tier before the next. Cached per tick so a redraw or an elapsed-tool-time
--- change cannot alter the face between timer fires.
+-- Random face per tick, but tiered: each size tier runs for as many ticks as
+-- it has faces, then the next tier takes over — even if randomness skipped
+-- some faces. Cached per tick so a redraw or an elapsed-tool-time change
+-- cannot alter the face between timer fires.
 function M.glyph()
   if glyph_cache.tick ~= spin_tick then
-    cursor = cursor % #M.spinner_frames + 1
+    tier_ticks = tier_ticks + 1
+    if tier_ticks > #NF_SIZE_TIERS[tier_index].faces then
+      tier_index = tier_index % #NF_SIZE_TIERS + 1
+      tier_ticks = 1
+    end
     glyph_cache = {
       tick = spin_tick,
-      glyph = M.spinner_frames[cursor],
+      glyph = pick(NF_SIZE_TIERS[tier_index].faces),
       plain = pick(PLAIN_SPINNER_FRAMES),
     }
   end
@@ -192,7 +199,8 @@ function M.start()
     return
   end
   glyph_cache.tick = -1
-  cursor = 0 -- each turn restarts at the smallest face
+  tier_index = 1 -- each turn restarts in the same-size tier
+  tier_ticks = 0
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,

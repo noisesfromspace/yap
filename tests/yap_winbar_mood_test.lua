@@ -1,6 +1,7 @@
--- The beacon walks the size tiers deterministically: every same-size face is
--- shown once before the bigger tier begins, and the face only changes on the
--- spinner tick — never on a redraw or on tool elapsed time.
+-- The beacon stays in the same-size tier first, picks a random face each tick,
+-- and moves to the bigger tier after as many ticks as the tier has faces —
+-- even though randomness means some faces may not have shown. A redraw or a
+-- tool-time change must never advance the face.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -25,6 +26,12 @@ end
 spinner.start()
 vim.uv.new_timer = original_timer
 
+local tier_of = {}
+for ti, tier in ipairs(spinner.groups) do
+  for _, glyph in ipairs(tier.faces) do
+    tier_of[glyph] = ti
+  end
+end
 local function face()
   local bar = yap.winbar(buf)
   for _, glyph in ipairs(spinner.spinner_frames) do
@@ -35,23 +42,35 @@ local function face()
   error("missing face: " .. bar)
 end
 
-local frames = spinner.spinner_frames
-assert(#spinner.groups[1].faces + #spinner.groups[2].faces == #frames, "tiers must cover every frame")
+local function tier_len(ti)
+  return #spinner.groups[ti].faces
+end
 
--- The beacon starts on the smallest face, and a redraw or a change to the
--- tool start time must not advance it.
 local glyph = face()
-assert(glyph == frames[1], "beacon should start on the smallest face")
-state.live[buf].since = os.time() - 500
-assert(face() == glyph, "redraw or elapsed time changed the face")
+assert(tier_of[glyph] == 1, "beacon should start in the same-size tier")
 
--- Walk a full cycle plus a wrap: the face advances exactly one slot per tick,
--- all of the first (same-size) tier before the bigger tier, then it wraps.
-for i = 1, #frames do
+-- Each tier runs for exactly its face count of showings, then the next tier
+-- takes over, wrapping back to the first. The starting face above already
+-- consumed one showing of tier 1, so the loop picks up one short of a full
+-- tier. The face must stay in the expected tier the whole time, and a redraw
+-- or elapsed-time change must not advance it.
+local tier, left = 1, tier_len(1) - 1
+local seen = {}
+for i = 1, 200 do
+  seen[tier] = true
   tick()
   vim.wait(1) -- run the scheduled timer callback
-  assert(face() == frames[i % #frames + 1], "face out of order after " .. i .. " ticks")
+  glyph = face()
+  assert(tier_of[glyph] == tier, "face escaped tier " .. tier .. " on tick " .. i)
+  state.live[buf].since = os.time() - i * 100
+  assert(face() == glyph, "redraw or elapsed time changed the face")
+  left = left - 1
+  if left == 0 then
+    tier = tier % #spinner.groups + 1
+    left = tier_len(tier)
+  end
 end
+assert(seen[1] and seen[2], "beacon should cycle through both size tiers")
 
 state.running[buf] = nil
 spinner.stop_if_idle()
