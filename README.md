@@ -71,6 +71,11 @@ Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`).
    `exa` and `jev` respectively); each backend is a self-registering Go
    package selected by name in the config.
 
+   Native providers (no `base_url` needed): `openai`, `anthropic`,
+   `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,
+   z.ai, local servers) is OpenAI-compatible and requires a `base_url`.
+   See `:help yap-configuration` for the full table.
+
    Export the key before starting Neovim: `export ANTHROPIC_API_KEY=<your-api-key>`.
 
 3. Install this repo as a Neovim plugin, or append

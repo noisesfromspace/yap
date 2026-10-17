@@ -147,17 +147,30 @@ and each path is configurable via `setup()` / the Nix module options):
     }
   }
 <
-  Any OpenAI-compatible /chat/completions endpoint works; API keys come from
-  the named env vars. Model prices come from the committed catalog
-  (`agent/price/pricing.json`). `decision` configures the decision-model
-  backend behind the decision tool and the alert gate (|yap-alert-gate|):
-  `provider` selects the backend (default "jev"; each backend is a
-  self-registering file in agent/decide), and `base_url`/`api_key_env`/`model`
-  are the common options. `alert` tunes
-  the gate thresholds (|yap-alert-gate|). `vpn.command` is the argv prefix
-  that enters the VPN network namespace for the bash/curl/fetch `vpn` flag;
-  when empty the flag is unavailable. `ssh.known_hosts` overrides the file
-  the ssh tool checks hosts against.
+  Supported providers (the provider name is the key under "providers"):
+
+    name        base_url                                  api_key_env example
+    openai      native; default https://api.openai.com/v1  OPENAI_API_KEY
+    anthropic   native; default https://api.anthropic.com  ANTHROPIC_API_KEY
+    google      native; default Google Generative Language GEMINI_API_KEY
+    gemini      alias of google                            GEMINI_API_KEY
+    deepseek    native; default https://api.deepseek.com   DEEPSEEK_API_KEY
+    <other>     REQUIRED; any OpenAI-compatible endpoint   e.g. MOONSHOT_API_KEY,
+                (moonshot https://api.moonshot.ai/v1,      OPENROUTER_API_KEY
+                openrouter https://openrouter.ai/api/v1,
+                z.ai, local servers, ...)
+
+  Native providers need no `base_url` (set one only for a proxy; Anthropic's
+  takes no `/v1`, Google's no `/v1beta`). Direct Anthropic ids use dashes
+  (`claude-sonnet-5-5`), OpenRouter's dots. API keys come from the named env
+  vars; the github tool reads `GITHUB_TOKEN` directly. Prices come from
+  `agent/price/pricing.json`.
+
+  `decision` configures the backend behind the decision tool and alert gate
+  (|yap-alert-gate|): `provider` (default "jev"), `base_url`, `api_key_env`,
+  `model`. `alert` tunes the gate thresholds. `vpn.command` is the argv prefix
+  that enters the VPN namespace for the `vpn` flag (unavailable when empty).
+  `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ |:YapInsert| template files (|yap-templates|).
