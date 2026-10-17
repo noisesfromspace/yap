@@ -369,12 +369,12 @@
             # Harness (Lua) setup options; consumed by the Neovim config.
             defaultProvider = mkOption {
               type = types.str;
-              default = "moonshot";
+              default = "anthropic";
               description = "Default provider name for new session buffers.";
             };
             defaultModel = mkOption {
               type = types.str;
-              default = "kimi-k3";
+              default = "claude-sonnet-5.5";
               description = "Default model for new session buffers.";
             };
             system = mkOption {
