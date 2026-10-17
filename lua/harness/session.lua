@@ -63,30 +63,8 @@ local function stamp_updated_at(buf)
       turns = turns + 1
     end
   end
-  -- Merge assets staged by attachment.attach() (buffer-local, deferred here
-  -- so attaching never rewrites the frontmatter mid-import and shifts the
-  -- line numbers import_paths is iterating).
-  local assets = fm.assets or {}
-  local added = false
-  local pending = vim.b[buf].yap_assets
-  if pending then
-    for _, a in ipairs(pending) do
-      local dup = false
-      for _, x in ipairs(assets) do
-        if x == a then
-          dup = true
-          break
-        end
-      end
-      if not dup then
-        assets[#assets + 1] = a
-        added = true
-      end
-    end
-    vim.b[buf].yap_assets = nil
-  end
   local updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
-  if fm.updated_at == updated_at and fm.turns == turns and not added then
+  if fm.updated_at == updated_at and fm.turns == turns then
     return -- unchanged: skip the rewrite so an untouched frontmatter stays clean
   end
   local block = frontmatter.render(
@@ -105,8 +83,7 @@ local function stamp_updated_at(buf)
     fm.forked_from,
     fm.forks,
     fm.subagent_parent,
-    assets,
-    fm.reasoning_level
+    fm.active_reasoning
   )
   vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
 end
@@ -243,11 +220,27 @@ function M.fork(buf, name, running)
         vim.b[buf].yap_path,
         {},
         nil,
-        fm.assets,
-        fm.reasoning_level
+        fm.active_reasoning
       )
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block
+    end
+  end
+  -- A self-contained session carries its dropped photos with it: copy the
+  -- source's assets folder and re-point the `file://` references at the copy.
+  local src_assets = paths.assets_dir(buf)
+  if vim.uv.fs_stat(src_assets) then
+    local dst_assets = vim.fn.fnamemodify(path, ":h") .. "/assets"
+    paths.ensure_session_dir(dst_assets)
+    local src_uri = vim.uri_from_fname(src_assets) .. "/"
+    local dst_uri = vim.uri_from_fname(dst_assets) .. "/"
+    for _, entry in ipairs(vim.fn.readdir(src_assets)) do
+      vim.fn.copy(src_assets .. "/" .. entry, dst_assets .. "/" .. entry)
+    end
+    for i, l in ipairs(lines) do
+      lines[i] = l:gsub(vim.pesc(src_uri), function()
+        return dst_uri
+      end)
     end
   end
   local written, write_err = vim.uv.fs_write(fd, table.concat(lines, "\n") .. "\n", 0)
@@ -318,8 +311,7 @@ function M.fork(buf, name, running)
       source_fm.forked_from,
       forks,
       source_fm.subagent_parent,
-      source_fm.assets,
-      source_fm.reasoning_level
+      source_fm.active_reasoning
     )
     vim.api.nvim_buf_set_lines(buf, 0, ending, false, block)
   end

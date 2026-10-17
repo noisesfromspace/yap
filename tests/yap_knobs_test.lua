@@ -17,7 +17,7 @@ vim.api.nvim_buf_set_lines(
   frontmatter.render(
     fm.provider, fm.model, fm.models, fm.created_at, fm.title, fm.description,
     fm.agent, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.created_cwd,
-    fm.forked_from, fm.forks, fm.subagent_parent, fm.assets, "high"
+    fm.forked_from, fm.forks, fm.subagent_parent, "high"
   )
 )
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "hi" })

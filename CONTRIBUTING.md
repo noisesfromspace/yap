@@ -76,17 +76,15 @@ this repository MUST keep this section up-to-date.
 
 Neither the Lua side nor the Go binary may keep message state between turns. An
 explicit `![FILE: name](file:///...)` reference in a user message is an image
-attachment; a standalone dropped or typed PNG/JPEG path is imported into a
-local asset store and replaced with that reference on send. On send, standalone
-absolute PNG/JPEG paths in user messages are imported automatically before
-parsing; this also applies to typed paths and changes only matching user lines.
-Go reads references on each send, extracts filename, detected media type, byte
-size, and pixel dimensions when decodable, then sends that metadata as adjacent
-text alongside the image bytes. Removing the reference removes the attachment;
-missing/invalid assets fail the send. Each imported asset's basename is staged
-and, on the next save, merged into the frontmatter `assets` list, so a session
-declares which content-addressed files it references. The asset store must
-accompany a session when moved to another machine. Why: branching by deletion,
+attachment; a standalone dropped or typed PNG/JPEG path is copied into the
+session's `assets/` folder and replaced with that reference on send. On send,
+standalone absolute PNG/JPEG paths in user messages are imported automatically
+before parsing; this also applies to typed paths and changes only matching
+user lines. Go reads references on each send, extracts filename, detected
+media type and byte size, then sends that metadata as adjacent text alongside
+the image bytes. Removing the reference removes the attachment; missing/invalid
+assets fail the send. The `assets/` folder travels with the session directory,
+so a session is self-contained on another machine. Why: branching by deletion,
 prefill by editing, and undo-tree navigation only work if the buffer is the
 single source of truth.
 
@@ -159,8 +157,8 @@ normally. Every stream exit, including backend errors and `:YapStop`, repairs
 any dangling streamed marker, appends a fresh `# @user` message, and saves that
 final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log
-(R-audit-log), the scratch notes file, and the frontmatter `assets` manifest
-(R-frontmatter). `save()` follows buffer renames: a `:file` rename moves the
+(R-audit-log), the scratch notes file, and the `assets/` folder of dropped
+photos. `save()` follows buffer renames: a `:file` rename moves the
 sidecars lazily (audit at the next turn, notes at the next scratch toggle),
 while a `:saveas` copy rehomes them eagerly so the original session keeps its
 own files and the copy continues with full history. Why: no second
@@ -184,16 +182,16 @@ never make yap write its data folder into the project directory
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
 The frontmatter holds `provider`/`model` (the combo to resume with),
-`reasoning_level` (an optional per-session sampling knob, hand-editable
-like `tools` and read on every send), `created_cwd` (the
+`available_reasoning` (the reasoning levels on offer) and `active_reasoning`
+(the live, hand-editable choice — empty means the provider default),
+`created_cwd` (the
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped
-on save for the picker), `tools` (the per-session tool allowlist: a normal
+on save for the picker), and `tools` (the per-session tool allowlist: a normal
 session lists every compiled-in tool so lines can be removed to retract
-access on the next send, while a subagent lists only its definition's tools),
-and `assets` (the manifest of content-addressed photo
-files the session references). yap writes the model fields only on `:Yap` and
+access on the next send, while a subagent lists only its definition's tools).
+yap writes the model fields only on `:Yap` and
 `:YapChangeModel` — never during a send, so the append-only rule holds
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
@@ -321,13 +319,7 @@ command executes. Denial, timeout, and the absence of a serve process (yap
 send) all deny. This is a prompt-injection mitigation, NOT a security
 boundary: the denylist is bypassable. A real sandbox, if ever wanted, is
 bubblewrap (Codex's Linux choice), not command-pattern allowlists (documented
-as bypassable). bash and python accept an opt-in `isolate_network` flag that
-runs the command in a fresh `unshare --user --map-root-user --net` namespace:
-a deterministic network cutoff (no outbound or loopback connectivity) for
-running commands offline — a model-requestable constraint, and the natural
-place for the alert gate to force isolation when it flags an exfiltration.
-curl and fetch deliberately do not: they exist to reach the network, so
-isolating them would only ever fail.
+as bypassable).
 bash/python's operational mechanics are unchanged: own process
 group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
 

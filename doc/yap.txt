@@ -111,12 +111,13 @@ session's model, or the setup() default for a plain buffer); it defaults to
 `deepseek/deepseek-v4-pro`. A `title:` you type in the frontmatter wins over
 the `title` group.
 
-`reasoning_level` (`low`/`medium`/`high`) is seeded into every new
-session's frontmatter so it is visible and hand-editable from the first
-line. Delete the line in a session to fall back to the provider's own
-default. `reasoning_level` is a cross-provider effort knob:
-it maps to OpenAI's `reasoning.effort`, Anthropic's `effort`/thinking budget,
-Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
+`reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
+into every new session's frontmatter as `active_reasoning` (with the full
+choice listed under `available_reasoning`) so it is visible and hand-editable
+from the first line. Delete `active_reasoning` in a session to fall back to
+the provider's own default. `active_reasoning` is a cross-provider effort
+knob: it maps to OpenAI's `reasoning.effort`, Anthropic's `effort`/thinking
+budget, Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
 disable it. `templates_dir`/`skills_dir` configure
@@ -340,7 +341,11 @@ as YAML frontmatter: >
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
-  reasoning_level: high
+  available_reasoning:
+    - low
+    - medium
+    - high
+  active_reasoning: high
   created_cwd: ~/code/project
   turns: 14
   created_at: 2025-09-29T19:22:33Z
@@ -354,23 +359,20 @@ as YAML frontmatter: >
     - read
     - search
     - glob
-  assets:
-    - ~/.local/share/nvim/yap/assets/<sha256>.png
   ---
 <
 
 `title` (always present, empty by default) overrides `description` as the
 session's display name. `description` is the generated summary shown while the
 title is empty. `provider`/`model` is the combo to resume with;
-`reasoning_level` (`low`/`medium`/`high`) is a sampling knob, seeded from
-the setup() defaults on new sessions and hand-editable like `tools`, read
-on every send; `created_cwd`
+`available_reasoning` lists the reasoning levels on offer and
+`active_reasoning` (`low`/`medium`/`high`) is the live, hand-editable choice —
+seeded from the setup() defaults on new sessions and read on every send,
+empty means the provider's default; `created_cwd`
 the exact working directory the session was created in; `models` the ordered
 history of combos used (most-recent-last); `subagents` the subagent session
 paths; `tools` the per-session tool allowlist — remove a line to retract that
-tool on the next send; `assets` the absolute paths of the photo files this
-session references (a shared content-addressed store under Neovim's data
-directory). `turns` counts completed `# @assistant` replies so
+tool on the next send. `turns` counts completed `# @assistant` replies so
 the picker can show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set
@@ -433,10 +435,12 @@ write/edit return short confirmations and stay bare.
 7. SESSIONS                                                  *yap-sessions*
 
 A session is the conversation markdown file plus a few sidecar files: an
-append-only audit log, an optional scratch notes file, and photo attachments
-in a shared asset store. Each session lives in its own directory,
+append-only audit log, an optional scratch notes file, and an `assets/`
+folder holding the photos the conversation references. Each session lives in
+its own directory,
 ~/.config/yap/sessions/<cwd-slug>/<session>/, containing session.md (the
-conversation), audit.jsonl (the audit log) and notes.md (the scratch jotter).
+conversation), audit.jsonl (the audit log), notes.md (the scratch jotter) and
+assets/ (dropped photos).
 Sessions are saved after every turn; the file is created when the buffer
 opens, and every save goes through |:write| so 'modified', |:w| and the exit
 prompt behave normally.

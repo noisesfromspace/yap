@@ -161,4 +161,12 @@ function M.notes_path(buf)
   return vim.fn.fnamemodify(path, ":h") .. "/notes.md"
 end
 
+--- The session's assets folder: <dir>/assets, beside the session markdown.
+--- Dropped photos are copied here so the session is self-contained and moves
+--- with its images (the `![FILE: …](file://…)` reference is the manifest).
+function M.assets_dir(buf)
+  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":h") .. "/assets"
+end
+
 return M

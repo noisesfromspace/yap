@@ -1,18 +1,44 @@
 local M = {}
 local max_bytes = 10 * 1024 * 1024
 
+local paths = require("harness.path")
+
 --- Append one `attachment` event to the session's audit log. Every attach
---- attempt is recorded: success carries the full metadata (name, source,
---- asset, bytes, format, sha256); failure carries the error plus whatever
---- was known. The image bytes themselves are never logged.
+--- attempt is recorded: success carries the metadata (name, source, asset,
+--- bytes, format); failure carries the error plus whatever was known. The
+--- image bytes themselves are never logged.
 local function record(buf, fields)
   fields.type = "attachment"
   fields.ts = os.date("%Y-%m-%dT%H:%M:%S")
   require("harness.audit").append_event(buf, fields)
 end
 
+--- A filename safe to live in the session's assets folder: the basename kept
+--- readable, stripping only the few characters that break paths or the
+--- markdown reference.
+local function safe_name(path)
+  return vim.fs.basename(path):gsub("[%[%]\r\n]", "_")
+end
+
+--- The destination for `name` inside `dir`, deduped with a `-1`, `-2` … suffix
+--- when a file of that name already exists (never overwrite an earlier import).
+local function unique_dest(dir, name)
+  local stem, ext = name:match("^(.-)(%.[^%.]+)$")
+  if not stem then
+    stem, ext = name, ""
+  end
+  local dest = dir .. "/" .. name
+  local i = 1
+  while vim.uv.fs_stat(dest) do
+    dest = dir .. "/" .. stem .. "-" .. i .. ext
+    i = i + 1
+  end
+  return dest
+end
+
 --- Turn a dropped, shell-escaped image path on the current user line into a
---- durable local reference. Ghostty pastes paths, not file contents.
+--- reference to a copy stored in the session's assets folder. Ghostty pastes
+--- paths, not file contents.
 function M.attach(buf, row)
   buf = buf or vim.api.nvim_get_current_buf()
   row = row or vim.api.nvim_win_get_cursor(0)[1]
@@ -62,48 +88,31 @@ function M.attach(buf, row)
     record(buf, { error = msg, source = path, bytes = #bytes })
     return nil, msg
   end
-  local hash = vim.fn.sha256(vim.base64.encode(bytes))
-  local dir = vim.fn.stdpath("data") .. "/yap/assets"
-  vim.fn.mkdir(dir, "p", 448) -- 0700
-  local dest = dir .. "/" .. hash .. ext
-  if not vim.uv.fs_stat(dest) then
-    local out, open_err = vim.uv.fs_open(dest, "wx", 384) -- 0600; never overwrite an existing asset
-    if not out then
-      record(buf, { error = open_err, source = path, asset = dest, bytes = #bytes, format = ext:sub(2), sha256 = hash })
-      return nil, open_err
-    end
-    local written, write_err = vim.uv.fs_write(out, bytes, 0)
-    vim.uv.fs_close(out)
-    if written ~= #bytes then
-      vim.uv.fs_unlink(dest)
-      local msg = write_err or "incomplete image copy"
-      record(buf, { error = msg, source = path, asset = dest, bytes = #bytes, format = ext:sub(2), sha256 = hash })
-      return nil, msg
-    end
+  local adir = paths.assets_dir(buf)
+  paths.ensure_session_dir(adir)
+  local dest = unique_dest(adir, safe_name(path))
+  local out, open_err = vim.uv.fs_open(dest, "wx", 384) -- 0600; never overwrite an existing asset
+  if not out then
+    record(buf, { error = open_err, source = path, asset = dest, bytes = #bytes, format = ext:sub(2) })
+    return nil, open_err
   end
-  local name = vim.fs.basename(path):gsub("[%[%]\r\n]", "_")
-  local reference = "![FILE: " .. name .. "](" .. vim.uri_from_fname(dest) .. ")"
+  local written, write_err = vim.uv.fs_write(out, bytes, 0)
+  vim.uv.fs_close(out)
+  if written ~= #bytes then
+    vim.uv.fs_unlink(dest)
+    local msg = write_err or "incomplete image copy"
+    record(buf, { error = msg, source = path, asset = dest, bytes = #bytes, format = ext:sub(2) })
+    return nil, msg
+  end
+  local reference = "![FILE: " .. vim.fs.basename(dest) .. "](" .. vim.uri_from_fname(dest) .. ")"
   vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { reference })
   record(buf, {
-    name = name,
+    name = vim.fs.basename(dest),
     source = path,
     asset = dest,
     bytes = #bytes,
     format = ext:sub(2),
-    sha256 = hash,
   })
-  -- Stage the asset for the frontmatter `assets` manifest. Persisting it here
-  -- would rewrite the frontmatter mid-import and shift every line number, so
-  -- it is deferred to the next save (session.stamp_updated_at merges it).
-  -- vim.b copies tables on read, so reassign the whole list after mutating.
-  local assets = vim.b[buf].yap_assets or {}
-  for _, a in ipairs(assets) do
-    if a == dest then
-      return reference
-    end
-  end
-  assets[#assets + 1] = dest
-  vim.b[buf].yap_assets = assets
   return reference
 end
 

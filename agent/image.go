@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -55,9 +51,6 @@ func userParts(text string) ([]llm.Part, error) {
 		}
 		name := text[match[2]:match[3]]
 		metadata := fmt.Sprintf("Image attachment metadata: filename=%q, media_type=%s, size=%d bytes", name, mediaType, len(data))
-		if config, _, decodeErr := image.DecodeConfig(bytes.NewReader(data)); decodeErr == nil {
-			metadata += fmt.Sprintf(", dimensions=%dx%d pixels", config.Width, config.Height)
-		}
 		parts = append(parts, llm.Part{Type: llm.PartText, Text: metadata + "."})
 		parts = append(parts, llm.Part{Type: llm.PartImage, URL: "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)})
 		start = match[1]

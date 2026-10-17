@@ -28,7 +28,7 @@ func TestUserPartsImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 4 || parts[0].Text != "What is this?\n" || parts[1].Type != llm.PartText || !strings.Contains(parts[1].Text, `filename="photo with space.png"`) || !strings.Contains(parts[1].Text, "media_type=image/png") || !strings.Contains(parts[1].Text, "size="+fmt.Sprint(len(data))+" bytes") || !strings.Contains(parts[1].Text, "dimensions=2x3 pixels") || parts[2].Type != llm.PartImage || !strings.HasPrefix(parts[2].URL, "data:image/png;base64,") || parts[3].Text != "\nPlease be brief." {
+	if len(parts) != 4 || parts[0].Text != "What is this?\n" || parts[1].Type != llm.PartText || !strings.Contains(parts[1].Text, `filename="photo with space.png"`) || !strings.Contains(parts[1].Text, "media_type=image/png") || !strings.Contains(parts[1].Text, "size="+fmt.Sprint(len(data))+" bytes") || parts[2].Type != llm.PartImage || !strings.HasPrefix(parts[2].URL, "data:image/png;base64,") || parts[3].Text != "\nPlease be brief." {
 		t.Fatalf("wrong parts: %+v", parts)
 	}
 	if parts, err := userParts("plain /tmp/photo.png and ![ordinary](file:///tmp/photo.png)"); err != nil || len(parts) != 1 || parts[0].Type != llm.PartText {

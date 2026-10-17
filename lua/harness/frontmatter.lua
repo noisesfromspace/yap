@@ -7,7 +7,11 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   reasoning_level: high
+--   available_reasoning:
+--     - low
+--     - medium
+--     - high
+--   active_reasoning: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
 --   tools:
@@ -26,17 +30,15 @@
 --     - ~/.config/yap/sessions/.../session-a1b2c3.md
 --   forks:
 --     - ~/.config/yap/sessions/.../branch.md
---   assets:
---     - ~/.local/share/nvim/yap/assets/<sha256>.png
 --   ---
 --
 -- `title` is always present (empty by default) and wins over `description`
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
--- `provider` are the combo to resume with; `reasoning_level`
--- (low|medium|high) is a per-session sampling knob, seeded from the config
--- default on new sessions and hand-editable like `tools` — read on every
--- send;
+-- `provider` are the combo to resume with; `available_reasoning` lists the
+-- reasoning levels on offer and `active_reasoning` (low|medium|high) is the
+-- live, hand-editable choice — read on every send, empty means the
+-- provider's own default;
 -- `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
@@ -51,9 +53,7 @@
 -- of every combo actually used (most-recent-last); `forked_from` and
 -- `forks` link copied sessions in both directions; `subagent_parent` points
 -- back to the owner; `subagents` is the ordered list of subagent session
--- paths this session ran (most-recent-last); `assets` is the manifest of the
--- absolute paths of the photo files this session references (the shared,
--- content-addressed store lives under Neovim's data directory).
+-- paths this session ran (most-recent-last).
 -- Token/cost
 -- totals are NOT persisted here — the winbar accumulates them per-buffer,
 -- and the durable session total is derived from the audit log, not the file.
@@ -67,8 +67,13 @@ local M = {}
 
 local config = require("harness.config")
 
+-- The reasoning levels a session can select. Rendered into the frontmatter as
+-- `available_reasoning` so the options are visible next to the active choice;
+-- the active value itself is what gets sent.
+local AVAILABLE_REASONING = { "low", "medium", "high" }
+
 local function is_list_key(k)
-  return k == "models" or k == "subagents" or k == "forks" or k == "assets"
+  return k == "models" or k == "subagents" or k == "forks"
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
@@ -82,7 +87,7 @@ function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {}, subagents = {}, forks = {}, assets = {} }
+  local fm = { models = {}, subagents = {}, forks = {} }
   local list_key = nil
   for i = 2, #lines do
     local line = lines[i]
@@ -114,8 +119,8 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
-      elseif k == "reasoning_level" then
-        fm.reasoning_level = v
+      elseif k == "active_reasoning" or k == "reasoning_level" then
+        fm.active_reasoning = v
       elseif k == "tools" then
         if v ~= "" then
           -- legacy inline form `tools: a,b,c` (pre-list sessions)
@@ -139,8 +144,6 @@ function M.parse(lines)
           fm.subagents[#fm.subagents + 1] = item
         elseif list_key == "forks" then
           fm.forks[#fm.forks + 1] = item
-        elseif list_key == "assets" then
-          fm.assets[#fm.assets + 1] = item
         elseif list_key == "tools" then
           fm.tools = fm.tools or {}
           fm.tools[#fm.tools + 1] = item
@@ -169,8 +172,7 @@ function M.render(
   forked_from,
   forks,
   subagent_parent,
-  assets,
-  reasoning_level
+  active_reasoning
 )
   local lines = { "---" }
   -- `title` is always written (empty by default) so a hand-edited value sits
@@ -183,8 +185,12 @@ function M.render(
   end
   lines[#lines + 1] = "model: " .. model
   lines[#lines + 1] = "provider: " .. provider
-  if reasoning_level and reasoning_level ~= "" then
-    lines[#lines + 1] = "reasoning_level: " .. reasoning_level
+  lines[#lines + 1] = "available_reasoning:"
+  for _, level in ipairs(AVAILABLE_REASONING) do
+    lines[#lines + 1] = "  - " .. level
+  end
+  if active_reasoning and active_reasoning ~= "" then
+    lines[#lines + 1] = "active_reasoning: " .. active_reasoning
   end
   if created_cwd and created_cwd ~= "" then
     lines[#lines + 1] = "created_cwd: " .. created_cwd
@@ -223,12 +229,6 @@ function M.render(
     lines[#lines + 1] = "forks:"
     for _, p in ipairs(forks) do
       lines[#lines + 1] = "  - " .. p
-    end
-  end
-  if assets and #assets > 0 then
-    lines[#lines + 1] = "assets:"
-    for _, a in ipairs(assets) do
-      lines[#lines + 1] = "  - " .. a
     end
   end
   if tools and #tools > 0 then
@@ -281,7 +281,7 @@ function M.sync(buf)
   -- user left in the buffer — deleting the line restores the provider
   -- default.
   local defaults = require("harness").config
-  local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
+  local active_reasoning = (not fm and defaults.reasoning_level) or (fm and fm.active_reasoning)
   local block = M.render(
     provider,
     model,
@@ -298,8 +298,7 @@ function M.sync(buf)
     fm and fm.forked_from,
     fm and fm.forks,
     fm and fm.subagent_parent,
-    fm and fm.assets,
-    reasoning_level
+    active_reasoning
   )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
@@ -344,8 +343,7 @@ function M.record_subagent(parent, child_path)
     fm.forked_from,
     fm.forks,
     fm.subagent_parent,
-    fm.assets,
-    fm.reasoning_level
+    fm.active_reasoning
   )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end
