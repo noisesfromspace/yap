@@ -32,7 +32,7 @@ func TestDecide(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := New(Config{BaseURL: srv.URL, APIKey: "sekret", Model: "typesafe/jev-1.13"})
+	m := New(decide.Config{BaseURL: srv.URL, APIKey: "sekret", Model: "typesafe/jev-1.13"})
 	resp, err := m.Decide(context.Background(), decide.Request{
 		State: map[string]any{"ticket": "blank checkout"},
 		Questions: []decide.Question{
@@ -88,7 +88,7 @@ func TestDecideError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), decide.Request{
+	_, err := New(decide.Config{BaseURL: srv.URL}).Decide(context.Background(), decide.Request{
 		State:     "x",
 		Questions: []decide.Question{{Name: "q", Type: decide.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},
 	})
@@ -108,7 +108,7 @@ func TestDecideDefaults(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := New(Config{BaseURL: srv.URL})
+	m := New(decide.Config{BaseURL: srv.URL})
 	if _, err := m.Decide(context.Background(), decide.Request{
 		State:     "x",
 		Questions: []decide.Question{{Name: "q", Type: decide.Noul, Criteria: map[string]string{"true": "y", "false": "n"}}},

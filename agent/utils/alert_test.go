@@ -43,10 +43,10 @@ func TestSilentTierRuns(t *testing.T) {
 
 func TestHardReasonRequiresApprovalWithoutModel(t *testing.T) {
 	// Deterministic floor must require approval even when no decision model is present.
-	if d := gate(t, nil, TierAskJev, "recursive deletion"); d.Outcome != OutcomeApproval {
+	if d := gate(t, nil, TierAskModel, "recursive deletion"); d.Outcome != OutcomeApproval {
 		t.Fatalf("hard reason with no model: %+v", d)
 	}
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.0, 0.9, 0)}, TierAskJev, "sudo"); d.Outcome != OutcomeApproval {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.0, 0.9, 0)}, TierAskModel, "sudo"); d.Outcome != OutcomeApproval {
 		t.Fatalf("hard reason overrides a benign model verdict: %+v", d)
 	}
 }
@@ -60,7 +60,7 @@ func TestAlwaysApprovalTier(t *testing.T) {
 func TestExfiltrationRequiresApproval(t *testing.T) {
 	// Score is a weighted mean: almost certain exfiltration is below 3.
 	for _, sev := range []float64{3, 2.99} {
-		if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, sev)}, TierAskJev, ""); d.Outcome != OutcomeApproval {
+		if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, sev)}, TierAskModel, ""); d.Outcome != OutcomeApproval {
 			t.Fatalf("exfil at score %.2f should require approval: %+v", sev, d)
 		}
 	}
@@ -70,7 +70,7 @@ func TestExfiltrationRequiresApproval(t *testing.T) {
 	s := answers["severity"]
 	s.Probabilities = map[string]float64{"0": 0.4, "3": 0.6}
 	answers["severity"] = s
-	if d := gate(t, fakeModel{answers: answers}, TierAskJev, ""); d.Outcome != OutcomeApproval {
+	if d := gate(t, fakeModel{answers: answers}, TierAskModel, ""); d.Outcome != OutcomeApproval {
 		t.Fatalf("majority exfil should require approval: %+v", d)
 	}
 }
@@ -78,43 +78,43 @@ func TestExfiltrationRequiresApproval(t *testing.T) {
 func TestMissingSeverityAdvisory(t *testing.T) {
 	answers := fakeAnswer(0.1, 0.9, 0)
 	delete(answers, "severity")
-	if d := gate(t, fakeModel{answers: answers}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: answers}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("missing severity must not silently run: %+v", d)
 	}
 }
 
 func TestDestructiveRequiresApprovalWhenConfident(t *testing.T) {
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.6, 0.9, 2)}, TierAskJev, ""); d.Outcome != OutcomeApproval {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.6, 0.9, 2)}, TierAskModel, ""); d.Outcome != OutcomeApproval {
 		t.Fatalf("destructive + even odds: %+v", d)
 	}
 	// Destructive + low confidence = no signal -> approval.
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.4, 0.2, 2)}, TierAskJev, ""); d.Outcome != OutcomeApproval {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.4, 0.2, 2)}, TierAskModel, ""); d.Outcome != OutcomeApproval {
 		t.Fatalf("destructive + low confidence should require approval: %+v", d)
 	}
 	// Destructive + low P + calibrated = advisory (warn, don't interrupt).
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.2, 0.9, 2)}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.2, 0.9, 2)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("destructive + low P + calibrated should warn (advisory): %+v", d)
 	}
 }
 
 func TestLikelyHarmfulRequiresApproval(t *testing.T) {
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.8, 0.9, 1)}, TierAskJev, ""); d.Outcome != OutcomeApproval {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.8, 0.9, 1)}, TierAskModel, ""); d.Outcome != OutcomeApproval {
 		t.Fatalf("high P + non-trivial severity should require approval: %+v", d)
 	}
 }
 
 func TestSuspiciousAdvisory(t *testing.T) {
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.5, 0.9, 1)}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.5, 0.9, 1)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("mid P should warn (advisory): %+v", d)
 	}
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.4, 0.9, 0)}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.4, 0.9, 0)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("P above advisory bar should warn (advisory) even at severity 0: %+v", d)
 	}
 }
 
 func TestUncertainAdvisory(t *testing.T) {
 	// Low confidence near the advisory bar is "no signal" -> at least an advisory.
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.25, 0.3, 0)}, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.25, 0.3, 0)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("low confidence near 0.5 should warn (advisory): %+v", d)
 	}
 }
@@ -127,7 +127,7 @@ func TestConfidenceReadFromSeverity(t *testing.T) {
 		"harmful":  {Name: "harmful", Type: decide.Noul, Noul: 0.2},
 		"severity": {Name: "severity", Type: decide.Score, Score: 1, Confidence: 0.9},
 	}
-	d := gate(t, fakeModel{answers: answers}, TierAskJev, "")
+	d := gate(t, fakeModel{answers: answers}, TierAskModel, "")
 	if d.Confidence != 0.9 {
 		t.Fatalf("confidence should come from the severity answer: %+v", d)
 	}
@@ -137,20 +137,20 @@ func TestConfidenceReadFromSeverity(t *testing.T) {
 }
 
 func TestBenignRuns(t *testing.T) {
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, 0)}, TierAskJev, ""); d.Outcome != OutcomeRun {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.1, 0.9, 0)}, TierAskModel, ""); d.Outcome != OutcomeRun {
 		t.Fatalf("benign call should run: %+v", d)
 	}
 }
 
 func TestModelFailureFailClosesToAdvisory(t *testing.T) {
 	dm := fakeModel{err: context.DeadlineExceeded}
-	if d := gate(t, dm, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, dm, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("model failure should warn (advisory), not run or require approval: %+v", d)
 	}
 }
 
 func TestNoModelAdvisory(t *testing.T) {
-	if d := gate(t, nil, TierAskJev, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, nil, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("missing model should warn (advisory), not run silently: %+v", d)
 	}
 }

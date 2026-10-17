@@ -55,11 +55,23 @@ Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`).
          "base_url": "https://api.moonshot.ai/v1",
          "api_key_env": "MOONSHOT_API_KEY"
        }
+     },
+     "websearch": {
+       "provider": "exa",
+       "api_key_env": "EXA_API_KEY"
+     },
+     "decision": {
+       "provider": "jev",
+       "api_key_env": "OPENROUTER_API_KEY"
      }
    }
    ```
 
-   Export the key before starting Neovim: `export MOONSHOT_API_KEY=…`.
+   The `websearch` and `decision` tools have pluggable backends (default
+   `exa` and `jev` respectively); each backend is a self-registering Go
+   package selected by name in the config.
+
+   Export the key before starting Neovim: `export MOONSHOT_API_KEY=<your-api-key>`.
 
 3. Install this repo as a Neovim plugin, or append
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
@@ -133,7 +145,6 @@ The full vocabulary is in `:help yap-glossary`.
 The full reference is in `:help yap` (`doc/yap.txt`). The contributor-facing
 contract — the Lua \<-> Go wire protocol and the numbered business rules —
 lives in [`CONTRIBUTING.md`](CONTRIBUTING.md), together with how to run the
-test suite (`tests/run.sh`, or `nix develop --command tests/run.sh` for the
-whole environment). AI assistants (and any human
+test suite (`tests/run.sh`). AI assistants (and any human
 contributor) editing this repository MUST read `CONTRIBUTING.md` before
 changing behaviour, and update it when they do.

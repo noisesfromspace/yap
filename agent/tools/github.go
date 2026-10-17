@@ -36,7 +36,7 @@ type githubArgs struct {
 	Path   string `json:"path,omitempty" jsonschema:"description=path within repository for read_file"`
 	Ref    string `json:"ref,omitempty" jsonschema:"description=branch tag or commit for read_file (default repository default branch)"`
 	Page   int    `json:"page,omitempty" jsonschema:"description=REST search page (default 1; max 10)"`
-	Safety bool   `json:"safety,omitempty" jsonschema:"description=run an optional jev prompt-injection check on untrusted GitHub content"`
+	Safety bool   `json:"safety,omitempty" jsonschema:"description=run an optional decision-model prompt-injection check on untrusted GitHub content"`
 }
 
 func init() {

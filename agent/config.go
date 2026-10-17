@@ -30,10 +30,13 @@ type GitHub struct {
 }
 
 // Decision configures the decision-model backend used by the decision tool and
-// the alert gate. It is Jev-specific today; agent/decide.Model is the plug
-// point for other decision backends. Zero values fall back to OpenRouter's
-// Decisions API, OPENROUTER_API_KEY, and the pinned Jev release.
+// the alert gate. Provider selects the backend (default "jev"; each backend is
+// a self-registering file in agent/decide). BaseURL/APIKeyEnv/Model are the
+// common options; zero values fall back to OpenRouter's Decisions API,
+// OPENROUTER_API_KEY, and the pinned Jev release. agent/decide.Model is the
+// plug point for other decision backends.
 type Decision struct {
+	Provider  string `json:"provider"`
 	BaseURL   string `json:"base_url"`
 	APIKeyEnv string `json:"api_key_env"`
 	Model     string `json:"model"`

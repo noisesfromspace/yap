@@ -28,7 +28,7 @@ const (
 
 type fetchArgs struct {
 	URL    string `json:"url" jsonschema:"description=http(s) URL to fetch"`
-	Safety bool   `json:"safety,omitempty" jsonschema_description:"when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
+	Safety bool   `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 	VPN    bool   `json:"vpn,omitempty" jsonschema:"description=run the request inside the VPN network namespace (requires the vpn.command config)"`
 }
 

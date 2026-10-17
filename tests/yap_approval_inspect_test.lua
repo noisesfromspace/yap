@@ -50,7 +50,7 @@ assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not o
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("▸ Guard (1)", 1, true), "board Guard section missing approval")
 assert(text:find("recursive deletion of critical paths", 1, true), "board missing approval reason")
--- Deterministic floor (no jev consult) must render "always", not a bogus
+-- Deterministic floor (no decision-model consult) must render "always", not a bogus
 -- "0.0/3 · 0% confident" (0 is truthy in Lua, so the metric fields need an
 -- explicit positive check).
 assert(text:find("always (no model consulted)", 1, true), "deterministic-floor approval not marked 'always'")

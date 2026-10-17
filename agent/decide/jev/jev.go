@@ -32,14 +32,6 @@ const (
 	requestTimeout = 5 * time.Second
 )
 
-// Config builds a Jev-backed decide.Model. Zero values fall back to
-// OpenRouter's Decisions endpoint and the pinned Jev release.
-type Config struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-}
-
 type client struct {
 	baseURL string
 	apiKey  string
@@ -47,8 +39,17 @@ type client struct {
 	http    *http.Client
 }
 
+// init registers Jev as a decision backend, so the agent loop can select it
+// by name (config `decision.provider`). Jev is the default backend
+// (decide.DefaultProvider).
+func init() {
+	decide.RegisterProvider("jev", func(cfg decide.Config) (decide.Model, error) {
+		return New(cfg), nil
+	})
+}
+
 // New returns a decide.Model backed by Jev via the OpenRouter Decisions API.
-func New(cfg Config) decide.Model {
+func New(cfg decide.Config) decide.Model {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = DefaultBaseURL
 	}

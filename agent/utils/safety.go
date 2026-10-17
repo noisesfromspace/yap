@@ -11,7 +11,7 @@ import (
 // content as flagged.
 const safetyThreshold = 0.5
 
-// SafetyGuarded optionally runs a jev prompt-injection scan over s using
+// SafetyGuarded optionally runs a decision-model prompt-injection scan over s using
 // the supplied decision model and prepends an advisory warning when the
 // scan flags it (or fails). The content is still returned — the annotation
 // warns the model, it does not block. Fail-open: a decision-model outage

@@ -2,10 +2,11 @@
 // Every non-test Go file in this directory except tools.go (the registry
 // below) defines exactly one tool, self-registering via Register in init().
 // Adding or changing a tool = editing a file here and recompiling
-// (CGO_ENABLED=0). Tool *providers* — websearch backends and the decision
-// model — are not tools: they live outside this directory (e.g.
+// (CGO_ENABLED=0). Tool *providers* — websearch backends and decision
+// models — are not tools: they live outside this directory (e.g.
 // agent/websearch/exa, agent/decide/jev) and register through
-// RegisterWebsearchProvider. See also the alert-gate notes on each tool.
+// RegisterWebsearchProvider / decide.RegisterProvider. See also the
+// alert-gate notes on each tool.
 //
 // A tool defines an Args struct; the JSON schema sent to the provider is
 // generated from it by reflection (invopop/jsonschema), and incoming

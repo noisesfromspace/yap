@@ -127,6 +127,7 @@ and each path is configurable via `setup()` / the Nix module options):
       }
     },
     "decision": {
+      "provider": "jev",
       "base_url": "https://openrouter.ai/api/alpha/decisions",
       "api_key_env": "OPENROUTER_API_KEY",
       "model": "typesafe/jev-1.13"
@@ -149,8 +150,10 @@ and each path is configurable via `setup()` / the Nix module options):
   Any OpenAI-compatible /chat/completions endpoint works; API keys come from
   the named env vars. Model prices come from the committed catalog
   (`agent/price/pricing.json`). `decision` configures the decision-model
-  backend behind the decision tool and the alert gate (|yap-alert-gate|).
-  `alert` tunes
+  backend behind the decision tool and the alert gate (|yap-alert-gate|):
+  `provider` selects the backend (default "jev"; each backend is a
+  self-registering file in agent/decide), and `base_url`/`api_key_env`/`model`
+  are the common options. `alert` tunes
   the gate thresholds (|yap-alert-gate|). `vpn.command` is the argv prefix
   that enters the VPN network namespace for the bash/curl/fetch `vpn` flag;
   when empty the flag is unavailable. `ssh.known_hosts` overrides the file
@@ -619,14 +622,14 @@ Every tool call passes a pre-execution gate. Three tiers:
 
   silent           read, ls, glob, search, git, github, fetch, websearch, decision,
                    quickfix, close_session, write, edit — run immediately.
-  ask-jev          bash, python, curl, subagent, playwright — a decision-model
+  ask-model        bash, python, curl, subagent, playwright — a decision-model
                    pass decides the outcome.
   always-approval  ssh — always pauses for a Run/Deny confirmation.
 
-For `ask-jev` tools a deterministic floor (destructive or high-blast-radius
+For `ask-model` tools a deterministic floor (destructive or high-blast-radius
 commands such as `rm -rf /`, `sudo`, `curl | sh`, `subprocess`/`os.system`,
-`shutil.rmtree`) always forces approval. Where the floor is silent, jev
-answers P(harmful) and a 0–3 severity score and maps the result to:
+`shutil.rmtree`) always forces approval. Where the floor is silent, the
+decision model answers P(harmful) and a 0–3 severity score and maps the result to:
 
   approval   pause the turn for a Run/Deny/Inspect decision (|:YapGuard|).
              Never runs on timeout (five minutes) or when the board is
@@ -693,7 +696,7 @@ replaces.
                       "subagent role".)
   subagent            A child session spawned by the `subagent` tool from an
                       agent definition.
-  decision model      The jev-style typed-probability backend behind the alert
+  decision model      The typed-probability backend behind the alert
                       gate and the `decision` tool.
 
 "Block" survives only in standard Markdown/Vim senses unrelated to yap's

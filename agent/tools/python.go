@@ -38,7 +38,7 @@ func init() {
 		func(a *pythonArgs) (string, string, error) { return runPython(a) })
 	// Deterministic floor: code-exec / dynamic-exec / recursive-delete calls
 	// are hard-blocked (see the alert gate in agent/agent.go).
-	Gate("python", utils.TierAskJev, func(args json.RawMessage) string {
+	Gate("python", utils.TierAskModel, func(args json.RawMessage) string {
 		var a pythonArgs
 		if err := json.Unmarshal(args, &a); err != nil {
 			return ""

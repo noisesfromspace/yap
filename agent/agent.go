@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"boers.email/yap/agent/decide"
-	"boers.email/yap/agent/decide/jev"
+	_ "boers.email/yap/agent/decide/jev" // registers the default decision backend
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/price"
@@ -306,15 +306,16 @@ var providerFactory = func(name string, prov Provider) (llm.Provider, error) {
 	})
 }
 
-// decisionModel builds the backend for the decision tool from config, defaulting
-// to Jev via OpenRouter's Decisions API. OPENROUTER_API_KEY authenticates
-// both the chat and decisions surfaces.
-func decisionModel(cfg *Config) decide.Model {
+// decisionModel builds the backend for the decision tool from config. It
+// selects the backend named by `decision.provider` (default "jev", the
+// compiled-in default) through the decide registry. OPENROUTER_API_KEY
+// authenticates both the chat and decisions surfaces.
+func decisionModel(cfg *Config) (decide.Model, error) {
 	env := cfg.Decision.APIKeyEnv
 	if env == "" {
 		env = "OPENROUTER_API_KEY"
 	}
-	return jev.New(jev.Config{
+	return decide.New(cfg.Decision.Provider, decide.Config{
 		BaseURL: cfg.Decision.BaseURL,
 		APIKey:  os.Getenv(env),
 		Model:   cfg.Decision.Model,
@@ -397,7 +398,7 @@ func gateState(name string, input json.RawMessage, t *turn, messages []llm.Messa
 			if err != nil {
 				state["file_source"] = "unreadable: " + err.Error()
 			} else {
-				// A large script should not dominate the Jev request. Mark the
+				// A large script should not dominate the decision-model request. Mark the
 				// omitted tail explicitly rather than implying a complete scan.
 				data, err := io.ReadAll(io.LimitReader(f, 16*1024+1))
 				_ = f.Close()
@@ -473,7 +474,10 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	// audit log. The decision backend adds to it through costTrackingModel;
 	// it is mutex-guarded because fetch/curl safety scans can run in parallel.
 	var totCost costTotal
-	dm := decisionModel(cfg)
+	dm, err := decisionModel(cfg)
+	if err != nil {
+		return err
+	}
 	dm = &costTrackingModel{inner: dm, total: &totCost}
 	tools.SetDecisionModel(dm)
 	alertCfg := alertConfig(cfg)

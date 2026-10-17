@@ -49,7 +49,7 @@ func init() {
 			"To hand control to the human (logins, Cloudflare/Turnstile, captcha), set handover=true; the window opens for manual use, then resume with command snapshot.",
 		func(a *playwrightArgs) (string, string, error) { return runPW(a) }, ClosePlaywright)
 	// A browser can act (and exfiltrate) on the user's behalf; gate it.
-	Gate("playwright", utils.TierAskJev, nil)
+	Gate("playwright", utils.TierAskModel, nil)
 }
 
 type pwState struct {

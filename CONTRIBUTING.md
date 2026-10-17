@@ -299,9 +299,9 @@ ever needed, add mark3labs/mcp-go additively.
 
 Each file self-registers via init(); adding a tool = adding a file and
 recompiling. Search and decision providers are not tools and live outside
-agent/tools/ (agent/websearch/exa, agent/decide/jev), registering through the
-tools package's exported registration functions so the directory stays one
-file per callable tool. Not config files (the author wants tool code, not opaque
+agent/tools/ (agent/websearch/exa, agent/decide/jev), self-registering through
+their packages' exported registration functions (tools.RegisterWebsearchProvider,
+decide.RegisterProvider) so the directory stays one file per callable tool. Not config files (the author wants tool code, not opaque
 declarations), not external executable tool plugins: the tool interface is
 compiled in, although individual tools may spawn subprocesses. bash, python and
 ssh are deliberately unsandboxed — the author runs pi the same way and accepts

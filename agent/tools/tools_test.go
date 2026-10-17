@@ -124,14 +124,14 @@ func TestBashToolStartEvent(t *testing.T) {
 
 func TestGatePreflight(t *testing.T) {
 	// Dangerous bash/python forms produce a hard-block reason.
-	if tier, reason := Assess("bash", json.RawMessage(`{"command":"rm -rf /"}`)); tier != utils.TierAskJev || reason == "" {
+	if tier, reason := Assess("bash", json.RawMessage(`{"command":"rm -rf /"}`)); tier != utils.TierAskModel || reason == "" {
 		t.Fatalf("bash rm -rf /: tier=%v reason=%q", tier, reason)
 	}
-	if tier, reason := Assess("python", json.RawMessage(`{"code":"import os; os.system('id')"}`)); tier != utils.TierAskJev || reason == "" {
+	if tier, reason := Assess("python", json.RawMessage(`{"code":"import os; os.system('id')"}`)); tier != utils.TierAskModel || reason == "" {
 		t.Fatalf("python os.system: tier=%v reason=%q", tier, reason)
 	}
 
-	// Benign forms: ask-jev tier, no hard floor.
+	// Benign forms: ask-model tier, no hard floor.
 	if _, reason := Assess("bash", json.RawMessage(`{"command":"echo hi"}`)); reason != "" {
 		t.Fatalf("echo hi: reason=%q", reason)
 	}
@@ -139,13 +139,13 @@ func TestGatePreflight(t *testing.T) {
 		t.Fatalf("print(1): reason=%q", reason)
 	}
 
-	// ask-jev tools without a preflight: gated, no floor.
+	// ask-model tools without a preflight: gated, no floor.
 	for _, tc := range []struct{ tool, args string }{
 		{"curl", `{"url":"https://example.com"}`},
 		{"subagent", `{"agent":"x","task":"y"}`},
 		{"playwright", `{"command":"goto https://example.com"}`},
 	} {
-		if tier, _ := Assess(tc.tool, json.RawMessage(tc.args)); tier != utils.TierAskJev {
+		if tier, _ := Assess(tc.tool, json.RawMessage(tc.args)); tier != utils.TierAskModel {
 			t.Fatalf("%s: tier=%v", tc.tool, tier)
 		}
 	}

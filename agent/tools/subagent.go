@@ -49,5 +49,5 @@ func init() {
 		}
 	})
 	// A subagent runs a full turn with its own tools; gate the delegation.
-	Gate("subagent", utils.TierAskJev, nil)
+	Gate("subagent", utils.TierAskModel, nil)
 }

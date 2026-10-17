@@ -5,7 +5,10 @@
 // be swapped without touching the tool or the agent loop.
 package decide
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // QuestionType names the three decision primitives a model can answer.
 type QuestionType string
@@ -59,4 +62,45 @@ type Response struct {
 // calibrated answers or an error; they never generate prose.
 type Model interface {
 	Decide(ctx context.Context, req Request) (Response, error)
+}
+
+// Config is the provider-facing subset of the `decision` config block. It
+// carries the options shared by every decision backend; the agent loop
+// resolves APIKey from the named env var before invoking a factory. A
+// backend with provider-specific options can read them from the environment
+// directly.
+type Config struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+}
+
+// Provider is a decision-backend factory: it builds a Model from the common
+// config. Backends self-register via RegisterProvider from their package's
+// init(), mirroring websearch providers (agent/tools).
+type Provider func(cfg Config) (Model, error)
+
+var providers = map[string]Provider{}
+
+// RegisterProvider adds a decision backend; called from a provider package's
+// init().
+func RegisterProvider(name string, p Provider) {
+	providers[name] = p
+}
+
+// DefaultProvider is the fallback when config names none.
+const DefaultProvider = "jev"
+
+// New builds the named decision backend (DefaultProvider when name is empty).
+// It fails loudly on an unknown provider so a config typo surfaces instead of
+// silently degrading to "no decision model" advisories.
+func New(name string, cfg Config) (Model, error) {
+	if name == "" {
+		name = DefaultProvider
+	}
+	p, ok := providers[name]
+	if !ok {
+		return nil, fmt.Errorf("decision provider %q is not registered", name)
+	}
+	return p(cfg)
 }

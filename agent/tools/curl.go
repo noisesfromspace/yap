@@ -42,7 +42,7 @@ type curlArgs struct {
 	FollowRedirects *bool             `json:"followRedirects,omitempty" jsonschema:"description=follow HTTP redirects (default true)"`
 	Timeout         int               `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 30)"`
 	Flags           string            `json:"flags,omitempty" jsonschema:"description=space-separated extra curl flags (e.g. --http1.1); values with spaces (like header values) belong in headers"`
-	Safety          bool              `json:"safety,omitempty" jsonschema_description:"when true, run a jev prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
+	Safety          bool              `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 	VPN             bool              `json:"vpn,omitempty" jsonschema:"description=run curl inside the VPN network namespace (requires the vpn.command config)"`
 }
 
@@ -55,7 +55,7 @@ func init() {
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
 	// curl can exfiltrate via data/headers over the shared network, so it is
 	// decision-gated (see the alert gate in agent/agent.go).
-	Gate("curl", utils.TierAskJev, nil)
+	Gate("curl", utils.TierAskModel, nil)
 }
 
 // curlDenyLong / curlDenyShort are curl options that can turn the tool into

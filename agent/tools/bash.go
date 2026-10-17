@@ -29,7 +29,7 @@ func init() {
 		func(a *bashArgs) (string, string, error) { return runBash(a) })
 	// Deterministic floor: high-risk commands are hard-blocked (see the alert
 	// gate in agent/agent.go); the decision model never downgrades these.
-	Gate("bash", utils.TierAskJev, func(args json.RawMessage) string {
+	Gate("bash", utils.TierAskModel, func(args json.RawMessage) string {
 		var a bashArgs
 		if err := json.Unmarshal(args, &a); err != nil {
 			return ""

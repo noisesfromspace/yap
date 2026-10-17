@@ -13,7 +13,7 @@ import (
 // should it run silently, run with an advisory, or pause the
 // turn and ask the user to approve? It layers a cheap deterministic floor
 // (regexes, per-tool checks) under one batched decision-model pass for the
-// gray middle, so jev only pays a round-trip where a wrong call can hurt.
+// gray middle, so the decision model only pays a round-trip where a wrong call can hurt.
 //
 // It is deliberately NOT a security boundary — bash is unsandboxed by
 // design (doc: R-compiled-tools) and any gate is steerable. It exists to make the common
@@ -26,7 +26,7 @@ type Tier int
 
 const (
 	TierSilent         Tier = iota // run without consulting the decision model
-	TierAskJev                     // ask the decision model; approval/advisory/run
+	TierAskModel                   // ask the decision model; approval/advisory/run
 	TierAlwaysApproval             // always pause for approval (no model)
 )
 
@@ -100,7 +100,7 @@ var severityShort = []string{"benign", "reversible", "destructive", "exfiltratio
 //	hardReason != ""            -> Approval (deterministic floor; never downgraded)
 //	tier == TierAlwaysApproval  -> Approval (e.g. ssh)
 //	tier == TierSilent          -> Run
-//	tier == TierAskJev          -> the decision model decides (below)
+//	tier == TierAskModel        -> the decision model decides (below)
 //
 // It never fails: a decision-model outage fail-closes to an advisory
 // (OutcomeAdvisory) so a down backend warns loudly instead of either
@@ -118,7 +118,7 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 		}
 		return d
 	}
-	// tier == TierAskJev
+	// tier == TierAskModel
 	if dm == nil {
 		d.Outcome = OutcomeAdvisory
 		d.Reason = "no decision model configured; alert check skipped"
