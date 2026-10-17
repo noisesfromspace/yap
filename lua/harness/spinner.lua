@@ -1,10 +1,9 @@
--- Busy beacon animation, extracted from the winbar: the smiley faces, the
+-- Busy beacon animation, extracted from the winbar: the status glyphs, the
 -- plain-unicode fallback glyphs and the Ember hue tween that tints them. The
--- beacon picks a random face but stays in one size tier — the same-size
--- (light) faces first — for as many ticks as the tier has faces, then moves to
--- the bigger (filled) tier even if randomness skipped some. The hue tween is
--- independent of the face, so it keeps cycling amber → coral → rose the whole
--- time a turn runs.
+-- beacon picks a random glyph each tick from a single uniform set — every
+-- glyph renders at the same cell size and the same outline weight, so there is
+-- no size jumping. The hue tween is independent of the glyph, so it keeps
+-- cycling amber → coral → rose the whole time a turn runs.
 
 local M = {}
 
@@ -19,100 +18,35 @@ local function pick(t)
   return t[rng_state % #t + 1]
 end
 
--- Size tiers: the light smileys (Font Awesome faces, Material Design outline
--- emoticons, and the lone Codicon + Octicon smileys) all render at one size;
--- the filled Material Design emoticons render noticeably bigger. The beacon
--- picks randomly within a tier, and switches tiers after as many ticks as the
--- tier has faces.
+-- Uniform spinner set: Shapes & status glyphs that all render at the same
+-- full cell size (≈1.00×1.00 em) with the same outline weight, so random
+-- picks never jump between sizes.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
-local NF_SIZE_TIERS = {
-  {
-    -- Same size: Font Awesome faces (solid + hollow), then Material Design
-    -- outline emoticons, then the Codicon and Octicon smileys.
-    faces = {
-      nf(0xEDA9),
-      nf(0xEE80),
-      nf(0xEE49),
-      nf(0xEE4B),
-      nf(0xEE4E),
-      nf(0xEE50),
-      nf(0xEE62),
-      nf(0xEE63),
-      nf(0xEE64),
-      nf(0xEE65),
-      nf(0xF118),
-      nf(0xEE4A),
-      nf(0xEE55),
-      nf(0xEE4D),
-      nf(0xEE52),
-      nf(0xEE54),
-      nf(0xEE53),
-      nf(0xEE5F),
-      nf(0xEE60),
-      nf(0xEE61),
-      nf(0xEE51),
-      nf(0xEE4F),
-      nf(0xEE89),
-      nf(0xEE4C),
-      nf(0xEE6E),
-      nf(0xEE42),
-      nf(0xEE6D),
-      nf(0xF11A),
-      nf(0xEE48),
-      nf(0xEE8F),
-      nf(0xEE43),
-      nf(0xEE1F),
-      nf(0xEE7C),
-      nf(0xF119),
-      nf(0xEE30),
-      nf(0xEE7B),
-      nf(0xF01F2),
-      nf(0xF01F5),
-      nf(0xF069C),
-      nf(0xF01F3),
-      nf(0xF0C79),
-      nf(0xF0C73),
-      nf(0xF1215),
-      nf(0xF0C77),
-      nf(0xF01F4),
-      nf(0xF0C6A),
-      nf(0xF0C6D),
-      nf(0xF069B),
-      nf(0xF0F4D),
-      nf(0xF01F8),
-      nf(0xF157D),
-      nf(0xF10DF),
-      nf(0xF01F6),
-      nf(0xF0C75),
-      nf(0xEB54),
-      nf(0xF4A2),
-    },
-  },
-  {
-    -- Bigger: filled Material Design emoticons.
-    faces = {
-      nf(0xF0C68),
-      nf(0xF0C71),
-      nf(0xF0C70),
-      nf(0xF0C6B),
-      nf(0xF0C78),
-      nf(0xF0C72),
-      nf(0xF1214),
-      nf(0xF01F9),
-      nf(0xF0C6F),
-      nf(0xF0C69),
-      nf(0xF0C6C),
-      nf(0xF0C6E),
-      nf(0xF0F4C),
-      nf(0xF0C76),
-      nf(0xF157C),
-      nf(0xF10DE),
-      nf(0xF0C74),
-      nf(0xF01F7),
-    },
-  },
+local NF_SPINNER = {
+  -- Font Awesome
+  nf(0xF13D), -- anchor
+  nf(0xF069), -- asterisk
+  nf(0xF0E7), -- bolt
+  nf(0xF14E), -- compass
+  nf(0xF05B), -- crosshairs
+  nf(0xF219), -- gem
+  nf(0xF067), -- plus
+  nf(0xF2DC), -- snowflake
+  nf(0xF00D), -- xmark
+  -- Material Design
+  nf(0xF0031), -- anchor
+  nf(0xF06C4), -- asterisk
+  nf(0xF05DD), -- bullseye
+  nf(0xF012C), -- check
+  nf(0xF0156), -- close
+  nf(0xF01A3), -- crosshairs
+  nf(0xF0347), -- magnet
+  nf(0xF0415), -- plus
+  nf(0xF0717), -- snowflake
+  nf(0xF04CE), -- star
+  nf(0xF04FE), -- target
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 
@@ -147,34 +81,20 @@ function M.color()
   )
 end
 
-M.groups = NF_SIZE_TIERS -- exported for tests: the size tiers themselves
-M.spinner_frames = {} -- exported for tests: every face the beacon can show
-for _, b in ipairs(NF_SIZE_TIERS) do
-  for _, g in ipairs(b.faces) do
-    M.spinner_frames[#M.spinner_frames + 1] = g
-  end
-end
+M.spinner_frames = NF_SPINNER -- exported for tests: every glyph the beacon can show
 
 local spinner_timer = nil
 local spin_tick = 0
-local tier_index = 1 -- current size tier
-local tier_ticks = 0 -- ticks spent in the current tier
 local glyph_cache = { tick = -1, glyph = nil, plain = nil }
 
--- Random face per tick, but tiered: each size tier runs for as many ticks as
--- it has faces, then the next tier takes over — even if randomness skipped
--- some faces. Cached per tick so a redraw or an elapsed-tool-time change
--- cannot alter the face between timer fires.
+-- Random glyph per tick, from a single uniform set. Cached per tick so a
+-- redraw or an elapsed-tool-time change cannot alter the glyph between timer
+-- fires.
 function M.glyph()
   if glyph_cache.tick ~= spin_tick then
-    tier_ticks = tier_ticks + 1
-    if tier_ticks > #NF_SIZE_TIERS[tier_index].faces then
-      tier_index = tier_index % #NF_SIZE_TIERS + 1
-      tier_ticks = 1
-    end
     glyph_cache = {
       tick = spin_tick,
-      glyph = pick(NF_SIZE_TIERS[tier_index].faces),
+      glyph = pick(NF_SPINNER),
       plain = pick(PLAIN_SPINNER_FRAMES),
     }
   end
@@ -199,8 +119,6 @@ function M.start()
     return
   end
   glyph_cache.tick = -1
-  tier_index = 1 -- each turn restarts in the same-size tier
-  tier_ticks = 0
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,

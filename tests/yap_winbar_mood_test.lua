@@ -1,7 +1,7 @@
--- The beacon stays in the same-size tier first, picks a random face each tick,
--- and moves to the bigger tier after as many ticks as the tier has faces —
--- even though randomness means some faces may not have shown. A redraw or a
--- tool-time change must never advance the face.
+-- The beacon picks a random glyph each tick from a single uniform set, and
+-- only changes on the spinner tick — never on a redraw or on tool elapsed
+-- time. Every glyph shares one size, so the test only asserts the glyph stays
+-- within the set and that the beacon roams it rather than parking on one face.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -26,12 +26,6 @@ end
 spinner.start()
 vim.uv.new_timer = original_timer
 
-local tier_of = {}
-for ti, tier in ipairs(spinner.groups) do
-  for _, glyph in ipairs(tier.faces) do
-    tier_of[glyph] = ti
-  end
-end
 local function face()
   local bar = yap.winbar(buf)
   for _, glyph in ipairs(spinner.spinner_frames) do
@@ -39,39 +33,30 @@ local function face()
       return glyph
     end
   end
-  error("missing face: " .. bar)
+  error("missing spinner glyph: " .. bar)
 end
 
-local function tier_len(ti)
-  return #spinner.groups[ti].faces
-end
+assert(#spinner.spinner_frames == 20, "expected 20 Shapes & status glyphs")
 
 local glyph = face()
-assert(tier_of[glyph] == 1, "beacon should start in the same-size tier")
-
--- Each tier runs for exactly its face count of showings, then the next tier
--- takes over, wrapping back to the first. The starting face above already
--- consumed one showing of tier 1, so the loop picks up one short of a full
--- tier. The face must stay in the expected tier the whole time, and a redraw
--- or elapsed-time change must not advance it.
-local tier, left = 1, tier_len(1) - 1
-local seen = {}
+local seen = { [glyph] = true }
 for i = 1, 200 do
-  seen[tier] = true
   tick()
   vim.wait(1) -- run the scheduled timer callback
   glyph = face()
-  assert(tier_of[glyph] == tier, "face escaped tier " .. tier .. " on tick " .. i)
+  seen[glyph] = true
+  -- A redraw or a change to the tool start time must not advance the glyph.
   state.live[buf].since = os.time() - i * 100
-  assert(face() == glyph, "redraw or elapsed time changed the face")
-  left = left - 1
-  if left == 0 then
-    tier = tier % #spinner.groups + 1
-    left = tier_len(tier)
-  end
+  assert(face() == glyph, "redraw or elapsed time changed the glyph")
 end
-assert(seen[1] and seen[2], "beacon should cycle through both size tiers")
+
+-- The beacon should roam the set, not park on one glyph.
+local n_distinct = 0
+for _ in pairs(seen) do
+  n_distinct = n_distinct + 1
+end
+assert(n_distinct >= 5, "beacon did not vary its glyph: " .. n_distinct)
 
 state.running[buf] = nil
 spinner.stop_if_idle()
-print("OK winbar_spinner_order")
+print("OK winbar_spinner")
