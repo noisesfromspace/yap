@@ -285,8 +285,6 @@ M.answer_approval = answer_approval
 -- about a call that already ran.
 local function notify_approval(buf, ev)
   local risk = ev.risk or ""
-  local key = M.config.keymaps.guard
-  local action = key ~= "" and (key .. " to Run, Deny or Inspect") or ":YapGuard to Run, Deny or Inspect"
   local lines = {
     ("yap: %s needs approval — %s: %s"):format(
       live_session_label(buf),
@@ -297,7 +295,6 @@ local function notify_approval(buf, ev)
   if risk ~= "" then
     lines[#lines + 1] = risk
   end
-  lines[#lines + 1] = action
   vim.notify(
     table.concat(lines, "\n"),
     vim.log.levels.ERROR,

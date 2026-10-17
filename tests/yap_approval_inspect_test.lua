@@ -41,10 +41,9 @@ assert(notice, "no approval notification fired")
 assert(notice.level == vim.log.levels.ERROR, "approval notification not ERROR level")
 assert(notice.opts.icon == yap.config.icons.approval, "approval notification missing shield icon")
 assert(not notice.msg:find("rm -rf /", 1, true), "notification should not dump the full call")
-assert(
-  notice.msg:find(yap.config.keymaps.guard .. " to Run, Deny or Inspect", 1, true),
-  "notification should point at the guard keymap"
-)
+assert(notice.msg:find("needs approval", 1, true), "notification should state approval is required")
+assert(not notice.msg:find("Run, Deny or Inspect", 1, true), "notification should not contain instructions")
+assert(not notice.msg:find(":YapGuard", 1, true), "notification should not contain the command")
 
 -- The board lists the parked approval with its decoded command and reason.
 guard.toggle()
