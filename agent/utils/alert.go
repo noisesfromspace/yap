@@ -59,7 +59,7 @@ type AlertConfig struct {
 // harm). Tuned from the audit log via the `alert` config block.
 var DefaultAlertConfig = AlertConfig{
 	ApprovalProb:  0.7,
-	AdvisoryProb:  0.35,
+	AdvisoryProb:  0.25,
 	MinConfidence: 0.6,
 }
 

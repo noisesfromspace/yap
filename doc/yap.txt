@@ -134,7 +134,7 @@ and each path is configurable via `setup()` / the Nix module options):
     },
     "alert": {
       "approval_prob": 0.7,
-      "advisory_prob": 0.35,
+      "advisory_prob": 0.25,
       "min_confidence": 0.6
     },
     "vpn": {
@@ -658,8 +658,9 @@ score, and P(reveals a live secret value) — and maps the result to:
              Never runs on timeout (five minutes) or when the board is
              dismissed. A call that would reveal a live secret or credential
              value forces approval even when severity reads benign.
-  advisory   run, but log the call and show a non-blocking warning with a
-             plain-language risk phrase (|:YapGuard| keeps the numbers).
+  advisory   run, but log the call to the guard board's Advisory section
+             (no notification) with a plain-language risk phrase — audit it
+             later in |:YapGuard|, which keeps the numbers.
   run        proceed silently.
 
 A decision-model outage degrades to `advisory` rather than blocking. Thresholds

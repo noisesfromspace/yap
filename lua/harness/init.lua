@@ -346,21 +346,10 @@ local function handle_event(buf, json_line)
     audit.append_event(buf, ev)
     guard.touch()
   elseif ev.type == "alert_advisory" then
-    -- Record before notifying: the board can now navigate to this exact alert.
+    -- Advisories are silent: recorded for the guard board's Advisory section
+    -- (and the audit log) but never toasted. The board is the audit surface.
     audit.append_event(buf, ev)
     guard.touch()
-    local lines = {
-      ("yap: %s — %s: %s"):format(
-        live_session_label(buf),
-        ev.name or "tool",
-        ev.reason or "flagged"
-      ),
-    }
-    local risk = ev.risk or ""
-    if risk ~= "" then
-      lines[#lines + 1] = risk
-    end
-    vim.notify(table.concat(lines, "\n"), vim.log.levels.WARN, { title = "yap alert" })
   elseif ev.type == "tool_call" then
     -- quickfix is a frontend side effect: only a live tool_call event
     -- creates a list, so persisted tool regions never replay on reopen.

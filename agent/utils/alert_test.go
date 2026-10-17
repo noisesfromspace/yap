@@ -174,11 +174,11 @@ func TestAbsentConfidenceDoesNotEscalate(t *testing.T) {
 	// Confidence 0 means "the backend did not report it", not "uncalibrated".
 	// Treating it as low confidence is what produced the wall of "decision
 	// model uncertain" advisories (222 of 272 in real audit logs).
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.25, 0, 0)}, TierAskModel, ""); d.Outcome != OutcomeRun {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.15, 0, 0)}, TierAskModel, ""); d.Outcome != OutcomeRun {
 		t.Fatalf("absent confidence below the advisory bar should run silently: %+v", d)
 	}
 	// Same probability with reported low confidence still warns.
-	if d := gate(t, fakeModel{answers: fakeAnswer(0.25, 0.3, 0)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
+	if d := gate(t, fakeModel{answers: fakeAnswer(0.15, 0.3, 0)}, TierAskModel, ""); d.Outcome != OutcomeAdvisory {
 		t.Fatalf("reported low confidence should still warn: %+v", d)
 	}
 }
