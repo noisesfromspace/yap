@@ -51,9 +51,9 @@ Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`).
    ```json
    {
      "providers": {
-       "moonshot": {
-         "base_url": "https://api.moonshot.ai/v1",
-         "api_key_env": "MOONSHOT_API_KEY"
+       "anthropic": {
+         "base_url": "https://api.anthropic.com",
+         "api_key_env": "ANTHROPIC_API_KEY"
        }
      },
      "websearch": {
@@ -71,13 +71,13 @@ Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`).
    `exa` and `jev` respectively); each backend is a self-registering Go
    package selected by name in the config.
 
-   Export the key before starting Neovim: `export MOONSHOT_API_KEY=<your-api-key>`.
+   Export the key before starting Neovim: `export ANTHROPIC_API_KEY=<your-api-key>`.
 
 3. Install this repo as a Neovim plugin, or append
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
 
    ```lua
-   require("harness").setup({ provider = "moonshot", model = "kimi-k3" })
+   require("harness").setup({ provider = "anthropic", model = "claude-sonnet-5.5" })
    ```
 
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.

@@ -9,8 +9,8 @@ local paths = require("harness.path")
 
 M.defaults = {
   bin = "yap", -- path to the yap binary
-  provider = "moonshot",
-  model = "kimi-k3",
+  provider = "anthropic",
+  model = "claude-sonnet-5.5",
   -- Per-session sampling knob, seeded into a new session's frontmatter so
   -- it is visible and hand-editable from the first line. Delete the line in
   -- a session (or set the default to nil) to fall back to the provider's
@@ -68,7 +68,7 @@ M.defaults = {
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
   -- before the agent answers.
-  description_model = "openai/gpt-5-nano",
+  description_model = "openrouter/google/gemini-2.5-flash-lite",
   -- Bigger model that writes the final title once the turn completes
   -- (back on the `# @user` message): a whole-session summary that tells the
   -- story so the session is easy to find in the picker later.

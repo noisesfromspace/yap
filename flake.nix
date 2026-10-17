@@ -384,7 +384,7 @@
             };
             descriptionModel = mkOption {
               type = types.str;
-              default = "openai/gpt-5-nano";
+              default = "openrouter/google/gemini-2.5-flash-lite";
               description = "Smallest provider/model combo used to label a session from the latest user message on send.";
             };
             descriptionAnswerModel = mkOption {
