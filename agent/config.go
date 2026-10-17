@@ -50,15 +50,6 @@ type Alert struct {
 	MinConfidence float64 `json:"min_confidence"`
 }
 
-// VPN configures the `vpn` flag on the bash, curl and fetch tools. Command
-// is the argv prefix that enters the VPN network namespace and then execs
-// the tool's own command — e.g. ["/run/wrappers/bin/tunnel"] (the setuid
-// wrapper the netns module builds) or ["sudo", "-n", "ip", "netns", "exec",
-// "mullvad"]. When empty, the vpn flag is unavailable and fails loudly.
-type VPN struct {
-	Command []string `json:"command"`
-}
-
 // SSH configures the ssh tool's trust boundary. KnownHosts overrides the
 // known_hosts file hosts are checked against; empty auto-detects (the
 // system-wide file when present, else ~/.ssh/known_hosts).
@@ -72,7 +63,6 @@ type Config struct {
 	GitHub    GitHub              `json:"github"`
 	Decision  Decision            `json:"decision"`
 	Alert     Alert               `json:"alert"`
-	VPN       VPN                 `json:"vpn"`
 	SSH       SSH                 `json:"ssh"`
 }
 

@@ -289,7 +289,6 @@
                 websearch.provider = "exa";
                 websearch.api_key_env = "EXA_API_KEY";
                 decision.provider = "jev";
-                vpn.command = [ "/run/wrappers/bin/tunnel" ];
               };
               description = ''
                 Agent configuration, written to
@@ -299,8 +298,7 @@
                 `websearch` (provider name + api_key_env for the search
                 tool), `decision` (provider name + base_url/api_key_env/model
                 for the decision backend behind the alert gate and the
-                decision tool) and `vpn` (`command` argv prefix that enters a
-                VPN network namespace for the bash/curl/fetch `vpn` flag). Model
+                decision tool). Model
                 prices come from the committed catalog in agent/price. API
                 keys themselves are referenced by environment variable name
                 in `api_key_env`.

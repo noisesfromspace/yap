@@ -43,7 +43,6 @@ type curlArgs struct {
 	Timeout         int               `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 30)"`
 	Flags           string            `json:"flags,omitempty" jsonschema:"description=space-separated extra curl flags (e.g. --http1.1); values with spaces (like header values) belong in headers"`
 	Safety          bool              `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
-	VPN             bool              `json:"vpn,omitempty" jsonschema:"description=run curl inside the VPN network namespace (requires the vpn.command config)"`
 }
 
 func init() {
@@ -216,16 +215,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 	// backstop (5s later) so curl's own "operation timed out" message wins.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
-	var cmd *exec.Cmd
-	if a.VPN {
-		argv, err := vpnArgv(append([]string{"curl"}, args...)...)
-		if err != nil {
-			return "", "", err
-		}
-		cmd = exec.CommandContext(ctx, argv[0], argv[1:]...)
-	} else {
-		cmd = exec.CommandContext(ctx, "curl", args...)
-	}
+	cmd := exec.CommandContext(ctx, "curl", args...)
 	if a.Data != "" {
 		cmd.Stdin = strings.NewReader(a.Data)
 	}

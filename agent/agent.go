@@ -466,7 +466,6 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	tools.SetWebsearchProvider(cfg.Websearch.Provider)
 	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
-	tools.SetVPNCommand(cfg.VPN.Command)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	tools.SetModelLister(listCombos)
 	// totCost accumulates every paid round-trip in a turn — model steps and

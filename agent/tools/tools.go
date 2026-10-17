@@ -167,21 +167,3 @@ func CloseAll() {
 		}
 	}
 }
-
-// vpnPrefix is the argv prefix that enters the VPN network namespace and
-// execs the tool's own command (config `vpn.command`). Empty when
-// unconfigured; the vpn flag then fails loudly instead of guessing.
-var vpnPrefix []string
-
-// SetVPNCommand sets the argv prefix used by the `vpn` tool flag.
-func SetVPNCommand(prefix []string) { vpnPrefix = append([]string(nil), prefix...) }
-
-// vpnArgv prepends the configured VPN prefix to base, returning the argv to
-// run. It fails when no prefix is configured, so the vpn flag never
-// silently falls back to the host network.
-func vpnArgv(base ...string) ([]string, error) {
-	if len(vpnPrefix) == 0 {
-		return nil, fmt.Errorf("vpn flag requires a `vpn.command` config (see ~/.config/yap/settings.json)")
-	}
-	return append(append([]string(nil), vpnPrefix...), base...), nil
-}

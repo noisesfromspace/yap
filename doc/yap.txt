@@ -146,11 +146,6 @@ and each path is configurable via `setup()` / the Nix module options):
       "advisory_prob": 0.25,
       "min_confidence": 0.6
     },
-    "vpn": {
-      "command": [
-	"/run/wrappers/bin/tunnel"
-      ]
-    },
     "ssh": {
       "known_hosts": "~/.ssh/known_hosts"
     }
@@ -177,8 +172,7 @@ and each path is configurable via `setup()` / the Nix module options):
 
   `decision` configures the backend behind the decision tool and alert gate
   (|yap-alert-gate|): `provider` (default "jev"), `base_url`, `api_key_env`,
-  `model`. `alert` tunes the gate thresholds. `vpn.command` is the argv prefix
-  that enters the VPN namespace for the `vpn` flag (unavailable when empty).
+  `model`. `alert` tunes the gate thresholds.
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).

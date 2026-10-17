@@ -84,18 +84,6 @@ func main() {
 		for _, t := range tools.All() {
 			fmt.Println(t.Name)
 		}
-	case "fetch-worker":
-		// Internal subcommand: performs a single SSRF-checked GET and writes
-		// the framed result to stdout. Invoked by the fetch tool's vpn path,
-		// which re-execs this binary under the `vpn.command` prefix.
-		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "fetch-worker: missing URL")
-			os.Exit(2)
-		}
-		if err := tools.RunFetchWorker(os.Args[2], os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "yap:", err)
-			os.Exit(1)
-		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)
