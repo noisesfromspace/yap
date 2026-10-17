@@ -165,4 +165,44 @@ assert(not chat_text(buf4):find("# @user\nalso check the tests", 1, true), "old 
 assert(chat_text(buf4):find("edited answer", 1, true), "model did not receive edited steer")
 assert(not table.concat(vim.api.nvim_buf_get_lines(scratch4, 0, -1, false), "\n"):find("edited instruction", 1, true), "delivered draft was not consumed")
 
-print("OK template steer, cancellation and edit")
+-- A skill injected mid-turn also steers instead of being refused: its
+-- frontmatter is stripped and the body lands at the next tool boundary.
+local tmp2 = vim.fn.tempname()
+vim.fn.mkdir(tmp2 .. "/templates", "p")
+vim.fn.mkdir(tmp2 .. "/skills", "p")
+local f2 = io.open(tmp2 .. "/skills/interrupt.md", "w")
+f2:write("---\ndescription: Interrupt the running turn\n---\nalso check the tests\n")
+f2:close()
+yap.setup({
+  bin = ROOT .. "/yap",
+  provider = "mock",
+  model = "m1",
+  templates_dir = tmp2 .. "/templates",
+  skills_dir = tmp2 .. "/skills",
+})
+
+local buf5 = yap.new()
+vim.api.nvim_buf_set_lines(buf5, -1, -1, false, { "do some work" })
+yap.send(buf5)
+local ok7 = vim.wait(10000, function()
+  return yap.is_running(buf5)
+end, 50)
+assert(ok7, "skill-steer turn did not start")
+vim.wait(400)
+
+vim.api.nvim_set_current_buf(buf5)
+yap.insert("interrupt")
+
+local ok8 = vim.wait(15000, function()
+  local l = vim.api.nvim_buf_get_lines(buf5, 0, -1, false)
+  return l[#l - 1] == "# @user" and not yap.is_running(buf5)
+end, 100)
+assert(ok8, "turn did not complete after skill steer")
+vim.wait(200)
+
+local t3 = chat_text(buf5)
+assert(t3:match("# @user\nalso check the tests"), "skill steer block missing:\n" .. t3)
+assert(t3:match("final answer"), "skill steer final answer missing:\n" .. t3)
+assert(not t3:match("STEER MISSING"), "skill steer did not reach the model:\n" .. t3)
+
+print("OK template steer, cancellation, edit and skill steer")

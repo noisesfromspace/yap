@@ -45,8 +45,26 @@ local buf = yap.new()
 local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not text:match("frontend: Review frontend code"), "skills list leaked into buffer: " .. text)
 
--- a skill merges into the system block, not a new # @user
+-- a skill merges into the system block, not a new # @user, and reveals the
+-- otherwise-folded system block so the merge is visible
+local sys_line
+for i, l in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  if l:match("^# @system%s*$") then
+    sys_line = i
+    break
+  end
+end
+assert(sys_line, "no # @system heading")
+assert(vim.fn.foldclosed(sys_line) ~= -1, "system fold not closed before skill insert")
+local notifications = {}
+local orig_notify = vim.notify
+vim.notify = function(msg)
+  notifications[#notifications + 1] = msg
+end
 yap.insert("frontend")
+vim.notify = orig_notify
+assert(vim.fn.foldclosed(sys_line) == -1, "system fold not opened after skill insert")
+assert(notifications[#notifications]:match("merged skill 'frontend'"), "no merge notification: " .. vim.inspect(notifications))
 text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(text:match("Use semantic HTML%."), "skill body not merged: " .. text)
 assert(select(2, text:gsub("# @user", "")) == 1, "unexpected # @user count: " .. text)

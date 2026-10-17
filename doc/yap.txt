@@ -614,15 +614,15 @@ WHAT INSERT DOES
   :YapInsert <template>   wrap in `# @user` and append at the end, then send
                             (unless a snippet; a leading `# @role` heading
                             sets the role and is never duplicated)
-  :YapInsert <skill>      merge the body into `# @system`
+  :YapInsert <skill>      merge the body into `# @system` (and reveal it)
   require('harness').insert(name, { at_cursor = true })
                             raw file above the cursor, no role logic
 
 Plain templates send immediately; snippets, skills and raw at-cursor inserts
-do not. While a send is in flight a template steers instead: its body (a
-leading `# @role` heading stripped) is injected at the running turn's next
+do not. While a send is in flight a template or skill steers instead: its body
+(a leading `# @role` heading stripped) is injected at the running turn's next
 tool boundary as a `# @user` message, exactly like a <C-s> steer
-(|yap-sessions|). Skills and raw insertion at the cursor are refused mid-turn.
+(|yap-sessions|). Raw insertion at the cursor is refused mid-turn.
 The `## Skills` section of the About Yap prefix lists names + descriptions,
 refreshed on every send.
 

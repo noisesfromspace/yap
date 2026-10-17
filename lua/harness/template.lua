@@ -165,11 +165,12 @@ end
 
 --- Merge a skill's body into the buffer's `# @system` message (or create the
 --- message at the top when there is none). Skills are system-prompt material:
---- they go where a stateless provider keeps instructions.
+--- they go where a stateless provider keeps instructions. Returns the 1-based
+--- line of the `# @system` heading so the caller can reveal the merged body.
 local function merge_into_system(buf, lines)
   if #lines == 0 then
     vim.notify("yap: skill is empty", vim.log.levels.WARN)
-    return
+    return nil
   end
   local blines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local sys
@@ -184,7 +185,7 @@ local function merge_into_system(buf, lines)
     vim.list_extend(top, lines)
     top[#top + 1] = ""
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, top)
-    return
+    return 1
   end
   local next_head = #blines + 1
   for i = sys + 1, #blines do
@@ -204,6 +205,7 @@ local function merge_into_system(buf, lines)
   vim.list_extend(ins, lines)
   ins[#ins + 1] = ""
   vim.api.nvim_buf_set_lines(buf, next_head - 1, next_head - 1, false, ins)
+  return sys
 end
 
 --- Insert `lines` as new lines above the cursor's line (the raw primitive).
@@ -247,9 +249,9 @@ end
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
 --- otherwise a template appends as a message and immediately sends it,
 --- while a skill merges into the system message. Snippets and at-cursor
---- inserts remain editable. While the agent is mid-turn a template steers the
---- running turn (injected at the next tool boundary) instead of inserting;
---- skills and at-cursor inserts still refuse. With no name, pick from the
+--- inserts remain editable. While the agent is mid-turn a template or skill
+--- steers the running turn (injected at the next tool boundary) instead of
+--- inserting; at-cursor inserts still refuse. With no name, pick from the
 --- combined list.
 function M.insert(name, opts)
   opts = opts or {}
@@ -273,10 +275,10 @@ function M.insert(name, opts)
     end
     lines = trim_blank(lines)
     if running(buf) then
-      -- Mid-turn a template steers the running turn instead of editing the
-      -- streaming buffer; skills and raw cursor inserts still refuse.
-      if entry.kind ~= "template" or opts.at_cursor then
-        vim.notify("yap: turn running; stop it before inserting a skill or editing the buffer", vim.log.levels.WARN)
+      -- Mid-turn a template or skill steers the running turn instead of
+      -- editing the streaming buffer; raw cursor inserts still refuse.
+      if opts.at_cursor then
+        vim.notify("yap: turn running; stop it before editing the buffer", vim.log.levels.WARN)
         return
       end
       -- Steering is always a `# @user` injection, so a leading role
@@ -307,7 +309,13 @@ function M.insert(name, opts)
     elseif opts.at_cursor then
       insert_at_cursor(buf, lines)
     elseif entry.kind == "skill" then
-      merge_into_system(buf, lines)
+      local sys = merge_into_system(buf, lines)
+      if sys then
+        -- The system block is folded closed in the default views, so reveal
+        -- the merged body: otherwise a skill inject looks like a no-op.
+        require("harness.fold").open(sys)
+        vim.notify("yap: merged skill '" .. entry.name .. "' into # @system", vim.log.levels.INFO)
+      end
     else
       M.append_as_message(buf, lines)
       if #lines > 0 then
