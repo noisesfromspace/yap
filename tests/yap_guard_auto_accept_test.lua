@@ -10,7 +10,7 @@ local state = require("harness.state")
 local guard = require("harness.guard")
 
 local chat = yap.new()
-vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "try sudo" })
+vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "try auto-accept" })
 
 local function board_text()
   return table.concat(vim.api.nvim_buf_get_lines(vim.fn.bufnr("yap://guard"), 0, -1, false), "\n")
@@ -69,7 +69,7 @@ guard.toggle()
 text = board_text()
 assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after live turn")
 assert(text:find("▸ Guard (1)", 1, true), "Guard section missing settled approval: " .. text)
-assert(text:find("sudo", 1, true), "settled approval missing its reason: " .. text)
+assert(text:find("system power control", 1, true), "settled approval missing its reason: " .. text)
 
 guard.toggle() -- close
 print("OK guard auto-accept")
