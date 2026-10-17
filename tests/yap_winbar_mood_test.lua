@@ -36,7 +36,7 @@ local function face()
   error("missing spinner glyph: " .. bar)
 end
 
-assert(#spinner.spinner_frames == 20, "expected 20 Shapes & status glyphs")
+assert(#spinner.spinner_frames == 30, "expected 30 circle glyphs")
 
 local glyph = face()
 local seen = { [glyph] = true }

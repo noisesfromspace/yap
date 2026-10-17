@@ -1,9 +1,9 @@
--- Busy beacon animation, extracted from the winbar: the status glyphs, the
+-- Busy beacon animation, extracted from the winbar: the circle glyphs, the
 -- plain-unicode fallback glyphs and the Ember hue tween that tints them. The
 -- beacon picks a random glyph each tick from a single uniform set — every
--- glyph renders at the same cell size and the same outline weight, so there is
--- no size jumping. The hue tween is independent of the glyph, so it keeps
--- cycling amber → coral → rose the whole time a turn runs.
+-- glyph renders at the same cell size (1.00×1.00 em) and the same filled
+-- weight, so there is no size jumping. The hue tween is independent of the
+-- glyph, so it keeps cycling amber → coral → rose the whole time a turn runs.
 
 local M = {}
 
@@ -18,35 +18,43 @@ local function pick(t)
   return t[rng_state % #t + 1]
 end
 
--- Uniform spinner set: Shapes & status glyphs that all render at the same
--- full cell size (≈1.00×1.00 em) with the same outline weight, so random
+-- Uniform spinner set: 30 Material Design circle glyphs that all render at
+-- the same size (measured 1.00×1.00 em) and the same filled weight, so random
 -- picks never jump between sizes.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
 local NF_SPINNER = {
-  -- Font Awesome
-  nf(0xF13D), -- anchor
-  nf(0xF069), -- asterisk
-  nf(0xF0E7), -- bolt
-  nf(0xF14E), -- compass
-  nf(0xF05B), -- crosshairs
-  nf(0xF219), -- gem
-  nf(0xF067), -- plus
-  nf(0xF2DC), -- snowflake
-  nf(0xF00D), -- xmark
-  -- Material Design
-  nf(0xF0031), -- anchor
-  nf(0xF06C4), -- asterisk
-  nf(0xF05DD), -- bullseye
-  nf(0xF012C), -- check
-  nf(0xF0156), -- close
-  nf(0xF01A3), -- crosshairs
-  nf(0xF0347), -- magnet
-  nf(0xF0415), -- plus
-  nf(0xF0717), -- snowflake
-  nf(0xF04CE), -- star
-  nf(0xF04FE), -- target
+  nf(0xF0765), -- circle
+  nf(0xF05E0), -- check-circle
+  nf(0xF0159), -- close-circle
+  nf(0xF0376), -- minus-circle
+  nf(0xF0417), -- plus-circle
+  nf(0xF040C), -- play-circle
+  nf(0xF03E5), -- pause-circle
+  nf(0xF0666), -- stop-circle
+  nf(0xF0EC2), -- record-circle
+  nf(0xF0661), -- skip-next-circle
+  nf(0xF0028), -- alert-circle
+  nf(0xF02D7), -- help-circle
+  nf(0xF07C3), -- dots-horizontal-circle
+  nf(0xF07C4), -- dots-vertical-circle
+  nf(0xF04CF), -- star-circle
+  nf(0xF0971), -- heart-circle
+  nf(0xF1807), -- fire-circle
+  nf(0xF1806), -- water-circle
+  nf(0xF1905), -- leaf-circle
+  nf(0xF0820), -- lightning-bolt-circle
+  nf(0xF1378), -- sync-circle
+  nf(0xF1377), -- refresh-circle
+  nf(0xF0954), -- clock
+  nf(0xF0DF8), -- send-circle
+  nf(0xF1464), -- download-circle
+  nf(0xF0B2C), -- chevron-up-circle
+  nf(0xF0B26), -- chevron-down-circle
+  nf(0xF0CE1), -- arrow-up-circle
+  nf(0xF0CDB), -- arrow-down-circle
+  nf(0xF0B94), -- eye-circle
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 
