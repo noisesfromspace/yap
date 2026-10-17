@@ -1,32 +1,35 @@
--- Busy beacon animation, extracted from the winbar: the mood-ring faces, the
+-- Busy beacon animation, extracted from the winbar: the smiley faces, the
 -- plain-unicode fallback glyphs and the Ember hue tween that tints them. The
--- beacon randomly loops through the existing emotion groups on each tick; the
--- hue tween is independent of the face, so it keeps cycling amber → coral →
--- rose the whole time a turn runs.
+-- beacon walks the size tiers in order — every same-size (light) face is shown
+-- once before the bigger (filled) ones start — so a turn never jumps between
+-- small and big faces at random. The hue tween is independent of the face, so
+-- it keeps cycling amber → coral → rose the whole time a turn runs.
 
 local M = {}
 
 local state = require("harness.state")
 local running = state.running
 
--- Local LCG so the shimmer never reseeds the global math.random other
--- plugins rely on; seeded from the monotonic clock at load.
+-- Local LCG so the plain fallback shimmer never reseeds the global math.random
+-- other plugins rely on; seeded from the monotonic clock at load.
 local rng_state = math.floor(vim.uv.hrtime() % 2 ^ 31) + 1
 local function pick(t)
   rng_state = (rng_state * 1664525 + 1013904223) % 2 ^ 32
   return t[rng_state % #t + 1]
 end
 
--- Mood ring: every single-cell smiley Nerd Fonts ships, grouped by emotion so
--- the Ember tint still applies. Font Awesome solid faces, the hollow
--- smile/frown/meh triad, the Material Design emoticon set, and the lone
--- Codicon + Octicon smileys are all included. The beacon picks a random group,
--- then a random face from it.
+-- Size tiers: the light smileys (Font Awesome faces, Material Design outline
+-- emoticons, and the lone Codicon + Octicon smileys) all render at one size;
+-- the filled Material Design emoticons render noticeably bigger. The beacon
+-- shows every glyph of the first tier, then every glyph of the second, then
+-- wraps around.
 local function nf(cp)
   return vim.fn.nr2char(cp)
 end
-local NF_MOOD_RING = {
+local NF_SIZE_TIERS = {
   {
+    -- Same size: Font Awesome faces (solid + hollow), then Material Design
+    -- outline emoticons, then the Codicon and Octicon smileys.
     faces = {
       nf(0xEDA9),
       nf(0xEE80),
@@ -39,12 +42,6 @@ local NF_MOOD_RING = {
       nf(0xEE64),
       nf(0xEE65),
       nf(0xF118),
-      nf(0xEB54),
-      nf(0xF4A2),
-    },
-  }, -- smile-wink, smile-beam, grin, grin-beam, grin-squint, grin-stars, laugh, laugh-beam, laugh-squint, laugh-wink, smile, cod-smiley, oct-smiley
-  {
-    faces = {
       nf(0xEE4A),
       nf(0xEE55),
       nf(0xEE4D),
@@ -56,34 +53,65 @@ local NF_MOOD_RING = {
       nf(0xEE61),
       nf(0xEE51),
       nf(0xEE4F),
+      nf(0xEE89),
+      nf(0xEE4C),
+      nf(0xEE6E),
+      nf(0xEE42),
+      nf(0xEE6D),
+      nf(0xF11A),
+      nf(0xEE48),
+      nf(0xEE8F),
+      nf(0xEE43),
+      nf(0xEE1F),
+      nf(0xEE7C),
+      nf(0xF119),
+      nf(0xEE30),
+      nf(0xEE7B),
+      nf(0xF01F2),
+      nf(0xF01F5),
+      nf(0xF069C),
+      nf(0xF01F3),
+      nf(0xF0C79),
+      nf(0xF0C73),
+      nf(0xF1215),
+      nf(0xF0C77),
+      nf(0xF01F4),
+      nf(0xF0C6A),
+      nf(0xF0C6D),
+      nf(0xF069B),
+      nf(0xF0F4D),
+      nf(0xF01F8),
+      nf(0xF157D),
+      nf(0xF10DF),
+      nf(0xF01F6),
+      nf(0xF0C75),
+      nf(0xEB54),
+      nf(0xF4A2),
     },
-  }, -- grin-wide, grin-wink, grin-hearts, grin-tongue, grin-tongue-wink, grin-tongue-squint, kiss, kiss-beam, kiss-wink-heart, grin-tears, grin-squint-tears
-  { faces = { nf(0xEE89), nf(0xEE4C), nf(0xEE6E), nf(0xEE42), nf(0xEE6D), nf(0xF11A) } }, -- surprise, grin-beam-sweat, rolling-eyes, flushed, meh-blank, meh
-  { faces = { nf(0xEE42), nf(0xEE48), nf(0xEE8F), nf(0xEE43), nf(0xEE6D), nf(0xEE6E) } }, -- flushed, grimace, tired, frown-open, meh-blank, rolling-eyes
-  { faces = { nf(0xEE8F), nf(0xEE48), nf(0xEE43), nf(0xEE1F), nf(0xEE7C), nf(0xF119) } }, -- tired, grimace, frown-open, angry, sad-tear, frown
-  { faces = { nf(0xEE30), nf(0xEE7B), nf(0xEE7C), nf(0xEE1F), nf(0xEE8F), nf(0xEE48) } }, -- dizzy, sad-cry, sad-tear, angry, tired, grimace
+  },
   {
+    -- Bigger: filled Material Design emoticons.
     faces = {
-      nf(0xF0C71), nf(0xF01F5), nf(0xF0C70), nf(0xF069C),
-      nf(0xF0C6B), nf(0xF01F3), nf(0xF0C78), nf(0xF0C79),
-      nf(0xF0C72), nf(0xF0C73), nf(0xF1214), nf(0xF1215),
-      nf(0xF01F9), nf(0xF0C77), nf(0xF0C6F), nf(0xF01F4),
+      nf(0xF0C68),
+      nf(0xF0C71),
+      nf(0xF0C70),
+      nf(0xF0C6B),
+      nf(0xF0C78),
+      nf(0xF0C72),
+      nf(0xF1214),
+      nf(0xF01F9),
+      nf(0xF0C6F),
+      nf(0xF0C69),
+      nf(0xF0C6C),
+      nf(0xF0C6E),
+      nf(0xF0F4C),
+      nf(0xF0C76),
+      nf(0xF157C),
+      nf(0xF10DE),
+      nf(0xF0C74),
+      nf(0xF01F7),
     },
-  }, -- md-emoticon-happy, happy-outline, excited, excited-outline, cool, cool-outline, wink, wink-outline, kiss, kiss-outline, lol, lol-outline, tongue, tongue-outline, devil, devil-outline
-  {
-    faces = {
-      nf(0xF0C69), nf(0xF0C6A), nf(0xF0C6C), nf(0xF0C6D),
-      nf(0xF0C6E), nf(0xF069B), nf(0xF0F4C), nf(0xF0F4D),
-      nf(0xF0C76), nf(0xF01F8), nf(0xF157C), nf(0xF157D),
-      nf(0xF10DE), nf(0xF10DF),
-    },
-  }, -- md-emoticon-angry, angry-outline, cry, cry-outline, dead, dead-outline, frown, frown-outline, sad, sad-outline, sick, sick-outline, confused, confused-outline
-  {
-    faces = {
-      nf(0xF0C68), nf(0xF01F2), nf(0xF0C74), nf(0xF01F6),
-      nf(0xF01F7), nf(0xF0C75),
-    },
-  }, -- md-emoticon, outline, neutral, neutral-outline, poop, poop-outline
+  },
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 
@@ -118,9 +146,9 @@ function M.color()
   )
 end
 
-M.groups = NF_MOOD_RING -- exported for tests: the emotion pools themselves
+M.groups = NF_SIZE_TIERS -- exported for tests: the size tiers themselves
 M.spinner_frames = {} -- exported for tests: every face the beacon can show
-for _, b in ipairs(NF_MOOD_RING) do
+for _, b in ipairs(NF_SIZE_TIERS) do
   for _, g in ipairs(b.faces) do
     M.spinner_frames[#M.spinner_frames + 1] = g
   end
@@ -128,16 +156,18 @@ end
 
 local spinner_timer = nil
 local spin_tick = 0
+local cursor = 0 -- index of the next face, advanced once per tick
 local glyph_cache = { tick = -1, glyph = nil, plain = nil }
 
--- Randomly loop through the emotion groups: each tick picks a fresh group and
--- a random face from it. Cached per tick so a redraw or an elapsed-tool-time
+-- Walk the size-ordered tiers deterministically: one face per tick, all of a
+-- tier before the next. Cached per tick so a redraw or an elapsed-tool-time
 -- change cannot alter the face between timer fires.
 function M.glyph()
   if glyph_cache.tick ~= spin_tick then
+    cursor = cursor % #M.spinner_frames + 1
     glyph_cache = {
       tick = spin_tick,
-      glyph = pick(pick(NF_MOOD_RING).faces),
+      glyph = M.spinner_frames[cursor],
       plain = pick(PLAIN_SPINNER_FRAMES),
     }
   end
@@ -162,6 +192,7 @@ function M.start()
     return
   end
   glyph_cache.tick = -1
+  cursor = 0 -- each turn restarts at the smallest face
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,
