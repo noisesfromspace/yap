@@ -40,6 +40,13 @@ function M.style(win, opts)
     vim.wo[win].relativenumber = false
     vim.wo[win].signcolumn = "no"
     vim.wo[win].cursorline = true
+    -- Long single commands (a curl with many -H/-d flags, a long git line)
+    -- have no shell operator to break at, so soft-wrap them at word
+    -- boundaries with a hanging indent. Display-only: 'linebreak' never
+    -- inserts newlines, so folds and per-line highlights are unaffected.
+    vim.wo[win].wrap = true
+    vim.wo[win].linebreak = true
+    vim.wo[win].breakindent = true
   end
 end
 
