@@ -225,6 +225,12 @@ function M.eval(opts)
   return require("harness.eval").eval(opts)
 end
 
+--- Open an interactive eval session about a selection, kept out of the
+--- session picker. The source buffer is not changed. See |:YapEval|.
+function M.eval_session(opts)
+  return require("harness.eval").session(opts)
+end
+
 function M.is_running(buf)
   return state.is_running(buf)
 end

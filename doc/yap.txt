@@ -221,7 +221,18 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         streamed in — offer to delete the superseded history
                         (|yap-compact|).
 *:YapEval*
-:YapEval[!] [instruction]
+:YapEval [instruction]
+                        Open an interactive eval session in a split about
+                        the selected lines (or about the current file with no
+                        range). It is a real session (default system prompt,
+                        tools, follow-ups) saved under the hidden
+                        `<project>/.eval/` folder, so it stays out of
+                        |:YapSessions|; |:YapFork| copies it into a listed
+                        session. The selection is quoted as context and the
+                        source buffer is never changed. With an instruction
+                        the first turn is sent at once; without one the
+                        cursor waits in the user turn for your question.
+:YapEval! [instruction]
                         Replace the selected lines with the model's output: a
                         one-shot, no-tools call to `eval_model`. Acts on a
                         linewise range (a visual selection via `:'<,'>` or an
@@ -233,16 +244,8 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         to summarize them); in any other buffer it is plain
                         text (refactor a function in place). With no range,
                         the output is inserted at the cursor as new lines
-                        (generate content into a fresh, empty buffer). With
-                        [!], the raw response (thinking and markers included)
-                        streams into a split holding a real session, saved
-                        under the hidden `<project>/.eval/` folder so it
-                        stays out of |:YapSessions|; the cleaned answer is
-                        still applied as usual. Ask follow-ups there like any
-                        session (these sends offer tools and do not touch
-                        the source buffer); |:YapFork| copies it into a
-                        listed session. No
-                        default keymap.
+                        (generate content into a fresh, empty buffer). No
+                        default keymap for either form.
 *:YapInsert*
 :YapInsert [name]     Insert a template or skill (|yap-templates|). With no
                         argument, pick from a combined list. At the cursor,

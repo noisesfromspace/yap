@@ -37,19 +37,23 @@ end, {
 })
 
 vim.api.nvim_create_user_command("YapEval", function(cmd)
-  local opts = { instruction = cmd.args, show = cmd.bang }
+  local opts = { instruction = cmd.args }
   -- range == 0 means no range was given: generate at the cursor instead of
   -- replacing a selection.
   if cmd.range > 0 then
     opts.line1 = cmd.line1
     opts.line2 = cmd.line2
   end
-  require("harness").eval(opts)
+  if cmd.bang then
+    require("harness").eval(opts)
+  else
+    require("harness").eval_session(opts)
+  end
 end, {
   range = true,
   nargs = "?",
   bang = true,
-  desc = "Replace the selection with the model's output, or generate at the cursor (one-shot, no tools); ! streams it into a hidden session for follow-ups",
+  desc = "Discuss the selection in a hidden eval session; ! replaces it with the model's output (one-shot, no tools)",
 })
 
 vim.api.nvim_create_user_command("YapInsert", function(cmd)

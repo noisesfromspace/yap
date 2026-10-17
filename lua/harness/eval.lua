@@ -1,4 +1,4 @@
--- :YapEval — a one-shot, stateless filter over the current selection.
+-- :YapEval! — a one-shot, stateless filter over the current selection.
 -- The selected lines are sent to the eval model with no tools; the returned
 -- text replaces the selection in place (`!`-semantics, but asynchronous and
 -- undoable like any other buffer edit).
@@ -11,6 +11,8 @@
 --
 -- With no range, the model's output is inserted at the cursor as new lines —
 -- "generate three fake addresses" fills a fresh, empty (No Name) buffer.
+--
+-- :YapEval (no bang) is the interactive counterpart: see M.session.
 
 local M = {}
 
@@ -20,7 +22,7 @@ end
 
 local EVAL_SYSTEM = [[You follow the instruction exactly and return ONLY the result: the replacement text when transforming the provided text, the new content when generating. Do not add any explanation, preamble, sign-off, Markdown code fence, or message heading.]]
 
---- Instruction applied when :YapEval gets a selection but no instruction: the
+--- Instruction applied when :YapEval! gets a selection but no instruction: the
 --- selection itself is the input, so a visual-mode eval just filters it.
 local DEFAULT_INSTRUCTION = "Improve this text"
 
@@ -133,51 +135,80 @@ function M.insert(buf, row, result)
   vim.api.nvim_buf_set_lines(buf, row, row, false, body)
 end
 
---- Open the eval as a real yap session in a split, kept out of the
+--- The opening user turn of an interactive eval session: the file context
+--- and the selected lines in a fence (longer than any backtick run inside),
+--- then the instruction — or a blank line for the user to write one.
+function M.session_user(buf, line1, line2, instruction)
+  local parts = {}
+  local name = vim.api.nvim_buf_get_name(buf)
+  if name ~= "" and not name:match("^%a+://") then
+    name = vim.fs.relpath(vim.fn.getcwd(), name) or name
+  end
+  local ft = vim.bo[buf].filetype or ""
+  if line1 then
+    local sel = vim.api.nvim_buf_get_lines(buf, line1 - 1, line2, false)
+    local where = (name ~= "" and name or "[No Name]") .. ":" .. line1 .. "-" .. line2
+    parts[#parts + 1] = "From " .. where .. (ft ~= "" and (" (language: " .. ft .. ")") or "") .. ":"
+    parts[#parts + 1] = ""
+    local longest = 2
+    for _, l in ipairs(sel) do
+      for run in l:gmatch("`+") do
+        longest = math.max(longest, #run)
+      end
+    end
+    local fence = string.rep("`", longest + 1)
+    parts[#parts + 1] = fence .. ft
+    vim.list_extend(parts, sel)
+    parts[#parts + 1] = fence
+    parts[#parts + 1] = ""
+  elseif name ~= "" then
+    parts[#parts + 1] = "File: " .. name .. (ft ~= "" and (" (language: " .. ft .. ")") or "")
+    parts[#parts + 1] = ""
+  end
+  parts[#parts + 1] = instruction or ""
+  return parts
+end
+
+--- :YapEval — open an interactive eval session in a split: a real yap
+--- session (default system prompt, tools, follow-ups) kept out of the
 --- :YapSessions picker by living under the hidden `<project>/.eval/` folder
---- (the picker globs `*/session.md` one level deep). The buffer holds the
---- eval's system prompt and user turn; the raw `yap send` stream (thinking,
---- model and error markers included) is appended as the `# @assistant`
---- reply, so follow-ups are ordinary sends. :YapFork copies it into a
---- listed session. Returns the session buffer, an append function for
---- stream chunks, and a done function that closes the turn and saves.
-function M.open_session(provider, model, user)
+--- (the picker globs `*/session.md` one level deep). The selection is
+--- context only; the source buffer is never changed. With an instruction
+--- the first turn is sent immediately, otherwise the cursor waits at the end
+--- of the user turn. :YapFork copies it into a listed session.
+function M.session(opts)
+  opts = opts or {}
+  local buf = opts.buf or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  local line1, line2 = opts.line1, opts.line2
+  if line1 and line2 and line1 > line2 then
+    line1, line2 = line2, line1
+  end
+  local provider, model = M.combo(buf)
+  if not provider then
+    vim.notify("yap eval: no model configured (set eval_model)", vim.log.levels.ERROR)
+    return
+  end
+  local instruction = opts.instruction ~= "" and opts.instruction or nil
+  local user = M.session_user(buf, line1, line2, instruction)
   local paths = require("harness.path")
-  local document = require("harness.document")
   local yap = require("harness")
-  local cur = vim.api.nvim_get_current_win()
   local sbuf = yap.new({
     provider = provider,
     model = model,
-    system = EVAL_SYSTEM,
     path = paths.new_session_path(paths.session_dir(vim.fn.getcwd()) .. "/.eval"),
     hidden = true,
   })
-  vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, vim.split(user, "\n", { plain = true }))
-  document.append_lines(sbuf, { "# @assistant", "" })
+  vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
   vim.cmd("botright split")
-  local win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win, sbuf)
-  vim.api.nvim_set_current_win(cur)
-  local function follow()
-    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == sbuf then
-      vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(sbuf), 0 })
-    end
+  vim.api.nvim_win_set_buf(0, sbuf)
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(sbuf), 0 })
+  if instruction then
+    yap.send(sbuf)
   end
-  follow()
-  local function append(chunk)
-    document.append_text(sbuf, chunk)
-    follow()
-  end
-  local function done()
-    if not vim.api.nvim_buf_is_valid(sbuf) then
-      return
-    end
-    document.append_lines(sbuf, { "# @user", "" })
-    follow()
-    require("harness.session").save(sbuf)
-  end
-  return sbuf, append, done
+  return sbuf
 end
 
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
@@ -185,8 +216,6 @@ end
 --- With no line range, generate instead: insert the output at the cursor.
 --- When `instruction` is empty or omitted, a selection is transformed with a
 --- default instruction; with no selection it is asked for via vim.ui.input.
---- With `show`, the response streams into a hidden eval session in a split
---- (see open_session), where follow-up questions can be asked.
 function M.eval(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -223,40 +252,18 @@ function M.eval(opts)
       vim.notify("yap eval: no model configured (set eval_model)", vim.log.levels.ERROR)
       return
     end
-    local user = M.build_user(buf, instruction, selected)
     local payload = vim.json.encode({
       messages = {
         { role = "system", content = EVAL_SYSTEM },
-        { role = "user", content = user },
+        { role = "user", content = M.build_user(buf, instruction, selected) },
       },
       tools = {},
     }) .. "\n"
     vim.notify("running…", vim.log.levels.INFO, { title = "yap eval" })
-    local sys_opts = { stdin = payload, text = true }
-    local chunks, done
-    if opts.show then
-      -- A stdout callback means result.stdout is nil, so collect the chunks
-      -- for the replace/insert step as well as streaming them.
-      chunks = {}
-      local append
-      _, append, done = M.open_session(provider, model, user)
-      sys_opts.stdout = function(_, data)
-        if data then
-          chunks[#chunks + 1] = data
-          vim.schedule(function()
-            append(data)
-          end)
-        end
-      end
-    end
     vim.system(
       { config().bin, "send", "--provider", provider, "--model", model },
-      sys_opts,
+      { stdin = payload, text = true },
       vim.schedule_wrap(function(result)
-        if chunks then
-          result.stdout = table.concat(chunks)
-          done()
-        end
         if replace then
           M.finish(buf, line1, line2, sent, result)
         else
@@ -270,7 +277,7 @@ function M.eval(opts)
     run(opts.instruction)
   elseif replace then
     -- A selection with no instruction: read the selection and transform it
-    -- with a default, so a visual-mode :YapEval does not prompt.
+    -- with a default, so a visual-mode :YapEval! does not prompt.
     run(DEFAULT_INSTRUCTION)
   else
     vim.ui.input({ prompt = "yap eval: " }, function(input)

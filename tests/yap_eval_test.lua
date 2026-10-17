@@ -86,38 +86,29 @@ assert(lines[1] == "before", "generate eval clobbered earlier line: " .. vim.ins
 assert(lines[2] == "summarized output", "generate eval did not insert at cursor: " .. vim.inspect(lines))
 assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
--- show (:YapEval!): the response streams into a hidden eval session in a
--- split, and the marker-stripped answer still replaces the selection.
-local shown = vim.api.nvim_create_buf(true, false)
-vim.api.nvim_set_current_buf(shown)
-vim.api.nvim_buf_set_lines(shown, 0, -1, false, { "some text" })
+-- :YapEval (no bang): an interactive session in a split under the hidden
+-- .eval/ folder. The selection is fenced context, nothing is sent without an
+-- instruction, and the source buffer is left alone.
+local src = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_set_current_buf(src)
+vim.bo[src].filetype = "go"
+vim.api.nvim_buf_set_lines(src, 0, -1, false, { "a", "x := `y`", "c" })
 local wins_before = #vim.api.nvim_tabpage_list_wins(0)
-yap.eval({ buf = shown, line1 = 1, line2 = 1, instruction = "rewrite", show = true })
-assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "show did not open a split")
-assert(vim.api.nvim_get_current_buf() == shown, "show moved focus away from the source buffer")
-ok = vim.wait(10000, function()
-  return table.concat(vim.api.nvim_buf_get_lines(shown, 0, -1, false), "\n"):find("summarized output") ~= nil
-end, 100)
-assert(ok, "show eval did not complete")
-lines = vim.api.nvim_buf_get_lines(shown, 0, -1, false)
-assert(#lines == 1 and lines[1] == "summarized output", "show eval wrong body: " .. vim.inspect(lines))
-local stream
-for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-  local b = vim.api.nvim_win_get_buf(w)
-  if b ~= shown then
-    stream = b
-  end
-end
-local streamed = table.concat(vim.api.nvim_buf_get_lines(stream, 0, -1, false), "\n")
-assert(streamed:find("summarized output"), "stream buffer missing output: " .. streamed)
-
--- The eval split is a real session: saved under the hidden .eval/ folder,
--- ending in a fresh # @user turn for follow-ups, and absent from the picker.
-assert(vim.b[stream].yap, "eval split is not a yap session")
-local spath = vim.b[stream].yap_path
+local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2 })
+assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "eval session did not open a split")
+assert(vim.api.nvim_get_current_buf() == sbuf, "focus did not move to the eval session")
+assert(vim.b[sbuf].yap, "eval split is not a yap session")
+assert(
+  vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }),
+  "eval session changed the source buffer"
+)
+local stext = table.concat(vim.api.nvim_buf_get_lines(sbuf, 0, -1, false), "\n")
+assert(stext:find("\n```go\nx := `y`\n```\n\n$"), "selection not fenced at the end of the user turn: " .. stext)
+assert(not stext:find("# @assistant"), "eval session sent without an instruction: " .. stext)
+assert(not stext:find("return ONLY the result", 1, true), "eval session kept the one-shot system prompt")
+local spath = vim.b[sbuf].yap_path
 assert(spath and spath:find("/%.eval/[^/]+/session%.md$"), "eval session not under .eval/: " .. tostring(spath))
 assert(vim.fn.filereadable(spath) == 1, "eval session not saved: " .. spath)
-assert(streamed:find("# @user\n*$"), "eval session missing trailing # @user: " .. streamed)
 assert(require("harness.path").project_cwd(spath) == vim.fs.normalize(vim.fn.getcwd()), "eval session project_cwd wrong")
 for _, item in ipairs(require("harness.session").list()) do
   assert(item.path ~= spath, "eval session listed in :YapSessions")
