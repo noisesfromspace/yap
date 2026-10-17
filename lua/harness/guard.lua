@@ -41,6 +41,8 @@ local HL = {
   benign = "YapGuardBenign",
   meta = "YapGuardMeta",
   hint = "YapGuardHint",
+  tool = "YapGuardTool",
+  command = "YapGuardCommand",
 }
 view.link(HL.section, "MoreMsg")
 view.link(HL.approval, "DiagnosticWarn")
@@ -52,6 +54,8 @@ view.link(HL.reversible, "DiagnosticWarn")
 view.link(HL.benign, "Comment")
 view.link(HL.meta, "Comment")
 view.link(HL.hint, "Comment")
+view.link(HL.tool, "Title")
+view.link(HL.command, "String")
 
 local ns = vim.api.nvim_create_namespace("yap.guard.hl")
 
@@ -65,7 +69,7 @@ local function ensure_board()
   board_buf = util.find_or_create_buffer(BOARD_NAME, false, true)
   vim.bo[board_buf].bufhidden = "hide"
   vim.bo[board_buf].modifiable = false
-  vim.bo[board_buf].filetype = "markdown" -- touchup/treesitter render the markdown
+  vim.bo[board_buf].filetype = "" -- plain text; rows carry their own highlights
   return board_buf
 end
 
@@ -136,7 +140,7 @@ end
 --- 0 for every field; 0 is truthy in Lua, so a bare `if row.p_alert` would
 --- wrongly take the "has metrics" branch and render "0.0/3 · 0% confident".
 local function has_metrics(row)
-  return (row.p_alert or 0) > 0 or (row.severity or 0) > 0
+  return (row.p_alert or 0) > 0 or (row.severity or 0) > 0 or (row.reveals_secret or 0) > 0
 end
 
 -- ─── Rows ──────────────────────────────────────────────────────────────────
@@ -156,8 +160,10 @@ local function approval_row(buf, ev)
     p_alert = num(ev.p_alert),
     severity = num(ev.severity),
     confidence = num(ev.confidence),
+    reveals_secret = num(ev.reveals_secret),
     severity_category = ev.severity_category or "",
     severity_breakdown = ev.severity_breakdown or "",
+    risk = ev.risk or "",
     ts = ev.ts or "",
   }
 end
@@ -177,8 +183,10 @@ local function advisory_row(ev, session_name, path, call, call_ref)
     p_alert = num(ev.p_alert),
     severity = num(ev.severity),
     confidence = num(ev.confidence),
+    reveals_secret = num(ev.reveals_secret),
     severity_category = ev.severity_category or "",
     severity_breakdown = ev.severity_breakdown or "",
+    risk = ev.risk or "",
     ts = ev.ts or "",
   }
 end
@@ -205,8 +213,10 @@ local function resolved_row(ev, req, session_name, path, call_ref)
     p_alert = num(req.p_alert),
     severity = num(req.severity),
     confidence = num(req.confidence),
+    reveals_secret = num(req.reveals_secret),
     severity_category = req.severity_category or "",
     severity_breakdown = req.severity_breakdown or "",
+    risk = req.risk or "",
     ts = ev.ts or "",
   }
 end
@@ -374,17 +384,25 @@ local function row_glyph(row)
   end
 end
 
-local function severity_badge(row)
+local function severity_hl(row)
   local cat = row.severity_category
+  if cat == "destructive" or cat == "exfiltration" then
+    return HL.destructive
+  elseif cat == "reversible" then
+    return HL.reversible
+  elseif cat == "benign" then
+    return HL.benign
+  end
+  return HL.meta
+end
+
+local function severity_badge(row)
   if row.kind == "approval" and not has_metrics(row) then
     return "always", HL.destructive
   end
-  if cat == "destructive" or cat == "exfiltration" then
-    return cat, HL.destructive
-  elseif cat == "reversible" then
-    return cat, HL.reversible
-  elseif cat == "benign" then
-    return cat, HL.benign
+  local cat = row.severity_category
+  if cat ~= "" then
+    return cat, severity_hl(row)
   end
   return "—", HL.meta
 end
@@ -410,42 +428,85 @@ local function title_segments(row)
   }
 end
 
---- The expanded detail, rendered as markdown (the board buffer is filetype
---- markdown): the command in a ```bash fence broken at operators and metrics
---- as a bullet list. Returns a list of plain lines.
+--- Fallback for rows persisted before the risk phrase was emitted: derive it
+--- from the dominant severity band, which older events still carry.
+local RISK_LEVEL = { benign = "low", reversible = "moderate", destructive = "high", exfiltration = "critical" }
+local RISK_PHRASE = { benign = "mostly benign", reversible = "likely reversible", destructive = "possible data loss", exfiltration = "possible exfiltration" }
+
+local function risk_text(row)
+  if row.risk ~= "" then
+    return row.risk
+  end
+  local cat = row.severity_category or ""
+  if RISK_LEVEL[cat] then
+    return RISK_LEVEL[cat] .. " — " .. RISK_PHRASE[cat]
+  end
+  return ""
+end
+
+--- One detail metric line: an indented, width-aligned label (dim) followed by
+--- the value and an optional plain-English explanation.
+local LABEL_W = 12
+
+local function kv(label, value, value_hl, explain)
+  local segs = {
+    { text = "    " },
+    { text = label, hl = HL.meta },
+  }
+  local pad = LABEL_W - vim.fn.strdisplaywidth(label)
+  if pad > 0 then
+    segs[#segs + 1] = { text = string.rep(" ", pad) }
+  end
+  segs[#segs + 1] = { text = value, hl = value_hl }
+  if explain and explain ~= "" then
+    segs[#segs + 1] = { text = "  " .. explain, hl = HL.meta }
+  end
+  return segs
+end
+
+--- The expanded detail, rendered as plain text with per-segment highlights
+--- (the board buffer is no longer markdown): the tool name, its command broken
+--- at operators, and the decision metrics explained in words. Returns a list of
+--- segment lists (one per line).
 local function detail_lines(row)
   local out = {}
-  out[#out + 1] = ("**%s**"):format(row.tool or "?")
-  out[#out + 1] = "```bash"
-  for _, l in ipairs(view.shell_lines(row.raw_command or "", "  ")) do
-    out[#out + 1] = l
+  out[#out + 1] = { { text = "    " }, { text = row.tool or "?", hl = HL.tool } }
+  if (row.raw_command or "") ~= "" then
+    for _, l in ipairs(view.shell_lines(row.raw_command, "  ")) do
+      out[#out + 1] = { { text = "      " }, { text = l, hl = HL.command } }
+    end
   end
-  out[#out + 1] = "```"
 
   if has_metrics(row) then
-    local parts = {}
-    local cat = row.severity_category ~= "" and row.severity_category or "?"
-    parts[#parts + 1] = cat
-    parts[#parts + 1] = string.format("severity %.1f/3", row.severity or 0)
+    local risk = risk_text(row)
+    if risk ~= "" then
+      out[#out + 1] = kv("risk", risk, severity_hl(row))
+    end
+    if (row.reveals_secret or 0) > 0 then
+      out[#out + 1] = kv("secret", string.format("%.0f%%", row.reveals_secret * 100), HL.destructive, "odds this reveals a live credential")
+    end
     if (row.p_alert or 0) > 0 then
-      parts[#parts + 1] = string.format("P(harmful)=%.2f", row.p_alert)
+      out[#out + 1] = kv("harmful", string.format("%.0f%%", row.p_alert * 100), HL.meta, "odds this call causes real harm")
+    end
+    if (row.severity or 0) > 0 then
+      out[#out + 1] = kv("severity", string.format("%.1f / 3", row.severity), HL.meta, "worst-harm score (0 benign → 3 exfiltration)")
     end
     if (row.confidence or 0) > 0 then
-      parts[#parts + 1] = string.format("%.0f%% confident", row.confidence * 100)
+      out[#out + 1] = kv("confidence", string.format("%.0f%%", row.confidence * 100), HL.meta, "how sure the model is")
     end
-    out[#out + 1] = "- **severity** " .. table.concat(parts, " · ")
+    if row.severity_breakdown ~= "" then
+      out[#out + 1] = kv("breakdown", row.severity_breakdown, HL.meta, "odds per outcome")
+    end
   elseif row.kind == "approval" then
-    out[#out + 1] = "- **severity** always (no model consulted)"
+    out[#out + 1] = kv("risk", "always — no model consulted", HL.destructive)
   end
-  if row.severity_breakdown ~= "" then
-    out[#out + 1] = "- **breakdown** " .. row.severity_breakdown
-  end
+
   local when = age(row.ts)
   local sess = flat(row.session)
   if row.kind == "approval" and when ~= "" then
     sess = sess .. " · parked " .. when
   end
-  out[#out + 1] = "- **session** " .. sess
+  out[#out + 1] = kv("session", sess, HL.meta)
 
   return out
 end
@@ -504,8 +565,8 @@ local function render()
       end
       emit_segments(title_segments(row))
       local detail = detail_lines(row)
-      for _, d in ipairs(detail) do
-        add(d)
+      for _, segs in ipairs(detail) do
+        emit_segments(segs)
       end
       folds[#folds + 1] = { start, start + #detail, row.key }
       key_lines[row.key] = start
@@ -518,9 +579,7 @@ local function render()
   emit_section(sections[1])
   emit_section(sections[2])
   add("")
-  local live_key = harness().config.keymaps.live
-  local live_hint = live_key ~= "" and (" · " .. live_key .. " log") or ""
-  add("a auto-accept · r/x run·deny · i inspect · c clear · za expand · [c/]c section" .. live_hint .. " · q close", HL.hint)
+  add("a auto-accept · r/x run·deny · i inspect · c clear · za expand · [c/]c section · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

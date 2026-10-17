@@ -284,12 +284,22 @@ M.answer_approval = answer_approval
 -- shield icon so an action-required pause is never mistaken for a warning
 -- about a call that already ran.
 local function notify_approval(buf, ev)
-  vim.notify(
-    ("yap: %s needs approval — %s: %s\n:YapGuard to Run, Deny or Inspect"):format(
+  local risk = ev.risk or ""
+  local key = M.config.keymaps.guard
+  local action = key ~= "" and (key .. " to Run, Deny or Inspect") or ":YapGuard to Run, Deny or Inspect"
+  local lines = {
+    ("yap: %s needs approval — %s: %s"):format(
       live_session_label(buf),
       ev.tool or "tool",
       ev.reason or "review call"
     ),
+  }
+  if risk ~= "" then
+    lines[#lines + 1] = risk
+  end
+  lines[#lines + 1] = action
+  vim.notify(
+    table.concat(lines, "\n"),
     vim.log.levels.ERROR,
     { title = "yap approval required", icon = M.config.icons.approval }
   )
@@ -342,17 +352,6 @@ local function handle_event(buf, json_line)
     -- Record before notifying: the board can now navigate to this exact alert.
     audit.append_event(buf, ev)
     guard.touch()
-    local parts = {}
-    local p, sev, conf = tonumber(ev.p_alert), tonumber(ev.severity), tonumber(ev.confidence)
-    if p then
-      parts[#parts + 1] = ("P(harmful)=%.2f"):format(p)
-    end
-    if sev then
-      parts[#parts + 1] = ("severity=%.2f"):format(sev)
-    end
-    if conf then
-      parts[#parts + 1] = ("conf=%.2f"):format(conf)
-    end
     local lines = {
       ("yap: %s — %s: %s"):format(
         live_session_label(buf),
@@ -360,10 +359,9 @@ local function handle_event(buf, json_line)
         ev.reason or "flagged"
       ),
     }
-    if #parts > 0 then
-      lines[#lines + 1] = table.concat(parts, " · ") .. " · :YapGuard"
-    else
-      lines[#lines + 1] = ":YapGuard"
+    local risk = ev.risk or ""
+    if risk ~= "" then
+      lines[#lines + 1] = risk
     end
     vim.notify(table.concat(lines, "\n"), vim.log.levels.WARN, { title = "yap alert" })
   elseif ev.type == "tool_call" then

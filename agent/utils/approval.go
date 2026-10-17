@@ -44,8 +44,10 @@ func RequestApproval(command, tool, reason string, dec Decision) (bool, error) {
 		"type": "approval_request", "id": id, "command": command,
 		"tool": tool, "reason": reason,
 		"p_alert": dec.PAlert, "severity": dec.Severity, "confidence": dec.Confidence,
+		"reveals_secret":    dec.RevealsSecret,
 		"severity_category": category, "severity_category_prob": categoryProb,
 		"severity_breakdown": dec.SeverityBreakdown(),
+		"risk":               dec.Risk(),
 	})
 	timer := time.NewTimer(approvalTimeout)
 	defer timer.Stop()

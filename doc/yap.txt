@@ -651,13 +651,15 @@ Every tool call passes a pre-execution gate. Three tiers:
 For `ask-model` tools a deterministic floor (destructive or high-blast-radius
 commands such as `rm -rf /`, `sudo`, `curl | sh`, `subprocess`/`os.system`,
 `shutil.rmtree`) always forces approval. Where the floor is silent, the
-decision model answers P(harmful) and a 0–3 severity score and maps the result to:
+decision model answers three questions in one pass — P(harmful), a 0–3 severity
+score, and P(reveals a live secret value) — and maps the result to:
 
   approval   pause the turn for a Run/Deny/Inspect decision (|:YapGuard|).
              Never runs on timeout (five minutes) or when the board is
-             dismissed.
-  advisory   run, but log the call and show a non-blocking warning naming
-             P(harmful), severity and confidence.
+             dismissed. A call that would reveal a live secret or credential
+             value forces approval even when severity reads benign.
+  advisory   run, but log the call and show a non-blocking warning with a
+             plain-language risk phrase (|:YapGuard| keeps the numbers).
   run        proceed silently.
 
 A decision-model outage degrades to `advisory` rather than blocking. Thresholds

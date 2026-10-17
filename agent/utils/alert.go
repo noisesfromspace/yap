@@ -72,6 +72,10 @@ type Decision struct {
 	PAlert     float64 // P(harmful)
 	Severity   float64 // worst-case harm score (0..3)
 	Confidence float64
+	// RevealsSecret is P(the call outputs a live secret or credential value),
+	// from the gate's third question. Zero when no model was consulted or the
+	// backend returned no answer for it.
+	RevealsSecret float64
 	// SeverityProbabilities is the severity score's per-band distribution
 	// (category index -> probability); nil when no model was consulted.
 	SeverityProbabilities map[string]float64
@@ -81,6 +85,10 @@ type Decision struct {
 const (
 	sevDestructive = 2.0 // "destructive or data loss"
 	approvalAtEven = 0.5 // destructive + at least even odds -> approval
+	// revealsSecretThreshold is the P(reveals_secret) at or above which a call
+	// pauses for approval even when the general severity score reads benign: a
+	// live secret about to reach the transcript is worth an interruption.
+	revealsSecretThreshold = 0.5
 )
 
 // severityLabels is the severity score question's ordered level -> meaning
@@ -140,6 +148,12 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 				Instructions: "What is the worst plausible harm if this tool call runs unapproved?",
 				Criteria:     severityLabels,
 			},
+			{
+				Name:         "reveals_secret",
+				Type:         decide.Noul,
+				Instructions: "Would running this tool call output or expose a live secret or credential value (a password, API key, private key, or token) into the transcript?",
+				Criteria:     map[string]string{"true": "reveals a live secret or credential value", "false": "does not reveal a live secret or credential value"},
+			},
 		},
 	})
 	if err != nil {
@@ -171,8 +185,11 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 	}
 	d.Severity = sev.Score
 	d.SeverityProbabilities = sev.Probabilities
+	if r, ok := resp.Answers["reveals_secret"]; ok && r.Type == decide.Noul {
+		d.RevealsSecret = r.Noul
+	}
 
-	d.Outcome, d.Reason = decideOutcome(harm.Noul, d.Confidence, sev, cfg)
+	d.Outcome, d.Reason = decideOutcome(harm.Noul, d.Confidence, d.RevealsSecret, sev, cfg)
 	return d
 }
 
@@ -180,17 +197,23 @@ func ShouldAlert(ctx context.Context, dm decide.Model, cfg AlertConfig, tier Tie
 // human phrase. Precedence is top-down; the first matching case wins. The
 // numbers are kept out of the reason and rendered separately (see Metrics,
 // SeverityCategory) so the advisory line and approval dialog stay readable.
-func decideOutcome(p, conf float64, severity decide.Answer, cfg AlertConfig) (Outcome, string) {
+func decideOutcome(p, conf, revealsSecret float64, severity decide.Answer, cfg AlertConfig) (Outcome, string) {
 	sev := severity.Score
 
 	switch {
+	// A live secret about to hit the transcript pauses for a human even when
+	// the general severity read is benign: the immediate blast radius is
+	// small, but exposure is irreversible.
+	case revealsSecret >= revealsSecretThreshold:
+		return OutcomeApproval, "would reveal a secret or credential value"
 	// Score is a weighted mean, not a category: a strong exfiltration
 	// probability need not yield an exact score of 3 (or even 2.5).
 	case severity.Probabilities["3"] >= 0.5 || sev >= 2.5:
 		return OutcomeApproval, "possible credential theft or exfiltration"
-	case sev >= sevDestructive && (p >= approvalAtEven || conf < cfg.MinConfidence):
-		// Destructive and either at least even odds, or the model is
-		// uncalibrated about it: no signal -> ask rather than act.
+	case sev >= sevDestructive && (p >= approvalAtEven || (conf > 0 && conf < cfg.MinConfidence)):
+		// Destructive and either at least even odds, or the model reports low
+		// calibration: no signal -> ask rather than act. Confidence 0 means
+		// "not reported", not "uncalibrated", so it never escalates.
 		return OutcomeApproval, "possible destructive operation"
 	case sev >= sevDestructive:
 		return OutcomeAdvisory, "possibly destructive, model unsure"
@@ -198,9 +221,8 @@ func decideOutcome(p, conf float64, severity decide.Answer, cfg AlertConfig) (Ou
 		return OutcomeApproval, "likely harmful"
 	case p >= cfg.AdvisoryProb:
 		return OutcomeAdvisory, "suspicious tool call"
-	case conf < cfg.MinConfidence && p >= cfg.AdvisoryProb/2:
-		// Near 0.5 with low confidence is "no signal": conservative path is
-		// to surface it rather than run silently.
+	case conf > 0 && conf < cfg.MinConfidence && p >= cfg.AdvisoryProb/2:
+		// Near 0.5 with reported low confidence is "no signal": surface it.
 		return OutcomeAdvisory, "decision model uncertain"
 	default:
 		return OutcomeRun, ""
@@ -238,6 +260,52 @@ func (d Decision) SeverityBreakdown() string {
 		}
 	}
 	return strings.Join(parts, " · ")
+}
+
+// Risk renders the decision as a plain-language phrase: a level word derived
+// from the dominant severity band plus a human description of that band
+// ("low — mostly benign", "critical — possible exfiltration"). Empty when no
+// model was consulted, so deterministic-floor and always-approval rows render
+// no risk phrase.
+func (d Decision) Risk() string {
+	if d.RevealsSecret >= revealsSecretThreshold {
+		return "critical — possible secret exposure"
+	}
+	cat, _ := d.SeverityCategory()
+	if cat == "" {
+		return ""
+	}
+	return riskLevel(cat) + " — " + riskPhrase(cat)
+}
+
+// riskLevel maps a dominant severity band to a single level word.
+func riskLevel(cat string) string {
+	switch cat {
+	case "benign":
+		return "low"
+	case "reversible":
+		return "moderate"
+	case "destructive":
+		return "high"
+	case "exfiltration":
+		return "critical"
+	}
+	return cat
+}
+
+// riskPhrase maps a dominant severity band to its plain-English meaning.
+func riskPhrase(cat string) string {
+	switch cat {
+	case "benign":
+		return "mostly benign"
+	case "reversible":
+		return "likely reversible"
+	case "destructive":
+		return "possible data loss"
+	case "exfiltration":
+		return "possible exfiltration"
+	}
+	return cat
 }
 
 // Metrics renders the decision's numbers compactly for surfaces that show

@@ -41,7 +41,10 @@ assert(notice, "no approval notification fired")
 assert(notice.level == vim.log.levels.ERROR, "approval notification not ERROR level")
 assert(notice.opts.icon == yap.config.icons.approval, "approval notification missing shield icon")
 assert(not notice.msg:find("rm -rf /", 1, true), "notification should not dump the full call")
-assert(notice.msg:find(":YapGuard", 1, true), "notification should point at :YapGuard")
+assert(
+  notice.msg:find(yap.config.keymaps.guard .. " to Run, Deny or Inspect", 1, true),
+  "notification should point at the guard keymap"
+)
 
 -- The board lists the parked approval with its decoded command and reason.
 guard.toggle()
@@ -53,7 +56,7 @@ assert(text:find("recursive deletion of critical paths", 1, true), "board missin
 -- Deterministic floor (no decision-model consult) must render "always", not a bogus
 -- "0.0/3 · 0% confident" (0 is truthy in Lua, so the metric fields need an
 -- explicit positive check).
-assert(text:find("always (no model consulted)", 1, true), "deterministic-floor approval not marked 'always'")
+assert(text:find("no model consulted", 1, true), "deterministic-floor approval not marked 'always'")
 guard.toggle() -- close (defer)
 
 -- Inspect focuses the session's tool region without touching the parked

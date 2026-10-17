@@ -104,8 +104,10 @@ func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Mo
 			"type": "alert_advisory", "id": call.ID, "name": call.Name,
 			"reason": dec.Reason, "p_alert": dec.PAlert,
 			"severity": dec.Severity, "confidence": dec.Confidence,
+			"reveals_secret":    dec.RevealsSecret,
 			"severity_category": category, "severity_category_prob": categoryProb,
 			"severity_breakdown": dec.SeverityBreakdown(),
+			"risk":               dec.Risk(),
 		})
 	}
 	return ""
