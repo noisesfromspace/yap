@@ -3,7 +3,10 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local fold = require("harness.fold")
 
-local buf = yap.new()
+-- The winbar assertions below read the model from the buffer, so pin a
+-- short combo: the default (anthropic/claude-sonnet-5-5) is long enough to
+-- push the model island out of the center section in an 80-column window.
+local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @system",
   "",

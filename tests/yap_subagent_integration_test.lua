@@ -23,24 +23,30 @@ for line in sys.stdin:
     if req.get("type") == "subagent_result":
         continue
     prompt = req["messages"][-1]["content"]
-    if prompt.startswith("delegate"):
-        agent = "browser" if "unsupported" in prompt else "scout"
-        session = prompt.split("session=", 1)[1].split()[0] if "session=" in prompt else ""
+    # The harness appends the Neovim cwd and git context to the user message,
+    # so substring-matching the whole prompt is fragile: a recent commit like
+    # "describe: notify on title/summary model failure" puts the word "failure"
+    # into a "delegate success" prompt and misclassifies it. Match on the task
+    # line only — the text before the injected context.
+    first = prompt.splitlines()[0]
+    if first.startswith("delegate"):
+        agent = "browser" if "unsupported" in first else "scout"
+        session = first.split("session=", 1)[1].split()[0] if "session=" in first else ""
         model = ""
-        if "override" in prompt:
+        if "override" in first:
             model = "other/model-b"
-        elif "badmodel" in prompt:
+        elif "badmodel" in first:
             model = "nonsense"
-        elif "followupmodel" in prompt:
+        elif "followupmodel" in first:
             model = "other/model-c"
-        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in prompt else "succeed")}), file=sys.stderr, flush=True)
+        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in first else "succeed")}), file=sys.stderr, flush=True)
         response = json.loads(sys.stdin.readline())
         print('\n' + response['result'] + '\n', flush=True)
-    elif "follow up" in prompt:
+    elif "follow up" in first:
         assert "Scout agent" in str(req["messages"]), "system prompt lost on follow-up"
         assert "succeed" in str(req["messages"]), "first question lost on follow-up"
         print('\nfollow-up answered\n', flush=True)
-    elif "fail" in prompt:
+    elif "fail" in first:
         print('\n<!-- yap:error\nchild model failed\n-->\n', flush=True)
     else:
         print('\nchild finished\n', flush=True)

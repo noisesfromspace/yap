@@ -67,7 +67,7 @@ local CASES = {
   { name = "yap_model_switch_test", port = 18170, mock = "mock_model_switch.py" },
   { name = "yap_cwd_test", port = 18132 },
   { name = "yap_git_test", port = 18132 },
-  { name = "yap_fork_test", port = 18163, mock = "mock_fork.py" },
+  { name = "yap_fork_test", port = 18164, mock = "mock_fork.py" },
 
   -- Buffer semantics, folds, winbar and parsing: no provider traffic.
   { name = "yap_fold_contract_test", port = 18132 },
@@ -128,6 +128,28 @@ local CASES = {
   -- the machine while it runs.
   { name = "yap_compact_test", port = 18132, mock = "mock_slow.py" },
 }
+
+-- A mock's port is the server a case talks to. Two cases sharing a port with
+-- different mocks would collide: the second mock's bind fails ("Address
+-- already in use") and the case silently talks to the first mock, surfacing
+-- much later as a confusing "mock did not start streaming" wait timeout. Catch
+-- that here, before any case runs, so the failure names both mocks.
+do
+  local by_port = {}
+  for _, case in ipairs(CASES) do
+    if case.mock then
+      local prev = by_port[case.port]
+      if prev and prev ~= case.mock then
+        error(
+          ("mock port %d is shared by %s and %s; give each mock its own port")
+            :format(case.port, prev, case.mock),
+          0
+        )
+      end
+      by_port[case.port] = case.mock
+    end
+  end
+end
 
 -- ---------------------------------------------------------------------------
 -- Isolation
