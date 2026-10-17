@@ -384,7 +384,7 @@
             };
             descriptionModel = mkOption {
               type = types.str;
-              default = "openrouter/google/gemini-2.5-flash-lite";
+              default = "openrouter/~deepseek/deepseek-flash-latest";
               description = "Smallest provider/model combo used to label a session from the latest user message on send.";
             };
             descriptionAnswerModel = mkOption {

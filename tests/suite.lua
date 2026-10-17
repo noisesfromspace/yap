@@ -93,6 +93,7 @@ local CASES = {
   { name = "yap_clear_test", port = 18132 },
   { name = "yap_default_model_test", port = 18132 },
   { name = "yap_live_open_test", port = 18132 },
+  { name = "yap_panel_edit_test", port = 18132 },
   { name = "yap_leave_session_test", port = 18132 },
   { name = "yap_uidiff_test", port = 18132 },
   { name = "yap_fencefold_test", port = 18132 },

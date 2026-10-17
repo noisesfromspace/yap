@@ -68,7 +68,7 @@ M.defaults = {
   -- Smallest model that labels the session from the latest user message
   -- as soon as it is sent, so the winbar and session picker have a title
   -- before the agent answers.
-  description_model = "openrouter/google/gemini-2.5-flash-lite",
+  description_model = "openrouter/~deepseek/deepseek-flash-latest",
   -- Bigger model that writes the final title once the turn completes
   -- (back on the `# @user` message): a whole-session summary that tells the
   -- story so the session is easy to find in the picker later.

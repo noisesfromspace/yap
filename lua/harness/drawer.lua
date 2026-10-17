@@ -30,13 +30,10 @@ end
 function M.style(win, opts)
   opts = opts or {}
   vim.wo[win].winfixheight = true
-  -- Pinned by default: a stray :e must not clobber the panel. The live tool
-  -- tail opts out (pinned = false) so it can be reused as a plain window to
-  -- peek at files; its buffer survives (bufhidden = hide) and reopens via
-  -- :YapLive / <leader>l.
-  if opts.pinned ~= false then
-    vim.wo[win].winfixbuf = true
-  end
+  -- Panels are plain windows, never 'winfixbuf'-pinned: :e and file pickers
+  -- must be able to reuse them like any other window. Their buffers survive
+  -- (bufhidden = hide) and reopen via their toggle (<leader>g / <leader>l /
+  -- <leader>s), so clobbering a panel view never loses data.
   vim.wo[win].winbar = "" -- the yap winbar is for sessions, not panels
   if not opts.editable then
     vim.wo[win].number = false
@@ -163,9 +160,9 @@ function M.close(buf, owner)
         -- visible, not an empty replacement buffer. :YapGuard still works
         -- from this window even when the session is hidden.
       else
-        -- Keep the drawer buffer available to reopen later. The window is
-        -- pinned, so clear the pin options for the swap; its replacement is
-        -- an ordinary empty buffer, not a drawer, so the pin stays cleared.
+        -- Keep the drawer buffer available to reopen later. Clear any pin
+        -- options for the swap; its replacement is an ordinary empty buffer,
+        -- not a drawer, so a pin stays cleared.
         vim.wo[win].winfixbuf = false
         vim.wo[win].winfixheight = false
         vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(false, true))

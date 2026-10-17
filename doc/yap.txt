@@ -57,7 +57,7 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     templates_dir = vim.fn.expand("~/.config/yap/templates"), -- :YapInsert files
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
     notify_done = true,           -- vim.notify when a hidden turn finishes
-    description_model = "openai/gpt-5-nano",       -- on-send label
+    description_model = "openrouter/~deepseek/deepseek-flash-latest", -- on-send label
     description_answer_model = "openai/gpt-5-mini", -- final session title
     eval_model = "",                                -- :YapEval model ("" inherits)
     syntax_highlight = true,      -- keep markdown syntax colors
@@ -92,7 +92,7 @@ v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the typographic
 spinner and the block gauge. Explicit `icons` entries win; set one to `""` to
 drop it.
 
-`description_model` (default `openai/gpt-5-nano`) labels a session from the
+`description_model` (default `openrouter/~deepseek/deepseek-flash-latest`) labels a session from the
 first request as soon as you send, so the picker has a title before the agent
 answers. `description_answer_model` (default `openai/gpt-5-mini`) writes an
 overall title after each completed turn. Set either to `""` to disable that
