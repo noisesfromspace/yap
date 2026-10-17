@@ -49,7 +49,7 @@ end, {
   range = true,
   nargs = "?",
   bang = true,
-  desc = "Replace the selection with the model's output, or generate at the cursor (one-shot, no tools); ! streams the full response into a split",
+  desc = "Replace the selection with the model's output, or generate at the cursor (one-shot, no tools); ! streams it into a hidden session for follow-ups",
 })
 
 vim.api.nvim_create_user_command("YapInsert", function(cmd)

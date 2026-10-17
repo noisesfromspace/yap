@@ -235,8 +235,13 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         the output is inserted at the cursor as new lines
                         (generate content into a fresh, empty buffer). With
                         [!], the raw response (thinking and markers included)
-                        streams into a scratch split as it arrives; the
-                        cleaned answer is still applied as usual. No
+                        streams into a split holding a real session, saved
+                        under the hidden `<project>/.eval/` folder so it
+                        stays out of |:YapSessions|; the cleaned answer is
+                        still applied as usual. Ask follow-ups there like any
+                        session (these sends offer tools and do not touch
+                        the source buffer); |:YapFork| copies it into a
+                        listed session. No
                         default keymap.
 *:YapInsert*
 :YapInsert [name]     Insert a template or skill (|yap-templates|). With no

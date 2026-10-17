@@ -86,8 +86,8 @@ assert(lines[1] == "before", "generate eval clobbered earlier line: " .. vim.ins
 assert(lines[2] == "summarized output", "generate eval did not insert at cursor: " .. vim.inspect(lines))
 assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
--- show (:YapEval!): the raw response streams into a scratch split, and the
--- marker-stripped answer still replaces the selection.
+-- show (:YapEval!): the response streams into a hidden eval session in a
+-- split, and the marker-stripped answer still replaces the selection.
 local shown = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(shown)
 vim.api.nvim_buf_set_lines(shown, 0, -1, false, { "some text" })
@@ -110,6 +110,18 @@ for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 end
 local streamed = table.concat(vim.api.nvim_buf_get_lines(stream, 0, -1, false), "\n")
 assert(streamed:find("summarized output"), "stream buffer missing output: " .. streamed)
+
+-- The eval split is a real session: saved under the hidden .eval/ folder,
+-- ending in a fresh # @user turn for follow-ups, and absent from the picker.
+assert(vim.b[stream].yap, "eval split is not a yap session")
+local spath = vim.b[stream].yap_path
+assert(spath and spath:find("/%.eval/[^/]+/session%.md$"), "eval session not under .eval/: " .. tostring(spath))
+assert(vim.fn.filereadable(spath) == 1, "eval session not saved: " .. spath)
+assert(streamed:find("# @user\n*$"), "eval session missing trailing # @user: " .. streamed)
+assert(require("harness.path").project_cwd(spath) == vim.fs.normalize(vim.fn.getcwd()), "eval session project_cwd wrong")
+for _, item in ipairs(require("harness.session").list()) do
+  assert(item.path ~= spath, "eval session listed in :YapSessions")
+end
 
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")

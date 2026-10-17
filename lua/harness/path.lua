@@ -101,9 +101,14 @@ end
 
 --- Originating cwd for a persisted session file, from its directory slug.
 --- A session lives at <sessions>/<cwd-slug>/<session>/session.md, so the
---- slug is two levels up from the markdown file.
+--- slug is two levels up from the markdown file — three for a hidden eval
+--- session under <cwd-slug>/.eval/<session>/session.md.
 function M.project_cwd(path)
-  return unscream(vim.fn.fnamemodify(path, ":h:h:t"))
+  local slug = vim.fn.fnamemodify(path, ":h:h:t")
+  if slug == ".eval" then
+    slug = vim.fn.fnamemodify(path, ":h:h:h:t")
+  end
+  return unscream(slug)
 end
 
 --- cwd display for a sessions-root subdirectory (the "all projects" scope).

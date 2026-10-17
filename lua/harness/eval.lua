@@ -133,30 +133,51 @@ function M.insert(buf, row, result)
   vim.api.nvim_buf_set_lines(buf, row, row, false, body)
 end
 
---- Open a scratch split that receives the raw `yap send` stream (thinking,
---- model and error markers included). Returns the buffer and an append
---- function that handles chunks ending mid-line.
-function M.open_stream()
-  local sbuf = vim.api.nvim_create_buf(false, true)
-  vim.bo[sbuf].bufhidden = "wipe"
-  vim.bo[sbuf].filetype = "markdown"
+--- Open the eval as a real yap session in a split, kept out of the
+--- :YapSessions picker by living under the hidden `<project>/.eval/` folder
+--- (the picker globs `*/session.md` one level deep). The buffer holds the
+--- eval's system prompt and user turn; the raw `yap send` stream (thinking,
+--- model and error markers included) is appended as the `# @assistant`
+--- reply, so follow-ups are ordinary sends. :YapFork copies it into a
+--- listed session. Returns the session buffer, an append function for
+--- stream chunks, and a done function that closes the turn and saves.
+function M.open_session(provider, model, user)
+  local paths = require("harness.path")
+  local document = require("harness.document")
+  local yap = require("harness")
   local cur = vim.api.nvim_get_current_win()
+  local sbuf = yap.new({
+    provider = provider,
+    model = model,
+    system = EVAL_SYSTEM,
+    path = paths.new_session_path(paths.session_dir(vim.fn.getcwd()) .. "/.eval"),
+    hidden = true,
+  })
+  vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, vim.split(user, "\n", { plain = true }))
+  document.append_lines(sbuf, { "# @assistant", "" })
   vim.cmd("botright split")
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, sbuf)
   vim.api.nvim_set_current_win(cur)
-  local function append(chunk)
-    if not vim.api.nvim_buf_is_valid(sbuf) then
-      return
-    end
-    local last = vim.api.nvim_buf_line_count(sbuf)
-    local tail = vim.api.nvim_buf_get_lines(sbuf, last - 1, last, false)[1] or ""
-    vim.api.nvim_buf_set_lines(sbuf, last - 1, last, false, vim.split(tail .. chunk, "\n", { plain = true }))
+  local function follow()
     if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == sbuf then
       vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(sbuf), 0 })
     end
   end
-  return sbuf, append
+  follow()
+  local function append(chunk)
+    document.append_text(sbuf, chunk)
+    follow()
+  end
+  local function done()
+    if not vim.api.nvim_buf_is_valid(sbuf) then
+      return
+    end
+    document.append_lines(sbuf, { "# @user", "" })
+    follow()
+    require("harness.session").save(sbuf)
+  end
+  return sbuf, append, done
 end
 
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
@@ -164,7 +185,8 @@ end
 --- With no line range, generate instead: insert the output at the cursor.
 --- When `instruction` is empty or omitted, a selection is transformed with a
 --- default instruction; with no selection it is asked for via vim.ui.input.
---- With `show`, the raw response streams into a scratch split as it arrives.
+--- With `show`, the response streams into a hidden eval session in a split
+--- (see open_session), where follow-up questions can be asked.
 function M.eval(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -201,21 +223,23 @@ function M.eval(opts)
       vim.notify("yap eval: no model configured (set eval_model)", vim.log.levels.ERROR)
       return
     end
+    local user = M.build_user(buf, instruction, selected)
     local payload = vim.json.encode({
       messages = {
         { role = "system", content = EVAL_SYSTEM },
-        { role = "user", content = M.build_user(buf, instruction, selected) },
+        { role = "user", content = user },
       },
       tools = {},
     }) .. "\n"
     vim.notify("running…", vim.log.levels.INFO, { title = "yap eval" })
     local sys_opts = { stdin = payload, text = true }
-    local chunks
+    local chunks, done
     if opts.show then
       -- A stdout callback means result.stdout is nil, so collect the chunks
       -- for the replace/insert step as well as streaming them.
       chunks = {}
-      local _, append = M.open_stream()
+      local append
+      _, append, done = M.open_session(provider, model, user)
       sys_opts.stdout = function(_, data)
         if data then
           chunks[#chunks + 1] = data
@@ -231,6 +255,7 @@ function M.eval(opts)
       vim.schedule_wrap(function(result)
         if chunks then
           result.stdout = table.concat(chunks)
+          done()
         end
         if replace then
           M.finish(buf, line1, line2, sent, result)
