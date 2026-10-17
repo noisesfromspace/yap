@@ -4,8 +4,7 @@ package.loaded.harness = nil -- start-packages may have loaded the installed cop
 local yap = require("harness")
 yap.setup({
   bin = ROOT .. "/yap",
-  description_model = "mock/m1",
-  description_answer_model = "mock/m1",
+  model_groups = { title = "mock/m1" },
 })
 
 local log_path = "/tmp/yap-describe.log"

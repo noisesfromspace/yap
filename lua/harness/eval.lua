@@ -48,12 +48,11 @@ function M.strip_markers(text)
   return table.concat(out, "\n")
 end
 
---- The provider/model combo for an eval: the dedicated `eval_model` when
---- configured, else the buffer's current combo (a session's model, or the
---- setup() default for a plain buffer).
+--- The provider/model combo for an eval: the `editor` model group when set,
+--- else the buffer's current combo (a session's model, or the setup()
+--- default for a plain buffer).
 function M.combo(buf)
-  local cfg = config()
-  local provider, model = require("harness.config").parse_combo(cfg.eval_model or "")
+  local provider, model = require("harness.config").group("editor")
   if not provider then
     provider, model = require("harness.config").current_combo(buf)
   end
@@ -186,7 +185,7 @@ function M.session(opts)
   end
   local provider, model = M.combo(buf)
   if not provider then
-    vim.notify("yap eval: no model configured (set eval_model)", vim.log.levels.ERROR)
+    vim.notify("yap eval: no model configured (set model_groups.editor)", vim.log.levels.ERROR)
     return
   end
   local instruction = opts.instruction ~= "" and opts.instruction or nil
@@ -248,7 +247,7 @@ function M.eval(opts)
     end
     local provider, model = M.combo(buf)
     if not provider then
-      vim.notify("yap eval: no model configured (set eval_model)", vim.log.levels.ERROR)
+      vim.notify("yap eval: no model configured (set model_groups.editor)", vim.log.levels.ERROR)
       return
     end
     local payload = vim.json.encode({

@@ -127,8 +127,7 @@ assert(not text(stopped):find("unfinished instruction", 1, true), "stop sent pen
 
 -- A failed backend spawn must not consume the queued message on disk or
 -- in the live scratch buffer.
-yap.config.description_model = ""
-yap.config.description_answer_model = ""
+yap.config.model_groups.title = ""
 yap.config.bin = ROOT .. "/no-such-yap-binary"
 local failed = yap.new()
 yap.scratch_toggle(failed)

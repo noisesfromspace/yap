@@ -236,7 +236,7 @@ the control surface.
 
 #### R-eval — A selection can be replaced (or content generated) by a one-shot, no-tools model call
 
-`:YapEval!` sends the selected lines to `eval_model` through the one-shot
+`:YapEval!` sends the selected lines to the `editor` model group through the one-shot
 `yap send` path (`tools: []`, so the model cannot call tools or touch other
 files) and replaces the selection with the response. It never runs the agent
 loop, the alert gate, or a serve process. `<!-- yap:* -->` markers and the
@@ -249,8 +249,9 @@ unchanged since the call started. With no range, the output is inserted at the
 cursor as new lines instead (generate content into a fresh buffer); a selection
 with no instruction is transformed with a default instruction (the selection is
 the input, so a visual-mode `:YapEval!` never prompts), while generate mode still
-prompts. `eval_model` defaults to `""`, which inherits the buffer's current
-combo. Why: an eval is a stateless filter (`!`-semantics), not a conversation,
+prompts. `model_groups.editor` defaults to `deepseek/deepseek-v4-pro`; set it
+to `""` to inherit the buffer's current combo. Why: an eval is a stateless
+filter (`!`-semantics), not a conversation,
 so it must not accumulate tool state or history.
 
 Plain `:YapEval` is the interactive counterpart and does not fall under the

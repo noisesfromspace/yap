@@ -2,10 +2,10 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 package.loaded.harness = nil
 local yap = require("harness")
-assert(yap.config.eval_model == "", "eval_model should default to inherit (empty)")
+assert(yap.config.model_groups.editor == "deepseek/deepseek-v4-pro", "editor group should default to the one-shot model")
 yap.setup({
   bin = ROOT .. "/yap",
-  eval_model = "mock/m1",
+  model_groups = { editor = "mock/m1" },
   models = { "mock/m1" },
 })
 

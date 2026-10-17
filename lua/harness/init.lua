@@ -1477,10 +1477,7 @@ function M.new(opts)
     vim.b[buf].yap_path = opts.path
     vim.api.nvim_buf_set_name(buf, opts.path)
   end
-  local provider, model = M.config.provider, M.config.model
-  if config.default_combo then
-    provider, model = config.parse_combo(config.default_combo)
-  end
+  local provider, model = config.session_combo()
   vim.b[buf].yap_provider = opts.provider or provider
   vim.b[buf].yap_model = opts.model or model
   vim.b[buf].yap_project_cwd = vim.fs.normalize(vim.fn.getcwd())

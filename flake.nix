@@ -367,30 +367,24 @@
             };
 
             # Harness (Lua) setup options; consumed by the Neovim config.
-            defaultProvider = mkOption {
-              type = types.str;
-              default = "anthropic";
-              description = "Default provider name for new session buffers.";
-            };
-            defaultModel = mkOption {
-              type = types.str;
-              default = "claude-sonnet-5-5";
-              description = "Default model for new session buffers.";
+            modelGroups = mkOption {
+              type = types.attrsOf types.str;
+              default = {
+                agent = "deepseek/deepseek-v4-pro";
+                editor = "deepseek/deepseek-v4-pro";
+                title = "deepseek/deepseek-flash";
+              };
+              description = ''
+                Named model tiers, each a "provider/model" combo, passed to
+                the harness as `model_groups`: `agent` (session worker),
+                `editor` (one-shot :YapEval model) and `title` (session
+                titling — instant label + final summary).
+              '';
             };
             system = mkOption {
               type = types.str;
               default = "You are a helpful coding assistant. Answer concisely.";
               description = "Fallback system prompt when no AGENTS.md is present.";
-            };
-            descriptionModel = mkOption {
-              type = types.str;
-              default = "openrouter/~deepseek/deepseek-flash-latest";
-              description = "Smallest provider/model combo used to label a session from the latest user message on send.";
-            };
-            descriptionAnswerModel = mkOption {
-              type = types.str;
-              default = "openai/gpt-5-mini";
-              description = "Bigger provider/model combo that writes the final whole-session title once each turn completes.";
             };
           };
 

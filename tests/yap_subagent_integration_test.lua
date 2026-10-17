@@ -58,8 +58,7 @@ yap.setup({
   bin = script,
   provider = "mock",
   model = "working",
-  description_model = "",
-  description_answer_model = "",
+  model_groups = { title = "" },
   agents_dir = home .. "/.config/yap/agents",
 })
 local parent = yap.new()
