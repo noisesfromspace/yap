@@ -169,4 +169,14 @@ function M.assets_dir(buf)
   return vim.fn.fnamemodify(path, ":h") .. "/assets"
 end
 
+--- The session's transient-file folder: <dir>/tmp, beside the session markdown.
+--- The backend writes live-tail logs, inline scripts, header files and SSH
+--- sockets here instead of the system temp dir, and the agent writes its
+--- throwaway scripts and generated artifacts here too, so nothing scatters
+--- into /tmp or the project and everything moves with the session.
+function M.tmp_dir(buf)
+  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":h") .. "/tmp"
+end
+
 return M

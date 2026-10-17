@@ -2,8 +2,10 @@ package utils
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -59,4 +61,24 @@ func TestReadToolTail(t *testing.T) {
 	if n := strings.Count(got, "\n"); n > toolMaxLines {
 		t.Fatalf("tail has %d lines, want <= %d", n, toolMaxLines)
 	}
+}
+
+func TestRunStreamedUsesTempBase(t *testing.T) {
+	// When the frontend supplies a per-session tmp dir, the live-tail log
+	// lands there instead of the system temp dir.
+	base := t.TempDir()
+	SetTempBase(base)
+	defer SetTempBase("")
+
+	cmd := exec.Command("echo", "hi")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	text, err := RunStreamed("bash", "echo hi", cmd, ToolDefaultTimeout)
+	if err != nil || !strings.Contains(text, "hi") {
+		t.Fatalf("run: %q %v", text, err)
+	}
+	logs, _ := filepath.Glob(base + "/yap-bash-*.log")
+	if len(logs) != 1 {
+		t.Fatalf("expected the log under the temp base, got %v", logs)
+	}
+	_ = os.Remove(logs[0])
 }

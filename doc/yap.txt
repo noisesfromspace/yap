@@ -435,12 +435,13 @@ write/edit return short confirmations and stay bare.
 7. SESSIONS                                                  *yap-sessions*
 
 A session is the conversation markdown file plus a few sidecar files: an
-append-only audit log, an optional scratch notes file, and an `assets/`
-folder holding the photos the conversation references. Each session lives in
-its own directory,
+append-only audit log, an optional scratch notes file, an `assets/`
+folder holding the photos the conversation references, and a `tmp/` folder
+for transient tool files and the agent's throwaway scripts and generated
+artifacts. Each session lives in its own directory,
 ~/.config/yap/sessions/<cwd-slug>/<session>/, containing session.md (the
-conversation), audit.jsonl (the audit log), notes.md (the scratch jotter) and
-assets/ (dropped photos).
+conversation), audit.jsonl (the audit log), notes.md (the scratch jotter),
+assets/ (dropped photos) and tmp/ (working files).
 Sessions are saved after every turn; the file is created when the buffer
 opens, and every save goes through |:write| so 'modified', |:w| and the exit
 prompt behave normally.

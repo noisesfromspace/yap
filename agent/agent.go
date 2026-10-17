@@ -49,6 +49,11 @@ type Request struct {
 	// root in the outside-root write note) pointing at the directory the
 	// session was started in. Empty for a one-shot `yap send`.
 	Cwd string `json:"cwd,omitempty"`
+	// TmpDir is the per-session folder for transient tool files (live-tail
+	// logs, inline scripts, header files, SSH control sockets). Set by the
+	// frontend from the session folder so those files live with the session
+	// instead of the system temp dir. Empty for a one-shot `yap send`.
+	TmpDir string `json:"tmp_dir,omitempty"`
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -463,6 +468,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		return err
 	}
 	utils.SetFrontendCwd(req.Cwd)
+	utils.SetTempBase(req.TmpDir)
 	tools.SetWebsearchProvider(cfg.Websearch.Provider)
 	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)

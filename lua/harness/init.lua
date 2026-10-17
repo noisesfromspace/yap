@@ -149,7 +149,7 @@ local yap_install_root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2),
 -- The harness's own boilerplate, always injected as the first system
 -- message on every send. It is independent of agents_file (the user's
 -- rules) and lives here so session files never store it.
-local function yap_about()
+local function yap_about(buf)
   local skills = template.skills_intro_lines()
   local agents = template.agents_intro_lines()
   local about = [[# About Yap
@@ -177,6 +177,20 @@ For independent slow work, `start_task` launches bash, fetch, or websearch in th
 Use `subagent` to delegate a self-contained subtask that is large or independent enough to benefit from an isolated context or a different model. It blocks until the child finishes and returns the child's answer and session path; inspect the child session for its full conversation. The `agent` argument names an agent from the `## Agents` list (definition files in `agents_dir`, default `~/.config/yap/agents/<agent>.md`). To ask a follow-up, pass `session` with that path and `task` with the question (omit `agent`); this appends a user turn to the same child, preserving its system prompt and history. Pass `model` as a `provider/model` combo to run the child on the model you judge appropriate — it overrides the agent definition's `model`. Discover combos with the `models` tool: with no filter it lists the configured providers and their model counts, and with a filter it lists matching `provider/model` combos plus their price per 1M tokens when known. Without `model` the child uses the definition's `model` (a bare model name there inherits the parent's provider) and otherwise your own combo. `model` is ignored on follow-ups.]]
   if agents then
     about = about .. "\n## Agents\n\nThe `agent` argument accepts one of:\n\n" .. table.concat(agents, "\n")
+  end
+  -- The agent needs the session's scratch location to write throwaway
+  -- scripts and generated artifacts into the session instead of /tmp or the
+  -- project. This prefix is the only per-send, per-buffer message, so the
+  -- path is injected here rather than stored in the session file.
+  local spath = buf and paths.session_path(buf)
+  if spath then
+    local sdir = vim.fn.fnamemodify(spath, ":h")
+    about = about
+      .. "\n\n## Session files\n\nThis session lives in `"
+      .. sdir
+      .. "`. Write throwaway scripts, generated artifacts (HTML, data dumps), and quick-inspection clones into its `tmp/` subfolder (`"
+      .. sdir
+      .. "/tmp/`) so they stay with the session and out of the project and /tmp."
   end
   return about
 end
@@ -890,7 +904,7 @@ function M.send(buf)
   -- The harness's own boilerplate is a stable system prefix, kept first so
   -- it never perturbs the prompt cache. Transient environment context (cwd,
   -- git status) is appended to the trailing user message below instead.
-  table.insert(messages, 1, { role = "system", content = yap_about() })
+  table.insert(messages, 1, { role = "system", content = yap_about(buf) })
 
   -- Label the session from the latest user message before transient context
   -- is appended, so the title model never sees cwd/git.
@@ -1229,6 +1243,9 @@ function M.send(buf)
     -- when the buffer spawns it, so the live cwd is what keeps the tools'
     -- "default: the Neovim cwd" true after a :cd.
     cwd = vim.fn.getcwd(),
+    -- The session's tmp/ folder: transient tool files (live-tail logs,
+    -- inline scripts, header files, SSH sockets) land here instead of /tmp.
+    tmp_dir = paths.tmp_dir(buf),
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)

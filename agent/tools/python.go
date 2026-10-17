@@ -25,8 +25,8 @@ func init() {
 		"Run a Python 3 script. Each call is a fresh process with no state carried between "+
 			"calls. Pass exactly one of code (a small inline script) or file (a script path written "+
 			"with the write tool) — use file for larger scripts so the code lives in a real, editable file. "+
-			"Write larger scripts under ~/.local/share/yap/scratch/ (outside the repo, gitignored); ~ is expanded "+
-			"to the home directory in path fields. Returns combined stdout/stderr and the exit "+
+			"Write larger scripts into this session's tmp/ folder (its path is in the system prompt under "+
+			"# About Yap → Session files); ~ is expanded to the home directory in path fields. Returns combined stdout/stderr and the exit "+
 			"code (a non-zero exit is reported, not an error); a failed script returns its traceback "+
 			"as text. Output is truncated to the LAST 2000 lines / 50KB; when truncated, the full "+
 			"output is saved to a temp file. Non-interactive: stdin is /dev/null. Runs in its own "+
@@ -79,7 +79,7 @@ func runPython(a *pythonArgs) (string, string, error) {
 		// filename and large payloads never hit `python3 -c`'s argv limit.
 		// The file is removed when the run returns; only the output log
 		// outlives it (for the Lua side's drain).
-		script, err := os.CreateTemp("", "yap-py-*.py")
+		script, err := os.CreateTemp(utils.TempBase(), "yap-py-*.py")
 		if err != nil {
 			return "", "", err
 		}

@@ -22,7 +22,7 @@ const (
 // stdin is /dev/null. On timeout the whole process group is SIGKILLed. cmd
 // must already have SysProcAttr.Setpgid set and its Dir validated.
 func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (string, error) {
-	out, err := os.CreateTemp("", "yap-"+name+"-*.log")
+	out, err := os.CreateTemp(TempBase(), "yap-"+name+"-*.log")
 	if err != nil {
 		return "", err
 	}
