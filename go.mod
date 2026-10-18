@@ -1,6 +1,6 @@
 module boers.email/yap
 
-go 1.26
+go 1.25.0
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3

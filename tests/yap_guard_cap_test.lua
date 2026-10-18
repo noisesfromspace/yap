@@ -15,7 +15,7 @@ local a = yap.new({ provider = "mock", model = "m1" })
 -- 31 resolved approvals, all newer than the parked one, in one audit log.
 local sdir = paths.session_dir(vim.fn.getcwd())
 local sess = sdir .. "/capcheck"
-vim.fs.mkdir(sess, { parents = true })
+vim.fn.mkdir(sess, "p")
 local f = io.open(sess .. "/audit.jsonl", "w")
 for i = 1, 31 do
   local ts = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time() + i)

@@ -276,7 +276,7 @@ function M.close_children(parent)
       subagent_done[child] = nil
       harness().stop(child)
       if vim.api.nvim_buf_is_valid(child) then
-        vim.npcall(vim.api.nvim_buf_delete, child, { force = true })
+        pcall(vim.api.nvim_buf_delete, child, { force = true })
       end
     end
   end

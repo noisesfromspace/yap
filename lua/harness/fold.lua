@@ -441,8 +441,15 @@ vim.api.nvim_create_autocmd("BufWipeout", {
 vim.api.nvim_create_autocmd("WinClosed", {
   group = group,
   callback = function(args)
+    -- The closed window's handle. `args.win` only exists on 0.13+;
+    -- `<afile>` (args.file) carries the same handle on every supported
+    -- version, as a string.
+    local win = tonumber(args.file)
+    if not win then
+      return
+    end
     for _, s in pairs(sessions) do
-      s.windows[args.win] = nil
+      s.windows[win] = nil
     end
   end,
 })

@@ -91,32 +91,10 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
 
-          # The harness requires Neovim 0.13+ (`vim.fs.mkdir`, `vim.npcall`)
-          # and nixpkgs still ships 0.12.x, so the dev shell builds upstream
-          # master. Same overlay shape as the author's nixos config: replacing
-          # neovim-unwrapped makes devPkgs.neovim (and the launchers below,
-          # which take their runtime from it) follow. Bump `rev`/`hash` to
-          # update: `nurl https://github.com/neovim/neovim master`.
-          devPkgs = pkgs.extend (
-            final: prev: {
-              neovim-unwrapped = prev.neovim-unwrapped.overrideAttrs {
-                pname = "neovim-nightly";
-                version = "0.13.0-dev";
-                src = prev.fetchFromGitHub {
-                  owner = "neovim";
-                  repo = "neovim";
-                  rev = "d387adf9cc731835b3d71d5a9d550eb6e1d7296f";
-                  hash = "sha256-TudXVTfnqNN3rRHBLvkv/FrfQQLnU1Z1b1Byajfdx64=";
-                };
-                # master's install no longer ships the desktop file that the
-                # nixpkgs build phase removes; leave a placeholder for the rm.
-                preBuild = ''
-                  mkdir -p $out/share/applications
-                  touch $out/share/applications/nvim.desktop
-                '';
-              };
-            }
-          );
+          # The harness floor is Neovim 0.11 (`vim.snippet.expand`,
+          # `vim.lsp.get_clients`); nixpkgs ships 0.12, which satisfies it,
+          # so the dev shell uses pkgs.neovim directly (no from-master
+          # overlay needed).
 
           # markdown + markdown_inline grammars for Neovim's built-in
           # treesitter (auto-discovered from parser/*.so on the runtimepath).
@@ -145,7 +123,7 @@
           # same clean base.
           yap-nvim = pkgs.writeShellApplication {
             name = "yap-nvim";
-            runtimeInputs = [ devPkgs.neovim ];
+            runtimeInputs = [ pkgs.neovim ];
             text = ''
               root="''${YAP_ROOT:-$(pwd)}"
               # Ignore an ambient Neovim install (e.g. a home-manager nightly):
@@ -158,7 +136,7 @@
           # Clean + markdown treesitter syntax highlighting.
           yap-nvim-treesitter = pkgs.writeShellApplication {
             name = "yap-nvim-treesitter";
-            runtimeInputs = [ devPkgs.neovim ];
+            runtimeInputs = [ pkgs.neovim ];
             text = ''
               root="''${YAP_ROOT:-$(pwd)}"
               unset VIM VIMRUNTIME
@@ -174,7 +152,7 @@
           # Clean + touchup renderer (needs the markdown grammars).
           yap-nvim-touchup = pkgs.writeShellApplication {
             name = "yap-nvim-touchup";
-            runtimeInputs = [ devPkgs.neovim ];
+            runtimeInputs = [ pkgs.neovim ];
             text = ''
               root="''${YAP_ROOT:-$(pwd)}"
               tu="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
@@ -195,7 +173,7 @@
           # markdown grammars). Sources its plugin file like yap does.
           yap-nvim-render-markdown = pkgs.writeShellApplication {
             name = "yap-nvim-render-markdown";
-            runtimeInputs = [ devPkgs.neovim ];
+            runtimeInputs = [ pkgs.neovim ];
             text = ''
               root="''${YAP_ROOT:-$(pwd)}"
               unset VIM VIMRUNTIME
@@ -212,7 +190,7 @@
           default = pkgs.mkShell {
             packages = [
               pkgs.go
-              devPkgs.neovim
+              pkgs.neovim
               (pkgs.python3.withPackages (p: [ p.msgpack ])) # attached-UI regression tests
               pkgs.vimPlugins.mini-nvim # mini.test: the Lua suite's framework (tests/minitest.lua)
               # Browser + runtime for the playwright tool (native Go client;

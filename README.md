@@ -38,7 +38,7 @@ See `:help yap-tools`.
 
 ## First run
 
-Yap needs Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`). 
+Yap needs Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`). 
 
 1. Build the backend and put `yap` on Neovim's `PATH`:
 

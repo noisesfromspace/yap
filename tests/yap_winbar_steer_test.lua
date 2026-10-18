@@ -13,7 +13,7 @@ local buf = yap.new({ provider = "mock", model = "m1" })
 
 local function winbar_at(cols)
   vim.cmd("vsplit")
-  vim.api.nvim_win_resize(0, cols, -1)
+  vim.api.nvim_win_set_width(0, cols)
   local wb = yap.winbar(buf)
   vim.cmd("close")
   return wb

@@ -95,7 +95,7 @@ end
 --- secrets. Matches the old per-project audit-dir posture, now that audit
 --- logs are co-located here.
 function M.ensure_session_dir(dir)
-  vim.fs.mkdir(dir, { parents = true })
+  vim.fn.mkdir(dir, "p")
   vim.fn.setfperm(dir, "rwx------")
 end
 

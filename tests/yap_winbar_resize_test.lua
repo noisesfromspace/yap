@@ -16,7 +16,7 @@ vim.b[buf].yap_session_usage = { prompt = 999, completion = 99, cost = 0.51 }
 -- then close back to the original.
 local function winbar_at(cols)
   vim.cmd("vsplit")
-  vim.api.nvim_win_resize(0, cols, -1)
+  vim.api.nvim_win_set_width(0, cols)
   local wb = yap.winbar(buf)
   vim.cmd("close")
   return wb
@@ -404,7 +404,7 @@ vim.api.nvim_buf_delete(left_buf, { force = true })
 vim.api.nvim_buf_delete(right_buf, { force = true })
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
-vim.api.nvim_win_resize(0, 12, -1)
+vim.api.nvim_win_set_width(0, 12)
 assert(
   rendered_left() == icons.idle .. "  Session title ",
   "narrow title has a dangling separator: " .. rendered_left()

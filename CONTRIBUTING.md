@@ -20,11 +20,10 @@ for the rule, not just the current mechanics.
 
 ## Running the tests
 
-Yap requires Neovim 0.13 or newer (`vim.fs.mkdir`, `vim.npcall`), which
-nixpkgs does not ship yet, so the flake's devShell builds Neovim from upstream
-master (`devPkgs` in `flake.nix`, pinned by `rev`; bump it to update) together
-with everything else the suite needs: Go, a python3 with `msgpack`, and
-mini.nvim. That is the fast path:
+Yap requires Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`).
+The flake's devShell uses nixpkgs' Neovim (0.12, which satisfies the floor)
+together with everything else the suite needs: Go, a python3 with `msgpack`,
+and mini.nvim. That is the fast path:
 
 ```sh
 nix develop                         # builds Neovim and the agent
@@ -33,7 +32,7 @@ nix develop --command tests/run.sh  # Go tests, fold-UI test, Lua suite
 
 `tests/run.sh` also works outside the devShell — it builds the agent itself
 and resolves what the ambient environment lacks from nixpkgs — but it then
-runs whatever `nvim` is on `PATH`, so that one must be 0.13+ as well. A full
+runs whatever `nvim` is on `PATH`, so that one must be 0.11+ as well. A full
 run takes about a minute; a subset is much faster:
 
 ```sh
@@ -62,7 +61,24 @@ mock provider config cannot bleed between tests. Mock providers
 prints the child's assertion and keeps its session home directory for
 inspection; a passing one deletes it.
 
-[mini.test]: https://nvim-mini.org/mini.nvim/TESTING.html
+## Supported Neovim versions
+
+The floor is Neovim 0.11, set by `vim.snippet.expand` and
+`vim.lsp.get_clients` (the newest APIs the harness actually relies on).
+Several newer APIs are deliberately **not** used, because they would raise
+the floor to 0.13 while offering nothing the code needs. If a replacement
+looks like a regression, check here before "fixing" it:
+
+| Avoided (0.13+)                         | Used instead (all supported versions)                  |
+| --------------------------------------- | ------------------------------------------------------ |
+| `vim.npcall(fn, ...)`                   | `pcall(fn, ...)` — every site discards the result      |
+| `vim.fs.mkdir(dir, { parents = true })` | `vim.fn.mkdir(dir, "p")`                               |
+| `args.win` on a `WinClosed` autocmd     | `tonumber(args.file)` — `<afile>` is the window handle |
+| `vim.api.nvim_win_resize(win, w, h)`    | `vim.api.nvim_win_set_width/height(win, size)`         |
+
+Do not reintroduce the left-hand column. If a future change genuinely needs
+an 0.13-only API, bump the floor here, in `README.md`, and in the
+`flake.nix` comment together.
 
 ## Business rules
 
@@ -430,7 +446,7 @@ notification is a completion *event*, and an autocmd is the Neovim-native hook
 for it (noice/nf-notify, chaining a next send) instead of a hardcoded side
 effect.
 
-## Lua <-> Go protocol (implementation reference)
+## Lua \<-> Go protocol (implementation reference)
 
 - **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
@@ -450,8 +466,7 @@ effect.
   wrapped in yap markers. Each turn ends with an RS-prefixed
   `yap:turn_end {"ok":true|false,"error":?}` line (not buffer text). A turn is
   complete once the corresponding stderr `turn_complete` barrier is received,
-  so audit events cannot lag behind completion. `yap send --provider NAME
-  --model MODEL` remains available for one-off calls (e.g. generating a
+  so audit events cannot lag behind completion. `yap send --provider NAME --model MODEL` remains available for one-off calls (e.g. generating a
   session description).
 - **stderr** — error message, exit 1. Also carries `yap:event {json}` progress
   lines; the Lua side timestamps each one, appends it to the audit log, and —
@@ -486,3 +501,5 @@ produced — reasoning items/encrypted content, signatures, thought signatures,
 reasoning_content — plus native tool-result messages, so tool continuation is
 lossless within one process. The binary is pure Go (no cgo), built
 CGO_ENABLED=0, using the GoAI SDK behind Yap's own agent/llm surface.
+
+[mini.test]: https://nvim-mini.org/mini.nvim/TESTING.html

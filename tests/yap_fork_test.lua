@@ -13,7 +13,7 @@ end
 local original_buf = yap.new()
 local original = vim.b[original_buf].yap_path
 local original_audit = paths.audit_path(original_buf)
-vim.fs.mkdir(vim.fn.fnamemodify(original_audit, ":h"), { parents = true })
+vim.fn.mkdir(vim.fn.fnamemodify(original_audit, ":h"), "p")
 vim.fn.writefile({ '{"type":"turn_end","prompt":42,"completion":3}' }, original_audit)
 vim.api.nvim_buf_set_lines(original_buf, -1, -1, false, { "fork-only unsaved change" })
 assert(vim.bo[original_buf].modified, "source should be dirty")

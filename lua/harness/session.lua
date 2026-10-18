@@ -104,7 +104,7 @@ function M.save(buf)
     paths.ensure_session_dir(dir)
     path = paths.new_session_path(dir)
     vim.b[buf].yap_path = path
-    vim.npcall(vim.api.nvim_buf_set_name, buf, path)
+    pcall(vim.api.nvim_buf_set_name, buf, path)
   end
   -- The session file is always <dir>/session.md, so re-point the buffer at
   -- its canonical file before writing: a `:file` rename moves the buffer's
@@ -112,7 +112,7 @@ function M.save(buf)
   -- from re-rooting the write into the cwd (and chmod'ing it 0700).
   local bufname = vim.api.nvim_buf_get_name(buf)
   if bufname ~= path and bufname ~= "" and not bufname:match("^%a+://") then
-    vim.npcall(vim.api.nvim_buf_set_name, buf, path)
+    pcall(vim.api.nvim_buf_set_name, buf, path)
   end
   stamp_updated_at(buf)
   paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))

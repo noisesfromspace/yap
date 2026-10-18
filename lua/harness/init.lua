@@ -337,7 +337,7 @@ local function handle_event(buf, json_line)
     -- Go keeps the log for us; once drained, an untruncated one is gone
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
-      vim.npcall(os.remove, ev.log)
+      pcall(os.remove, ev.log)
     end
   elseif ev.type == "subagent_request" then
     subagent.start(buf, ev)
@@ -1044,7 +1044,7 @@ function M.send(buf)
       audit.drain(buf) -- final bytes; a killed tool never sent tool_end
       audit.flush(buf) -- emit any unterminated final line
       for path in pairs(state.live_logs[buf] or {}) do
-        vim.npcall(os.remove, path)
+        pcall(os.remove, path)
       end
       state.live_logs[buf] = nil
       live[buf] = nil
@@ -1281,7 +1281,7 @@ function M.stop(buf)
     audit.drain(buf)
     audit.flush(buf) -- emit any unterminated final line
     for path in pairs(state.live_logs[buf] or {}) do
-      vim.npcall(os.remove, path)
+      pcall(os.remove, path)
     end
     state.live_logs[buf] = nil
     live[buf] = nil
@@ -1380,7 +1380,7 @@ local function setup_buffer(buf)
   -- runs, so a markdown client may already be attached; stop it.
   if vim.lsp and vim.lsp.get_clients then
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-      vim.npcall(client.stop, client)
+      pcall(client.stop, client)
     end
   end
 
@@ -2175,7 +2175,7 @@ function M.setup(opts)
               if normal > 1 then
                 vim.api.nvim_win_close(win, true)
                 if not vim.api.nvim_win_is_valid(win) then
-                  vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
+                  pcall(vim.api.nvim_buf_delete, cur, { force = true })
                 end
               end
             end
@@ -2191,7 +2191,7 @@ function M.setup(opts)
           local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
           if #lines <= 1 and (#lines == 0 or lines[1] == "") then
             switch_buf(target)
-            vim.npcall(vim.api.nvim_buf_delete, cur, { force = true })
+            pcall(vim.api.nvim_buf_delete, cur, { force = true })
             return
           end
         end
@@ -2269,7 +2269,7 @@ function M.setup(opts)
       if vim.b[args.buf].yap and args.data and args.data.client_id then
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if client then
-          vim.npcall(client.stop, client)
+          pcall(client.stop, client)
         end
       end
     end,
