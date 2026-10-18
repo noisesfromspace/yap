@@ -119,6 +119,7 @@ Rules:
 - No colon in the title — it breaks the YAML frontmatter
 - Routine commit/close instructions are housekeeping, not the session goal
 - Never title from code, logs, or command output; do not use Markdown fences
+- No ** or ```, keep it flat text
 - Example: "Fold lag – cache per changedtick"
 
 Return only the title.]]
