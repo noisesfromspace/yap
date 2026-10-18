@@ -432,14 +432,14 @@ effect.
 
 ## Lua <-> Go protocol (implementation reference)
 
-- **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"...","tmp_dir":"..."}`
+- **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
   as assistant transcript text). `cwd` is request-only, like the context tail:
   the serve process's own working directory is fixed when the buffer spawns it,
   so this is what keeps bash/python's documented "default: the Neovim cwd" (and
   the project root in the outside-root write note) true after a `:cd`; absent
   for a one-shot `yap send`, whose tools then use the process cwd.
-  `tmp_dir` is the session's `tmp/` folder; the backend writes transient tool
+  `assets_dir` is the session's `assets/` folder; the backend writes transient tool
   files (live-tail logs, inline scripts, header files, SSH sockets) there
   instead of the system temp dir, and the agent is told to put its scratch
   scripts and generated artifacts there too. Explicit user `![FILE: name](file:///...)`

@@ -109,21 +109,21 @@ func SetFrontendCwd(dir string) { frontendCwd = dir }
 // cwd (cmd.Dir unset), which is where they already are.
 func FrontendCwd() string { return frontendCwd }
 
-// tempBase is the directory transient tool files are created in: the
-// frontend's per-session tmp dir when it sent one, else the system temp dir.
-var tempBase string
+// assetsBase is the directory transient tool files are created in: the
+// frontend's per-session assets dir when it sent one, else the system temp dir.
+var assetsBase string
 
-// SetTempBase records the per-session tmp dir the frontend sent this turn.
-func SetTempBase(dir string) { tempBase = dir }
+// SetAssetsBase records the per-session assets dir the frontend sent this turn.
+func SetAssetsBase(dir string) { assetsBase = dir }
 
-// TempBase returns the directory for transient tool files (live-tail logs,
+// AssetsBase returns the directory for transient tool files (live-tail logs,
 // inline scripts, header files, SSH sockets), creating it when the frontend
 // supplied one. Falls back to the system temp dir (which honors $TMPDIR) so
 // a one-shot `yap send` behaves as before.
-func TempBase() string {
-	if tempBase != "" {
-		if err := os.MkdirAll(tempBase, 0o700); err == nil {
-			return tempBase
+func AssetsBase() string {
+	if assetsBase != "" {
+		if err := os.MkdirAll(assetsBase, 0o700); err == nil {
+			return assetsBase
 		}
 	}
 	return os.TempDir()

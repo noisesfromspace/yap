@@ -215,7 +215,7 @@ func masterAlive(ctx context.Context, m *sshMaster, a *sshArgs, name string, por
 
 func startMaster(ctx context.Context, a *sshArgs, name string, port int, key string) (*sshMaster, error) {
 	if sshMasters.dir == "" {
-		dir, err := os.MkdirTemp(utils.TempBase(), "yap-ssh-")
+		dir, err := os.MkdirTemp(utils.AssetsBase(), "yap-ssh-")
 		if err != nil {
 			return nil, err
 		}

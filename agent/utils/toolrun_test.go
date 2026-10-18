@@ -63,12 +63,12 @@ func TestReadToolTail(t *testing.T) {
 	}
 }
 
-func TestRunStreamedUsesTempBase(t *testing.T) {
-	// When the frontend supplies a per-session tmp dir, the live-tail log
+func TestRunStreamedUsesAssetsBase(t *testing.T) {
+	// When the frontend supplies a per-session assets dir, the live-tail log
 	// lands there instead of the system temp dir.
 	base := t.TempDir()
-	SetTempBase(base)
-	defer SetTempBase("")
+	SetAssetsBase(base)
+	defer SetAssetsBase("")
 
 	cmd := exec.Command("echo", "hi")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

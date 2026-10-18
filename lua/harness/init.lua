@@ -188,9 +188,9 @@ Use `subagent` to delegate a self-contained subtask that is large or independent
     about = about
       .. "\n\n## Session files\n\nThis session lives in `"
       .. sdir
-      .. "`. Write throwaway scripts, generated artifacts (HTML, data dumps), and quick-inspection clones into its `tmp/` subfolder (`"
+      .. "`. Write throwaway Python scripts, generated artifacts (HTML, data dumps), fetched downloads, and quick-inspection clones into its `assets/` subfolder (`"
       .. sdir
-      .. "/tmp/`) so they stay with the session and out of the project and /tmp."
+      .. "/assets/`) — the same folder that holds images the conversation references — so they stay with the session, out of the project and /tmp, and you can find files you saved there earlier in the session."
   end
   return about
 end
@@ -1243,9 +1243,9 @@ function M.send(buf)
     -- when the buffer spawns it, so the live cwd is what keeps the tools'
     -- "default: the Neovim cwd" true after a :cd.
     cwd = vim.fn.getcwd(),
-    -- The session's tmp/ folder: transient tool files (live-tail logs,
+    -- The session's assets/ folder: transient tool files (live-tail logs,
     -- inline scripts, header files, SSH sockets) land here instead of /tmp.
-    tmp_dir = paths.tmp_dir(buf),
+    assets_dir = paths.assets_dir(buf),
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)

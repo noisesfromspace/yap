@@ -162,21 +162,16 @@ function M.notes_path(buf)
 end
 
 --- The session's assets folder: <dir>/assets, beside the session markdown.
---- Dropped photos are copied here so the session is self-contained and moves
---- with its images (the `![FILE: …](file://…)` reference is the manifest).
+--- It is the session's single working-files folder: dropped photos are copied
+--- here (the `![FILE: …](file://…)` reference is the manifest), the backend
+--- writes live-tail logs, inline scripts, header files and SSH sockets here
+--- instead of the system temp dir, and the agent writes its throwaway
+--- scripts, fetched downloads and generated artifacts here too — so nothing
+--- scatters into /tmp or the project, everything moves with the session, and
+--- the agent can find files it saved earlier in the session.
 function M.assets_dir(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
   return vim.fn.fnamemodify(path, ":h") .. "/assets"
-end
-
---- The session's transient-file folder: <dir>/tmp, beside the session markdown.
---- The backend writes live-tail logs, inline scripts, header files and SSH
---- sockets here instead of the system temp dir, and the agent writes its
---- throwaway scripts and generated artifacts here too, so nothing scatters
---- into /tmp or the project and everything moves with the session.
-function M.tmp_dir(buf)
-  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":h") .. "/tmp"
 end
 
 return M

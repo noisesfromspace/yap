@@ -160,7 +160,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 	// Response headers land in a temp file so the redirect target can be
 	// parsed without mixing a machine-readable line into the body shown to
 	// the model.
-	hdr, err := os.CreateTemp(utils.TempBase(), "yap-curl-*.hdr")
+	hdr, err := os.CreateTemp(utils.AssetsBase(), "yap-curl-*.hdr")
 	if err != nil {
 		return "", "", err
 	}
