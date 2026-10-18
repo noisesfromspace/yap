@@ -62,7 +62,7 @@ func resolvePath(p string) (string, error) {
 }
 
 // ExpandHome resolves a leading ~ or ~/ in a user-supplied path to the
-// home directory, so `~/.local/share/yap/scratch/x.py` works in every path field. Only
+// home directory, so `~/x.py` works in every path field. Only
 // the bare ~ form is handled (tools never need other-user home lookup);
 // anything else — including `~user/` — is returned unchanged. On a home-dir
 // lookup failure the input is returned untouched and the tool's normal
