@@ -1,6 +1,6 @@
 -- Session titling: generate the one-line description shown in the winbar and
--- session picker, by asking a small model to label the latest user request
--- ("user") and a bigger model to summarize the whole session ("answer").
+-- session picker, by asking the `title` model group to label the latest user
+-- request ("user") and to summarize the whole session ("answer").
 
 local M = {}
 

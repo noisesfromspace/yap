@@ -801,9 +801,8 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 
 	if totPrompt+totCompletion > 0 {
-		// End the turn with a blank line (the marker the harness used to
-		// consume is gone: the turn_end audit event below is the single
-		// carrier of usage, folded by the Lua side).
+		// End the turn with a blank line; the turn_end audit event below is
+		// the single carrier of usage, folded by the Lua side.
 		m := usagePayload(totPrompt, totCompletion, lastPrompt)
 		pad()
 		out.Flush()

@@ -106,9 +106,9 @@ function M.save(buf)
     vim.b[buf].yap_path = path
     vim.npcall(vim.api.nvim_buf_set_name, buf, path)
   end
-  -- The session file is always <dir>/session.md; a `:file` rename no longer
-  -- renames the session (its directory does), so re-point the buffer at its
-  -- canonical file before writing. This also stops a relative `:file` target
+  -- The session file is always <dir>/session.md, so re-point the buffer at
+  -- its canonical file before writing: a `:file` rename moves the buffer's
+  -- name, not the session file. This also stops a relative `:file` target
   -- from re-rooting the write into the cwd (and chmod'ing it 0700).
   local bufname = vim.api.nvim_buf_get_name(buf)
   if bufname ~= path and bufname ~= "" and not bufname:match("^%a+://") then

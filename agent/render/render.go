@@ -1,9 +1,8 @@
 // Package render turns the agent's tool activity into markdown for the
 // session buffer: the yap:tool markers, HTML-comment escaping for
 // thinking text and tool headers/results, and the fenced-code-block logic.
-// These concerns used to be split between package main and package utils;
-// keeping them in one package gives the Lua parser and the markdown
-// renderers a single Go counterpart to stay in sync with.
+// One package gives the Lua parser and the markdown renderers a single Go
+// counterpart to stay in sync with.
 package render
 
 import (
@@ -198,11 +197,10 @@ func EmitToolResult(out *bufio.Writer, result, ui string) {
 	}
 	if ui != "" {
 		ui = utils.Scrub(ui)
-		// The ui diff used to live INSIDE a `<!-- yap:ui … -->` comment,
-		// where treesitter never parses a fence — a comment is one leaf
-		// html_block node, so a ```diff inside it got no highlighting.
 		// Paired one-line markers leave the fence at block level, so the
-		// markdown grammar parses it and injects the diff parser.
+		// markdown grammar parses it and injects the diff parser (a ```diff
+		// nested in an HTML comment sits in one html_block leaf and never
+		// highlights).
 		fence := backtickFence(ui)
 		fmt.Fprintf(out, "<!-- yap:ui -->\n%sdiff\n%s\n%s\n<!-- /yap:ui -->\n", fence, ui, fence)
 	}
