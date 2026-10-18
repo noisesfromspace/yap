@@ -7,6 +7,8 @@ local HEAD = "^# @(%a+)%s*$"
 local TOOL_OPEN = "^<!%-%- yap:tool"
 local TOOL_CLOSE = "^<!%-%- /yap:tool"
 local COMMENT_OPEN = "^<!%-%-.*yap:%a+%s*$"
+-- Any yap marker opener or closer line: `<!-- yap:...` or `<!-- /yap:...`.
+local MARKER_LINE = "^<!%-%- /?yap:"
 
 -- fence_run: a fence opener/closer — <=3 spaces indent then a run of
 -- >=3 backticks or tildes. Returns (char, run, tail) or nil. Indent is
@@ -152,10 +154,37 @@ function M.clear(buf)
   model_cache[buf] = nil
 end
 
+--- Strip `<!-- yap:* -->` marker regions (thinking/model/error/ui) from raw
+--- text, keeping all other lines — including ordinary HTML comments — intact.
+--- A single-line marker (ends in `-->`) is dropped; a multi-line marker opens
+--- on its own line and is dropped through its bare `-->` closer. This is the
+--- raw-output counterpart of document.lua's buffer parser, which drops the
+--- same markers while splitting a buffer into messages; eval.lua uses it to
+--- clean one-shot `yap send` responses.
+function M.strip_markers(text)
+  local out = {}
+  local in_marker = false
+  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+    if in_marker then
+      if line == "-->" then
+        in_marker = false
+      end
+    elseif line:match(MARKER_LINE) then
+      if not line:match("%-%->%s*$") then
+        in_marker = true
+      end
+    else
+      out[#out + 1] = line
+    end
+  end
+  return table.concat(out, "\n")
+end
+
 M.HEAD = HEAD
 M.TOOL_OPEN = TOOL_OPEN
 M.TOOL_CLOSE = TOOL_CLOSE
 M.COMMENT_OPEN = COMMENT_OPEN
+M.MARKER_LINE = MARKER_LINE
 M.fence_run = fence_run
 
 return M

@@ -16,6 +16,8 @@
 
 local M = {}
 
+local structure = require("harness.structure")
+
 local function config()
   return require("harness").config
 end
@@ -25,28 +27,6 @@ local EVAL_SYSTEM = [[You follow the instruction exactly and return ONLY the res
 --- Instruction applied when :YapEval! gets a selection but no instruction: the
 --- selection itself is the input, so a visual-mode eval just filters it.
 local DEFAULT_INSTRUCTION = "Improve this text"
-
---- Strip `<!-- yap:* -->` marker regions (thinking/model/error) from a
---- one-shot `yap send` response, preserving any other HTML in the answer.
---- Exported for tests.
-function M.strip_markers(text)
-  local out = {}
-  local in_marker = false
-  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-    if in_marker then
-      if line == "-->" then
-        in_marker = false
-      end
-    elseif line:match("^<!%-%- /?yap:") then
-      if not line:match("%-%->%s*$") then
-        in_marker = true
-      end
-    else
-      out[#out + 1] = line
-    end
-  end
-  return table.concat(out, "\n")
-end
 
 --- The provider/model combo for an eval: the `editor` model group when set,
 --- else the buffer's current combo (a session's model, or the setup()
@@ -87,7 +67,7 @@ function M.decode(result)
     vim.notify("yap eval: " .. ((result.stderr or ""):gsub("%s+$", "")), vim.log.levels.ERROR)
     return nil
   end
-  local text = M.strip_markers(result.stdout or "")
+  local text = structure.strip_markers(result.stdout or "")
   text = text:gsub("^\n+", ""):gsub("\n+$", "")
   if text == "" then
     vim.notify("yap eval: the model returned no output", vim.log.levels.WARN)

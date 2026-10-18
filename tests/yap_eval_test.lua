@@ -10,15 +10,16 @@ yap.setup({
 })
 
 local eval = require("harness.eval")
+local structure = require("harness.structure")
 
 -- strip_markers removes the binary's thinking/model/error blocks but keeps
 -- ordinary HTML comments untouched.
 assert(
-  eval.strip_markers("<!-- yap:thinking\nhidden\n-->\n\nout") == "\nout",
+  structure.strip_markers("<!-- yap:thinking\nhidden\n-->\n\nout") == "\nout",
   "multi-line marker not stripped"
 )
-assert(eval.strip_markers("<!-- yap:model {} -->\nout") == "out", "single-line marker not stripped")
-assert(eval.strip_markers("<!-- normal -->\nout") == "<!-- normal -->\nout", "non-yap comment stripped")
+assert(structure.strip_markers("<!-- yap:model {} -->\nout") == "out", "single-line marker not stripped")
+assert(structure.strip_markers("<!-- normal -->\nout") == "<!-- normal -->\nout", "non-yap comment stripped")
 
 os.remove("/tmp/yap-eval.log")
 
