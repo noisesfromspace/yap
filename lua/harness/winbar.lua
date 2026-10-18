@@ -257,6 +257,10 @@ local function render_winbar(buf)
     elseif not inactive and busy then
       icon = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
       icon_group = "BusySpin"
+    elseif inactive and busy and steer[buf] then
+      -- A generating session drops its spinner when inactive, but a pending
+      -- steer still advertises itself through the leftmost state icon.
+      icon, icon_group = icons.steer, "Needs"
     elseif not busy then
       if errors[buf] then
         icon, icon_group = icons.error, "Error"

@@ -331,6 +331,12 @@ assert(
   not yap.winbar(target):find("%#YapBusySpin#", 1, true),
   "inactive generating session should drop the busy beacon"
 )
+state.steer[target] = "check the tests"
+assert(
+  yap.winbar(target):find("%#YapNeeds#" .. icons.steer, 1, true) == 1,
+  "inactive generating session with a pending steer should keep its steer icon leftmost"
+)
+state.steer[target] = nil
 state.running[target] = nil
 vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
 state.running[target], state.running[other], state.awaiting[waiting] =
