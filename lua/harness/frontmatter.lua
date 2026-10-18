@@ -11,7 +11,7 @@
 --     - low
 --     - medium
 --     - high
---   active_reasoning: high
+--   reasoning_level: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
 --   tools:
@@ -36,7 +36,7 @@
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
 -- `provider` are the combo to resume with; `available_reasoning` lists the
--- reasoning levels on offer and `active_reasoning` (low|medium|high) is the
+-- reasoning levels on offer and `reasoning_level` (low|medium|high) is the
 -- live, hand-editable choice — read on every send, empty means the
 -- provider's own default;
 -- `created_cwd` is the exact working
@@ -101,7 +101,7 @@ function M.parse(lines)
         fm.provider = v
       elseif k == "model" then
         fm.model = v
-      elseif k == "created_cwd" or k == "cwd" then -- "cwd" is the pre-rename key
+      elseif k == "created_cwd" then
         fm.created_cwd = v
       elseif k == "created_at" then
         fm.created_at = v
@@ -119,19 +119,10 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
-      elseif k == "active_reasoning" or k == "reasoning_level" then
-        fm.active_reasoning = v
+      elseif k == "reasoning_level" then
+        fm.reasoning_level = v
       elseif k == "tools" then
-        if v ~= "" then
-          -- legacy inline form `tools: a,b,c` (pre-list sessions)
-          local names = {}
-          for name in v:gmatch("[^,%s]+") do
-            names[#names + 1] = name
-          end
-          fm.tools = names
-        else
-          list_key = "tools"
-        end
+        list_key = "tools"
       elseif is_list_key(k) then
         list_key = k
       end
@@ -172,7 +163,7 @@ function M.render(
   forked_from,
   forks,
   subagent_parent,
-  active_reasoning
+  reasoning_level
 )
   local lines = { "---" }
   -- `title` is always written (empty by default) so a hand-edited value sits
@@ -189,8 +180,8 @@ function M.render(
   for _, level in ipairs(AVAILABLE_REASONING) do
     lines[#lines + 1] = "  - " .. level
   end
-  if active_reasoning and active_reasoning ~= "" then
-    lines[#lines + 1] = "active_reasoning: " .. active_reasoning
+  if reasoning_level and reasoning_level ~= "" then
+    lines[#lines + 1] = "reasoning_level: " .. reasoning_level
   end
   if created_cwd and created_cwd ~= "" then
     lines[#lines + 1] = "created_cwd: " .. created_cwd
@@ -281,7 +272,7 @@ function M.sync(buf)
   -- user left in the buffer — deleting the line restores the provider
   -- default.
   local defaults = require("harness").config
-  local active_reasoning = (not fm and defaults.reasoning_level) or (fm and fm.active_reasoning)
+  local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
   local block = M.render(
     provider,
     model,
@@ -298,7 +289,7 @@ function M.sync(buf)
     fm and fm.forked_from,
     fm and fm.forks,
     fm and fm.subagent_parent,
-    active_reasoning
+    reasoning_level
   )
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
@@ -343,7 +334,7 @@ function M.record_subagent(parent, child_path)
     fm.forked_from,
     fm.forks,
     fm.subagent_parent,
-    fm.active_reasoning
+    fm.reasoning_level
   )
   vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
 end

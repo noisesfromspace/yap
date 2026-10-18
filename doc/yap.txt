@@ -106,16 +106,16 @@ it follows:
 
 Set a group to `""` to disable it. `title` defaults to `""` (titling off);
 set it to a cheap combo like `deepseek/deepseek-flash` to label sessions. An
-empty `editor` group makes |:YapEval| inherit the buffer's current combo (a
+An empty `editor` group makes |:YapEval| inherit the buffer's current combo (a
 session's model, or the setup() default for a plain buffer); it defaults to
 `deepseek/deepseek-v4-pro`. A `title:` you type in the frontmatter wins over
 the `title` group.
 
 `reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
-into every new session's frontmatter as `active_reasoning` (with the full
+into every new session's frontmatter as `reasoning_level` (with the full
 choice listed under `available_reasoning`) so it is visible and hand-editable
-from the first line. Delete `active_reasoning` in a session to fall back to
-the provider's own default. `active_reasoning` is a cross-provider effort
+from the first line. Delete `reasoning_level` in a session to fall back to
+the provider's own default. `reasoning_level` is a cross-provider effort
 knob: it maps to OpenAI's `reasoning.effort`, Anthropic's `effort`/thinking
 budget, Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
 
@@ -345,7 +345,7 @@ as YAML frontmatter: >
     - low
     - medium
     - high
-  active_reasoning: high
+  reasoning_level: high
   created_cwd: ~/code/project
   turns: 14
   created_at: 2025-09-29T19:22:33Z
@@ -366,7 +366,7 @@ as YAML frontmatter: >
 session's display name. `description` is the generated summary shown while the
 title is empty. `provider`/`model` is the combo to resume with;
 `available_reasoning` lists the reasoning levels on offer and
-`active_reasoning` (`low`/`medium`/`high`) is the live, hand-editable choice —
+`reasoning_level` (`low`/`medium`/`high`) is the live, hand-editable choice —
 seeded from the setup() defaults on new sessions and read on every send,
 empty means the provider's default; `created_cwd`
 the exact working directory the session was created in; `models` the ordered

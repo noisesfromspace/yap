@@ -15,7 +15,7 @@ assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid
 local fm = frontmatter.parse(lines)
 assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
-assert(fm.active_reasoning == "medium", "new session should seed default active_reasoning: " .. vim.inspect(fm.active_reasoning))
+assert(fm.reasoning_level == "medium", "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level))
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.created_cwd))
@@ -190,36 +190,30 @@ assert(
   vim.deep_equal(tools_fm.tools, { "read", "search", "glob" }),
   "tools list not roundtripped: " .. vim.inspect(tools_fm.tools)
 )
-local legacy_tools = frontmatter.parse({ "---", "tools: read, search", "---" })
-assert(
-  vim.deep_equal(legacy_tools.tools, { "read", "search" }),
-  "legacy inline tools not parsed: " .. vim.inspect(legacy_tools.tools)
-)
-
--- active_reasoning: the live choice; available_reasoning lists the options.
+-- reasoning_level: the live choice; available_reasoning lists the options.
 local knobs_block = frontmatter.render(
   "zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, "high"
 )
 local knobs_fm = frontmatter.parse(knobs_block)
-assert(knobs_fm.active_reasoning == "high", "active_reasoning not roundtripped: " .. vim.inspect(knobs_fm.active_reasoning))
-local saw_active, saw_available = false, false
+assert(knobs_fm.reasoning_level == "high", "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level))
+local saw_level, saw_available = false, false
 local available = {}
 for _, l in ipairs(knobs_block) do
-  if l == "active_reasoning: high" then
-    saw_active = true
+  if l == "reasoning_level: high" then
+    saw_level = true
   elseif l == "available_reasoning:" then
     saw_available = true
   elseif l:match("^%s+%-%s+%S+$") then
     available[#available + 1] = l:match("^%s+%-%s+(%S+)$")
   end
 end
-assert(saw_active, "active_reasoning line missing: " .. vim.inspect(knobs_block))
+assert(saw_level, "reasoning_level line missing: " .. vim.inspect(knobs_block))
 assert(
   saw_available and vim.deep_equal(available, { "low", "medium", "high" }),
   "available_reasoning list wrong: " .. vim.inspect(knobs_block)
 )
 local plain_fm = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project"))
-assert(plain_fm.active_reasoning == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
+assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
 -- 9. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.

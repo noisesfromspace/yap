@@ -237,10 +237,8 @@ function M.scratch_toggle(buf)
       end
     end
     if not found.notes and not found.steer and not found.queue then
-      local legacy = (#lines == 1 and lines[1] == "") and {} or lines
-      local migrated = { "# @notes", "", "# @steer", "", "# @queue" }
-      vim.list_extend(migrated, legacy)
-      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, migrated)
+      -- No sections yet: seed the three explicit sections.
+      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "# @notes", "", "# @steer", "", "# @queue" })
     else
       local missing = {}
       for _, role in ipairs({ "notes", "steer", "queue" }) do

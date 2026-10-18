@@ -255,7 +255,6 @@ function M.append_event(buf, ev)
     end
   end
   vim.fn.writefile({ vim.json.encode(ev) }, path, "a")
-  vim.fn.setfperm(path, "rw-------") -- also tighten a legacy 0644 log
 end
 
 --- Fold one turn_end event's usage into a {prompt, completion, cost} table.

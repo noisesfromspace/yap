@@ -1218,11 +1218,11 @@ function M.send(buf)
   running[buf] = process
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
-  -- empty list means unrestricted (all tools). `active_reasoning` is the
+  -- empty list means unrestricted (all tools). `reasoning_level` is the
   -- same live-editable shape: read on every send so a hand-edited value
   -- takes effect without a :Yap rewrite.
   local tools = nil
-  local active_reasoning = nil
+  local reasoning_level = nil
   local fm_end = frontmatter.end_line(buf)
   if fm_end then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, fm_end, false))
@@ -1230,7 +1230,7 @@ function M.send(buf)
       if fm.tools and #fm.tools > 0 then
         tools = fm.tools
       end
-      active_reasoning = fm.active_reasoning
+      reasoning_level = fm.reasoning_level
     end
   end
   local payload = vim.json.encode({
@@ -1238,7 +1238,7 @@ function M.send(buf)
     model = model,
     messages = messages,
     tools = tools,
-    reasoning_level = active_reasoning,
+    reasoning_level = reasoning_level,
     -- Request-only (like the context tail): the backend's own cwd is fixed
     -- when the buffer spawns it, so the live cwd is what keeps the tools'
     -- "default: the Neovim cwd" true after a :cd.

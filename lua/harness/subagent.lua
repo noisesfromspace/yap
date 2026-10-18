@@ -256,7 +256,7 @@ function M.start(parent, ev)
       child_fm.forked_from,
       child_fm.forks,
       parent_path,
-      child_fm.active_reasoning
+      child_fm.reasoning_level
     )
   )
   require("harness.session").save(child)

@@ -8,8 +8,8 @@ local roles = { system = "system", user = "user", assistant = "assistant" }
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
 --- Parse a yap buffer into a message list.
---- Lines before the first heading are ignored (legacy frontmatter in
---- old session files stays inert).
+--- Lines before the first heading are ignored (the YAML frontmatter
+--- precedes the first message heading).
 --- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
 --- `<!-- yap:tool -->` regions are FLATTENED: a valid region inside an
 --- assistant message becomes ordinary assistant transcript text — the tool
@@ -48,7 +48,7 @@ function M.parse_buffer(buf)
 
   local function flush()
     if not role then
-      acc = {} -- pre-heading lines (legacy frontmatter) are not a message
+      acc = {} -- pre-heading lines (the YAML frontmatter) are not a message
       return
     end
     flush_tool() -- safety net for a dangling region
@@ -72,26 +72,17 @@ function M.parse_buffer(buf)
   for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if tool then
       -- Inside a yap:tool region: collect the result, skip the
-      -- display-only yap:ui section (legacy multi-line comment form,
-      -- or the paired form: `<!-- yap:ui -->` … fence …
-      -- `<!-- /yap:ui -->`).
+      -- display-only yap:ui section (the paired form:
+      -- `<!-- yap:ui -->` … fence … `<!-- /yap:ui -->`).
       if line:match("^<!%-%- /yap:tool") then
         flush_tool()
         ui_paired = false
-        in_marker = false -- a legacy yap:ui comment cannot outlive its region
       elseif line:match("^<!%-%- /yap:ui") then
         ui_paired = false
       elseif ui_paired then
       -- block-level diff content between the paired markers
       elseif line:match("^<!%-%- yap:ui %-%->%s*$") then
         ui_paired = true
-      elseif line:match("^<!%-%- yap:ui") then
-        -- legacy multi-line comment form: skip until a bare `-->`
-        in_marker = not line:match("%-%->")
-      elseif in_marker then
-        if line:match("^%-%->$") then
-          in_marker = false
-        end
       else
         table.insert(tool.result, line)
       end

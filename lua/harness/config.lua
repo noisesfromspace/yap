@@ -12,7 +12,7 @@ M.defaults = {
   provider = "anthropic",
   model = "claude-sonnet-5-5",
   -- Default active reasoning level, seeded into a new session's frontmatter
-  -- as `active_reasoning` so it is visible and hand-editable from the first
+  -- as `reasoning_level` so it is visible and hand-editable from the first
   -- line. Delete the line in a session (or set the default to nil) to fall
   -- back to the provider's own default.
   reasoning_level = "medium",

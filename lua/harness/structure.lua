@@ -127,16 +127,10 @@ local function parse(buf)
           comment = { kind = "tool_inner" }
         end
       elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-        if region == "tool" then
-          -- A legacy yap:ui subsection inside a tool region is content of
-          -- the region fold, not a fold of its own.
-          comment = { kind = "tool_inner" }
-        else
-          local kind = line:match("yap:(%a+)") or "comment"
-          local d = { kind = kind, start = i }
-          regions[#regions + 1] = d
-          comment = { kind = kind, region = d }
-        end
+        local kind = line:match("yap:(%a+)") or "comment"
+        local d = { kind = kind, start = i }
+        regions[#regions + 1] = d
+        comment = { kind = kind, region = d }
       elseif line:match(TOOL_CLOSE) then
         end_tool(i)
         region = nil

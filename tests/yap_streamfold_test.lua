@@ -27,9 +27,9 @@ for _, l in ipairs({ '  "id": "w1",', '  "name": "write",', '  "arguments": { "c
 end
 assert(vim.fn.foldclosed(opener) == opener, "fold reopened while JSON streamed: " .. vim.fn.foldclosed(opener))
 append("Successfully wrote 1 bytes to /tmp/x")
-append("<!-- yap:ui")
+append("<!-- yap:ui -->")
 append("+x")
-append("-->")
+append("<!-- /yap:ui -->")
 append("<!-- /yap:tool -->")
 assert(vim.fn.foldclosed(opener) == opener, "fold reopened by result lines: " .. vim.fn.foldclosed(opener))
 -- the whole region (result, ui, closer) is inside the one fold
