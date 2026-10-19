@@ -36,6 +36,16 @@ fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
 can continue independent work and later call `wait_tasks` for the result.  
 See `:help yap-tools`.
 
+A turn is an agent loop: the model asks for tool calls, yap runs them, and
+feeds the results back until the model gives a final answer:
+
+```mermaid
+flowchart LR
+    Model -->|"tool call(s)"| Run["Run compiled-in tool"]
+    Run -->|"tool_result"| Model
+    Model -->|"final answer"| Buffer["Reply streams into the session buffer"]
+```
+
 ## First run
 
 Yap needs Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`). 

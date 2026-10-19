@@ -88,6 +88,20 @@ this repository MUST keep this section up-to-date.
 
 ### Conversation document and persistence
 
+The send pipeline — how the buffer becomes a request and comes back as a
+reply — is one flow through six rules:
+
+```mermaid
+flowchart TD
+    A["Session buffer — only source of truth"] --> B["Parser skips or flattens yap:* marker regions; ignores pre-heading lines"]
+    B --> C["Merge adjacent same-role messages; drop empty ones"]
+    C --> D["Append transient context tail (cwd + git snapshot) to trailing user msg"]
+    D --> E["Send one JSON line per turn on stdin"]
+    E --> F["Stream reply in — append-only, existing lines never rewritten"]
+    F --> G["On exit: repair dangling markers, append # @user heading, save via write!"]
+    G --> A
+```
+
 #### R-buffer-only-state — The buffer is the only conversation state
 
 Neither the Lua side nor the Go binary may keep message state between turns. An
@@ -500,6 +514,36 @@ for it (noice/nf-notify, chaining a next send) instead of a hardcoded side
 effect.
 
 ## Lua \<-> Go protocol (implementation reference)
+
+One turn, end to end. Three channels — stdin (requests and approval replies),
+stdout (streamed reply text and marker regions), stderr (progress events and
+the completion barrier):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Nvim as Neovim/Lua
+    participant Go as yap serve
+    participant API as Provider API
+
+    Nvim->>Go: stdin: JSON turn {provider, model, messages, cwd, assets_dir}
+    Go->>API: chat request (messages + compiled tool defs)
+    Note over Go,API: 429/5xx/network retried before any output
+    loop until final answer or iteration bound
+        API-->>Go: streamed completion chunks
+        Go-->>Nvim: stdout: streamed text + yap markers (thinking/tool/usage)
+        opt tool call
+            Go-->>Nvim: stderr: tool_call / tool_start / tool_end / tool_result
+        end
+        opt guard rule matched
+            Go-->>Nvim: stderr: approval_request (pauses for Run/Deny)
+            Nvim->>Go: stdin: approval_result
+        end
+    end
+    Go-->>Nvim: stderr: turn_complete barrier
+    Go-->>Nvim: stdout: turn_end (RS-prefixed, not buffer text)
+    Nvim->>Nvim: timestamp yap:event lines into audit.jsonl
+```
 
 - **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
