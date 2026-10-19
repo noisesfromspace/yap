@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
 )
 
@@ -89,5 +90,5 @@ func init() {
 			return result, ui, nil
 		})
 	// Secret paths are approvable, not silently edited: pause for Run/Deny.
-	Gate("edit", func(a *editArgs) string { return a.Path }, utils.SecretPathRule("edits a secret path"))
+	Gate("edit", func(a *editArgs) string { return a.Path }, safety.SecretPathRule("edits a secret path"))
 }

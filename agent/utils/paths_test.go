@@ -40,7 +40,7 @@ func TestResolvePath(t *testing.T) {
 	}
 
 	// an existing symlinked path resolves
-	got, err := resolvePath(filepath.Join(link, "sub", "f.txt"))
+	got, err := ResolvePath(filepath.Join(link, "sub", "f.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestResolvePath(t *testing.T) {
 	}
 
 	// a non-existent leaf resolves its existing ancestors and keeps the tail
-	got, err = resolvePath(filepath.Join(dir, "missing", "f.txt"))
+	got, err = ResolvePath(filepath.Join(dir, "missing", "f.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}

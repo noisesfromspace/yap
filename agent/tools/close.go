@@ -1,6 +1,6 @@
 package tools
 
-import "boers.email/yap/agent/utils"
+import "boers.email/yap/agent/wire"
 
 // close_session is a frontend side effect (like quickfix): the tool itself
 // performs no Go-side action beyond emitting the close_session frame; the
@@ -13,7 +13,7 @@ func init() {
 	Register("close_session",
 		"Ask Neovim to close this yap session buffer once the current turn has finished streaming and the session file has been saved. Use it only when the user has asked to end/close the session (e.g. \"close the session when done\").",
 		func(a *closeArgs) (string, string, error) {
-			utils.EmitCloseSession()
+			wire.EmitCloseSession()
 			return "session close requested; the buffer will be closed once this turn completes", "", nil
 		})
 }

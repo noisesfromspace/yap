@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"boers.email/yap/agent/llm"
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
 )
 
@@ -159,7 +160,7 @@ func EmitToolHeader(out *bufio.Writer, call llm.ToolCall) {
 	// write/edit carry their full content in the arguments; the header
 	// keeps only the shape — the yap:ui diff shows the change and the
 	// audit log has the full arguments (R-tool-region).
-	argsJSON := utils.Scrub(string(call.Input))
+	argsJSON := safety.Scrub(string(call.Input))
 	args, ok := utils.SlimArgs(call.Name, argsJSON)
 	if !ok {
 		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -196,7 +197,7 @@ func EmitToolResult(out *bufio.Writer, result, ui string) {
 		out.WriteString(fence + "\n")
 	}
 	if ui != "" {
-		ui = utils.Scrub(ui)
+		ui = safety.Scrub(ui)
 		// Paired one-line markers leave the fence at block level, so the
 		// markdown grammar parses it and injects the diff parser (a ```diff
 		// nested in an HTML comment sits in one html_block leaf and never

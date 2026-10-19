@@ -423,7 +423,7 @@ declaration order and returns the first matching rule's name as the reason
 shown in the approval dialog and audit log. `yap guard` and the guard board
 both read the same registry (`tools.Rules`), so declaring a rule in a tool's
 source is the only step to surface it everywhere. Secret paths and
-secret-reveal commands share one location list in `agent/utils/secrets.go`;
+secret-reveal commands share one location list in `agent/safety/secrets.go`;
 `scrub.go` redacts whatever still reaches a result as the final backstop.
 
 The guard board also reads each project's audit logs to show the settled

@@ -665,7 +665,7 @@ current binary compiled in — `yap guard` is authoritative. The set today:
                 /run/agenix, /etc/agenix) — approvable, never silently
                 read or written.
 
-Secret paths and secret-reveal commands are one system (agent/utils/secrets.go):
+Secret paths and secret-reveal commands are one system (agent/safety/secrets.go):
 adding a location to its list drives both surfaces, and scrub.go redacts any
 secret that still reaches a result as the backstop.
 

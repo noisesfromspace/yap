@@ -1,7 +1,10 @@
-// Package utils holds small, shared helpers used across the yap agent:
-// the framed wire-protocol emitter (frames.go), process-group tracking for
-// cleaning up in-flight tool processes on interrupt, argument slimming for
-// the buffer-visible tool headers, path resolution (paths.go), the static
-// guard-rule gate (gate.go) with its secret knowledge (secrets.go) and
-// redaction (scrub.go), SSRF checks, and unified diffs.
+// Package utils holds the small, leaf helpers shared across the yap agent
+// that have no tighter home: path and environment-root resolution
+// (paths.go), argument slimming for buffer-visible tool headers (slim.go),
+// and unified diffs (diff.go).
+//
+// The two larger clusters that used to live here now have their own
+// packages: the framed wire protocol and turn/process runtime (agent/wire)
+// and the security primitives — secret detection/redaction, SSRF checks and
+// the static guard-rule gate (agent/safety).
 package utils

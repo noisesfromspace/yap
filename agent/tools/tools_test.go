@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 func run(t *testing.T, tool, args string) (string, string, error) {
@@ -92,8 +92,8 @@ func TestBash(t *testing.T) {
 // one ordered channel.
 func TestBashToolStartEvent(t *testing.T) {
 	var buf bytes.Buffer
-	old := utils.SetFrameWriter(&buf)
-	defer utils.SetFrameWriter(old)
+	old := wire.SetFrameWriter(&buf)
+	defer wire.SetFrameWriter(old)
 
 	if _, _, err := run(t, "bash", `{"command":"echo hi"}`); err != nil {
 		t.Fatalf("run: %v", err)
@@ -239,9 +239,9 @@ func TestBashTempFileHygiene(t *testing.T) {
 	// drains the final bytes and then deletes it (tool_end carries log +
 	// truncated for that). The result still carries the full text.
 	var buf bytes.Buffer
-	old := utils.SetFrameWriter(&buf)
+	old := wire.SetFrameWriter(&buf)
 	r, _, err := run(t, "bash", `{"command":"echo small"}`)
-	utils.SetFrameWriter(old)
+	wire.SetFrameWriter(old)
 	if err != nil || !strings.Contains(r, "small") {
 		t.Fatalf("run: %q %v", r, err)
 	}

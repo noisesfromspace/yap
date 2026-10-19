@@ -22,8 +22,9 @@
 // Helpers do NOT belong here, even when only tools call them. Shared
 // helpers (path resolution, SSRF checks, secret scrubbing + the secrets
 // guard, unified diffs, events, process-group tracking, arg slimming, the
-// static rule matcher) live in agent/utils. If you are adding something
-// that does not call Register or Gate, it goes in agent/utils.
+// static rule matcher) live in agent/wire, agent/safety and agent/utils. If
+// you are adding something that does not call Register or Gate, it goes in
+// one of those packages.
 package tools
 
 import (
@@ -35,7 +36,7 @@ import (
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/safety"
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
@@ -128,7 +129,7 @@ type GuardRule struct {
 type guardGate struct {
 	tool    string
 	inspect func(args json.RawMessage) string
-	rules   []utils.Rule
+	rules   []safety.Rule
 }
 
 var guards []guardGate
@@ -138,7 +139,7 @@ var guards []guardGate
 // the tool's typed arguments; rules are matched in order and the first match
 // pauses the call for approval. Rules live in the tool's source file, so the
 // guard board and `yap guard` pick them up automatically.
-func Gate[T any](name string, inspect func(*T) string, rules ...utils.Rule) {
+func Gate[T any](name string, inspect func(*T) string, rules ...safety.Rule) {
 	guards = append(guards, guardGate{
 		tool:  name,
 		rules: rules,
@@ -177,7 +178,7 @@ func Match(name string, args json.RawMessage) string {
 		if g.tool != name {
 			continue
 		}
-		if reason := utils.MatchRules(g.rules, g.inspect(args)); reason != "" {
+		if reason := safety.MatchRules(g.rules, g.inspect(args)); reason != "" {
 			return reason
 		}
 	}

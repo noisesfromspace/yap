@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 func TestSubagentTimeout(t *testing.T) {
@@ -26,12 +26,12 @@ func TestSubagentTimeout(t *testing.T) {
 
 func TestSubagentModelForwarded(t *testing.T) {
 	var buf bytes.Buffer
-	oldWriter := utils.SetFrameWriter(&buf)
+	oldWriter := wire.SetFrameWriter(&buf)
 	oldReplies, oldWait := SubagentReplies, subagentWait
 	SubagentReplies = make(chan SubagentReply, 1)
 	subagentWait = time.Millisecond
 	defer func() {
-		utils.SetFrameWriter(oldWriter)
+		wire.SetFrameWriter(oldWriter)
 		SubagentReplies, subagentWait = oldReplies, oldWait
 	}()
 	tool, _ := Get("subagent")

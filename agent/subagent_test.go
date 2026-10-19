@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"boers.email/yap/agent/internal/testutil"
 )
 
 // A serve process must accept the child's reply while its parent tool is
@@ -17,14 +19,14 @@ func TestSubagentReplyWhileTurnRuns(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if calls == 1 {
-			sse(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"subagent","arguments":"{\"agent\":\"scout\",\"task\":\"look\"}"}}]}}]}`)
-			sse(w, `{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`)
+			testutil.SSE(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"subagent","arguments":"{\"agent\":\"scout\",\"task\":\"look\"}"}}]}}]}`)
+			testutil.SSE(w, `{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`)
 		} else {
-			sse(w, `{"choices":[{"delta":{"content":"done"}}]}`)
+			testutil.SSE(w, `{"choices":[{"delta":{"content":"done"}}]}`)
 		}
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 	r, w := io.Pipe()
 	defer r.Close()

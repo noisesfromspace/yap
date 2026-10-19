@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/safety"
+	"boers.email/yap/agent/wire"
 
 	readability "codeberg.org/readeck/go-readability/v2"
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
@@ -51,8 +52,8 @@ func fetchRaw(rawURL string) (status int, statusText, contentType string, finalU
 		return 0, "", "", nil, nil, fmt.Errorf("only http(s) URLs supported")
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second, Transport: utils.CheckedTransport()}
-	req, err := http.NewRequestWithContext(utils.TurnContext(), http.MethodGet, rawURL, nil)
+	client := &http.Client{Timeout: 30 * time.Second, Transport: safety.CheckedTransport()}
+	req, err := http.NewRequestWithContext(wire.TurnContext(), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return 0, "", "", nil, nil, err
 	}

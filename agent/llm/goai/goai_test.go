@@ -11,7 +11,7 @@ import (
 	"github.com/zendev-sh/goai/provider"
 
 	"boers.email/yap/agent/llm"
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 func TestImagePartReachesSDK(t *testing.T) {
@@ -283,13 +283,13 @@ func TestClassify(t *testing.T) {
 		err  error
 		code int
 	}{
-		{"auth", &sdk.APIError{StatusCode: 401, Message: "unauthorized"}, utils.CodeAuth},
-		{"forbidden", &sdk.APIError{StatusCode: 403, Message: "forbidden"}, utils.CodeAuth},
-		{"rate limited", &sdk.APIError{StatusCode: 429, IsRetryable: true}, utils.CodeRateLimited},
-		{"server 500", &sdk.APIError{StatusCode: 500, IsRetryable: true}, utils.CodeInternal},
-		{"overflow", &sdk.ContextOverflowError{Message: "context overflow"}, utils.CodeContextOverflow},
-		{"network", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, utils.CodeNetwork},
-		{"unknown", errors.New("something else"), utils.CodeInternal},
+		{"auth", &sdk.APIError{StatusCode: 401, Message: "unauthorized"}, wire.CodeAuth},
+		{"forbidden", &sdk.APIError{StatusCode: 403, Message: "forbidden"}, wire.CodeAuth},
+		{"rate limited", &sdk.APIError{StatusCode: 429, IsRetryable: true}, wire.CodeRateLimited},
+		{"server 500", &sdk.APIError{StatusCode: 500, IsRetryable: true}, wire.CodeInternal},
+		{"overflow", &sdk.ContextOverflowError{Message: "context overflow"}, wire.CodeContextOverflow},
+		{"network", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, wire.CodeNetwork},
+		{"unknown", errors.New("something else"), wire.CodeInternal},
 	}
 	for _, c := range cases {
 		if code, _ := Classify(c.err); code != c.code {
@@ -299,7 +299,7 @@ func TestClassify(t *testing.T) {
 
 	// An auth APIError carries its status code as machine-readable data.
 	code, data := Classify(&sdk.APIError{StatusCode: 401, Message: "unauthorized"})
-	if code != utils.CodeAuth || data["status"] != 401 {
+	if code != wire.CodeAuth || data["status"] != 401 {
 		t.Fatalf("auth data wrong: code=%d data=%v", code, data)
 	}
 }

@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 // curl shell-outs to the system curl binary — the most versatile way to
@@ -60,7 +62,7 @@ func init() {
 // GET: an explicit non-GET method (mutation) and a request body (data leaving
 // the machine). The denied flags already keep curl from reading local files
 // or writing responses to disk.
-var curlRules = []utils.Rule{
+var curlRules = []safety.Rule{
 	{Name: "non-GET request method", Match: func(s string) bool { return strings.Contains(s, "non-GET method") }},
 	{Name: "sends a request body", Match: func(s string) bool { return strings.Contains(s, "request body") }},
 }
@@ -172,7 +174,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("invalid URL: %w", err)
 	}
-	if err := utils.CheckURLHost(u); err != nil {
+	if err := safety.CheckURLHost(u); err != nil {
 		return "", "", err
 	}
 
@@ -234,7 +236,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 
 	// curl's --max-time bounds the transfer; the Go context is only a
 	// backstop (5s later) so curl's own "operation timed out" message wins.
-	ctx, cancel := context.WithTimeout(utils.TurnContext(), timeout+5*time.Second)
+	ctx, cancel := context.WithTimeout(wire.TurnContext(), timeout+5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "curl", args...)
 	if a.Data != "" {

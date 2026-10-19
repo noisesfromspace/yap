@@ -25,8 +25,10 @@ package main
 
 import (
 	"boers.email/yap/agent/llm/goai"
+	"boers.email/yap/agent/models"
 	"boers.email/yap/agent/tools"
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/turn"
+	"boers.email/yap/agent/wire"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -51,7 +53,7 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
-		utils.KillAll()
+		wire.KillAll()
 		tools.CloseAll()
 		fmt.Fprintln(os.Stderr, "interrupted")
 		os.Exit(1)
@@ -71,7 +73,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "send: --provider and --model are required")
 			os.Exit(2)
 		}
-		if err := send(*provider, *model, os.Stdin, os.Stdout); err != nil {
+		if err := turn.Send(*provider, *model, os.Stdin, os.Stdout); err != nil {
 			tools.CloseAll()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
@@ -83,7 +85,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "models":
-		if err := models(); err != nil {
+		if err := models.List(); err != nil {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
@@ -110,11 +112,11 @@ func main() {
 
 // serve keeps tool state (including SSH connections) in this process across turns.
 // All Go→Lua traffic is newline-delimited JSON frames on one channel (see
-// agent/utils/frames.go): text, event, tool_output, request and turn_complete.
+// agent/wire/frames.go): text, event, tool_output, request and turn_complete.
 // One channel means total ordering, so the frontend needs no cross-pipe
 // completion barrier.
 type serveRequest struct {
-	Request
+	turn.Request
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
 	V        int    `json:"v"`
@@ -123,30 +125,30 @@ type serveRequest struct {
 // wireError maps a Go error onto the structured error object a turn_complete
 // frame carries. A CodedError (request/params problem) keeps its code;
 // everything else is an internal error.
-func wireError(err error) *utils.WireError {
+func wireError(err error) *wire.WireError {
 	if err == nil {
 		return nil
 	}
-	var ce utils.CodedError
+	var ce wire.CodedError
 	if errors.As(err, &ce) {
-		return &utils.WireError{Code: ce.Code, Message: ce.Error()}
+		return &wire.WireError{Code: ce.Code, Message: ce.Error()}
 	}
 	code, data := goai.Classify(err)
-	return &utils.WireError{Code: code, Message: err.Error(), Data: data}
+	return &wire.WireError{Code: code, Message: err.Error(), Data: data}
 }
 
 func serve(in io.Reader, out io.Writer) error {
 	tools.SubagentReplies = make(chan tools.SubagentReply, 1)
-	utils.ApprovalReplies = make(chan utils.ApprovalReply, 1)
+	wire.ApprovalReplies = make(chan wire.ApprovalReply, 1)
 	defer func() {
 		tools.SubagentReplies = nil
-		utils.ApprovalReplies = nil
+		wire.ApprovalReplies = nil
 	}()
 	// All Go→Lua traffic is framed JSON on stdout: text frames (buffer
 	// content), event frames (audit), tool_output frames (live tail), and
 	// request/turn_complete frames. One channel, total ordering.
-	oldOut := utils.SetFrameWriter(out)
-	defer utils.SetFrameWriter(oldOut)
+	oldOut := wire.SetFrameWriter(out)
+	defer wire.SetFrameWriter(oldOut)
 	requests := make(chan []byte)
 	readErr := make(chan error, 1)
 
@@ -215,7 +217,7 @@ func serve(in io.Reader, out io.Writer) error {
 					}
 					_ = json.Unmarshal(line, &ar)
 					select {
-					case utils.ApprovalReplies <- utils.ApprovalReply{ID: ar.ID, Approved: ar.Approved}:
+					case wire.ApprovalReplies <- wire.ApprovalReply{ID: ar.ID, Approved: ar.Approved}:
 					default:
 					}
 					continue
@@ -255,11 +257,11 @@ func serve(in io.Reader, out io.Writer) error {
 		var req serveRequest
 		err := json.Unmarshal(line, &req)
 		if err != nil {
-			err = utils.CodedError{Code: utils.CodeParse, Err: err}
+			err = wire.CodedError{Code: wire.CodeParse, Err: err}
 		} else if req.V != 1 {
-			err = utils.CodedError{Code: utils.CodeInvalidReq, Err: fmt.Errorf("unsupported protocol version %d (want 1)", req.V)}
+			err = wire.CodedError{Code: wire.CodeInvalidReq, Err: fmt.Errorf("unsupported protocol version %d (want 1)", req.V)}
 		} else if req.Provider == "" || req.Model == "" {
-			err = utils.CodedError{Code: utils.CodeInvalidParam, Err: fmt.Errorf("provider and model are required")}
+			err = wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("provider and model are required")}
 		} else {
 			updateMu.Lock()
 			updateCh = make(chan update, 1)
@@ -273,7 +275,7 @@ func serve(in io.Reader, out io.Writer) error {
 			cancelMu.Lock()
 			cancelFn = cancel
 			cancelMu.Unlock()
-			err = runTurn(ctx, req.Provider, req.Model, req.Request, utils.TextWriter(), func() boundary {
+			err = turn.Run(ctx, req.Provider, req.Model, req.Request, wire.TextWriter(), func() turn.Boundary {
 				for {
 					select {
 					case u := <-ch:
@@ -284,14 +286,14 @@ func serve(in io.Reader, out io.Writer) error {
 							hasSteer = pendingSteer != ""
 						}
 					default:
-						b := boundary{}
+						b := turn.Boundary{}
 						if hasModel {
-							b.provider, b.model = pendProvider, pendModel
+							b.Provider, b.Model = pendProvider, pendModel
 							hasModel = false
 							pendProvider, pendModel = "", ""
 						}
 						if hasSteer {
-							b.steer = pendingSteer
+							b.Steer = pendingSteer
 							hasSteer = false
 							pendingSteer = ""
 						}
@@ -314,9 +316,9 @@ func serve(in io.Reader, out io.Writer) error {
 		// frontend completes the turn on this frame alone. A cancelled turn
 		// is a stop, not a failure — the serve process stays alive.
 		if errors.Is(err, context.Canceled) {
-			utils.EmitTurnCancelled()
+			wire.EmitTurnCancelled()
 		} else {
-			utils.EmitTurnComplete(err == nil, wireError(err))
+			wire.EmitTurnComplete(err == nil, wireError(err))
 		}
 	}
 	return <-readErr

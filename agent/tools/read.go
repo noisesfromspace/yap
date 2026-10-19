@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
 )
 
@@ -59,5 +60,5 @@ func init() {
 			return text, "", nil
 		})
 	// Secret files are approvable, not silently read: pause for Run/Deny.
-	Gate("read", func(a *readArgs) string { return a.Path }, utils.SecretPathRule("reads a secret path"))
+	Gate("read", func(a *readArgs) string { return a.Path }, safety.SecretPathRule("reads a secret path"))
 }

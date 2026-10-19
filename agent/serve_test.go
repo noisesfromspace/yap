@@ -9,16 +9,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"boers.email/yap/agent/internal/testutil"
 )
 
 func TestServeMultipleTurnsAndFailure(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		sse(w, `{"choices":[{"delta":{"content":"reply `+fmt.Sprint(calls)+`"}}]}`)
+		testutil.SSE(w, `{"choices":[{"delta":{"content":"reply `+fmt.Sprint(calls)+`"}}]}`)
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 	var out bytes.Buffer
 	input := `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}` + "\n" +
@@ -59,16 +61,16 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 		calls++
 		if calls == 1 {
 			firstCall <- struct{}{}
-			sse(w,
+			testutil.SSE(w,
 				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"sleep 30\"}"}}]}}]}`,
 				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 			)
 			return
 		}
-		sse(w, `{"choices":[{"delta":{"content":"second turn ok"}}]}`)
+		testutil.SSE(w, `{"choices":[{"delta":{"content":"second turn ok"}}]}`)
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	r, w := io.Pipe()
@@ -127,7 +129,7 @@ func TestServeCancelMidStream(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
-	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	r, w := io.Pipe()

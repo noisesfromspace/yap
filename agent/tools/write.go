@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
 )
 
@@ -40,5 +41,5 @@ func init() {
 			return result, ui, nil
 		})
 	// Secret paths are approvable, not silently written: pause for Run/Deny.
-	Gate("write", func(a *writeArgs) string { return a.Path }, utils.SecretPathRule("writes a secret path"))
+	Gate("write", func(a *writeArgs) string { return a.Path }, safety.SecretPathRule("writes a secret path"))
 }

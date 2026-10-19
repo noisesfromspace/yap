@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 // The fake executable models OpenSSH's foreground master and mux commands;
@@ -40,19 +40,19 @@ esac
 	systemKnownHosts, sshBinary = known, script
 	t.Cleanup(func() { CloseSSH(); systemKnownHosts, sshBinary = prev, prevBinary })
 	approvalIDs := make(chan string, 10)
-	oldWriter := utils.SetFrameWriter(approvalIDWriter{ids: approvalIDs})
-	oldReplies := utils.ApprovalReplies
-	replies := make(chan utils.ApprovalReply)
-	utils.ApprovalReplies = replies
+	oldWriter := wire.SetFrameWriter(approvalIDWriter{ids: approvalIDs})
+	oldReplies := wire.ApprovalReplies
+	replies := make(chan wire.ApprovalReply)
+	wire.ApprovalReplies = replies
 	go func() {
 		for id := range approvalIDs {
-			replies <- utils.ApprovalReply{ID: id, Approved: true}
+			replies <- wire.ApprovalReply{ID: id, Approved: true}
 		}
 	}()
 	t.Cleanup(func() {
-		utils.SetFrameWriter(oldWriter)
+		wire.SetFrameWriter(oldWriter)
 		close(approvalIDs)
-		utils.ApprovalReplies = oldReplies
+		wire.ApprovalReplies = oldReplies
 	})
 	t.Setenv("SSH_TEST_LOG", log)
 	// The fake uses the same socket name that startMaster computes.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 type globArgs struct {
@@ -31,7 +32,7 @@ func runGlob(a *globArgs) (string, string, error) {
 		args = append(args, a.Path)
 	}
 
-	ctx, cancel := context.WithTimeout(utils.TurnContext(), searchTimeout)
+	ctx, cancel := context.WithTimeout(wire.TurnContext(), searchTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "rg", args...).Output()
 	if err != nil {

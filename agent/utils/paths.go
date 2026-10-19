@@ -8,14 +8,14 @@ import (
 
 // Path resolution and environment roots shared by the tools. Secret paths
 // are deliberately NOT handled here: they belong to the secrets domain
-// (secrets.go — IsSecretPath, SecretPathRule), which reuses resolvePath and
+// (secrets.go — IsSecretPath, SecretPathRule), which reuses ResolvePath and
 // ExpandHome below as its mechanics.
 
-// resolvePath returns the absolute, cleaned path with symlinks resolved in
+// ResolvePath returns the absolute, cleaned path with symlinks resolved in
 // the longest existing prefix. The non-existent tail (a file being created)
 // is re-appended, so a symlink in an existing ancestor still resolves. It
 // falls back to the cleaned absolute path when nothing resolves.
-func resolvePath(p string) (string, error) {
+func ResolvePath(p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err

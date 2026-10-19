@@ -8,7 +8,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 // searchTimeout bounds a single ripgrep run (a huge tree or a network
@@ -34,7 +36,7 @@ func init() {
 		func(a *searchArgs) (string, string, error) { return runSearch(a) })
 	// `path` can point anywhere; a secret directory is approvable, not
 	// silently searched.
-	Gate("search", func(a *searchArgs) string { return a.Path }, utils.SecretPathRule("searches a secret path"))
+	Gate("search", func(a *searchArgs) string { return a.Path }, safety.SecretPathRule("searches a secret path"))
 }
 
 func runSearch(a *searchArgs) (string, string, error) {
@@ -55,7 +57,7 @@ func runSearch(a *searchArgs) (string, string, error) {
 		args = append(args, a.Path)
 	}
 
-	ctx, cancel := context.WithTimeout(utils.TurnContext(), searchTimeout)
+	ctx, cancel := context.WithTimeout(wire.TurnContext(), searchTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "rg", args...).Output()
 	if err != nil {

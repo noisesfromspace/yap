@@ -20,7 +20,7 @@ import (
 	"github.com/zendev-sh/goai/provider/openai"
 
 	"boers.email/yap/agent/llm"
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 // NewProvider builds an llm.Provider for the named provider. Native provider
@@ -81,7 +81,7 @@ func IsRetryable(err error) bool {
 // then network-level errors; anything else is an internal error.
 func Classify(err error) (int, map[string]any) {
 	if err == nil {
-		return utils.CodeInternal, nil
+		return wire.CodeInternal, nil
 	}
 	var apiErr *sdk.APIError
 	if errors.As(err, &apiErr) {
@@ -91,21 +91,21 @@ func Classify(err error) (int, map[string]any) {
 		}
 		switch apiErr.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return utils.CodeAuth, data
+			return wire.CodeAuth, data
 		case http.StatusTooManyRequests:
-			return utils.CodeRateLimited, data
+			return wire.CodeRateLimited, data
 		default:
-			return utils.CodeInternal, data
+			return wire.CodeInternal, data
 		}
 	}
 	var overflow *sdk.ContextOverflowError
 	if errors.As(err, &overflow) {
-		return utils.CodeContextOverflow, nil
+		return wire.CodeContextOverflow, nil
 	}
 	if IsRetryable(err) {
-		return utils.CodeNetwork, map[string]any{"retryable": true}
+		return wire.CodeNetwork, map[string]any{"retryable": true}
 	}
-	return utils.CodeInternal, nil
+	return wire.CodeInternal, nil
 }
 
 type providerImpl struct {

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 // SubagentReplies is installed by serve. Each serve process handles one turn
@@ -33,7 +33,7 @@ func init() {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
-		utils.EmitSubagentRequest(id, a.Agent, a.Model, a.Task, a.Session)
+		wire.EmitSubagentRequest(id, a.Agent, a.Model, a.Task, a.Session)
 		timer := time.NewTimer(subagentWait)
 		defer timer.Stop()
 		for {
@@ -42,10 +42,10 @@ func init() {
 				if reply.ID == id {
 					return reply.Result, "", nil
 				}
-			case <-utils.TurnContext().Done():
+			case <-wire.TurnContext().Done():
 				return "", "", fmt.Errorf("subagent cancelled")
 			case <-timer.C:
-				utils.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})
+				wire.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})
 				return "", "", fmt.Errorf("subagent timed out after %s", subagentWait)
 			}
 		}

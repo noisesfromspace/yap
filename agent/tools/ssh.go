@@ -16,7 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 type sshArgs struct {
@@ -76,7 +78,7 @@ func init() {
 		return result, "", err
 	}, CloseSSH)
 	// Every ssh call pauses for approval before it runs.
-	Gate("ssh", func(*sshArgs) string { return "" }, utils.Rule{Name: "remote command execution", Always: true})
+	Gate("ssh", func(*sshArgs) string { return "" }, safety.Rule{Name: "remote command execution", Always: true})
 }
 
 // Do not load ~/.ssh/config: aliases, ProxyCommand, HostKeyAlias, and
@@ -129,7 +131,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
-	checkCtx, checkCancel := context.WithTimeout(utils.TurnContext(), timeout)
+	checkCtx, checkCancel := context.WithTimeout(wire.TurnContext(), timeout)
 	// -F /dev/null makes OpenSSH check only the requested name. A known IP
 	// or an entry in the user's known_hosts cannot authorize a different name.
 	host := a.Host
@@ -142,7 +144,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if checkErr != nil {
 		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, checkErr)
 	}
-	ctx, cancel := context.WithTimeout(utils.TurnContext(), timeout)
+	ctx, cancel := context.WithTimeout(wire.TurnContext(), timeout)
 	defer cancel()
 	var err error
 	m := sshMasters.clients[key]
@@ -228,8 +230,8 @@ func startMaster(ctx context.Context, a *sshArgs, name string, port int, key str
 		removeSSHDirIfEmpty()
 		return nil, err
 	}
-	utils.Track(m.cmd.Process.Pid)
-	go func() { err := m.cmd.Wait(); utils.Untrack(m.cmd.Process.Pid); m.done <- err; close(m.done) }()
+	wire.Track(m.cmd.Process.Pid)
+	go func() { err := m.cmd.Wait(); wire.Untrack(m.cmd.Process.Pid); m.done <- err; close(m.done) }()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {

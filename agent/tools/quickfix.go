@@ -3,7 +3,7 @@ package tools
 import (
 	"fmt"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/wire"
 )
 
 type quickfixEntry struct {
@@ -24,7 +24,7 @@ func init() {
 			// A frontend side effect: emit the quickfix frame so the Lua side
 			// replaces the list. The audit tool_call/tool_result events still
 			// carry the full record; this is the UI action only.
-			utils.EmitQuickfix(a.Entries)
+			wire.EmitQuickfix(a.Entries)
 			return fmt.Sprintf("quickfix list set (%d entries)", len(a.Entries)), "", nil
 		})
 }

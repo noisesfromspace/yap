@@ -12,7 +12,7 @@ import (
 
 	"github.com/mxschmitt/playwright-go"
 
-	"boers.email/yap/agent/utils"
+	"boers.email/yap/agent/safety"
 )
 
 // The playwright tool drives a real Chromium via playwright-go. It is the
@@ -56,8 +56,8 @@ func init() {
 // playwrightRules gate the one command that escapes the ref-based loop and
 // runs arbitrary code in the page: eval. Navigation, clicks and form fills act
 // through the accessibility snapshot and carry no such risk.
-var playwrightRules = []utils.Rule{
-	utils.Pattern("browser JavaScript eval", `(?i)^\s*eval\b`),
+var playwrightRules = []safety.Rule{
+	safety.Pattern("browser JavaScript eval", `(?i)^\s*eval\b`),
 }
 
 type pwState struct {
