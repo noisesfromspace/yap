@@ -159,7 +159,7 @@ Return only the title.]]
   })
   vim.system(
     { harness().config.bin, "send", "--provider", provider, "--model", model },
-    { stdin = payload, text = true },
+    { stdin = payload, text = true, timeout = 30000 },
     vim.schedule_wrap(function(result)
       if not vim.api.nvim_buf_is_valid(buf) then
         return
@@ -170,7 +170,16 @@ Return only the title.]]
       if kind == "user" and current_description(buf) ~= "" then
         return
       end
+      -- The instant label runs only once, so a failed attempt must not wedge
+      -- that gate: clear it so a later send retries. The whole-session
+      -- summary already retries on its own (it re-runs after every turn).
+      local function retry_later()
+        if kind == "user" then
+          description_started[buf] = nil
+        end
+      end
       if result.code ~= 0 then
+        retry_later()
         -- A title/summary model failure (out of credits, bad provider, …)
         -- must not fail silently: surface it like the eval and send paths do.
         local err = (result.stderr or ""):gsub("%s+$", "")
@@ -186,6 +195,7 @@ Return only the title.]]
       local description = structure.strip_markers(result.stdout or "")
       description = view.collapse(description):gsub(":%s+", " – ")
       if description == "" or description:find("`", 1, true) then
+        retry_later()
         return
       end
       -- The prompts ask for a 2-6 word phrase, but a verbose model can
@@ -199,10 +209,12 @@ Return only the title.]]
       end
       local e = frontmatter.end_line(buf)
       if not e then
+        retry_later()
         return
       end
       local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
       if not fm then
+        retry_later()
         return
       end
       local block = frontmatter.render(
