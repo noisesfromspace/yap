@@ -257,49 +257,55 @@ local function render_winbar(buf)
     -- inactive session drops it (a generating session needs no attention) but
     -- keeps its state icon, so a waiting/errored/stopped/idle session stays
     -- visible at a glance from another window.
-    local icon, icon_group = nil, nil
+    local state_icons = {}
     local busy = running and running[buf]
     if pending_approvals[buf] then
       -- A parked approval outranks the busy spinner: the session needs a
       -- decision, not a "streaming" signal, and must stay visible from an
       -- inactive window too.
-      icon, icon_group = icons.approval, "Approval"
+      state_icons[#state_icons + 1] = seg(icons.approval, "Approval")
     elseif not inactive and busy then
-      icon = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
-      icon_group = "BusySpin"
+      -- A pending steer advertises itself immediately left of the running
+      -- beacon, so both stay visible in the gutter while streaming.
+      if steer[buf] then
+        state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
+      end
+      local glyph = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
+      state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
     elseif inactive and busy and steer[buf] then
       -- A generating session drops its spinner when inactive, but a pending
       -- steer still advertises itself through the leftmost state icon.
-      icon, icon_group = icons.steer, "Needs"
+      state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
     elseif not busy then
       if errors[buf] then
-        icon, icon_group = icons.error, "Error"
+        state_icons[#state_icons + 1] = seg(icons.error, "Error")
       elseif stopped[buf] then
-        icon, icon_group = icons.stopped, "Needs"
+        state_icons[#state_icons + 1] = seg(icons.stopped, "Needs")
       elseif steer[buf] then
-        icon, icon_group = icons.steer, "Needs"
+        state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
       elseif awaiting[buf] and vim.b[buf].yap_agent then
-        icon, icon_group = icons.done, "Idle"
+        state_icons[#state_icons + 1] = seg(icons.done, "Idle")
       elseif awaiting[buf] then
-        icon, icon_group = icons.waiting, "Needs"
+        state_icons[#state_icons + 1] = seg(icons.waiting, "Needs")
       else
-        icon, icon_group = icons.idle, "Idle"
+        state_icons[#state_icons + 1] = seg(icons.idle, "Idle")
       end
     end
 
+    local icon_width = width_of(state_icons)
     if gutter > 0 then
-      local lead = math.floor((gutter - 1) / 2)
+      local lead = math.floor((gutter - icon_width) / 2)
       left[#left + 1] = seg(string.rep(" ", lead), "Idle")
-      if icon then
-        left[#left + 1] = seg(icon, icon_group)
+      for _, s in ipairs(state_icons) do
+        left[#left + 1] = s
       end
-      local trail = gutter - lead - (icon and 1 or 0)
+      local trail = gutter - lead - icon_width
       if trail > 0 then
         left[#left + 1] = seg(string.rep(" ", trail), "Idle")
       end
-    elseif icon then
+    elseif icon_width > 0 then
       -- No gutter (e.g. line numbers off): the icon is the leftmost item.
-      add_item({ seg(icon, icon_group) })
+      add_item(state_icons)
     end
 
     -- The fold-view switch lives in the left cluster only for an inactive
@@ -309,7 +315,7 @@ local function render_winbar(buf)
     end
 
     -- Tool text belongs to the text region, ahead of the rollup. A pending
-    -- steer icon instead joins the model island (see center_segments).
+    -- steer icon instead joins the leftmost state icon (see above).
     if not inactive and busy then
       local l = live and live[buf]
       if l and l.ms and l.ms >= 2000 then
@@ -505,9 +511,7 @@ local function render_winbar(buf)
   -- The center section holds the model island and, in the active bar, the
   -- fold-view switch to its right. Inactive sessions show their session
   -- identity instead of a model that is only useful while that session is
-  -- selected. A pending steer icon sits immediately left of the model; a
-  -- matching blank cell on the right keeps the model name on the true
-  -- midpoint. The switch is added with a matching blank on the left so the
+  -- selected. The switch is added with a matching blank on the left so the
   -- model name stays centered even though the whole section grows. When the
   -- window is too narrow for the island, it drops alone and leaves the
   -- switch behind (see render_winbar).
@@ -523,7 +527,6 @@ local function render_winbar(buf)
         local label = session.label(vim.b[buf].yap_path, nil, full_title(buf))
         text = view.truncate_display(label, 40)
       end
-      local show_steer = not inactive and steer[buf] ~= nil
       if switch_segs then
         -- Blank left of the island: the switch width plus its two-column gap.
         center[#center + 1] = seg(string.rep(" ", width_of(switch_segs) + 2), "Idle")
@@ -531,15 +534,8 @@ local function render_winbar(buf)
       center[#center + 1] = seg(" ", "Idle")
       center[#center + 1] = seg("", "IslandCap")
       center[#center + 1] = seg(" ", "Count", true)
-      if show_steer then
-        center[#center + 1] = seg(icons.steer, "Needs", true)
-        center[#center + 1] = seg(" ", "Count", true)
-      end
       center[#center + 1] = seg(text, "Model", true, true)
       center[#center + 1] = seg(" ", "Count", true)
-      if show_steer then
-        center[#center + 1] = seg("  ", "Count", true)
-      end
       center[#center + 1] = seg("", "IslandCap")
     end
     if switch_segs then

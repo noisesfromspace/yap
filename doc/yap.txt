@@ -518,7 +518,8 @@ with how long the running tool has been grinding. When the window is inactive
 the beacon and title disappear; the state icon remains.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
-(`bash 12s`); a pending `# @steer` adds a steer icon. A three-stop fold-view
+(`bash 12s`); a pending `# @steer` adds a steer icon immediately left of
+that beacon. A three-stop fold-view
 switch (`1  2  3`) highlights the selected preset; click a stop or use
 <leader>1..3. Then a rollup island totals ALL OTHER yap sessions by state
 (streaming, awaiting you, stopped, errored, idle). After the island: the
