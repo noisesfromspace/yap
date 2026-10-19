@@ -96,7 +96,7 @@ flowchart TD
     A["Session buffer — only source of truth"] --> B["Parser skips or flattens yap:* marker regions; ignores pre-heading lines"]
     B --> C["Merge adjacent same-role messages; drop empty ones"]
     C --> D["Append transient context tail (cwd + git snapshot) to trailing user msg"]
-    D --> E["Send one JSON line per turn on stdin"]
+    D --> E["Send one JSON Lines record per turn (full messages array) on stdin"]
     E --> F["Stream reply in — append-only, existing lines never rewritten"]
     F --> G["On exit: repair dangling markers, append # @user heading, save via write!"]
     G --> A
@@ -545,7 +545,9 @@ sequenceDiagram
     Nvim->>Nvim: timestamp yap:event lines into audit.jsonl
 ```
 
-- **stdin** — one JSON line per turn: `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
+- **stdin** — one JSON Lines record per turn (a single newline-terminated JSON
+  object carrying the full `messages` array, not one message):
+  `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
   as assistant transcript text). `cwd` is request-only, like the context tail:
   the serve process's own working directory is fixed when the buffer spawns it,
