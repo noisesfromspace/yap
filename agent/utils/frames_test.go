@@ -47,7 +47,7 @@ func TestTextWriterFrames(t *testing.T) {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal([]byte(buf.String()), &frame); err != nil {
+	if err := json.Unmarshal(buf.Bytes(), &frame); err != nil {
 		t.Fatalf("not a JSON frame: %v\n%s", err, buf.String())
 	}
 	if frame.Type != "text" || frame.Text != "hello\nworld" {

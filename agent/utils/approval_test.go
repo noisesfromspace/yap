@@ -32,7 +32,7 @@ func TestRequestApproval(t *testing.T) {
 		Reason  string `json:"reason"`
 		Command string `json:"command"`
 	}
-	if err := json.Unmarshal([]byte(events.String()), &frame); err != nil {
+	if err := json.Unmarshal(events.Bytes(), &frame); err != nil {
 		t.Fatalf("decode approval request frame: %v", err)
 	}
 	if frame.Type != "approval_request" || frame.Tool != "bash" || frame.Reason != "recursive or forced deletion" || frame.Command != "rm -rf /" {

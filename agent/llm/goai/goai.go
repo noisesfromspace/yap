@@ -89,10 +89,10 @@ func Classify(err error) (int, map[string]any) {
 		if apiErr.IsRetryable {
 			data["retryable"] = true
 		}
-		switch {
-		case apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden:
+		switch apiErr.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
 			return utils.CodeAuth, data
-		case apiErr.StatusCode == http.StatusTooManyRequests:
+		case http.StatusTooManyRequests:
 			return utils.CodeRateLimited, data
 		default:
 			return utils.CodeInternal, data

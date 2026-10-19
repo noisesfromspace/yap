@@ -121,10 +121,11 @@ func TestBashToolStartEvent(t *testing.T) {
 			if json.Unmarshal(outer.Event, &ev) != nil {
 				continue
 			}
-			if ev.Type == "tool_start" {
+			switch ev.Type {
+			case "tool_start":
 				started = true
 				_ = json.Unmarshal(outer.Event, &startEv)
-			} else if ev.Type == "tool_end" {
+			case "tool_end":
 				ended = true
 			}
 		case "tool_output":

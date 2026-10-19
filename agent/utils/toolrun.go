@@ -86,7 +86,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	// The copy goroutine (cmd.Stdout is a MultiWriter over this file and the
 	// tool_output framer) writes to `out` until the child exits, so the file
 	// must stay open until Wait drains the pipe.
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	Track(pgid)
 	defer Untrack(pgid)
