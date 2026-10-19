@@ -20,7 +20,7 @@ vim.fn.writefile({
   "",
 }, src)
 local buf = yap.open(src)
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 fold.set_view_level(1) -- fold all agent output for this test
 local function heading(role, n)
   n = n or 1

@@ -6,8 +6,8 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
-local fold = require("harness.fold")
-local document = require("harness.document")
+local fold = require("harness.ui.fold")
+local document = require("harness.model.document")
 
 local function find_line(buf, pattern, n)
   n = n or 1

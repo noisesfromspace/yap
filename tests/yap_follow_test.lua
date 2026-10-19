@@ -16,7 +16,7 @@ local function conversation(buf, filler)
     lines[#lines + 1] = "filler line " .. i
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  require("harness.fold").set_view_level(1)
+  require("harness.ui.fold").set_view_level(1)
   assert(vim.fn.foldclosed(5) == -1, "precondition: the user prompt stays open in view 1")
 end
 

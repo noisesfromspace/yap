@@ -10,7 +10,7 @@ local paths = require("harness.path")
 local function record(buf, fields)
   fields.type = "attachment"
   fields.ts = os.date("%Y-%m-%dT%H:%M:%S")
-  require("harness.audit").append_event(buf, fields)
+  require("harness.agent.audit").append_event(buf, fields)
 end
 
 --- A filename safe to live in the session's assets folder: the basename kept
@@ -46,7 +46,7 @@ function M.attach(buf, row)
     return nil, "not a yap session"
   end
   local role
-  for _, heading in ipairs(require("harness.structure").parse(buf).headings) do
+  for _, heading in ipairs(require("harness.model.structure").parse(buf).headings) do
     if heading.line > row then
       break
     end
@@ -118,7 +118,7 @@ end
 
 function M.import_paths(buf)
   local role
-  local headings = require("harness.structure").parse(buf).headings
+  local headings = require("harness.model.structure").parse(buf).headings
   local next_heading = 1
   for row, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if headings[next_heading] and headings[next_heading].line == row then

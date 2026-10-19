@@ -1,8 +1,8 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
-local document = require("harness.document")
+local fold = require("harness.ui.fold")
+local document = require("harness.model.document")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {

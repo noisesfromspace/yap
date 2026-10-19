@@ -3,7 +3,7 @@ vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime! plugin/yap.lua")
 local yap = require("harness")
 local session = require("harness.session")
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 local paths = require("harness.path")
 yap.setup({ bin = ROOT .. "/yap", provider = "def", model = "default-m" })
 

@@ -1,7 +1,7 @@
 -- Behavioural contract: identities survive edits, intent survives streaming,
 -- native commands agree with Tab, and separate windows remain independent.
 vim.opt.rtp:prepend(vim.fn.getcwd())
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 local keys = require("harness").config.keymaps
 local api, fn = vim.api, vim.fn
 local function make(lines, view)
@@ -14,7 +14,7 @@ local function make(lines, view)
   return b
 end
 local function append(b, text)
-  require("harness.document").append_text(b, text)
+  require("harness.model.document").append_text(b, text)
 end
 local function native(line, command)
   api.nvim_win_set_cursor(0, { line, 0 })
@@ -139,13 +139,13 @@ assert(fn.foldclosed(7) == -1, "repair lost a surviving native open")
 b = make(fixture)
 append(b, "# @user\n\nquestion")
 fold.toggle(3)
-require("harness.document").append_message(b, "user", { "continued" })
+require("harness.model.document").append_message(b, "user", { "continued" })
 assert(fn.foldclosed(3) == -1 and fn.foldclosed(7) == 7, "message append discarded history intent")
 
 -- Stream fragments that could still be structural are withheld, never
 -- painted as prose. Ordinary prose and unterminated final text stay lossless.
 b = make({ "# @assistant", "" })
-local document = require("harness.document")
+local document = require("harness.model.document")
 local pending, rendered = "", ""
 for _, part in ipairs({ "<", "!-- ya", "p:thinking", "\n", "thought", "\n-->\n", "regular prose" }) do
   local ready

@@ -1,7 +1,7 @@
 -- Templates and skills: reusable context material inserted into conversation documents.
 
 local M = {}
-local document = require("harness.document")
+local document = require("harness.model.document")
 local HEAD = "^# @(%a+)%s*$"
 
 local function config()
@@ -313,7 +313,7 @@ function M.insert(name, opts)
       if sys then
         -- The system block is folded closed in the default views, so reveal
         -- the merged body: otherwise a skill inject looks like a no-op.
-        require("harness.fold").open(sys)
+        require("harness.ui.fold").open(sys)
         vim.notify("yap: merged skill '" .. entry.name .. "' into # @system", vim.log.levels.INFO)
       end
     else

@@ -49,7 +49,7 @@ assert(m2[3].role == "user" and m2[3].content == "next question", "user message 
 
 -- structure.parse must see through an unclosed thinking comment to the
 -- headings on the other side (document.parse_buffer relies on it).
-local structure = require("harness.structure")
+local structure = require("harness.model.structure")
 local p = structure.parse(buf)
 assert(#p.headings == 3, "expected 3 headings, got " .. #p.headings .. ": " .. vim.inspect(p.headings))
 assert(p.regions[1].kind == "thinking" and p.regions[1].finish == 10, "thinking region not bounded: " .. vim.inspect(p.regions))

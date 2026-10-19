@@ -16,7 +16,7 @@
 
 local M = {}
 
-local structure = require("harness.structure")
+local structure = require("harness.model.structure")
 
 local function config()
   return require("harness").config

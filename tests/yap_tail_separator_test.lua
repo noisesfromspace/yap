@@ -3,7 +3,7 @@
 -- distinct blocks.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local audit = require("harness.audit")
+local audit = require("harness.agent.audit")
 
 local buf = vim.api.nvim_create_buf(true, true)
 vim.api.nvim_buf_set_name(buf, "tail-sep-test")

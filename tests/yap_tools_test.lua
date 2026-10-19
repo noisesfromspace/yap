@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 yap.setup({ bin = ROOT .. "/tests/mock_tools.py" })
 
 -- 1. a normal session's frontmatter lists every tool the binary reports

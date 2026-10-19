@@ -16,7 +16,7 @@ vim.notify = function(msg, level, opts)
 end
 
 local state = require("harness.state")
-local guard = require("harness.guard")
+local guard = require("harness.ui.guard")
 yap.send()
 assert(
   vim.wait(10000, function()

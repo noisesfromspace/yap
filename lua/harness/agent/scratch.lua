@@ -7,8 +7,8 @@ local M = {}
 local state = require("harness.state")
 local paths = require("harness.path")
 local util = require("harness.util")
-local document = require("harness.document")
-local drawer = require("harness.drawer")
+local document = require("harness.model.document")
+local drawer = require("harness.ui.drawer")
 
 local function harness()
   return require("harness")
@@ -281,7 +281,7 @@ function M.scratch_toggle(buf)
     end
     if cfg.keymaps.guard ~= "" then
       vim.keymap.set("n", cfg.keymaps.guard, function()
-        require("harness.guard").toggle()
+        require("harness.ui.guard").toggle()
       end, { buffer = scratch, silent = true, desc = "yap: guard board" })
     end
     if cfg.keymaps.insert_file ~= "" then
@@ -307,7 +307,7 @@ function M.scratch_toggle(buf)
   end
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens
-  -- full-width below it (see harness.drawer).
+  -- full-width below it (see harness.ui.drawer).
   if not drawer.toggle(buf, scratch, SCRATCH_HEIGHT, { editable = true }) then
     return
   end

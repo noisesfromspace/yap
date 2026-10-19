@@ -1,5 +1,5 @@
 -- Shared structural parser for folding and navigation.
--- Extracted from harness.fold
+-- Extracted from harness.ui.fold
 
 local M = {}
 

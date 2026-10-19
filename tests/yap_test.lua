@@ -1,8 +1,8 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-assert(type(require("harness.document").parse_buffer) == "function", "document module")
-assert(type(require("harness.template").template_names) == "function", "template module")
+assert(type(require("harness.model.document").parse_buffer) == "function", "document module")
+assert(type(require("harness.agent.template").template_names) == "function", "template module")
 assert(type(require("harness.state").is_running) == "function", "state module")
 local session = require("harness.session")
 
@@ -39,7 +39,7 @@ assert(#items == 0, "expected no listed sessions, got " .. #items)
 
 -- 3b. A frontmatter title names a session and keeps it visible before a
 -- description is generated; the directory name is not the display name.
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 frontmatter.sync(buf) -- the fake conversation above replaced the frontmatter
 -- Type the title into the always-present `title:` line, as a user would.
 local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

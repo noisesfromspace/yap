@@ -1,8 +1,7 @@
 -- Shared mutable state for the yap harness: the per-buffer maps the winbar,
 -- send/backend orchestration and session picker all read and write.
--- Centralizing them here (instead of forward-declaring locals in init.lua)
--- is what lets winbar live in its own module while the send path still
--- reaches into the same tables.
+-- Centralizing them here is what lets winbar, stream, buffers and sessions
+-- each live in their own module while reaching into the same tables.
 
 local M = {
   sessions = {}, -- buf -> true (every open yap session, for the global rollup)
@@ -20,6 +19,9 @@ local M = {
   subagent_children = {}, -- parent buf -> child buf (the running subagent)
   subagent_done = {}, -- child buf -> function(success) to report its result
   pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer
+  close_after_turn = {}, -- session buf -> true (a close_session side effect, honored on turn completion)
+  stream_flush = {}, -- session buf -> flush() that coalesces streamed text into one buffer edit per tick
+  follow_override = {}, -- session buf -> windows deliberately focused during a turn (paused tail-following)
   auto_accept = false, -- approve incoming approval requests (guard board toggle)
 }
 

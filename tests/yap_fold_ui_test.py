@@ -103,8 +103,8 @@ vim.o.laststatus = 0
 vim.o.showtabline = 0
 vim.o.cmdheight = 1
 vim.o.scrolloff = 0
-fold = require("harness.fold")
-document = require("harness.document")
+fold = require("harness.ui.fold")
+document = require("harness.model.document")
 keys = setmetatable({ toggle_fold = "<Tab>" }, { __index = function() return "" end })
 function fresh(view)
   buf = vim.api.nvim_create_buf(false, true)

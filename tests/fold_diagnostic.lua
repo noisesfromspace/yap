@@ -33,9 +33,9 @@ local function sample(source)
     local cursor = api.nvim_win_get_cursor(win)[1]
     local positions = { cursor }
     -- Check recent Yap regions plus the one under the cursor. No text is read into the report.
-    local fold = package.loaded["harness.fold"]
+    local fold = package.loaded["harness.ui.fold"]
     local expected = {}
-    if fold and vim.wo.foldtext:find("harness.fold", 1, true) then
+    if fold and vim.wo.foldtext:find("harness.ui.fold", 1, true) then
       local ok, p = pcall(fold.parse, buf)
       if ok then
         for i = math.max(1, #p.regions - 11), #p.regions do

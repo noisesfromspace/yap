@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -113,7 +113,7 @@ assert(vim.fn.foldclosed(live_reply) == live_reply, "previous live reply stayed 
 fold.set_view_level(1)
 fold.toggle(9)
 assert(vim.fn.foldclosed(9) == -1, "Tab did not open old assistant in view 1")
-require("harness.document").append_text(buf, "streamed text\n")
+require("harness.model.document").append_text(buf, "streamed text\n")
 fold.after_append(buf, { "streamed text", "" })
 assert(vim.fn.foldclosed(9) == -1, "text stream closed Tab-opened reply")
 local current
@@ -123,7 +123,7 @@ for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
   end
 end
 assert(vim.fn.foldclosed(current) == current, "text stream opened current reply")
-require("harness.document").append_text(buf, "<!-- yap:thinking\nmore\n-->\n")
+require("harness.model.document").append_text(buf, "<!-- yap:thinking\nmore\n-->\n")
 fold.after_append(buf, { "<!-- yap:thinking", "more", "-->" })
 assert(vim.fn.foldclosed(9) == -1, "thinking stream closed Tab-opened reply")
 assert(vim.fn.foldclosed(current) == current, "thinking stream opened current reply")

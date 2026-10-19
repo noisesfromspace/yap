@@ -4,7 +4,7 @@ local yap = require("harness")
 yap.setup({ provider = "mock", model = "m1" })
 vim.cmd("runtime plugin/yap.lua")
 local paths = require("harness.path")
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 
 local function text(buf)
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")

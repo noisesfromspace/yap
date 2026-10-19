@@ -12,8 +12,8 @@ local M = {}
 local state = require("harness.state")
 local paths = require("harness.path")
 local util = require("harness.util")
-local view = require("harness.view")
-local drawer = require("harness.drawer")
+local view = require("harness.ui.view")
+local drawer = require("harness.ui.drawer")
 
 local function harness()
   return require("harness")
@@ -461,7 +461,7 @@ local function apply_folds(buf, result)
       vim.api.nvim_win_call(win, function()
         vim.wo.foldmethod = "manual"
         vim.wo.foldminlines = 0
-        vim.wo.foldtext = "v:lua.require'harness.guard'.foldtext()"
+        vim.wo.foldtext = "v:lua.require'harness.ui.guard'.foldtext()"
         vim.cmd("normal! zE")
         for _, f in ipairs(result.folds) do
           vim.cmd(("%d,%dfold"):format(f[1], f[2]))

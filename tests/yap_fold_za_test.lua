@@ -5,7 +5,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 local function buf_with(lines)
   local buf = yap.new()

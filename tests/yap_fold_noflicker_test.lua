@@ -7,8 +7,8 @@
 -- watch flow).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local fold = require("harness.fold")
-local document = require("harness.document")
+local fold = require("harness.ui.fold")
+local document = require("harness.model.document")
 
 local buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)

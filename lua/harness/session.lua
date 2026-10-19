@@ -11,11 +11,13 @@
 -- sessions stay visible in the open-session picker via the filename fallback.
 -- Saved subagents appear beneath their parent in history.
 
+local view = require("harness.ui.view")
+
 local M = {}
 
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 local paths = require("harness.path")
-local picker = require("harness.picker")
+local picker = require("harness.ui.picker")
 
 --- Write the buffer to its session file, creating one (named after the
 --- current time) on first save. Also called when a buffer is opened so
@@ -625,6 +627,34 @@ function M.pick(opts, on_choice)
       on_choice(choice.path)
     end
   end)
+end
+
+--- Session title for the picker and notifications: `title` when set, else
+--- `description`, else the filename. Subagents and forks are indented under
+--- their parent when it is open. The project cwd is rendered separately by
+--- |harness.instances|.
+function M.live_label(buf, parent)
+  local name = vim.api.nvim_buf_get_name(buf)
+  local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
+  local e = frontmatter.end_line(buf)
+  local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
+  local label = M.label(path, fm and fm.title, fm and fm.description)
+  local role = fm and fm.agent or vim.b[buf].yap_agent
+  if role then
+    local task = M.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    local fallback = view.collapse(vim.b[buf].yap_subagent_task or "")
+    label = M.agent_label(role, fm and fm.title, fm and fm.description, task, fallback, label)
+  end
+  if role and parent then
+    return "↳ " .. label
+  end
+  if fm and fm.forked_from then
+    return parent and "↳ fork · " .. label or "fork · " .. label .. " (parent not shown)"
+  end
+  if role and (fm and fm.subagent_parent or vim.b[buf].yap_subagent_parent) then
+    return label .. " (parent not shown)"
+  end
+  return label
 end
 
 return M

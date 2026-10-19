@@ -7,7 +7,7 @@ vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
-local guard = require("harness.guard")
+local guard = require("harness.ui.guard")
 
 local s = yap.new()
 guard.toggle()

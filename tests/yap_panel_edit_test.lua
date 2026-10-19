@@ -8,7 +8,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
-local guard = require("harness.guard")
+local guard = require("harness.ui.guard")
 
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()

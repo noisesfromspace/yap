@@ -3,7 +3,7 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
-local spinner_frames = require("harness.spinner").spinner_frames
+local spinner_frames = require("harness.ui.spinner").spinner_frames
 
 local buf = yap.new({ provider = "mock", model = "m1" })
 -- Simulate a completed session without a network round-trip: usage lives

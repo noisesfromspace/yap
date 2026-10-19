@@ -6,8 +6,8 @@
 
 local M = {}
 
-local structure = require("harness.structure")
-local view = require("harness.view")
+local structure = require("harness.model.structure")
+local view = require("harness.ui.view")
 local HEAD = structure.HEAD
 local TOOL_OPEN = structure.TOOL_OPEN
 local TOOL_CLOSE = structure.TOOL_CLOSE
@@ -209,7 +209,7 @@ end
 local function options()
   vim.wo.foldmethod = "manual"
   vim.wo.foldminlines = 0 -- even the first complete opener arrives folded
-  vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
+  vim.wo.foldtext = "v:lua.require'harness.ui.fold'.text()"
 end
 
 local function apply(buf, win, w, list)

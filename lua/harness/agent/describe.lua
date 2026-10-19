@@ -4,11 +4,11 @@
 
 local M = {}
 
-local frontmatter = require("harness.frontmatter")
-local document = require("harness.document")
+local frontmatter = require("harness.model.frontmatter")
+local document = require("harness.model.document")
 local config = require("harness.config")
-local view = require("harness.view")
-local structure = require("harness.structure")
+local view = require("harness.ui.view")
+local structure = require("harness.model.structure")
 
 local function harness()
   return require("harness")

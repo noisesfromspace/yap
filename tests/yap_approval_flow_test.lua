@@ -10,7 +10,7 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
 local state = require("harness.state")
-local guard = require("harness.guard")
+local guard = require("harness.ui.guard")
 
 local a = yap.new({ provider = "mock", model = "m1" })
 local b = yap.new({ provider = "mock", model = "m1" })

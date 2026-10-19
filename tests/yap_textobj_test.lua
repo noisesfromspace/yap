@@ -186,7 +186,7 @@ end
 -- re-enters visual mode via feedkeys + replace_termcodes, which translates
 -- <C-a>; `:normal` typed it literally and never reached the visual mapping.
 do
-  local textobj = require("harness.textobj")
+  local textobj = require("harness.ui.textobj")
   local buf = fresh({
     "# @system",
     "",

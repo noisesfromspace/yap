@@ -66,7 +66,7 @@ function M.parse_buffer(buf)
   end
 
   local header_roles = {}
-  for _, h in ipairs(require("harness.structure").parse(buf).headings) do
+  for _, h in ipairs(require("harness.model.structure").parse(buf).headings) do
     header_roles[h.line] = roles[h.role]
   end
   for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
@@ -160,7 +160,7 @@ function M.append_text(buf, text)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local fold = require("harness.fold")
+  local fold = require("harness.ui.fold")
   fold.before_change(buf)
   local row = vim.api.nvim_buf_line_count(buf) - 1
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
@@ -258,7 +258,7 @@ function M.append_lines(buf, chunk)
   end
   local lines = vim.deepcopy(chunk)
   table.insert(lines, 1, "")
-  local fold = require("harness.fold")
+  local fold = require("harness.ui.fold")
   fold.before_change(buf)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
   fold.after_append(buf)
@@ -346,7 +346,7 @@ function M.append_message(buf, role, lines)
   while last > first and tail > first and all[last] == out[tail] do
     last, tail = last - 1, tail - 1
   end
-  local fold = require("harness.fold")
+  local fold = require("harness.ui.fold")
   fold.before_change(buf)
   vim.api.nvim_buf_set_lines(buf, first, last, false, vim.list_slice(out, first + 1, tail))
   fold.after_append(buf)

@@ -2,8 +2,8 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime! plugin/yap.lua")
 local yap = require("harness")
-local fold = require("harness.fold")
-local structure = require("harness.structure")
+local fold = require("harness.ui.fold")
+local structure = require("harness.model.structure")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {

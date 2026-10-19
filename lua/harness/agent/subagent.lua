@@ -5,10 +5,10 @@
 local M = {}
 
 local state = require("harness.state")
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 local config = require("harness.config")
 local paths = require("harness.path")
-local document = require("harness.document")
+local document = require("harness.model.document")
 
 local function harness()
   return require("harness")

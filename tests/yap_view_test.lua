@@ -3,7 +3,7 @@
 -- inside quotes, backticks, $()/${}, or a heredoc body.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local view = require("harness.view")
+local view = require("harness.ui.view")
 
 local function eq(got, want, msg)
   if #got ~= #want then

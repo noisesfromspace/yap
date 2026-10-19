@@ -147,9 +147,9 @@ end
 
 local function apply_folds(buf)
   vim.wo.foldmethod = "manual"
-  vim.wo.foldtext = "v:lua.require'harness.fold'.text()"
+  vim.wo.foldtext = "v:lua.require'harness.ui.fold'.text()"
   vim.wo.foldlevel = 0
-  require("harness.fold").set_view_level(1) -- assistant output folded
+  require("harness.ui.fold").set_view_level(1) -- assistant output folded
 end
 
 local function clear_folds()
@@ -385,7 +385,7 @@ end
 
 print(string.format("=== yap+touchup perf profiler  (buffer=%d lines, window=%dx%d) ===", SIZE, WIN_W, WIN_H))
 
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 local cb = require("touchup.commentblocks")
 require("touchup").setup()
 

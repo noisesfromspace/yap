@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -25,7 +25,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
 })
 -- yap.new ran setup_buffer on the template; re-apply for our content
 fold.setup_buffer(buf)
-local structure = require("harness.structure")
+local structure = require("harness.model.structure")
 local p_fold = fold.parse(buf)
 local p_struct = structure.parse(buf)
 assert(

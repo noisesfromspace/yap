@@ -26,7 +26,7 @@ state.stopped[buf] = nil
 state.awaiting[buf] = nil
 assert(left():find("%#YapIdle#" .. icons.idle, 1, true), "clearing state returns to idle")
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @assistant", "", "Done", "", "# @user", "" })
-require("harness.winbar").seed_awaiting(buf)
+require("harness.ui.winbar").seed_awaiting(buf)
 assert(left():find("%#YapNeeds#" .. icons.waiting, 1, true), "reopened awaiting chat should show a waiting icon")
 state.awaiting[buf] = nil
 -- A finished subagent is done, not waiting: its own state icon is `done`.

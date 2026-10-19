@@ -20,7 +20,7 @@ vim.api.nvim_create_user_command("YapLive", function()
 end, { desc = "Open the session's live tool tail" })
 
 vim.api.nvim_create_user_command("YapGuard", function()
-  require("harness.guard").toggle()
+  require("harness.ui.guard").toggle()
 end, { desc = "Open the guard board: static guard rules and parked approvals" })
 
 vim.api.nvim_create_user_command("YapClear", function(cmd)

@@ -7,7 +7,7 @@ vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local state = require("harness.state")
-local guard = require("harness.guard")
+local guard = require("harness.ui.guard")
 
 local chat = yap.new()
 vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "try auto-accept" })

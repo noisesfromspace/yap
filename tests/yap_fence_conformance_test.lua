@@ -1,6 +1,6 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 -- Assert fold.fence_run classifies fence openers identically to Go's
 -- fenceLine. The cases live in a shared JSON fixture so the two grammars

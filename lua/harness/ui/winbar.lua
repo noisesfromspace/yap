@@ -9,10 +9,10 @@ local M = {}
 local state = require("harness.state")
 local util = require("harness.util")
 local config = require("harness.config")
-local frontmatter = require("harness.frontmatter")
-local spinner = require("harness.spinner")
-local view = require("harness.view")
-local picker = require("harness.picker")
+local frontmatter = require("harness.model.frontmatter")
+local spinner = require("harness.ui.spinner")
+local view = require("harness.ui.view")
+local picker = require("harness.ui.picker")
 local session = require("harness.session")
 
 local running = state.running
@@ -222,7 +222,7 @@ local function render_winbar(buf)
   -- it sits in the left cluster (inactive bar) or beside the model island
   -- (active bar).
   local function fold_switch_segs()
-    local selected = require("harness.fold").level(win)
+    local selected = require("harness.ui.fold").level(win)
     local stops = {}
     for level = 1, 3 do
       local s = seg(" " .. level .. " ", level == selected and "ViewActive" or "ViewInactive", false, false, level)
@@ -641,7 +641,7 @@ _G.YapFoldViewClick = function(level, _, button)
     return
   end
   vim.api.nvim_win_call(win, function()
-    require("harness.fold").set_view_level(level)
+    require("harness.ui.fold").set_view_level(level)
   end)
 end
 

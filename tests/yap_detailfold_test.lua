@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 -- The winbar assertions below read the model from the buffer, so pin a
 -- short combo: the default (anthropic/claude-sonnet-5-5) is long enough to

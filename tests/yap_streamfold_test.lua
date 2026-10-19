@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "go", "", "# @assistant", "" })
@@ -50,7 +50,7 @@ print("OK simulation")
 -- until a later forced rebuild snapped it back. The closer must stay inside
 -- the fold on every append, checked via the real document.append_text path.
 do
-  local document = require("harness.document")
+  local document = require("harness.model.document")
   local buf2 = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_win_set_buf(vim.api.nvim_get_current_win(), buf2)
   vim.api.nvim_buf_set_lines(buf2, 0, -1, false, {

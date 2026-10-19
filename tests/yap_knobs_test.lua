@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local frontmatter = require("harness.frontmatter")
+local frontmatter = require("harness.model.frontmatter")
 yap.setup({ bin = ROOT .. "/tests/mock_knobs.py" })
 
 -- Hand-edited frontmatter knobs must reach the request payload on send, the

@@ -13,7 +13,7 @@ local row = vim.api.nvim_buf_line_count(buf)
 local escaped = source:gsub(" ", "\\ ")
 vim.api.nvim_buf_set_lines(buf, row - 1, row, false, { escaped })
 vim.api.nvim_win_set_cursor(0, { row, 0 })
-local ref, err = require("harness.attachment").attach()
+local ref, err = require("harness.agent.attachment").attach()
 assert(ref, err)
 assert(ref:match("^!%[FILE: .+%]%(%s*file://"), ref)
 assert(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] == ref)
@@ -53,7 +53,7 @@ assert(messages[#messages].role == "user" and messages[#messages].content == ref
 local auto = yap.new()
 local last = vim.api.nvim_buf_line_count(auto)
 vim.api.nvim_buf_set_lines(auto, last - 1, last, false, { "Describe this picture", escaped })
-assert(require("harness.attachment").import_paths(auto))
+assert(require("harness.agent.attachment").import_paths(auto))
 local lines = vim.api.nvim_buf_get_lines(auto, last - 1, last + 1, false)
 assert(lines[1] == "Describe this picture", vim.inspect(lines))
 local auto_ref = lines[2]
@@ -65,7 +65,7 @@ assert(
   auto_asset:sub(1, #paths.assets_dir(auto) + 1) == paths.assets_dir(auto) .. "/",
   "auto asset not in session folder: " .. auto_asset
 )
-assert(require("harness.attachment").import_paths(auto)) -- subsequent sends do not re-import
+assert(require("harness.agent.attachment").import_paths(auto)) -- subsequent sends do not re-import
 assert(vim.api.nvim_buf_get_lines(auto, last, last + 1, false)[1] == auto_ref)
 
 local other = yap.new()
@@ -74,7 +74,7 @@ vim.api.nvim_buf_set_lines(other, endline - 1, endline, false, {
   "A path in prose: " .. source,
   "/missing/file.png",
 })
-local ok, failure = require("harness.attachment").import_paths(other)
+local ok, failure = require("harness.agent.attachment").import_paths(other)
 assert(not ok and failure:find("expected a local image", 1, true), tostring(failure))
 
 -- A failed import is audited too: the error plus the attempted source.

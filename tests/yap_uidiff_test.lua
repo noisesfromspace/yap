@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 local buf = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",

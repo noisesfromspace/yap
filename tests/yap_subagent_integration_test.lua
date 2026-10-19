@@ -85,11 +85,11 @@ local session_line, linked_path = success:match("Session: %[(.-)%]%((.-)%)")
 assert(session_line and linked_path == session_line, "child session link missing")
 local child_path = linked_path
 assert(vim.fn.filereadable(child_path) == 1, "child session missing")
-local fm = require("harness.frontmatter").parse(vim.fn.readfile(child_path))
+local fm = require("harness.model.frontmatter").parse(vim.fn.readfile(child_path))
 assert(fm.provider == "mock" and fm.model == "working", "bare Pi model did not inherit parent combo")
 assert(table.concat(fm.tools, ",") == "read,search", "agent aliases not normalized")
 assert(fm.subagent_parent == vim.b[parent].yap_path, "child parent path missing")
-local parent_fm = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
+local parent_fm = require("harness.model.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
 assert(
   parent_fm and parent_fm.subagents and #parent_fm.subagents == 1,
   "parent frontmatter did not record the subagent"
@@ -100,7 +100,7 @@ assert(followup:find("follow-up answered", 1, true), followup)
 local child_text = table.concat(vim.fn.readfile(child_path), "\n")
 assert(child_text:find("# @user\n\nfollow up", 1, true), "follow-up not appended as user message")
 assert(child_text:find("# @system\n\nScout agent", 1, true), "child system prompt changed")
-local after = require("harness.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
+local after = require("harness.model.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
 assert(#after.subagents == 1, "follow-up created another child session")
 local unknown = delegate("delegate session=" .. home .. "/other.md")
 assert(unknown:find("error: subagent session not found", 1, true), unknown)
@@ -115,12 +115,12 @@ for path in overridden:gmatch("Session: %[.-%]%((.-)%)") do
   over_path = path
 end
 assert(over_path and over_path ~= child_path, "override spawned no new child")
-local over_fm = require("harness.frontmatter").parse(vim.fn.readfile(over_path))
+local over_fm = require("harness.model.frontmatter").parse(vim.fn.readfile(over_path))
 assert(over_fm.provider == "other" and over_fm.model == "model-b", "per-call model ignored: " .. vim.inspect(over_fm.model))
 -- A follow-up ignores `model`: the child keeps the combo in its frontmatter.
 local followup_model = delegate("delegate session=" .. over_path .. " followupmodel")
 assert(followup_model:find("follow-up answered", 1, true), followup_model)
-local over_after = require("harness.frontmatter").parse(vim.fn.readfile(over_path))
+local over_after = require("harness.model.frontmatter").parse(vim.fn.readfile(over_path))
 assert(
   over_after.provider == "other" and over_after.model == "model-b",
   "follow-up changed the child's combo: " .. vim.inspect(over_after.provider .. "/" .. over_after.model)

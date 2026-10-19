@@ -19,7 +19,7 @@ local M = {}
 local paths = require("harness.path")
 local util = require("harness.util")
 local state = require("harness.state")
-local view = require("harness.view")
+local view = require("harness.ui.view")
 
 -- The `$ command` header is highlighted so it reads as a section marker
 -- against streamed output; a horizontal rule separates consecutive commands.

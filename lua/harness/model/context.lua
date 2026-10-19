@@ -6,7 +6,7 @@
 --
 -- Providers are functions returning a string (or nil/"" to contribute
 -- nothing). Built-ins register themselves below; plugins add more with
--- `require("harness.context").register(fn[, order])`.
+-- `require("harness.model.context").register(fn[, order])`.
 
 local M = {}
 

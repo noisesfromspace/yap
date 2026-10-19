@@ -15,7 +15,7 @@
 
 local M = {}
 
-local fold = require("harness.fold")
+local fold = require("harness.ui.fold")
 
 -- ─── Range finders ─────────────────────────────────────────────────────────
 

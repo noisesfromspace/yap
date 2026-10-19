@@ -6,7 +6,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
-local spinner = require("harness.spinner")
+local spinner = require("harness.ui.spinner")
 local state = require("harness.state")
 local buf = yap.new()
 state.running[buf] = {}
