@@ -7,7 +7,7 @@
 local M = {}
 
 local state = require("harness.state")
-local template = require("harness.agent.template")
+local template = require("harness.client.template")
 local paths = require("harness.path")
 local session = require("harness.session")
 

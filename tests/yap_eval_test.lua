@@ -9,7 +9,7 @@ yap.setup({
   models = { "mock/m1" },
 })
 
-local eval = require("harness.agent.eval")
+local eval = require("harness.client.eval")
 local structure = require("harness.model.structure")
 
 -- strip_markers removes the binary's thinking/model/error blocks but keeps

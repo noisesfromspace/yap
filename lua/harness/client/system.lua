@@ -4,7 +4,7 @@
 
 local M = {}
 
-local template = require("harness.agent.template")
+local template = require("harness.client.template")
 local paths = require("harness.path")
 
 -- The plugin's install root, derived from this file's location on the

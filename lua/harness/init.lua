@@ -23,17 +23,17 @@ local state = require("harness.state")
 local frontmatter = require("harness.model.frontmatter")
 local winbar = require("harness.ui.winbar")
 local drawer = require("harness.ui.drawer")
-local scratchmod = require("harness.agent.scratch")
-local describe = require("harness.agent.describe")
-local subagent = require("harness.agent.subagent")
-local template = require("harness.agent.template")
+local scratchmod = require("harness.client.scratch")
+local describe = require("harness.client.describe")
+local subagent = require("harness.client.subagent")
+local template = require("harness.client.template")
 local guard = require("harness.ui.guard")
 local document = require("harness.model.document")
 local fold = require("harness.ui.fold")
-local audit = require("harness.agent.audit")
+local audit = require("harness.client.audit")
 local session = require("harness.session")
 
-local stream = require("harness.agent.stream")
+local stream = require("harness.client.stream")
 local buffers = require("harness.session.buffers")
 local sessions = require("harness.session.sessions")
 local maintain = require("harness.session.maintain")
@@ -97,13 +97,13 @@ end
 --- Evaluate a visual selection through the model (one-shot, no tools): the
 --- selected lines are replaced by the model's output. See |:YapEval|.
 function M.eval(opts)
-  return require("harness.agent.eval").eval(opts)
+  return require("harness.client.eval").eval(opts)
 end
 
 --- Open an interactive eval session about a selection, kept out of the
 --- session picker. The source buffer is not changed. See |:YapEval|.
 function M.eval_session(opts)
-  return require("harness.agent.eval").session(opts)
+  return require("harness.client.eval").session(opts)
 end
 
 function M.is_running(buf)

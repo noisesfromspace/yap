@@ -11,18 +11,18 @@ local M = {}
 
 local state = require("harness.state")
 local document = require("harness.model.document")
-local audit = require("harness.agent.audit")
+local audit = require("harness.client.audit")
 local guard = require("harness.ui.guard")
-local scratchmod = require("harness.agent.scratch")
-local subagent = require("harness.agent.subagent")
-local describe = require("harness.agent.describe")
+local scratchmod = require("harness.client.scratch")
+local subagent = require("harness.client.subagent")
+local describe = require("harness.client.describe")
 local spinner = require("harness.ui.spinner")
 local context = require("harness.model.context")
 local frontmatter = require("harness.model.frontmatter")
 local config = require("harness.config")
 local paths = require("harness.path")
 local session = require("harness.session")
-local system = require("harness.agent.system")
+local system = require("harness.client.system")
 local maintain = require("harness.session.maintain")
 
 -- Per-buffer state aliases (kept in harness.state so winbar/picker/setup
@@ -197,7 +197,7 @@ local function handle_event(buf, ev)
     guard.touch()
   end
 end
--- The scratch queue and mid-turn steering live in harness.agent.scratch.
+-- The scratch queue and mid-turn steering live in harness.client.scratch.
 
 --- The wire error code maps to a short category the notify prefixes, so an
 --- auth failure, rate limit, network error and internal error read distinctly;
@@ -280,7 +280,7 @@ local function repair_stream_tail(buf)
   end
 end
 
--- Session titling (description generation) lives in harness.agent.describe.
+-- Session titling (description generation) lives in harness.client.describe.
 --- remains in its file; template steering without a scratch gets copied to
 --- the empty user prompt so it cannot silently disappear.
 local function leave_undelivered_steer(buf)
@@ -329,7 +329,7 @@ function M.send(buf)
 
   -- Import standalone photo paths before parsing or starting the turn. The
   -- resulting reference is visible in the buffer and survives later sends.
-  local imported, attach_err = require("harness.agent.attachment").import_paths(buf)
+  local imported, attach_err = require("harness.client.attachment").import_paths(buf)
   if not imported then
     vim.notify("yap: " .. attach_err, vim.log.levels.WARN)
     return false

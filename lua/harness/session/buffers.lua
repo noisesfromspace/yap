@@ -9,13 +9,13 @@ local M = {}
 local state = require("harness.state")
 local config = require("harness.config")
 local frontmatter = require("harness.model.frontmatter")
-local audit = require("harness.agent.audit")
+local audit = require("harness.client.audit")
 local winbar = require("harness.ui.winbar")
 local fold = require("harness.ui.fold")
 local textobj = require("harness.ui.textobj")
 local paths = require("harness.path")
 local session = require("harness.session")
-local system = require("harness.agent.system")
+local system = require("harness.client.system")
 
 local running = state.running
 local awaiting = state.awaiting
@@ -251,7 +251,7 @@ function M.new(opts)
   return buf
 end
 
--- Subagent spawning and child teardown live in harness.agent.subagent.
+-- Subagent spawning and child teardown live in harness.client.subagent.
 
 --- Open a saved session file as a yap buffer.
 --- Turn a session-file buffer into a managed yap buffer: unlisted,

@@ -2,7 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 assert(type(require("harness.model.document").parse_buffer) == "function", "document module")
-assert(type(require("harness.agent.template").template_names) == "function", "template module")
+assert(type(require("harness.client.template").template_names) == "function", "template module")
 assert(type(require("harness.state").is_running) == "function", "state module")
 local session = require("harness.session")
 

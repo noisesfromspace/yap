@@ -8,7 +8,7 @@ local picker = require("harness.ui.picker")
 local frontmatter = require("harness.model.frontmatter")
 local session = require("harness.session")
 local drawer = require("harness.ui.drawer")
-local audit = require("harness.agent.audit")
+local audit = require("harness.client.audit")
 local guard = require("harness.ui.guard")
 local buffers = require("harness.session.buffers")
 

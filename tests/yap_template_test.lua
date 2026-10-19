@@ -28,12 +28,12 @@ yap.setup({
 
 -- the skill/agent lists for the About Yap prefix resolve name + description,
 -- falling back to the filename when a definition omits `name`
-local skills = require("harness.agent.template").skills_intro_lines()
+local skills = require("harness.client.template").skills_intro_lines()
 assert(
   vim.deep_equal(skills, { "- frontend: Review frontend code" }),
   "skills intro: " .. vim.inspect(skills)
 )
-local agents = require("harness.agent.template").agents_intro_lines()
+local agents = require("harness.client.template").agents_intro_lines()
 assert(
   vim.deep_equal(agents, { "- audit", "- implementer: Focused Yap implementation subagent." }),
   "agents intro: " .. vim.inspect(agents)

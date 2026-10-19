@@ -10,7 +10,7 @@ local paths = require("harness.path")
 local function record(buf, fields)
   fields.type = "attachment"
   fields.ts = os.date("%Y-%m-%dT%H:%M:%S")
-  require("harness.agent.audit").append_event(buf, fields)
+  require("harness.client.audit").append_event(buf, fields)
 end
 
 --- A filename safe to live in the session's assets folder: the basename kept
