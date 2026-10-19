@@ -1,14 +1,11 @@
--- The guard board (yap://guard): one read-only, global projection of the
--- static guard rules every tool declares in its source (bash's sudo/rm -rf,
--- ssh's always-approval, ...), with parked approvals and the project's
--- settled decision history folded into the same list. Parked approvals are
--- answered in place; settled rows (granted/denied/timed-out) are read back
--- from the project's audit logs so decisions persist across sessions. The
--- rules come from `yap guard` (a compiled-in listing), so adding a rule to a
--- tool's source file is all it takes for it to show up here. `c` clears the
--- settled history: it stores a project watermark (guard.json) and hides rows
--- at or before it. It opens as the same bottom drawer as the live tool tail;
--- actions are direct keys on the cursor row.
+-- The guard board (yap://guard): one read-only, global projection of
+-- everything that needs attention — parked approvals (live, answered in
+-- place) and the project's settled decision history (granted/denied/
+-- timed-out approvals read back from the audit logs so decisions persist
+-- across sessions). `c` clears the settled history: it stores a project
+-- watermark (guard.json) and hides rows at or before it. It opens as the
+-- same bottom drawer as the live tool tail; actions are direct keys on the
+-- cursor row.
 
 local M = {}
 
@@ -29,8 +26,6 @@ local MAX_HISTORY_ROWS = 30 -- cap the project's settled-history readback
 -- (not fixed colors) so every colorscheme renders them.
 local HL = {
   approval = "YapGuardApproval",
-  rule = "YapGuardRule",
-  always = "YapGuardAlways",
   granted = "YapGuardGranted",
   denied = "YapGuardDenied",
   meta = "YapGuardMeta",
@@ -39,8 +34,6 @@ local HL = {
   command = "YapGuardCommand",
 }
 view.link(HL.approval, "DiagnosticWarn")
-view.link(HL.rule, "Comment")
-view.link(HL.always, "DiagnosticError")
 view.link(HL.granted, "DiagnosticOk")
 view.link(HL.denied, "DiagnosticError")
 view.link(HL.meta, "Comment")
@@ -74,30 +67,6 @@ function M.buf()
 end
 
 local flat = view.flat
-
--- The compiled-in static rules, cached once fetched: they only change when
--- the binary is rebuilt. A failure is not cached, so a later open retries
--- instead of pinning an empty board for the session.
-local rules_cache
-
-local function load_rules()
-  if rules_cache then
-    return rules_cache
-  end
-  -- With a list argument, system() raises E475 when the binary is not
-  -- executable (unlike the string form, which reports shell_error). pcall
-  -- keeps the board usable: with no rules it still lists parked approvals.
-  local ok, out = pcall(vim.fn.system, { harness().config.bin, "guard" })
-  if not ok or vim.v.shell_error ~= 0 then
-    return {}
-  end
-  local decoded_ok, decoded = pcall(vim.json.decode, out)
-  if decoded_ok and type(decoded) == "table" then
-    rules_cache = decoded
-    return decoded
-  end
-  return {}
-end
 
 --- Decode a tool-call argument JSON into the primary target, raw (newlines
 --- and heredocs preserved) so the detail can break it at operators.
@@ -183,20 +152,6 @@ local function approval_call(buf, ev)
       end
     end
   end
-end
-
-local function rule_row(r)
-  return {
-    kind = "rule",
-    key = "rule:" .. r.tool .. ":" .. r.name,
-    buf = nil,
-    tool = r.tool or "tool",
-    name = r.name or "",
-    always = r.always == true,
-    raw_command = "",
-    reason = "",
-    ts = "",
-  }
 end
 
 --- A settled approval read back from an audit log: granted/denied from an
@@ -310,9 +265,8 @@ local function cap(rows, n)
   return out
 end
 
---- Build the single ordered row list: parked approvals (actionable, live),
---- then the project's settled decision history (persisted across sessions),
---- then the static rules (reference). Rules come sorted from `yap guard`.
+--- Build the ordered row list: parked approvals (actionable, live), then the
+--- project's settled decision history (persisted across sessions).
 local function build_rows()
   local approvals = {}
   for owner, ev in pairs(state.pending_approvals) do
@@ -334,16 +288,12 @@ local function build_rows()
   for _, r in ipairs(history) do
     rows[#rows + 1] = r
   end
-  for _, r in ipairs(load_rules()) do
-    rows[#rows + 1] = rule_row(r)
-  end
   return rows, approval_count, history_count
 end
 
 -- ─── Rendering ─────────────────────────────────────────────────────────────
 
---- The glyph and its highlight for an approval/settled row; nil for a rule
---- row (which renders its own dot prefix).
+--- The glyph and its highlight for an approval/settled row.
 local function row_glyph(row)
   if row.kind == "approval" then
     return harness().config.icons.approval, HL.approval
@@ -357,31 +307,17 @@ end
 
 local function summary_segments(row)
   local glyph, glyph_hl = row_glyph(row)
-  if glyph then
-    local reason = view.clip(row.reason, 62)
-    if reason == "" then
-      reason = row.kind
-    end
-    local when = age(row.ts)
-    return {
-      { text = " " },
-      { text = glyph, hl = glyph_hl },
-      { text = "  " },
-      { text = reason, hl = glyph_hl },
-      { text = when ~= "" and ("  " .. when) or "", hl = HL.meta },
-    }
+  local reason = view.clip(row.reason, 62)
+  if reason == "" then
+    reason = row.kind
   end
-  local name = row.name ~= "" and row.name or "rule"
-  if row.always then
-    name = name .. " (always)"
-  end
+  local when = age(row.ts)
   return {
     { text = " " },
-    { text = "·", hl = HL.rule },
+    { text = glyph, hl = glyph_hl },
     { text = "  " },
-    { text = row.tool, hl = HL.tool },
-    { text = " · " },
-    { text = name, hl = row.always and HL.always or HL.rule },
+    { text = reason, hl = glyph_hl },
+    { text = when ~= "" and ("  " .. when) or "", hl = HL.meta },
   }
 end
 
@@ -404,13 +340,6 @@ end
 local STATUS = { approval = "parked", granted = "granted", denied = "denied", timeout = "timed out" }
 
 local function detail_lines(row)
-  if row.kind == "rule" then
-    if row.always then
-      return { kv("always", "pauses every call for approval", HL.always) }
-    end
-    return {}
-  end
-
   local out = {}
   out[#out + 1] = { { text = "    " }, { text = row.tool or "?", hl = HL.tool } }
   if (row.raw_command or "") ~= "" then
@@ -428,7 +357,7 @@ local function detail_lines(row)
   return out
 end
 
---- Rebuild the board buffer from live approvals + the compiled-in rules.
+--- Rebuild the board buffer from live approvals + settled history.
 local function render()
   local buf = ensure_board()
   local rows, approval_count, history_count = build_rows()
@@ -448,17 +377,17 @@ local function render()
   end
 
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
-  local rule_count = #rows - approval_count - history_count
-  local counts = ("Rules %d"):format(rule_count)
+  local parts = {}
   if approval_count > 0 then
-    counts = ("%s · Parked %d"):format(counts, approval_count)
+    parts[#parts + 1] = ("Parked %d"):format(approval_count)
   end
   if history_count > 0 then
-    counts = ("%s · History %d"):format(counts, history_count)
+    parts[#parts + 1] = ("History %d"):format(history_count)
   end
   if state.auto_accept then
-    counts = counts .. " · auto-accept on"
+    parts[#parts + 1] = "auto-accept on"
   end
+  local counts = table.concat(parts, " · ")
   local hdr = view.header_lines(("Guard Board · %s"):format(project), counts)
   add(hdr[1], view.hl.header)
   add(hdr[2], view.hl.meta)
@@ -566,7 +495,7 @@ local function deny_row(row)
 end
 
 local function inspect_row(row)
-  if row.kind ~= "rule" and row.path then
+  if row.path then
     harness().reveal_call(row.path, row.call)
   end
 end

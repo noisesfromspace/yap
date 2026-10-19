@@ -44,14 +44,12 @@ assert(notice.msg:find("needs approval", 1, true), "notification should state ap
 assert(not notice.msg:find("Run, Deny or Inspect", 1, true), "notification should not contain instructions")
 assert(not notice.msg:find(":YapGuard", 1, true), "notification should not contain the command")
 
--- The board lists the parked approval with its decoded command and reason,
--- plus the compiled-in static rules below it.
+-- The board lists the parked approval with its decoded command and reason.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("recursive deletion of critical paths", 1, true), "board missing approval reason")
-assert(text:find("sudo", 1, true), "board missing the static rules list")
 guard.toggle() -- close (defer)
 
 -- Inspect focuses the session's tool region without touching the parked

@@ -1,7 +1,7 @@
 -- A parked approval is a first-class state, not a modal: the session's own
 -- winbar shows the shield, other sessions' rollup counts it as "approval"
 -- (not running), and the guard board's single list shows every parked
--- approval (above the static rules). Answering clears the approval; closing
+-- approval. Answering clears the approval; closing
 -- the board defers (never denies).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
@@ -39,15 +39,13 @@ assert(not bar_b:match(icons.running .. "%d"), "parked session counted as runnin
 
 park(b, "approval-2", "ssh", "rm -rf /", "remote command execution")
 
--- The board is one durable buffer listing both parked approvals and the
--- compiled-in static rules below them.
+-- The board is one durable buffer listing both parked approvals.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open: " .. vim.api.nvim_buf_get_name(board))
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("recursive or forced deletion", 1, true), "board missing first reason")
 assert(text:find("remote command execution", 1, true), "board missing second reason")
-assert(text:find("sudo", 1, true), "board missing the static rules list")
 assert(not vim.bo[board].modifiable, "guard board should be read-only")
 
 -- Closing the board defers: both approvals stay parked.

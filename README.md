@@ -104,7 +104,7 @@ same buffer. Every send uses Neovim's current working directory as request-only 
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool tail (streaming output).                        |
-| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals and the static guard rules.   |
+| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals and settled decision history. |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapEval[!] [instruction]`               |             | Discuss the selection in a new session (follow-ups, source untouched). `!` replaces the selection with the model's output, or generates at the cursor (one-shot, no tools). |

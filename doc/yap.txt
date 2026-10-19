@@ -198,15 +198,14 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         focuses the existing window); `q` closes it.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): a read-only bottom
-                        drawer of the static guard rules every tool declares
-                        (|yap-guard-gate|), any parked approvals, and the
-                        project's settled decision history (granted/denied/
-                        timed-out approvals read back from the audit logs, so
-                        decisions persist across sessions). <Tab>/`za` expand
-                        a row; on an approval row `r`/`x` run/deny, `i`
-                        inspects, `a` toggles auto-accept, `c` clears the
-                        history (stores a project watermark, hiding rows at
-                        or before it), `q` closes.
+                        drawer of everything that needs attention — any parked
+                        approvals and the project's settled decision history
+                        (granted/denied/timed-out approvals read back from the
+                        audit logs, so decisions persist across sessions).
+                        <Tab>/`za` expand a row; on an approval row `r`/`x`
+                        run/deny, `i` inspects, `a` toggles auto-accept, `c`
+                        clears the history (stores a project watermark, hiding
+                        rows at or before it), `q` closes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -476,9 +475,8 @@ The live tool tail (|:YapLive|) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-|:YapGuard| lists the static guard rules, parked approvals and the project's
-settled decision history, and jumps to the matching tool region in the
-session. |:YapClear| placeholders point back
+|:YapGuard| lists the parked approvals and the project's settled decision
+history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
@@ -645,9 +643,9 @@ manual recipe:
 Every tool call passes a pre-execution approval gate made of static rules.
 Each rule is declared in the tool's own source file, next to the tool it
 guards (see tools.Gate and utils.Rule in the agent source), and is compiled
-into the binary. `yap guard` prints the complete current list as JSON; the
-guard board (|:YapGuard|) renders the same list. When a rule matches, the
-turn pauses for a Run/Deny confirmation; otherwise the call runs.
+into the binary. `yap guard` prints the complete current list as JSON. When
+a rule matches, the turn pauses for a Run/Deny confirmation; otherwise the
+call runs.
 
 Which tools declare rules, and which rules each declares, is whatever the
 current binary compiled in — `yap guard` is authoritative. The set today:
@@ -674,8 +672,8 @@ A matching rule supplies the reason shown in the approval notification, the
 audit log and the guard board. The gate is a steerable safety net, not a
 security boundary: bash is unsandboxed by design — the denylist is bypassable.
 Adding a rule is a one-file change in the tool's source (recompile to pick it
-up); nothing else needs editing — the rule then appears in `yap guard` and the
-guard board automatically.
+up); nothing else needs editing — the rule then appears in `yap guard`
+automatically.
 
 Parked approvals are live state, answered via Run/Deny. Once answered, the
 outcome is written to the audit log and read back as settled history —
@@ -733,7 +731,7 @@ replaces.
                       (Not "blocked request".)
   guard rule          A static, deterministic condition declared in a tool's
                       source that pauses matching calls for approval (e.g.
-                      bash's `sudo`). Listed in `yap guard` / |:YapGuard|.
+                      bash's `sudo`). Listed in `yap guard`.
   agent definition    A `~/.config/yap/agents/<name>.md` file describing a subagent
                       (name, model, tools, system prompt). (Not "role",
                       "subagent role".)

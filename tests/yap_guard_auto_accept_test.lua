@@ -63,12 +63,10 @@ assert(
 )
 assert(state.pending_approvals[chat] == nil, "auto-accept left the approval parked")
 
--- The answered approval's rule is listed, and the header still shows the
--- mode is on.
+-- The header still shows the mode is on after the live turn.
 guard.toggle()
 text = board_text()
 assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after live turn")
-assert(text:find("system power control", 1, true), "static rule missing its name: " .. text)
 
 guard.toggle() -- close
 print("OK guard auto-accept")
