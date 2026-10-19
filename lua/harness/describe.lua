@@ -151,11 +151,18 @@ Return only the title.]]
   if kind == "user" then
     description_started[buf] = true
   end
+  -- Titling is a zero-tool task: the title model must only return a phrase.
+  -- Without `tools = {}` the model keeps the full tool set, and a reasoning
+  -- model handed an imperative request ("count to 10…") can ignore the title
+  -- instruction and run tools instead, so its reply comes back as fenced
+  -- tool output — which the backtick guard below then rejects, leaving the
+  -- session untitled.
   local payload = vim.json.encode({
     messages = {
       { role = "system", content = system },
       { role = "user", content = content },
     },
+    tools = {},
   })
   vim.system(
     { harness().config.bin, "send", "--provider", provider, "--model", model },

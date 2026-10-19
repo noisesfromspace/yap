@@ -10,9 +10,9 @@ LOG = "/tmp/yap-describe.log"
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        messages = body["messages"]
         with open(LOG, "a") as f:
-            messages = body["messages"]
-            f.write(json.dumps(messages) + "\n")
+            f.write(json.dumps(body) + "\n")
         is_title = any("Write a short session title" in m.get("content", "") for m in messages)
         has_fence_case = any("Fence regression trigger" in m.get("content", "") for m in messages)
         has_colon_case = any("Colon regression trigger" in m.get("content", "") for m in messages)

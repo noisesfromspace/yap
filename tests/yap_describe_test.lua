@@ -46,9 +46,9 @@ assert(ok, "description requests missing from log: " .. read_log())
 
 local tiny, full
 for line in read_log():gmatch("[^\n]+") do
-  local ok, messages = pcall(vim.json.decode, line)
-  if ok and type(messages) == "table" then
-    local system = messages[1] and messages[1].content or ""
+  local ok, decoded = pcall(vim.json.decode, line)
+  if ok and type(decoded) == "table" and type(decoded.messages) == "table" then
+    local system = decoded.messages[1] and decoded.messages[1].content or ""
     if system:match("Write a short title for the user's request") then
       tiny = line
     elseif system:match("centered on the overall work") then
@@ -73,6 +73,22 @@ assert(
 )
 assert(not full:match("Subject: change"), "answer title prompt still requests the colon pattern: " .. full)
 assert(full:match("No colon"), "answer title prompt missing colon guard: " .. full)
+
+-- The title model must be tool-less: a model that keeps the full tool set
+-- can execute the user's request instead of returning a title (an imperative
+-- request like "count to 10" makes a reasoning model run `bash`), and its
+-- fenced tool output is then rejected by the backtick guard — leaving the
+-- session untitled. With `tools = {}` the backend sends the provider no tool
+-- definitions, so the request carries no `tools` key at all.
+for line in read_log():gmatch("[^\n]+") do
+  local ok, decoded = pcall(vim.json.decode, line)
+  if ok and type(decoded) == "table" and type(decoded.messages) == "table" then
+    local system = decoded.messages[1] and decoded.messages[1].content or ""
+    if system:match("Write a short title") or system:match("centered on the overall work") then
+      assert(decoded.tools == nil, "title request must not send tools: " .. line)
+    end
+  end
+end
 
 -- The requests are logged before their replies complete. Wait for the
 -- asynchronous description callback to update the frontmatter.
