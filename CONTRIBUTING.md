@@ -298,8 +298,33 @@ ft=markdown setup; cell-based TUIs break Neovim yanking.
 
 Native OpenAI (Responses API), Anthropic, Google/Gemini and DeepSeek, plus any
 OpenAI-compatible /chat/completions endpoint (Moonshot/Kimi, OpenRouter,
-z.ai, local servers) via the compat provider. The stdout wire protocol is
-unchanged: plain text and yap markers.
+z.ai, local servers) via the compat provider. The wire protocol is
+unchanged in spirit — buffer text and yap markers — but is now carried as
+framed records on a single channel (R-framed-stream).
+
+#### R-framed-stream — Lua and the agent talk over one framed, versioned, typed record stream
+
+The agent process exposes stdout as the single Go→Lua channel: every record
+is one JSON Lines object with a `type` field. stderr carries process logs
+only (nothing protocol-shaped), and stdin carries the Lua→Go records (the
+`turn` request plus the typed replies and injections). One ordered channel
+makes completion total: the terminal `turn_complete` record is received only
+after every preceding `text`/`event`/`tool_output` record, so there is no
+cross-pipe completion barrier and no reserved byte. This is a typed event
+stream, not JSON-RPC — the turn is one request that yields a long stream of
+records and one terminal record, which JSON-RPC's request/response model
+cannot express without re-inventing streaming as notifications. The parts of
+JSON-RPC worth keeping are borrowed where they earn their keep: a protocol
+`v` version on the `turn` and `turn_complete` records (both sides reject a
+mismatch), structured `{code,message,data}` errors on the terminal record
+(using JSON-RPC's familiar code ranges as a convention), and `id` correlation
+for the two genuine request/response pairs — `approval_request`/
+`approval_result` and `subagent_request`/`subagent_result`. Why: the firehose
+is the product (incremental text interleaved with tool calls, approvals and
+progress), and framing it with one ordered channel removes the RS sentinel,
+the `yap:event` stderr regex, the dual-signal completion barrier, and the
+temp-file polling — the four wire-level wonkinesses — without adopting an
+envelope that does not fit.
 
 ### Tools and audit trail
 
@@ -412,7 +437,8 @@ The buffer is the parseable conversation document (R-buffer-only-state); streami
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
 each session has ONE persistent live tail (yap://<session>-audit): bash
-announces its temp log via a yap:event stderr line, the Lua side drains new
+announces its temp log via a `tool_start` frame and streams its output as
+`tool_output` delta frames on the single channel, the Lua side appends new
 bytes into the tail (a `$ command` header per call), and `:YapLive` opens it.
 The tail is a plain text buffer, never replayed from the audit log — the full
 streamed output lives in the tool's temp log, and the audit log carries the
@@ -430,7 +456,7 @@ moment, and the buffer format has no transient states to repair.
 
 `audit.jsonl` beside the session markdown (in its own
 `<cwd-slug>/<session>/` directory, `<session>/session.md`), JSON Lines (one timestamped JSON object per line),
-append-only, written by the Lua side from yap:event lines: full tool arguments,
+append-only, written by the Lua side from event frames: full tool arguments,
 full results, `attachment` events for image imports (success metadata or the
 failure), approval decisions, and one journal line per turn (model,
 tokens, cost, ms). Streamed bash output is NOT duplicated here — it
@@ -513,11 +539,13 @@ notification is a completion *event*, and an autocmd is the Neovim-native hook
 for it (noice/nf-notify, chaining a next send) instead of a hardcoded side
 effect.
 
-## Lua \<-> Go protocol (implementation reference)
+## Lua <-> Go protocol (implementation reference)
 
-One turn, end to end. Three channels — stdin (requests and approval replies),
-stdout (streamed reply text and marker regions), stderr (progress events and
-the completion barrier):
+One turn, end to end. One ordered channel — stdout carries every Go→Lua
+record (`text`, `event`, `tool_output`, and the two reply-requesting records
+`approval_request`/`subagent_request`, ended by a terminal `turn_complete`);
+stdin carries the Lua→Go records (`turn`, plus `steer`, `model`,
+`approval_result`, `subagent_result`); stderr is process logs only:
 
 ```mermaid
 sequenceDiagram
@@ -526,28 +554,27 @@ sequenceDiagram
     participant Go as yap serve
     participant API as Provider API
 
-    Nvim->>Go: stdin: JSON turn {provider, model, messages, cwd, assets_dir}
+    Nvim->>Go: stdin: {"type":"turn","v":1,provider,model,messages,cwd,assets_dir}
     Go->>API: chat request (messages + compiled tool defs)
     Note over Go,API: 429/5xx/network retried before any output
     loop until final answer or iteration bound
         API-->>Go: streamed completion chunks
-        Go-->>Nvim: stdout: streamed text + yap markers (thinking/tool/usage)
+        Go-->>Nvim: stdout: {"type":"text","text":...} (prose + yap markers)
         opt tool call
-            Go-->>Nvim: stderr: tool_call / tool_start / tool_end / tool_result
+            Go-->>Nvim: {"type":"event","event":{tool_call}} then tool_start / tool_output* / tool_end / tool_result
         end
         opt guard rule matched
-            Go-->>Nvim: stderr: approval_request (pauses for Run/Deny)
-            Nvim->>Go: stdin: approval_result
+            Go-->>Nvim: {"type":"approval_request",id,command,tool,reason}
+            Nvim->>Go: stdin: {"type":"approval_result",id,approved}
         end
     end
-    Go-->>Nvim: stderr: turn_complete barrier
-    Go-->>Nvim: stdout: turn_end (RS-prefixed, not buffer text)
-    Nvim->>Nvim: timestamp yap:event lines into audit.jsonl
+    Go-->>Nvim: {"type":"turn_complete","v":1,ok,error?}
+    Nvim->>Nvim: timestamp event records into audit.jsonl
 ```
 
 - **stdin** — one JSON Lines record per turn (a single newline-terminated JSON
   object carrying the full `messages` array, not one message):
-  `{"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
+  `{"type":"turn","v":1,"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
   as assistant transcript text). `cwd` is request-only, like the context tail:
   the serve process's own working directory is fixed when the buffer spawns it,
@@ -560,37 +587,57 @@ sequenceDiagram
   scripts and generated artifacts there too. Explicit user `![FILE: name](file:///...)`
   references stay in Markdown and Go converts them into ordered image parts
   when sending; binary data is never in the session or stdin.
+  The other stdin records are typed injections and replies:
+  `{"type":"steer","text":...}` (empty text cancels),
+  `{"type":"model","provider":...,"model":...}`,
+  `{"type":"approval_result","id":...,"approved":bool}`, and
+  `{"type":"subagent_result","id":...,"result":...}`.
 - **argv** — `yap serve` (one persistent process per session buffer).
-- **stdout** — raw assistant text, streamed; thinking, tool regions and usage
-  wrapped in yap markers. Each turn ends with an RS-prefixed
-  `yap:turn_end {"ok":true|false,"error":?}` line (not buffer text). A turn is
-  complete once the corresponding stderr `turn_complete` barrier is received,
-  so audit events cannot lag behind completion. `yap send --provider NAME --model MODEL` remains available for one-off calls (e.g. generating a
-  session description).
-- **stderr** — error message, exit 1. Also carries `yap:event {json}` progress
-  lines; the Lua side timestamps each one, appends it to the audit log, and —
-  for streamed tools — follows the output in the live tool tail:
+- **stdout** — the single Go→Lua channel, JSON Lines, one record per line:
 
-  - `tool_start` `{"type","name":"bash","log","command"}` — the tool's
-    output streams into `log`; the live tail follows it for live output.
-  - `tool_end` `{"type","name":"bash","log","truncated"}` — the
-    tool's log is complete; the Lua side drains the final bytes and removes
-    the untruncated temp log.
-  - `tool_call` `{"type","name","args"}` — every tool before it runs, full
-    arguments (the buffer header keeps only slimmed write/edit args, R-tool-region).
-  - `tool_result` `{"type","name","bytes","result"}` — full result.
-  - `approval_request` `{"type","id","command","tool","reason"}` — a guard
-    rule matched, so the call pauses for approval; the Lua side prompts and
-    replies `{"type":"approval_result","id","approved"}` on stdin.
-  - `approval_timeout` `{"type","id"}` — the user never answered; denied.
-  - `retry` `{"type","attempt","delay_ms","error"}` — a transient generation
-    error (429/5xx/network) was retried before any output was emitted.
-  - `turn_end` `{"type","model","prompt","completion","context_prompt",?,"cost",?,"context_window",?,"ms"}`
-    — one per completed send.
+  - `text` `{"type":"text","text":...}` — buffer content (prose plus the
+    thinking/tool/usage markers), appended verbatim; this is the raw markdown
+    the old stdout carried, now framed so no reserved byte or sentinel is
+    needed.
+  - `event` `{"type":"event","event":{...}}` — the audit/UI trail, one record
+    per event; the nested object is exactly the payload the old `yap:event`
+    line carried, so the Lua handler is unchanged:
+    `tool_start` `{type,name:"bash",log,command}` (output streams into `log`;
+    the live tail follows it), `tool_end` `{type,name,log,truncated}`,
+    `tool_call` `{type,name,args}` (full arguments before the tool runs),
+    `tool_result` `{type,name,bytes,result}` (full result),
+    `approval_timeout` `{type,id}`, `subagent_timeout` `{type,id}`,
+    `task_start`/`task_end`, `retry` `{type,attempt,delay_ms,error}`,
+    `steer`, `model_change`, `tool_text_warning`, `usage`, and
+    `turn_end` `{type,model,prompt,completion,context_prompt,cost?,context_window?,ms}`.
+  - `tool_output` `{"type":"tool_output","log":...,"delta":...}` — a chunk of a
+    running tool's output, keyed by the same `log` path `tool_start` announced;
+    this replaces the temp-file polling (the bytes are also tee'd to the temp
+    log on disk, so a truncated result still points at the full output).
+  - `approval_request` `{"type":"approval_request","id":...,"command":...,"tool":...,"reason":...}`
+    — a guard rule matched, so the call parks until the Lua side replies
+    `{"type":"approval_result","id","approved"}` on stdin (or auto-accepts, or
+    the backend times out and emits `approval_timeout`).
+  - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...,"session":...}`
+    — the Lua side spawns/runs a child session and replies
+    `{"type":"subagent_result","id","result"}`.
+  - `turn_complete` `{"type":"turn_complete","v":1,"ok":bool,"error":{code,message,data}?}`
+    — the terminal record for one turn. Received only after every preceding
+    record (one channel, total ordering), so this alone closes the turn; there
+    is no completion barrier. On failure the structured error object carries
+    `code` (JSON-RPC's familiar ranges: -32700 parse, -32600 invalid request,
+    -32602 invalid params, -32603 internal) and `message`.
 
-  Streamed bash output is not re-recorded in the audit log — it lives
-  in the tool's temp log and is followed by the live tail; the audit log
-  carries the tail-truncated result instead. The rest is error text.
+  `yap send --provider NAME --model MODEL` remains available for one-off
+  calls (e.g. generating a session description) and still reads a bare JSON
+  request and writes raw text — it is a CLI convenience, not the persistent
+  protocol, so the framing applies to `yap serve` only.
+- **stderr** — process logs only (error messages on exit 1). Nothing on
+  stderr is protocol-shaped.
+
+Streamed bash output is not re-recorded in the audit log — it lives in the
+tool's temp log (teed from the `tool_output` stream) and is followed by the
+live tail; the audit log carries the tail-truncated result instead.
 
 The binary runs the agent loop internally: when the model requests tool calls
 it executes them (compiled-in tools), emits one yap:tool region per pair, and

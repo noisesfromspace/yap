@@ -27,8 +27,8 @@ import (
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 	"bufio"
-	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -104,20 +104,29 @@ func main() {
 }
 
 // serve keeps tool state (including SSH connections) in this process across turns.
-// RS cannot appear in streamed content: turnOutput strips it before writing.
-const turnEnd = "\x1eyap:turn_end "
-
+// All Go→Lua traffic is newline-delimited JSON frames on one channel (see
+// agent/utils/frames.go): text, event, tool_output, request and turn_complete.
+// One channel means total ordering, so the frontend needs no cross-pipe
+// completion barrier.
 type serveRequest struct {
 	Request
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	V        int    `json:"v"`
 }
 
-type turnOutput struct{ w io.Writer }
-
-func (o turnOutput) Write(p []byte) (int, error) {
-	_, err := o.w.Write(bytes.ReplaceAll(p, []byte{0x1e}, []byte("?")))
-	return len(p), err
+// wireError maps a Go error onto the structured error object a turn_complete
+// frame carries. A CodedError (request/params problem) keeps its code;
+// everything else is an internal error.
+func wireError(err error) *utils.WireError {
+	if err == nil {
+		return nil
+	}
+	var ce utils.CodedError
+	if errors.As(err, &ce) {
+		return &utils.WireError{Code: ce.Code, Message: ce.Error()}
+	}
+	return &utils.WireError{Code: utils.CodeInternal, Message: err.Error()}
 }
 
 func serve(in io.Reader, out io.Writer) error {
@@ -127,6 +136,11 @@ func serve(in io.Reader, out io.Writer) error {
 		tools.SubagentReplies = nil
 		utils.ApprovalReplies = nil
 	}()
+	// All Go→Lua traffic is framed JSON on stdout: text frames (buffer
+	// content), event frames (audit), tool_output frames (live tail), and
+	// request/turn_complete frames. One channel, total ordering.
+	oldOut := utils.SetFrameWriter(out)
+	defer utils.SetFrameWriter(oldOut)
 	requests := make(chan []byte)
 	readErr := make(chan error, 1)
 
@@ -191,16 +205,12 @@ func serve(in io.Reader, out io.Writer) error {
 					default:
 					}
 					continue
-				case "steer", "unsteer":
+				case "steer":
 					updateMu.Lock()
 					ch := updateCh
 					updateMu.Unlock()
 					if ch != nil {
-						text := reply.Text
-						if reply.Type == "unsteer" {
-							text = ""
-						}
-						push(ch, update{steer: text})
+						push(ch, update{steer: reply.Text}) // empty text cancels
 					}
 					continue
 				case "model":
@@ -222,66 +232,57 @@ func serve(in io.Reader, out io.Writer) error {
 	for line := range requests {
 		var req serveRequest
 		err := json.Unmarshal(line, &req)
-		if err == nil {
-			if req.Provider == "" || req.Model == "" {
-				err = fmt.Errorf("provider and model are required")
-			} else {
-				updateMu.Lock()
-				updateCh = make(chan update, 1)
-				ch := updateCh
-				updateMu.Unlock()
-				pendingSteer := ""
-				hasSteer := false
-				var pendProvider, pendModel string
-				hasModel := false
-				err = runTurn(req.Provider, req.Model, req.Request, turnOutput{out}, func() boundary {
-					for {
-						select {
-						case u := <-ch:
-							if u.provider != "" {
-								pendProvider, pendModel, hasModel = u.provider, u.model, true
-							} else {
-								pendingSteer = u.steer
-								hasSteer = pendingSteer != ""
-							}
-						default:
-							b := boundary{}
-							if hasModel {
-								b.provider, b.model = pendProvider, pendModel
-								hasModel = false
-								pendProvider, pendModel = "", ""
-							}
-							if hasSteer {
-								b.steer = pendingSteer
-								hasSteer = false
-								pendingSteer = ""
-							}
-							return b
+		if err != nil {
+			err = utils.CodedError{Code: utils.CodeParse, Err: err}
+		} else if req.V != 1 {
+			err = utils.CodedError{Code: utils.CodeInvalidReq, Err: fmt.Errorf("unsupported protocol version %d (want 1)", req.V)}
+		} else if req.Provider == "" || req.Model == "" {
+			err = utils.CodedError{Code: utils.CodeInvalidParam, Err: fmt.Errorf("provider and model are required")}
+		} else {
+			updateMu.Lock()
+			updateCh = make(chan update, 1)
+			ch := updateCh
+			updateMu.Unlock()
+			pendingSteer := ""
+			hasSteer := false
+			var pendProvider, pendModel string
+			hasModel := false
+			err = runTurn(req.Provider, req.Model, req.Request, utils.TextWriter(), func() boundary {
+				for {
+					select {
+					case u := <-ch:
+						if u.provider != "" {
+							pendProvider, pendModel, hasModel = u.provider, u.model, true
+						} else {
+							pendingSteer = u.steer
+							hasSteer = pendingSteer != ""
 						}
+					default:
+						b := boundary{}
+						if hasModel {
+							b.provider, b.model = pendProvider, pendModel
+							hasModel = false
+							pendProvider, pendModel = "", ""
+						}
+						if hasSteer {
+							b.steer = pendingSteer
+							hasSteer = false
+							pendingSteer = ""
+						}
+						return b
 					}
-				})
-				updateMu.Lock()
-				if updateCh == ch {
-					updateCh = nil
 				}
-				updateMu.Unlock()
+			})
+			updateMu.Lock()
+			if updateCh == ch {
+				updateCh = nil
 			}
+			updateMu.Unlock()
 		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "yap:", err)
-		}
-		// The RS prefix marks the sentinel even after prose without a newline.
-		status := map[string]any{"ok": err == nil}
-		if err != nil {
-			status["error"] = err.Error()
-		}
-		end, _ := json.Marshal(status)
-		if _, writeErr := fmt.Fprintf(out, "%s%s\n", turnEnd, end); writeErr != nil {
-			return writeErr
-		}
-		// stderr events and stdout have independent pipes; the frontend
-		// completes only after receiving both this barrier and the sentinel.
-		utils.EmitEvent(map[string]string{"type": "turn_complete"})
+		// The terminal frame: every text/event/tool_output frame above is
+		// already on the channel (one channel, total ordering), so the
+		// frontend completes the turn on this frame alone.
+		utils.EmitTurnComplete(err == nil, wireError(err))
 	}
 	return <-readErr
 }

@@ -27,12 +27,11 @@ func run(t *testing.T, tool, args string) (string, string, error) {
 type approvalIDWriter struct{ ids chan string }
 
 func (w approvalIDWriter) Write(p []byte) (int, error) {
-	line, _ := strings.CutPrefix(string(p), "yap:event ")
 	var ev struct {
 		Type string `json:"type"`
 		ID   string `json:"id"`
 	}
-	if json.Unmarshal([]byte(line), &ev) == nil && ev.Type == "approval_request" {
+	if json.Unmarshal(p, &ev) == nil && ev.Type == "approval_request" {
 		w.ids <- ev.ID
 	}
 	return len(p), nil
@@ -88,37 +87,55 @@ func TestBash(t *testing.T) {
 	}
 }
 
-// The tool_start event announces the temp log the live view follows.
+// The tool_start event announces the temp log the live view follows; the
+// tool_output frames stream its bytes; tool_end closes it. All three land on
+// one ordered channel.
 func TestBashToolStartEvent(t *testing.T) {
 	var buf bytes.Buffer
-	old := utils.SetEventWriter(&buf)
-	defer utils.SetEventWriter(old)
+	old := utils.SetFrameWriter(&buf)
+	defer utils.SetFrameWriter(old)
 
 	if _, _, err := run(t, "bash", `{"command":"echo hi"}`); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("expected tool_start + tool_end events, got: %q", buf.String())
-	}
-	jsonLine, ok := strings.CutPrefix(lines[0], "yap:event ")
-	if !ok {
-		t.Fatalf("no yap:event line: %q", lines[0])
-	}
-	var ev struct {
+	var started, ended, streamed bool
+	var startEv struct {
 		Type    string `json:"type"`
 		Name    string `json:"name"`
 		Log     string `json:"log"`
 		Command string `json:"command"`
 	}
-	if err := json.Unmarshal([]byte(jsonLine), &ev); err != nil {
-		t.Fatalf("event not JSON: %v", err)
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var outer struct {
+			Type  string          `json:"type"`
+			Event json.RawMessage `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(line), &outer); err != nil {
+			t.Fatalf("frame not JSON: %q", line)
+		}
+		switch outer.Type {
+		case "event":
+			var ev struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(outer.Event, &ev) != nil {
+				continue
+			}
+			if ev.Type == "tool_start" {
+				started = true
+				_ = json.Unmarshal(outer.Event, &startEv)
+			} else if ev.Type == "tool_end" {
+				ended = true
+			}
+		case "tool_output":
+			streamed = true
+		}
 	}
-	if ev.Type != "tool_start" || ev.Name != "bash" || !strings.Contains(ev.Log, "yap-bash-") || ev.Command != "echo hi" {
-		t.Fatalf("bad event: %+v", ev)
+	if !started || !ended || !streamed {
+		t.Fatalf("expected tool_start, tool_output and tool_end frames, got: %q", buf.String())
 	}
-	if !strings.Contains(lines[1], `"tool_end"`) {
-		t.Fatalf("no tool_end event: %q", lines[1])
+	if startEv.Type != "tool_start" || startEv.Name != "bash" || !strings.Contains(startEv.Log, "yap-bash-") || startEv.Command != "echo hi" {
+		t.Fatalf("bad tool_start event: %+v", startEv)
 	}
 }
 
@@ -221,9 +238,9 @@ func TestBashTempFileHygiene(t *testing.T) {
 	// drains the final bytes and then deletes it (tool_end carries log +
 	// truncated for that). The result still carries the full text.
 	var buf bytes.Buffer
-	old := utils.SetEventWriter(&buf)
+	old := utils.SetFrameWriter(&buf)
 	r, _, err := run(t, "bash", `{"command":"echo small"}`)
-	utils.SetEventWriter(old)
+	utils.SetFrameWriter(old)
 	if err != nil || !strings.Contains(r, "small") {
 		t.Fatalf("run: %q %v", r, err)
 	}

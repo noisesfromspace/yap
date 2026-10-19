@@ -35,7 +35,6 @@ local MAX_TAIL_LINES = 5000
 
 -- Per-session tail state: session buf -> { bufnr, rules }.
 local tails = {}
-local audit_poll_timer
 local resize_autocmd = false
 local resync -- defined after the rule helpers; used by the resize autocmd
 
@@ -188,40 +187,25 @@ function M.refresh(buf)
   resync(tails[buf])
 end
 
---- Follow new bytes of each running tool's temp log into the tail. A line not
---- yet newline-terminated is buffered in the log state and only emitted once
---- it completes, so a partial write is never split across two fake lines.
-function M.drain(buf)
+--- Append a streamed chunk of one running tool's output to the tail. A line
+--- not yet newline-terminated is buffered in the log state and only emitted
+--- once it completes, so a partial write is never split across two fake
+--- lines. This replaces the old temp-file polling: bytes arrive as ordered
+--- `tool_output` frames on the same channel as tool_start/tool_end.
+function M.tool_output(buf, log, delta)
   local t = tails[buf]
   local logs = state.live_logs[buf]
   if not t or not logs then
     return
   end
-  for _, l in pairs(logs) do
-    local fd = vim.uv.fs_open(l.log, "r", 438)
-    if fd then
-      local stat = vim.uv.fs_fstat(fd)
-      local offset = l.offset or 0
-      if stat and stat.size < offset then
-        -- The log was replaced or truncated under us; follow it from the top
-        -- instead of stalling on an offset it will never reach again.
-        offset = 0
-      end
-      if stat and stat.size > offset then
-        local data = vim.uv.fs_read(fd, stat.size - offset, offset)
-        -- Advance by what was actually read: assigning stat.size first made a
-        -- failed read skip that byte range for good.
-        if data and #data > 0 then
-          l.offset = offset + #data
-          local text = (l.pending or "") .. data
-          local lines = vim.split(text, "\n", { plain = true })
-          l.pending = table.remove(lines)
-          append_lines(t, lines)
-        end
-      end
-      vim.uv.fs_close(fd)
-    end
+  local l = logs[log]
+  if not l then
+    return
   end
+  local text = (l.pending or "") .. delta
+  local lines = vim.split(text, "\n", { plain = true })
+  l.pending = table.remove(lines)
+  append_lines(t, lines)
 end
 
 --- Emit any unterminated tail line (e.g. a command's final write without a
@@ -297,33 +281,6 @@ function M.seed_session_usage(buf)
   end
   vim.b[buf].yap_session_usage = su
   vim.b[buf].yap_usage = nil
-end
-
--- Poll tool logs independently of the visual spinner. Direct drains on
--- tool_end and process exit still capture the final bytes before cleanup.
-function M.poll_stop_if_idle()
-  if audit_poll_timer and not next(state.running) then
-    audit_poll_timer:stop()
-    audit_poll_timer:close()
-    audit_poll_timer = nil
-  end
-end
-
-function M.poll_start()
-  if audit_poll_timer then
-    return
-  end
-  audit_poll_timer = vim.uv.new_timer()
-  audit_poll_timer:start(
-    0,
-    180,
-    vim.schedule_wrap(function()
-      for b in pairs(state.running) do
-        M.drain(b)
-      end
-      M.poll_stop_if_idle()
-    end)
-  )
 end
 
 --- The session buffer's tail-view state, or nil.

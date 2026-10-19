@@ -39,19 +39,18 @@ for line in sys.stdin:
             model = "nonsense"
         elif "followupmodel" in first:
             model = "other/model-c"
-        print('yap:event ' + json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in first else "succeed")}), file=sys.stderr, flush=True)
+        print(json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in first else "succeed")}), flush=True)
         response = json.loads(sys.stdin.readline())
-        print('\n' + response['result'] + '\n', flush=True)
+        print(json.dumps({"type":"text","text":"\n" + response['result'] + "\n"}), flush=True)
     elif "follow up" in first:
         assert "Scout agent" in str(req["messages"]), "system prompt lost on follow-up"
         assert "succeed" in str(req["messages"]), "first question lost on follow-up"
-        print('\nfollow-up answered\n', flush=True)
+        print(json.dumps({"type":"text","text":"\nfollow-up answered\n"}), flush=True)
     elif "fail" in first:
-        print('\n<!-- yap:error\nchild model failed\n-->\n', flush=True)
+        print(json.dumps({"type":"text","text":"\n<!-- yap:error\nchild model failed\n-->\n"}), flush=True)
     else:
-        print('\nchild finished\n', flush=True)
-    print('\x1eyap:turn_end {"ok":true}', flush=True)
-    print('yap:event {"type":"turn_complete"}', file=sys.stderr, flush=True)
+        print(json.dumps({"type":"text","text":"\nchild finished\n"}), flush=True)
+    print(json.dumps({"type":"turn_complete","ok":True,"v":1}), flush=True)
 ]=],
     "\n",
     { plain = true }

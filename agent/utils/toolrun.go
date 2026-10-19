@@ -29,15 +29,22 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	outPath := out.Name()
 	EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": Scrub(command)})
 	cmd.Stdin = nil // /dev/null
-	cmd.Stdout = out
-	cmd.Stderr = out
+	// Tee the child's merged output: it still lands in the temp log (the
+	// durable, truncation-referenced copy), and each chunk is also framed as
+	// a tool_output record so the live tail follows it in order. One pipe for
+	// stdout+stderr means the bytes are interleaved exactly as produced.
+	cmd.Stdout = io.MultiWriter(out, toolOutputFramer{outPath})
+	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
 		_ = out.Close()
 		_ = os.Remove(outPath)
 		return "", err
 	}
-	_ = out.Close()         // the child has its own fd
+	// The copy goroutine (cmd.Stdout is a MultiWriter over this file and the
+	// tool_output framer) writes to `out` until the child exits, so the file
+	// must stay open until Wait drains the pipe.
+	defer out.Close()
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	Track(pgid)
 	defer Untrack(pgid)
@@ -85,6 +92,15 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		text += fmt.Sprintf("\n[exit code %d]", exit)
 	}
 	return text, nil
+}
+
+// toolOutputFramer frames each chunk of a running tool's output as a
+// tool_output record for the live tail (see RunStreamed's tee).
+type toolOutputFramer struct{ log string }
+
+func (f toolOutputFramer) Write(p []byte) (int, error) {
+	EmitToolOutput(f.log, string(p))
+	return len(p), nil
 }
 
 // readToolTail keeps the last lines/bytes of command output.

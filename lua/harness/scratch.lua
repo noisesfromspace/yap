@@ -97,7 +97,7 @@ local function cancel_steer(buf)
     return
   end
   local ok = pcall(function()
-    proc:write(vim.json.encode({ type = "unsteer" }) .. "\n")
+    proc:write(vim.json.encode({ type = "steer", text = "" }) .. "\n")
   end)
   if not ok then
     vim.notify("yap: could not cancel steer (backend gone)", vim.log.levels.WARN)

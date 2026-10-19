@@ -33,7 +33,7 @@ func init() {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
-		utils.EmitEvent(map[string]any{"type": "subagent_request", "id": id, "agent": a.Agent, "model": a.Model, "task": a.Task, "session": a.Session})
+		utils.EmitSubagentRequest(id, a.Agent, a.Model, a.Task, a.Session)
 		timer := time.NewTimer(subagentWait)
 		defer timer.Stop()
 		for {

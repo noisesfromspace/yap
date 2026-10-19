@@ -38,13 +38,7 @@ func RequestApproval(command, tool, reason string) (bool, error) {
 		return false, fmt.Errorf("approval requires yap serve")
 	}
 	id := fmt.Sprintf("approval-%d", approvalSeq.Add(1))
-	EmitEvent(map[string]any{
-		"type":    "approval_request",
-		"id":      id,
-		"command": command,
-		"tool":    tool,
-		"reason":  reason,
-	})
+	EmitApprovalRequest(id, command, tool, reason)
 	timer := time.NewTimer(approvalTimeout)
 	defer timer.Stop()
 	for {

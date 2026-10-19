@@ -16,5 +16,5 @@ if len(sys.argv) > 1 and sys.argv[1] == "tools":
 payload = json.loads(sys.stdin.readline())
 if len(sys.argv) > 1 and sys.argv[1] == "serve":
     tools = payload.get("tools") or []
-    print("received-tools:" + ",".join(sorted(tools)))
+    print(json.dumps({"type": "text", "text": "received-tools:" + ",".join(sorted(tools))}), flush=True)
 sys.exit(0)

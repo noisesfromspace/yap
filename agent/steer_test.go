@@ -138,6 +138,29 @@ func TestRunTurnSteerNeutralizesStructuralLines(t *testing.T) {
 	}
 }
 
+// concatTextFrames reconstructs the buffer content from a framed serve
+// stream: the concatenation of every `text` frame, in order.
+func concatTextFrames(t *testing.T, s string) string {
+	t.Helper()
+	var out strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if line == "" {
+			continue
+		}
+		var frame struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			t.Fatalf("bad frame: %v: %q", err, line)
+		}
+		if frame.Type == "text" {
+			out.WriteString(frame.Text)
+		}
+	}
+	return out.String()
+}
+
 // TestServeSteerMidTurn: end-to-end through serve() — a `steer` line on
 // stdin while a turn runs (during a slow first tool) is injected into the
 // buffer mid-turn.
@@ -165,7 +188,7 @@ func TestServeSteerMidTurn(t *testing.T) {
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- serve(r, &out) }()
-	_, _ = io.WriteString(w, `{"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
 	<-firstCall // the turn is running: the first LLM call is in flight
 	_, _ = io.WriteString(w, `{"type":"steer","text":"also check the tests"}`+"\n")
 	_ = w.Close()
@@ -181,7 +204,7 @@ func TestServeSteerMidTurn(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("calls=%d (want 2)", calls)
 	}
-	if !strings.Contains(out.String(), "# @user\nalso check the tests") {
+	if !strings.Contains(concatTextFrames(t, out.String()), "# @user\nalso check the tests") {
 		t.Fatalf("steer not injected: %q", out.String())
 	}
 }
@@ -268,7 +291,7 @@ func TestServeModelSwitchMidTurn(t *testing.T) {
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- serve(r, &out) }()
-	_, _ = io.WriteString(w, `{"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
 	<-firstCall // the turn is running: the first LLM call is in flight
 	_, _ = io.WriteString(w, `{"type":"model","provider":"other","model":"m2"}`+"\n")
 	_ = w.Close()
@@ -287,7 +310,7 @@ func TestServeModelSwitchMidTurn(t *testing.T) {
 	if secondModel != "m2" {
 		t.Fatalf("second request model = %q, want m2", secondModel)
 	}
-	if !strings.Contains(out.String(), `<!-- yap:model {"from":"mock/m1","to":"other/m2"} -->`) {
+	if !strings.Contains(concatTextFrames(t, out.String()), `<!-- yap:model {"from":"mock/m1","to":"other/m2"} -->`) {
 		t.Fatalf("model marker not injected: %q", out.String())
 	}
 }

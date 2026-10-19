@@ -13,5 +13,5 @@ if len(sys.argv) > 1 and sys.argv[1] == "tools":
 
 payload = json.loads(sys.stdin.readline())
 if len(sys.argv) > 1 and sys.argv[1] == "serve":
-    print("received-reasoning:" + str(payload.get("reasoning_level")))
+    print(json.dumps({"type": "text", "text": "received-reasoning:" + str(payload.get("reasoning_level"))}), flush=True)
 sys.exit(0)

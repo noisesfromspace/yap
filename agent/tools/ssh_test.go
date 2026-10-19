@@ -40,7 +40,7 @@ esac
 	systemKnownHosts, sshBinary = known, script
 	t.Cleanup(func() { CloseSSH(); systemKnownHosts, sshBinary = prev, prevBinary })
 	approvalIDs := make(chan string, 10)
-	oldWriter := utils.SetEventWriter(approvalIDWriter{ids: approvalIDs})
+	oldWriter := utils.SetFrameWriter(approvalIDWriter{ids: approvalIDs})
 	oldReplies := utils.ApprovalReplies
 	replies := make(chan utils.ApprovalReply)
 	utils.ApprovalReplies = replies
@@ -50,7 +50,7 @@ esac
 		}
 	}()
 	t.Cleanup(func() {
-		utils.SetEventWriter(oldWriter)
+		utils.SetFrameWriter(oldWriter)
 		close(approvalIDs)
 		utils.ApprovalReplies = oldReplies
 	})

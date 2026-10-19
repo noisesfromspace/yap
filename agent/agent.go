@@ -352,10 +352,10 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			for n := range cfg.Providers {
 				names = append(names, n)
 			}
-			return nil, fmt.Errorf("unknown provider %q (configured: %s)", provName, strings.Join(names, ", "))
+			return nil, utils.CodedError{Code: utils.CodeInvalidParam, Err: fmt.Errorf("unknown provider %q (configured: %s)", provName, strings.Join(names, ", "))}
 		}
 		if os.Getenv(prov.APIKeyEnv) == "" {
-			return nil, fmt.Errorf("provider %q: env var %s is not set", provName, prov.APIKeyEnv)
+			return nil, utils.CodedError{Code: utils.CodeInvalidParam, Err: fmt.Errorf("provider %q: env var %s is not set", provName, prov.APIKeyEnv)}
 		}
 		p, err := providerFactory(provName, prov)
 		if err != nil {
@@ -370,14 +370,14 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	}
 
 	if len(req.Messages) == 0 {
-		return errors.New("request contains no messages")
+		return utils.CodedError{Code: utils.CodeInvalidParam, Err: errors.New("request contains no messages")}
 	}
 
 	out := bufio.NewWriter(outw)
 	messages := make([]llm.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
-			return errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")
+			return utils.CodedError{Code: utils.CodeInvalidParam, Err: errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")}
 		}
 		var role llm.Role
 		switch m.Role {
@@ -388,7 +388,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		case "assistant":
 			role = llm.RoleAssistant
 		default:
-			return fmt.Errorf("unsupported message role %q", m.Role)
+			return utils.CodedError{Code: utils.CodeInvalidParam, Err: fmt.Errorf("unsupported message role %q", m.Role)}
 		}
 		var content []llm.Part
 		if m.Content != "" {
@@ -619,11 +619,11 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		for i, call := range t.calls {
 			// Flush the session-visible call before publishing its audit event.
-			// stdout/stderr are separate pipes, so this is the only causal
-			// boundary Yap can establish before the tool starts.
+			// Both are frames on one channel, so the header is on the wire
+			// before the tool_call event (and any tool_output that follows).
 			pad()
 			render.EmitToolHeader(out, call)
-			// Audit trail (yap:event on stderr): the full call before
+			// Audit trail (event frame): the full call before
 			// it runs, the full result after. The Lua side appends these
 			// to the session's audit log, which is what makes slimmed
 			// headers and :YapClear lossless.

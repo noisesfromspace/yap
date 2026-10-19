@@ -12,7 +12,7 @@ import (
 // below the header, so the header — which parse_buffer flattens into
 // the model's transcript on later sends — keeps only the shape
 // ("[N lines]"); the file on disk is the ground truth and the full
-// arguments are in the audit log (yap:event tool_call). ok is false when the
+// arguments are in the audit log (the tool_call event). ok is false when the
 // tool is not slimmed, when the arguments do not parse, or when they do not
 // carry the exact fields being summarized — a confidently wrong header
 // ("[0 lines]" for a call that did write content) is worse than the raw

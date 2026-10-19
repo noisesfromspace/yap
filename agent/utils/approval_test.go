@@ -20,24 +20,23 @@ func TestRequestApproval(t *testing.T) {
 
 	// Denied.
 	var events bytes.Buffer
-	oldWriter := SetEventWriter(&events)
-	defer SetEventWriter(oldWriter)
+	oldWriter := SetFrameWriter(&events)
+	defer SetFrameWriter(oldWriter)
 	go func() { ApprovalReplies <- ApprovalReply{ID: "approval-1", Approved: false} }()
 	if ok, err := RequestApproval("rm -rf /", "bash", "recursive or forced deletion"); ok || err != nil {
 		t.Fatalf("deny: ok=%v err=%v", ok, err)
 	}
-	var event struct {
+	var frame struct {
 		Type    string `json:"type"`
 		Tool    string `json:"tool"`
 		Reason  string `json:"reason"`
 		Command string `json:"command"`
 	}
-	line := strings.TrimPrefix(strings.TrimSpace(events.String()), "yap:event ")
-	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		t.Fatalf("decode approval audit event: %v", err)
+	if err := json.Unmarshal([]byte(events.String()), &frame); err != nil {
+		t.Fatalf("decode approval request frame: %v", err)
 	}
-	if event.Type != "approval_request" || event.Tool != "bash" || event.Reason != "recursive or forced deletion" || event.Command != "rm -rf /" {
-		t.Fatalf("approval audit event mismatch: %+v", event)
+	if frame.Type != "approval_request" || frame.Tool != "bash" || frame.Reason != "recursive or forced deletion" || frame.Command != "rm -rf /" {
+		t.Fatalf("approval request frame mismatch: %+v", frame)
 	}
 
 	// Approved.

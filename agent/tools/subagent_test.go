@@ -26,12 +26,12 @@ func TestSubagentTimeout(t *testing.T) {
 
 func TestSubagentModelForwarded(t *testing.T) {
 	var buf bytes.Buffer
-	oldWriter := utils.SetEventWriter(&buf)
+	oldWriter := utils.SetFrameWriter(&buf)
 	oldReplies, oldWait := SubagentReplies, subagentWait
 	SubagentReplies = make(chan SubagentReply, 1)
 	subagentWait = time.Millisecond
 	defer func() {
-		utils.SetEventWriter(oldWriter)
+		utils.SetFrameWriter(oldWriter)
 		SubagentReplies, subagentWait = oldReplies, oldWait
 	}()
 	tool, _ := Get("subagent")

@@ -31,7 +31,7 @@ func TestSubagentReplyWhileTurnRuns(t *testing.T) {
 	var out bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- serve(r, &out) }()
-	_, _ = io.WriteString(w, `{"provider":"mock","model":"m1","messages":[{"role":"user","content":"delegate"}]}`+"\n")
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"delegate"}]}`+"\n")
 	// The first subagent in this serve process uses id 1. The reply arrives
 	// after the request line, before the turn has finished.
 	_, _ = io.WriteString(w, `{"type":"subagent_result","id":"1","result":"Session: child.md\nfound it"}`+"\n")

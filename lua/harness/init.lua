@@ -307,44 +307,46 @@ local function notify_approval(buf, ev)
   )
 end
 
-local function handle_event(buf, json_line)
-  local ok, ev = pcall(vim.json.decode, json_line)
-  if not ok or type(ev) ~= "table" then
+-- A guard rule matched: the turn is parked and the user answers via the
+-- guard board (Run/Deny) or auto-accept. This is a top-level
+-- approval_request frame (not a nested event) because it demands a reply.
+local function handle_approval_request(buf, ev)
+  ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
+  audit.append_event(buf, ev)
+  pending_approvals[buf] = ev
+  if state.auto_accept then
+    answer_approval(buf, true)
+  else
+    notify_approval(buf, ev)
+    guard.touch()
+  end
+end
+
+local function handle_event(buf, ev)
+  if type(ev) ~= "table" then
     return
   end
   ev.ts = os.date("%Y-%m-%dT%H:%M:%S")
   if ev.type == "tool_start" and ev.log then
     local logs = state.live_logs[buf] or {}
     state.live_logs[buf] = logs
-    logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), offset = 0, pending = "" }
+    logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), pending = "" }
     live[buf] = logs[ev.log]
     audit.tool_start(buf, ev.command or ev.name or "tool")
   elseif ev.type == "tool_end" then
-    audit.drain(buf) -- the log is complete; capture the final bytes
     audit.flush(buf, ev.log) -- emit any unterminated final line
     local logs = state.live_logs[buf] or {}
     logs[ev.log] = nil
     live[buf] = next(logs) and select(2, next(logs)) or nil
-    -- Go keeps the log for us; once drained, an untruncated one is gone
+    -- The untruncated log is no longer needed once its bytes have streamed
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
       pcall(os.remove, ev.log)
     end
-  elseif ev.type == "subagent_request" then
-    subagent.start(buf, ev)
   elseif ev.type == "subagent_timeout" then
     local child = subagent_children[buf]
     if child then
       M.stop(child)
-    end
-  elseif ev.type == "approval_request" then
-    audit.append_event(buf, ev)
-    pending_approvals[buf] = ev
-    if state.auto_accept then
-      answer_approval(buf, true)
-    else
-      notify_approval(buf, ev)
-      guard.touch()
     end
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
@@ -946,14 +948,12 @@ function M.send(buf)
   -- buffer is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear.
   spinner.start()
-  audit.poll_start()
 
   local process = servers[buf]
   if not process then
     local partial = ""
     local stderr_partial = ""
     local stderr_chunks = {}
-    local status, barrier
     -- Coalesce rapid per-token stdout flushes into one buffer edit per
     -- ~STREAM_FLUSH_MS: region parsing is O(n) per edit, so batching keeps a
     -- fast stream smooth on large sessions instead of stalling per token.
@@ -1013,13 +1013,7 @@ function M.send(buf)
         end)
       end
     end
-    local function route_event(ev)
-      sync_followers()
-      handle_event(buf, ev)
-      follow_tail()
-    end
     local function complete(result)
-      status, barrier = nil, false
       finish_flush()
       sync_followers()
       running[buf] = nil
@@ -1027,7 +1021,6 @@ function M.send(buf)
       stderr_chunks = {}
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
-      audit.drain(buf) -- final bytes; a killed tool never sent tool_end
       audit.flush(buf) -- emit any unterminated final line
       for path in pairs(state.live_logs[buf] or {}) do
         pcall(os.remove, path)
@@ -1035,7 +1028,6 @@ function M.send(buf)
       state.live_logs[buf] = nil
       live[buf] = nil
       spinner.stop_if_idle()
-      audit.poll_stop_if_idle()
       repair_stream_tail(buf)
       if not result.ok then
         local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
@@ -1095,6 +1087,29 @@ function M.send(buf)
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
     end
+    local function handle_frame(frame)
+      if frame.type == "text" then
+        append(frame.text or "")
+        return
+      end
+      sync_followers()
+      if frame.type == "event" then
+        handle_event(buf, frame.event)
+      elseif frame.type == "tool_output" then
+        audit.tool_output(buf, frame.log, frame.delta)
+      elseif frame.type == "approval_request" then
+        handle_approval_request(buf, frame)
+      elseif frame.type == "subagent_request" then
+        subagent.start(buf, frame)
+      elseif frame.type == "turn_complete" then
+        complete({
+          ok = frame.ok == true,
+          error = frame.error and frame.error.message or nil,
+        })
+        return
+      end
+      follow_tail()
+    end
     local handle
     local ok, started = pcall(
       vim.system,
@@ -1107,32 +1122,23 @@ function M.send(buf)
             return
           end
           partial = partial .. data
-          while partial ~= "" do
-            if partial:sub(1, 1) == "\30" then
-              local i = partial:find("\n", 1, true)
-              if not i then
-                break
-              end
-              local line = partial:sub(2, i - 1)
-              partial = partial:sub(i + 1)
-              local status_line = line:match("^yap:turn_end (.+)$")
-              local parsed, result = pcall(vim.json.decode, status_line or "")
-              if status_line and parsed and type(result) == "table" and type(result.ok) == "boolean" then
-                status = result
-                if running[buf] and barrier then
-                  complete(result)
-                end
-              else
-                append("?" .. line .. "\n")
-              end
+          while true do
+            local i = partial:find("\n", 1, true)
+            if not i then
+              break
+            end
+            local line = partial:sub(1, i - 1)
+            partial = partial:sub(i + 1)
+            if line == "" then
+              -- skip an empty frame line
             else
-              local i = partial:find("\30", 1, true)
-              if i then
-                append(partial:sub(1, i - 1))
-                partial = partial:sub(i)
+              local ok, frame = pcall(vim.json.decode, line)
+              if ok and type(frame) == "table" and frame.type then
+                handle_frame(frame)
               else
-                append(partial)
-                partial = ""
+                -- A non-frame line on stdout is unexpected (the agent emits
+                -- only frames here); surface it as error text, never as buffer.
+                table.insert(stderr_chunks, line)
               end
             end
           end
@@ -1149,20 +1155,7 @@ function M.send(buf)
             end
             local line = stderr_partial:sub(1, i - 1)
             stderr_partial = stderr_partial:sub(i + 1)
-            local ev = line:match("^yap:event (.+)$")
-            if ev then
-              local parsed, event = pcall(vim.json.decode, ev)
-              if parsed and event.type == "turn_complete" then
-                barrier = true
-                if running[buf] and status then
-                  complete(status)
-                end
-              else
-                route_event(ev)
-              end
-            else
-              table.insert(stderr_chunks, line)
-            end
+            table.insert(stderr_chunks, line)
           end
         end),
       },
@@ -1172,10 +1165,7 @@ function M.send(buf)
         end
         servers[buf] = nil
         pending_approvals[buf] = nil
-        if partial ~= "" then
-          append(partial)
-          partial = ""
-        end
+        partial = "" -- an incomplete frame at exit is discarded (killed process)
         if stderr_partial ~= "" then
           table.insert(stderr_chunks, stderr_partial)
         end
@@ -1190,7 +1180,6 @@ function M.send(buf)
     )
     if not ok then
       spinner.stop_if_idle()
-      audit.poll_stop_if_idle()
       stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
@@ -1220,6 +1209,8 @@ function M.send(buf)
     end
   end
   local payload = vim.json.encode({
+    type = "turn",
+    v = 1,
     provider = provider,
     model = model,
     messages = messages,
@@ -1263,8 +1254,6 @@ function M.stop(buf)
     -- cleanup: release the per-turn UI state it would have released here.
     pending_approvals[buf] = nil
     spinner.stop_if_idle()
-    audit.poll_stop_if_idle()
-    audit.drain(buf)
     audit.flush(buf) -- emit any unterminated final line
     for path in pairs(state.live_logs[buf] or {}) do
       pcall(os.remove, path)

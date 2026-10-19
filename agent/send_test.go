@@ -303,8 +303,8 @@ func TestUsageCostFromCatalog(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
-	old := utils.SetEventWriter(&out)
-	defer utils.SetEventWriter(old)
+	old := utils.SetFrameWriter(&out)
+	defer utils.SetFrameWriter(old)
 	if err := send("mock", "gpt-4o", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -333,8 +333,8 @@ func TestUsageCostIncludesCacheRead(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
-	old := utils.SetEventWriter(&out)
-	defer utils.SetEventWriter(old)
+	old := utils.SetFrameWriter(&out)
+	defer utils.SetFrameWriter(old)
 	if err := send("mock", "gpt-4o", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -360,8 +360,8 @@ func TestContextPromptIncludesCachedTokens(t *testing.T) {
 	t.Setenv("YAP_TEST_KEY", "k")
 
 	var out bytes.Buffer
-	old := utils.SetEventWriter(&out)
-	defer utils.SetEventWriter(old)
+	old := utils.SetFrameWriter(&out)
+	defer utils.SetFrameWriter(old)
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -406,15 +406,15 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 		journal.Write(p)
 		return len(p), nil
 	})
-	oldEventOut := utils.SetEventWriter(writer)
-	defer utils.SetEventWriter(oldEventOut)
+	oldEventOut := utils.SetFrameWriter(writer)
+	defer utils.SetFrameWriter(oldEventOut)
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), writer); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	s := journal.String()
-	usage := strings.Index(s, `yap:event {"completion":10,"context_prompt":100,"prompt":100,"type":"usage"}`)
+	usage := strings.Index(s, `{"event":{"completion":10,"context_prompt":100,"prompt":100,"type":"usage"},"type":"event"}`)
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
-	event := strings.Index(s, `yap:event {"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"}`)
+	event := strings.Index(s, `{"event":{"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"},"type":"event"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
 	after := strings.Index(s, "after")
 	finalUsage := strings.Index(s, `"type":"turn_end"`)
@@ -597,11 +597,11 @@ func TestRetryTransientStepError(t *testing.T) {
 	defer func() { retryBaseDelay = oldDelay }()
 
 	var journal strings.Builder
-	oldEventOut := utils.SetEventWriter(writerFunc(func(p []byte) (int, error) {
+	oldEventOut := utils.SetFrameWriter(writerFunc(func(p []byte) (int, error) {
 		journal.Write(p)
 		return len(p), nil
 	}))
-	defer utils.SetEventWriter(oldEventOut)
+	defer utils.SetFrameWriter(oldEventOut)
 
 	var out bytes.Buffer
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
@@ -649,11 +649,11 @@ func TestTextToolCallSurfaced(t *testing.T) {
 	defer func() { providerFactory = oldFactory }()
 
 	var journal strings.Builder
-	oldEventOut := utils.SetEventWriter(writerFunc(func(p []byte) (int, error) {
+	oldEventOut := utils.SetFrameWriter(writerFunc(func(p []byte) (int, error) {
 		journal.Write(p)
 		return len(p), nil
 	}))
-	defer utils.SetEventWriter(oldEventOut)
+	defer utils.SetFrameWriter(oldEventOut)
 
 	var out bytes.Buffer
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
