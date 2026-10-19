@@ -42,6 +42,8 @@ func init() {
 				if reply.ID == id {
 					return reply.Result, "", nil
 				}
+			case <-utils.TurnContext().Done():
+				return "", "", fmt.Errorf("subagent cancelled")
 			case <-timer.C:
 				utils.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})
 				return "", "", fmt.Errorf("subagent timed out after %s", subagentWait)

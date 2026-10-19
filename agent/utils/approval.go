@@ -49,6 +49,8 @@ func RequestApproval(command, tool, reason string) (bool, error) {
 			}
 			// A reply for a stale request (shouldn't happen: one turn at a
 			// time) is dropped.
+		case <-TurnContext().Done():
+			return false, fmt.Errorf("approval cancelled")
 		case <-timer.C:
 			EmitEvent(map[string]any{"type": "approval_timeout", "id": id})
 			return false, fmt.Errorf("approval timed out after %s", approvalTimeout)

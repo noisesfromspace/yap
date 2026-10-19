@@ -315,7 +315,7 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read request from stdin: %w", err)
 	}
-	return runTurn(providerName, model, req, outw, func() boundary { return boundary{} })
+	return runTurn(context.Background(), providerName, model, req, outw, func() boundary { return boundary{} })
 }
 
 // runTurn runs one agent loop. poll is consulted before each generation
@@ -326,8 +326,13 @@ func send(providerName, model string, in io.Reader, outw io.Writer) error {
 // same turn. Both land at the next tool boundary, so native tool results
 // stay native — unlike a stop-and-resend, which flattens them to
 // transcript text.
-func runTurn(providerName, model string, req Request, outw io.Writer, poll func() boundary) error {
+func runTurn(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() boundary) error {
 	start := time.Now()
+	// Install the turn's context so tools (RunStreamed, fetch, curl, approval,
+	// subagent) can abort promptly when the frontend cancels the turn. Cleared
+	// after the background task pool has drained (see the defer below).
+	utils.SetTurnContext(ctx)
+	defer utils.SetTurnContext(context.Background())
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -448,7 +453,6 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 	}
 
-	ctx := context.Background()
 	pool := &taskPool{tasks: make(map[string]*backgroundTask)}
 	defer func() { pool.wait(nil) }() // also reap tasks on model errors or iteration limit
 	for iter := 0; ; iter++ {

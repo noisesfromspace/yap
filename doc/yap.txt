@@ -185,7 +185,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         (evaluated at send time), so `:cd` takes effect on
                         the next send.
 *:YapStop*
-:YapStop              Kill the in-flight request for the current buffer.
+:YapStop              Cancel the in-flight request for the current buffer.
+                        The turn is aborted (the LLM stream and any running
+                        tool are cancelled) but the backend process stays
+                        alive, so its tool state — SSH control masters above
+                        all — survives for the next send.
 *:YapLive*
 :YapLive              Open this session's live tool tail (|yap-audit|): one
                         persistent, read-only buffer following the running
@@ -268,7 +272,7 @@ and <leader>M, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
-  <C-c>                 Kill the in-flight request (see |:YapStop|).
+  <C-c>                 Cancel the in-flight request (see |:YapStop|).
   <leader>m             Change model (picker, see |:YapChangeModel|).
   <leader>M             Change the default model for new buffers (picker).
   <leader>g             Open/close the guard board (see |:YapGuard|).

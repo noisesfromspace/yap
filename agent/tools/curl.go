@@ -234,7 +234,7 @@ func curlOnce(a *curlArgs, rawURL string) (string, string, error) {
 
 	// curl's --max-time bounds the transfer; the Go context is only a
 	// backstop (5s later) so curl's own "operation timed out" message wins.
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
+	ctx, cancel := context.WithTimeout(utils.TurnContext(), timeout+5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "curl", args...)
 	if a.Data != "" {

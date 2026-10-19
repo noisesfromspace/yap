@@ -18,8 +18,10 @@ func Track(pgid int) { runningMu.Lock(); running[pgid] = true; runningMu.Unlock(
 // Untrack removes a finished process group id.
 func Untrack(pgid int) { runningMu.Lock(); delete(running, pgid); runningMu.Unlock() }
 
-// KillAll SIGKILLs every tracked tool process group; used on interrupt so
-// :YapStop takes in-flight commands down with the binary.
+// KillAll SIGKILLs every tracked tool process group; used on SIGTERM/SIGINT
+// so a killed backend takes its in-flight commands down with it. A user
+// :YapStop no longer reaches this path — it cancels the turn via the protocol
+// while the process (and its SSH masters) stay alive.
 func KillAll() {
 	runningMu.Lock()
 	defer runningMu.Unlock()

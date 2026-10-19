@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"boers.email/yap/agent/tools"
+	"boers.email/yap/agent/utils"
 )
 
 // endpoint is the Exa API URL. A var so tests can point it at a local
@@ -88,7 +89,7 @@ func (provider) Search(p tools.WebsearchParams) ([]tools.WebsearchResult, error)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(utils.TurnContext(), http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}

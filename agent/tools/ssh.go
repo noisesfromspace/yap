@@ -129,7 +129,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), timeout)
+	checkCtx, checkCancel := context.WithTimeout(utils.TurnContext(), timeout)
 	// -F /dev/null makes OpenSSH check only the requested name. A known IP
 	// or an entry in the user's known_hosts cannot authorize a different name.
 	host := a.Host
@@ -142,7 +142,7 @@ func runSSH(a *sshArgs) (string, error) {
 	if checkErr != nil {
 		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, checkErr)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(utils.TurnContext(), timeout)
 	defer cancel()
 	var err error
 	m := sshMasters.clients[key]
@@ -270,7 +270,8 @@ func removeSSHDirIfEmpty() {
 	}
 }
 
-// CloseSSH releases all master connections on backend exit and on :YapStop/SIGTERM.
+// CloseSSH releases all master connections on backend exit (SIGTERM/SIGINT,
+// buffer unload). A user :YapStop keeps the masters alive for the next send.
 func CloseSSH() {
 	sshMasters.Lock()
 	defer sshMasters.Unlock()

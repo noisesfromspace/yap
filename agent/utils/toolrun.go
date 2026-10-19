@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -53,8 +54,13 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	go func() { done <- cmd.Wait() }()
 
 	timedOut := false
+	cancelled := false
 	select {
 	case err = <-done:
+	case <-TurnContext().Done():
+		cancelled = true
+		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
+		err = <-done
 	case <-time.After(timeout):
 		timedOut = true
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
@@ -68,6 +74,12 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	}
 	text, truncated := readToolTail(outPath, size)
 	EmitEvent(map[string]any{"type": "tool_end", "name": name, "log": outPath, "truncated": truncated})
+
+	if cancelled {
+		// The turn was cancelled: the tail gets its final bytes and the log
+		// is cleaned up, but the result is moot (the model will not see it).
+		return "", context.Canceled
+	}
 
 	exit := 0
 	if ee, ok := err.(*exec.ExitError); ok {

@@ -2,6 +2,8 @@ package tools
 
 import (
 	"fmt"
+
+	"boers.email/yap/agent/utils"
 )
 
 type quickfixEntry struct {
@@ -19,6 +21,10 @@ func init() {
 	Register("quickfix",
 		"Replace the current Neovim quickfix list with these source locations. Previous lists remain available via :colder.",
 		func(a *quickfixArgs) (string, string, error) {
+			// A frontend side effect: emit the quickfix frame so the Lua side
+			// replaces the list. The audit tool_call/tool_result events still
+			// carry the full record; this is the UI action only.
+			utils.EmitQuickfix(a.Entries)
 			return fmt.Sprintf("quickfix list set (%d entries)", len(a.Entries)), "", nil
 		})
 }

@@ -52,7 +52,11 @@ func fetchRaw(rawURL string) (status int, statusText, contentType string, finalU
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second, Transport: utils.CheckedTransport()}
-	resp, err := client.Get(rawURL)
+	req, err := http.NewRequestWithContext(utils.TurnContext(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, "", "", nil, nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, "", "", nil, nil, err
 	}

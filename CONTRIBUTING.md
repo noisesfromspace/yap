@@ -386,7 +386,8 @@ prompt-injection mitigation, NOT a security boundary: the denylist is
 bypassable. A real sandbox, if ever wanted, is bubblewrap (Codex's Linux
 choice), not command-pattern allowlists (documented as bypassable).
 bash's operational mechanics are unchanged: own process
-group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
+group, group kill on timeout and on turn cancellation, tail-truncation, closed
+stdin.
 
 ```mermaid
 flowchart TD
@@ -587,11 +588,16 @@ sequenceDiagram
   scripts and generated artifacts there too. Explicit user `![FILE: name](file:///...)`
   references stay in Markdown and Go converts them into ordered image parts
   when sending; binary data is never in the session or stdin.
-  The other stdin records are typed injections and replies:
-  `{"type":"steer","text":...}` (empty text cancels),
+  The other stdin records are typed injections, replies and one control
+  record:
+  `{"type":"steer","text":...}` (empty text cancels a pending steer),
   `{"type":"model","provider":...,"model":...}`,
-  `{"type":"approval_result","id":...,"approved":bool}`, and
-  `{"type":"subagent_result","id":...,"result":...}`.
+  `{"type":"approval_result","id":...,"approved":bool}`,
+  `{"type":"subagent_result","id":...,"result":...}`, and
+  `{"type":"cancel"}` — cancels the in-flight turn (aborts the LLM stream
+  and any running tool/approval/subagent through a context cancellation)
+  without killing the serve process, so SSH control masters and other tool
+  state survive for the next send.
 - **argv** — `yap serve` (one persistent process per session buffer).
 - **stdout** — the single Go→Lua channel, JSON Lines, one record per line:
 
@@ -621,12 +627,20 @@ sequenceDiagram
   - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...,"session":...}`
     — the Lua side spawns/runs a child session and replies
     `{"type":"subagent_result","id","result"}`.
-  - `turn_complete` `{"type":"turn_complete","v":1,"ok":bool,"error":{code,message,data}?}`
+  - `quickfix` `{"type":"quickfix","entries":[...]}` — a frontend side
+    effect: the Lua side replaces the Neovim quickfix list with these entries
+    (only a live frame creates a list, so persisted tool regions never replay).
+  - `close_session` `{"type":"close_session"}` — a frontend side effect: the
+    Lua side closes the session buffer once the turn completes and the session
+    file is saved.
+  - `turn_complete` `{"type":"turn_complete","v":1,"ok":bool,"error":{code,message,data}?,"cancelled":bool?}`
     — the terminal record for one turn. Received only after every preceding
     record (one channel, total ordering), so this alone closes the turn; there
     is no completion barrier. On failure the structured error object carries
     `code` (JSON-RPC's familiar ranges: -32700 parse, -32600 invalid request,
-    -32602 invalid params, -32603 internal) and `message`.
+    -32602 invalid params, -32603 internal) and `message`. A `cancelled:true`
+    record is a user-initiated stop, not a failure: the frontend closes the
+    turn without an error marker, and the serve process stays alive.
 
   `yap send --provider NAME --model MODEL` remains available for one-off
   calls (e.g. generating a session description) and still reads a bare JSON

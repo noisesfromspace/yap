@@ -322,6 +322,28 @@ local function handle_approval_request(buf, ev)
   end
 end
 
+-- A first-class quickfix frame (a frontend side effect, not an audit event):
+-- replaces the Neovim quickfix list. Only a live frame creates a list, so
+-- persisted tool regions never replay on reopen.
+local function handle_quickfix(frame)
+  local entries = frame.entries
+  if type(entries) ~= "table" then
+    return
+  end
+  local items = {}
+  for _, entry in ipairs(entries) do
+    table.insert(items, {
+      filename = entry.file,
+      lnum = entry.line,
+      col = entry.column or 0,
+      text = entry.text,
+    })
+  end
+  -- ' ' creates a new stack entry: it replaces the visible list while
+  -- preserving the previous one for :colder/:cnewer.
+  vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
+end
+
 local function handle_event(buf, ev)
   if type(ev) ~= "table" then
     return
@@ -353,29 +375,6 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev)
     guard.touch()
   elseif ev.type == "tool_call" then
-    -- quickfix is a frontend side effect: only a live tool_call event
-    -- creates a list, so persisted tool regions never replay on reopen.
-    if ev.name == "quickfix" then
-      local ok_qf, a = pcall(vim.json.decode, ev.args or "")
-      if ok_qf and type(a) == "table" and type(a.entries) == "table" then
-        local items = {}
-        for _, entry in ipairs(a.entries) do
-          table.insert(items, {
-            filename = entry.file,
-            lnum = entry.line,
-            col = entry.column or 0,
-            text = entry.text,
-          })
-        end
-        -- ' ' creates a new stack entry: it replaces the visible list while
-        -- preserving the previous one for :colder/:cnewer.
-        vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
-      end
-    elseif ev.name == "close_session" then
-      -- Defer to turn completion so the reply streams out and the session
-      -- file is saved before the buffer is wiped (complete() below).
-      close_after_turn[buf] = true
-    end
     audit.append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
     audit.append_event(buf, ev) -- full result; bash output already streamed above
@@ -1029,6 +1028,18 @@ function M.send(buf)
       live[buf] = nil
       spinner.stop_if_idle()
       repair_stream_tail(buf)
+      if result.cancelled then
+        -- A user-initiated stop: the turn was cancelled but the serve
+        -- process stays alive (SSH control masters and tool state survive).
+        -- No error marker — the user asked for this. Clear any parked
+        -- approval so the guard board reflects the settled turn.
+        pending_approvals[buf] = nil
+        guard.touch()
+        close_stream(buf)
+        follow_tail()
+        close_if_requested(buf)
+        return
+      end
       if not result.ok then
         local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
         report_error(buf, err ~= "" and err or "backend exited")
@@ -1101,9 +1112,16 @@ function M.send(buf)
         handle_approval_request(buf, frame)
       elseif frame.type == "subagent_request" then
         subagent.start(buf, frame)
+      elseif frame.type == "quickfix" then
+        handle_quickfix(frame)
+      elseif frame.type == "close_session" then
+        -- Defer to turn completion so the reply streams out and the session
+        -- file is saved before the buffer is wiped (complete() below).
+        close_after_turn[buf] = true
       elseif frame.type == "turn_complete" then
         complete({
           ok = frame.ok == true,
+          cancelled = frame.cancelled == true,
           error = frame.error and frame.error.message or nil,
         })
         return
@@ -1243,30 +1261,25 @@ function M.stop(buf)
   if child then
     M.stop(child)
   end
-  local handle = running[buf]
-  if handle then
+  local proc = running[buf]
+  if proc then
     stopped[buf] = true
-    handle:kill(15) -- the exit callback closes the interrupted turn
-    servers[buf] = nil
-    running[buf] = nil
-    -- servers[buf] is already nil, so the process exit callback's
-    -- `servers[buf] ~= handle` guard returns early and never reaches its own
-    -- cleanup: release the per-turn UI state it would have released here.
-    pending_approvals[buf] = nil
-    spinner.stop_if_idle()
-    audit.flush(buf) -- emit any unterminated final line
-    for path in pairs(state.live_logs[buf] or {}) do
-      pcall(os.remove, path)
+    -- Cancel just the in-flight turn, keeping the serve process alive so its
+    -- tool state (SSH control masters above all) survives for the next send.
+    -- The cancelled turn completes via the normal turn_complete frame, which
+    -- runs complete()'s cancelled path (no error marker).
+    local ok = pcall(function()
+      proc:write(vim.json.encode({ type = "cancel" }) .. "\n")
+    end)
+    if not ok then
+      -- Backend gone (killed externally): fall back to the old hard cleanup.
+      servers[buf] = nil
+      running[buf] = nil
+      pending_approvals[buf] = nil
+      spinner.stop_if_idle()
+      repair_stream_tail(buf)
+      close_stream(buf)
     end
-    state.live_logs[buf] = nil
-    live[buf] = nil
-    local f = stream_flush[buf]
-    if f then
-      f()
-      stream_flush[buf] = nil
-    end
-    repair_stream_tail(buf)
-    close_stream(buf)
   end
 end
 

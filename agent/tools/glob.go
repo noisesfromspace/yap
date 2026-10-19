@@ -31,7 +31,7 @@ func runGlob(a *globArgs) (string, string, error) {
 		args = append(args, a.Path)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), searchTimeout)
+	ctx, cancel := context.WithTimeout(utils.TurnContext(), searchTimeout)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "rg", args...).Output()
 	if err != nil {

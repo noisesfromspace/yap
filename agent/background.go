@@ -172,6 +172,11 @@ func (p *taskPool) call(call llm.ToolCall, allowed *[]string) taskResult {
 			if strings.HasPrefix(task.value.result, "error:") {
 				status = "failed"
 			}
+			// A turn cancel aborts the task (RunStreamed/fetch/curl/glob/search
+			// all select on TurnContext), so record that in the audit log.
+			if utils.TurnContext().Err() != nil {
+				status = "cancelled"
+			}
 			utils.EmitEvent(map[string]any{"type": "task_end", "id": id, "name": args.Tool, "status": status, "result": task.value.result})
 			close(task.done)
 		}()

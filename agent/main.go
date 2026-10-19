@@ -27,6 +27,7 @@ import (
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -40,8 +41,11 @@ import (
 
 func main() {
 	defer tools.CloseAll()
-	// :YapStop terminates the persistent backend. Kill tracked local
-	// tool process groups as well; one handler serves every turn.
+	// SIGTERM/SIGINT (e.g. the process being killed, or a buffer unload)
+	// terminate the persistent backend. Kill tracked local tool process
+	// groups as well; one handler serves every turn. A user :YapStop does not
+	// signal the process — it cancels the in-flight turn over the protocol,
+	// keeping the backend and its tool state alive.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -157,6 +161,14 @@ func serve(in io.Reader, out io.Writer) error {
 	var updateMu sync.Mutex
 	var updateCh chan update
 
+	// The currently-running turn's cancel func. The `cancel` notification on
+	// stdin calls it; the turn's context cancellation then unwinds the agent
+	// loop (LLM stream, in-flight tools, parked approvals/subagents) without
+	// killing the serve process, so SSH control masters and other tool state
+	// survive a :YapStop.
+	var cancelMu sync.Mutex
+	var cancelFn context.CancelFunc
+
 	// push delivers an update to the running turn, always keeping the latest
 	// one (an older pending steer/model is superseded, not queued).
 	push := func(ch chan update, u update) {
@@ -221,6 +233,14 @@ func serve(in io.Reader, out io.Writer) error {
 						push(ch, update{provider: reply.Provider, model: reply.Model})
 					}
 					continue
+				case "cancel":
+					cancelMu.Lock()
+					fn := cancelFn
+					cancelMu.Unlock()
+					if fn != nil {
+						fn()
+					}
+					continue
 				}
 			}
 			requests <- line
@@ -247,7 +267,11 @@ func serve(in io.Reader, out io.Writer) error {
 			hasSteer := false
 			var pendProvider, pendModel string
 			hasModel := false
-			err = runTurn(req.Provider, req.Model, req.Request, utils.TextWriter(), func() boundary {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancelMu.Lock()
+			cancelFn = cancel
+			cancelMu.Unlock()
+			err = runTurn(ctx, req.Provider, req.Model, req.Request, utils.TextWriter(), func() boundary {
 				for {
 					select {
 					case u := <-ch:
@@ -278,11 +302,20 @@ func serve(in io.Reader, out io.Writer) error {
 				updateCh = nil
 			}
 			updateMu.Unlock()
+			cancelMu.Lock()
+			cancelFn = nil
+			cancelMu.Unlock()
+			cancel()
 		}
 		// The terminal frame: every text/event/tool_output frame above is
 		// already on the channel (one channel, total ordering), so the
-		// frontend completes the turn on this frame alone.
-		utils.EmitTurnComplete(err == nil, wireError(err))
+		// frontend completes the turn on this frame alone. A cancelled turn
+		// is a stop, not a failure — the serve process stays alive.
+		if errors.Is(err, context.Canceled) {
+			utils.EmitTurnCancelled()
+		} else {
+			utils.EmitTurnComplete(err == nil, wireError(err))
+		}
 	}
 	return <-readErr
 }

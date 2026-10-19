@@ -119,9 +119,12 @@ vim.notify = function(msg, ...)
 end
 yap.scratch_send(stop_scratch)
 yap.stop(stopped)
+-- stop() cancels the turn via a message to the backend (which stays alive for
+-- the next send), so completion is asynchronous: wait for the cancelled turn
+-- to finish before asserting on the notify it triggers.
+assert(vim.wait(5000, function() return not yap.is_running(stopped) end, 20), "stop did not stop the turn")
 vim.notify = original_notify
 assert(table.concat(stop_notices, "\n"):find("steer was not delivered", 1, true), "stopped steer had no warning")
-assert(not yap.is_running(stopped), "stop did not stop the turn")
 assert(text(stop_scratch):find("unfinished instruction", 1, true), "stop consumed pending steer")
 assert(not text(stopped):find("unfinished instruction", 1, true), "stop sent pending steer")
 

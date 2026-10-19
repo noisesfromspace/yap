@@ -23,7 +23,9 @@ import (
 //   - tool_output       — streamed bytes of a running tool (live tail)
 //   - approval_request  — request: the frontend replies approval_result
 //   - subagent_request  — request: the frontend replies subagent_result
-//   - turn_complete     — the terminal frame for one turn (ok + error)
+//   - quickfix          — frontend side effect: replace the quickfix list
+//   - close_session     — frontend side effect: close the buffer after the turn
+//   - turn_complete     — the terminal frame for one turn (ok + error, or cancelled)
 
 // frameOut is the single frame sink (a var so tests can capture it).
 var frameOut io.Writer = os.Stderr
@@ -109,6 +111,8 @@ const (
 	CodeInvalidReq   = -32600
 	CodeInvalidParam = -32602
 	CodeInternal     = -32603
+	// CodeCancelled marks a turn the user cancelled (LSP's RequestCancelled).
+	CodeCancelled = -32800
 )
 
 // CodedError carries an error code for a request/params problem, so the
@@ -144,4 +148,36 @@ func EmitTurnComplete(ok bool, werr *WireError) {
 		m["error"] = werr
 	}
 	writeFrameLocked(m)
+}
+
+// EmitTurnCancelled writes the terminal frame for a user-cancelled turn: the
+// frontend treats it as a stop (no error marker), not a failure. The serve
+// process stays alive, so SSH connections and other tool state survive.
+func EmitTurnCancelled() {
+	frameMu.Lock()
+	defer frameMu.Unlock()
+	writeFrameLocked(map[string]any{
+		"type":      "turn_complete",
+		"v":         1,
+		"ok":        false,
+		"cancelled": true,
+	})
+}
+
+// EmitQuickfix writes one `quickfix` frame — a frontend side effect that
+// replaces the Neovim quickfix list. The audit tool_call/tool_result events
+// still carry the full record; this frame is the UI action only.
+func EmitQuickfix(entries any) {
+	frameMu.Lock()
+	defer frameMu.Unlock()
+	writeFrameLocked(map[string]any{"type": "quickfix", "entries": entries})
+}
+
+// EmitCloseSession writes one `close_session` frame — a frontend side effect
+// asking Neovim to close the session buffer once the turn completes and the
+// session file is saved.
+func EmitCloseSession() {
+	frameMu.Lock()
+	defer frameMu.Unlock()
+	writeFrameLocked(map[string]any{"type": "close_session"})
 }
