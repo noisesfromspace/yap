@@ -181,6 +181,13 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 	}
 
 	res := stream.Result()
+	// A user cancel mid-stream may surface as a provider stream error, or —
+	// because the SDK closes the response body on cancellation — as a clean
+	// EOF with no error at all. Check the turn context first so a cancel
+	// always looks like cancellation, never a successful (truncated) answer.
+	if ctx.Err() != nil {
+		return t, ctx.Err()
+	}
 	if res.Err != nil {
 		// Report what was already emitted (if anything) so the caller can
 		// decide whether a retry is safe: a mid-stream error after text has

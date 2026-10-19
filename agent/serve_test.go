@@ -103,3 +103,57 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 		t.Fatalf("calls=%d want 2", calls)
 	}
 }
+
+// TestServeCancelMidStream: a `cancel` notification that lands while the
+// model is still streaming prose (no tool in flight) must emit a
+// turn_complete with "cancelled":true — not a silent ok:true on a truncated
+// stream, and not an error frame. The SDK closes the response body on
+// cancellation, so the stream can end cleanly with only a prefix of the
+// answer; the turn must still be recognised as cancelled.
+func TestServeCancelMidStream(t *testing.T) {
+	started := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl := http.NewResponseController(w)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n")
+		_ = fl.Flush()
+		started <- struct{}{}
+		// Stream slowly so the cancel lands mid-stream.
+		for i := 0; i < 50; i++ {
+			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"%d\"}}]}\n\n", i)
+			_ = fl.Flush()
+			time.Sleep(20 * time.Millisecond)
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	writeConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	r, w := io.Pipe()
+	defer r.Close()
+	var out bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- serve(r, &out) }()
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	<-started
+	time.Sleep(50 * time.Millisecond) // a prefix has streamed, the stream is live
+	_, _ = io.WriteString(w, `{"type":"cancel"}`+"\n")
+	_ = w.Close()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel blocked serve")
+	}
+	s := out.String()
+	if !strings.Contains(s, `"cancelled":true`) {
+		t.Fatalf("missing cancelled turn_complete: %q", s)
+	}
+	if strings.Contains(s, `"ok":true`) {
+		t.Fatalf("cancelled turn reported ok: %q", s)
+	}
+}
