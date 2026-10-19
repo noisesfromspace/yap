@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/internal/testutil"
-	"boers.email/yap/agent/models"
 )
 
 func TestListModelsNativeShapes(t *testing.T) {
@@ -39,7 +39,7 @@ func TestListModelsNativeShapes(t *testing.T) {
 				fmt.Fprint(w, tt.response)
 			}))
 			defer srv.Close()
-			ids, err := models.ListModels(t.Context(), tt.name, srv.URL, "k")
+			ids, err := config.ListModels(t.Context(), tt.name, srv.URL, "k")
 			if err != nil || len(ids) != 1 || ids[0] != tt.want {
 				t.Fatalf("ids=%v err=%v", ids, err)
 			}
@@ -74,7 +74,7 @@ func TestModels(t *testing.T) {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := models.List()
+	err := config.List()
 	w.Close()
 	os.Stdout = old
 	var buf bytes.Buffer

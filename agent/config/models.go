@@ -1,4 +1,4 @@
-package models
+package config
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/price"
 	"boers.email/yap/agent/tools"
 )
@@ -42,7 +41,7 @@ func List() error {
 // provider must not block the picker. The requests are independent, so they
 // run concurrently.
 func ListCombos() ([]tools.ModelCombo, []string, error) {
-	cfg, err := config.LoadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, nil, err
 	}

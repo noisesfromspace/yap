@@ -24,8 +24,8 @@
 package main
 
 import (
+	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/llm/goai"
-	"boers.email/yap/agent/models"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/turn"
 	"boers.email/yap/agent/wire"
@@ -85,7 +85,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "models":
-		if err := models.List(); err != nil {
+		if err := config.List(); err != nil {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

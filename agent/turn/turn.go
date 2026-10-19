@@ -16,7 +16,6 @@ import (
 	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
-	"boers.email/yap/agent/models"
 	"boers.email/yap/agent/price"
 	"boers.email/yap/agent/render"
 	"boers.email/yap/agent/safety"
@@ -352,7 +351,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
-	tools.SetModelLister(models.ListCombos)
+	tools.SetModelLister(config.ListCombos)
 	// totCost accumulates the model-step cost for the turn, so one number
 	// lands in the usage event and the audit log.
 	var totCost float64

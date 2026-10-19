@@ -1,3 +1,8 @@
+// Package config loads the provider settings (~/.config/yap/settings.json)
+// and discovers the provider/model combos those settings expose. LoadConfig
+// reads the file; List, ListCombos and ListModels query the configured
+// providers for their model lists, so the picker, the `models` CLI and the
+// `models` tool share one source of truth.
 package config
 
 import (
