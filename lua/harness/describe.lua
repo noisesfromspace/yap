@@ -8,6 +8,7 @@ local frontmatter = require("harness.frontmatter")
 local document = require("harness.document")
 local config = require("harness.config")
 local view = require("harness.view")
+local structure = require("harness.structure")
 
 local function harness()
   return require("harness")
@@ -140,8 +141,13 @@ Return only the title.]]
   if not provider then
     return
   end
+  -- Only the whole-session summary is sequence-guarded: a slow earlier
+  -- summary must not clobber a newer one. The instant label is exempt — it
+  -- runs once, and simply must not overwrite a summary that already landed.
   local seq = (description_seq[buf] or 0) + 1
-  description_seq[buf] = seq
+  if kind == "answer" then
+    description_seq[buf] = seq
+  end
   if kind == "user" then
     description_started[buf] = true
   end
@@ -155,7 +161,13 @@ Return only the title.]]
     { harness().config.bin, "send", "--provider", provider, "--model", model },
     { stdin = payload, text = true },
     vim.schedule_wrap(function(result)
-      if not vim.api.nvim_buf_is_valid(buf) or description_seq[buf] ~= seq then
+      if not vim.api.nvim_buf_is_valid(buf) then
+        return
+      end
+      if kind == "answer" and description_seq[buf] ~= seq then
+        return
+      end
+      if kind == "user" and current_description(buf) ~= "" then
         return
       end
       if result.code ~= 0 then
@@ -168,7 +180,10 @@ Return only the title.]]
         vim.notify(err, vim.log.levels.ERROR)
         return
       end
-      local description = (result.stdout or ""):gsub("<!%-%-.-%-%->", "")
+      -- Strip the reasoning/model markers (multi-line thinking included)
+      -- before collapsing; the naive single-line comment strip left a
+      -- reasoning model's thinking block in the title.
+      local description = structure.strip_markers(result.stdout or "")
       description = view.collapse(description):gsub(":%s+", " – ")
       if description == "" or description:find("`", 1, true) then
         return
