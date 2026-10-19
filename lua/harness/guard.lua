@@ -1,10 +1,14 @@
 -- The guard board (yap://guard): one read-only, global projection of the
 -- static guard rules every tool declares in its source (bash's sudo/rm -rf,
--- ssh's always-approval, ...), with any parked approvals folded into the
--- same list so they can be answered in place. The rules come from `yap guard`
--- (a compiled-in listing), so adding a rule to a tool's source file is all it
--- takes for it to show up here. It opens as the same bottom drawer as the
--- live tool tail; actions are direct keys on the cursor row.
+-- ssh's always-approval, ...), with parked approvals and the project's
+-- settled decision history folded into the same list. Parked approvals are
+-- answered in place; settled rows (granted/denied/timed-out) are read back
+-- from the project's audit logs so decisions persist across sessions. The
+-- rules come from `yap guard` (a compiled-in listing), so adding a rule to a
+-- tool's source file is all it takes for it to show up here. `c` clears the
+-- settled history: it stores a project watermark (guard.json) and hides rows
+-- at or before it. It opens as the same bottom drawer as the live tool tail;
+-- actions are direct keys on the cursor row.
 
 local M = {}
 
@@ -19,6 +23,7 @@ local function harness()
 end
 
 local BOARD_NAME = "yap://guard"
+local MAX_HISTORY_ROWS = 30 -- cap the project's settled-history readback
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -26,6 +31,8 @@ local HL = {
   approval = "YapGuardApproval",
   rule = "YapGuardRule",
   always = "YapGuardAlways",
+  granted = "YapGuardGranted",
+  denied = "YapGuardDenied",
   meta = "YapGuardMeta",
   hint = "YapGuardHint",
   tool = "YapGuardTool",
@@ -34,6 +41,8 @@ local HL = {
 view.link(HL.approval, "DiagnosticWarn")
 view.link(HL.rule, "Comment")
 view.link(HL.always, "DiagnosticError")
+view.link(HL.granted, "DiagnosticOk")
+view.link(HL.denied, "DiagnosticError")
 view.link(HL.meta, "Comment")
 view.link(HL.hint, "Comment")
 view.link(HL.tool, "Title")
@@ -190,7 +199,119 @@ local function rule_row(r)
   }
 end
 
---- Build the single ordered row list: parked approvals first (actionable),
+--- A settled approval read back from an audit log: granted/denied from an
+--- approval_result, timeout from an approval_timeout. `req` is the matching
+--- approval_request (its tool/command/reason explain what was gated); it may
+--- be nil for a log that no longer has the request, so tool/command fall back.
+local function resolved_row(ev, req, session_name, path, call_ref)
+  local kind
+  if ev.type == "approval_result" then
+    kind = ev.approved and "granted" or "denied"
+  else
+    kind = "timeout"
+  end
+  req = req or {}
+  return {
+    kind = kind,
+    key = "resolved:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
+    buf = nil,
+    path = path,
+    call = call_ref, -- { id, occurrence } of the gated tool call (or nil)
+    session = session_name,
+    tool = req.tool or "tool",
+    raw_command = decode_raw(req.command),
+    reason = req.reason or "",
+    ts = ev.ts or "",
+  }
+end
+
+-- The clear watermark lives in guard.json beside the project's session
+-- directories. It is project-scoped: settled rows at or before it are hidden
+-- from the board but stay in the append-only audit log. Only clear() writes
+-- it; the board reads it every render so a clear persists across reopens.
+local function guard_file()
+  return paths.session_dir(vim.fn.getcwd()) .. "/guard.json"
+end
+
+local function read_cleared_time()
+  local p = guard_file()
+  if vim.fn.filereadable(p) ~= 1 then
+    return nil
+  end
+  local ok, data = pcall(vim.json.decode, vim.fn.readfile(p)[1] or "")
+  if ok and type(data) == "table" then
+    return ts_time(data.cleared_ts or "")
+  end
+  return nil
+end
+
+local function write_cleared_time(ts)
+  local p = guard_file()
+  paths.ensure_session_dir(vim.fn.fnamemodify(p, ":h"))
+  vim.fn.writefile({ vim.json.encode({ cleared_ts = ts }) }, p)
+  vim.fn.setfperm(p, "rw-------")
+end
+
+local function is_cleared(ev, cleared)
+  if not cleared then
+    return false
+  end
+  local t = ts_time(ev.ts)
+  return t ~= nil and t <= cleared
+end
+
+--- Scan the current project's audit logs for settled approvals (granted/
+--- denied/timed-out), skipping rows at or before `cleared`. Returns a list of
+--- resolved rows, newest first.
+local function scan_project(cleared)
+  local resolved = {}
+  local session_dir = paths.session_dir(vim.fn.getcwd())
+  for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
+    if vim.fn.filereadable(log) == 1 then
+      local path = vim.fn.fnamemodify(log, ":h") .. "/session.md"
+      local session_name = paths.session_name(path)
+      local occurrences, requests, last_call = {}, {}, nil
+      for _, line in ipairs(vim.fn.readfile(log)) do
+        if line ~= "" then
+          local ok, ev = pcall(vim.json.decode, line)
+          if ok and type(ev) == "table" then
+            if ev.type == "tool_call" and ev.id then
+              occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+              last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+            elseif ev.type == "approval_request" and ev.id then
+              requests[ev.id] = { ev = ev, call = last_call }
+            elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
+              if not is_cleared(ev, cleared) then
+                local req = requests[ev.id]
+                resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return resolved
+end
+
+local function newest_first(a, b)
+  return (a.ts or "") > (b.ts or "")
+end
+
+--- Cap a list to the newest `n` rows (rows are already sorted newest first).
+local function cap(rows, n)
+  if #rows <= n then
+    return rows
+  end
+  local out = {}
+  for i = 1, n do
+    out[i] = rows[i]
+  end
+  return out
+end
+
+--- Build the single ordered row list: parked approvals (actionable, live),
+--- then the project's settled decision history (persisted across sessions),
 --- then the static rules (reference). Rules come sorted from `yap guard`.
 local function build_rows()
   local approvals = {}
@@ -201,32 +322,52 @@ local function build_rows()
       approvals[#approvals + 1] = row
     end
   end
-  table.sort(approvals, function(a, b)
-    return (a.ts or "") > (b.ts or "")
-  end)
+  table.sort(approvals, newest_first)
+
+  local history = scan_project(read_cleared_time())
+  table.sort(history, newest_first)
+  history = cap(history, MAX_HISTORY_ROWS)
 
   local rows = approvals
   local approval_count = #approvals
+  local history_count = #history
+  for _, r in ipairs(history) do
+    rows[#rows + 1] = r
+  end
   for _, r in ipairs(load_rules()) do
     rows[#rows + 1] = rule_row(r)
   end
-  return rows, approval_count
+  return rows, approval_count, history_count
 end
 
 -- ─── Rendering ─────────────────────────────────────────────────────────────
 
-local function summary_segments(row)
+--- The glyph and its highlight for an approval/settled row; nil for a rule
+--- row (which renders its own dot prefix).
+local function row_glyph(row)
   if row.kind == "approval" then
+    return harness().config.icons.approval, HL.approval
+  elseif row.kind == "granted" then
+    return harness().config.icons.done, HL.granted
+  elseif row.kind == "denied" or row.kind == "timeout" then
+    return "✗", HL.denied
+  end
+  return nil, nil
+end
+
+local function summary_segments(row)
+  local glyph, glyph_hl = row_glyph(row)
+  if glyph then
     local reason = view.clip(row.reason, 62)
     if reason == "" then
-      reason = "approval"
+      reason = row.kind
     end
     local when = age(row.ts)
     return {
       { text = " " },
-      { text = harness().config.icons.approval, hl = HL.approval },
+      { text = glyph, hl = glyph_hl },
       { text = "  " },
-      { text = reason, hl = HL.approval },
+      { text = reason, hl = glyph_hl },
       { text = when ~= "" and ("  " .. when) or "", hl = HL.meta },
     }
   end
@@ -260,6 +401,8 @@ local function kv(label, value, value_hl)
   return segs
 end
 
+local STATUS = { approval = "parked", granted = "granted", denied = "denied", timeout = "timed out" }
+
 local function detail_lines(row)
   if row.kind == "rule" then
     if row.always then
@@ -277,8 +420,9 @@ local function detail_lines(row)
   end
   local when = age(row.ts)
   local sess = flat(row.session)
-  if when ~= "" then
-    sess = sess .. " · parked " .. when
+  local status = STATUS[row.kind]
+  if status and when ~= "" then
+    sess = sess .. " · " .. status .. " " .. when
   end
   out[#out + 1] = kv("session", sess, HL.meta)
   return out
@@ -287,7 +431,7 @@ end
 --- Rebuild the board buffer from live approvals + the compiled-in rules.
 local function render()
   local buf = ensure_board()
-  local rows, approval_count = build_rows()
+  local rows, approval_count, history_count = build_rows()
 
   local lines = {}
   local highlights = {}
@@ -304,10 +448,13 @@ local function render()
   end
 
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
-  local rule_count = #rows - approval_count
+  local rule_count = #rows - approval_count - history_count
   local counts = ("Rules %d"):format(rule_count)
   if approval_count > 0 then
     counts = ("%s · Parked %d"):format(counts, approval_count)
+  end
+  if history_count > 0 then
+    counts = ("%s · History %d"):format(counts, history_count)
   end
   if state.auto_accept then
     counts = counts .. " · auto-accept on"
@@ -348,7 +495,7 @@ local function render()
     end
   end
   add("")
-  add("a auto-accept · r/x run·deny · i inspect · za expand · q close", HL.hint)
+  add("a auto-accept · r/x run·deny · i inspect · c clear history · za expand · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -419,7 +566,7 @@ local function deny_row(row)
 end
 
 local function inspect_row(row)
-  if row.kind == "approval" then
+  if row.kind ~= "rule" and row.path then
     harness().reveal_call(row.path, row.call)
   end
 end
@@ -476,6 +623,9 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "a", function()
     M.toggle_auto_accept()
   end, { buffer = buf, silent = true, desc = "yap: toggle auto-accept" })
+  vim.keymap.set("n", "c", function()
+    M.clear()
+  end, { buffer = buf, silent = true, desc = "yap: clear guard history" })
 end
 
 --- Open (or focus) the board, or close it when already open. The board is a
@@ -509,6 +659,15 @@ function M.toggle()
   install_keymaps(buf)
   apply_folds(buf, result)
   vim.api.nvim_win_set_cursor(0, { result.first_row_line or 1, 0 })
+end
+
+--- Clear the settled decision history: write the project watermark to now so
+--- rows at or before it are hidden from the board. The audit log is left
+--- intact (history persists; the watermark only hides it). Parked approvals
+--- are live state answered via r/x — `c` does not touch them.
+function M.clear()
+  write_cleared_time(os.date("%Y-%m-%dT%H:%M:%S"))
+  M.touch()
 end
 
 --- Toggle auto-accept: while on, incoming approval requests are answered Run

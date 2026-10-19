@@ -37,7 +37,7 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 
-for _, key in ipairs({ "r", "x", "i" }) do
+for _, key in ipairs({ "r", "x", "i", "c" }) do
   local m = vim.fn.maparg(key, "n", false, true)
   assert(m and m.buffer == 1, "guard board missing direct '" .. key .. "' keymap")
 end
@@ -54,6 +54,16 @@ assert(line, "second approval summary not found")
 vim.api.nvim_win_set_cursor(0, { line, 0 })
 vim.api.nvim_feedkeys("x", "mtx", false)
 assert(state.pending_approvals[a] == nil, "x did not deny the approval under the cursor")
+
+-- c writes the project watermark (guard.json) and leaves parked approvals
+-- alone: it clears the settled history view, not live approvals.
+park(a, "key-3", "bash", "echo a", "clear-a")
+guard.touch()
+vim.api.nvim_feedkeys("c", "mtx", false)
+assert(state.pending_approvals[a] ~= nil, "c cleared a parked approval")
+local paths = require("harness.path")
+local gf = paths.session_dir(vim.fn.getcwd()) .. "/guard.json"
+assert(vim.fn.filereadable(gf) == 1, "c did not write the guard.json watermark")
 
 guard.toggle() -- close
 state.running[a] = nil

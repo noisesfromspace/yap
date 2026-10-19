@@ -195,10 +195,14 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): a read-only bottom
                         drawer of the static guard rules every tool declares
-                        (|yap-guard-gate|) plus any parked approvals, in one
-                        list. <Tab>/`za` expand a row; on an approval row
-                        `r`/`x` run/deny, `i` inspects, `a` toggles
-                        auto-accept, `q` closes.
+                        (|yap-guard-gate|), any parked approvals, and the
+                        project's settled decision history (granted/denied/
+                        timed-out approvals read back from the audit logs, so
+                        decisions persist across sessions). <Tab>/`za` expand
+                        a row; on an approval row `r`/`x` run/deny, `i`
+                        inspects, `a` toggles auto-accept, `c` clears the
+                        history (stores a project watermark, hiding rows at
+                        or before it), `q` closes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -468,8 +472,9 @@ The live tool tail (|:YapLive|) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-|:YapGuard| lists the static guard rules and parked approvals and jumps to
-the matching tool region in the session. |:YapClear| placeholders point back
+|:YapGuard| lists the static guard rules, parked approvals and the project's
+settled decision history, and jumps to the matching tool region in the
+session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
@@ -667,6 +672,13 @@ security boundary: bash is unsandboxed by design — the denylist is bypassable.
 Adding a rule is a one-file change in the tool's source (recompile to pick it
 up); nothing else needs editing — the rule then appears in `yap guard` and the
 guard board automatically.
+
+Parked approvals are live state, answered via Run/Deny. Once answered, the
+outcome is written to the audit log and read back as settled history —
+granted/denied/timed-out — so decisions persist across sessions. `c` in the
+guard board clears that history view by writing a project watermark
+(guard.json, a timestamp) and hiding rows at or before it; the audit log is
+left intact. Parked approvals are not touched by `c`.
 
 ==============================================================================
 12. GLOSSARY                                                *yap-glossary*

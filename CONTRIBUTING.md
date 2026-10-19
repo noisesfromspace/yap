@@ -386,6 +386,12 @@ source is the only step to surface it everywhere. Secret paths and
 secret-reveal commands share one location list in `agent/utils/secrets.go`;
 `scrub.go` redacts whatever still reaches a result as the final backstop.
 
+The guard board also reads each project's audit logs to show the settled
+decision history (granted/denied/timed-out approvals) beside parked
+approvals, so decisions persist across sessions. `c` clears that history by
+writing a project watermark (guard.json, a timestamp) and hiding rows at or
+before it; the audit log is left intact and parked approvals are untouched.
+
 #### R-live-output-audit — Live tool output never enters the session buffer
 
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
