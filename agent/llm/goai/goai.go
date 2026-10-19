@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 
 	sdk "github.com/zendev-sh/goai"
@@ -19,6 +20,7 @@ import (
 	"github.com/zendev-sh/goai/provider/openai"
 
 	"boers.email/yap/agent/llm"
+	"boers.email/yap/agent/utils"
 )
 
 // NewProvider builds an llm.Provider for the named provider. Native provider
@@ -70,6 +72,40 @@ func IsRetryable(err error) bool {
 		strings.Contains(msg, "TLS handshake timeout") ||
 		strings.Contains(msg, "no such host") ||
 		strings.Contains(msg, "i/o timeout")
+}
+
+// Classify maps a provider error onto Yap's wire error codes (utils.Code*)
+// plus a small machine-readable data payload, so the frontend branches on a
+// code instead of string-matching the message. APIError first (its status
+// code separates auth from rate-limit), then the context-overflow sentinel,
+// then network-level errors; anything else is an internal error.
+func Classify(err error) (int, map[string]any) {
+	if err == nil {
+		return utils.CodeInternal, nil
+	}
+	var apiErr *sdk.APIError
+	if errors.As(err, &apiErr) {
+		data := map[string]any{"status": apiErr.StatusCode}
+		if apiErr.IsRetryable {
+			data["retryable"] = true
+		}
+		switch {
+		case apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden:
+			return utils.CodeAuth, data
+		case apiErr.StatusCode == http.StatusTooManyRequests:
+			return utils.CodeRateLimited, data
+		default:
+			return utils.CodeInternal, data
+		}
+	}
+	var overflow *sdk.ContextOverflowError
+	if errors.As(err, &overflow) {
+		return utils.CodeContextOverflow, nil
+	}
+	if IsRetryable(err) {
+		return utils.CodeNetwork, map[string]any{"retryable": true}
+	}
+	return utils.CodeInternal, nil
 }
 
 type providerImpl struct {

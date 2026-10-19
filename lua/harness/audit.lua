@@ -210,7 +210,7 @@ end
 
 --- Emit any unterminated tail line (e.g. a command's final write without a
 --- trailing newline). `log` names one log to flush; nil flushes every log
---- (used on process exit / stop, when all logs are torn down).
+--- (used on tool_end for one log, and on turn completion/cancel for all).
 function M.flush(buf, log)
   local t = tails[buf]
   local logs = state.live_logs[buf]

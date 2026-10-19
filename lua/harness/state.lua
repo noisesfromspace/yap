@@ -13,6 +13,7 @@ local M = {
   live_logs = {}, -- buf -> log path -> running log state (tool_output frames feed the tail)
   live_usage = {}, -- buf -> provider-reported usage accumulated during this turn
   errors = {}, -- buf -> error string (winbar + session picker)
+  error_code = {}, -- buf -> wire error code (from turn_complete, for branchable handling)
   last_turn = {}, -- buf -> turn_end event (User YapTurnDone data)
   awaiting = {}, -- buf -> true (turn complete, awaiting user reply)
   steer = {}, -- buf -> pending steering text (sent mid-turn, not yet delivered)

@@ -1,12 +1,15 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestReadToolTail(t *testing.T) {
@@ -81,4 +84,50 @@ func TestRunStreamedUsesAssetsBase(t *testing.T) {
 		t.Fatalf("expected the log under the temp base, got %v", logs)
 	}
 	_ = os.Remove(logs[0])
+}
+
+// TestRunStreamedEmitsProgress checks that a streamed tool emits throttled
+// progress frames carrying the running tool's byte/line throughput and
+// elapsed time — the data the winbar shows instead of inferring time.
+func TestRunStreamedEmitsProgress(t *testing.T) {
+	var frames bytes.Buffer
+	old := SetFrameWriter(&frames)
+	defer SetFrameWriter(old)
+
+	oldInterval := progressInterval
+	progressInterval = 5 * time.Millisecond
+	defer func() { progressInterval = oldInterval }()
+
+	cmd := exec.Command("bash", "-c", "echo one; echo two; sleep 0.05")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	text, err := RunStreamed("bash", "echo one; echo two; sleep 0.05", cmd, ToolDefaultTimeout)
+	if err != nil || !strings.Contains(text, "two") {
+		t.Fatalf("run: %q %v", text, err)
+	}
+
+	type frame struct {
+		Type  string `json:"type"`
+		Tool  string `json:"tool"`
+		Bytes int64  `json:"bytes"`
+		Lines int64  `json:"lines"`
+		Ms    int64  `json:"ms"`
+	}
+	var saw bool
+	var last frame
+	for _, line := range strings.Split(strings.TrimSpace(frames.String()), "\n") {
+		var f frame
+		if err := json.Unmarshal([]byte(line), &f); err != nil {
+			t.Fatalf("frame not JSON: %q", line)
+		}
+		if f.Type == "progress" {
+			saw = true
+			last = f
+		}
+	}
+	if !saw {
+		t.Fatalf("no progress frame emitted: %q", frames.String())
+	}
+	if last.Tool != "bash" || last.Bytes <= 0 || last.Lines < 2 {
+		t.Fatalf("progress frame wrong: %+v", last)
+	}
 }

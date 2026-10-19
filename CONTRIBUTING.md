@@ -181,11 +181,11 @@ and churn fold state.)
 
 The file is created at buffer creation so a fresh session is file-backed
 before the first reply. Saves follow every turn exit,
-including errors and `:YapStop`, and go through `:write!` (not `writefile()`):
-the buffer owns the file, so mtime bookkeeping, `:w`, and E13 all behave
-normally. Every stream exit, including backend errors and `:YapStop`, repairs
-any dangling streamed marker, appends a fresh `# @user` message, and saves that
-final writable state. The markdown file is the only serialization of the
+including errors and a cancelled `:YapStop`, and go through `:write!` (not
+`writefile()`): the buffer owns the file, so mtime bookkeeping, `:w`, and E13
+all behave normally. Every turn exit, including backend errors and a
+cancelled `:YapStop`, repairs any dangling streamed marker, appends a fresh
+`# @user` message, and saves that final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log
 (R-audit-log), the scratch notes file, and the `assets/` folder of dropped
 photos. `save()` follows buffer renames: a `:file` rename moves the
@@ -620,6 +620,11 @@ sequenceDiagram
     running tool's output, keyed by the same `log` path `tool_start` announced;
     this replaces the temp-file polling (the bytes are also tee'd to the temp
     log on disk, so a truncated result still points at the full output).
+  - `progress` `{"type":"progress","log":...,"tool":...,"bytes":...,"lines":...,"ms":...}`
+    — throttled throughput for the running streamed tool, emitted on a timer
+    (not on output) so a quiet command still reports elapsed time; the winbar
+    renders it as `<tool> <Ns> · <bytes>` instead of inferring time from a
+    start timestamp. Not audited — transient UI state, like `usage`.
   - `approval_request` `{"type":"approval_request","id":...,"command":...,"tool":...,"reason":...}`
     — a guard rule matched, so the call parks until the Lua side replies
     `{"type":"approval_result","id","approved"}` on stdin (or auto-accepts, or
@@ -637,10 +642,15 @@ sequenceDiagram
     — the terminal record for one turn. Received only after every preceding
     record (one channel, total ordering), so this alone closes the turn; there
     is no completion barrier. On failure the structured error object carries
-    `code` (JSON-RPC's familiar ranges: -32700 parse, -32600 invalid request,
-    -32602 invalid params, -32603 internal) and `message`. A `cancelled:true`
-    record is a user-initiated stop, not a failure: the frontend closes the
-    turn without an error marker, and the serve process stays alive.
+    `code`, `message`, and optional machine-readable `data`. Codes reuse
+    JSON-RPC's ranges — `-32700` parse, `-32600` invalid request, `-32602`
+    invalid params, `-32603` internal, `-32800` cancelled — plus provider
+    classes in the server range: `-32001` auth (401/403), `-32002` rate
+    limited (429), `-32003` network, `-32004` context-window overflow
+    (classified by `goai.Classify`). The frontend branches on `code` to word
+    the notification and store `state.error_code`. A `cancelled:true` record
+    is a user-initiated stop, not a failure: the frontend closes the turn
+    without an error marker, and the serve process stays alive.
 
   `yap send --provider NAME --model MODEL` remains available for one-off
   calls (e.g. generating a session description) and still reads a bare JSON

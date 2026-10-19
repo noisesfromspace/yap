@@ -86,6 +86,22 @@ func EmitToolOutput(log, delta string) {
 	writeFrameLocked(map[string]any{"type": "tool_output", "log": log, "delta": delta})
 }
 
+// EmitProgress writes one `progress` frame: throttled throughput for a
+// running streamed tool, so the winbar shows real output progress instead of
+// only wall-clock time. `ms` is elapsed since the tool started.
+func EmitProgress(log, tool string, bytes, lines, ms int64) {
+	frameMu.Lock()
+	defer frameMu.Unlock()
+	writeFrameLocked(map[string]any{
+		"type":  "progress",
+		"log":   log,
+		"tool":  tool,
+		"bytes": bytes,
+		"lines": lines,
+		"ms":    ms,
+	})
+}
+
 // EmitApprovalRequest writes one `approval_request` frame — a request the
 // frontend answers with an approval_result.
 func EmitApprovalRequest(id, command, tool, reason string) {
@@ -113,6 +129,13 @@ const (
 	CodeInternal     = -32603
 	// CodeCancelled marks a turn the user cancelled (LSP's RequestCancelled).
 	CodeCancelled = -32800
+	// Provider/network error classes, in JSON-RPC's implementation-defined
+	// server range (-32000..-32099), so the frontend branches on code instead
+	// of string-matching. Classified by goai.Classify.
+	CodeAuth            = -32001 // 401/403: credentials or permissions
+	CodeRateLimited     = -32002 // 429: too many requests
+	CodeNetwork         = -32003 // transport: timeout, DNS, refused, reset
+	CodeContextOverflow = -32004 // prompt exceeds the model's context window
 )
 
 // CodedError carries an error code for a request/params problem, so the

@@ -1,12 +1,14 @@
 package utils
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -17,6 +19,26 @@ const (
 	toolMaxLines       = 2000
 	toolMaxBytes       = 50 * 1024
 )
+
+// progressInterval is how often a streamed tool emits a progress frame while
+// it runs (a var so tests can shorten it).
+var progressInterval = 250 * time.Millisecond
+
+// progressTracker counts the bytes and lines a streamed tool has emitted,
+// for the throttled progress frames the winbar shows ("bash 12s · 48KB").
+type progressTracker struct {
+	bytes atomic.Int64
+	lines atomic.Int64
+}
+
+func (p *progressTracker) add(b []byte) {
+	p.bytes.Add(int64(len(b)))
+	p.lines.Add(int64(bytes.Count(b, []byte{'\n'})))
+}
+
+func (p *progressTracker) snapshot() (int64, int64) {
+	return p.bytes.Load(), p.lines.Load()
+}
 
 // RunStreamed runs a tool process with stdout and stderr merged into a temp
 // log that the Lua side follows live (tool_start/tool_end announce the log path).
@@ -29,12 +51,13 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	}
 	outPath := out.Name()
 	EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": Scrub(command)})
+	var tracker progressTracker
 	cmd.Stdin = nil // /dev/null
 	// Tee the child's merged output: it still lands in the temp log (the
 	// durable, truncation-referenced copy), and each chunk is also framed as
 	// a tool_output record so the live tail follows it in order. One pipe for
 	// stdout+stderr means the bytes are interleaved exactly as produced.
-	cmd.Stdout = io.MultiWriter(out, toolOutputFramer{outPath})
+	cmd.Stdout = io.MultiWriter(out, toolOutputFramer{log: outPath, tracker: &tracker})
 	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
@@ -42,6 +65,24 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		_ = os.Remove(outPath)
 		return "", err
 	}
+	// Emit a throttled progress frame while the tool runs, so the winbar shows
+	// real output throughput instead of only wall-clock time. A timer drives it
+	// (not the output) so a quiet command still reports elapsed time.
+	start := time.Now()
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(progressInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				b, l := tracker.snapshot()
+				EmitProgress(outPath, name, b, l, time.Since(start).Milliseconds())
+			}
+		}
+	}()
 	// The copy goroutine (cmd.Stdout is a MultiWriter over this file and the
 	// tool_output framer) writes to `out` until the child exits, so the file
 	// must stay open until Wait drains the pipe.
@@ -66,6 +107,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
+	close(stop) // no progress frames after tool_end
 	// Let the Lua side drain the final bytes before an untruncated log is
 	// removed; deleting it here raced the drain.
 	var size int64
@@ -107,11 +149,18 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 }
 
 // toolOutputFramer frames each chunk of a running tool's output as a
-// tool_output record for the live tail (see RunStreamed's tee).
-type toolOutputFramer struct{ log string }
+// tool_output record for the live tail (see RunStreamed's tee), and tallies
+// the bytes/lines for the progress frames.
+type toolOutputFramer struct {
+	log     string
+	tracker *progressTracker
+}
 
 func (f toolOutputFramer) Write(p []byte) (int, error) {
 	EmitToolOutput(f.log, string(p))
+	if f.tracker != nil {
+		f.tracker.add(p)
+	}
 	return len(p), nil
 }
 

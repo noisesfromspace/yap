@@ -2,12 +2,16 @@ package goai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"testing"
 
+	sdk "github.com/zendev-sh/goai"
 	"github.com/zendev-sh/goai/provider"
 
 	"boers.email/yap/agent/llm"
+	"boers.email/yap/agent/utils"
 )
 
 func TestImagePartReachesSDK(t *testing.T) {
@@ -267,5 +271,35 @@ func TestToLLMUsage(t *testing.T) {
 	a := toLLMUsage("anthropic", provider.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 100, CacheWriteTokens: 50})
 	if a.CompletionTokens != 5 || a.CacheReadTokens != 100 || a.CacheWriteTokens != 50 {
 		t.Fatalf("anthropic usage: %+v", a)
+	}
+}
+
+// TestClassify pins the wire-error taxonomy: auth vs rate-limit vs network
+// vs context-overflow vs internal, so the frontend can branch on a code
+// instead of string-matching.
+func TestClassify(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code int
+	}{
+		{"auth", &sdk.APIError{StatusCode: 401, Message: "unauthorized"}, utils.CodeAuth},
+		{"forbidden", &sdk.APIError{StatusCode: 403, Message: "forbidden"}, utils.CodeAuth},
+		{"rate limited", &sdk.APIError{StatusCode: 429, IsRetryable: true}, utils.CodeRateLimited},
+		{"server 500", &sdk.APIError{StatusCode: 500, IsRetryable: true}, utils.CodeInternal},
+		{"overflow", &sdk.ContextOverflowError{Message: "context overflow"}, utils.CodeContextOverflow},
+		{"network", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, utils.CodeNetwork},
+		{"unknown", errors.New("something else"), utils.CodeInternal},
+	}
+	for _, c := range cases {
+		if code, _ := Classify(c.err); code != c.code {
+			t.Errorf("%s: code = %d, want %d", c.name, code, c.code)
+		}
+	}
+
+	// An auth APIError carries its status code as machine-readable data.
+	code, data := Classify(&sdk.APIError{StatusCode: 401, Message: "unauthorized"})
+	if code != utils.CodeAuth || data["status"] != 401 {
+		t.Fatalf("auth data wrong: code=%d data=%v", code, data)
 	}
 }

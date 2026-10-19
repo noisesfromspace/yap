@@ -24,6 +24,7 @@
 package main
 
 import (
+	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
 	"bufio"
@@ -130,7 +131,8 @@ func wireError(err error) *utils.WireError {
 	if errors.As(err, &ce) {
 		return &utils.WireError{Code: ce.Code, Message: ce.Error()}
 	}
-	return &utils.WireError{Code: utils.CodeInternal, Message: err.Error()}
+	code, data := goai.Classify(err)
+	return &utils.WireError{Code: code, Message: err.Error(), Data: data}
 }
 
 func serve(in io.Reader, out io.Writer) error {

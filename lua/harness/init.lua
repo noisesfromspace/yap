@@ -253,9 +253,10 @@ end
 
 -- One persistent serve backend per session buffer, so several sessions can
 -- stream at once. Each backend keeps its own tool state (SSH connections
--- above all) for the life of its buffer; a stopped process is restarted
--- on the next send. `servers` lives in harness.state (shared with the
--- subagent and scratch modules).
+-- above all) for the life of its buffer; a cancelled turn (|:YapStop|)
+-- unwinds over the protocol while the process — and its tool state —
+-- survives. `servers` lives in harness.state (shared with the subagent and
+-- scratch modules).
 
 -- buf → flush function: flushes streamed stdout that has been buffered for
 -- a redraw tick into the buffer. The send path coalesces per-token stdout
@@ -264,8 +265,8 @@ end
 -- per token (O(n) per edit on large sessions).
 local stream_flush = {}
 
--- The audit log write, live tool tail, session-usage seed, and log drain
--- all live in harness.audit.
+-- The audit log write, live tool tail, and session-usage seed live in
+-- harness.audit.
 
 local follow_override = {} -- session buf -> windows deliberately focused during a turn (paused tail-following)
 local live_session_label
@@ -771,9 +772,35 @@ function M.reveal_call(path, call)
 end
 
 -- The scratch queue and mid-turn steering live in harness.scratch.
---- parse-excluded marker in the buffer as a record.
-local function report_error(buf, err)
+
+--- The wire error code maps to a short category the notify prefixes, so an
+--- auth failure, rate limit, network error and internal error read distinctly;
+--- the full message still follows. Only programmatic consumers read
+--- state.error_code; the human string stays errors[buf].
+local function error_category(code)
+  if code == -32001 then
+    return "authentication failed"
+  elseif code == -32002 then
+    return "rate limited"
+  elseif code == -32003 then
+    return "network error"
+  elseif code == -32004 then
+    return "context window exceeded"
+  elseif code == -32602 then
+    return "invalid request"
+  elseif code == -32700 then
+    return "malformed request"
+  end
+  return nil
+end
+
+--- Report an error and record it as a parse-excluded marker in the buffer.
+--- `code` is the wire error code (nil for a backend exit, which is
+--- classed as internal); it selects the notify category and is stored in
+--- state.error_code for programmatic consumers.
+local function report_error(buf, err, code)
   errors[buf] = err
+  state.error_code[buf] = code
   -- The marker is an HTML comment: neutralize any `-->` in the error
   -- text so it can't close the comment early for markdown renderers.
   local lines = { "<!-- yap:error" }
@@ -784,18 +811,18 @@ local function report_error(buf, err)
   -- a direct follow-up in the child should still report its own error.
   local parent = vim.b[buf].yap_subagent_parent
   if not (parent and running[parent]) then
-    vim.notify("yap: " .. err, vim.log.levels.ERROR)
+    local category = code and error_category(code) or nil
+    vim.notify("yap: " .. (category and (category .. " — ") or "") .. err, vim.log.levels.ERROR)
   end
 end
 
---- Close dangling regions left by an interrupted stream. :YapStop
---- kills the binary, which exits without emitting the closers for
---- whatever it was mid-way through: a thinking comment (close with
---- `-->`), a multi-line tool header (an unterminated comment: `-->`,
---- then the region closer), or a tool region whose header landed but
---- whose result didn't (`<!-- /yap:tool -->`). Two flags suffice:
---- model text/thinking and tool regions never interleave. Idempotent;
---- cheap enough to run on every process exit.
+--- Close dangling regions left by an interrupted stream. A cancelled
+--- |:YapStop| (or a backend that died) can end mid-way through an open
+--- region: a thinking comment (close with `-->`), a multi-line tool header
+--- (an unterminated comment: `-->`, then the region closer), or a tool region
+--- whose header landed but whose result didn't (`<!-- /yap:tool -->`). Two
+--- flags suffice: model text/thinking and tool regions never interleave.
+--- Idempotent; cheap enough to run on every turn exit.
 local function repair_stream_tail(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -917,6 +944,7 @@ function M.send(buf)
   end
 
   errors[buf] = nil
+  state.error_code[buf] = nil
   stopped[buf] = nil
   awaiting[buf] = nil
   -- provider/model come from the buffer vars (set by :Yap /
@@ -1041,8 +1069,13 @@ function M.send(buf)
         return
       end
       if not result.ok then
-        local err = result.error or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
-        report_error(buf, err ~= "" and err or "backend exited")
+        local code
+        local err = result.error
+        if type(err) == "table" then
+          code, err = err.code, err.message
+        end
+        err = err or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
+        report_error(buf, err ~= "" and err or "backend exited", code)
         close_stream(buf)
         follow_tail()
         close_if_requested(buf)
@@ -1108,6 +1141,13 @@ function M.send(buf)
         handle_event(buf, frame.event)
       elseif frame.type == "tool_output" then
         audit.tool_output(buf, frame.log, frame.delta)
+      elseif frame.type == "progress" then
+        -- Throughput for the running tool, shown by the winbar beacon.
+        local logs = state.live_logs[buf]
+        local l = logs and logs[frame.log]
+        if l then
+          l.ms, l.bytes, l.lines = frame.ms, frame.bytes, frame.lines
+        end
       elseif frame.type == "approval_request" then
         handle_approval_request(buf, frame)
       elseif frame.type == "subagent_request" then
@@ -1122,7 +1162,7 @@ function M.send(buf)
         complete({
           ok = frame.ok == true,
           cancelled = frame.cancelled == true,
-          error = frame.error and frame.error.message or nil,
+          error = frame.error,
         })
         return
       end
@@ -1253,7 +1293,7 @@ function M.send(buf)
 end
 
 -- Subagent child teardown lives in harness.subagent.
---- Kill the in-flight request for the current buffer.
+--- Cancel the in-flight turn for the current buffer (the backend survives).
 function M.stop(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   local child = subagent_children[buf]
@@ -2040,6 +2080,7 @@ function M.setup(opts)
       state.live_usage[args.buf] = nil
       state.sessions[args.buf] = nil
       errors[args.buf] = nil
+      state.error_code[args.buf] = nil
       last_turn[args.buf] = nil
       awaiting[args.buf] = nil
       stopped[args.buf] = nil
