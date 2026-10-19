@@ -3,7 +3,7 @@
 -- Two responsibilities, kept apart:
 --
 --   audit.jsonl is the append-only durable record (R-audit-log): every tool
---   call, result, attachment, approval/advisory decision, retry, steer,
+--   call, result, attachment, approval request/answer, retry, steer,
 --   model change and turn journal. `append_event` writes it; `:YapClear`
 --   placeholders and the guard board read it. Nothing here renders it.
 --

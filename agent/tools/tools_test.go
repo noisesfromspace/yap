@@ -122,42 +122,94 @@ func TestBashToolStartEvent(t *testing.T) {
 	}
 }
 
-func TestGatePreflight(t *testing.T) {
-	// Dangerous bash/python forms produce a hard-block reason.
-	if tier, reason := Assess("bash", json.RawMessage(`{"command":"rm -rf /"}`)); tier != utils.TierAskModel || reason == "" {
-		t.Fatalf("bash rm -rf /: tier=%v reason=%q", tier, reason)
+func TestGuardRules(t *testing.T) {
+	// Dangerous bash commands produce a guard-rule reason.
+	if reason := Match("bash", json.RawMessage(`{"command":"rm -rf /"}`)); reason == "" {
+		t.Fatalf("bash rm -rf /: no rule matched")
 	}
-	if tier, reason := Assess("python", json.RawMessage(`{"code":"import os; os.system('id')"}`)); tier != utils.TierAskModel || reason == "" {
-		t.Fatalf("python os.system: tier=%v reason=%q", tier, reason)
+	if reason := Match("bash", json.RawMessage(`{"command":"sudo apt update"}`)); reason != "sudo" {
+		t.Fatalf("bash sudo: reason=%q", reason)
 	}
 
-	// Benign forms: ask-model tier, no hard floor.
-	if _, reason := Assess("bash", json.RawMessage(`{"command":"echo hi"}`)); reason != "" {
+	// Benign commands are not gated.
+	if reason := Match("bash", json.RawMessage(`{"command":"echo hi"}`)); reason != "" {
 		t.Fatalf("echo hi: reason=%q", reason)
 	}
-	if _, reason := Assess("python", json.RawMessage(`{"code":"print(1)"}`)); reason != "" {
-		t.Fatalf("print(1): reason=%q", reason)
+
+	// ssh always requires approval.
+	if reason := Match("ssh", json.RawMessage(`{"host":"db","command":"restart"}`)); reason != "remote command execution" {
+		t.Fatalf("ssh: reason=%q", reason)
 	}
 
-	// ask-model tools without a preflight: gated, no floor.
-	for _, tc := range []struct{ tool, args string }{
-		{"curl", `{"url":"https://example.com"}`},
-		{"subagent", `{"agent":"x","task":"y"}`},
-		{"playwright", `{"command":"goto https://example.com"}`},
+	// Secret paths are approvable for read/write/edit/search: a matching rule,
+	// never a silent read/write.
+	for _, tc := range []struct{ tool, args, want string }{
+		{"read", `{"path":"~/.ssh/id_ed25519"}`, "reads a secret path"},
+		{"write", `{"path":"~/.aws/credentials"}`, "writes a secret path"},
+		{"edit", `{"path":"~/.config/sops/age.yaml"}`, "edits a secret path"},
+		{"search", `{"pattern":"x","path":"/run/agenix.d"}`, "searches a secret path"},
 	} {
-		if tier, _ := Assess(tc.tool, json.RawMessage(tc.args)); tier != utils.TierAskModel {
-			t.Fatalf("%s: tier=%v", tc.tool, tier)
+		if reason := Match(tc.tool, json.RawMessage(tc.args)); reason != tc.want {
+			t.Fatalf("%s: reason=%q want %q", tc.tool, reason, tc.want)
 		}
+	}
+	if reason := Match("write", json.RawMessage(`{"path":"/tmp/out.txt"}`)); reason != "" {
+		t.Fatalf("write non-secret path: reason=%q", reason)
 	}
 
-	// Silent tools (default) and unknown tools are not gated.
-	for _, tool := range []string{"read", "edit", "write", "search"} {
-		if tier, _ := Assess(tool, json.RawMessage(`{}`)); tier != utils.TierSilent {
-			t.Fatalf("%s should be silent: tier=%v", tool, tier)
+	// curl gates its exfiltration vectors: an explicit non-GET method or a
+	// request body. Plain GET/HEAD fetches run.
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com"}`)); reason != "" {
+		t.Fatalf("curl GET: reason=%q", reason)
+	}
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","method":"POST"}`)); reason != "non-GET request method" {
+		t.Fatalf("curl POST: reason=%q", reason)
+	}
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","data":"x"}`)); reason != "sends a request body" {
+		t.Fatalf("curl body: reason=%q", reason)
+	}
+
+	// subagent delegates to a child whose own tools carry the gates: no rule.
+	if reason := Match("subagent", json.RawMessage(`{"agent":"audit","task":"x"}`)); reason != "" {
+		t.Fatalf("subagent: reason=%q", reason)
+	}
+
+	// playwright gates only the eval command (arbitrary JavaScript).
+	if reason := Match("playwright", json.RawMessage(`{"command":"eval document.cookie"}`)); reason != "browser JavaScript eval" {
+		t.Fatalf("playwright eval: reason=%q", reason)
+	}
+	if reason := Match("playwright", json.RawMessage(`{"command":"goto https://example.com"}`)); reason != "" {
+		t.Fatalf("playwright goto: reason=%q", reason)
+	}
+
+	// Unknown and ungated tools run.
+	if reason := Match("nope", json.RawMessage(`{}`)); reason != "" {
+		t.Fatalf("unknown tool: reason=%q", reason)
+	}
+	if reason := Match("read", json.RawMessage(`{}`)); reason != "" {
+		t.Fatalf("read: reason=%q", reason)
+	}
+}
+
+func TestGuardRulesListing(t *testing.T) {
+	// Rules() is the `yap guard` source: sorted by (tool, name), with the
+	// always flag set only for ssh (the one unconditional-approval tool).
+	sawSSH := false
+	var prev string
+	for _, r := range Rules() {
+		if r.Tool+"/"+r.Name < prev {
+			t.Fatalf("rules not sorted: %q before %q", prev, r.Tool+"/"+r.Name)
+		}
+		prev = r.Tool + "/" + r.Name
+		if r.Tool == "ssh" {
+			sawSSH = true
+			if !r.Always {
+				t.Fatalf("ssh rule should be marked always")
+			}
 		}
 	}
-	if tier, _ := Assess("nope", json.RawMessage(`{}`)); tier != utils.TierSilent {
-		t.Fatalf("unknown tool should be silent: tier=%v", tier)
+	if !sawSSH {
+		t.Fatal("ssh rule missing from Rules()")
 	}
 }
 
@@ -261,7 +313,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "close_session", "curl", "decision", "edit", "fetch", "glob", "ls", "models", "python", "quickfix", "read", "search", "websearch", "write"} {
+	for _, name := range []string{"bash", "close_session", "curl", "edit", "fetch", "glob", "ls", "models", "quickfix", "read", "search", "websearch", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)

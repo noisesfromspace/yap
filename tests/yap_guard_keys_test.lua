@@ -1,5 +1,6 @@
 -- Direct row keys on the guard board: r/x run/deny the approval under the
--- cursor without opening the transient, and i is bound for every row.
+-- cursor without opening the transient, and i is bound for every row. Rule
+-- rows are informational (r/x/i are no-ops there).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -41,7 +42,7 @@ for _, key in ipairs({ "r", "x", "i" }) do
   assert(m and m.buffer == 1, "guard board missing direct '" .. key .. "' keymap")
 end
 
--- r on the cursor row (already the first Open row) approves directly.
+-- r on the cursor row (already the first approval row) approves directly.
 vim.api.nvim_feedkeys("r", "mtx", false)
 assert(state.pending_approvals[a] == nil, "r did not approve the approval under the cursor")
 

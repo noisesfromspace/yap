@@ -2,7 +2,6 @@ package main
 
 import (
 	"boers.email/yap/agent/llm"
-	"boers.email/yap/agent/utils"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -111,7 +110,7 @@ func TestBackgroundTaskWaitAndAutomaticDrain(t *testing.T) {
 func TestBackgroundCannotBypassToolAllowlist(t *testing.T) {
 	p := &taskPool{tasks: make(map[string]*backgroundTask)}
 	allowed := []string{"start_task", "wait_tasks"}
-	v := p.call(llm.ToolCall{ID: "c1", Name: "start_task", Input: json.RawMessage(`{"tool":"bash","arguments":"{\"command\":\"touch /tmp/yap-disallowed-test\"}"}`)}, &turn{}, nil, &allowed, nil, utils.DefaultAlertConfig)
+	v := p.call(llm.ToolCall{ID: "c1", Name: "start_task", Input: json.RawMessage(`{"tool":"bash","arguments":"{\"command\":\"touch /tmp/yap-disallowed-test\"}"}`)}, &allowed)
 	if !strings.Contains(v.result, "not allowed") || len(p.pending()) != 0 {
 		t.Fatal(v.result)
 	}

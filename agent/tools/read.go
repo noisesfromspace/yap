@@ -25,9 +25,6 @@ func init() {
 		"Read a text file. Returns at most 2000 lines / 50KB; for large files use offset and limit.",
 		func(a *readArgs) (string, string, error) {
 			a.Path = utils.ExpandHome(a.Path)
-			if err := utils.GuardReadPath(a.Path); err != nil {
-				return "", "", err
-			}
 			data, err := os.ReadFile(a.Path)
 			if err != nil {
 				return "", "", err
@@ -61,4 +58,6 @@ func init() {
 			}
 			return text, "", nil
 		})
+	// Secret files are approvable, not silently read: pause for Run/Deny.
+	Gate("read", func(a *readArgs) string { return a.Path }, utils.SecretPathRule("reads a secret path"))
 }

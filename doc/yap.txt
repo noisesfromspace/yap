@@ -12,7 +12,7 @@ CONTENTS                                                     *yap-contents*
   8. Folding & navigation . |yap-folding|
   9. Winbar ............... |yap-winbar|
  10. Templates & skills ... |yap-templates|
- 11. The alert gate ....... |yap-alert-gate|
+ 11. The guard gate ....... |yap-guard-gate|
  12. Glossary ............. |yap-glossary|
 
 ==============================================================================
@@ -136,17 +136,6 @@ and each path is configurable via `setup()` / the Nix module options):
 	"api_key_env": "MOONSHOT_API_KEY"
       }
     },
-    "decision": {
-      "provider": "jev",
-      "base_url": "https://openrouter.ai/api/alpha/decisions",
-      "api_key_env": "OPENROUTER_API_KEY",
-      "model": "typesafe/jev-1.13"
-    },
-    "alert": {
-      "approval_prob": 0.7,
-      "advisory_prob": 0.25,
-      "min_confidence": 0.6
-    },
     "ssh": {
       "known_hosts": "~/.ssh/known_hosts"
     }
@@ -171,9 +160,6 @@ and each path is configurable via `setup()` / the Nix module options):
   vars; the github tool reads `GITHUB_TOKEN` directly. Prices come from
   `agent/price/pricing.json`.
 
-  `decision` configures the backend behind the decision tool and alert gate
-  (|yap-alert-gate|): `provider` (default "jev"), `base_url`, `api_key_env`,
-  `model`. `alert` tunes the gate thresholds.
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
@@ -208,11 +194,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         focuses the existing window); `q` closes it.
 *:YapGuard*
 :YapGuard            Open the guard board (yap://guard): a read-only bottom
-                        drawer of approvals and advisories (|yap-alert-gate|).
-                        <Tab>/`za` expand a row; on the
-                        row under the cursor `r`/`x` run/deny an approval, `i`
-                        inspects, `c` clears every guard and advisory item,
-                        `q` closes.
+                        drawer of the static guard rules every tool declares
+                        (|yap-guard-gate|) plus any parked approvals, in one
+                        list. <Tab>/`za` expand a row; on an approval row
+                        `r`/`x` run/deny, `i` inspects, `a` toggles
+                        auto-accept, `q` closes.
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -377,7 +363,6 @@ the picker can show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set
 by |:YapChangeModel|, then the persisted default, then setup() defaults.
-Legacy files without frontmatter keep the setup() default combo.
 
 ==============================================================================
 6. MARKERS & TOOL REGIONS                                      *yap-markers*
@@ -426,8 +411,8 @@ arguments, result) when the buffer is sent. Editing or deleting the visible
 markdown changes the transcript directly; a region outside an assistant
 message is skipped.
 
-Tool results from content-bearing tools (read, bash, ls, fetch, curl, git,
-search, glob) are wrapped in a fenced code block — read with a language info
+Tool results from content-bearing tools (read, bash, ls, fetch, curl, search,
+glob) are wrapped in a fenced code block — read with a language info
 string detected from the path, fetch as ```markdown, the rest plain.
 write/edit return short confirmations and stay bare.
 
@@ -475,7 +460,7 @@ AUDIT LOG                                                        *yap-audit*
 
 audit.jsonl beside the session file is an append-only, JSON Lines record that
 survives restarts: every tool call (full arguments), full tool results, image
-attachments, approval/advisory decisions, a retry line for each transient
+attachments, approval requests and their Run/Deny answers, a retry line for each transient
 generation error, and one `turn_end` line per completed send (model, prompt,
 completion, cost, ms).
 
@@ -483,9 +468,9 @@ The live tool tail (|:YapLive|) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-|:YapGuard| lists advisories and approval requests and jumps to the matching
-tool region in the session. |:YapClear| placeholders point back at the exact
-audit-log lines they replaced.
+|:YapGuard| lists the static guard rules and parked approvals and jumps to
+the matching tool region in the session. |:YapClear| placeholders point back
+at the exact audit-log lines they replaced.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
 and tool output routinely contain secrets.
@@ -646,35 +631,42 @@ manual recipe:
      |yap-introduction|). The summary message is the new context.
 
 ==============================================================================
-11. THE ALERT GATE                                        *yap-alert-gate*
+11. THE GUARD GATE                                        *yap-guard-gate*
 
-Every tool call passes a pre-execution gate. Three tiers:
+Every tool call passes a pre-execution approval gate made of static rules.
+Each rule is declared in the tool's own source file, next to the tool it
+guards (see tools.Gate and utils.Rule in the agent source), and is compiled
+into the binary. `yap guard` prints the complete current list as JSON; the
+guard board (|:YapGuard|) renders the same list. When a rule matches, the
+turn pauses for a Run/Deny confirmation; otherwise the call runs.
 
-  silent           read, ls, glob, search, git, github, fetch, websearch, decision,
-                   quickfix, close_session, write, edit — run immediately.
-  ask-model        bash, python, curl, subagent, playwright — a decision-model
-                   pass decides the outcome.
-  always-approval  ssh — always pauses for a Run/Deny confirmation.
+Which tools declare rules, and which rules each declares, is whatever the
+current binary compiled in — `yap guard` is authoritative. The set today:
 
-For `ask-model` tools a deterministic floor (destructive or high-blast-radius
-commands such as `rm -rf /`, `sudo`, `curl | sh`, `subprocess`/`os.system`,
-`shutil.rmtree`) always forces approval. Where the floor is silent, the
-decision model answers three questions in one pass — P(harmful), a 0–3 severity
-score, and P(reveals a live secret value) — and maps the result to:
+  bash          a denylist of destructive or high-blast-radius commands —
+                `sudo`, `rm -rf /`, `curl | sh`, `git push --force`, and the
+                like — plus secret-reveal commands: decrypting
+                (age/gpg/sops/openssl), generating or exporting a private
+                key, and reading a file under a secret directory.
+  ssh           always pauses for a Run/Deny confirmation.
+  curl          an explicit non-GET method or a request body (sends data off
+                the machine).
+  playwright    the `eval` command (arbitrary JavaScript in the page).
+  read/write    a path that is, or resolves into, a secret directory
+  /edit/search  (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh,
+                /run/agenix, /etc/agenix) — approvable, never silently
+                read or written.
 
-  approval   pause the turn for a Run/Deny/Inspect decision (|:YapGuard|).
-             Never runs on timeout (five minutes) or when the board is
-             dismissed. A call that would reveal a live secret or credential
-             value forces approval even when severity reads benign.
-  advisory   run, but log the call to the guard board's Advisory section
-             (no notification) with a plain-language risk phrase — audit it
-             later in |:YapGuard|, which keeps the numbers.
-  run        proceed silently.
+Secret paths and secret-reveal commands are one system (agent/utils/secrets.go):
+adding a location to its list drives both surfaces, and scrub.go redacts any
+secret that still reaches a result as the backstop.
 
-A decision-model outage degrades to `advisory` rather than blocking. Thresholds
-live in the `alert` section of config.json (|yap-configuration|). The gate is
-a steerable safety net, not a security boundary: bash is unsandboxed by
-design — the denylist is bypassable.
+A matching rule supplies the reason shown in the approval notification, the
+audit log and the guard board. The gate is a steerable safety net, not a
+security boundary: bash is unsandboxed by design — the denylist is bypassable.
+Adding a rule is a one-file change in the tool's source (recompile to pick it
+up); nothing else needs editing — the rule then appears in `yap guard` and the
+guard board automatically.
 
 ==============================================================================
 12. GLOSSARY                                                *yap-glossary*
@@ -720,17 +712,17 @@ replaces.
   audit view          The live tool tail `:YapLive` opens: one read-only
                       buffer per session following the running tool's output.
                       (Not "live view", "audit drawer".)
-  advisory            The gate outcome that runs a call and logs a
-                      non-blocking warning. (Not "advice", "advise".)
   approval            The gate outcome that pauses a turn for a Run/Deny/
-                      Inspect decision. (Not "blocked request".)
+                      Inspect decision, triggered by a static guard rule.
+                      (Not "blocked request".)
+  guard rule          A static, deterministic condition declared in a tool's
+                      source that pauses matching calls for approval (e.g.
+                      bash's `sudo`). Listed in `yap guard` / |:YapGuard|.
   agent definition    A `~/.config/yap/agents/<name>.md` file describing a subagent
                       (name, model, tools, system prompt). (Not "role",
                       "subagent role".)
   subagent            A child session spawned by the `subagent` tool from an
                       agent definition.
-  decision model      The typed-probability backend behind the alert
-                      gate and the `decision` tool.
 
 "Block" survives only in standard Markdown/Vim senses unrelated to yap's
 structure: code block, block-level, block comment, block device, block

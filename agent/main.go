@@ -8,6 +8,10 @@
 // Usage:
 //
 //	yap send --provider NAME --model MODEL < request.json
+//	yap serve                     # persistent backend per session buffer
+//	yap models                    # list configured providers/models
+//	yap tools                     # list compiled-in tool names
+//	yap guard                     # list the compiled-in static guard rules (JSON)
 //
 // request.json: {"messages":[{"role":"system|user|assistant","content":"..."}]}
 //
@@ -48,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}()
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json")
+		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json\n       yap serve | models | tools | guard")
 		os.Exit(2)
 	}
 
@@ -84,6 +88,15 @@ func main() {
 		for _, t := range tools.All() {
 			fmt.Println(t.Name)
 		}
+	case "guard":
+		// Print the compiled-in static guard rules as one JSON array so the
+		// frontend's guard board can render them without recompiling.
+		out, err := json.Marshal(tools.Rules())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "yap:", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(out))
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)

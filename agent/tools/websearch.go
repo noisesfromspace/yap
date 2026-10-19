@@ -3,8 +3,6 @@ package tools
 import (
 	"fmt"
 	"strings"
-
-	"boers.email/yap/agent/utils"
 )
 
 // Websearch is a thin dispatcher over pluggable search providers. Each
@@ -20,7 +18,7 @@ const (
 
 // WebsearchParams is the provider-facing subset of the tool's args. The
 // dispatcher maps the full tool args onto this shape, so a provider need
-// know nothing about the tool's JSON schema or safety handling.
+// know nothing about the tool's JSON schema or guard rules.
 type WebsearchParams struct {
 	Query          string
 	Limit          int
@@ -71,7 +69,6 @@ type websearchArgs struct {
 	IncludeDomains []string `json:"includeDomains,omitempty" jsonschema:"description=restrict results to these domains"`
 	ExcludeDomains []string `json:"excludeDomains,omitempty" jsonschema:"description=exclude results from these domains"`
 	MaxAgeHours    *int     `json:"maxAgeHours,omitempty" jsonschema:"description=max age of cached content in hours (0=livecrawl; -1=cache only)"`
-	Safety         bool     `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on results before returning them; flagged content is annotated with a warning (costs one extra decision-model call, so use for untrusted content)"`
 }
 
 func init() {
@@ -147,5 +144,5 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 	if len(out) > readMaxBytes {
 		out = capBytes(out, readMaxBytes) + "\n[truncated at 50KB: lower limit or use contentMode=highlights]"
 	}
-	return utils.SafetyGuarded(decisionModel, a.Safety, out), "", nil
+	return out, "", nil
 }

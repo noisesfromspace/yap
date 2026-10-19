@@ -15,15 +15,12 @@ type writeArgs struct {
 
 func init() {
 	Register("write",
-		"Write content to a file. Runs immediately with no confirmation. Creates the file if it doesn't exist, "+
+		"Write content to a file. Creates the file if it doesn't exist, "+
 			"overwrites if it does. Automatically creates parent directories. "+
+			"Writing to a secret path (~/.ssh, ~/.aws, /run/agenix, ...) pauses for user approval. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {
 			a.Path = utils.ExpandHome(a.Path)
-			note, err := utils.GuardWritePath(a.Path)
-			if err != nil {
-				return "", "", err
-			}
 			old, readErr := os.ReadFile(a.Path)
 			if readErr != nil && !os.IsNotExist(readErr) {
 				return "", "", readErr
@@ -40,9 +37,8 @@ func init() {
 			// is the visual record since long argument headers are folded.
 			ui := utils.UnifiedDiff(a.Path, string(old), a.Content)
 			result := fmt.Sprintf("Successfully wrote %d bytes to %s", len(a.Content), a.Path)
-			if note != "" {
-				result = note + "\n" + result
-			}
 			return result, ui, nil
 		})
+	// Secret paths are approvable, not silently written: pause for Run/Deny.
+	Gate("write", func(a *writeArgs) string { return a.Path }, utils.SecretPathRule("writes a secret path"))
 }

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,18 +69,16 @@ func TestSearchNoMatches(t *testing.T) {
 }
 
 // `path` can point anywhere, so searching a secret directory must hit the
-// same guard read does.
-func TestSearchRefusesSecretPaths(t *testing.T) {
-	if _, err := exec.LookPath("rg"); err != nil {
-		t.Skip("rg not available")
+// same secret-path rule read does (approvable, not silently searched).
+func TestSearchSecretPathRule(t *testing.T) {
+	if reason := Match("search", json.RawMessage(`{"pattern":"x","path":"~/.ssh"}`)); reason != "searches a secret path" {
+		t.Fatalf("~/.ssh: reason=%q", reason)
 	}
-	_, _, err := run(t, "search", `{"pattern":"x","path":"~/.ssh"}`)
-	if err == nil || !strings.Contains(err.Error(), "secret path") {
-		t.Fatalf("search into a secret path should be refused: %v", err)
+	if reason := Match("search", json.RawMessage(`{"pattern":"x","path":"/run/agenix.d"}`)); reason != "searches a secret path" {
+		t.Fatalf("agenix: reason=%q", reason)
 	}
-	_, _, err = run(t, "search", `{"pattern":"x","path":"/run/agenix.d"}`)
-	if err == nil || !strings.Contains(err.Error(), "secret path") {
-		t.Fatalf("search into the resolved agenix dir should be refused: %v", err)
+	if reason := Match("search", json.RawMessage(`{"pattern":"x","path":"/tmp"}`)); reason != "" {
+		t.Fatalf("non-secret path: reason=%q", reason)
 	}
 }
 

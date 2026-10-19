@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,8 +53,13 @@ func TestReadTruncation(t *testing.T) {
 	}
 }
 
-func TestReadSecretPath(t *testing.T) {
-	if _, _, err := run(t, "read", `{"path":"~/.ssh/id_ed25519"}`); err == nil || !strings.Contains(err.Error(), "secret path") {
-		t.Fatalf("secret path: %v", err)
+// TestReadSecretPathRule: secret paths are approvable, so read's gate rule
+// matches them (the approval happens in the agent loop, not in Run).
+func TestReadSecretPathRule(t *testing.T) {
+	if reason := Match("read", json.RawMessage(`{"path":"~/.ssh/id_ed25519"}`)); reason != "reads a secret path" {
+		t.Fatalf("secret path: reason=%q", reason)
+	}
+	if reason := Match("read", json.RawMessage(`{"path":"/tmp/ok.txt"}`)); reason != "" {
+		t.Fatalf("non-secret path: reason=%q", reason)
 	}
 }

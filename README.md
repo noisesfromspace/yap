@@ -29,7 +29,7 @@ Inspired by pi and gptel.
 ## Tools
 
 The agent ships with a fixed set of tools. It reads and edits files, runs
-bash, python, and ssh, searches the web, reads GitHub, drives a browser
+bash and ssh, searches the web, reads GitHub, drives a browser
 with Playwright, and delegates to subagents in separate sessions. Independent
 read-only calls in one round run concurrently (up to four). For slow bash,
 fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
@@ -59,17 +59,12 @@ Yap needs Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`).
      "websearch": {
        "provider": "exa",
        "api_key_env": "EXA_API_KEY"
-     },
-     "decision": {
-       "provider": "jev",
-       "api_key_env": "OPENROUTER_API_KEY"
      }
    }
    ```
 
-   The `websearch` and `decision` tools have pluggable backends (default
-   `exa` and `jev` respectively); each backend is a self-registering Go
-   package selected by name in the config.
+   The `websearch` tool has a pluggable backend (default `exa`); each backend
+   is a self-registering Go package selected by name in the config.
 
    Native providers (no `base_url` needed): `openai`, `anthropic`,
    `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,
@@ -99,7 +94,7 @@ same buffer. Every send uses Neovim's current working directory as request-only 
 | `:YapStop`                                | `<C-c>`     | Stop the current request.                                          |
 | `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                  |
 | `:YapLive`                                | `<leader>l` | Open the live tool tail (streaming output).                        |
-| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals, advisories and history.    |
+| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals and the static guard rules.   |
 | `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.               |
 | `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                |
 | `:YapEval[!] [instruction]`               |             | Discuss the selection in a new session (follow-ups, source untouched). `!` replaces the selection with the model's output, or generates at the cursor (one-shot, no tools). |
@@ -132,7 +127,7 @@ adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
 | send                | the action and in-flight request (`:YapSend` / `<C-s>`)               |
 | prefill             | hand-writing an `# @assistant` message to continue from it            |
 | steer               | mid-turn injection of a `# @steer` body at a model boundary           |
-| advisory / approval | the alert gate's run-with-warning / pause-for-approval outcomes       |
+| approval            | the static rule that pauses a tool call for a Run/Deny answer           |
 | agent definition    | a `~/.config/yap/agents/<name>.md` file describing a subagent (not a “role”) |
 | audit log / view    | the append-only `.jsonl` record, and the `:YapLive` tool-tail buffer |
 

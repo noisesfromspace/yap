@@ -168,7 +168,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. M.confi
   end
   about = about .. "\n\n" .. [[## Parallelism and background work
 
-When you need several independent read-only results (read, search, glob, git, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
+When you need several independent read-only results (read, search, glob, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 
 For independent slow work, `start_task` launches bash, fetch, or websearch in the background and returns a task ID. Launch the slow call, do other useful work, then call `wait_tasks` once to collect the result before relying on it. For example, start a long test run or build, then read files or research meanwhile. Tasks end within this turn; do not start commands that conflict with ongoing work.
 
@@ -285,32 +285,23 @@ local function answer_approval(buf, approved)
       { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
     )
   end
-  -- Re-render after the result is written (and pending cleared) so an answered
-  -- approval re-renders as settled (granted/denied) in Guard instead of
-  -- vanishing from the board.
+  -- Re-render after the result is written (and pending cleared) so an
+  -- answered approval leaves the board instead of staying parked.
   guard.touch()
 end
 M.answer_approval = answer_approval
 
 -- Approval is a non-blocking notification, not a modal: the turn is parked
 -- (the backend waits up to five minutes) and the user answers deliberately
--- via :YapGuard. Distinct from the advisory toast by level, title and
--- shield icon so an action-required pause is never mistaken for a warning
--- about a call that already ran.
+-- via :YapGuard. ERROR level plus the shield icon make an action-required
+-- pause unmistakable.
 local function notify_approval(buf, ev)
-  local risk = ev.risk or ""
-  local lines = {
+  vim.notify(
     ("yap: %s needs approval — %s: %s"):format(
       live_session_label(buf),
       ev.tool or "tool",
       ev.reason or "review call"
     ),
-  }
-  if risk ~= "" then
-    lines[#lines + 1] = risk
-  end
-  vim.notify(
-    table.concat(lines, "\n"),
     vim.log.levels.ERROR,
     { title = "yap approval required", icon = M.config.icons.approval }
   )
@@ -357,11 +348,6 @@ local function handle_event(buf, json_line)
     end
   elseif ev.type == "approval_timeout" then
     pending_approvals[buf] = nil
-    audit.append_event(buf, ev)
-    guard.touch()
-  elseif ev.type == "alert_advisory" then
-    -- Advisories are silent: recorded for the guard board's Advisory section
-    -- (and the audit log) but never toasted. The board is the audit surface.
     audit.append_event(buf, ev)
     guard.touch()
   elseif ev.type == "tool_call" then
@@ -418,7 +404,7 @@ local function handle_event(buf, json_line)
     -- The audit log is the single source of truth for usage: this folds the
     -- turn into both the since-open and all-time totals (see audit.lua).
     audit.apply_turn_end(buf, ev)
-    -- An advisory that fired mid-turn is on disk now; re-render the board so
+    -- A turn may have answered or expired approvals; re-render the board so
     -- it reflects the settled turn even if its own touch() raced the event.
     guard.touch()
   end
@@ -725,7 +711,7 @@ end
 --- even if the user later edits their transcript, so a missing region simply
 --- leaves the session cursor where it was. `call` is the { id, occurrence }
 --- of the tool call to reveal.
-local function focus_alert_call(buf, call)
+local function focus_approval_call(buf, call)
   if not call then
     return
   end
@@ -780,7 +766,7 @@ function M.reveal_call(path, call)
   else
     buf = M.open(path)
   end
-  focus_alert_call(buf, call)
+  focus_approval_call(buf, call)
 end
 
 -- The scratch queue and mid-turn steering live in harness.scratch.
@@ -1536,9 +1522,8 @@ adopt = function(buf, path)
   end
   vim.b[buf].yap_path = path
   vim.b[buf].yap_project_cwd = paths.project_cwd(path)
-  -- Resume the recorded combo; legacy files without frontmatter keep the
-  -- config default. Nothing is injected on open — that would dirty the
-  -- buffer the moment it is resumed.
+  -- Resume the recorded combo from frontmatter. Nothing is injected on
+  -- open — adopt only reads, so resuming never dirties the buffer.
   local e = frontmatter.end_line(buf)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))

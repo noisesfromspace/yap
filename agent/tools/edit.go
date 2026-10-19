@@ -25,18 +25,14 @@ type editArgs struct {
 func init() {
 	Register("edit",
 		"Make precise file edits with exact text replacement, including multiple "+
-			"disjoint edits in one call. Runs immediately with no confirmation. Each edits[].oldText is matched against the original "+
+			"disjoint edits in one call. Each edits[].oldText is matched against the original "+
 			"file, must occur exactly once (include more context if ambiguous), and must not "+
-			"overlap another edit. To create files use write.",
+			"overlap another edit. Editing a secret path (~/.ssh, ~/.aws, /run/agenix, ...) pauses for user approval. To create files use write.",
 		func(a *editArgs) (string, string, error) {
 			if len(a.Edits) == 0 {
 				return "", "", fmt.Errorf("no edits given")
 			}
 			a.Path = utils.ExpandHome(a.Path)
-			note, err := utils.GuardWritePath(a.Path)
-			if err != nil {
-				return "", "", err
-			}
 			data, err := os.ReadFile(a.Path)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -90,9 +86,8 @@ func init() {
 			}
 			ui := utils.UnifiedDiff(a.Path, orig, content)
 			result := fmt.Sprintf("Successfully replaced %d edit(s) in %s.", len(a.Edits), a.Path)
-			if note != "" {
-				result = note + "\n" + result
-			}
 			return result, ui, nil
 		})
+	// Secret paths are approvable, not silently edited: pause for Run/Deny.
+	Gate("edit", func(a *editArgs) string { return a.Path }, utils.SecretPathRule("edits a secret path"))
 }

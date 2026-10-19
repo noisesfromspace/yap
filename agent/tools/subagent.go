@@ -48,6 +48,6 @@ func init() {
 			}
 		}
 	})
-	// A subagent runs a full turn with its own tools; gate the delegation.
-	Gate("subagent", utils.TierAskModel, nil)
+	// No static gate: delegation is inert — the child's own tool calls
+	// (bash denylist, ssh always, curl and playwright rules) carry the gates.
 }

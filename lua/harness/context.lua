@@ -51,7 +51,7 @@ end
 
 -- Git state for :pwd, or nil when it is not a git repo. A few cheap
 -- synchronous calls; the result is capped so a dirty monorepo cannot flood
--- the prompt. The read-only git tool remains the source for detail.
+-- the prompt.
 local function git_snapshot(cwd)
   local out = vim.fn.system({ "git", "-C", cwd, "status", "--porcelain", "--branch" })
   if vim.v.shell_error ~= 0 or out == "" then

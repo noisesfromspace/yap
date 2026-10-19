@@ -42,7 +42,6 @@ type curlArgs struct {
 	FollowRedirects *bool             `json:"followRedirects,omitempty" jsonschema:"description=follow HTTP redirects (default true)"`
 	Timeout         int               `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 30)"`
 	Flags           string            `json:"flags,omitempty" jsonschema:"description=space-separated extra curl flags (e.g. --http1.1); values with spaces (like header values) belong in headers"`
-	Safety          bool              `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
 }
 
 func init() {
@@ -52,9 +51,31 @@ func init() {
 			"Sends a browser User-Agent by default to get past agent blocks. Returns the raw response body "+
 			"(curl does not execute JavaScript) — for JS-heavy pages prefer websearch with contentMode=text.",
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
-	// curl can exfiltrate via data/headers over the shared network, so it is
-	// decision-gated (see the alert gate in agent/agent.go).
-	Gate("curl", utils.TierAskModel, nil)
+	// Static rules, declared below: a request body or an explicit non-GET
+	// method sends data off the machine. GET/HEAD fetches stay ungated.
+	Gate("curl", curlRisk, curlRules...)
+}
+
+// curlRules gate the two exfiltration vectors curl exposes beyond a plain
+// GET: an explicit non-GET method (mutation) and a request body (data leaving
+// the machine). The denied flags already keep curl from reading local files
+// or writing responses to disk.
+var curlRules = []utils.Rule{
+	{Name: "non-GET request method", Match: func(s string) bool { return strings.Contains(s, "non-GET method") }},
+	{Name: "sends a request body", Match: func(s string) bool { return strings.Contains(s, "request body") }},
+}
+
+// curlRisk renders one curl call's risk signals as a short string the rules
+// above match on.
+func curlRisk(a *curlArgs) string {
+	var b strings.Builder
+	if m := strings.ToUpper(strings.TrimSpace(a.Method)); m != "" && m != "GET" && m != "HEAD" {
+		b.WriteString("non-GET method ")
+	}
+	if strings.TrimSpace(a.Data) != "" {
+		b.WriteString("request body")
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // curlDenyLong / curlDenyShort are curl options that can turn the tool into
@@ -70,7 +91,7 @@ var (
 		"--location", "--location-trusted", "--url", "--next", "--proxy", "--preproxy",
 		"--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--proto-redir",
 		// Local-file reads and writes: a path in a request turns curl into an
-		// unguarded reader (past GuardReadPath) or an arbitrary file writer.
+		// unguarded reader (past the secret-path guard) or an arbitrary file writer.
 		"--upload-file", "--stderr", "--cookie", "--cookie-jar", "--form",
 		"--form-string", "--data", "--data-ascii", "--data-binary", "--data-raw",
 		"--data-urlencode", "--json", "--netrc", "--netrc-file", "--write-out",
@@ -91,7 +112,7 @@ func rejectCurlFlags(flags string) error {
 		if !strings.HasPrefix(f, "-") {
 			// A value for the preceding flag. curl reads a local file wherever
 			// a value is a bare `@path` (-H @file, -d @file, -F @file), which
-			// would walk past GuardReadPath; the dedicated url/headers/data
+			// would walk past the secret-path guard; the dedicated url/headers/data
 			// args carry those values without touching the filesystem.
 			if strings.HasPrefix(f, "@") {
 				return fmt.Errorf("curl argument %q is not allowed: an '@' value reads a local file", f)
@@ -129,10 +150,10 @@ func runCurl(a *curlArgs) (string, string, error) {
 			return "", "", err
 		}
 		if !follow || redirectURL == "" {
-			return utils.SafetyGuarded(decisionModel, a.Safety, body), "", nil
+			return body, "", nil
 		}
 		if hop >= curlMaxRedirects-1 {
-			return utils.SafetyGuarded(decisionModel, a.Safety, body+"\n[too many redirects (>10)]"), "", nil
+			return body + "\n[too many redirects (>10)]", "", nil
 		}
 		next, err := resolveRedirect(current, redirectURL)
 		if err != nil {

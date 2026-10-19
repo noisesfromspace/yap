@@ -61,7 +61,6 @@ func TestResultFence(t *testing.T) {
 		{"read", `{"path":"/tmp/Makefile"}`, "make", true},
 		{"fetch", `{"url":"http://x"}`, "markdown", true},
 		{"bash", `{"command":"ls"}`, "", true},
-		{"git", `{"command":"diff"}`, "", true},
 		{"ls", `{"path":"/tmp"}`, "", true},
 		{"search", `{"pattern":"x"}`, "", true},
 		{"glob", `{"pattern":"*.go"}`, "", true},

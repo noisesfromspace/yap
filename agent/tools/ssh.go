@@ -75,6 +75,8 @@ func init() {
 		result, err := runSSH(a)
 		return result, "", err
 	}, CloseSSH)
+	// Every ssh call pauses for approval before it runs.
+	Gate("ssh", func(*sshArgs) string { return "" }, utils.Rule{Name: "remote command execution", Always: true})
 }
 
 // Do not load ~/.ssh/config: aliases, ProxyCommand, HostKeyAlias, and
@@ -140,15 +142,9 @@ func runSSH(a *sshArgs) (string, error) {
 	if checkErr != nil {
 		return "", fmt.Errorf("SSH host %s is not in system known hosts: %w", a.Host, checkErr)
 	}
-	ok, err := utils.RequestApproval(fmt.Sprintf("ssh %s@%s -- %s", name, a.Host, a.Command), "ssh", "remote command execution", utils.Decision{})
-	if err != nil {
-		return "", fmt.Errorf("SSH command requires approval: %w", err)
-	}
-	if !ok {
-		return "", fmt.Errorf("SSH command rejected by user")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	var err error
 	m := sshMasters.clients[key]
 	if m != nil && !masterAlive(ctx, m, a, name, port) {
 		stopMaster(m)
@@ -156,7 +152,6 @@ func runSSH(a *sshArgs) (string, error) {
 		m = nil
 	}
 	if m == nil {
-		var err error
 		m, err = startMaster(ctx, a, name, port, key)
 		if err != nil {
 			return "", err

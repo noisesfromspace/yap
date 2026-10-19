@@ -29,27 +29,6 @@ type GitHub struct {
 	APIKeyEnv string `json:"api_key_env"`
 }
 
-// Decision configures the decision-model backend used by the decision tool and
-// the alert gate. Provider selects the backend (default "jev"; each backend is
-// a self-registering file in agent/decide). BaseURL/APIKeyEnv/Model are the
-// common options; zero values fall back to OpenRouter's Decisions API,
-// OPENROUTER_API_KEY, and the pinned Jev release. agent/decide.Model is the
-// plug point for other decision backends.
-type Decision struct {
-	Provider  string `json:"provider"`
-	BaseURL   string `json:"base_url"`
-	APIKeyEnv string `json:"api_key_env"`
-	Model     string `json:"model"`
-}
-
-// Alert tunes the pre-execution tool-call gate (see agent/utils/alert.go).
-// Zero values use DefaultAlertConfig; set a value only to override it.
-type Alert struct {
-	ApprovalProb  float64 `json:"approval_prob"`
-	AdvisoryProb  float64 `json:"advisory_prob"`
-	MinConfidence float64 `json:"min_confidence"`
-}
-
 // SSH configures the ssh tool's trust boundary. KnownHosts overrides the
 // known_hosts file hosts are checked against; empty auto-detects (the
 // system-wide file when present, else ~/.ssh/known_hosts).
@@ -61,8 +40,6 @@ type Config struct {
 	Providers map[string]Provider `json:"providers"`
 	Websearch Websearch           `json:"websearch"`
 	GitHub    GitHub              `json:"github"`
-	Decision  Decision            `json:"decision"`
-	Alert     Alert               `json:"alert"`
 	SSH       SSH                 `json:"ssh"`
 }
 

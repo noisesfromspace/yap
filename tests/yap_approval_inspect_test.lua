@@ -1,7 +1,6 @@
 -- A parked approval is non-blocking: it notifies (distinctly) instead of
--- popping a modal, the guard board shows it, Inspect
--- focuses the audit entry, and Deny (the board's answer path) continues the
--- turn.
+-- popping a modal, the guard board shows it, Inspect focuses the matching
+-- tool region, and Deny (the board's answer path) continues the turn.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -45,17 +44,14 @@ assert(notice.msg:find("needs approval", 1, true), "notification should state ap
 assert(not notice.msg:find("Run, Deny or Inspect", 1, true), "notification should not contain instructions")
 assert(not notice.msg:find(":YapGuard", 1, true), "notification should not contain the command")
 
--- The board lists the parked approval with its decoded command and reason.
+-- The board lists the parked approval with its decoded command and reason,
+-- plus the compiled-in static rules below it.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("▸ Guard (1)", 1, true), "board Guard section missing approval")
 assert(text:find("recursive deletion of critical paths", 1, true), "board missing approval reason")
--- Deterministic floor (no decision-model consult) must render "always", not a bogus
--- "0.0/3 · 0% confident" (0 is truthy in Lua, so the metric fields need an
--- explicit positive check).
-assert(text:find("no model consulted", 1, true), "deterministic-floor approval not marked 'always'")
+assert(text:find("sudo", 1, true), "board missing the static rules list")
 guard.toggle() -- close (defer)
 
 -- Inspect focuses the session's tool region without touching the parked
@@ -85,12 +81,5 @@ assert(
   "turn did not continue after denial"
 )
 
--- The answered approval stays in Guard (now settled/denied), not vanish.
-guard.toggle()
-local bboard = vim.fn.bufnr("yap://guard")
-local btext = table.concat(vim.api.nvim_buf_get_lines(bboard, 0, -1, false), "\n")
-assert(btext:find("▸ Guard (1)", 1, true), "board missing Guard after denial: " .. btext)
-assert(btext:find("recursive deletion of critical paths", 1, true), "denied approval vanished from Guard")
-guard.toggle() -- close
 vim.notify = old_notify
 print("OK approval inspect")

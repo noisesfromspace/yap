@@ -32,6 +32,9 @@ func init() {
 		"Search files with ripgrep. Returns matching lines as path:line:content, one per line. "+
 			"Output is truncated to the first 2000 lines / 50KB.",
 		func(a *searchArgs) (string, string, error) { return runSearch(a) })
+	// `path` can point anywhere; a secret directory is approvable, not
+	// silently searched.
+	Gate("search", func(a *searchArgs) string { return a.Path }, utils.SecretPathRule("searches a secret path"))
 }
 
 func runSearch(a *searchArgs) (string, string, error) {
@@ -39,14 +42,6 @@ func runSearch(a *searchArgs) (string, string, error) {
 		return "", "", fmt.Errorf("empty pattern")
 	}
 	a.Path = utils.ExpandHome(a.Path)
-	if a.Path != "" {
-		// Same guard as read: `path` can point anywhere, so an explicit
-		// secret directory must not be searchable just because rg is the
-		// one looking inside it.
-		if err := utils.GuardReadPath(a.Path); err != nil {
-			return "", "", err
-		}
-	}
 	max := a.MaxCount
 	if max <= 0 {
 		max = searchMaxCount

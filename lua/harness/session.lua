@@ -36,8 +36,8 @@ local picker = require("harness.picker")
 --- has an at-a-glance session depth without opening the file. One full-buffer
 --- read feeds both the frontmatter parse and the turn count; the write
 --- serializes the whole buffer anyway, so the extra scan is not new work.
---- The rewrite is skipped when neither field changed. Legacy files without
---- frontmatter are skipped.
+--- The rewrite is skipped when neither field changed, or when the buffer
+--- has no frontmatter to stamp.
 local function stamp_updated_at(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then

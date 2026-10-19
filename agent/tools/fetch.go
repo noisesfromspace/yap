@@ -24,8 +24,7 @@ const (
 )
 
 type fetchArgs struct {
-	URL    string `json:"url" jsonschema:"description=http(s) URL to fetch"`
-	Safety bool   `json:"safety,omitempty" jsonschema_description:"when true, run a decision-model prompt-injection check on the result before returning it; flagged content is annotated with a warning (costs one extra decision-model call, so use only for untrusted content)"`
+	URL string `json:"url" jsonschema:"description=http(s) URL to fetch"`
 }
 
 func init() {
@@ -39,7 +38,7 @@ func init() {
 			if err != nil {
 				return "", "", err
 			}
-			return fetchProcess(status, statusText, contentType, finalURL, body, a.Safety)
+			return fetchProcess(status, statusText, contentType, finalURL, body)
 		})
 }
 
@@ -70,14 +69,13 @@ func fetchRaw(rawURL string) (status int, statusText, contentType string, finalU
 }
 
 // fetchProcess turns a fetched response into the tool result: readability
-// extraction for HTML, capped text for everything else, and the optional
-// prompt-injection scan.
-func fetchProcess(status int, statusText, contentType string, finalURL *url.URL, body []byte, safety bool) (string, string, error) {
+// extraction for HTML, capped text for everything else.
+func fetchProcess(status int, statusText, contentType string, finalURL *url.URL, body []byte) (string, string, error) {
 	if status != http.StatusOK {
 		return fmt.Sprintf("error: %s", statusText), "", nil
 	}
 	if !isHTMLContentType(contentType) {
-		return utils.SafetyGuarded(decisionModel, safety, capText(string(body))), "", nil
+		return capText(string(body)), "", nil
 	}
 
 	text, err := extractMarkdown(body, finalURL)
@@ -86,11 +84,11 @@ func fetchProcess(status int, statusText, contentType string, finalURL *url.URL,
 		// converting the whole page, mirroring the old raw-HTML path but
 		// still returning Markdown, not tags.
 		if md, mdErr := htmltomarkdown.ConvertString(string(body)); mdErr == nil {
-			return utils.SafetyGuarded(decisionModel, safety, capText(md)), "", nil
+			return capText(md), "", nil
 		}
 		return "", "", err
 	}
-	return utils.SafetyGuarded(decisionModel, safety, capText(text)), "", nil
+	return capText(text), "", nil
 }
 
 func isHTMLContentType(contentType string) bool {

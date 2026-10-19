@@ -99,21 +99,7 @@ assert(
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
--- 7. a legacy file without frontmatter keeps the config default and is
---    left untouched (open must not inject a dirtying edit)
-local legacy = vim.fn.tempname() .. ".md"
-vim.fn.writefile({ "# @system", "", "hi", "", "# @user", "" }, legacy)
-vim.cmd("bwipeout!")
-yap.open(legacy)
-local buf3 = vim.api.nvim_get_current_buf()
-assert(vim.b[buf3].yap_provider == nil and vim.b[buf3].yap_model == nil, "legacy open should not set buffer combo vars")
-assert(yap.winbar(buf3):match("def/default%-m"), "legacy open should fall back to config in the winbar")
-assert(
-  vim.api.nvim_buf_get_lines(buf3, 0, 1, false)[1] == "# @system",
-  "open must not inject frontmatter into legacy files"
-)
-
--- 8. subagents + updated_at + turns render and parse back
+-- 7. subagents + updated_at + turns render and parse back
 local subagents_block = frontmatter.render(
   "zeta",
   "m1",
@@ -215,7 +201,7 @@ assert(
 local plain_fm = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project"))
 assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
--- 9. a `title` wins over the generated description; without a title the
+-- 8. a `title` wins over the generated description; without a title the
 -- description wins, and the directory name is only the final fallback.
 local named_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/session.md"
 assert(
@@ -236,7 +222,7 @@ assert(
     .. session.label(named_path, "Pinned title", "Generated description", "/srv/app")
 )
 
--- 10. save stamps a turn count from the `# @user` headings
+-- 9. save stamps a turn count from the `# @user` headings
 local buf4 = yap.new({ provider = "zeta", model = "m1" })
 local body4 = vim.api.nvim_buf_get_lines(buf4, 0, -1, false)
 vim.list_extend(body4, {

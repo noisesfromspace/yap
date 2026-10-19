@@ -10,7 +10,6 @@
 :YapLive	yap.txt	/*:YapLive*
 :YapSend	yap.txt	/*:YapSend*
 :YapStop	yap.txt	/*:YapStop*
-yap-alert-gate	yap.txt	/*yap-alert-gate*
 yap-audit	yap.txt	/*yap-audit*
 yap-buffer	yap.txt	/*yap-buffer*
 yap-commands	yap.txt	/*yap-commands*
@@ -19,6 +18,7 @@ yap-configuration	yap.txt	/*yap-configuration*
 yap-contents	yap.txt	/*yap-contents*
 yap-folding	yap.txt	/*yap-folding*
 yap-glossary	yap.txt	/*yap-glossary*
+yap-guard-gate	yap.txt	/*yap-guard-gate*
 yap-introduction	yap.txt	/*yap-introduction*
 yap-keymaps	yap.txt	/*yap-keymaps*
 yap-markers	yap.txt	/*yap-markers*

@@ -28,26 +28,22 @@ var approvalTimeout = 5 * time.Minute
 // RequestApproval pauses the turn and asks the user to approve running
 // `command` (shown verbatim; the Lua side truncates for display). The tool
 // and reason are recorded with the request so audit history explains why
-// the dialog appeared, alongside the decision model's numbers (dec).
-// `dec` is zero-valued for the deterministic floor and always-approval tiers
-// (no model consulted); the frontend renders those rows as `always`. It
-// returns (true, nil) when approved, (false, nil) when denied, and an error
-// when there is no serve process to ask or the user never answers. Denial
-// and timeout are surfaced to the model as a tool error.
-func RequestApproval(command, tool, reason string, dec Decision) (bool, error) {
+// the dialog appeared — `reason` is the static guard rule that matched
+// (or the tool's own always-approval label). It returns (true, nil) when
+// approved, (false, nil) when denied, and an error when there is no serve
+// process to ask or the user never answers. Denial and timeout are surfaced
+// to the model as a tool error.
+func RequestApproval(command, tool, reason string) (bool, error) {
 	if ApprovalReplies == nil {
 		return false, fmt.Errorf("approval requires yap serve")
 	}
 	id := fmt.Sprintf("approval-%d", approvalSeq.Add(1))
-	category, categoryProb := dec.SeverityCategory()
 	EmitEvent(map[string]any{
-		"type": "approval_request", "id": id, "command": command,
-		"tool": tool, "reason": reason,
-		"p_alert": dec.PAlert, "severity": dec.Severity, "confidence": dec.Confidence,
-		"reveals_secret":    dec.RevealsSecret,
-		"severity_category": category, "severity_category_prob": categoryProb,
-		"severity_breakdown": dec.SeverityBreakdown(),
-		"risk":               dec.Risk(),
+		"type":    "approval_request",
+		"id":      id,
+		"command": command,
+		"tool":    tool,
+		"reason":  reason,
 	})
 	timer := time.NewTimer(approvalTimeout)
 	defer timer.Stop()

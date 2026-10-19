@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 
-	"boers.email/yap/agent/decide"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/render"
 	"boers.email/yap/agent/tools"
@@ -18,7 +16,7 @@ import (
 // never speculate about whether two shell commands or edits commute.
 var parallelTools = map[string]bool{
 	"ls": true, "read": true, "search": true, "glob": true,
-	"git": true, "fetch": true, "websearch": true, "models": true,
+	"fetch": true, "websearch": true, "models": true,
 }
 
 const maxConcurrentTasks = 4
@@ -78,37 +76,19 @@ func (p *taskPool) wait(ids []string) string {
 	return strings.TrimSpace(out.String())
 }
 
-// decideTool is shared by foreground and background dispatch. Approval must
-// finish on the owner goroutine before a background worker is launched.
-func decideTool(call llm.ToolCall, t *turn, messages []llm.Message, dm decide.Model, cfg utils.AlertConfig) string {
-	tier, hardReason := tools.Assess(call.Name, call.Input)
-	state := gateState(call.Name, call.Input, t, messages)
-	if state["file_source_blocked"] == true {
-		hardReason = "Python script is in a protected secret path; inspect the file before approving"
-	} else if state["file_source_truncated"] == true {
-		hardReason = "Python script exceeds the 16 KiB decision window; inspect the full file before approving"
-	}
-	dec := utils.ShouldAlert(context.Background(), dm, cfg, tier, hardReason, state)
-	switch dec.Outcome {
-	case utils.OutcomeApproval:
-		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, dec.Reason, dec)
+// staticGate runs a tool's deterministic guard rules before it executes. A
+// matching rule pauses for approval; no rule means the call runs. It returns
+// a non-empty denial string (an error the model sees) when approval is
+// refused or unavailable.
+func staticGate(call llm.ToolCall) string {
+	if reason := tools.Match(call.Name, call.Input); reason != "" {
+		approved, err := utils.RequestApproval(utils.Scrub(string(call.Input)), call.Name, reason)
 		if err != nil {
 			return "error: " + err.Error()
 		}
 		if !approved {
 			return "error: " + call.Name + " rejected by user"
 		}
-	case utils.OutcomeAdvisory:
-		category, categoryProb := dec.SeverityCategory()
-		utils.EmitEvent(map[string]any{
-			"type": "alert_advisory", "id": call.ID, "name": call.Name,
-			"reason": dec.Reason, "p_alert": dec.PAlert,
-			"severity": dec.Severity, "confidence": dec.Confidence,
-			"reveals_secret":    dec.RevealsSecret,
-			"severity_category": category, "severity_category_prob": categoryProb,
-			"severity_breakdown": dec.SeverityBreakdown(),
-			"risk":               dec.Risk(),
-		})
 	}
 	return ""
 }
@@ -135,7 +115,7 @@ func runTool(tool *tools.Tool, call llm.ToolCall) taskResult {
 	return taskResult{utils.Scrub(result), ui}
 }
 
-func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allowed *[]string, dm decide.Model, cfg utils.AlertConfig) taskResult {
+func (p *taskPool) call(call llm.ToolCall, allowed *[]string) taskResult {
 	if !allowedTool(call.Name, allowed) {
 		return taskResult{result: "error: unknown tool " + call.Name}
 	}
@@ -176,7 +156,7 @@ func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allo
 		}
 		p.mu.Unlock()
 		inner := llm.ToolCall{ID: call.ID, Name: args.Tool, Input: json.RawMessage(args.Arguments)}
-		if denial := decideTool(inner, t, messages, dm, cfg); denial != "" {
+		if denial := staticGate(inner); denial != "" {
 			return taskResult{result: denial}
 		}
 		p.mu.Lock()
@@ -201,7 +181,7 @@ func (p *taskPool) call(call llm.ToolCall, t *turn, messages []llm.Message, allo
 	if !ok {
 		return taskResult{result: "error: unknown tool " + call.Name}
 	}
-	if denial := decideTool(call, t, messages, dm, cfg); denial != "" {
+	if denial := staticGate(call); denial != "" {
 		return taskResult{result: denial}
 	}
 	return runTool(tool, call)

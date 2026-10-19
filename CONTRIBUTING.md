@@ -253,7 +253,7 @@ the control surface.
 `:YapEval!` sends the selected lines to the `editor` model group through the one-shot
 `yap send` path (`tools: []`, so the model cannot call tools or touch other
 files) and replaces the selection with the response. It never runs the agent
-loop, the alert gate, or a serve process. `<!-- yap:* -->` markers and the
+loop, the guard gate, or a serve process. `<!-- yap:* -->` markers and the
 binary's framing newlines are stripped from the response. In a session buffer
 the replacement is wrapped as a single `# @assistant` message (so a selection
 of turns collapses to a summary, like compaction scoped to a range); in any
@@ -318,34 +318,81 @@ ever needed, add mark3labs/mcp-go additively.
 #### R-compiled-tools — Tools are compiled-in Go files, one per file in agent/tools/
 
 Each file self-registers via init(); adding a tool = adding a file and
-recompiling. Search and decision providers are not tools and live outside
-agent/tools/ (agent/websearch/exa, agent/decide/jev), self-registering through
-their packages' exported registration functions (tools.RegisterWebsearchProvider,
-decide.RegisterProvider) so the directory stays one file per callable tool. Not config files (the author wants tool code, not opaque
+recompiling. Search providers are not tools and live outside
+agent/tools/ (agent/websearch/exa), self-registering through their
+package's exported registration function (tools.RegisterWebsearchProvider)
+so the directory stays one file per callable tool. Not config files (the author wants tool code, not opaque
 declarations), not external executable tool plugins: the tool interface is
-compiled in, although individual tools may spawn subprocesses. bash, python and
+compiled in, although individual tools may spawn subprocesses. bash and
 ssh are deliberately unsandboxed — the author runs pi the same way and accepts
 the residual risk — but are no longer unconfirmed: a conservative denylist of
 irreversible / high-blast-radius operations (remote content piped into a
 shell, rm -rf, mkfs/dd onto block devices, sudo, git push --force / reset
 --hard / clean -f, chmod -R / chown -R, redirects onto system or secret paths,
-shutdown/reboot, fork bombs; for python, subprocess/os.system/... and
-shutil.rmtree) pauses the turn for an explicit human Run/Deny before the
-command executes. Denial, timeout, and the absence of a serve process (yap
-send) all deny. This is a prompt-injection mitigation, NOT a security
-boundary: the denylist is bypassable. A real sandbox, if ever wanted, is
-bubblewrap (Codex's Linux choice), not command-pattern allowlists (documented
-as bypassable).
-bash/python's operational mechanics are unchanged: own process
+shutdown/reboot, fork bombs, and secret-reveal commands — decrypting with
+age/gpg/sops/openssl, generating or exporting a private key, reading a file
+under a secret directory) pauses the turn for an explicit human Run/Deny
+before the command executes; ssh pauses for every call, curl (an explicit
+non-GET method or a request body) and playwright (`eval`) pause on their own
+targeted rules, and read/write/edit/search pause before touching a secret
+path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
+/etc/agenix) — secret paths are approvable, never silently read or written.
+Those rules
+are declared in the tool's own file via `Gate` (with `utils.Pattern` for a
+regex rule or `Always` for an unconditional pause); `yap guard` prints the
+compiled-in list and the guard board renders it, so a new rule is a one-file
+change and nothing else has to learn about it. Denial,
+timeout, and the absence of a serve process (yap send) all deny. This is a
+prompt-injection mitigation, NOT a security boundary: the denylist is
+bypassable. A real sandbox, if ever wanted, is bubblewrap (Codex's Linux
+choice), not command-pattern allowlists (documented as bypassable).
+bash's operational mechanics are unchanged: own process
 group, group kill on timeout and on `:YapStop`, tail-truncation, closed stdin.
+
+```mermaid
+flowchart TD
+    A[Model emits a tool call] --> B{On the allowlist?}
+    B -- no --> E1["error: unknown tool"]
+    B -- yes --> C["staticGate: tools.Match(name, args)"]
+
+    C --> D{Any rule matches?}
+    D -- no --> R[Run the tool]
+    D -- yes --> G[utils.RequestApproval]
+
+    G --> G1["emit approval_request event<br/>(audit log + notify + guard board)"]
+    G1 --> G2[Park the turn, wait on the reply channel]
+    G2 --> A1{Answer}
+    A1 -- approved --> R
+    A1 -- denied --> E2["error: <tool> rejected by user"]
+    A1 -- timeout / no serve --> E3["error: approval timed out / requires yap serve"]
+
+    R --> S[Scrub result] --> F[Fence result] --> M[Back to the model]
+
+    subgraph Rules[Rules — declared in each tool's source via Gate]
+        RL[Always — ssh: every call]
+        RP[Pattern — bash denylist + secret-reveal commands]
+        RF[Match — curl non-GET/body, playwright eval]
+        RS[SecretPathRule — read/write/edit/search]
+        RS2["one secretPaths list drives both SecretPathRule and bash's secret-reveal rules"]
+    end
+    C -.-> Rules
+```
+
+Rule matching (`tools.Match` → `utils.MatchRules`) walks the tool's rules in
+declaration order and returns the first matching rule's name as the reason
+shown in the approval dialog and audit log. `yap guard` and the guard board
+both read the same registry (`tools.Rules`), so declaring a rule in a tool's
+source is the only step to surface it everywhere. Secret paths and
+secret-reveal commands share one location list in `agent/utils/secrets.go`;
+`scrub.go` redacts whatever still reaches a result as the final backstop.
 
 #### R-live-output-audit — Live tool output never enters the session buffer
 
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
-each session has ONE persistent live tail (yap://<session>-audit): bash/python
-announce their temp log via a yap:event stderr line, the Lua side drains new
+each session has ONE persistent live tail (yap://<session>-audit): bash
+announces its temp log via a yap:event stderr line, the Lua side drains new
 bytes into the tail (a `$ command` header per call), and `:YapLive` opens it.
 The tail is a plain text buffer, never replayed from the audit log — the full
 streamed output lives in the tool's temp log, and the audit log carries the
@@ -365,8 +412,8 @@ moment, and the buffer format has no transient states to repair.
 `<cwd-slug>/<session>/` directory, `<session>/session.md`), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from yap:event lines: full tool arguments,
 full results, `attachment` events for image imports (success metadata or the
-failure), approval/advisory decisions, and one journal line per turn (model,
-tokens, cost, ms). Streamed bash/python output is NOT duplicated here — it
+failure), approval decisions, and one journal line per turn (model,
+tokens, cost, ms). Streamed bash output is NOT duplicated here — it
 lives in the tool's temp log and is followed live by the tool tail
 (R-live-output-audit). The per-session directory is kept mode 0700 and
 the session markdown, notes, and audit log files mode 0600 — transcripts and
@@ -452,9 +499,9 @@ effect.
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
   as assistant transcript text). `cwd` is request-only, like the context tail:
   the serve process's own working directory is fixed when the buffer spawns it,
-  so this is what keeps bash/python's documented "default: the Neovim cwd" (and
-  the project root in the outside-root write note) true after a `:cd`; absent
-  for a one-shot `yap send`, whose tools then use the process cwd.
+  so this is what keeps bash's documented "default: the Neovim cwd" true
+  after a `:cd`; absent for a one-shot `yap send`, whose tools then use the
+  process cwd.
   `assets_dir` is the session's `assets/` folder; the backend writes transient tool
   files (live-tail logs, inline scripts, header files, SSH sockets) there
   instead of the system temp dir, and the agent is told to put its scratch
@@ -472,24 +519,24 @@ effect.
   lines; the Lua side timestamps each one, appends it to the audit log, and —
   for streamed tools — follows the output in the live tool tail:
 
-  - `tool_start` `{"type","name":"bash"|"python","log","command"}` — the tool's
+  - `tool_start` `{"type","name":"bash","log","command"}` — the tool's
     output streams into `log`; the live tail follows it for live output.
-  - `tool_end` `{"type","name":"bash"|"python","log","truncated"}` — the
+  - `tool_end` `{"type","name":"bash","log","truncated"}` — the
     tool's log is complete; the Lua side drains the final bytes and removes
     the untruncated temp log.
   - `tool_call` `{"type","name","args"}` — every tool before it runs, full
     arguments (the buffer header keeps only slimmed write/edit args, R-tool-region).
   - `tool_result` `{"type","name","bytes","result"}` — full result.
-  - `approval_request` `{"type","id","command"}` — a dangerous command pauses
-    the turn; the Lua side prompts and replies
-    `{"type":"approval_result","id","approved"}` on stdin.
+  - `approval_request` `{"type","id","command","tool","reason"}` — a guard
+    rule matched, so the call pauses for approval; the Lua side prompts and
+    replies `{"type":"approval_result","id","approved"}` on stdin.
   - `approval_timeout` `{"type","id"}` — the user never answered; denied.
   - `retry` `{"type","attempt","delay_ms","error"}` — a transient generation
     error (429/5xx/network) was retried before any output was emitted.
   - `turn_end` `{"type","model","prompt","completion","context_prompt",?,"cost",?,"context_window",?,"ms"}`
     — one per completed send.
 
-  Streamed bash/python output is not re-recorded in the audit log — it lives
+  Streamed bash output is not re-recorded in the audit log — it lives
   in the tool's temp log and is followed by the live tail; the audit log
   carries the tail-truncated result instead. The rest is error text.
 

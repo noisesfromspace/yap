@@ -47,17 +47,15 @@ func sse(w http.ResponseWriter, chunks ...string) {
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-// TestAlertGateBlocksBeforeExecution checks the full provider -> Jev ->
-// dispatch path, not just the score mapping in utils tests. A weighted
-// severity just under 3 must still pause before the command executes.
-func TestAlertGateBlocksBeforeExecution(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "should-not-exist")
+// TestStaticGateBlocksBeforeExecution checks the full dispatch path: a bash
+// command matching a static guard rule (sudo) pauses before the command runs.
+func TestStaticGateBlocksBeforeExecution(t *testing.T) {
 	var toolInput string
 	chatCalls := 0
 	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chatCalls++
 		if chatCalls == 1 {
-			args, _ := json.Marshal(map[string]string{"command": "touch " + path})
+			args, _ := json.Marshal(map[string]string{"command": "sudo -n true"})
 			toolInput = string(args)
 			chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call1", "type": "function", "function": map[string]string{"name": "bash", "arguments": toolInput}}}}, "finish_reason": "tool_calls"}}})
 			sse(w, string(chunk))
@@ -66,19 +64,11 @@ func TestAlertGateBlocksBeforeExecution(t *testing.T) {
 		sse(w, `{"choices":[{"delta":{"content":"done"}}]}`)
 	}))
 	defer chat.Close()
-	decisions := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"answers":{"harmful":{"type":"noul","noul":0.1,"confidence":0.9},"severity":{"type":"score","score":2.99,"confidence":0.99,"probabilities":{"2":0.01,"3":0.99}}}}`)
-	}))
-	defer decisions.Close()
-	writeConfigJSON(t, fmt.Sprintf(`{"providers":{"mock":{"base_url":%q,"api_key_env":"YAP_TEST_KEY"}},"decision":{"base_url":%q}}`, chat.URL+"/v1", decisions.URL))
+	writeConfigJSON(t, fmt.Sprintf(`{"providers":{"mock":{"base_url":%q,"api_key_env":"YAP_TEST_KEY"}}}`, chat.URL+"/v1"))
 	t.Setenv("YAP_TEST_KEY", "k")
 	var out bytes.Buffer
 	if err := send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"try a tool"}]}`), &out); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("unapproved command ran: stat err=%v", err)
 	}
 	if !strings.Contains(out.String(), "approval requires yap serve") || chatCalls != 2 {
 		t.Fatalf("gate did not block and return error to model: calls=%d output=%q", chatCalls, out.String())

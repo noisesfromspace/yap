@@ -162,7 +162,7 @@ func TestCurlFlagDeny(t *testing.T) {
 		"-so /tmp/out",
 		"-So/tmp/out",
 		"-sSL",
-		// '@' values read a local file past GuardReadPath
+		// '@' values read a local file past the secret-path guard
 		"-H @/etc/hostname",
 		"-d @/etc/hostname",
 		"--data @/etc/hostname",

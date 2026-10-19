@@ -48,8 +48,16 @@ func init() {
 			"After navigation and interactions the tool returns the page snapshot with [ref=..] handles; act on them by ref. "+
 			"To hand control to the human (logins, Cloudflare/Turnstile, captcha), set handover=true; the window opens for manual use, then resume with command snapshot.",
 		func(a *playwrightArgs) (string, string, error) { return runPW(a) }, ClosePlaywright)
-	// A browser can act (and exfiltrate) on the user's behalf; gate it.
-	Gate("playwright", utils.TierAskModel, nil)
+	// Static rule, declared below: `eval` runs arbitrary JavaScript in the
+	// page (reading cookies/storage from the user's logged-in session).
+	Gate("playwright", func(a *playwrightArgs) string { return a.Command }, playwrightRules...)
+}
+
+// playwrightRules gate the one command that escapes the ref-based loop and
+// runs arbitrary code in the page: eval. Navigation, clicks and form fills act
+// through the accessibility snapshot and carry no such risk.
+var playwrightRules = []utils.Rule{
+	utils.Pattern("browser JavaScript eval", `(?i)^\s*eval\b`),
 }
 
 type pwState struct {

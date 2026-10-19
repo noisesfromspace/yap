@@ -1,10 +1,11 @@
 -- A parked approval is a first-class state, not a modal: the session's own
 -- winbar shows the shield, other sessions' rollup counts it as "approval"
--- (not running), and the guard board's Guard section lists every parked
--- approval across sessions. Answering clears the approval; closing the board
--- defers (never denies).
+-- (not running), and the guard board's single list shows every parked
+-- approval (above the static rules). Answering clears the approval; closing
+-- the board defers (never denies).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
+vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local icons = require("harness").config.icons
@@ -36,16 +37,17 @@ local bar_b = yap.winbar(b)
 assert(bar_b:find(icons.approval .. "1", 1, true), "rollup missing approval count: " .. bar_b)
 assert(not bar_b:match(icons.running .. "%d"), "parked session counted as running: " .. bar_b)
 
-park(b, "approval-2", "ssh", "rm -rf /", "requires approval")
+park(b, "approval-2", "ssh", "rm -rf /", "remote command execution")
 
--- The board is one durable buffer listing both parked approvals in Guard.
+-- The board is one durable buffer listing both parked approvals and the
+-- compiled-in static rules below them.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open: " .. vim.api.nvim_buf_get_name(board))
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("▸ Guard (2)", 1, true), "Guard section missing both approvals: " .. text)
 assert(text:find("recursive or forced deletion", 1, true), "board missing first reason")
-assert(text:find("requires approval", 1, true), "board missing second reason")
+assert(text:find("remote command execution", 1, true), "board missing second reason")
+assert(text:find("sudo", 1, true), "board missing the static rules list")
 assert(not vim.bo[board].modifiable, "guard board should be read-only")
 
 -- Closing the board defers: both approvals stay parked.

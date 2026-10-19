@@ -2,11 +2,9 @@
 // Every non-test Go file in this directory except tools.go (the registry
 // below) defines exactly one tool, self-registering via Register in init().
 // Adding or changing a tool = editing a file here and recompiling
-// (CGO_ENABLED=0). Tool *providers* — websearch backends and decision
-// models — are not tools: they live outside this directory (e.g.
-// agent/websearch/exa, agent/decide/jev) and register through
-// RegisterWebsearchProvider / decide.RegisterProvider. See also the
-// alert-gate notes on each tool.
+// (CGO_ENABLED=0). Tool *providers* — websearch backends — are not tools:
+// they live outside this directory (e.g. agent/websearch/exa) and register
+// through RegisterWebsearchProvider.
 //
 // A tool defines an Args struct; the JSON schema sent to the provider is
 // generated from it by reflection (invopop/jsonschema), and incoming
@@ -14,11 +12,18 @@
 // (santhosh-tekuri/jsonschema) before Run is called — hand-written
 // schemas and raw unmarshal errors are both gone.
 //
+// Each tool may also declare static guard rules with Gate in its init().
+// A rule is a named, deterministic condition that pauses the call for a
+// human Run/Deny decision before it runs. Rules are declared next to the
+// tool they guard (in the tool's own source file), and every registered
+// rule is surfaced automatically by `yap guard` and the frontend's guard
+// board — adding one is a one-file change plus a recompile.
+//
 // Helpers do NOT belong here, even when only tools call them. Shared
-// helpers (path guarding, SSRF checks, secret scrubbing, safety scanning,
-// unified diffs, events, process-group tracking, arg slimming) live in
-// agent/utils. If you are adding something that does not call Register,
-// it goes in agent/utils.
+// helpers (path resolution, SSRF checks, secret scrubbing + the secrets
+// guard, unified diffs, events, process-group tracking, arg slimming, the
+// static rule matcher) live in agent/utils. If you are adding something
+// that does not call Register or Gate, it goes in agent/utils.
 package tools
 
 import (
@@ -41,12 +46,6 @@ type Tool struct {
 	Schema      json.RawMessage // generated from the tool's Args struct
 	run         func(args json.RawMessage) (result, ui string, err error)
 	close       func()
-	// Alert-gate metadata (see utils/alert.go). gateTier defaults to
-	// TierSilent when Gate is never called; preflight runs deterministic
-	// checks and returns a non-empty hard-block reason, or "" to defer to
-	// the tier's decision.
-	gateTier  utils.Tier
-	preflight func(args json.RawMessage) string
 }
 
 var registry = map[string]*Tool{}
@@ -115,34 +114,74 @@ func Get(name string) (*Tool, bool) {
 	return t, ok
 }
 
-// Gate configures the pre-execution alert gate for a tool, called from the
-// tool file's init() after Register. tier selects how much scrutiny the call
-// gets; preflight (optional) runs deterministic checks and returns a
-// non-empty reason to hard-block the call regardless of the decision model.
-func Gate(name string, tier utils.Tier, preflight func(args json.RawMessage) string) {
-	t, ok := registry[name]
-	if !ok {
-		// Called from the same init() that registered the tool: a miss means
-		// the name is misspelled, and the tool would silently run at
-		// TierSilent — an ungated curl or bash. Fail loudly instead.
-		panic(fmt.Sprintf("tools: Gate(%q): tool is not registered", name))
-	}
-	t.gateTier = tier
-	t.preflight = preflight
+// GuardRule is one registered guard rule, as surfaced to `yap guard` and the
+// frontend's guard board.
+type GuardRule struct {
+	Tool   string `json:"tool"`
+	Name   string `json:"name"`
+	Always bool   `json:"always,omitempty"`
 }
 
-// Assess runs a tool's deterministic preflight and returns its tier plus any
-// hard-block reason. Unknown tools are treated as silent; the caller reports
-// the unknown-tool error.
-func Assess(name string, args json.RawMessage) (utils.Tier, string) {
-	t, ok := registry[name]
-	if !ok {
-		return utils.TierSilent, ""
+// guardGate is a tool's static rule set: one inspect function that extracts
+// the text the rules match on from the tool's arguments, plus the ordered
+// rules themselves.
+type guardGate struct {
+	tool    string
+	inspect func(args json.RawMessage) string
+	rules   []utils.Rule
+}
+
+var guards []guardGate
+
+// Gate registers static approval rules for a tool, called from the tool's
+// init() after Register. `inspect` extracts the text the rules match on from
+// the tool's typed arguments; rules are matched in order and the first match
+// pauses the call for approval. Rules live in the tool's source file, so the
+// guard board and `yap guard` pick them up automatically.
+func Gate[T any](name string, inspect func(*T) string, rules ...utils.Rule) {
+	guards = append(guards, guardGate{
+		tool:  name,
+		rules: rules,
+		inspect: func(raw json.RawMessage) string {
+			var a T
+			if json.Unmarshal(raw, &a) != nil {
+				return ""
+			}
+			return inspect(&a)
+		},
+	})
+}
+
+// Rules returns every registered guard rule sorted by (tool, name), for the
+// `yap guard` listing and the frontend guard board.
+func Rules() []GuardRule {
+	var out []GuardRule
+	for _, g := range guards {
+		for _, r := range g.rules {
+			out = append(out, GuardRule{Tool: g.tool, Name: r.Name, Always: r.Always})
+		}
 	}
-	if t.preflight == nil {
-		return t.gateTier, ""
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Tool != out[j].Tool {
+			return out[i].Tool < out[j].Tool
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// Match returns the name of the first guard rule for tool `name` that trips
+// on args, or "" when none do.
+func Match(name string, args json.RawMessage) string {
+	for _, g := range guards {
+		if g.tool != name {
+			continue
+		}
+		if reason := utils.MatchRules(g.rules, g.inspect(args)); reason != "" {
+			return reason
+		}
 	}
-	return t.gateTier, t.preflight(args)
+	return ""
 }
 
 // All returns all registered tools, sorted by name (stable requests).

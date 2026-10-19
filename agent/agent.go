@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"boers.email/yap/agent/decide"
-	_ "boers.email/yap/agent/decide/jev" // registers the default decision backend
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/price"
@@ -45,7 +43,7 @@ type Request struct {
 	// Cwd is the frontend's working directory at send time. Request-only,
 	// like the context tail: the serve process's own cwd is fixed when the
 	// buffer spawns it, so without this a `:cd` in Neovim would leave the
-	// documented "default: the Neovim cwd" of bash/python (and the project
+	// documented "default: the Neovim cwd" of bash (and the project
 	// root in the outside-root write note) pointing at the directory the
 	// session was started in. Empty for a one-shot `yap send`.
 	Cwd string `json:"cwd,omitempty"`
@@ -312,140 +310,6 @@ var providerFactory = func(name string, prov Provider) (llm.Provider, error) {
 	})
 }
 
-// decisionModel builds the backend for the decision tool from config. It
-// selects the backend named by `decision.provider` (default "jev", the
-// compiled-in default) through the decide registry. OPENROUTER_API_KEY
-// authenticates both the chat and decisions surfaces.
-func decisionModel(cfg *Config) (decide.Model, error) {
-	env := cfg.Decision.APIKeyEnv
-	if env == "" {
-		env = "OPENROUTER_API_KEY"
-	}
-	return decide.New(cfg.Decision.Provider, decide.Config{
-		BaseURL: cfg.Decision.BaseURL,
-		APIKey:  os.Getenv(env),
-		Model:   cfg.Decision.Model,
-	})
-}
-
-// costTotal is the turn's running dollar total. Model steps add on the agent
-// goroutine; decision round-trips (including fetch/curl safety scans) add from
-// parallel tool goroutines, so it is mutex-guarded.
-type costTotal struct {
-	mu    sync.Mutex
-	total float64
-}
-
-func (c *costTotal) Add(v float64) {
-	c.mu.Lock()
-	c.total += v
-	c.mu.Unlock()
-}
-
-func (c *costTotal) Load() float64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.total
-}
-
-// costTrackingModel wraps the decision backend so every decision round-trip
-// (the alert gate, the decision tool, and fetch/curl safety scans) folds its
-// backend-reported cost into the turn's running total. Safety scans can run
-// concurrently (parallel read-only tools), so the total is mutex-guarded.
-type costTrackingModel struct {
-	inner decide.Model
-	total *costTotal
-}
-
-func (m *costTrackingModel) Decide(ctx context.Context, req decide.Request) (decide.Response, error) {
-	resp, err := m.inner.Decide(ctx, req)
-	if err == nil && resp.Cost > 0 {
-		m.total.Add(resp.Cost)
-	}
-	return resp, err
-}
-
-// alertConfig merges the `alert` config block over DefaultAlertConfig. A
-// zero threshold means "not set"; use the default.
-func alertConfig(cfg *Config) utils.AlertConfig {
-	c := utils.DefaultAlertConfig
-	if cfg.Alert.ApprovalProb > 0 {
-		c.ApprovalProb = cfg.Alert.ApprovalProb
-	}
-	if cfg.Alert.AdvisoryProb > 0 {
-		c.AdvisoryProb = cfg.Alert.AdvisoryProb
-	}
-	if cfg.Alert.MinConfidence > 0 {
-		c.MinConfidence = cfg.Alert.MinConfidence
-	}
-	return c
-}
-
-// gateState supplies bounded context, including the source of a Python file
-// call: the filename alone is insufficient for a decision about its effects.
-func gateState(name string, input json.RawMessage, t *turn, messages []llm.Message) map[string]any {
-	state := map[string]any{
-		"tool":      name,
-		"arguments": utils.Scrub(string(input)),
-		"preamble":  truncateRunes(t.text, 2000),
-		"user":      truncateRunes(lastUserText(messages), 2000),
-	}
-	if name == "python" {
-		var a struct {
-			File string `json:"file"`
-		}
-		if json.Unmarshal(input, &a) == nil && a.File != "" {
-			p := utils.ExpandHome(a.File)
-			if err := utils.GuardReadPath(p); err != nil {
-				state["file_source_blocked"] = true
-				return state
-			}
-			f, err := os.Open(p)
-			if err != nil {
-				state["file_source"] = "unreadable: " + err.Error()
-			} else {
-				// A large script should not dominate the decision-model request. Mark the
-				// omitted tail explicitly rather than implying a complete scan.
-				data, err := io.ReadAll(io.LimitReader(f, 16*1024+1))
-				_ = f.Close()
-				if err != nil {
-					state["file_source"] = "unreadable: " + err.Error()
-				} else {
-					truncated := len(data) > 16*1024
-					if truncated {
-						data = data[:16*1024]
-					}
-					state["file_source"] = utils.Scrub(string(data))
-					state["file_source_truncated"] = truncated
-				}
-			}
-		}
-	}
-	return state
-}
-
-func lastUserText(messages []llm.Message) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role != llm.RoleUser {
-			continue
-		}
-		for _, p := range messages[i].Content {
-			if p.Type == llm.PartText {
-				return p.Text
-			}
-		}
-	}
-	return ""
-}
-
-func truncateRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
-}
-
 func send(providerName, model string, in io.Reader, outw io.Writer) error {
 	var req Request
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
@@ -475,18 +339,9 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	tools.SetModelLister(listCombos)
-	// totCost accumulates every paid round-trip in a turn — model steps and
-	// decision-model calls — so one number lands in the usage event and the
-	// audit log. The decision backend adds to it through costTrackingModel;
-	// it is mutex-guarded because fetch/curl safety scans can run in parallel.
-	var totCost costTotal
-	dm, err := decisionModel(cfg)
-	if err != nil {
-		return err
-	}
-	dm = &costTrackingModel{inner: dm, total: &totCost}
-	tools.SetDecisionModel(dm)
-	alertCfg := alertConfig(cfg)
+	// totCost accumulates the model-step cost for the turn, so one number
+	// lands in the usage event and the audit log.
+	var totCost float64
 	// resolveModel builds the provider + model for a combo. It is re-run on
 	// every mid-turn switch so a stale or bad combo fails loudly instead of
 	// silently continuing on the previous model.
@@ -572,8 +427,8 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		if info, ok := price.Lookup(providerName, model); ok && info.ContextWindow > 0 {
 			m["context_window"] = info.ContextWindow
 		}
-		if c := totCost.Load(); c > 0 {
-			m["cost"] = c
+		if totCost > 0 {
+			m["cost"] = totCost
 		}
 		return m
 	}
@@ -677,7 +532,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
-		totCost.Add(stepCost(t))
+		totCost += stepCost(t)
 		lastPrompt = contextPromptTokens(t)
 		if t.prompt+t.completion > 0 {
 			m := usagePayload(totPrompt, totCompletion, lastPrompt)
@@ -741,8 +596,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 		// model call order regardless of completion order.
 		parallel := len(t.calls) > 1
 		for _, call := range t.calls {
-			tier, hardReason := tools.Assess(call.Name, call.Input)
-			if !parallelTools[call.Name] || !allowedTool(call.Name, req.Tools) || tier != utils.TierSilent || hardReason != "" {
+			if !parallelTools[call.Name] || !allowedTool(call.Name, req.Tools) || tools.Match(call.Name, call.Input) != "" {
 				parallel = false
 				break
 			}
@@ -778,7 +632,7 @@ func runTurn(providerName, model string, req Request, outw io.Writer, poll func(
 			if parallel {
 				value = results[i]
 			} else {
-				value = pool.call(call, t, messages, req.Tools, dm, alertCfg)
+				value = pool.call(call, req.Tools)
 			}
 			result, ui := value.result, value.ui
 			render.EmitToolResult(out, result, ui)
