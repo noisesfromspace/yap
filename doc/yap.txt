@@ -62,7 +62,7 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
       editor = "deepseek/deepseek-v4-pro", -- :YapEval one-shot
       title = "",                 -- session titles ("" disables titling)
     },
-    syntax_highlight = true,      -- keep markdown syntax colors
+    syntax_highlight = true,      -- true | "block" | false
     nerd_font = true,             -- false for plain-Unicode icons
     icons = { since = "󰅐", total = "󰆼" }, -- winbar/picker glyph overrides
     keymaps = { stop = "<C-c>" }, -- override any key; "" disables it
@@ -84,8 +84,15 @@ tokens, cost, ms) is also emitted on the `User YapTurnDone` autocmd so other
 plugins can hook completion (e.g. noice/nf-notify rendering, or chaining a
 next send). Disable with `notify_done = false` and hook that event yourself.
 
-`syntax_highlight` (default true) keeps tree-sitter markdown highlighting;
-set false to drop syntax colors.
+`syntax_highlight` (default true) controls tree-sitter markdown highlighting:
+`true` for full colours (the inline pass is dropped once a session passes
+`syntax_highlight_block_lines` lines), `"block"` for block-level colours only
+(headings, fences, quotes, lists, syntax-coloured fenced code) with inline
+emphasis never highlighted, or `false` for no highlighting (touchup still
+renders the structural marks). `syntax_highlight_block_lines` (default 30000)
+is the line count at which `true` drops the inline `markdown_inline` pass,
+which is O(buffer) per scroll and the source of jitter holding j/k on long
+transcripts; lower it if large sessions still feel sticky.
 
 `nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
 Icon keys include `since`, `total`, `running`, `waiting`, `stopped`, `error`,

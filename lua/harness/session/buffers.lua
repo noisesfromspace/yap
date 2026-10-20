@@ -119,21 +119,15 @@ local function setup_buffer(buf)
   -- with the open-session picker.
   vim.bo[buf].buflisted = false
 
-  -- Stop treesitter's syntax highlighter (not the parser) when the user
-  -- opts out. touchup runs its own queries over the parser, which stays
-  -- loaded either way. Deferred so the FileType autocommands that started
-  -- the highlighter have run.
-  if not harness().config.syntax_highlight then
-    vim.schedule(function()
-      if not vim.api.nvim_buf_is_valid(buf) then
-        return
-      end
-      local hl = vim.treesitter.highlighter and vim.treesitter.highlighter.active[buf]
-      if hl and hl.destroy then
-        hl:destroy()
-      end
-    end)
-  end
+  -- Apply the configured treesitter-highlight mode (full / block / none).
+  -- Deferred so the FileType autocommands that started the highlighter (and
+  -- created the parser) have run; block mode needs the parser to exist.
+  vim.schedule(function()
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    require("harness.session.highlight").apply(buf)
+  end)
 
   -- Diff hunks are meaningless on a session transcript, and mini.diff's
   -- number-column rendering collides with 'relativenumber': the two

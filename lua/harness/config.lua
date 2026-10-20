@@ -38,12 +38,28 @@ M.defaults = {
   -- vim.notify for a completed turn when its buffer is not visible
   -- (delegated child results go to the running parent instead).
   notify_done = true,
-  -- Keep treesitter's markdown syntax highlighting on yap buffers. It is
-  -- on by default: the highlighter is incremental and measured to be
-  -- negligible (~0.001ms/scroll) — the per-redraw cost attributed to
-  -- "treesitter" in profiling was actually touchup re-rendering plus live
-  -- buffer churn, not the highlighter. Set false to drop syntax colors.
+  -- Treesitter syntax highlighting on yap buffers.
+  --
+  --   true    Full markdown highlighting, but the expensive inline pass is
+  --           dropped once a session grows past syntax_highlight_block_lines
+  --           lines. The full highlighter is O(buffer) per scroll, not
+  --           O(viewport): the markdown grammar injects markdown_inline once
+  --           per inline span (every **bold**, `code`, *em*, [link]) — one
+  --           tree per span across the whole buffer — and the highlighter
+  --           walks all of them on every viewport change. That is the jitter
+  --           people feel holding j/k over a long transcript.
+  --   "block" Block-level highlighting only (headings, fences, quotes, lists,
+  --           and syntax-coloured code inside fences). Inline emphasis is
+  --           never highlighted, so scrolling stays cheap at any size.
+  --   false   No treesitter highlighting. touchup still renders the structural
+  --           marks (role headings, comment labels, etc.) — most of the
+  --           scannability — independent of this option.
   syntax_highlight = true,
+  -- Line count at which syntax_highlight = true drops the inline
+  -- (markdown_inline) pass. The inline cost grows linearly with the
+  -- transcript, so past this point the per-scroll cost is felt. Lower it if
+  -- large sessions still feel sticky; "block" mode always skips it.
+  syntax_highlight_block_lines = 30000,
   -- Terminal glyph availability cannot be detected reliably; set false to use
   -- plain Unicode status glyphs, the original spinner and block gauge.
   nerd_font = true,
