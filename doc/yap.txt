@@ -236,11 +236,10 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
   require("harness").instances()            -- pick another open session
   require("harness").waiting()              -- pick a session awaiting your reply
-  require("harness").history()              -- alias of sessions()
   require("harness").change_default_model() -- pick the default model for new sessions
   require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
 <
-`scope` for sessions()/history() is `"cwd"` (default) or `"all"`; omit it for
+`scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
 the current project. `insert(name, { at_cursor = true })` inserts the raw
 file at the cursor instead of appending/sending; insert_file() picks a file
 under |:pwd| and inserts an `@path` reference at the cursor. See |yap-keymaps|

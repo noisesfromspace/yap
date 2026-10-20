@@ -170,11 +170,6 @@ function M.sessions(scope)
     buffers.open(path)
   end)
 end
-
---- Alias for the saved-session history picker.
-function M.history(scope)
-  M.sessions(scope)
-end
 --- Sort waiting sessions last; their dedicated <leader>w picker
 --- makes them easy to reach without letting them crowd the general list.
 local function session_rank(buf)

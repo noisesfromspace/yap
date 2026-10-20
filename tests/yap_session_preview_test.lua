@@ -409,16 +409,16 @@ for _, item in ipairs(live_titled.items) do
   end
 end
 
--- The history picker annotates saved sessions that are open with their live
+-- The sessions picker annotates saved sessions that are open with their live
 -- state, including a manually stopped turn.
 local state = require("harness.state")
 local icons = yap.config.icons
-local function history_status(expected)
+local function sessions_status(expected)
   captured = nil
   vim.ui.select = function(items, opts)
     captured = { items = items, opts = opts }
   end
-  yap.history()
+  yap.sessions()
   vim.ui.select = orig_select
   local item
   for _, candidate in ipairs(captured and captured.items or {}) do
@@ -426,30 +426,30 @@ local function history_status(expected)
       item = candidate
     end
   end
-  assert(item, "expected saved history row: " .. vim.inspect(captured))
+  assert(item, "expected saved sessions row: " .. vim.inspect(captured))
   local rendered = captured.opts.format_item(item)
-  assert(rendered:find("^" .. expected .. "  ") == 1, "history icon is not in the fixed column: " .. rendered)
+  assert(rendered:find("^" .. expected .. "  ") == 1, "sessions icon is not in the fixed column: " .. rendered)
 end
 state.running[saved] = {}
-history_status(icons.running)
+sessions_status(icons.running)
 state.running[saved] = nil
 state.awaiting[saved] = true
-history_status(icons.waiting)
+sessions_status(icons.waiting)
 state.stopped[saved] = true
-history_status(icons.stopped)
+sessions_status(icons.stopped)
 state.awaiting[saved], state.stopped[saved] = nil, nil
 captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.history()
+yap.sessions()
 vim.ui.select = orig_select
 local idle_row
 for _, item in ipairs(captured.items) do
   if item.path == path then idle_row = captured.opts.format_item(item) end
 end
 assert(idle_row and idle_row:find("^" .. icons.idle .. "  ") == 1,
-  "open idle history session needs a live icon: " .. tostring(idle_row))
+  "open idle saved session needs a live icon: " .. tostring(idle_row))
 -- A closed session has no status column; open children still carry their
 -- icon and indented title beneath it.
 vim.api.nvim_buf_delete(saved, { force = true })
@@ -457,18 +457,18 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.history()
+yap.sessions()
 vim.ui.select = orig_select
 for _, item in ipairs(captured.items) do
   local row = captured.opts.format_item(item)
   if item.path == path then
-    assert(row:find("^Preview test") == 1, "closed history row should have no status column: " .. row)
+    assert(row:find("^Preview test") == 1, "closed sessions row should have no status column: " .. row)
   elseif item.path == saved_child_path then
-    assert(row:find("^" .. icons.idle .. "    ↳") == 1, "history child title should be indented after status: " .. row)
+    assert(row:find("^" .. icons.idle .. "    ↳") == 1, "sessions child title should be indented after status: " .. row)
   end
 end
 
--- All-project history places the project after each root, not before the
+-- The all-project sessions picker places the project after each root, not before the
 -- status column; children keep their indented titles without repeating it.
 local paths = require("harness.path")
 local other_dir = paths.session_dir("/tmp/yap-other-project")
@@ -478,7 +478,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.history("all")
+yap.sessions("all")
 vim.ui.select = orig_select
 local all_parent, all_child, other_row
 for _, item in ipairs(captured.items) do
@@ -488,9 +488,9 @@ for _, item in ipairs(captured.items) do
   if item.path == other_dir .. "/other-project/session.md" then other_row = row end
 end
 assert(all_parent and all_parent:find("^Preview test") == 1
-  and all_parent:find(paths.project_cwd(path), 1, true), "history cwd should follow root title: " .. tostring(all_parent))
+  and all_parent:find(paths.project_cwd(path), 1, true), "sessions cwd should follow root title: " .. tostring(all_parent))
 assert(all_child and all_child:find("^" .. icons.idle .. "    ↳") == 1
-  and not all_child:find(vim.fn.getcwd(), 1, true), "history child should not repeat project: " .. tostring(all_child))
+  and not all_child:find(vim.fn.getcwd(), 1, true), "sessions child should not repeat project: " .. tostring(all_child))
 assert(other_row and other_row:find("^Preview test") == 1
   and other_row:find("/tmp/yap/other/project", 1, true), "other project prefix missing: " .. tostring(other_row))
 
