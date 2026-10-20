@@ -80,6 +80,7 @@ local CASES = {
   { name = "yap_fold_reconcile_test", port = 18132 },
   { name = "yap_fold_noflicker_test", port = 18132 },
   { name = "yap_fold_leak_test", port = 18132 },
+  { name = "yap_fold_visual_test", port = 18132 },
   { name = "yap_fold_mouse_test", port = 18132 },
   { name = "yap_think_test", port = 18132 },
   { name = "yap_error_test", port = 18132 },

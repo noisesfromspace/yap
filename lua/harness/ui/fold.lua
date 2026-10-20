@@ -273,63 +273,13 @@ local function options()
   vim.wo.foldtext = "v:lua.require'harness.ui.fold'.text()"
 end
 
-local function apply(buf, win, w, list, incremental)
+local function apply(buf, win, w, list)
   vim.api.nvim_win_call(win, function()
     local saved = vim.fn.winsaveview()
     options()
     local wanted = {}
     for _, b in ipairs(list) do
       wanted[b.id] = b
-    end
-    -- A tail append never shifts existing line numbers or removes folds, so
-    -- the incremental path installs new folds and grows the tail fold's range
-    -- in place, skipping the O(folds) drift detection and the zE + full
-    -- re-:fold rebuild (the per-chunk cost on a long session). Anything
-    -- unexpected — a moved anchor, a window/view reset — falls through to the
-    -- full rebuild below.
-    if incremental == true and not (w.rebuild or w.reset or w.restore) then
-      local moved = false
-      for _, b in ipairs(list) do
-        local old = w.installed[b.id]
-        if old and old.start ~= b.start then
-          moved = true
-          break
-        end
-      end
-      if not moved then
-        local n = #list
-        for idx, b in ipairs(list) do
-          local old = w.installed[b.id]
-          if not old then
-            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
-            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
-            w.installed[b.id] = { start = b.start, finish = b.finish }
-          elseif idx == n then
-            -- Tail fold: a manual fold cannot be grown in place without
-            -- nesting, and a tail append can shrink its native range by one
-            -- line even when the logical finish is unchanged. Delete and
-            -- re-create just this one fold. zd needs the cursor on it, so
-            -- jump, delete and re-fold; the saved view is restored below
-            -- before any redraw, so the user never sees the hop.
-            vim.api.nvim_win_set_cursor(0, { b.start, 0 })
-            -- silent!: a one-line fold can be removed entirely by the line
-            -- split, so there may be no fold left to delete.
-            vim.cmd("silent! normal! zd")
-            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
-            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
-            old.start, old.finish = b.start, b.finish
-          elseif old.finish ~= b.finish then
-            -- A non-tail fold whose range drifted (rare; a safety net).
-            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
-            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
-            old.start, old.finish = b.start, b.finish
-          end
-        end
-        w.rebuild, w.reset, w.restore = false, false, false
-        vim.fn.winrestview(saved)
-        return
-      end
-      -- An anchor moved: treat like the full path below.
     end
     -- A full rebuild is needed when the window was (re)entered, the view was
     -- reset, an anchor moved (an edit above shifted its line numbers), or a
@@ -399,7 +349,7 @@ function M.reconcile(buf, full, incremental)
     if full then
       w.rebuild = true
     end
-    apply(buf, win, w, intended(all, w.view), incremental)
+    apply(buf, win, w, intended(all, w.view))
   end
   s.projected_tick = vim.api.nvim_buf_get_changedtick(buf)
 end
