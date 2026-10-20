@@ -36,15 +36,27 @@ fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
 can continue independent work and later call `wait_tasks` for the result.\
 See `:help yap-tools`.
 
-A turn is an agent loop: the model asks for tool calls, yap runs them, and
-feeds the results back until the model gives a final answer:
+A turn is an agent loop — the model proposes the next action, the harness
+runs it, and the result feeds back until the model stops asking. Yap runs
+one loop per send, with its own specifics annotated below:
 
 ```mermaid
 flowchart LR
-    Model -->|"tool call(s)"| Run["Run compiled-in tool"]
-    Run -->|"tool_result"| Model
-    Model -->|"final answer"| Buffer["Reply streams into the session buffer"]
+    subgraph loop["agent loop · one per send · capped at 300 iterations"]
+        direction LR
+        M["Model"] -->|"thinking + prose stream into the buffer"| Q{"Tool calls?"}
+        Q -->|"yes"| A{"Approval gate"}
+        A -->|"Run"| R["Run tools<br/>read-only calls concurrent (≤4)"]
+        R -->|"tool results as native messages"| M
+        A -->|"Deny"| M
+    end
+    Q -->|"no"| B["Final answer streams into the buffer"]
 ```
+
+Mid-turn steering (`# @steer`) and provider/model switches land at the next
+model boundary, after a tool batch and before the next generation. If the
+model would finish with background tasks still running, yap waits for them
+and injects the results before the answer.
 
 ## First run
 
