@@ -724,9 +724,9 @@ replaces.
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.
-  audit view          The live tool tail `:YapLive` opens: one read-only
+  tail viewer         The live tool tail `:YapLive` opens: one read-only
                       buffer per session following the running tool's output.
-                      (Not "live view", "audit drawer".)
+                      (Not "audit view", "live view", "audit drawer".)
   approval            The gate outcome that pauses a turn for a Run/Deny/
                       Inspect decision, triggered by a static guard rule.
                       (Not "blocked request".)

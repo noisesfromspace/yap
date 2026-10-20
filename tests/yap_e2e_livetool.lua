@@ -3,18 +3,18 @@
 -- live output stays in the tool's log file (rendered by :YapLive), never
 -- in the buffer. The result lands once, at completion. :YapStop
 -- mid-run leaves the buffer parseable (dangling tool region repaired on
--- process exit). auto_open_live opens the audit view by itself.
+-- process exit). auto_open_live opens the tail viewer by itself.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
--- The persistent audit view buffer of a session buffer (yap://<name>-audit).
-local function audit_buf(chat)
+-- The persistent tail viewer buffer of a session buffer (yap://<name>-tail).
+local function tail_buf(chat)
   local name = vim.api.nvim_buf_get_name(chat)
-  name = name:match("^yap://") and (name .. "-audit")
-    or ("yap://" .. require("harness.path").session_name(name) .. "-audit")
+  name = name:match("^yap://") and (name .. "-tail")
+    or ("yap://" .. require("harness.path").session_name(name) .. "-tail")
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_get_name(b) == name then
       return b
@@ -76,11 +76,11 @@ assert(not mid_text:match("stream done"), "turn completed before mid-run check c
 
 -- the tail view buffer IS filling while the tool runs
 local tb1
-local audit_filling = vim.wait(10000, function()
-  tb1 = audit_buf(buf)
+local tail_filling = vim.wait(10000, function()
+  tb1 = tail_buf(buf)
   return tb1 and table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n"):match("\nl1\n") ~= nil
 end, 20)
-assert(audit_filling, "audit view buffer not filling during the run")
+assert(tail_filling, "tail viewer buffer not filling during the run")
 
 local done = vim.wait(30000, function()
   return vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == ""
@@ -113,11 +113,11 @@ assert(not yap.winbar():match("bash"), "winbar still shows the tool after comple
 
 -- the tail view holds the FULL output (tool_end drains before the temp log
 -- of an untruncated run is deleted), with the command as a `$` header
-local audit_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
-assert(audit_text:match("%$ printf"), "no command header in the tail view: " .. audit_text)
+local tail_text = table.concat(vim.api.nvim_buf_get_lines(tb1, 0, -1, false), "\n")
+assert(tail_text:match("%$ printf"), "no command header in the tail view: " .. tail_text)
 assert(
-  audit_text:match("\nl1\nl2\n") and audit_text:match("tail%-without%-newline"),
-  "tail view incomplete: " .. audit_text
+  tail_text:match("\nl1\nl2\n") and tail_text:match("tail%-without%-newline"),
+  "tail view incomplete: " .. tail_text
 )
 
 -- the parsed assistant message carries the flattened result, marker line excluded
@@ -156,21 +156,21 @@ set_prompt(buf2, "run again; I will stop you")
 yap.send()
 
 -- wait until the tool header has landed, then :YapLive opens the
--- (already created) audit view in a split, scrolled to the bottom
+-- (already created) tail viewer in a split, scrolled to the bottom
 local started = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- yap:tool") ~= nil
 end, 20)
 assert(started, "tool header not present before stop")
-local tb2 = audit_buf(buf2)
-assert(tb2, "no audit view buffer for the second session")
+local tb2 = tail_buf(buf2)
+assert(tb2, "no tail viewer buffer for the second session")
 yap.live()
 assert(
-  vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-audit$"),
-  ":YapLive did not open the audit view"
+  vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"),
+  ":YapLive did not open the tail viewer"
 )
-assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "audit view window not at the bottom")
+assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail viewer window not at the bottom")
 
--- The live view is a winfixbuf drawer; switching its buffer would raise
+-- The tail viewer is a winfixbuf drawer; switching its buffer would raise
 -- E1513. Return focus to the session window, where stop() acts.
 vim.api.nvim_set_current_win(vim.fn.win_findbuf(buf2)[1])
 vim.api.nvim_win_set_cursor(0, { 1, 0 }) -- park away from the stream tail

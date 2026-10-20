@@ -21,8 +21,8 @@ local notes_path = vim.api.nvim_buf_get_name(scratch)
 
 vim.api.nvim_set_current_win(session_win)
 yap.live(session)
-local audit = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(audit):match("%-audit$"), "live audit view did not open")
+local tail = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(tail):match("%-tail$"), "live tail viewer did not open")
 
 -- Replacing the session in its window means it is no longer visible. The
 -- drawer windows close, but their buffers and the queued work remain intact.
@@ -30,12 +30,12 @@ local other = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_win_set_buf(session_win, other)
 assert(
   vim.wait(1000, function()
-    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
+    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(tail) == 0
   end),
   "scratch/live drawers stayed open after leaving the session"
 )
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped")
-assert(vim.api.nvim_buf_is_valid(audit), "audit view buffer was wiped")
+assert(vim.api.nvim_buf_is_valid(tail), "tail viewer buffer was wiped")
 assert(vim.fn.filereadable(notes_path) == 1, "scratch notes file was removed")
 assert(vim.api.nvim_buf_get_lines(scratch, 0, -1, false)[1] == "unsent task", "scratch contents were lost")
 
@@ -50,7 +50,7 @@ vim.api.nvim_win_set_buf(0, scratch)
 vim.api.nvim_win_set_buf(session_win, other)
 assert(
   vim.wait(1000, function()
-    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(audit) == 0
+    return #vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(tail) == 0
   end),
   "drawers in separate tabs stayed open after leaving the session"
 )

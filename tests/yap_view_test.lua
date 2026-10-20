@@ -1,4 +1,4 @@
--- The shell-command line breaker shared by the guard board and audit view:
+-- The shell-command line breaker shared by the guard board and tail viewer:
 -- break at top-level && / || / | / ; and at existing newlines, but never
 -- inside quotes, backticks, $()/${}, or a heredoc body.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()

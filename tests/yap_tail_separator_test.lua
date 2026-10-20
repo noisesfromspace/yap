@@ -23,13 +23,13 @@ assert(lines[4] ~= "" and lines[4]:gsub("─", "") == "", "no rule separator bef
 assert(lines[5] == "$ echo three", "second header wrong: " .. lines[5])
 
 -- Each `$ command` header is highlighted; the rule separator is not.
-local ns = vim.api.nvim_get_namespaces()["yap.audit.hl"]
-assert(ns, "audit highlight namespace missing")
+local ns = vim.api.nvim_get_namespaces()["yap.tail.hl"]
+assert(ns, "tail highlight namespace missing")
 local function hl_on(line)
   local row = line - 1
   local marks = vim.api.nvim_buf_get_extmarks(tail, ns, { row, 0 }, { row, 0 }, { details = true })
   for _, m in ipairs(marks) do
-    if m[4] and m[4].hl_group == "YapAuditCommand" then
+    if m[4] and m[4].hl_group == "YapTailCommand" then
       return true
     end
   end

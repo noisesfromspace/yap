@@ -432,12 +432,12 @@ approvals, so decisions persist across sessions. `c` clears that history by
 writing a project watermark (guard.json, a timestamp) and hiding rows at or
 before it; the audit log is left intact and parked approvals are untouched.
 
-#### R-live-output-audit — Live tool output never enters the session buffer
+#### R-live-output-tail — Live tool output never enters the session buffer
 
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
-each session has ONE persistent live tail (yap://<session>-audit): bash
+each session has ONE persistent live tail (yap://<session>-tail): bash
 announces its temp log via a `tool_start` frame and streams its output as
 `tool_output` delta frames on the single channel, the Lua side appends new
 bytes into the tail (a `$ command` header per call), and `:YapLive` opens it.
@@ -462,7 +462,7 @@ full results, `attachment` events for image imports (success metadata or the
 failure), approval decisions, and one journal line per turn (model,
 tokens, cost, ms). Streamed bash output is NOT duplicated here — it
 lives in the tool's temp log and is followed live by the tool tail
-(R-live-output-audit). The per-session directory is kept mode 0700 and
+(R-live-output-tail). The per-session directory is kept mode 0700 and
 the session markdown, notes, and audit log files mode 0600 — transcripts and
 tool output routinely contain secrets, so nothing in the session directory is
 world-readable. The audit file is the authoritative record and survives

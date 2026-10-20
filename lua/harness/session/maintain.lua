@@ -20,7 +20,7 @@ local HEAD = "^# @(%a+)%s*$"
 --- (default 2) yap:tool regions with a placeholder; the full output
 --- stays in the audit log. Headers (flattened into the model's transcript)
 --- and yap:ui diffs stay. This is the one sanctioned rewrite of
---- existing lines (R-live-output-audit): the user owns the document, and clearing old
+--- existing lines (R-live-output-tail): the user owns the document, and clearing old
 --- tool output is what keeps long sessions inside the context window.
 function M.clear(buf, keep)
   buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()

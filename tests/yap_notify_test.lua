@@ -137,13 +137,13 @@ vim.api.nvim_buf_delete(stopped, { force = true })
 -- (MiniPick.buffers etc.); the pickers are the way back.
 assert(not vim.bo[buf].buflisted, "session buffer should be unlisted")
 assert(not vim.bo[buf2].buflisted, "second session buffer should be unlisted")
-local audits_unlisted = true
+local tails_unlisted = true
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_get_name(b):match("%-audit$") then
-    audits_unlisted = audits_unlisted and not vim.bo[b].buflisted
+  if vim.api.nvim_buf_get_name(b):match("%-tail$") then
+    tails_unlisted = tails_unlisted and not vim.bo[b].buflisted
   end
 end
-assert(audits_unlisted, "audit view buffers should be unlisted")
+assert(tails_unlisted, "tail viewer buffers should be unlisted")
 
 -- Switch away and fire the event for that buffer: now the default
 -- handler notifies (the background-turn case).

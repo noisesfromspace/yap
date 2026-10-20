@@ -7,7 +7,7 @@
 --   model change and turn journal. `append_event` writes it; `:YapClear`
 --   placeholders and the guard board read it. Nothing here renders it.
 --
---   The live view (`:YapLive`) is a plain tail of the running tool's output:
+--   The tail viewer (`:YapLive`) is a plain tail of the running tool's output:
 --   one unlisted buffer per session that shows a `$ command` header per bash
 --   call followed by that call's streamed bytes, newest at the bottom. It is
 --   never replayed from the audit log — a stopped tool leaves an empty tail,
@@ -25,8 +25,8 @@ local view = require("harness.ui.view")
 -- against streamed output; a horizontal rule separates consecutive commands.
 -- Linked (not a fixed color) so every colorscheme renders it; `default`
 -- keeps user overrides.
-local ns = vim.api.nvim_create_namespace("yap.audit.hl")
-local HL_CMD = "YapAuditCommand"
+local ns = vim.api.nvim_create_namespace("yap.tail.hl")
+local HL_CMD = "YapTailCommand"
 view.link(HL_CMD, "Title")
 
 -- The tail keeps at most this many lines, always the newest: old lines are
@@ -44,7 +44,7 @@ function M.ensure(buf)
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
     return t
   end
-  local name = paths.audit_buf_name(buf)
+  local name = paths.tail_buf_name(buf)
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false

@@ -25,7 +25,7 @@ local function normal_windows(tab)
 end
 
 --- The shared panel window options. `editable` marks the scratch jotter; the
---- read-only panels (audit, guard) additionally drop line numbers and the
+--- read-only panels (tail, guard) additionally drop line numbers and the
 --- sign column so a streaming projection reads as a dashboard, not a buffer.
 function M.style(win, opts)
   opts = opts or {}
@@ -63,7 +63,7 @@ local function close_win(win)
   end
 end
 
---- Half the screen height, for the large read-only panels (guard, audit).
+--- Half the screen height, for the large read-only panels (guard, tail).
 --- Split heights are row counts, so a bottom drawer at this height fills the
 --- bottom half of the tab while the anchor keeps the top half.
 function M.half_screen()
@@ -163,7 +163,7 @@ function M.close(buf, owner)
       if normal_windows(tab) > 1 then
         vim.api.nvim_win_close(win, true)
       elseif state.pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
-        -- Inspect + :only while focused on the audit: keep the review
+        -- Inspect + :only while focused on the tail: keep the review
         -- visible, not an empty replacement buffer. :YapGuard still works
         -- from this window even when the session is hidden.
       else

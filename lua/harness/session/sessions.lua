@@ -84,7 +84,7 @@ function M.live(buf)
   end
   vim.keymap.set("n", "q", function()
     M.live(t.bufnr)
-  end, { buffer = t.bufnr, silent = true, desc = "yap: close live view" })
+  end, { buffer = t.bufnr, silent = true, desc = "yap: close tail viewer" })
   if harness().config.keymaps.guard ~= "" then
     vim.keymap.set("n", harness().config.keymaps.guard, function()
       guard.toggle()
@@ -199,7 +199,7 @@ end
 --- name), or nil for all. The
 --- "needs you" includes ordinary waiting/stopped parents, but only stopped
 --- or errored children: a finished child need not be replied to. A current
---- parent remains visible while it has an open subagent. Audit views are
+--- parent remains visible while it has an open subagent. Tail viewers are
 --- never here — use :YapLive / <leader>l.
 local function has_open_child(parent)
   local child = subagent_children[parent]

@@ -138,9 +138,9 @@ end
 
 --- The live tool tail buffer's name; mirrors the session directory name so a
 --- renamed directory keeps its tail buffer.
-function M.audit_buf_name(buf)
+function M.tail_buf_name(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return "yap://" .. M.session_name(path) .. "-audit"
+  return "yap://" .. M.session_name(path) .. "-tail"
 end
 
 --- The session's JSON Lines audit log: <dir>/audit.jsonl, beside the session

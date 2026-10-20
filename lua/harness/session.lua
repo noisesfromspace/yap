@@ -141,7 +141,7 @@ function M.save(buf)
 end
 
 --- Copy the current in-memory transcript to a new session file. Do not rename
---- or save the source buffer: its process, audit view, and unsaved edits belong
+--- or save the source buffer: its process, tail viewer, and unsaved edits belong
 --- to the original session. The caller opens the new file as a separate buffer.
 --- An optional name is a basename; `.md` is added when omitted.
 function M.fork(buf, name, running)
