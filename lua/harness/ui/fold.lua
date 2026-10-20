@@ -13,6 +13,8 @@ local TOOL_OPEN = structure.TOOL_OPEN
 local TOOL_CLOSE = structure.TOOL_CLOSE
 local COMMENT_OPEN = structure.COMMENT_OPEN
 local parse = structure.parse
+local extend = structure.extend
+local mark_changed = structure.mark_changed
 local fence_run = structure.fence_run
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
@@ -57,6 +59,37 @@ local function position(buf, id)
   return mark[1] + 1
 end
 
+-- The installed fold containing the last line: the one with the greatest
+-- start line not past the tail. A tail append can only split/remove that
+-- one fold, so its intent is the only one that must be captured before the
+-- edit (a one-line manual fold is removed when its line is split).
+local function tail_installed(w, lastline)
+  local best_id, best_start
+  for id, rec in pairs(w.installed) do
+    if rec.start <= lastline and (best_start == nil or rec.start > best_start) then
+      best_id, best_start = id, rec.start
+    end
+  end
+  return best_id, best_start
+end
+
+local function capture_one(buf, win, w, id, start)
+  if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then
+    return
+  end
+  vim.api.nvim_win_call(win, function()
+    if not vim.wo.foldenable then
+      return
+    end
+    if vim.fn.foldlevel(start) > 0 then
+      local closed = vim.fn.foldclosed(start)
+      if closed == -1 or closed == start then
+        w.intent[id] = closed == -1
+      end
+    end
+  end)
+end
+
 -- Only actual native folds are observed. Missing/deleted folds are not
 -- mistaken for user opens, and disabling folding does not pin everything.
 -- With manual folds there is no foldexpr/lazy recomputation to confuse this
@@ -86,12 +119,29 @@ local function state(buf)
   if s then
     return s
   end
-  s = { records = {}, windows = {}, default_view = 2 }
+  s = { records = {}, windows = {}, default_view = 2, streaming = false }
   sessions[buf] = s
   vim.api.nvim_buf_attach(buf, false, {
-    on_lines = function()
-      for win, w in pairs(s.windows) do
-        capture(buf, win, w)
+    on_lines = function(...)
+      -- firstline (0-based index of the first changed OLD line) lets
+      -- structure tell a pure tail append from a middle edit. Neovim 0.13
+      -- passes ("lines", bufnr, changedtick, firstline, …); earlier versions
+      -- pass (bufnr, changedtick, firstline, …).
+      local firstline
+      if select("#", ...) >= 4 and type(select(1, ...)) == "string" then
+        firstline = select(4, ...)
+      elseif select("#", ...) >= 3 then
+        firstline = select(3, ...)
+      end
+      mark_changed(buf, firstline)
+      -- Stream appends capture the tail fold in before_change and reconcile
+      -- synchronously; this capture observes native folds from user edits.
+      -- Skipping it during a stream append avoids an O(folds) walk per
+      -- flushed chunk.
+      if not s.streaming then
+        for win, w in pairs(s.windows) do
+          capture(buf, win, w)
+        end
       end
       -- Arbitrary user edits/undo need reconciliation as well as streaming.
       -- Stream writes call after_append synchronously, before yielding;
@@ -151,12 +201,19 @@ local function identify(buf, s, p)
   if s.tick == vim.api.nvim_buf_get_changedtick(buf) then
     return s.folds
   end
+  -- One batched nvim_buf_get_extmarks replaces a per-record
+  -- get_extmark_by_id walk: s.records holds every fold id ever created
+  -- (including invalidated ones retained for undo), so querying one at a time
+  -- is O(records) C round-trips per reconcile. The batch returns only live
+  -- marks in one call; s.records stays the id→kind map and must not be
+  -- pruned, or an undo_restore'd anchor would lose its identity/intent.
   local at = {}
-  for id, kind in pairs(s.records) do
-    local row = position(buf, id)
-    if row then
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, anchors, 0, -1, {})) do
+    local kind = s.records[mark[1]]
+    if kind then
+      local row = mark[2] + 1
       at[row] = at[row] or {}
-      at[row][kind] = id
+      at[row][kind] = mark[1]
     end
   end
   local all = {}
@@ -178,15 +235,19 @@ local function identify(buf, s, p)
   if p.frontmatter then
     add("message:frontmatter", 1, p.frontmatter)
   end
-  for i, h in ipairs(p.headings) do
-    add("message:" .. h.role, h.line, p.headings[i + 1] and p.headings[i + 1].line - 1 or p.count)
+  -- headings and regions are each already sorted by line; merge them instead
+  -- of a table.sort (O(n) rather than O(n log n)).
+  local h, r = p.headings, p.regions
+  local hi, ri = 1, 1
+  while hi <= #h or ri <= #r do
+    if ri > #r or (hi <= #h and h[hi].line <= r[ri].start) then
+      add("message:" .. h[hi].role, h[hi].line, h[hi + 1] and h[hi + 1].line - 1 or p.count)
+      hi = hi + 1
+    else
+      add("region:" .. r[ri].kind, r[ri].start, r[ri].finish or p.count)
+      ri = ri + 1
+    end
   end
-  for _, d in ipairs(p.regions) do
-    add("region:" .. d.kind, d.start, d.finish or p.count)
-  end
-  table.sort(all, function(a, b)
-    return a.start < b.start
-  end)
   s.folds, s.tick = all, vim.api.nvim_buf_get_changedtick(buf)
   return all
 end
@@ -212,13 +273,63 @@ local function options()
   vim.wo.foldtext = "v:lua.require'harness.ui.fold'.text()"
 end
 
-local function apply(buf, win, w, list)
+local function apply(buf, win, w, list, incremental)
   vim.api.nvim_win_call(win, function()
     local saved = vim.fn.winsaveview()
     options()
     local wanted = {}
     for _, b in ipairs(list) do
       wanted[b.id] = b
+    end
+    -- A tail append never shifts existing line numbers or removes folds, so
+    -- the incremental path installs new folds and grows the tail fold's range
+    -- in place, skipping the O(folds) drift detection and the zE + full
+    -- re-:fold rebuild (the per-chunk cost on a long session). Anything
+    -- unexpected — a moved anchor, a window/view reset — falls through to the
+    -- full rebuild below.
+    if incremental == true and not (w.rebuild or w.reset or w.restore) then
+      local moved = false
+      for _, b in ipairs(list) do
+        local old = w.installed[b.id]
+        if old and old.start ~= b.start then
+          moved = true
+          break
+        end
+      end
+      if not moved then
+        local n = #list
+        for idx, b in ipairs(list) do
+          local old = w.installed[b.id]
+          if not old then
+            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
+            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+            w.installed[b.id] = { start = b.start, finish = b.finish }
+          elseif idx == n then
+            -- Tail fold: a manual fold cannot be grown in place without
+            -- nesting, and a tail append can shrink its native range by one
+            -- line even when the logical finish is unchanged. Delete and
+            -- re-create just this one fold. zd needs the cursor on it, so
+            -- jump, delete and re-fold; the saved view is restored below
+            -- before any redraw, so the user never sees the hop.
+            vim.api.nvim_win_set_cursor(0, { b.start, 0 })
+            -- silent!: a one-line fold can be removed entirely by the line
+            -- split, so there may be no fold left to delete.
+            vim.cmd("silent! normal! zd")
+            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
+            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+            old.start, old.finish = b.start, b.finish
+          elseif old.finish ~= b.finish then
+            -- A non-tail fold whose range drifted (rare; a safety net).
+            vim.cmd(("%d,%dfold"):format(b.start, b.finish))
+            vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+            old.start, old.finish = b.start, b.finish
+          end
+        end
+        w.rebuild, w.reset, w.restore = false, false, false
+        vim.fn.winrestview(saved)
+        return
+      end
+      -- An anchor moved: treat like the full path below.
     end
     -- A full rebuild is needed when the window was (re)entered, the view was
     -- reset, an anchor moved (an edit above shifted its line numbers), or a
@@ -276,18 +387,19 @@ local function apply(buf, win, w, list)
   end)
 end
 
-function M.reconcile(buf, full)
+function M.reconcile(buf, full, incremental)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
   local s = state(buf)
-  local all = identify(buf, s, parse(buf))
+  local p = incremental == true and extend(buf) or parse(buf)
+  local all = identify(buf, s, p)
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do
     local w = window(s, win)
     if full then
       w.rebuild = true
     end
-    apply(buf, win, w, intended(all, w.view))
+    apply(buf, win, w, intended(all, w.view), incremental)
   end
   s.projected_tick = vim.api.nvim_buf_get_changedtick(buf)
 end
@@ -379,12 +491,27 @@ function M.mouse_left()
   return ""
 end
 
--- Capture before a stream edit: Neovim may remove a one-line manual fold
--- when that line is split. After the edit it is too late to recover its
--- native open/closed choice. Document mutations call this before writing.
-function M.before_change(buf)
+-- Capture before an edit: Neovim may remove a one-line manual fold when
+-- that line is split. After the edit it is too late to recover its native
+-- open/closed choice. Document mutations call this before writing. The stream
+-- append path passes skip=true: only the tail fold can be split by a tail
+-- append, so capturing just it (rather than every installed fold) keeps the
+-- per-chunk cost off the O(folds) critical path.
+function M.before_change(buf, skip)
   local s = sessions[buf]
-  if s then
+  if not s then
+    return
+  end
+  s.streaming = skip == true
+  if skip == true then
+    local lastline = vim.api.nvim_buf_line_count(buf)
+    for win, w in pairs(s.windows) do
+      local id, start = tail_installed(w, lastline)
+      if id then
+        capture_one(buf, win, w, id, start)
+      end
+    end
+  else
     for win, w in pairs(s.windows) do
       capture(buf, win, w)
     end
@@ -393,10 +520,13 @@ end
 
 -- Text and its folds are committed before the stream callback yields. The
 -- scheduled on_lines fallback subsequently sees identical ranges (a no-op).
-function M.after_append(buf, _)
+function M.after_append(buf, incremental)
   local s = sessions[buf]
-  if s and s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf) then
-    M.reconcile(buf)
+  if s then
+    s.streaming = false
+    if s.projected_tick ~= vim.api.nvim_buf_get_changedtick(buf) then
+      M.reconcile(buf, false, incremental)
+    end
   end
 end
 

@@ -2,8 +2,7 @@
 
 An LLM agent that lives in a Neovim buffer. You chat with it, and it can
 edit files, run commands, search the web, and delegate to subagents. The
-conversation is a plain Markdown buffer you edit like any other text or
-file.
+conversation is a plain Markdown buffer you edit like any other file.
 
 Chat APIs are stateless: every request sends the whole conversation again.
 So the buffer is the conversation. Delete a message and the next request
@@ -17,12 +16,12 @@ Inspired by pi and gptel.
 - Text objects for messages, thinking, and tool regions (`dit` clears a
   region, `dam` drops a message).
 - `]`/`[` navigation between messages and regions (`]m`, `]u`, `]a`, `]t`).
-- A winbar with session description, model, token totals, cost, and
   streaming status.
+- Templates and skills merged into (running) conversation.
+- Scratch buffer that allows queueing and steering running conversations.
+- Subagents create new markdown files that inherit all regular session features.
 - Folding to collapse agent output or tool calls (`<leader>1/2/3`).
-- Sessions as plain Markdown files you can resume, fork, and render.
-- Subagents create new markdown files that are easy to track and manipulate.
-- Templates and skills merged into the conversation (`insert()`).
+- A winbar with session description, model, token totals, cost, and
 - Options are presented with whatever picker you use (`vim.ui.select`).
 - Drop images into the chat and the will get interpreted by the model.
 
@@ -115,9 +114,6 @@ Yap needs Neovim 0.11 or newer.
 
 ## Lua API
 
-Everything else is a Lua function on `require("harness")` — no `:Yap...`
-command for these. Bind them to keys or call them directly (copy-paste ready):
-
 | Function                                                 | Shortcut    | Purpose                                     |
 | -------------------------------------------------------- | ----------- | ------------------------------------------- |
 | `require("harness").send()`                              | `<C-s>`     | send the transcript                         |
@@ -171,9 +167,8 @@ The full vocabulary is in `:help yap-glossary`.
 
 ## Documentation
 
-The full reference is in `:help yap` (`doc/yap.txt`). The contributor-facing
-contract — the Lua \<-> Go wire protocol and the numbered business rules —
-lives in [`CONTRIBUTING.md`](CONTRIBUTING.md), together with how to run the
-test suite (`tests/run.sh`). AI assistants (and any human
-contributor) editing this repository MUST read `CONTRIBUTING.md` before
-changing behaviour, and update it when they do.
+The full reference is in `:help yap` (`doc/yap.txt`). Before changing behavior,
+anyone editing this repo, human or AI, should read `CONTRIBUTING.md`. It covers
+the Lua <-> Go wire protocol, the numbered business rules, and how to run the
+tests (`tests/run.sh`). Update that file when your change affects those
+details.

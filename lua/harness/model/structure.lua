@@ -54,7 +54,143 @@ end
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
 --   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
-local model_cache = {} -- buf -> { tick, parse }
+--
+-- The scanner keeps its mutable state (open fence/comment/tool region) in a
+-- `ctx` table so a pure tail append can resume from a checkpoint instead of
+-- rescanning the whole buffer (R-stream-parse): a streaming reply appends to
+-- the last line, which never shifts existing line numbers, so the only work
+-- is re-classifying the tail.
+local model_cache = {} -- buf -> { tick, parse, ctx, checkpoint, tail_clean }
+
+local function new_ctx()
+  return {
+    headings = {},
+    regions = {},
+    region = nil, -- "tool" while a yap:tool region is open, else nil
+    fence = nil, -- { char, n } while inside a fenced code block
+    comment = nil, -- { kind, region? } while inside a multi-line marker
+    comment_i = nil, -- index of comment.region in regions (or nil)
+    tool = nil, -- the open yap:tool region table (an element of regions)
+    tool_i = nil, -- index of tool in regions (or nil)
+  }
+end
+
+local function end_tool(ctx, finish)
+  if ctx.tool and not ctx.tool.finish then
+    ctx.tool.finish = finish
+  end
+  ctx.tool = nil
+  ctx.tool_i = nil
+end
+
+-- One line of the forward pass.
+local function step(ctx, i, line)
+  if ctx.fence then
+    local c, n, tail = fence_run(line)
+    if c == ctx.fence.char and n >= ctx.fence.n and tail:match("^%s*$") then
+      ctx.fence = nil
+    end
+  elseif ctx.comment then
+    -- Inside a multi-line HTML comment: raw text until a bare `-->`
+    -- (a ``` inside a comment is NOT a fence). An unclosed comment
+    -- (thinking/error) must not swallow the next message boundary: bound
+    -- it at the next `# @role` heading, mirroring how tool regions stop
+    -- at a heading. tool_inner comments (multi-line JSON headers) always
+    -- close with `-->` and are left alone.
+    if line:match("^%-%->%s*$") then
+      if ctx.comment.region then
+        ctx.comment.region.finish = i
+      end
+      ctx.comment = nil
+      ctx.comment_i = nil
+    elseif ctx.comment.region and line:match(HEAD) then
+      ctx.comment.region.finish = i - 1
+      ctx.comment = nil
+      ctx.comment_i = nil
+      ctx.headings[#ctx.headings + 1] = { role = line:match(HEAD), line = i }
+    end
+  else
+    local c, n = fence_run(line)
+    if c then
+      ctx.fence = { char = c, n = n }
+    elseif line:match(HEAD) then
+      -- A heading ends an unfinished tool region; document.lua still
+      -- treats headings inside well-formed tool results as result text.
+      end_tool(ctx, i - 1)
+      ctx.headings[#ctx.headings + 1] = { role = line:match(HEAD), line = i }
+      ctx.region = nil
+    elseif line:match(TOOL_OPEN) and ctx.region ~= "tool" then
+      end_tool(ctx, i - 1)
+      local d = { kind = "tool", start = i }
+      ctx.regions[#ctx.regions + 1] = d
+      ctx.tool, ctx.tool_i = d, #ctx.regions
+      ctx.region = "tool"
+      -- Pretty JSON headers are comments too: fence/heading-looking
+      -- argument lines must not change the surrounding region structure.
+      if not line:find("-->", 1, true) then
+        ctx.comment = { kind = "tool_inner" }
+        ctx.comment_i = nil
+      end
+    elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
+      local kind = line:match("yap:(%a+)") or "comment"
+      local d = { kind = kind, start = i }
+      ctx.regions[#ctx.regions + 1] = d
+      ctx.comment = { kind = kind, region = d }
+      ctx.comment_i = #ctx.regions
+    elseif line:match(TOOL_CLOSE) then
+      end_tool(ctx, i)
+      ctx.region = nil
+    end
+    -- else: plain content line
+  end
+end
+
+-- O(1) snapshot of the scanner state just before the last scanned line.
+-- References into `regions` are stored as indices (plus their current
+-- finish) so a tail append can truncate the result and re-point them.
+local function snapshot(ctx)
+  return {
+    headings_n = #ctx.headings,
+    regions_n = #ctx.regions,
+    region = ctx.region,
+    fence = ctx.fence and { char = ctx.fence.char, n = ctx.fence.n } or nil,
+    comment_kind = ctx.comment and ctx.comment.kind or nil,
+    comment_i = ctx.comment and ctx.comment_i or nil,
+    comment_finish = ctx.comment and ctx.comment.region and ctx.comment.region.finish or nil,
+    tool_i = ctx.tool_i,
+    tool_finish = ctx.tool and ctx.tool.finish or nil,
+  }
+end
+
+local function restore(ctx, cp)
+  for i = #ctx.headings, cp.headings_n + 1, -1 do
+    ctx.headings[i] = nil
+  end
+  for i = #ctx.regions, cp.regions_n + 1, -1 do
+    ctx.regions[i] = nil
+  end
+  ctx.region = cp.region
+  ctx.fence = cp.fence
+  if cp.comment_kind then
+    ctx.comment = { kind = cp.comment_kind }
+    ctx.comment_i = cp.comment_i
+    if cp.comment_i then
+      ctx.comment.region = ctx.regions[cp.comment_i]
+      ctx.comment.region.finish = cp.comment_finish
+    end
+  else
+    ctx.comment = nil
+    ctx.comment_i = nil
+  end
+  if cp.tool_i then
+    ctx.tool = ctx.regions[cp.tool_i]
+    ctx.tool.finish = cp.tool_finish
+    ctx.tool_i = cp.tool_i
+  else
+    ctx.tool = nil
+    ctx.tool_i = nil
+  end
+end
 
 local function parse(buf)
   local tick = vim.api.nvim_buf_get_changedtick(buf)
@@ -75,79 +211,76 @@ local function parse(buf)
       end
     end
   end
-  local headings, regions = {}, {}
-  local region, fence, comment = nil, nil, nil
-  local tool
-  local function end_tool(finish)
-    if tool and not tool.finish then
-      tool.finish = finish
-    end
-    tool = nil
-  end
-
+  local ctx = new_ctx()
+  local checkpoint
   for i, line in ipairs(lines) do
-    if fence then
-      local c, n, tail = fence_run(line)
-      if c == fence.char and n >= fence.n and tail:match("^%s*$") then
-        fence = nil
-      end
-    elseif comment then
-      -- Inside a multi-line HTML comment: raw text until a bare `-->`
-      -- (a ``` inside a comment is NOT a fence). An unclosed comment
-      -- (thinking/error) must not swallow the next message boundary: bound
-      -- it at the next `# @role` heading, mirroring how tool regions stop
-      -- at a heading. tool_inner comments (multi-line JSON headers) always
-      -- close with `-->` and are left alone.
-      if line:match("^%-%->%s*$") then
-        if comment.region then
-          comment.region.finish = i
-        end
-        comment = nil
-      elseif comment.region and line:match(HEAD) then
-        comment.region.finish = i - 1
-        comment = nil
-        headings[#headings + 1] = { role = line:match(HEAD), line = i }
-      end
-    else
-      local c, n = fence_run(line)
-      if c then
-        fence = { char = c, n = n }
-      elseif line:match(HEAD) then
-        -- A heading ends an unfinished tool region; document.lua still
-        -- treats headings inside well-formed tool results as result text.
-        end_tool(i - 1)
-        headings[#headings + 1] = { role = line:match(HEAD), line = i }
-        region = nil
-      elseif line:match(TOOL_OPEN) and region ~= "tool" then
-        end_tool(i - 1)
-        local d = { kind = "tool", start = i }
-        regions[#regions + 1] = d
-        tool, region = d, "tool"
-        -- Pretty JSON headers are comments too: fence/heading-looking
-        -- argument lines must not change the surrounding region structure.
-        if not line:find("-->", 1, true) then
-          comment = { kind = "tool_inner" }
-        end
-      elseif line:match(COMMENT_OPEN) and not line:match("%-%->") then
-        local kind = line:match("yap:(%a+)") or "comment"
-        local d = { kind = kind, start = i }
-        regions[#regions + 1] = d
-        comment = { kind = kind, region = d }
-      elseif line:match(TOOL_CLOSE) then
-        end_tool(i)
-        region = nil
-      end
-      -- else: plain content line
+    if i == #lines then
+      checkpoint = snapshot(ctx)
     end
+    step(ctx, i, line)
   end
 
-  local p = { headings = headings, regions = regions, count = #lines, frontmatter = frontmatter }
-  model_cache[buf] = { tick = tick, parse = p }
+  local p = { headings = ctx.headings, regions = ctx.regions, count = #lines, frontmatter = frontmatter }
+  model_cache[buf] = { tick = tick, parse = p, ctx = ctx, checkpoint = checkpoint, tail_clean = true }
   return p
+end
+
+-- Extend a cached parse for a pure tail append (append_text). Rewinds to the
+-- checkpoint captured just before the previous last line and rescans only the
+-- new tail. The caller marks non-tail edits via M.mark_changed; when that
+-- flag is off (or the buffer shrank) this falls back to a full rescan, so a
+-- mis-classified change is never silently mis-parsed.
+local function extend(buf)
+  local cached = model_cache[buf]
+  if not cached or not cached.ctx or not cached.checkpoint or not cached.tail_clean then
+    return parse(buf)
+  end
+  local tick = vim.api.nvim_buf_get_changedtick(buf)
+  if cached.tick == tick then
+    return cached.parse
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  if #lines < cached.parse.count then
+    return parse(buf)
+  end
+  local ctx = cached.ctx
+  restore(ctx, cached.checkpoint)
+  local checkpoint
+  for i = cached.parse.count, #lines do
+    if i == #lines then
+      checkpoint = snapshot(ctx)
+    end
+    step(ctx, i, lines[i])
+  end
+  local p = { headings = ctx.headings, regions = ctx.regions, count = #lines, frontmatter = cached.parse.frontmatter }
+  cached.parse = p
+  cached.tick = tick
+  cached.checkpoint = checkpoint
+  cached.tail_clean = true
+  return p
+end
+
+-- Record a buffer edit so extend() only trusts a checkpoint while every edit
+-- since the last parse touched only the tail (the last line or beyond).
+-- `firstline` is the 0-based index of the first OLD line the edit replaced.
+function M.mark_changed(buf, firstline)
+  local c = model_cache[buf]
+  if not c then
+    return
+  end
+  if type(firstline) ~= "number" then
+    c.tail_clean = false -- unknown edit shape: be conservative, rescan
+  else
+    c.tail_clean = c.tail_clean and (firstline >= c.parse.count - 1)
+  end
 end
 
 function M.parse(buf)
   return parse(buf)
+end
+
+function M.extend(buf)
+  return extend(buf)
 end
 
 function M.clear(buf)

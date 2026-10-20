@@ -161,11 +161,14 @@ function M.append_text(buf, text)
     return
   end
   local fold = require("harness.ui.fold")
-  fold.before_change(buf)
+  -- append_text only ever extends the last line, so the fold engine can
+  -- capture just the tail fold and extend the cached structural parse instead
+  -- of rescanning the whole buffer (R-stream-parse).
+  fold.before_change(buf, true)
   local row = vim.api.nvim_buf_line_count(buf) - 1
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
-  fold.after_append(buf)
+  fold.after_append(buf, true)
 end
 
 --- Windows whose cursor sits on the last line of `buf`: the user is

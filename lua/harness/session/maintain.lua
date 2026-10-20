@@ -91,8 +91,15 @@ function M.clear(buf, keep)
       i = i + 1
     end
   end
+  -- Clear from the bottom up so earlier regions keep their line numbers:
+  -- an edit at a region only shifts lines BELOW it, which have already been
+  -- processed. The `lines` snapshot read above stays valid for the
+  -- idempotency check (a region already replaced by a placeholder is
+  -- skipped). This removes the old full-buffer re-read per region — an
+  -- O(regions × n) loop that froze the editor on sessions with thousands
+  -- of tool calls.
   local cleared = 0
-  for r = 1, #regions - keep do
+  for r = #regions - keep, 1, -1 do
     local s, e = regions[r][1], regions[r][2]
     if e >= s and not lines[s]:match("^%[output cleared") then
       local id
@@ -103,11 +110,6 @@ function M.clear(buf, keep)
       local placeholder = ("[output cleared — full output in the audit log: %s]"):format(ref_for(id))
       vim.api.nvim_buf_set_lines(buf, s - 1, e, false, { placeholder })
       cleared = cleared + 1
-      local delta = (e - s + 1) - 1 -- replaced that many lines with one
-      for r2 = r + 1, #regions do
-        regions[r2][1], regions[r2][2] = regions[r2][1] - delta, regions[r2][2] - delta
-      end
-      lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     end
   end
   if cleared > 0 then
@@ -210,15 +212,12 @@ function M.delete(buf)
   while se > 0 and lines[se]:match("^%s*$") do
     se = se - 1
   end
-  local kept = {}
-  for i = 1, se do
-    kept[#kept + 1] = lines[i]
-  end
-  kept[#kept + 1] = "" -- one blank line between system and summary (R-blank-lines)
-  for i = ai, #lines do
-    kept[#kept + 1] = lines[i]
-  end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, kept)
+  -- Delete the superseded history as one range edit, leaving a single blank
+  -- line between the system message and the summary (R-blank-lines). A range
+  -- delete (rather than rebuilding the whole buffer through a `kept` table)
+  -- is O(deleted) not O(buffer), and preserves the frontmatter/system/summary
+  -- extmarks (folds, etc.) instead of deleting and recreating them.
+  vim.api.nvim_buf_set_lines(buf, se, ai - 1, false, { "" })
   session.save(buf)
 end
 
