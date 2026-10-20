@@ -40,6 +40,7 @@ type Part struct {
 	ToolName        string
 	ToolInput       json.RawMessage
 	ToolOutput      string
+	CacheControl    string // "ephemeral": prompt-cache breakpoint (Anthropic maps it; others ignore)
 	ProviderOptions map[string]any
 }
 

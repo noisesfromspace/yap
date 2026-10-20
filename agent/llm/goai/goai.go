@@ -374,6 +374,7 @@ func toSDKMessage(msg llm.Message) provider.Message {
 			ToolName:        p.ToolName,
 			ToolInput:       p.ToolInput,
 			ToolOutput:      p.ToolOutput,
+			CacheControl:    p.CacheControl,
 			ProviderOptions: p.ProviderOptions,
 		})
 	}

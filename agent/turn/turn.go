@@ -516,6 +516,20 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 				})
 			}
 		}
+		// Prompt-cache breakpoint at the end of stable history (the last
+		// assistant message): the trailing user message is excluded because it
+		// carries the volatile cwd/git tail. Anthropic maps CacheControl to
+		// cache_control; OpenAI/Gemini/DeepSeek/... ignore it.
+		if iter == 0 {
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == llm.RoleAssistant {
+					if c := messages[i].Content; len(c) > 0 {
+						c[len(c)-1].CacheControl = "ephemeral"
+					}
+					break
+				}
+			}
+		}
 		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools, req.ReasoningLevel)
 		if err != nil {
 			// Retry transient errors (429/5xx, network) only while the failed
