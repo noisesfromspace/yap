@@ -115,20 +115,23 @@ Yap needs Neovim 0.11 or newer.
 
 ## Lua API
 
-```lua
-require("harness").send()                              -- <C-s>     send the transcript
-require("harness").stop()                              -- <C-c>     stop the in-flight request
-require("harness").live()                              -- <leader>l open the live tool tail
-require("harness").guard()                             -- <leader>g open/close the guard board
-require("harness").change_model(combo)                 -- <leader>m set this session's provider/model
-require("harness").sessions(scope)                     --           resume a saved session ("cwd" | "all")
-require("harness").instances()                         -- <leader>r pick another open session
-require("harness").waiting()                           -- <leader>w pick a session awaiting your reply
-require("harness").history()                           -- <leader>y pick a saved session with live status
-require("harness").change_default_model()              -- <leader>M pick the default model for new sessions
-require("harness").insert(name, { at_cursor = false }) -- <C-t>     insert template/ merge a skill
-require("harness").insert_file({ from_insert = true }) -- <C-f>     pick a file and insert an @path reference
-```
+Everything else is a Lua function on `require("harness")` — no `:Yap...`
+command for these. Bind them to keys or call them directly (copy-paste ready):
+
+| Function                                     | Shortcut    | Purpose                                     |
+| -------------------------------------------- | ----------- | ------------------------------------------- |
+| ``require("harness").send()``                 | `<C-s>`     | send the transcript                         |
+| ``require("harness").stop()``                 | `<C-c>`     | stop the in-flight request                  |
+| ``require("harness").live()``                 | `<leader>l` | open the live tool tail                     |
+| ``require("harness").guard()``                | `<leader>g` | open/close the guard board                  |
+| ``require("harness").change_model(combo)``    | `<leader>m` | set this session's provider/model           |
+| ``require("harness").sessions(scope)``        |             | resume a saved session (`cwd` \| `all`)     |
+| ``require("harness").instances()``            | `<leader>r` | pick another open session                   |
+| ``require("harness").waiting()``              | `<leader>w` | pick a session awaiting your reply          |
+| ``require("harness").history()``              | `<leader>y` | pick a saved session with live status       |
+| ``require("harness").change_default_model()`` | `<leader>M` | pick the default model for new sessions     |
+| ``require("harness").insert(name, { at_cursor = false })`` | `<C-t>` | insert template / merge a skill |
+| ``require("harness").insert_file({ from_insert = true })`` | `<C-f>` | pick a file and insert an `@path` reference |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 
