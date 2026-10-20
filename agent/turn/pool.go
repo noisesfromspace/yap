@@ -16,7 +16,7 @@ import (
 // Only read-only, independent tools may share a model round. In particular,
 // never speculate about whether two shell commands or edits commute.
 var parallelTools = map[string]bool{
-	"ls": true, "read": true, "search": true, "glob": true,
+	"read": true, "search": true, "glob": true,
 	"fetch": true, "websearch": true, "models": true,
 }
 

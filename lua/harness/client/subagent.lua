@@ -23,7 +23,6 @@ local servers = state.servers
 -- The tools a subagent may request; agent-definition files also use the aliases
 -- below (grep/find/webfetch) which are mapped onto these canonical names.
 local ALLOWED_TOOLS = {
-  "ls",
   "read",
   "search",
   "glob",
@@ -41,7 +40,7 @@ local ALLOWED_TOOLS = {
 -- prompt-injection hop removed from the user's attention, so it must opt into
 -- write/bash/curl/ssh explicitly. Any agent definition may still request the full
 -- set (minus recursive `subagent`) via its `tools:` header.
-local DEFAULT_SUBAGENT_TOOLS = { "ls", "read", "search", "glob", "fetch", "websearch", "quickfix" }
+local DEFAULT_SUBAGENT_TOOLS = { "read", "search", "glob", "fetch", "websearch", "quickfix" }
 
 local function subagent_result(parent, child, child_path, reply)
   return function(success)
