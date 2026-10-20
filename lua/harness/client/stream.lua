@@ -2,7 +2,7 @@
 --
 -- One persistent serve backend per session buffer, so several sessions can
 -- stream at once. Each backend keeps its own tool state (SSH connections
--- above all) for the life of its buffer; a cancelled turn (|:YapStop|)
+-- above all) for the life of its buffer; a cancelled turn (stop())
 -- unwinds over the protocol while the process — and its tool state —
 -- survives. `servers` lives in harness.state (shared with the subagent and
 -- scratch modules).
@@ -80,7 +80,7 @@ M.answer_approval = answer_approval
 
 -- Approval is a non-blocking notification, not a modal: the turn is parked
 -- (the backend waits up to five minutes) and the user answers deliberately
--- via :YapGuard. ERROR level plus the shield icon make an action-required
+-- via guard(). ERROR level plus the shield icon make an action-required
 -- pause unmistakable.
 local function notify_approval(buf, ev)
   vim.notify(
@@ -243,7 +243,7 @@ local function report_error(buf, err, code)
 end
 
 --- Close dangling regions left by an interrupted stream. A cancelled
---- |:YapStop| (or a backend that died) can end mid-way through an open
+--- stop() (or a backend that died) can end mid-way through an open
 --- region: a thinking comment (close with `-->`), a multi-line tool header
 --- (an unterminated comment: `-->`, then the region closer), or a tool region
 --- whose header landed but whose result didn't (`<!-- /yap:tool -->`). Two
@@ -302,7 +302,7 @@ local function leave_undelivered_steer(buf)
   end
 end
 
---- Every stream exit, including errors and :YapStop, hands the buffer back
+--- Every stream exit, including errors and stop(), hands the buffer back
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
   repair_stream_tail(buf)
@@ -320,7 +320,7 @@ end
 function M.send(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   if running[buf] then
-    vim.notify("yap: turn already running; use :YapStop to interrupt it", vim.log.levels.WARN)
+    vim.notify("yap: turn already running; press <C-c> (or call stop()) to interrupt it", vim.log.levels.WARN)
     return false
   end
   -- A close request is scoped to the turn that made it: a stale flag from
@@ -372,8 +372,8 @@ function M.send(buf)
   state.error_code[buf] = nil
   stopped[buf] = nil
   awaiting[buf] = nil
-  -- provider/model come from the buffer vars (set by :Yap /
-  -- :YapChangeModel), falling back to config; sync them so the winbar
+  -- provider/model come from the buffer vars (set by new() /
+  -- change_model()), falling back to config; sync them so the winbar
   -- and this send agree.
   local provider, model = config.current_combo(buf)
   vim.b[buf].yap_provider = provider

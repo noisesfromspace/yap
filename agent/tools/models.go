@@ -34,7 +34,7 @@ type modelsArgs struct {
 }
 
 func init() {
-	Register("models", "List the provider/model combos available to :YapChangeModel and to a subagent's `model` argument. With no filter, returns a summary of the configured providers and how many models each has; with a filter, lists up to 100 matching combos and their price per 1M tokens when known. Providers that do not answer are reported as warnings. Prefer a filter over listing everything.", func(a *modelsArgs) (string, string, error) {
+	Register("models", "List the provider/model combos available to change_model() and to a subagent's `model` argument. With no filter, returns a summary of the configured providers and how many models each has; with a filter, lists up to 100 matching combos and their price per 1M tokens when known. Providers that do not answer are reported as warnings. Prefer a filter over listing everything.", func(a *modelsArgs) (string, string, error) {
 		if modelLister == nil {
 			return "", "", fmt.Errorf("models requires yap serve")
 		}

@@ -1,15 +1,8 @@
 :Yap	yap.txt	/*:Yap*
-:YapChangeModel	yap.txt	/*:YapChangeModel*
 :YapClear	yap.txt	/*:YapClear*
 :YapCompact	yap.txt	/*:YapCompact*
 :YapEval	yap.txt	/*:YapEval*
 :YapFork	yap.txt	/*:YapFork*
-:YapGuard	yap.txt	/*:YapGuard*
-:YapHistory	yap.txt	/*:YapHistory*
-:YapInsert	yap.txt	/*:YapInsert*
-:YapLive	yap.txt	/*:YapLive*
-:YapSend	yap.txt	/*:YapSend*
-:YapStop	yap.txt	/*:YapStop*
 yap-audit	yap.txt	/*yap-audit*
 yap-buffer	yap.txt	/*yap-buffer*
 yap-commands	yap.txt	/*yap-commands*
@@ -21,6 +14,7 @@ yap-glossary	yap.txt	/*yap-glossary*
 yap-guard-gate	yap.txt	/*yap-guard-gate*
 yap-introduction	yap.txt	/*yap-introduction*
 yap-keymaps	yap.txt	/*yap-keymaps*
+yap-lua-api	yap.txt	/*yap-lua-api*
 yap-markers	yap.txt	/*yap-markers*
 yap-sessions	yap.txt	/*yap-sessions*
 yap-skill	yap.txt	/*yap-skill*

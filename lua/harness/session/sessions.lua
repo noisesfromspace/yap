@@ -53,7 +53,7 @@ function M.tail_buffer(buf)
   return t and t.bufnr or nil
 end
 
---- Open the session's live tool tail (:YapLive): one persistent read-only
+--- Open the session's live tool tail (live()): one persistent read-only
 --- buffer that follows the running tool's output. Opens even before any tool
 --- has run (an empty tail that fills as tools execute). The tail stacks below
 --- the guard board when it is open in this tab, else below the session window
@@ -200,7 +200,7 @@ end
 --- "needs you" includes ordinary waiting/stopped parents, but only stopped
 --- or errored children: a finished child need not be replied to. A current
 --- parent remains visible while it has an open subagent. Tail viewers are
---- never here — use :YapLive / <leader>l.
+--- never here — use live() / <leader>l.
 local function has_open_child(parent)
   local child = subagent_children[parent]
   if child and vim.api.nvim_buf_is_valid(child) then

@@ -107,7 +107,7 @@ do
   )
   assert(vim.api.nvim_win_get_cursor(0)[1] == row0, "moving off the tail did not cancel follow")
   -- Let this turn finish before the next section starts; a second
-  -- :YapSend in the SAME buffer while it is still streaming would be
+  -- send() in the SAME buffer while it is still streaming would be
   -- (correctly) refused with "already streaming".
   assert(
     vim.wait(20000, function()

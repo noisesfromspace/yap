@@ -46,7 +46,7 @@ func main() {
 	defer tools.CloseAll()
 	// SIGTERM/SIGINT (e.g. the process being killed, or a buffer unload)
 	// terminate the persistent backend. Kill tracked local tool process
-	// groups as well; one handler serves every turn. A user :YapStop does not
+	// groups as well; one handler serves every turn. A user stop() does not
 	// signal the process — it cancels the in-flight turn over the protocol,
 	// keeping the backend and its tool state alive.
 	sig := make(chan os.Signal, 1)
@@ -169,7 +169,7 @@ func serve(in io.Reader, out io.Writer) error {
 	// stdin calls it; the turn's context cancellation then unwinds the agent
 	// loop (LLM stream, in-flight tools, parked approvals/subagents) without
 	// killing the serve process, so SSH control masters and other tool state
-	// survive a :YapStop.
+	// survive a stop().
 	var cancelMu sync.Mutex
 	var cancelFn context.CancelFunc
 

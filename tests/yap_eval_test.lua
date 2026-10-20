@@ -88,7 +88,7 @@ assert(lines[2] == "summarized output", "generate eval did not insert at cursor:
 assert(lines[3] == "after", "generate eval clobbered later line: " .. vim.inspect(lines))
 
 -- :YapEval (no bang): an interactive, regular session in a split, listed in
--- :YapHistory. The selection is fenced context, nothing is sent without an
+-- sessions(). The selection is fenced context, nothing is sent without an
 -- instruction, and the source buffer is left alone.
 local src = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(src)
@@ -113,7 +113,7 @@ local listed = false
 for _, item in ipairs(require("harness.session").list()) do
   listed = listed or item.path == spath
 end
-assert(listed, "eval session missing from :YapHistory")
+assert(listed, "eval session missing from sessions()")
 
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")

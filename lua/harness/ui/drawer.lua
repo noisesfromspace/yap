@@ -1,5 +1,5 @@
 -- Fixed-height bottom drawers: the ONE window pattern shared by every Yap
--- panel — the live tool tail (:YapLive), the guard board (:YapGuard) and the
+-- panel — the live tool tail (live()), the guard board (guard()) and the
 -- scratch queue (<leader>s). A single persistent buffer per panel, never
 -- duplicated, always a bottom split under the panel's own anchor window,
 -- closed back to the window it was toggled from. All three share the same
@@ -164,7 +164,7 @@ function M.close(buf, owner)
         vim.api.nvim_win_close(win, true)
       elseif state.pending_approvals[owner] and win == vim.api.nvim_get_current_win() then
         -- Inspect + :only while focused on the tail: keep the review
-        -- visible, not an empty replacement buffer. :YapGuard still works
+        -- visible, not an empty replacement buffer. guard() still works
         -- from this window even when the session is hidden.
       else
         -- Keep the drawer buffer available to reopen later. Clear any pin

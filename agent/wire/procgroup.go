@@ -20,7 +20,7 @@ func Untrack(pgid int) { runningMu.Lock(); delete(running, pgid); runningMu.Unlo
 
 // KillAll SIGKILLs every tracked tool process group; used on SIGTERM/SIGINT
 // so a killed backend takes its in-flight commands down with it. A user
-// :YapStop no longer reaches this path — it cancels the turn via the protocol
+// stop() no longer reaches this path — it cancels the turn via the protocol
 // while the process (and its SSH masters) stay alive.
 func KillAll() {
 	runningMu.Lock()

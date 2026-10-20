@@ -17,14 +17,14 @@ M.defaults = {
   -- back to the provider's own default.
   reasoning_level = "medium",
   -- Optional override list of "provider/model" combos for
-  -- :YapChangeModel. When unset, the picker queries every provider
+  -- change_model(). When unset, the picker queries every provider
   -- in config.json for its model list (GET /models).
   models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
   agents_file = paths.config_home() .. "/yap/AGENTS.md",
-  -- Templates are text files inserted into the context by :YapInsert
+  -- Templates are text files inserted into the context by insert()
   -- (a compaction prompt, a snippet, ...); skills are the same but
   -- system-prompt material, merged into the `# @system` message.
   templates_dir = paths.config_home() .. "/yap/templates",
@@ -69,7 +69,7 @@ M.defaults = {
   -- that needs a model reads its tier here, so a tier is set once and every
   -- feature that uses it follows:
   --   agent  — the session worker. Empty falls back to provider/model above
-  --            (and a persisted :YapChangeDefaultModel still wins over both).
+  --            (and a persisted change_default_model() still wins over both).
   --   editor — the one-shot, no-tools model behind :YapEval.
   --   title  — session titling: both the instant on-send label and the
   --            final whole-session summary. Empty disables titling.
@@ -254,7 +254,7 @@ function M.group(name)
 end
 
 --- The combo a brand-new session starts on: the persisted default
---- (:YapChangeDefaultModel), else the `agent` model group, else setup()'s
+--- (change_default_model()), else the `agent` model group, else setup()'s
 --- provider/model.
 function M.session_combo()
   if M.default_combo then
@@ -270,8 +270,8 @@ function M.session_combo()
   return require("harness").config.provider, require("harness").config.model
 end
 
---- The combo yap will send with: per-buffer vars (set by :Yap /
---- :YapChangeModel), falling back to the session default above.
+--- The combo yap will send with: per-buffer vars (set by new() /
+--- change_model()), falling back to the session default above.
 function M.current_combo(buf)
   local provider, model = vim.b[buf].yap_provider, vim.b[buf].yap_model
   if provider then

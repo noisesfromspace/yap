@@ -54,7 +54,7 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     agents_dir = "~/.config/yap/agents",       -- subagent definitions
     sessions_dir = "~/.config/yap/sessions",   -- sessions + scratch + audit logs
-    templates_dir = vim.fn.expand("~/.config/yap/templates"), -- :YapInsert files
+    templates_dir = vim.fn.expand("~/.config/yap/templates"), -- insert() files
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
     notify_done = true,           -- vim.notify when a hidden turn finishes
     model_groups = {              -- named model tiers (provider/model combos)
@@ -99,7 +99,7 @@ drop it.
 it follows:
 
   agent  — the session worker. Empty falls back to `provider`/`model` above
-           (and a persisted |:YapChangeDefaultModel| still wins over both).
+           (and a persisted change_default_model() still wins over both).
   editor — the one-shot, no-tools model behind |:YapEval|.
   title  — session titling: both the instant on-send label and the final
            whole-session summary.
@@ -163,8 +163,8 @@ and each path is configurable via `setup()` / the Nix module options):
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
-  ~/.config/yap/templates/ |:YapInsert| template files (|yap-templates|).
-  ~/.config/yap/skills/    |:YapInsert| skill files (|yap-templates|).
+  ~/.config/yap/templates/ insert() template files (|yap-templates|).
+  ~/.config/yap/skills/    insert() skill files (|yap-templates|).
   ~/.config/yap/sessions/  Autosaved sessions + scratch queues + audit logs.
   ~/.config/yap/agents/    Subagent definitions.
 
@@ -177,35 +177,7 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
 *:Yap*
 :Yap                  Open a new session buffer with a system message and an
                         empty `# @user` prompt. Nothing is sent until you type
-                        there and |:YapSend|.
-*:YapSend*
-:YapSend              Send the whole buffer to the provider and stream the
-                        reply in. Also appends Neovim's current working
-                        directory and git snapshot as request-only context
-                        (evaluated at send time), so `:cd` takes effect on
-                        the next send.
-*:YapStop*
-:YapStop              Cancel the in-flight request for the current buffer.
-                        The turn is aborted (the LLM stream and any running
-                        tool are cancelled) but the backend process stays
-                        alive, so its tool state — SSH control masters above
-                        all — survives for the next send.
-*:YapLive*
-:YapLive              Open this session's live tool tail (|yap-audit|): one
-                        persistent, read-only buffer following the running
-                        tool's output — a `$ command` header per bash call with
-                        its streamed output. Opens scrolled to the bottom (or
-                        focuses the existing window); `q` closes it.
-*:YapGuard*
-:YapGuard            Open the guard board (yap://guard): a read-only bottom
-                        drawer of everything that needs attention — any parked
-                        approvals and the project's settled decision history
-                        (granted/denied/timed-out approvals read back from the
-                        audit logs, so decisions persist across sessions).
-                        <Tab>/`za` expand a row; on an approval row `r`/`x`
-                        run/deny, `i` inspects, `a` toggles auto-accept, `c`
-                        clears the history (stores a project watermark, hiding
-                        rows at or before it), `q` closes.
+                        there and send().
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line
@@ -222,7 +194,7 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         Open an interactive eval session in a split about
                         the selected lines (or about the current file with no
                         range). It is a regular session (default system
-                        prompt, tools, follow-ups), listed in |:YapHistory|.
+                        prompt, tools, follow-ups), listed in sessions().
                         The selection is quoted as context and the
                         source buffer is never changed. With an instruction
                         the first turn is sent at once; without one the
@@ -241,16 +213,6 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         the output is inserted at the cursor as new lines
                         (generate content into a fresh, empty buffer). No
                         default keymap for either form.
-*:YapInsert*
-:YapInsert [name]     Insert a template or skill (|yap-templates|). With no
-                        argument, pick from a combined list. At the cursor,
-                        use `<leader>T`.
-*:YapChangeModel*
-:YapChangeModel {provider/model}
-                        Change this buffer's provider/model combo. Without an
-                        argument, pick from a list. Mid-turn, the new combo
-                        takes effect at the next model boundary. To change
-                        the default for new buffers, use `<leader>M`.
 *:YapFork*
 :YapFork [name]       Copy the current in-memory conversation into a new,
                         independent session in the same project. The original
@@ -258,10 +220,31 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         original; the copy opens in the current window. No
                         name generates a filename; a name uses `name.md`.
                         Existing files are never replaced.
-*:YapHistory*
-:YapHistory [scope]   Pick a saved session to resume. scope is `cwd` (the
-                        default, current project) or `all` (every project).
-                        Open sessions are unlisted (use `<leader>r`).
+
+LUA API                                                  *yap-lua-api*
+
+The per-buffer actions below are Lua functions on `require("harness")`; there
+are no `:Yap...` commands for them. Bind them to keys or call them directly:
+>lua
+
+  require("harness").send()                 -- send the transcript
+  require("harness").stop()                 -- stop the in-flight request
+  require("harness").live()                 -- open the live tool tail
+  require("harness").guard()                -- open/close the guard board
+  require("harness").insert(name)           -- insert a template / merge a skill
+  require("harness").change_model(combo)    -- set this session's provider/model
+  require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
+  require("harness").instances()            -- pick another open session
+  require("harness").waiting()              -- pick a session awaiting your reply
+  require("harness").history()              -- alias of sessions()
+  require("harness").change_default_model() -- pick the default model for new sessions
+  require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
+<
+`scope` for sessions()/history() is `"cwd"` (default) or `"all"`; omit it for
+the current project. `insert(name, { at_cursor = true })` inserts the raw
+file at the cursor instead of appending/sending; insert_file() picks a file
+under |:pwd| and inserts an `@path` reference at the cursor. See |yap-keymaps|
+for the default shortcuts that call these.
 
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
@@ -271,11 +254,11 @@ and <leader>M, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
-  <C-c>                 Cancel the in-flight request (see |:YapStop|).
-  <leader>m             Change model (picker, see |:YapChangeModel|).
+  <C-c>                 Cancel the in-flight request (see stop()).
+  <leader>m             Change model (picker, see change_model()).
   <leader>M             Change the default model for new buffers (picker).
-  <leader>g             Open/close the guard board (see |:YapGuard|).
-  <leader>l             Watch the live tool tail (see |:YapLive|).
+  <leader>g             Open/close the guard board (see guard()).
+  <leader>l             Watch the live tool tail (see live()).
 
 Inside the guard board, <leader>l opens the live tail directly below it;
 inside the live tail, <leader>g opens the guard board directly above it.
@@ -283,7 +266,7 @@ Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
-  <C-t> (n, i)          Insert a template or skill (see |:YapInsert|).
+  <C-t> (n, i)          Insert a template or skill (see insert()).
   <leader>T             Insert a template or skill at the cursor.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
@@ -369,7 +352,7 @@ tool on the next send. `turns` counts completed `# @assistant` replies so
 the picker can show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set
-by |:YapChangeModel|, then the persisted default, then setup() defaults.
+by change_model(), then the persisted default, then setup() defaults.
 
 ==============================================================================
 6. MARKERS & TOOL REGIONS                                      *yap-markers*
@@ -407,7 +390,7 @@ A tool call and its result are ONE region inside an assistant message: >
                   confirmations; read-like tools return (truncated) content.
                   The header normally lands BEFORE the tool runs, so its
                   arguments are visible during execution. Live bash output is
-                  followed via |:YapLive|, never written into the buffer.
+                  followed via live(), never written into the buffer.
 
   <!-- yap:ui   Optional display-only diff for edits and writes, fenced as
                   ```diff between paired one-line markers. It is pure
@@ -440,7 +423,7 @@ prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (unlisted, keymapped, live tool tail attached), the same
-as |:YapHistory| resume.
+as sessions() resume.
 
 File operations are the session operations:
 
@@ -471,11 +454,11 @@ attachments, approval requests and their Run/Deny answers, a retry line for each
 generation error, and one `turn_end` line per completed send (model, prompt,
 completion, cost, ms).
 
-The live tool tail (|:YapLive|) is a separate, plain buffer that follows the
+The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-|:YapGuard| lists the parked approvals and the project's settled decision
+guard() lists the parked approvals and the project's settled decision
 history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.
 
@@ -552,11 +535,11 @@ For a global segment independent of yap buffers, use
 A template or skill is just a markdown file — the filename (minus `.md`) is
 the name in the picker, the body is what gets inserted. They live in:
 
-  ~/.config/yap/templates/     generic text (|:YapInsert|)
-  ~/.config/yap/skills/        system-prompt material (|:YapInsert|)
+  ~/.config/yap/templates/     generic text (insert())
+  ~/.config/yap/skills/        system-prompt material (insert())
 
 Both configurable via `templates_dir` / `skills_dir`. Create the directory,
-drop a file in, then `<C-t>` (or `:YapInsert <name>`) to insert it;
+drop a file in, then `<C-t>` (or insert(name)) to insert it;
 `<leader>T` inserts the raw file at the cursor.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
@@ -612,10 +595,10 @@ would start a new message and split the instructions.
 
 WHAT INSERT DOES
 
-  :YapInsert <template>   wrap in `# @user` and append at the end, then send
+  insert(template)        wrap in `# @user` and append at the end, then send
                             (unless a snippet; a leading `# @role` heading
                             sets the role and is never duplicated)
-  :YapInsert <skill>      merge the body into `# @system` (and reveal it)
+  insert(skill)           merge the body into `# @system` (and reveal it)
   require('harness').insert(name, { at_cursor = true })
                             raw file above the cursor, no role logic
 
@@ -709,7 +692,7 @@ replaces.
                       (Not "block", "detail".)
   tool region         One tool call + its result (header, result text,
                       optional yap:ui section). (Not "tool block".)
-  send                The action (`:YapSend`, `<C-s>`) and the in-flight
+  send                The action (send(), `<C-s>`) and the in-flight
                       request it starts.
   turn                One completed send: one assistant reply, closed by a
                       `turn_end` journal line.
@@ -724,7 +707,7 @@ replaces.
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.
-  tail viewer         The live tool tail `:YapLive` opens: one read-only
+  tail viewer         The live tool tail live() opens: one read-only
                       buffer per session following the running tool's output.
                       (Not "audit view", "live view", "audit drawer".)
   approval            The gate outcome that pauses a turn for a Run/Deny/

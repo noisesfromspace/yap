@@ -245,7 +245,7 @@ function M.agents_intro_lines()
   return #lines > 0 and lines or nil
 end
 
---- :YapInsert [name] / insert(name, { at_cursor = true }).
+--- insert(name, { at_cursor = true }).
 --- `opts.at_cursor` (default false) inserts verbatim above the cursor;
 --- otherwise a template appends as a message and immediately sends it,
 --- while a skill merges into the system message. Snippets and at-cursor
@@ -359,7 +359,7 @@ function M.insert(name, opts)
   end)
 end
 
---- Completion list for :YapInsert and its Lua insert() counterpart.
+--- Completion list for insert() and its Lua counterpart.
 function M.template_names()
   local names = {}
   for _, e in ipairs(template_entries()) do

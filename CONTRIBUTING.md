@@ -181,10 +181,10 @@ and churn fold state.)
 
 The file is created at buffer creation so a fresh session is file-backed
 before the first reply. Saves follow every turn exit,
-including errors and a cancelled `:YapStop`, and go through `:write!` (not
+including errors and a cancelled stop(), and go through `:write!` (not
 `writefile()`): the buffer owns the file, so mtime bookkeeping, `:w`, and E13
 all behave normally. Every turn exit, including backend errors and a
-cancelled `:YapStop`, repairs any dangling streamed marker, appends a fresh
+cancelled stop(), repairs any dangling streamed marker, appends a fresh
 `# @user` message, and saves that final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log
 (R-audit-log), the scratch notes file, and the `assets/` folder of dropped
@@ -194,7 +194,7 @@ while a `:saveas` copy rehomes them eagerly so the original session keeps its
 own files and the copy continues with full history. Why: no second
 serialization format to keep in sync. Session buffers (and their live tail
 buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
-`<leader>r`, and a session's tool tail opens with `:YapLive`.
+`<leader>r`, and a session's tool tail opens with live().
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -222,11 +222,11 @@ on save for the picker), and `tools` (the per-session tool allowlist: a normal
 session lists every compiled-in tool so lines can be removed to retract
 access on the next send, while a subagent lists only its definition's tools).
 yap writes the model fields only on `:Yap` and
-`:YapChangeModel` — never during a send, so the append-only rule holds
+change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
 metadata). It reads the frontmatter on open and surfaces it in the
-`:YapHistory` picker. Token/cost totals are deliberately NOT frontmatter:
+sessions() picker. Token/cost totals are deliberately NOT frontmatter:
 they accumulate in per-buffer memory for the winbar and reset on reopen. The
 earlier frontmatter design got this wrong by folding per-reply usage into the
 header, which made every metadata update a non-local buffer edit that fought
@@ -284,7 +284,7 @@ so it must not accumulate tool state or history.
 
 Plain `:YapEval` is the interactive counterpart and does not fall under the
 one-shot rule: it opens a regular session (default system prompt, tools,
-listed in `:YapHistory`) with the selection quoted as context. It never edits
+listed in sessions()) with the selection quoted as context. It never edits
 the source buffer.
 
 ### Backend and wire protocol
@@ -440,7 +440,7 @@ post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
 each session has ONE persistent live tail (yap://<session>-tail): bash
 announces its temp log via a `tool_start` frame and streams its output as
 `tool_output` delta frames on the single channel, the Lua side appends new
-bytes into the tail (a `$ command` header per call), and `:YapLive` opens it.
+bytes into the tail (a `$ command` header per call), and live() opens it.
 The tail is a plain text buffer, never replayed from the audit log — the full
 streamed output lives in the tool's temp log, and the audit log carries the
 tail-truncated result. The session buffer only gets one-shot, append-only

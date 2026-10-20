@@ -273,7 +273,7 @@ func removeSSHDirIfEmpty() {
 }
 
 // CloseSSH releases all master connections on backend exit (SIGTERM/SIGINT,
-// buffer unload). A user :YapStop keeps the masters alive for the next send.
+// buffer unload). A user stop() keeps the masters alive for the next send.
 func CloseSSH() {
 	sshMasters.Lock()
 	defer sshMasters.Unlock()

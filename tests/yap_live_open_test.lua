@@ -4,7 +4,7 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
--- :YapLive opens the live tool tail even before any tool has run (empty,
+-- live() opens the live tool tail even before any tool has run (empty,
 -- fills as tools execute)
 yap.live()
 local tail = vim.api.nvim_get_current_buf()

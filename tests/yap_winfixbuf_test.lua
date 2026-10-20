@@ -20,7 +20,7 @@ local ok2, buf2 = pcall(yap.new)
 assert(ok2, "visible new under winfixbuf failed: " .. tostring(buf2))
 assert(vim.api.nvim_get_current_buf() == buf2, "visible new did not switch to the new session")
 
--- Resume a saved session (:YapHistory / yap.open) from a pinned window:
+-- Resume a saved session (sessions() / yap.open) from a pinned window:
 -- the loaded-but-unmodified buffer goes through :edit, which must not E1513.
 local saved_path = vim.b[buf2].yap_path
 vim.wo[win].winfixbuf = true

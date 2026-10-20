@@ -7,22 +7,6 @@ vim.api.nvim_create_user_command("Yap", function()
   require("harness").new()
 end, { desc = "Open a new yap session buffer" })
 
-vim.api.nvim_create_user_command("YapSend", function()
-  require("harness").send()
-end, { desc = "Send the buffer to the model" })
-
-vim.api.nvim_create_user_command("YapStop", function()
-  require("harness").stop()
-end, { desc = "Stop the in-flight yap request" })
-
-vim.api.nvim_create_user_command("YapLive", function()
-  require("harness").live()
-end, { desc = "Open the session's live tool tail" })
-
-vim.api.nvim_create_user_command("YapGuard", function()
-  require("harness.ui.guard").toggle()
-end, { desc = "Open the guard board: static guard rules and parked approvals" })
-
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
 end, {
@@ -56,26 +40,6 @@ end, {
   desc = "Discuss the selection in a hidden eval session; ! replaces it with the model's output (one-shot, no tools)",
 })
 
-vim.api.nvim_create_user_command("YapInsert", function(cmd)
-  require("harness").insert(cmd.fargs[1], {})
-end, {
-  nargs = "?",
-  complete = function()
-    return require("harness").template_names()
-  end,
-  desc = "Insert a template (as a `# @user` message) or skill (into the system prompt); arg: name, or pick from the list",
-})
-
-vim.api.nvim_create_user_command("YapChangeModel", function(cmd)
-  require("harness").change_model(cmd.fargs[1])
-end, {
-  nargs = "?",
-  complete = function()
-    return require("harness").config.models or {}
-  end,
-  desc = "Change the provider/model combo for the current buffer (no arg: pick from configured models)",
-})
-
 vim.api.nvim_create_user_command("YapFork", function(cmd)
   local path, err = require("harness").fork(cmd.args)
   if not path then
@@ -84,14 +48,4 @@ vim.api.nvim_create_user_command("YapFork", function(cmd)
 end, {
   nargs = "?",
   desc = "Copy this conversation into a new independent session and open it",
-})
-
-vim.api.nvim_create_user_command("YapHistory", function(cmd)
-  require("harness").sessions(cmd.fargs[1])
-end, {
-  nargs = "?",
-  complete = function()
-    return { "all" }
-  end,
-  desc = "Pick a saved yap session to resume (:YapHistory all for every project)",
 })

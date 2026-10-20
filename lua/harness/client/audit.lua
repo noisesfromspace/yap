@@ -7,7 +7,7 @@
 --   model change and turn journal. `append_event` writes it; `:YapClear`
 --   placeholders and the guard board read it. Nothing here renders it.
 --
---   The tail viewer (`:YapLive`) is a plain tail of the running tool's output:
+--   The tail viewer (live()) is a plain tail of the running tool's output:
 --   one unlisted buffer per session that shows a `$ command` header per bash
 --   call followed by that call's streamed bytes, newest at the bottom. It is
 --   never replayed from the audit log — a stopped tool leaves an empty tail,

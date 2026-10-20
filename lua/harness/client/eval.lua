@@ -150,7 +150,7 @@ end
 
 --- :YapEval — open an interactive eval session in a split: a regular yap
 --- session (default system prompt, tools, follow-ups, listed in
---- :YapHistory). The selection is context only; the source buffer is never
+--- sessions()). The selection is context only; the source buffer is never
 --- changed. With an instruction the first turn is sent immediately,
 --- otherwise the cursor waits at the end of the user turn.
 function M.session(opts)
@@ -177,7 +177,7 @@ function M.session(opts)
     hidden = true,
   })
   vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
-  -- Save the quoted selection now so the session is listed in :YapHistory
+  -- Save the quoted selection now so the session is listed in sessions()
   -- before its first send.
   require("harness.session").save(sbuf)
   vim.cmd("botright split")

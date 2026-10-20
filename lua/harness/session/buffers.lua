@@ -256,7 +256,7 @@ end
 --- Open a saved session file as a yap buffer.
 --- Turn a session-file buffer into a managed yap buffer: unlisted,
 --- keymapped, live tool tail attached, model combo resumed from
---- frontmatter. Shared by :YapHistory resume and by directly opening
+--- frontmatter. Shared by sessions()/history() resume and by directly opening
 --- a file under ~/.config/yap/sessions/.
 local function adopt(buf, path)
   if vim.b[buf].yap then

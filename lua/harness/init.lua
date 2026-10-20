@@ -54,6 +54,9 @@ M.send = stream.send
 M.stop = stream.stop
 M.answer_approval = stream.answer_approval
 
+-- Guard board (ui).
+M.guard = guard.toggle
+
 -- Buffer lifecycle (buffers).
 M.new = buffers.new
 M.fork = buffers.fork
@@ -254,7 +257,7 @@ end
 --- Change the default provider/model for NEW buffers, persisted to
 --- `$XDG_CACHE_HOME/yap/default`. Does not touch the current buffer.
 --- With an argument: "provider/model". Without: pick from the same list
---- as :YapChangeModel.
+--- as change_model().
 function M.change_default_model(combo)
   if not combo then
     config.pick(function(choice)

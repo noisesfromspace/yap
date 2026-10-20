@@ -220,7 +220,7 @@
                 if ( cd "$YAP_ROOT" && CGO_ENABLED=0 ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
                   echo "yap: built agent -> $YAP_BIN"
                 else
-                  echo "yap: agent build failed (see above); Neovim still usable, :YapSend will not work" >&2
+                  echo "yap: agent build failed (see above); Neovim still usable, send() will not work" >&2
                 fi
                 export PATH="$YAP_CACHE/bin:$PATH"
               else
@@ -298,7 +298,7 @@
               type = types.nullOr types.str;
               default = null;
               description = ''
-                Directory of `:YapInsert` templates, passed to the harness
+                Directory of `insert()` templates, passed to the harness
                 as `templates_dir`. When null the harness default
                 ({file}`$XDG_CONFIG_HOME/yap/templates`, default
                 {file}`~/.config/yap/templates`) is used.

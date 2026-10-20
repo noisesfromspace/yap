@@ -1,7 +1,7 @@
 -- E2E: a running tool is visible WITHOUT streaming into the session buffer:
 -- the header lands immediately, the winbar shows the tool name, and the
--- live output stays in the tool's log file (rendered by :YapLive), never
--- in the buffer. The result lands once, at completion. :YapStop
+-- live output stays in the tool's log file (rendered by live()), never
+-- in the buffer. The result lands once, at completion. stop()
 -- mid-run leaves the buffer parseable (dangling tool region repaired on
 -- process exit). auto_open_live opens the tail viewer by itself.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -150,12 +150,12 @@ assert(
   "flattened assistant lost before follow-up; roles=" .. table.concat(roles, ",")
 )
 
--- ─── :YapLive + stop mid-run ───────────────────────────────────────────
+-- ─── live() + stop mid-run ───────────────────────────────────────────
 local buf2 = yap.new()
 set_prompt(buf2, "run again; I will stop you")
 yap.send()
 
--- wait until the tool header has landed, then :YapLive opens the
+-- wait until the tool header has landed, then live() opens the
 -- (already created) tail viewer in a split, scrolled to the bottom
 local started = vim.wait(10000, function()
   return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- yap:tool") ~= nil
@@ -166,7 +166,7 @@ assert(tb2, "no tail viewer buffer for the second session")
 yap.live()
 assert(
   vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"),
-  ":YapLive did not open the tail viewer"
+  "live() did not open the tail viewer"
 )
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail viewer window not at the bottom")
 

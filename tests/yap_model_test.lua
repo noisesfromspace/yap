@@ -16,12 +16,12 @@ vim.notify = notify
 assert(#notices == 0, "successful model change should not notify: " .. table.concat(notices, " | "))
 assert(vim.b[buf].yap_provider == "other" and vim.b[buf].yap_model == "o1", "vars not set")
 assert(yap.winbar(buf):match("other/o1"), "winbar not updated")
--- command plumbing
+-- Lua plumbing
 local command_notices = {}
 vim.notify = function(msg)
   command_notices[#command_notices + 1] = msg
 end
-vim.cmd("YapChangeModel mock/m2")
+yap.change_model("mock/m2")
 vim.notify = notify
 assert(#command_notices == 0, "model command should stay quiet: " .. table.concat(command_notices, " | "))
 assert(vim.b[buf].yap_model == "m2", "command failed")

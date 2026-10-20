@@ -16,10 +16,17 @@ end
 assert(has_map("yap: change model"), "no <leader>m mapping in yap buffer")
 assert(has_map("yap: stop in-flight request", "<C-C>"), "stop mapping is not <C-c>")
 
--- Picker variants and infrequent operations are Lua/keymap only; the
--- discoverable entry points remain Ex commands.
+-- Per-buffer actions are Lua/keymap only; a few discoverable entry points
+-- remain Ex commands.
 vim.cmd("runtime plugin/yap.lua")
 for _, name in ipairs({
+  "YapInsert",
+  "YapHistory",
+  "YapGuard",
+  "YapChangeModel",
+  "YapSend",
+  "YapStop",
+  "YapLive",
   "YapInsertHere",
   "YapSessions",
   "YapInstances",
@@ -29,10 +36,10 @@ for _, name in ipairs({
 }) do
   assert(vim.fn.exists(":" .. name) == 0, name .. " should not be an Ex command")
 end
-for _, name in ipairs({ "YapInsert", "YapHistory", "YapGuard", "YapChangeModel", "YapEval" }) do
+for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
-for _, name in ipairs({ "insert", "history", "instances", "waiting", "change_default_model" }) do
+for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "history", "instances", "waiting", "change_default_model" }) do
   assert(type(yap[name]) == "function", name .. " Lua API missing")
 end
 for _, key in ipairs({ "insert_here", "history", "waiting", "change_default_model" }) do

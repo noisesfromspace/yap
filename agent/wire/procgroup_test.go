@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// KillAll is the :YapStop safety net: it must actually take down a tracked
+// KillAll is the stop() safety net: it must actually take down a tracked
 // process group, not just drop bookkeeping entries.
 func TestKillAll(t *testing.T) {
 	cmd := exec.Command("sleep", "60")
