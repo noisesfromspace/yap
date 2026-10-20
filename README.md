@@ -22,7 +22,7 @@ Inspired by pi and gptel.
 - Folding to collapse agent output or tool calls (`<leader>1/2/3`).
 - Sessions as plain Markdown files you can resume, fork, and render.
 - Subagents create new markdown files that are easy to track and manipulate.
-- Templates and skills merged into the conversation (`:YapInsert`).
+- Templates and skills merged into the conversation (`insert()`).
 - Options are presented with whatever picker you use (`vim.ui.select`).
 - Drop images into the chat and the will get interpreted by the model.
 
@@ -36,31 +36,33 @@ fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
 can continue independent work and later call `wait_tasks` for the result.\
 See `:help yap-tools`.
 
-A turn is an agent loop — the model proposes the next action, the harness
-runs it, and the result feeds back until the model stops asking. Yap runs
-one loop per send, with its own specifics annotated below:
+A turn is an agent loop: the model proposes the next action, the backend
+runs it, and the result feeds back until the model stops asking. The loop
+lives in a Go backend (`yap serve`), one per session, driven from a Lua
+frontend in Neovim:
 
 ```mermaid
 flowchart LR
-    subgraph loop["agent loop · one per send · capped at 300 iterations"]
-        direction LR
-        M["Model"] -->|"thinking + prose stream into the buffer"| Q{"Tool calls?"}
-        Q -->|"yes"| A{"Approval gate"}
-        A -->|"Run"| R["Run tools<br/>read-only calls concurrent (≤4)"]
-        R -->|"tool results as native messages"| M
-        A -->|"Deny"| M
+    subgraph FE["Neovim (Lua frontend)"]
+        A["Session buffer: editable Markdown, the conversation"]
     end
-    Q -->|"no"| B["Final answer streams into the buffer"]
+    subgraph BE["yap serve (Go backend)"]
+        B["Agent loop: propose, run, feed back"]
+        C["Tools: files, bash, ssh, web, GitHub, browser, subagents"]
+    end
+    subgraph P["Provider API"]
+        D["The model"]
+    end
+    A -->|"turn (full transcript)"| B
+    B <-->|"streamed completion + tool calls"| D
+    B --> C
+    C -->|"results"| B
+    B -->|"streamed reply"| A
 ```
-
-Mid-turn steering (`# @steer`) and provider/model switches land at the next
-model boundary, after a tool batch and before the next generation. If the
-model would finish with background tasks still running, yap waits for them
-and injects the results before the answer.
 
 ## First run
 
-Yap needs Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`).
+Yap needs Neovim 0.11 or newer.
 
 1. Build the backend and put `yap` on Neovim's `PATH`:
 
@@ -103,35 +105,40 @@ Yap needs Neovim 0.11 or newer (`vim.snippet.expand`, `vim.lsp.get_clients`).
 
 ## Commands
 
-`:Yap` opens an editable Markdown session. The reply streams back into the
-same buffer. Every send uses Neovim's current working directory as request-only context.
+| Command                     | Purpose                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `:Yap`                      | Start a session.                                                                            |
+| `:YapClear [keep]`          | Replace older tool output with audit-log references.                                        |
+| `:YapCompact`               | Summarize, then optionally drop superseded history.                                         |
+| `:YapEval[!] [instruction]` | Discuss the selection in a new session. `!` replaces the selection with the model's output. |
+| `:YapFork [name]`           | Copy the conversation to an independent buffer; edit it to branch.                          |
 
-| Command                                   | Shortcut    | Purpose                                                                                    |
-| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------ |
-| `:Yap`                                    |             | Start a session.                                                                           |
-| `:YapSend`                                | `<C-s>`     | Send the transcript.                                                                       |
-| `:YapStop`                                | `<C-c>`     | Stop the current request.                                                                  |
-| `:YapChangeModel [provider/model]`        | `<leader>m` | Pick or set this session's model.                                                          |
-| `:YapLive`                                | `<leader>l` | Open the live tool tail (streaming output).                                                |
-| `:YapGuard`                               | `<leader>g` | Open the guard board: parked approvals and settled decision history.                       |
-| `:YapClear [keep]`                        |             | Replace older tool output with audit-log references.                                       |
-| `:YapCompact`                             |             | Summarize, then optionally drop superseded history.                                        |
-| `:YapEval[!] [instruction]`               |             | Discuss the selection in a new session. `!` replaces the selection with the model's output |
-| `:YapInsert [name]`                       | `<C-t>`     | Insert a template or merge a skill.                                                        |
-| `:YapHistory [scope]`                     |             | Resume a saved session (`cwd`, `all`).                                                     |
-| `:YapFork [name]`                         |             | Copy the conversation to an independent buffer; edit it to branch.                         |
-| Lua: `insert(name, { at_cursor = true })` | `<leader>T` | Insert template/skill text at the cursor.                                                  |
-| Lua: `instances()`                        | `<leader>r` | Pick another open session.                                                                 |
-| Lua: `waiting()`                          | `<leader>w` | Pick a session awaiting your reply (or stopped).                                           |
-| Lua: `history()`                          | `<leader>y` | Pick a saved session with live status.                                                     |
-| Lua: `change_default_model()`             | `<leader>M` | Pick the default model for new sessions.                                                   |
+## Lua API
+
+```lua
+require("harness").send()                              -- <C-s>     send the transcript
+require("harness").stop()                              -- <C-c>     stop the in-flight request
+require("harness").live()                              -- <leader>l open the live tool tail
+require("harness").guard()                             -- <leader>g open/close the guard board
+require("harness").change_model(combo)                 -- <leader>m set this session's provider/model
+require("harness").sessions(scope)                     --           resume a saved session ("cwd" | "all")
+require("harness").instances()                         -- <leader>r pick another open session
+require("harness").waiting()                           -- <leader>w pick a session awaiting your reply
+require("harness").history()                           -- <leader>y pick a saved session with live status
+require("harness").change_default_model()              -- <leader>M pick the default model for new sessions
+require("harness").insert(name, { at_cursor = false }) -- <C-t>     insert template/ merge a skill
+require("harness").insert_file({ from_insert = true }) -- <C-f>     pick a file and insert an @path reference
+```
+
+All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 
 ## Rendering
 
 Markdown renders should work, but output or user input could break it.
 [touchup](https://git.boers.email/martijn/touchup.nvim)
 adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
-`usage` labels and draws each tool region as one region.
+`usage` labels and draws each tool region as one region. Be aware that not
+every Markdown renderer is built to handle 50k+ line files.
 
 ## Terminology
 
@@ -143,12 +150,13 @@ adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
 | region           | a marker-delimited span: tool, thinking, error, or ui                        |
 | tool region      | one tool call + its result                                                   |
 | turn             | one completed send → one assistant reply                                     |
-| send             | the action and in-flight request (`:YapSend` / `<C-s>`)                      |
+| send             | the action and in-flight request (`send()` / `<C-s>`)                        |
 | prefill          | hand-writing an `# @assistant` message to continue from it                   |
 | steer            | mid-turn injection of a `# @steer` body at a model boundary                  |
 | approval         | the static rule that pauses a tool call for a Run/Deny answer                |
 | agent definition | a `~/.config/yap/agents/<name>.md` file describing a subagent (not a “role”) |
-| audit log / view | the append-only `.jsonl` record, and the `:YapLive` tool-tail buffer         |
+| audit log        | the append-only `.jsonl` record                                              |
+| tail view        | the `live()` tool-tail buffer                                                |
 
 The full vocabulary is in `:help yap-glossary`.
 
