@@ -500,9 +500,10 @@ caught and reported the same way.
 Session buffers set `minidiff_disable` (and detach an already-attached
 mini.diff) and an LspAttach guard stops any markdown LSP client, so diff hunks
 and semantic-token/inlay-hint streams — meaningless on a transcript — don't
-pay per-redraw cost. Tree-sitter markdown highlighting stays on by default
-(`syntax_highlight`): the highlighter is incremental and measured to be
-effectively free.
+pay per-redraw cost. Tree-sitter markdown highlighting stays on, block-level
+only: the inline `markdown_inline` injection is always dropped because it is
+O(buffer) per scroll and the source of jitter holding j/k over a long
+transcript.
 
 #### R-folding — Folding is a projection of anchored structural units
 

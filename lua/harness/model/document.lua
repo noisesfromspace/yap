@@ -169,9 +169,6 @@ function M.append_text(buf, text)
   local col = #(vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or "")
   vim.api.nvim_buf_set_text(buf, row, col, row, col, vim.split(text, "\n", { plain = true }))
   fold.after_append(buf, true)
-  -- A session can cross the inline-highlight threshold while it streams;
-  -- the check is O(1) and a no-op until then, so it is safe on every flush.
-  require("harness.session.highlight").apply(buf)
 end
 
 --- Windows whose cursor sits on the last line of `buf`: the user is
@@ -268,7 +265,6 @@ function M.append_lines(buf, chunk)
   fold.before_change(buf)
   vim.api.nvim_buf_set_lines(buf, keep, n, false, lines)
   fold.after_append(buf)
-  require("harness.session.highlight").apply(buf)
 end
 
 --- The role of the buffer's last message heading (`# @user`, ...), or nil
