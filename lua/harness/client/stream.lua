@@ -183,6 +183,8 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev) -- audit trail: a model switch landed mid-turn
   elseif ev.type == "tool_text_warning" then
     audit.append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
+  elseif ev.type == "error" then
+    audit.append_event(buf, ev) -- a turn failed: classified code + message
   elseif ev.type == "usage" then
     state.live_usage[buf] = ev
     vim.cmd.redrawstatus()

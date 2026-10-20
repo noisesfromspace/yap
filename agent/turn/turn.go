@@ -334,7 +334,7 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 // same turn. Both land at the next tool boundary, so native tool results
 // stay native — unlike a stop-and-resend, which flattens them to
 // transcript text.
-func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary) error {
+func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary) (retErr error) {
 	start := time.Now()
 	// Install the turn's context so tools (RunStreamed, fetch, curl, approval,
 	// subagent) can abort promptly when the frontend cancels the turn. Cleared
@@ -468,6 +468,39 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	}
 
 	pool := &taskPool{tasks: make(map[string]*backgroundTask)}
+	// A terminal anomaly that does not abort the loop (empty completion, tool
+	// iteration cap) is recorded here so the deferred recorder below marks the
+	// turn "error" rather than "ok". The serve loop still sees a successful
+	// turn (the model is shown the error marker), but the audit log must not
+	// call a no-answer turn a success.
+	var turnError error
+	// The terminal audit record: exactly one turn_end line per turn, whatever
+	// its outcome. Registered before the pool reap below so it runs after it
+	// (defers unwind LIFO), keeping turn_end the last record a turn writes —
+	// after any background task_end events. It carries the final usage and a
+	// status (ok|error|cancelled) so failed and cancelled turns are as durable
+	// as successful ones.
+	defer func() {
+		status := "ok"
+		var msg string
+		switch {
+		case errors.Is(retErr, context.Canceled):
+			status = "cancelled"
+		case retErr != nil:
+			status, msg = "error", retErr.Error()
+		case turnError != nil:
+			status, msg = "error", turnError.Error()
+		}
+		m := usagePayload(totPrompt, totCompletion, lastPrompt)
+		m["type"] = "turn_end"
+		m["status"] = status
+		m["model"] = model
+		m["ms"] = time.Since(start).Milliseconds()
+		if msg != "" {
+			m["error"] = msg
+		}
+		wire.EmitEvent(m)
+	}()
 	defer func() { pool.wait(nil) }() // also reap tasks on model errors or iteration limit
 	for iter := 0; ; iter++ {
 		// Mid-turn injections land at the next model boundary — after the
@@ -608,6 +641,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 				}
 				pad()
 				fmt.Fprintf(out, "<!-- yap:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
+				turnError = fmt.Errorf("model returned an empty completion (finish_reason: %s)", reason)
 			}
 			break // final answer streamed; turn complete
 		}
@@ -615,6 +649,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		if iter >= maxToolIterations {
 			pad()
 			fmt.Fprintf(out, "<!-- yap:error\nreached %d tool iterations without a final answer\n-->\n\n", maxToolIterations)
+			turnError = fmt.Errorf("reached %d tool iterations without a final answer", maxToolIterations)
 			break
 		}
 
@@ -687,16 +722,11 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	}
 
 	if totPrompt+totCompletion > 0 {
-		// End the turn with a blank line; the turn_end audit event below is
-		// the single carrier of usage, folded by the Lua side.
-		m := usagePayload(totPrompt, totCompletion, lastPrompt)
+		// End the turn with a blank line (R-blank-lines). The terminal
+		// turn_end audit event is emitted by the deferred recorder above,
+		// which also runs on error and cancellation so every turn — not just
+		// successful ones — leaves one journal line.
 		pad()
-		out.Flush()
-		// Audit: one turn journal line (audit log).
-		m["type"] = "turn_end"
-		m["model"] = model
-		m["ms"] = time.Since(start).Milliseconds()
-		wire.EmitEvent(m)
 	}
 	out.Flush()
 	return nil

@@ -392,7 +392,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	if usage < 0 || header < 0 || event < 0 || result < 0 || after < 0 || finalUsage < 0 ||
 		usage >= header || header >= event || event >= result || result >= after || after >= finalUsage ||
 		!strings.Contains(s, `"completion":30,"context_prompt":200,"model":"m1","ms":`) ||
-		!strings.Contains(s, `"prompt":300,"type":"turn_end"`) {
+		!strings.Contains(s, `"prompt":300,"status":"ok","type":"turn_end"`) {
 		t.Fatalf("usage should update after each model step and before tool execution; final event should carry cumulative usage:\n%s", s)
 	}
 }
@@ -565,6 +565,51 @@ func TestTextToolCallSurfaced(t *testing.T) {
 	}
 	if !strings.Contains(journal.String(), `"type":"tool_text_warning"`) {
 		t.Fatalf("missing tool_text_warning event: %s", journal.String())
+	}
+}
+
+// emptyCompletionModel returns no text, no tool calls and no usage — the
+// "empty completion" anomaly the loop must never fail silently.
+type emptyCompletionModel struct{}
+
+func (emptyCompletionModel) DoStream(_ context.Context, _ llm.Params) (*llm.Stream, error) {
+	events := make(chan llm.Event)
+	close(events)
+	stream := llm.NewStream(events)
+	stream.SetResult(llm.Result{FinishReason: "stop"})
+	return stream, nil
+}
+
+type emptyCompletionProvider struct{}
+
+func (emptyCompletionProvider) Model(string) llm.LanguageModel { return emptyCompletionModel{} }
+
+// TestEmptyCompletionAuditedAsError: a turn that ends with no answer is
+// recorded as an errored turn_end (status "error"), not silently as "ok".
+func TestEmptyCompletionAuditedAsError(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return emptyCompletionProvider{}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	var journal strings.Builder
+	oldEventOut := wire.SetFrameWriter(writerFunc(func(p []byte) (int, error) {
+		journal.Write(p)
+		return len(p), nil
+	}))
+	defer wire.SetFrameWriter(oldEventOut)
+
+	var out bytes.Buffer
+	if err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if !strings.Contains(out.String(), "<!-- yap:error") {
+		t.Fatalf("missing error marker:\n%s", out.String())
+	}
+	if !strings.Contains(journal.String(), `"status":"error"`) {
+		t.Fatalf("turn_end not marked error: %s", journal.String())
 	}
 }
 

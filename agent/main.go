@@ -318,7 +318,15 @@ func serve(in io.Reader, out io.Writer) error {
 		if errors.Is(err, context.Canceled) {
 			wire.EmitTurnCancelled()
 		} else {
-			wire.EmitTurnComplete(err == nil, wireError(err))
+			werr := wireError(err)
+			if werr != nil {
+				// Audit: a failed turn leaves an error record carrying the
+				// classified code, so auth/rate-limit/network/... failures are
+				// as durable as tool calls. The terminal turn_end (status
+				// "error") emitted inside Run carries usage and the raw message.
+				wire.EmitEvent(map[string]any{"type": "error", "code": werr.Code, "message": werr.Message})
+			}
+			wire.EmitTurnComplete(err == nil, werr)
 		}
 	}
 	return <-readErr

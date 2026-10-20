@@ -631,8 +631,11 @@ sequenceDiagram
     `tool_result` `{type,name,bytes,result}` (full result),
     `approval_timeout` `{type,id}`, `subagent_timeout` `{type,id}`,
     `task_start`/`task_end`, `retry` `{type,attempt,delay_ms,error}`,
-    `steer`, `model_change`, `tool_text_warning`, `usage`, and
-    `turn_end` `{type,model,prompt,completion,context_prompt,cost?,context_window?,ms}`.
+    `steer`, `model_change`, `tool_text_warning`, `usage`,
+    `error` `{type,code,message}` (a failed turn), and
+    `turn_end` `{type,model,prompt,completion,context_prompt,cost?,context_window?,ms,status,error?}`
+    — `status` is `ok`|`error`|`cancelled`; every turn leaves exactly one, and
+    a failed turn also gets an `error` line with the classified code.
   - `tool_output` `{"type":"tool_output","log":...,"delta":...}` — a chunk of a
     running tool's output, keyed by the same `log` path `tool_start` announced;
     this replaces the temp-file polling (the bytes are also tee'd to the temp

@@ -44,6 +44,11 @@ func TestServeMultipleTurnsAndFailure(t *testing.T) {
 	if !strings.Contains(s, `"code":-32602`) || !strings.Contains(s, "unknown provider") {
 		t.Fatalf("missing structured error: %q", s)
 	}
+	// The failed turn is also audited: an error event carries the classified
+	// code + message.
+	if !strings.Contains(s, `"type":"error"`) {
+		t.Fatalf("missing error audit event: %q", s)
+	}
 	// Text arrives in text frames; the failed turn produces none.
 	if !strings.Contains(s, "reply 1") || !strings.Contains(s, "reply 2") || strings.Contains(s, "reply 3") {
 		t.Fatalf("text frames wrong: %q", s)
@@ -97,6 +102,10 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 	s := out.String()
 	if !strings.Contains(s, `"cancelled":true`) {
 		t.Fatalf("missing cancelled turn_complete: %q", s)
+	}
+	// The cancelled turn leaves a terminal turn_end journal line too.
+	if !strings.Contains(s, `"status":"cancelled"`) {
+		t.Fatalf("missing cancelled turn_end: %q", s)
 	}
 	if !strings.Contains(s, "second turn ok") {
 		t.Fatalf("serve did not survive the cancel: %q", s)

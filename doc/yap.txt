@@ -474,8 +474,9 @@ AUDIT LOG                                                        *yap-audit*
 audit.jsonl beside the session file is an append-only, JSON Lines record that
 survives restarts: every tool call (full arguments), full tool results, image
 attachments, approval requests and their Run/Deny answers, a retry line for each transient
-generation error, and one `turn_end` line per completed send (model, prompt,
-completion, cost, ms).
+generation error, an `error` line for a failed send (classified code + message),
+and one `turn_end` line per send regardless of outcome — model, prompt,
+completion, cost, ms, and a `status` of `ok`, `error`, or `cancelled`.
 
 The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
