@@ -49,6 +49,7 @@ local CASES = {
   { name = "yap_guard_clear_test", port = 18132 },
   { name = "yap_guard_cap_test", port = 18132 },
   { name = "yap_guard_curl_test", port = 18132 },
+  { name = "yap_guard_focus_test", port = 18132 },
   { name = "yap_follow_test", port = 18152, mock = "mock_follow.py" },
   {
     name = "yap_picker_test",

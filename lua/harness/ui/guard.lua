@@ -456,7 +456,22 @@ local function render()
   vim.bo[buf].modifiable = false
 
   vim.b[buf].yap_guard_rows = row_map
-  return { folds = folds, first_row_line = first_row_line, key_lines = key_lines }
+
+  -- When an approval is parked it is the board's focus: the cursor lands on it
+  -- and it alone is unfolded. Approvals sort first (newest first), so rows[1]
+  -- is the newest parked approval whenever one exists.
+  local focus_key, focus_line
+  if approval_count > 0 then
+    focus_key = rows[1].key
+    focus_line = key_lines[focus_key]
+  end
+  return {
+    folds = folds,
+    first_row_line = first_row_line,
+    key_lines = key_lines,
+    focus_key = focus_key,
+    focus_line = focus_line,
+  }
 end
 
 --- The row under a board buffer line, or nil. `row_map` is a sparse map keyed
@@ -486,7 +501,10 @@ local function apply_folds(buf, result)
         vim.cmd("normal! zE")
         for _, f in ipairs(result.folds) do
           vim.cmd(("%d,%dfold"):format(f[1], f[2]))
-          if expanded[f[3]] then
+          -- A parked approval is always unfolded and every other row folded;
+          -- without one, honor the rows the user has expanded themselves.
+          local open = result.focus_key and (f[3] == result.focus_key) or expanded[f[3]]
+          if open then
             vim.cmd(("%dfoldopen"):format(f[1]))
           else
             vim.cmd(("%dfoldclose"):format(f[1]))
@@ -608,7 +626,7 @@ function M.toggle()
   local result = render()
   install_keymaps(buf)
   apply_folds(buf, result)
-  vim.api.nvim_win_set_cursor(0, { result.first_row_line or 1, 0 })
+  vim.api.nvim_win_set_cursor(0, { result.focus_line or result.first_row_line or 1, 0 })
 end
 
 --- Clear the settled decision history: write the project watermark to now so
@@ -640,7 +658,8 @@ function M.toggle_auto_accept()
 end
 
 --- Re-render the board when an approval event changes the open set, but only
---- while it is on screen (a hidden board re-renders on next open). The cursor
+--- while it is on screen (a hidden board re-renders on next open). A parked
+--- approval re-focuses the cursor and stays unfolded; without one the cursor
 --- and expanded rows survive the refresh.
 function M.touch()
   if not board_buf or not vim.api.nvim_buf_is_valid(board_buf) then
@@ -656,7 +675,9 @@ function M.touch()
   local key = row and row.key
   local result = render()
   apply_folds(board_buf, result)
-  local line = (key and result.key_lines[key]) or result.first_row_line or 1
+  -- A parked approval re-takes focus; only without one keep the row the user
+  -- was on (so a live update never jumps them away from a history row).
+  local line = result.focus_line or (key and result.key_lines[key]) or result.first_row_line or 1
   vim.api.nvim_win_set_cursor(win, { line, 0 })
 end
 
