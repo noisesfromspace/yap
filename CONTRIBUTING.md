@@ -362,17 +362,32 @@ agent/tools/ (agent/websearch/exa), self-registering through their
 package's exported registration function (tools.RegisterWebsearchProvider)
 so the directory stays one file per callable tool. Not config files (the author wants tool code, not opaque
 declarations), not external executable tool plugins: the tool interface is
-compiled in, although individual tools may spawn subprocesses. bash and
-ssh are deliberately unsandboxed — the author runs pi the same way and accepts
-the residual risk — but are no longer unconfirmed: a conservative denylist of
+compiled in, although individual tools may spawn subprocesses. bash runs
+inside a bubblewrap (bwrap) sandbox on Linux (agent/safety/sandbox.go):
+the filesystem is bind-mounted read-only, a small allowlist (the live :pwd,
+the session assets dir, plus `sandbox.allow_write`) is re-mounted writable,
+/tmp is a private tmpfs, and the secret directories are shadowed with empty
+mounts so the sandboxed process cannot read them. A write outside the
+allowlist is refused by the kernel (EROFS) and escalates to the same Run/Deny
+approval the guard rules use — approve to re-run unsandboxed, deny to keep
+the read-only failure. The same allowlist (safety.IsWritablePath) bounds the
+`write` and `edit` tools via an OutsideWritableRule gate, so every mutating
+path shares one definition of "where the agent may write"; `read` is
+deliberately not bounded. `curl` is not sandboxed — its local-file reach is a
+finite flag surface, so the local-file flags are approval-gated (the guard
+pauses for Run/Deny) and the SSRF / protocol-smuggling flags (curlDenyLong)
+are refused outright, so a second enforcement mechanism is redundant. On top of
+that barrier sits a conservative denylist of
 irreversible / high-blast-radius operations (remote content piped into a
 shell, rm -rf, mkfs/dd onto block devices, sudo, git push --force / reset
 --hard / clean -f, chmod -R / chown -R, redirects onto system or secret paths,
 shutdown/reboot, fork bombs, and secret-reveal commands — decrypting with
 age/gpg/sops/openssl, generating or exporting a private key, reading a file
-under a secret directory) pauses the turn for an explicit human Run/Deny
-before the command executes; ssh pauses for every call, curl (an explicit
-non-GET method or a request body) and playwright (`eval`) pause on their own
+under a secret directory) that pauses the turn for an explicit human Run/Deny
+before the command executes; a command that matches one of these rules was
+already approved, so it runs unsandboxed outright and never prompts twice.
+ssh pauses for every call, curl (an explicit non-GET method, a request body,
+or a local-file flag) and playwright (`eval`) pause on their own
 targeted rules, and read/write/edit/search pause before touching a secret
 path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
 /etc/agenix) — secret paths are approvable, never silently read or written.
@@ -381,10 +396,12 @@ are declared in the tool's own file via `Gate` (with `utils.Pattern` for a
 regex rule or `Always` for an unconditional pause); `yap guard` prints the
 compiled-in list and the guard board renders it, so a new rule is a one-file
 change and nothing else has to learn about it. Denial,
-timeout, and the absence of a serve process (yap send) all deny. This is a
-prompt-injection mitigation, NOT a security boundary: the denylist is
-bypassable. A real sandbox, if ever wanted, is bubblewrap (Codex's Linux
-choice), not command-pattern allowlists (documented as bypassable).
+timeout, and the absence of a serve process (yap send) all deny. The denylist
+is a pre-flight tripwire and remains bypassable by design (any string match
+can be obfuscated); the sandbox is the hard boundary. It is a write and read
+barrier, not a network or confidentiality boundary — the sandbox does not
+unshare the network namespace and still shows everything not on the
+denied-read list.
 bash's operational mechanics are unchanged: own process
 group, group kill on timeout and on turn cancellation, tail-truncation, closed
 stdin.

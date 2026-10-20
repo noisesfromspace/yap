@@ -53,18 +53,22 @@ func init() {
 			"Sends a browser User-Agent by default to get past agent blocks. Returns the raw response body "+
 			"(curl does not execute JavaScript) — for JS-heavy pages prefer websearch with contentMode=text.",
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
-	// Static rules, declared below: a request body or an explicit non-GET
-	// method sends data off the machine. GET/HEAD fetches stay ungated.
+	// Static rules, declared below: a request body, an explicit non-GET
+	// method, or a local-file flag. GET/HEAD fetches without file flags stay
+	// ungated.
 	Gate("curl", curlRisk, curlRules...)
 }
 
-// curlRules gate the two exfiltration vectors curl exposes beyond a plain
-// GET: an explicit non-GET method (mutation) and a request body (data leaving
-// the machine). The denied flags already keep curl from reading local files
-// or writing responses to disk.
+// curlRules gate the exfiltration vectors curl exposes beyond a plain GET: an
+// explicit non-GET method (mutation), a request body (data leaving the
+// machine), and any local-file flag (read a file to send it, or write a
+// response to disk). The SSRF / protocol flags are NOT gated — they are
+// hard-refused in rejectCurlFlags before the tool runs, because they have no
+// legitimate use the human should be asked to bless.
 var curlRules = []safety.Rule{
 	{Name: "non-GET request method", Match: func(s string) bool { return strings.Contains(s, "non-GET method") }},
 	{Name: "sends a request body", Match: func(s string) bool { return strings.Contains(s, "request body") }},
+	{Name: "reads or writes a local file", Match: func(s string) bool { return strings.Contains(s, "local file access") }},
 }
 
 // curlRisk renders one curl call's risk signals as a short string the rules
@@ -75,35 +79,68 @@ func curlRisk(a *curlArgs) string {
 		b.WriteString("non-GET method ")
 	}
 	if strings.TrimSpace(a.Data) != "" {
-		b.WriteString("request body")
+		b.WriteString("request body ")
+	}
+	if flagsTouchLocalFiles(a.Flags) {
+		b.WriteString("local file access ")
 	}
 	return strings.TrimSpace(b.String())
 }
 
-// curlDenyLong / curlDenyShort are curl options that can turn the tool into
-// an arbitrary file-writer or an SSRF vector (unix sockets, config files,
-// output files, DNS rebinding, interface pinning) and are therefore refused.
-// This is defense-in-depth against prompt-injected curl invocations, not a
-// security boundary — bash is unsandboxed by design (doc: R-compiled-tools).
+// curlDenyLong / curlDenyShort are the SSRF / protocol-smuggling options:
+// they change how or where curl connects (unix sockets, DNS pinning, proxies,
+// config-file injection, internal redirect following) and would silently
+// bypass the per-hop host check. They are refused outright — each has no
+// legitimate use the structured args don't already express, so there is no
+// human decision to make. (-L/--location is omitted and redirects are
+// followed manually with a host check per hop.)
 var (
 	curlDenyLong = []string{
-		"--unix-socket", "--abstract-unix-socket", "--config", "--output",
-		"--output-dir", "--remote-name", "--remote-name-all", "--dump-header",
-		"--trace", "--trace-ascii", "--resolve", "--connect-to", "--interface",
-		"--location", "--location-trusted", "--url", "--next", "--proxy", "--preproxy",
-		"--socks4", "--socks4a", "--socks5", "--socks5-hostname", "--proto-redir",
-		// Local-file reads and writes: a path in a request turns curl into an
-		// unguarded reader (past the secret-path guard) or an arbitrary file writer.
-		"--upload-file", "--stderr", "--cookie", "--cookie-jar", "--form",
-		"--form-string", "--data", "--data-ascii", "--data-binary", "--data-raw",
-		"--data-urlencode", "--json", "--netrc", "--netrc-file", "--write-out",
+		"--unix-socket", "--abstract-unix-socket", "--config",
+		"--resolve", "--connect-to", "--interface",
+		"--location", "--location-trusted", "--url", "--next",
+		"--proxy", "--preproxy", "--socks4", "--socks4a", "--socks5",
+		"--socks5-hostname", "--proto-redir",
 	}
 	// Short options as a letter set, because curl clusters them: `-So/path`
 	// is `-S -o /path`, so testing only the first letter misses the -o.
 	// -H stays allowed (its value is where headers without spaces go).
-	curlDenyShort = "dFKbcoODLTwx"
+	curlDenyShort = "KLx" // -K config, -L location, -x proxy
 )
 
+// curlFileLong / curlFileShort are the curl options that read or write a
+// local file (including the `@file` marker). Each has a legitimate use — save
+// a download, POST a file, present a client cert — but a prompt-injected curl
+// could use one to read a file (including a secret) and send it off the
+// machine. They are therefore approval-gated rather than hard-blocked: the
+// human sees the exact flags and decides.
+var (
+	curlFileLong = []string{
+		// Local-file writes: responses, headers, traces, cookies, caches,
+		// generated code.
+		"--output", "--output-dir", "--remote-name", "--remote-name-all",
+		"--remote-header-name", "--dump-header", "--trace", "--trace-ascii",
+		"--stderr", "--cookie-jar", "--alt-svc", "--etag-save", "--libcurl",
+		"--hsts",
+		// Local-file reads and request bodies from files: uploads, cookies,
+		// credentials, TLS client material, and the body flags whose values
+		// may be `@file`.
+		"--upload-file", "--cookie", "--form", "--form-string",
+		"--data", "--data-ascii", "--data-binary", "--data-raw",
+		"--data-urlencode", "--json", "--netrc", "--netrc-file", "--write-out",
+		"--cert", "--key", "--cacert", "--capath", "--crlfile", "--pubkey",
+		"--proxy-cert", "--proxy-key", "--proxy-cacert", "--proxy-capath",
+		"--proxy-crlfile",
+	}
+	curlFileShort = "dFbcoODTw" // -d -F -b -c -o -O -D -T -w
+)
+
+// rejectCurlFlags hard-refuses the SSRF / protocol-smuggling options listed
+// in curlDenyLong/curlDenyShort. These change how or where curl connects and
+// would silently bypass the per-hop host check, so they are refused rather
+// than gated — there is no legitimate use to approve. Local-file flags are
+// NOT refused here: they are approval-gated instead (see flagsTouchLocalFiles
+// and curlRules).
 func rejectCurlFlags(flags string) error {
 	for _, f := range strings.Fields(flags) {
 		for _, d := range curlDenyLong {
@@ -111,30 +148,67 @@ func rejectCurlFlags(flags string) error {
 				return fmt.Errorf("curl flag %q is not allowed", f)
 			}
 		}
-		if !strings.HasPrefix(f, "-") {
-			// A value for the preceding flag. curl reads a local file wherever
-			// a value is a bare `@path` (-H @file, -d @file, -F @file), which
-			// would walk past the secret-path guard; the dedicated url/headers/data
-			// args carry those values without touching the filesystem.
-			if strings.HasPrefix(f, "@") {
-				return fmt.Errorf("curl argument %q is not allowed: an '@' value reads a local file", f)
-			}
+		if strings.HasPrefix(f, "--") || !strings.HasPrefix(f, "-") {
 			continue
 		}
-		// The same marker glued onto a flag (-d@file, -w@file).
-		if strings.ContainsRune(f, '@') {
-			return fmt.Errorf("curl flag %q is not allowed: an '@' value reads a local file", f)
-		}
-		if strings.HasPrefix(f, "--") {
-			continue
-		}
-		for _, c := range f[1:] {
+		for _, c := range shortFlagLetters(f) {
 			if strings.ContainsRune(curlDenyShort, c) {
 				return fmt.Errorf("curl flag %q is not allowed", f)
 			}
 		}
 	}
 	return nil
+}
+
+// shortFlagLetters extracts the leading run of ASCII letters from a short
+// option field, so a glued value (starting at `/`, `@`, `=`, a digit, …) is
+// not scanned as further clustered flags: `-so/tmp/out` → "so", `-Axyz` →
+// "A" (a user-agent "xyz" must not read as clustered flags).
+func shortFlagLetters(f string) string {
+	i := 1
+	for i < len(f) {
+		c := f[i]
+		if c < 'A' || c > 'z' || (c > 'Z' && c < 'a') {
+			break
+		}
+		i++
+	}
+	return f[1:i]
+}
+
+// flagsTouchLocalFiles reports whether `flags` names an option that reads or
+// writes a local file, or uses the `@file` marker. It drives the "reads or
+// writes a local file" guard rule: the option itself is allowed, but the
+// human must approve it because a prompt-injected curl could use it to read a
+// file — including a secret — and send it off the machine.
+func flagsTouchLocalFiles(flags string) bool {
+	for _, f := range strings.Fields(flags) {
+		for _, d := range curlFileLong {
+			if f == d || strings.HasPrefix(f, d+"=") {
+				return true
+			}
+		}
+		if !strings.HasPrefix(f, "-") {
+			// A value for the preceding flag: `@file` reads a local file.
+			if strings.HasPrefix(f, "@") {
+				return true
+			}
+			continue
+		}
+		// The same marker glued onto a flag (-d@file, -w@file).
+		if strings.ContainsRune(f, '@') {
+			return true
+		}
+		if strings.HasPrefix(f, "--") {
+			continue
+		}
+		for _, c := range shortFlagLetters(f) {
+			if strings.ContainsRune(curlFileShort, c) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func runCurl(a *curlArgs) (string, string, error) {

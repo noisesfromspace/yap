@@ -175,6 +175,19 @@ func TestGuardRules(t *testing.T) {
 		t.Fatalf("write non-secret path: reason=%q", reason)
 	}
 
+	// write/edit are project-bound: a target outside the writable allowlist
+	// (project + assets + temp) pauses, mirroring the bash sandbox's write
+	// barrier. read is deliberately NOT bounded — reading is not a write.
+	if reason := Match("write", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "writes outside the project" {
+		t.Fatalf("write outside project: reason=%q", reason)
+	}
+	if reason := Match("edit", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "edits outside the project" {
+		t.Fatalf("edit outside project: reason=%q", reason)
+	}
+	if reason := Match("read", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "" {
+		t.Fatalf("read outside project should not be bounded: reason=%q", reason)
+	}
+
 	// curl gates its exfiltration vectors: an explicit non-GET method or a
 	// request body. Plain GET/HEAD fetches run.
 	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com"}`)); reason != "" {
@@ -185,6 +198,16 @@ func TestGuardRules(t *testing.T) {
 	}
 	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","data":"x"}`)); reason != "sends a request body" {
 		t.Fatalf("curl body: reason=%q", reason)
+	}
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","flags":"-o /tmp/x"}`)); reason != "reads or writes a local file" {
+		t.Fatalf("curl output flag: reason=%q", reason)
+	}
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","flags":"-d @/etc/hostname"}`)); reason != "reads or writes a local file" {
+		t.Fatalf("curl @file flag: reason=%q", reason)
+	}
+	// SSRF/protocol flags are hard-refused in the tool, not approval-gated.
+	if reason := Match("curl", json.RawMessage(`{"url":"https://example.com","flags":"--resolve x:80:127.0.0.1"}`)); reason != "" {
+		t.Fatalf("curl SSRF flag should be refused, not gated: reason=%q", reason)
 	}
 
 	// subagent delegates to a child whose own tools carry the gates: no rule.

@@ -60,6 +60,28 @@ func ExpandHome(p string) string {
 	return p
 }
 
+// ToolPath resolves a tool-supplied filesystem path the way a subprocess tool
+// does: expands a leading ~ and resolves a relative path against the frontend
+// cwd (the project), falling back to the process cwd when the frontend sent
+// none (one-shot `yap send`). bash already gets this via cmd.Dir = frontend
+// cwd; this is the same resolution for the in-process mutating tools
+// (write/edit), so their "relative or absolute" schema field, the bash
+// sandbox, and the writable-allowlist guard (safety.IsWritablePath) all agree
+// on where a relative path lands after a :cd.
+func ToolPath(p string) string {
+	p = ExpandHome(p)
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	if cwd := FrontendCwd(); cwd != "" {
+		return filepath.Join(cwd, p)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return filepath.Join(cwd, p)
+	}
+	return p
+}
+
 // frontendCwd is the frontend's working directory for the turn in progress.
 // The backend process's own cwd is fixed when the buffer spawns it, so a
 // `:cd` in Neovim is invisible here: without this the documented default for

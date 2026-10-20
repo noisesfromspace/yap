@@ -61,7 +61,12 @@ flowchart LR
 
 ## First run
 
-Yap needs Neovim 0.11 or newer.
+Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
+
+- `rg` (ripgrep) — the `search` and `glob` tools shell out to it.
+- `curl` — the `curl` command.
+- `bwrap` (bubblewrap) — the bash sandbox (Linux). Optional: without it the
+  bash tool falls back to running unsandboxed.
 
 1. Build the backend and put `yap` on Neovim's `PATH`:
 

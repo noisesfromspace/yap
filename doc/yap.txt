@@ -145,6 +145,11 @@ and each path is configurable via `setup()` / the Nix module options):
     },
     "ssh": {
       "known_hosts": "~/.ssh/known_hosts"
+    },
+    "sandbox": {
+      "enabled": true,
+      "allow_write": ["~/.cache"],
+      "deny_read": ["~/private"]
     }
   }
 <
@@ -168,6 +173,18 @@ and each path is configurable via `setup()` / the Nix module options):
   `agent/price/pricing.json`.
 
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
+
+  The `sandbox` block configures the bash tool's bubblewrap sandbox (Linux
+  only; see |yap-sandbox|). `enabled` defaults to true — the sandbox is on
+  unless the file sets `enabled: false`; on a machine without bubblewrap
+  (or off Linux) it silently falls back to running bash unsandboxed.
+  `allow_write` adds directories to the writable allowlist beyond the
+  always-writable project dir (the live |:pwd|, so it follows |:cd|) and the
+  session's assets dir — the same allowlist that bounds the `write` and
+  `edit` tools. `deny_read` adds paths to shadow with empty mounts beyond the
+  built-in secret directories (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/sops`,
+  `/etc/ssh`, `/run/agenix`), which are always shadowed so bash cannot read
+  them.
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ insert() template files (|yap-templates|).
@@ -646,13 +663,22 @@ current binary compiled in — `yap guard` is authoritative. The set today:
                 (age/gpg/sops/openssl), generating or exporting a private
                 key, and reading a file under a secret directory.
   ssh           always pauses for a Run/Deny confirmation.
-  curl          an explicit non-GET method or a request body (sends data off
-                the machine).
+  curl          an explicit non-GET method, a request body (data off the
+                machine), or a local-file flag (an `@file` read, a `-o`/
+                `-O` write, a client cert, a cookie jar, …) — the human
+                approves it. The SSRF / protocol flags (`--resolve`,
+                `--unix-socket`, `--proxy`, `-L`, `--config`, …) are not
+                gated: they are refused outright in the tool.
   playwright    the `eval` command (arbitrary JavaScript in the page).
   read/write    a path that is, or resolves into, a secret directory
   /edit/search  (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh,
                 /run/agenix, /etc/agenix) — approvable, never silently
                 read or written.
+  write/edit    a target outside the writable allowlist (the live |:pwd|,
+                the session assets dir, `sandbox.allow_write`, and the temp
+                dir) — pauses for Run/Deny, so the mutating file tools stay
+                bounded to the project like the sandbox below. `read` is
+                deliberately NOT bounded — reading is not a write.
 
 Secret paths and secret-reveal commands are one system (agent/safety/secrets.go):
 adding a location to its list drives both surfaces, and scrub.go redacts any
@@ -660,10 +686,41 @@ secret that still reaches a result as the backstop.
 
 A matching rule supplies the reason shown in the approval notification, the
 audit log and the guard board. The gate is a steerable safety net, not a
-security boundary: bash is unsandboxed by design — the denylist is bypassable.
+security boundary on its own: the denylist is bypassable. The hard boundary
+is the bubblewrap sandbox below (|yap-sandbox|), which the kernel enforces.
 Adding a rule is a one-file change in the tool's source (recompile to pick it
 up); nothing else needs editing — the rule then appears in `yap guard`
 automatically.
+
+THE SANDBOX                                                     *yap-sandbox*
+
+bash runs inside a bubblewrap (bwrap) sandbox on Linux. The whole
+filesystem is bind-mounted read-only, a small allowlist of directories is
+re-mounted writable, `/tmp` is a private tmpfs, and the secret directories are
+shadowed with empty mounts so the sandboxed process cannot read them. The
+writable allowlist is the live |:pwd| (so it follows |:cd|), the session's
+assets dir, and any `allow_write` entries from the `sandbox` config block.
+The same allowlist also bounds the `write` and `edit` tools (see above), so
+every mutating path — bash, write, edit — shares one definition of "where the
+agent may write". `curl` is not sandboxed: its local-file reach is a finite
+flag surface, so the local-file flags are approval-gated (the guard pauses
+for Run/Deny) and the SSRF / protocol-smuggling flags are refused outright —
+there is no need for a second enforcement mechanism there.
+
+When a command still tries to write outside the allowlist, the kernel refuses
+it (EROFS) and the turn pauses for the same Run/Deny approval the guard rules
+use: approving re-runs the command unsandboxed, denying returns the read-only
+failure to the model. A command that already matched a static guard rule (e.g.
+`sudo`, `git push --force`) was approved before it ran, so it runs unsandboxed
+outright — the approval is the blessing to run it unconfined, and it never
+prompts twice for the same command.
+
+This is a write and read barrier, not a network or confidentiality boundary:
+the sandbox does not unshare the network namespace, so a command can still
+reach the internet, and the read-only view still shows everything not on the
+denied-read list. It is on by default (disable with `sandbox.enabled = false`)
+and silently falls back to running bash unsandboxed when bwrap is
+absent or the platform is not Linux.
 
 Parked approvals are live state, answered via Run/Deny. Once answered, the
 outcome is written to the audit log and read back as settled history —

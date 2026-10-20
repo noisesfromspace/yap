@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -55,6 +56,8 @@ func SlimArgs(name, argsJSON string) (args any, ok bool) {
 			Edits []struct {
 				OldText json.RawMessage `json:"oldText"`
 				NewText json.RawMessage `json:"newText"`
+				From    json.RawMessage `json:"from"`
+				To      json.RawMessage `json:"to"`
 			} `json:"edits"`
 		}
 		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil || a.Edits == nil {
@@ -64,13 +67,66 @@ func SlimArgs(name, argsJSON string) (args any, ok bool) {
 		if err := json.Unmarshal(a.Path, &path); err != nil {
 			return nil, false
 		}
-		add, del := 0, 0
+		// str decodes an optional JSON string field, "" when absent.
+		str := func(r json.RawMessage) (string, error) {
+			if r == nil {
+				return "", nil
+			}
+			var s string
+			if err := json.Unmarshal(r, &s); err != nil {
+				return "", err
+			}
+			return s, nil
+		}
+		// Range edits (from/to) carry no oldText, so the deleted span size
+		// must be read from the file.
+		needFile := false
 		for _, e := range a.Edits {
-			var oldText, newText string
-			if err := json.Unmarshal(e.OldText, &oldText); err != nil {
+			if e.From != nil {
+				needFile = true
+				break
+			}
+		}
+		var orig string
+		if needFile {
+			data, err := os.ReadFile(ExpandHome(path))
+			if err != nil {
 				return nil, false
 			}
-			if err := json.Unmarshal(e.NewText, &newText); err != nil {
+			orig = string(data)
+		}
+		add, del := 0, 0
+		for _, e := range a.Edits {
+			if e.From != nil {
+				from, err := str(e.From)
+				if err != nil {
+					return nil, false
+				}
+				to, err := str(e.To)
+				if err != nil {
+					return nil, false
+				}
+				newText, err := str(e.NewText)
+				if err != nil {
+					return nil, false
+				}
+				start, end, err := ResolveSpan(orig, from, to)
+				if err != nil {
+					return nil, false
+				}
+				add += lineCount(newText)
+				del += lineCount(orig[start:end])
+				continue
+			}
+			if e.OldText == nil || e.NewText == nil {
+				return nil, false
+			}
+			oldText, err := str(e.OldText)
+			if err != nil {
+				return nil, false
+			}
+			newText, err := str(e.NewText)
+			if err != nil {
 				return nil, false
 			}
 			add += lineCount(newText)

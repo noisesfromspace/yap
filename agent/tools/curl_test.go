@@ -129,40 +129,55 @@ func TestCurlRedirectsAndFlags(t *testing.T) {
 	}
 }
 
-func TestCurlFlagDeny(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "ok")
-	}))
-	defer srv.Close()
-
+func TestCurlFlagSplit(t *testing.T) {
+	// SSRF / protocol-smuggling flags are hard-refused: they change where
+	// curl connects and would bypass the per-hop host check.
 	for _, flag := range []string{
 		"--unix-socket /var/run/docker.sock",
+		"--abstract-unix-socket yap",
 		"--location",
 		"--location-trusted",
 		"-L",
 		"-Lk",
+		"-sSL", // clustered -L
 		"--url http://169.254.169.254/",
 		"--next",
 		"--proxy http://127.0.0.1:8080",
+		"--preproxy http://127.0.0.1:8080",
 		"-x http://127.0.0.1:8080",
-		"--abstract-unix-socket yap",
+		"--socks4 localhost",
+		"--socks5 localhost",
+		"--socks5-hostname localhost",
+		"--proto-redir =http,https",
+		"--interface eth0",
 		"--config /tmp/c",
 		"-K /tmp/c",
 		"-K/tmp/c",
+		"--resolve example.com:80:127.0.0.1",
+		"--connect-to example.com:80:127.0.0.1:80",
+	} {
+		if err := rejectCurlFlags(flag); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Fatalf("flag %q should be hard-refused: %v", flag, err)
+		}
+		if flagsTouchLocalFiles(flag) {
+			t.Fatalf("flag %q should not be approval-gated (it is hard-refused)", flag)
+		}
+	}
+
+	// Local-file flags are approval-gated, not refused: the tool runs, but
+	// the guard pauses for a Run/Deny first.
+	for _, flag := range []string{
 		"-o /tmp/out",
 		"-ofile",
 		"-O",
 		"--output /tmp/out",
 		"--remote-name",
-		"--resolve example.com:80:127.0.0.1",
-		"--connect-to example.com:80:127.0.0.1:80",
+		"--remote-name-all",
+		"--remote-header-name",
 		"--dump-header /tmp/h",
 		"--trace-ascii /tmp/t",
-		// curl clusters short options, so `-So/path` is `-S -o /path`
-		"-so /tmp/out",
+		"-so /tmp/out", // clustered -o
 		"-So/tmp/out",
-		"-sSL",
-		// '@' values read a local file past the secret-path guard
 		"-H @/etc/hostname",
 		"-d @/etc/hostname",
 		"--data @/etc/hostname",
@@ -172,10 +187,33 @@ func TestCurlFlagDeny(t *testing.T) {
 		"-c /tmp/jar",
 		"--netrc-file /tmp/n",
 		"--write-out @/etc/hostname",
+		"--cert /etc/hostname",
+		"--key /tmp/k",
+		"--cacert /tmp/ca",
+		"--capath /tmp/capath",
+		"--crlfile /tmp/crl",
+		"--pubkey /tmp/pub",
+		"--proxy-cert /tmp/c",
+		"--proxy-key /tmp/k",
+		"--proxy-cacert /tmp/ca",
+		"--proxy-capath /tmp/capath",
+		"--proxy-crlfile /tmp/crl",
+		"--alt-svc /tmp/alt",
+		"--etag-save /tmp/etag",
+		"--libcurl /tmp/out.c",
+		"--hsts /tmp/hsts",
 	} {
-		if _, _, err := run(t, "curl", `{"url":"`+srv.URL+`/","flags":"`+flag+`"}`); err == nil || !strings.Contains(err.Error(), "not allowed") {
-			t.Fatalf("flag %q should be refused: %v", flag, err)
+		if err := rejectCurlFlags(flag); err != nil {
+			t.Fatalf("flag %q should not be hard-refused: %v", flag, err)
 		}
+		if !flagsTouchLocalFiles(flag) {
+			t.Fatalf("flag %q should be approval-gated", flag)
+		}
+	}
+
+	// A benign flag touches neither list.
+	if rejectCurlFlags("--http1.1") != nil || flagsTouchLocalFiles("--http1.1") {
+		t.Fatalf("benign flag should pass both checks")
 	}
 }
 

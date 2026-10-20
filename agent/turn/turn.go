@@ -351,6 +351,12 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
 	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
+	enabled := cfg.Sandbox.Enabled == nil || *cfg.Sandbox.Enabled
+	safety.SetSandboxConfig(safety.SandboxConfig{
+		Enabled:    enabled,
+		AllowWrite: cfg.Sandbox.AllowWrite,
+		DenyRead:   cfg.Sandbox.DenyRead,
+	})
 	tools.SetModelLister(config.ListCombos)
 	// totCost accumulates the model-step cost for the turn, so one number
 	// lands in the usage event and the audit log.

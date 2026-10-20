@@ -18,10 +18,10 @@ func init() {
 	Register("write",
 		"Write content to a file. Creates the file if it doesn't exist, "+
 			"overwrites if it does. Automatically creates parent directories. "+
-			"Writing to a secret path (~/.ssh, ~/.aws, /run/agenix, ...) pauses for user approval. "+
+			"Writing to a secret path (~/.ssh, ~/.aws, /run/agenix, ...) or outside the project pauses for user approval. "+
 			"For partial changes to existing files use edit instead.",
 		func(a *writeArgs) (string, string, error) {
-			a.Path = utils.ExpandHome(a.Path)
+			a.Path = utils.ToolPath(a.Path)
 			old, readErr := os.ReadFile(a.Path)
 			if readErr != nil && !os.IsNotExist(readErr) {
 				return "", "", readErr
@@ -41,5 +41,9 @@ func init() {
 			return result, ui, nil
 		})
 	// Secret paths are approvable, not silently written: pause for Run/Deny.
-	Gate("write", func(a *writeArgs) string { return a.Path }, safety.SecretPathRule("writes a secret path"))
+	// A target outside the writable allowlist (project + assets) also pauses,
+	// so the purpose-built file tools stay bounded like the bash sandbox.
+	Gate("write", func(a *writeArgs) string { return a.Path },
+		safety.SecretPathRule("writes a secret path"),
+		safety.OutsideWritableRule("writes outside the project"))
 }

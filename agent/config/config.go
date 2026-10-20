@@ -41,11 +41,24 @@ type SSH struct {
 	KnownHosts string `json:"known_hosts"`
 }
 
+// Sandbox configures the bash tool's bubblewrap sandbox (Linux only).
+// Enabled is a pointer so a missing key defaults to true: the sandbox is on
+// unless the settings file explicitly sets enabled=false. AllowWrite and
+// DenyRead add directories to the writable allowlist and the read-denied
+// shadow list beyond the built-ins (the project dir and session assets dir
+// are always writable; the secret paths are always shadowed).
+type Sandbox struct {
+	Enabled    *bool    `json:"enabled"`
+	AllowWrite []string `json:"allow_write"`
+	DenyRead   []string `json:"deny_read"`
+}
+
 type Config struct {
 	Providers map[string]Provider `json:"providers"`
 	Websearch Websearch           `json:"websearch"`
 	GitHub    GitHub              `json:"github"`
 	SSH       SSH                 `json:"ssh"`
+	Sandbox   Sandbox             `json:"sandbox"`
 }
 
 func configPath() string {

