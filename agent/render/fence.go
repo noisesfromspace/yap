@@ -28,6 +28,8 @@ func resultFence(name, argsJSON string) (lang string, ok bool) {
 		return "", true // plain fence: command output is arbitrary text
 	case "search", "glob":
 		return "", true // plain fence: listing output is arbitrary text
+	case "github":
+		return "json", true
 	default:
 		return "", false
 	}
