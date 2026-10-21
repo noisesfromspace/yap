@@ -528,6 +528,14 @@ of these groups, so a `default` definition is silently ignored — that is how
 `markdownBlockquote` kept `Comment`'s colour but lost `@markup.quote`'s italic,
 and how `# @user` lost its underline.
 
+Session buffers also clear the per-keystroke option hooks a markdown setup
+installs (`indentexpr`, `formatexpr`). nvim-treesitter's FileType handling sets
+`indentexpr` for any language with an `indents` query — markdown has one — and
+Vim evaluates it on every new line (<CR>, `o`, `O`) and on `=`. Its query parses
+from the top of the buffer and folds make its `w0..w$` range span thousands of
+rows, so one <CR> measured 577 ms on a 64k-line session against 9 ms with the
+hook cleared. A transcript is not code.
+
 The parser is left fully intact, injections included. Decoration renderers are
 consumers of the parsed tree, not of the highlighter, so stopping the
 highlighter does not make the injected trees redundant: touchup reads the main

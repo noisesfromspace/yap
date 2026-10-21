@@ -72,6 +72,16 @@ if has_parser then
 end
 assert(vim.bo[buf].syntax == "markdown", "syntax not set to markdown, got " .. tostring(vim.bo[buf].syntax))
 
+-- Per-keystroke option hooks are cleared. nvim-treesitter's FileType setup sets
+-- `indentexpr` for markdown (it ships an indents query) and insert-mode Enter
+-- evaluates it: measured 577 ms for one <CR> on a 64k-line session, because the
+-- indent query parses from the top of the buffer. A transcript is not code.
+vim.bo[buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+vim.bo[buf].formatexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+highlight.apply(buf)
+assert(vim.bo[buf].indentexpr == "", "indentexpr not cleared: " .. vim.bo[buf].indentexpr)
+assert(vim.bo[buf].formatexpr == "", "formatexpr not cleared: " .. vim.bo[buf].formatexpr)
+
 -- Re-applying is a safe no-op.
 highlight.apply(buf)
 assert(vim.bo[buf].syntax == "markdown", "syntax lost on re-apply")

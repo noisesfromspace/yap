@@ -34,6 +34,14 @@
 -- lines, 420 ms at 92k for the main tree alone). That belongs to the renderer
 -- — Neovim time-slices the same parse when a callback is passed — and is not
 -- something this module can remove without breaking the renderers themselves.
+--
+-- Session buffers also drop the per-keystroke option hooks a markdown setup
+-- installs. nvim-treesitter's FileType handling sets `indentexpr` for any
+-- language with an `indents` query — markdown has one — and Vim evaluates it on
+-- every new line (<CR>, `o`, `O`) and on `=`. Its query parses from the top of
+-- the buffer, and folds make its `w0..w$` range span thousands of rows, so one
+-- <CR> measured 577 ms on a 64k-line session versus 9 ms with the hook cleared.
+-- A transcript is not code: plain 'autoindent' is the right behaviour.
 
 local M = {}
 
@@ -163,6 +171,15 @@ function M.apply(buf)
   -- Stop the highlighter only: the parser and its injections stay alive for
   -- the decoration renderers, which read the tree directly.
   vim.treesitter.stop(buf)
+  -- A tree-sitter-driven option hook re-parses the buffer on every keystroke.
+  -- nvim-treesitter's FileType setup sets `indentexpr` for markdown (it ships an
+  -- indents query), and insert-mode Enter evaluates it for the new line: 170-500
+  -- ms per Enter on a 64k-line session, because the indent query parses from the
+  -- top of the buffer and folds make its `w0..w$` range span thousands of rows.
+  -- A transcript is not code — plain 'autoindent' is the right behaviour, and
+  -- nothing else in yap sets these.
+  vim.bo[buf].indentexpr = ""
+  vim.bo[buf].formatexpr = ""
   -- Setting 'syntax' re-sources the file (SynSet clears b:current_syntax), so
   -- this also picks up the fenced-language list above.
   vim.api.nvim_buf_call(buf, function()
