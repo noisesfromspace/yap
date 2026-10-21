@@ -10,13 +10,15 @@ yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 local guard = require("harness.ui.guard")
 
 local s = yap.new()
+local chat_win = vim.api.nvim_get_current_win()
+local full = vim.api.nvim_win_get_height(chat_win)
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "board did not open")
 assert(#vim.api.nvim_list_wins() == 2, "board did not open in a split")
 assert(
-  vim.api.nvim_win_get_height(0) == math.max(1, math.floor(vim.o.lines / 2)),
-  "board is not half the screen: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(vim.o.lines / 2)
+  vim.api.nvim_win_get_height(0) == math.floor(full / 2),
+  "board is not half the session window: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(full / 2)
 )
 
 -- Give :q a place to land so closing the board's tab doesn't quit the test.

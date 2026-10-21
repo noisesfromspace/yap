@@ -73,7 +73,7 @@ function M.live(buf)
     anchor = drawer.owner_window(owner)
   end
 
-  if not drawer.open_at(t.bufnr, drawer.half_screen(), nil, split, anchor) then
+  if not drawer.open_at(t.bufnr, drawer.half_screen(anchor), nil, split, anchor) then
     return
   end
   audit.refresh(owner) -- a rule drawn while hidden may not match this window's width

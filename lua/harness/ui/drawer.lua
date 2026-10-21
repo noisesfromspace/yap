@@ -63,10 +63,17 @@ local function close_win(win)
   end
 end
 
---- Half the screen height, for the large read-only panels (guard, tail).
---- Split heights are row counts, so a bottom drawer at this height fills the
---- bottom half of the tab while the anchor keeps the top half.
-function M.half_screen()
+--- Half the anchor window's height, for the large read-only panels (guard,
+--- tail). Split heights are row counts, so a drawer at this height takes half
+--- the anchor window while the anchor keeps the other half. Basing the height
+--- on the anchor (not the whole screen) keeps a second stacked panel from
+--- squeezing the session out: the guard board and live tail share the bottom
+--- half instead of each claiming half the tab. Falls back to half the screen
+--- when the anchor is gone (the session has no visible window).
+function M.half_screen(win)
+  if win and vim.api.nvim_win_is_valid(win) then
+    return math.max(1, math.floor(vim.api.nvim_win_get_height(win) / 2))
+  end
   return math.max(1, math.floor(vim.o.lines / 2))
 end
 
@@ -142,7 +149,17 @@ function M.open_at(bufnr, height, opts, split, anchor)
 
   -- nvim_open_win with an explicit split/win is deterministic: it splits the
   -- anchor window itself (no :belowright + current-window dance) and no
-  -- autocommands can reshuffle the fresh layout mid-open.
+  -- autocommands can reshuffle the fresh layout mid-open. Splitting the
+  -- anchor redistributes its height to the new window; a fixed-height drawer
+  -- anchor ('winfixheight') would refuse to yield, so the split would steal
+  -- the space from the session above instead and collapse it. Drop the flag
+  -- for the span of the split, then restore it — the two drawers share the
+  -- anchor's column rather than squeezing the session out.
+  local anchor_fixed
+  if anchor and vim.api.nvim_win_is_valid(anchor) then
+    anchor_fixed = vim.wo[anchor].winfixheight
+    vim.wo[anchor].winfixheight = false
+  end
   local win = vim.api.nvim_open_win(bufnr, true, {
     split = split,
     win = anchor or 0,
@@ -150,6 +167,9 @@ function M.open_at(bufnr, height, opts, split, anchor)
     noautocmd = true,
   })
   M.style(win, opts)
+  if anchor and vim.api.nvim_win_is_valid(anchor) then
+    vim.wo[anchor].winfixheight = anchor_fixed
+  end
   drawer_anchor[bufnr] = anchor
   return win
 end

@@ -4,6 +4,7 @@ local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
+local full = vim.api.nvim_win_get_height(chat_win)
 -- live() opens the live tool tail even before any tool has run (empty,
 -- fills as tools execute)
 yap.live()
@@ -11,8 +12,8 @@ local tail = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(tail):match("%-tail$"), "live did not open the tail buffer")
 assert(not vim.bo[tail].modifiable, "fresh tail view should be read-only")
 assert(
-  vim.api.nvim_win_get_height(0) == math.max(1, math.floor(vim.o.lines / 2)),
-  "tail drawer is not half the screen: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(vim.o.lines / 2)
+  vim.api.nvim_win_get_height(0) == math.floor(full / 2),
+  "tail drawer is not half the session window: " .. vim.api.nvim_win_get_height(0) .. " vs " .. math.floor(full / 2)
 )
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "tail view has no buffer-local live toggle")
 yap.live(tail)

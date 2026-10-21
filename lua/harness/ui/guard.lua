@@ -620,7 +620,7 @@ function M.toggle()
     split, anchor = "below", vim.api.nvim_get_current_win()
   end
 
-  if not drawer.open_at(buf, drawer.half_screen(), nil, split, anchor) then
+  if not drawer.open_at(buf, drawer.half_screen(anchor), nil, split, anchor) then
     return
   end
   local result = render()
