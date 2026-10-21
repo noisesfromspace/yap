@@ -130,19 +130,6 @@ local function setup_buffer(buf)
     require("harness.session.highlight").apply(buf)
   end)
 
-  -- Diff hunks are meaningless on a session transcript, and mini.diff's
-  -- number-column rendering collides with 'relativenumber': the two
-  -- re-render the gutter together on every redraw (a ~20x cost on long
-  -- sessions — relativenumber alone is ~0.01ms, mini.diff alone ~0, but
-  -- combined ~0.24ms). Disable mini.diff here so relativenumber stays
-  -- cheap. The buffer-local minidiff_disable flag makes mini.diff's
-  -- BufEnter auto-enable refuse to re-attach.
-  local ok_md, MiniDiff = pcall(require, "mini.diff")
-  if ok_md and MiniDiff then
-    vim.b[buf].minidiff_disable = true
-    MiniDiff.disable(buf)
-  end
-
   local keys = harness().config.keymaps
   local map = function(mode, lhs, rhs, desc)
     if lhs == "" then

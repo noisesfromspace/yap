@@ -239,20 +239,25 @@ local function extend(buf)
   if cached.tick == tick then
     return cached.parse
   end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  if #lines < cached.parse.count then
+  local count = vim.api.nvim_buf_line_count(buf)
+  if count < cached.parse.count then
     return parse(buf)
   end
+  -- Only the tail is rescanned, so only the tail is read. A full read costs
+  -- ~1.8ms at 64k lines and made `extend` as expensive as a full parse; the
+  -- checkpoint already carries the scanner state for everything above it.
+  local base = cached.parse.count - 1
+  local tail = vim.api.nvim_buf_get_lines(buf, base, -1, false)
   local ctx = cached.ctx
   restore(ctx, cached.checkpoint)
   local checkpoint
-  for i = cached.parse.count, #lines do
-    if i == #lines then
+  for i = cached.parse.count, count do
+    if i == count then
       checkpoint = snapshot(ctx)
     end
-    step(ctx, i, lines[i])
+    step(ctx, i, tail[i - base])
   end
-  local p = { headings = ctx.headings, regions = ctx.regions, count = #lines, frontmatter = cached.parse.frontmatter }
+  local p = { headings = ctx.headings, regions = ctx.regions, count = count, frontmatter = cached.parse.frontmatter }
   cached.parse = p
   cached.tick = tick
   cached.checkpoint = checkpoint

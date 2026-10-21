@@ -507,10 +507,11 @@ caught and reported the same way.
 
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 
-Session buffers set `minidiff_disable` (and detach an already-attached
-mini.diff) and an LspAttach guard stops any markdown LSP client, so diff hunks
-and semantic-token/inlay-hint streams — meaningless on a transcript — don't
-pay per-redraw cost. Session buffers are coloured by Vim's markdown syntax
+Session buffers are unlisted (`buflisted = false`), which makes mini.diff's
+`BufEnter` auto-enable skip them — its guard requires a listed buffer — so no
+`minidiff_disable` flag is needed. An LspAttach guard stops any markdown LSP
+client, so semantic-token/inlay-hint streams — meaningless on a transcript —
+don't pay per-redraw cost. Session buffers are coloured by Vim's markdown syntax
 (`syntax/markdown.vim`) instead of the tree-sitter highlighter: the
 highlighter's per-redraw range is `line('w0')..line('w$')`, which with folds
 closed spans thousands of *buffer* rows on a long transcript, so its cost
