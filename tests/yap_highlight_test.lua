@@ -44,6 +44,17 @@ if has_parser then
   assert(vim.treesitter.highlighter.active[buf] == nil, "highlighter still active after apply")
   local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
   assert(ok and parser, "parser must survive apply (touchup renders from it)")
+  -- Injections are dropped: nothing consumes injected trees once the
+  -- highlighter is off, and keeping them makes touchup's first parse build
+  -- one tree per inline span / fence / marker (measured 18k trees, ~700ms on
+  -- a 34k-line session). The main tree must survive: one tree, no children.
+  parser:parse(true)
+  local trees = 0
+  parser:for_each_tree(function()
+    trees = trees + 1
+  end)
+  assert(trees == 1, "injections not dropped: " .. trees .. " trees")
+  assert(next(parser._children) == nil, "injection children were created")
 end
 assert(vim.bo[buf].syntax == "markdown", "syntax not set to markdown, got " .. tostring(vim.bo[buf].syntax))
 

@@ -18,8 +18,48 @@
 -- `g:markdown_fenced_languages`. tree-sitter is still *started* (touchup
 -- renders its block decorations from the parser); only the highlighter is
 -- stopped.
+--
+-- Stopping the highlighter also means nothing consumes *injected* trees any
+-- more, and dropping them makes opening a big session cheaper. touchup parses
+-- the whole buffer on its first render, and the default markdown injections
+-- make that parse produce one tree per inline span (7,502 at 34.5k lines), one
+-- per fence, and — via html — one `comment` tree per `<!-- yap:… -->` marker:
+-- 18,005 trees at 34.5k lines, 48,005 at 92k. Dropping them leaves the single
+-- main markdown tree. Measured end to end (touchup's first render on a session
+-- buffer): 34.5k lines 413 ms -> 313 ms, 92k lines 1,053 ms -> 780 ms.
+--
+-- What remains is the main markdown tree itself (166 ms at 34.5k lines, 420 ms
+-- at 92k), which yap cannot avoid: touchup's block decorations are read from
+-- it, and a mid-file range parse still builds the whole document. Nothing
+-- visible is lost by the strip: block decorations come from that main tree,
+-- and inline emphasis now comes from `syntax=markdown`, not from the dropped
+-- `markdown_inline` trees.
 
 local M = {}
+
+-- A query with no injection captures: `LanguageTree:_get_injections` returns
+-- early when the query has none, so a parse builds the main tree and nothing
+-- else. Built once.
+local no_injections
+
+--- Stop the tree-sitter highlighter and drop its injections, leaving the plain
+--- markdown tree that touchup's block renderers need.
+local function strip_injections(buf)
+  local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
+  if not ok or not parser or not parser._children then
+    return
+  end
+  if not no_injections then
+    -- A valid query that captures nothing; a query with zero injection
+    -- captures short-circuits injection extraction entirely.
+    no_injections = vim.treesitter.query.parse("markdown", "((document) @nothing)")
+  end
+  parser._injection_query = no_injections
+  -- Drop children a parse may already have created, and forget the region the
+  -- old query covered, so the next parse starts from nothing.
+  parser._children = {}
+  parser._processed_injection_region = nil
+end
 
 -- Fence languages that get embedded syntax colouring. These all ship with
 -- Neovim; a fence tagged with anything else renders as plain code.
@@ -61,6 +101,7 @@ function M.apply(buf)
   end
   -- Stop the highlighter only: the parser stays alive for touchup.
   vim.treesitter.stop(buf)
+  strip_injections(buf)
   -- Setting 'syntax' re-sources the file (SynSet clears b:current_syntax), so
   -- this also picks up the fenced-language list above.
   vim.api.nvim_buf_call(buf, function()
