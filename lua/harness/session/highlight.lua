@@ -10,10 +10,12 @@
 -- Block-level highlighting (headings, fences, quotes, lists, and the
 -- syntax-coloured code inside fences) lives in the main tree and is
 -- viewport-bounded, so it stays cheap. Yap therefore always drops the
--- `markdown_inline` injection, keeping the cheap block colours. There is no
--- public Neovim API to change injections after a parser exists, so it swaps
--- the LanguageTree's injection query and removes the inline child directly
--- (fields stable since Neovim 0.5).
+-- `markdown_inline` injection, keeping the cheap block colours. Inline
+-- emphasis is restored separately by harness.session.inline (a
+-- viewport-bounded regex renderer). There is no public Neovim API to change
+-- injections after a parser exists, so it swaps the LanguageTree's injection
+-- query and removes the inline child directly (fields stable since Neovim
+-- 0.5).
 
 local M = {}
 

@@ -625,6 +625,11 @@ function M.setup(opts)
       vim.notify(msg, vim.log.levels.INFO, { title = "yap" })
     end,
   })
+
+  -- Inline markdown emphasis (bold/italic/code/links) is rendered by a
+  -- viewport-bounded regex pass, not the treesitter highlighter (which is
+  -- O(buffer) per scroll via the per-span markdown_inline injection).
+  require("harness.session.inline").setup()
 end
 
 return M
