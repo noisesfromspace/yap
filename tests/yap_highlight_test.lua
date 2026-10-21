@@ -1,6 +1,6 @@
 -- Markdown colouring policy: a yap session buffer is coloured by Vim's
--- markdown syntax, not the tree-sitter highlighter, and the parser survives
--- (touchup renders from it).
+-- markdown syntax, not the tree-sitter highlighter, and the parser keeps its
+-- injections (decoration renderers read the tree, not the highlighter).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local highlight = require("harness.session.highlight")
@@ -32,9 +32,21 @@ vim.bo[buf].filetype = "markdown"
 -- not guaranteed on the runtimepath (the suite's child has none), in which
 -- case there is no highlighter to stop and only the syntax half is testable.
 local has_parser = pcall(vim.treesitter.get_parser, buf, "markdown")
+-- Languages the parser builds for this buffer *before* the policy runs. The
+-- policy must not change this set: renderers read injected trees, so dropping
+-- any of them silently deletes their decorations. Compared as a set so the
+-- assertion holds whether or not grammars are installed in this environment.
+local baseline_langs = {}
 if has_parser then
   vim.treesitter.start(buf, "markdown")
   assert(vim.treesitter.highlighter.active[buf] ~= nil, "highlighter was not started")
+  local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
+  if ok and parser then
+    pcall(parser.parse, parser, true)
+    parser:for_each_tree(function(_, tree)
+      baseline_langs[tree:lang()] = true
+    end)
+  end
 end
 
 highlight.apply(buf)
@@ -44,17 +56,19 @@ if has_parser then
   assert(vim.treesitter.highlighter.active[buf] == nil, "highlighter still active after apply")
   local ok, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
   assert(ok and parser, "parser must survive apply (touchup renders from it)")
-  -- Injections are dropped: nothing consumes injected trees once the
-  -- highlighter is off, and keeping them makes touchup's first parse build
-  -- one tree per inline span / fence / marker (measured 18k trees, ~700ms on
-  -- a 34k-line session). The main tree must survive: one tree, no children.
-  parser:parse(true)
-  local trees = 0
-  parser:for_each_tree(function()
-    trees = trees + 1
+  -- Injections must be untouched. Stopping the highlighter does not make them
+  -- redundant: touchup reads the `markdown_inline` child for links/markers and
+  -- render-markdown dispatches per injected language. Dropping them cost 25->9
+  -- touchup marks and 15->11 render-markdown marks on this shape of buffer.
+  -- Compare against the pre-policy set so this holds with or without grammars.
+  pcall(parser.parse, parser, true)
+  local langs = {}
+  parser:for_each_tree(function(_, tree)
+    langs[tree:lang()] = true
   end)
-  assert(trees == 1, "injections not dropped: " .. trees .. " trees")
-  assert(next(parser._children) == nil, "injection children were created")
+  for lang in pairs(baseline_langs) do
+    assert(langs[lang], "apply() dropped the " .. lang .. " injection")
+  end
 end
 assert(vim.bo[buf].syntax == "markdown", "syntax not set to markdown, got " .. tostring(vim.bo[buf].syntax))
 

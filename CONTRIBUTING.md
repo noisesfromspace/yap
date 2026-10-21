@@ -516,9 +516,21 @@ highlighter's per-redraw range is `line('w0')..line('w$')`, which with folds
 closed spans thousands of *buffer* rows on a long transcript, so its cost
 grows with session size and holding j/k stalls. The syntax engine only
 evaluates displayed lines, and it covers inline emphasis plus embedded fence
-languages (`g:markdown_fenced_languages`). tree-sitter is still started —
-touchup renders its block decorations from the parser — only the highlighter
-is stopped (`session/highlight.lua`).
+languages (`g:markdown_fenced_languages`). Only the highlighter is stopped
+(`session/highlight.lua`).
+
+The parser is left fully intact, injections included. Decoration renderers are
+consumers of the parsed tree, not of the highlighter, so stopping the
+highlighter does not make the injected trees redundant: touchup reads the main
+markdown tree for its block renderers and the `markdown_inline` child for
+link/marker styling, and render-markdown dispatches a handler per injected
+language (`markdown`, `markdown_inline`, `html`, `yaml`, `latex`). Dropping
+injections to speed up the first render was measured at 25 -> 9 touchup marks
+and 15 -> 11 render-markdown marks on the same buffer, so the policy must not
+touch them. The cost that remains is per *open*, not per scroll: a renderer
+parses the whole buffer synchronously on its first render (166 ms at 34.5k
+lines for the main tree alone), which is the renderer's to fix — Neovim
+time-slices the same parse when handed a callback.
 
 #### R-folding — Folding is a projection of anchored structural units
 
