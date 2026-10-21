@@ -119,10 +119,10 @@ local function setup_buffer(buf)
   -- with the open-session picker.
   vim.bo[buf].buflisted = false
 
-  -- Apply the treesitter-highlight policy (always block-level colours: drop
-  -- the inline markdown_inline injection). Deferred so the FileType
-  -- autocommands that started the highlighter (and created the parser) have
-  -- run; dropping the inline injection needs the parser to exist.
+  -- Apply the highlight policy (markdown syntax instead of the treesitter
+  -- highlighter). Deferred so the FileType autocommands have run: ftplugin/
+  -- markdown.lua starts the highlighter and creates the parser there, and the
+  -- policy stops the highlighter while leaving the parser for touchup.
   vim.schedule(function()
     if not vim.api.nvim_buf_is_valid(buf) then
       return

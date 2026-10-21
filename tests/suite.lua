@@ -105,7 +105,6 @@ local CASES = {
   { name = "yap_fence_conformance_test", port = 18132 },
   { name = "yap_parse_incremental_test", port = 18132 },
   { name = "yap_highlight_test", port = 18132 },
-  { name = "yap_inline_test", port = 18132 },
   { name = "yap_lsp_test", port = 18132 },
   { name = "yap_template_test", port = 18132 },
   { name = "yap_frontmatter_test", port = 18132 },
@@ -162,16 +161,30 @@ end
 -- Isolation
 -- ---------------------------------------------------------------------------
 
-local ENV_KEYS = { "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME" }
+-- Isolate the child's data dirs. HOME and XDG_* (state included: Neovim 0.13
+-- keeps its log under stdpath('state')) pin sessions/config/cache/logs inside
+-- the case dir. The NVIM_LOG_FILE vars are inherited from whatever Neovim runs
+-- the suite, and nvim's startup check compares the inherited "want" path
+-- against its own, then notifies WARN 100ms later when they differ — a
+-- notification that races any test asserting on vim.notify.
+local ENV_KEYS = { "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME" }
+local ENV_UNSET = { "NVIM_LOG_FILE", "__NVIM_LOG_FILE_WANT" }
 
 local function isolate(dir)
   local saved = {}
   for _, key in ipairs(ENV_KEYS) do
     saved[key] = vim.env[key]
   end
+  for _, key in ipairs(ENV_UNSET) do
+    saved[key] = vim.env[key]
+  end
   vim.env.HOME = dir
   vim.env.XDG_CONFIG_HOME = dir .. "/.config"
   vim.env.XDG_CACHE_HOME = dir .. "/.cache"
+  vim.env.XDG_STATE_HOME = dir .. "/.local/state"
+  for _, key in ipairs(ENV_UNSET) do
+    vim.env[key] = nil
+  end
   return saved
 end
 

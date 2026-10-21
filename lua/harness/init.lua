@@ -631,10 +631,10 @@ function M.setup(opts)
     end,
   })
 
-  -- Inline markdown emphasis (bold/italic/code/links) is rendered by a
-  -- viewport-bounded regex pass, not the treesitter highlighter (which is
-  -- O(buffer) per scroll via the per-span markdown_inline injection).
-  require("harness.session.inline").setup()
+  -- Session buffers are coloured by Vim's markdown syntax, not the
+  -- treesitter highlighter, whose per-redraw range spans every folded row and
+  -- so grows with session size. See session/highlight.lua.
+  require("harness.session.highlight").setup()
 end
 
 return M

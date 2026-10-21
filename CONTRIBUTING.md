@@ -510,10 +510,15 @@ caught and reported the same way.
 Session buffers set `minidiff_disable` (and detach an already-attached
 mini.diff) and an LspAttach guard stops any markdown LSP client, so diff hunks
 and semantic-token/inlay-hint streams — meaningless on a transcript — don't
-pay per-redraw cost. Tree-sitter markdown highlighting stays on, block-level
-only: the inline `markdown_inline` injection is always dropped because it is
-O(buffer) per scroll and the source of jitter holding j/k over a long
-transcript.
+pay per-redraw cost. Session buffers are coloured by Vim's markdown syntax
+(`syntax/markdown.vim`) instead of the tree-sitter highlighter: the
+highlighter's per-redraw range is `line('w0')..line('w$')`, which with folds
+closed spans thousands of *buffer* rows on a long transcript, so its cost
+grows with session size and holding j/k stalls. The syntax engine only
+evaluates displayed lines, and it covers inline emphasis plus embedded fence
+languages (`g:markdown_fenced_languages`). tree-sitter is still started —
+touchup renders its block decorations from the parser — only the highlighter
+is stopped (`session/highlight.lua`).
 
 #### R-folding — Folding is a projection of anchored structural units
 
