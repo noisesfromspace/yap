@@ -48,16 +48,6 @@ local function island_hl(text, group, style)
   return "%#YapIsland" .. (style or "") .. (group or "") .. "#" .. esc(text) .. "%*"
 end
 
--- Human byte count for the running tool's beacon ("48KB", "1.2MB").
-local function human_bytes(n)
-  if n >= 1024 * 1024 then
-    return string.format("%.1fMB", n / (1024 * 1024))
-  elseif n >= 1024 then
-    return string.format("%.0fKB", n / 1024)
-  end
-  return n .. "B"
-end
-
 -- Last backend error per buffer; shown in the winbar until the next send.
 
 -- The agent is awaiting the user's next prompt: set when a turn
@@ -320,9 +310,6 @@ local function render_winbar(buf)
       local l = live and live[buf]
       if l and l.ms and l.ms >= 2000 then
         local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
-        if l.bytes and l.bytes > 0 then
-          label = label .. " · " .. human_bytes(l.bytes)
-        end
         add_item({ seg(label, "BusyText") })
       end
     end
