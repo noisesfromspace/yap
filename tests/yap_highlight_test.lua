@@ -28,6 +28,33 @@ if ok and parser and parser._children then
   -- language collapse into one tree (the grammar-free observable of the
   -- O(#fences)-per-scroll fix).
   assert(parser._injection_query.has_combined_injections == true, "fenced-code injection not combined")
+
+  -- Injected trees must stay constant in the number of tool markers: the
+  -- highlighter walks every injected tree on each viewport change, so a tree
+  -- per marker (`html_block` -> html -> `comment`) made scrolling O(#tool
+  -- calls).
+  local many = {}
+  for i = 1, 200 do
+    many[#many + 1] = "# @assistant"
+    many[#many + 1] = '<!-- yap:tool {"id":"c' .. i .. '","name":"bash"} -->'
+    many[#many + 1] = "```diff"
+    many[#many + 1] = "- old " .. i
+    many[#many + 1] = "+ new " .. i
+    many[#many + 1] = "```"
+    many[#many + 1] = "<!-- /yap:tool -->"
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, many)
+  parser._processed_injection_region = nil
+  parser:parse(true)
+  local trees, langs = 0, {}
+  parser:for_each_tree(function(_, tree)
+    trees = trees + 1
+    langs[tree:lang()] = true
+  end)
+  assert(
+    trees <= 3,
+    "injected trees scale with tool markers: " .. trees .. " trees " .. vim.inspect(vim.tbl_keys(langs))
+  )
 end
 
 -- Re-applying is a safe no-op (drop_inline is idempotent).
