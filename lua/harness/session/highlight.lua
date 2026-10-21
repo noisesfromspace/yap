@@ -83,6 +83,52 @@ local function merge_fenced()
   vim.g.markdown_fenced_languages = list
 end
 
+-- Vim's `syntax/markdown.vim` borrows its colours from `syntax/html.vim`
+-- (`markdownBold -> htmlBold`, `markdownH1 -> htmlH1`, ...) and leaves some
+-- groups unlinked altogether (`markdownCode`, `markdownCodeBlock`). A
+-- colourscheme built for tree-sitter — mini.base16, the modern default — styles
+-- the `@markup.*` captures and no HTML groups, so those chains dead-end at an
+-- undefined group and the text renders plain. Link the intermediates to the
+-- captures the colourscheme does style, so syntax=markdown looks like the
+-- tree-sitter highlighting it replaced.
+--
+-- `default = true` throughout: a colourscheme that styles these legacy groups,
+-- or the syntax file's own link, always wins — this only fills the holes.
+local legacy_links = {
+  -- intermediates syntax/markdown.vim links through
+  { "htmlBold", "@markup.strong" },
+  { "htmlBoldItalic", "@markup.strong" },
+  { "htmlItalic", "@markup.italic" },
+  { "htmlStrike", "@markup.strikethrough" },
+  { "htmlCode", "@markup.raw" },
+  { "htmlLink", "@markup.link.label" },
+  { "htmlTag", "@tag" },
+  { "htmlTagName", "@tag" },
+  { "htmlSpecialChar", "@string.escape" },
+  -- groups syntax/markdown.vim never links
+  { "markdownCode", "@markup.raw" },
+  { "markdownCodeBlock", "@markup.raw" },
+  { "markdownCodeDelimiter", "@punctuation.special" },
+  { "markdownLinkDelimiter", "@punctuation.special" },
+  { "markdownLinkTextDelimiter", "@punctuation.special" },
+  { "markdownListMarker", "@markup.list" },
+  { "markdownOrderedListMarker", "@markup.list" },
+  { "markdownBlockquote", "@markup.quote" },
+  { "markdownRule", "@punctuation.special" },
+}
+for i = 1, 6 do
+  legacy_links[#legacy_links + 1] = { "htmlH" .. i, "@markup.heading." .. i }
+  legacy_links[#legacy_links + 1] = { "markdownH" .. i, "@markup.heading." .. i }
+end
+
+--- Fill the gaps in the legacy markdown colour chains. Idempotent, and must
+--- run after `syntax/markdown.vim` is sourced so its own links win.
+local function link_legacy()
+  for _, pair in ipairs(legacy_links) do
+    vim.api.nvim_set_hl(0, pair[1], { link = pair[2], default = true })
+  end
+end
+
 --- Colour `buf` with the markdown syntax instead of the tree-sitter
 --- highlighter. Idempotent.
 function M.apply(buf)
@@ -107,6 +153,8 @@ function M.apply(buf)
   vim.api.nvim_buf_call(buf, function()
     vim.bo.syntax = "markdown"
   end)
+  -- After the syntax file: its links are in place, so ours only fill gaps.
+  link_legacy()
 end
 
 function M.setup()
