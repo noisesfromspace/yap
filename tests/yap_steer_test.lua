@@ -42,6 +42,19 @@ yap.scratch_send(scratch)
 vim.notify = notify
 assert(#steer_notices == 0, "steering is visible in scratch; no confirmation toast: " .. vim.inspect(steer_notices))
 
+-- The section carries a state label only: it is pending, not a reminder of
+-- which key to press.
+local function label(buf, row)
+  local parts = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, { row - 1, 0 }, { row - 1, -1 }, { details = true })) do
+    for _, c in ipairs(m[4].virt_text or {}) do
+      parts[#parts + 1] = c[1]
+    end
+  end
+  return table.concat(parts)
+end
+assert(label(scratch, 3) == "  · pending", "submitted steer is not labelled pending: " .. label(scratch, 3))
+
 -- Steering stays pending in the live section until the backend confirms it.
 assert(
   table.concat(vim.api.nvim_buf_get_lines(scratch, 0, -1, false), "\n"):match("# @steer\nalso check the tests"),
@@ -150,22 +163,40 @@ assert(
 local buf4 = yap.new()
 vim.api.nvim_buf_set_lines(buf4, -1, -1, false, { "do some work" })
 yap.send(buf4)
-assert(vim.wait(10000, function() return yap.is_running(buf4) end, 50), "edit-steer turn did not start")
+assert(
+  vim.wait(10000, function()
+    return yap.is_running(buf4)
+  end, 50),
+  "edit-steer turn did not start"
+)
 vim.wait(400)
 yap.scratch_toggle(buf4)
 local scratch4 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch4, 0, -1, false, {
-  "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
+  "# @notes",
+  "",
+  "# @steer",
+  "also check the tests",
+  "",
+  "# @queue",
 })
 vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(scratch4)
 vim.api.nvim_buf_set_lines(scratch4, 3, 4, false, { "edited instruction" })
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch4 })
-assert(vim.wait(15000, function() return not yap.is_running(buf4) end, 100), "edited steer did not finish")
+assert(
+  vim.wait(15000, function()
+    return not yap.is_running(buf4)
+  end, 100),
+  "edited steer did not finish"
+)
 assert(chat_text(buf4):find("# @user\nedited instruction", 1, true), "edited steer was not injected")
 assert(not chat_text(buf4):find("# @user\nalso check the tests", 1, true), "old steer was injected")
 assert(chat_text(buf4):find("edited answer", 1, true), "model did not receive edited steer")
-assert(not table.concat(vim.api.nvim_buf_get_lines(scratch4, 0, -1, false), "\n"):find("edited instruction", 1, true), "delivered draft was not consumed")
+assert(
+  not table.concat(vim.api.nvim_buf_get_lines(scratch4, 0, -1, false), "\n"):find("edited instruction", 1, true),
+  "delivered draft was not consumed"
+)
 
 -- A skill injected mid-turn also steers instead of being refused: its
 -- frontmatter is stripped and the body lands at the next tool boundary.

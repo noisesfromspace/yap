@@ -57,8 +57,10 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
 })
 require("harness.client.scratch").refresh(scratch)
 assert(vim.bo[scratch].modified, "draft should stay unsaved and prompt on exit")
-assert(not text(scratch):find("sends as next message", 1, true), "virtual hint leaked into file")
-assert(hint(scratch, 7):find("sends as next message", 1, true), "queue hint missing")
+assert(not text(scratch):find("uncommitted", 1, true), "virtual state label leaked into file")
+assert(hint(scratch, 7) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 7))
+-- # @notes is inert and carries no label at all.
+assert(hint(scratch, 2) == "", "notes section grew a state label")
 assert(vim.fn.foldlevel(9) == 1, "unknown heading incorrectly ended queue fold")
 -- A notes keypress does not send anything; idle steer does, even with queue filled.
 cursor(2)
@@ -88,7 +90,10 @@ assert(
 )
 cursor(heading(scratch, "queue") + 1)
 yap.scratch_send(scratch)
-assert(hint(scratch, heading(scratch, "queue")):find("sends when this turn ends", 1, true), "armed hint missing")
+assert(
+  hint(scratch, heading(scratch, "queue")) == "  · scheduled",
+  "armed queue has no state label: " .. hint(scratch, heading(scratch, "queue"))
+)
 -- Changes after the keypress are included, from the live buffer, not the file.
 vim.api.nvim_buf_set_lines(
   scratch,

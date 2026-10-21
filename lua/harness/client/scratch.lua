@@ -265,41 +265,33 @@ end
 
 local status_ns = vim.api.nvim_create_namespace("yap_scratch_status")
 
---- Display-only hints: the buffer/file remains plain editable Markdown.
+--- Display-only state labels: the buffer/file stays plain editable Markdown,
+--- and the label says where a section stands (never what to press). An empty
+--- section and the inert # @notes carry no label.
 function M.refresh(scratch)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return
   end
   vim.api.nvim_buf_clear_namespace(scratch, status_ns, 0, -1)
   local owner = vim.b[scratch].yap_owner
-  local busy = owner and vim.api.nvim_buf_is_valid(owner) and state.is_running(owner)
   for i, line in ipairs(vim.api.nvim_buf_get_lines(scratch, 0, -1, false)) do
     local section = section_name(line)
-    if section then
-      local text = M.section_text(scratch, section)
-      local hint
-      if section == "notes" then
-        hint = "notes only"
-      elseif section == "steer" and text ~= "" then
-        if busy then
-          hint = state.steer[owner] and "pending · edit to revise or clear to cancel" or "<C-s> steers this turn"
-        else
-          hint = "<C-s> sends as next message"
-        end
-      elseif section == "queue" and text ~= "" then
-        if busy then
-          hint = vim.b[scratch].yap_queue_armed and "sends when this turn ends" or "<C-s> sends after this turn"
-        else
-          hint = "<C-s> sends as next message"
-        end
+    if section and section ~= "notes" and M.section_text(scratch, section) ~= "" then
+      -- uncommitted: typed, not yet handed to a turn. pending: submitted to
+      -- the running turn. scheduled: authorized to send when that turn ends.
+      local label
+      if section == "steer" then
+        label = state.steer[owner] and "pending" or "uncommitted"
+      else
+        label = vim.b[scratch].yap_queue_armed and "scheduled" or "uncommitted"
       end
-      if hint then
-        vim.api.nvim_buf_set_extmark(scratch, status_ns, i - 1, 0, {
-          virt_text = { { "  " .. hint, "Comment" } },
-          virt_text_pos = "eol",
-          hl_mode = "combine",
-        })
-      end
+      vim.api.nvim_buf_set_extmark(scratch, status_ns, i - 1, 0, {
+        -- The leading dot keeps the label visibly separate from the
+        -- heading's own text: it is an annotation, not buffer content.
+        virt_text = { { "  · " .. label, "Comment" } },
+        virt_text_pos = "eol",
+        hl_mode = "combine",
+      })
     end
   end
 end

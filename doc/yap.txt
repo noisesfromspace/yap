@@ -450,13 +450,22 @@ SCRATCH BUFFER
 
 <leader>s toggles the scratch buffer — a file-backed sibling (`notes.md`)
 with Markdown editing and spell checking in its window. Its three sections
-fold independently and have inline, display-only hints describing what
-<C-s> will do; the winbar is unchanged. Only these three headings delimit sections; other `# @...`
-lines are ordinary scratch content, including when pasted inside a queue or
-steer. When sent, role headings and yap marker lines are Markdown-escaped
-in the session transcript so they cannot split the message. Each queue or
-steer body is one message. Clearing a sent section leaves a
-blank line beneath its heading.
+fold independently and carry an inline, display-only state label preceded by
+a `·` so it reads as an annotation rather than buffer text — nothing you have
+to press; the winbar is unchanged:
+
+  uncommitted   The body is typed but not handed to a turn yet.
+  pending       (steer) Submitted to the running turn.
+  scheduled     (queue) Authorized to send when that turn ends.
+
+An empty section and # @notes show no label.
+
+Only these three headings delimit sections; other `# @...` lines are
+ordinary scratch content, including when pasted inside a queue or steer.
+When sent, role headings and yap marker lines are Markdown-escaped in the
+session transcript so they cannot split the message. Each queue or steer
+body is one message, and clearing a sent section leaves a blank line
+beneath its heading.
 
   # @notes    An inert backlog; never sent.
   # @steer    While running, <C-s> submits a replaceable pending message

@@ -267,7 +267,8 @@ Only the three named headings delimit sections: any other `# @...` line is
 ordinary content. Editing/removing a pending steer updates/cancels it in
 the backend. Consumed bodies are removed and saved with a blank line under
 the heading; unsent edits still need `:write` and prompt on exit. Inline
-virtual text shows each section's action/status without modifying the file.
+virtual text shows each section's state (uncommitted / pending / scheduled)
+without modifying the file, never the key that would change it.
 The sections fold independently. Why: pending work is retractable, and the
 visible buffer — not a stale disk snapshot — is the control surface.
 
