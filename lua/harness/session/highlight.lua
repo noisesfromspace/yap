@@ -64,23 +64,21 @@ end
 -- groups unlinked altogether (`markdownCode`, `markdownCodeBlock`). A
 -- colourscheme built for tree-sitter — mini.base16, the modern default — styles
 -- the `@markup.*` captures and no HTML groups, so those chains dead-end at an
--- undefined group and the text renders plain. Link the intermediates to the
--- captures the colourscheme does style, so syntax=markdown looks like the
--- tree-sitter highlighting it replaced.
+-- undefined group and the text renders plain.
 --
--- `default = true` throughout: a colourscheme that styles these legacy groups,
--- or the syntax file's own link, always wins — this only fills the holes.
-local legacy_links = {
-  -- intermediates syntax/markdown.vim links through
-  { "htmlBold", "@markup.strong" },
-  { "htmlBoldItalic", "@markup.strong" },
-  { "htmlItalic", "@markup.italic" },
-  { "htmlStrike", "@markup.strikethrough" },
-  { "htmlCode", "@markup.raw" },
-  { "htmlLink", "@markup.link.label" },
-  { "htmlTag", "@tag" },
-  { "htmlTagName", "@tag" },
-  { "htmlSpecialChar", "@string.escape" },
+-- `default = true` is not enough here: `syntax/markdown.vim` already links most
+-- of these groups, so a default definition is ignored and, for example,
+-- `markdownBlockquote` kept `Comment`'s foreground but never picked up
+-- `@markup.quote`'s italic. Instead each syntax group is set to the merge of
+-- what it resolves to today and the capture that describes the same thing — so
+-- the syntax engine ends up with the rendering the tree-sitter highlighter gave
+-- the same construct.
+--
+-- Headings also carry touchup's declarations: it styles the lang-suffixed
+-- `@markup.heading.1.markdown` (bold + underline) and `.2` (underline), which
+-- only the tree-sitter highlighter ever applied. Those attributes are folded in
+-- so `# @user` keeps its underline under the syntax engine.
+local capture_map = {
   -- groups syntax/markdown.vim never links
   { "markdownCode", "@markup.raw" },
   { "markdownCodeBlock", "@markup.raw" },
@@ -91,17 +89,57 @@ local legacy_links = {
   { "markdownOrderedListMarker", "@markup.list" },
   { "markdownBlockquote", "@markup.quote" },
   { "markdownRule", "@punctuation.special" },
+  { "markdownStrike", "@markup.strikethrough" },
+  { "markdownBold", "@markup.strong" },
+  { "markdownItalic", "@markup.italic" },
+  { "markdownLinkText", "@markup.link.label" },
+  { "markdownUrl", "@markup.link.url" },
+  -- the html intermediates syntax/markdown.vim links through
+  { "htmlBold", "@markup.strong" },
+  { "htmlBoldItalic", "@markup.strong" },
+  { "htmlItalic", "@markup.italic" },
+  { "htmlStrike", "@markup.strikethrough" },
+  { "htmlCode", "@markup.raw" },
+  { "htmlLink", "@markup.link.label" },
+  { "htmlTag", "@tag" },
+  { "htmlTagName", "@tag" },
+  { "htmlSpecialChar", "@string.escape" },
 }
+
+-- What touchup declares for `@markup.heading.N.markdown`, per level.
+local heading_extra = {
+  [1] = { bold = true, underline = true },
+  [2] = { underline = true },
+}
+
+-- Heading groups get the capture plus touchup's attributes; the intermediates
+-- and the syntax groups are both set so either lookup path lands the same way.
 for i = 1, 6 do
-  legacy_links[#legacy_links + 1] = { "htmlH" .. i, "@markup.heading." .. i }
-  legacy_links[#legacy_links + 1] = { "markdownH" .. i, "@markup.heading." .. i }
+  local extra = heading_extra[i] or {}
+  capture_map[#capture_map + 1] = { "htmlH" .. i, "@markup.heading." .. i, extra }
+  capture_map[#capture_map + 1] = { "markdownH" .. i, "@markup.heading." .. i, extra }
 end
 
---- Fill the gaps in the legacy markdown colour chains. Idempotent, and must
---- run after `syntax/markdown.vim` is sourced so its own links win.
-local function link_legacy()
-  for _, pair in ipairs(legacy_links) do
-    vim.api.nvim_set_hl(0, pair[1], { link = pair[2], default = true })
+--- Attributes of a group with its link chain already followed.
+local function resolved(name)
+  return vim.api.nvim_get_hl(0, { name = name, link = false }) or {}
+end
+
+--- Merge each syntax group with the capture that describes the same construct.
+--- `nvim_get_hl` already resolved the chain, so a colourscheme's own styling of
+--- the syntax group survives; the capture only overrides what it defines.
+local function apply_captures()
+  for _, entry in ipairs(capture_map) do
+    local group, capture, extra = entry[1], entry[2], entry[3]
+    local attrs = resolved(group)
+    for k, v in pairs(resolved(capture)) do
+      attrs[k] = v
+    end
+    for k, v in pairs(extra or {}) do
+      attrs[k] = v
+    end
+    attrs.default = nil
+    vim.api.nvim_set_hl(0, group, attrs)
   end
 end
 
@@ -130,12 +168,24 @@ function M.apply(buf)
   vim.api.nvim_buf_call(buf, function()
     vim.bo.syntax = "markdown"
   end)
-  -- After the syntax file: its links are in place, so ours only fill gaps.
-  link_legacy()
+  -- After the syntax file: its links are in place, so the merge starts from them.
+  apply_captures()
 end
+
+local group = vim.api.nvim_create_augroup("YapMarkdownColour", { clear = true })
 
 function M.setup()
   merge_fenced()
+  -- The merged groups are set explicitly (not `default`), so a colourscheme
+  -- change wipes them; re-merge against the new scheme.
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = group,
+    callback = function()
+      if vim.g.syntax_on == 1 then
+        apply_captures()
+      end
+    end,
+  })
 end
 
 return M

@@ -118,35 +118,70 @@ assert(added.diffAdded, "```diff added line not coloured as diffAdded")
 local lua = groups_in_line(10)
 assert(lua.luaStatement or lua.luaNumber or lua.luaComment, "```lua body not coloured by lua syntax")
 
--- The syntax engine assigns its own group names, but Vim's markdown.vim borrows
--- its colours from syntax/html.vim and never links some groups at all, so a
--- colourscheme that only styles the tree-sitter captures (mini.base16, the
--- modern norm) rendered inline code plain. Those gaps are filled with `default`
--- links to the captures.
-local function link_of(name)
-  return vim.api.nvim_get_hl(0, { name = name }).link
+-- The syntax engine assigns its own group names, but Vim's markdown.vim
+-- borrows its colours from syntax/html.vim and never links some groups at all,
+-- so under a colourscheme that styles only the tree-sitter captures (mini.base16
+-- — the modern norm) those constructs rendered plain. Each syntax group is
+-- merged with the capture describing the same construct, so the invariant is:
+-- every attribute the capture defines must also appear on the syntax group.
+local function attrs(name)
+  return vim.api.nvim_get_hl(0, { name = name, link = false })
 end
 
--- Simulate a colourscheme that styles only the captures.
-vim.api.nvim_set_hl(0, "@markup.raw", { fg = "#123456" })
-local raw_fg = tonumber("123456", 16)
+-- A colourscheme that styles only the captures, the case that broke.
+local scheme = {
+  { "@markup.strong", { bold = true } },
+  { "@markup.italic", { italic = true } },
+  { "@markup.strikethrough", { strikethrough = true } },
+  { "@markup.raw", { fg = "#123456" } },
+  { "@markup.quote", { italic = true } },
+  { "@markup.list", { fg = "#654321" } },
+  { "@markup.heading.1", { fg = "#abcdef" } },
+}
+for _, entry in ipairs(scheme) do
+  vim.api.nvim_set_hl(0, entry[1], entry[2])
+end
 vim.cmd("hi clear")
-vim.cmd("syntax reset")
+for _, entry in ipairs(scheme) do
+  vim.api.nvim_set_hl(0, entry[1], entry[2])
+end
 highlight.apply(buf)
-assert(link_of("markdownCode") == "@markup.raw", "markdownCode not linked: " .. tostring(link_of("markdownCode")))
-assert(link_of("markdownCodeBlock") == "@markup.raw", "markdownCodeBlock not linked")
-vim.api.nvim_set_hl(0, "@markup.raw", { fg = "#123456" })
-local code = vim.api.nvim_get_hl(0, { name = "markdownCode", link = false })
-assert(code.fg == raw_fg, "inline code does not resolve to @markup.raw: " .. vim.inspect(code))
 
--- `hi clear` (what a colourscheme runs) keeps these defaults in place.
+local parity = {
+  { "markdownBold", "@markup.strong" },
+  { "markdownItalic", "@markup.italic" },
+  { "markdownStrike", "@markup.strikethrough" },
+  { "markdownCode", "@markup.raw" },
+  { "markdownCodeBlock", "@markup.raw" },
+  { "markdownBlockquote", "@markup.quote" },
+  { "markdownListMarker", "@markup.list" },
+  { "markdownOrderedListMarker", "@markup.list" },
+  { "markdownH1", "@markup.heading.1" },
+  { "markdownLinkText", "@markup.link.label" },
+}
+for _, pair in ipairs(parity) do
+  local want, got = attrs(pair[2]), attrs(pair[1])
+  for key, value in pairs(want) do
+    if key ~= "default" and key ~= "cterm" then
+      assert(
+        got[key] == value,
+        ("%s is missing %s=%s from %s: %s"):format(pair[1], key, tostring(value), pair[2], vim.inspect(got))
+      )
+    end
+  end
+end
+
+-- Headings carry touchup's `@markup.heading.N.markdown` attributes, which only
+-- the tree-sitter highlighter ever applied; `# @user` keeps its underline.
+local h1, h2 = attrs("markdownH1"), attrs("markdownH2")
+assert(h1.underline, "H1 heading lost its underline")
+assert(h1.bold, "H1 heading lost its bold")
+assert(h2.underline, "H2 heading lost its underline")
+
+-- Re-applying is a no-op and re-merges after a colourscheme reset.
 vim.cmd("hi clear")
-assert(link_of("markdownCode") == "@markup.raw", "hi clear dropped the default links")
-
--- A colourscheme's own definition wins: our links are `default`.
-vim.api.nvim_set_hl(0, "markdownCode", { fg = "#654321" })
+vim.api.nvim_set_hl(0, "@markup.raw", { fg = "#123456" })
 highlight.apply(buf)
-local own = vim.api.nvim_get_hl(0, { name = "markdownCode", link = false })
-assert(own.fg == tonumber("654321", 16), "colourscheme's markdownCode was overridden: " .. vim.inspect(own))
+assert(attrs("markdownCode").fg == tonumber("123456", 16), "merge did not survive hi clear")
 
 print("OK highlight")

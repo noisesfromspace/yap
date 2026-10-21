@@ -519,6 +519,15 @@ evaluates displayed lines, and it covers inline emphasis plus embedded fence
 languages (`g:markdown_fenced_languages`). Only the highlighter is stopped
 (`session/highlight.lua`).
 
+Each syntax group is then merged with the tree-sitter capture that describes the
+same construct (`markdownBlockquote` + `@markup.quote`, `markdownCode` +
+`@markup.raw`, ...), plus touchup's `@markup.heading.N.markdown` attributes, so
+the syntax engine renders a construct the way the highlighter did. Merging
+rather than `hi def link` is deliberate: `syntax/markdown.vim` already links most
+of these groups, so a `default` definition is silently ignored — that is how
+`markdownBlockquote` kept `Comment`'s colour but lost `@markup.quote`'s italic,
+and how `# @user` lost its underline.
+
 The parser is left fully intact, injections included. Decoration renderers are
 consumers of the parsed tree, not of the highlighter, so stopping the
 highlighter does not make the injected trees redundant: touchup reads the main
