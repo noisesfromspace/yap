@@ -209,7 +209,10 @@ func IsWritablePath(p string) bool {
 		abs = resolved
 	}
 	dirs := WritableDirs(projectDir())
-	dirs = append(dirs, os.TempDir()) // scratch writes never prompt
+	// Scratch writes never prompt. Both the conventional /tmp and os.TempDir()
+	// count: a harness that sets TMPDIR to a per-process dir (`nix develop` uses
+	// /tmp/nix-shell.*) must not make plain /tmp writes suddenly prompt.
+	dirs = append(dirs, os.TempDir(), "/tmp")
 	return under(abs, dirs)
 }
 
