@@ -48,7 +48,6 @@ local function harness()
   return require("harness")
 end
 
-
 -- Honor a close_session request by wiping the buffer. The turn has already
 -- been saved by whichever completion path reached this point.
 local function close_if_requested(buf)
@@ -84,11 +83,7 @@ M.answer_approval = answer_approval
 -- pause unmistakable.
 local function notify_approval(buf, ev)
   vim.notify(
-    ("yap: %s needs approval — %s: %s"):format(
-      session.live_label(buf),
-      ev.tool or "tool",
-      ev.reason or "review call"
-    ),
+    ("yap: %s needs approval — %s: %s"):format(session.live_label(buf), ev.tool or "tool", ev.reason or "review call"),
     vim.log.levels.ERROR,
     { title = "yap approval required", icon = harness().config.icons.approval }
   )
@@ -472,6 +467,7 @@ function M.send(buf)
       sync_followers()
       running[buf] = nil
       follow_override[buf] = nil
+      scratchmod.refresh(vim.b[buf].yap_scratch)
       stderr_chunks = {}
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
@@ -490,6 +486,7 @@ function M.send(buf)
         -- approval so the guard board reflects the settled turn.
         pending_approvals[buf] = nil
         guard.touch()
+        scratchmod.finish_queue(buf, false)
         close_stream(buf)
         follow_tail()
         close_if_requested(buf)
@@ -503,6 +500,7 @@ function M.send(buf)
         end
         err = err or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
         report_error(buf, err ~= "" and err or "backend exited", code)
+        scratchmod.finish_queue(buf, false)
         close_stream(buf)
         follow_tail()
         close_if_requested(buf)
@@ -529,7 +527,8 @@ function M.send(buf)
         end
       end
       -- A late steer was never injected: keep it as a draft, not an
-      -- automatically sent follow-up turn.
+      -- automatically sent follow-up turn. An explicitly armed queue is
+      -- independent of that draft and may start the next turn.
       document.append_lines(buf, { "# @user", "" })
       leave_undelivered_steer(buf)
       follow_tail()
@@ -557,6 +556,7 @@ function M.send(buf)
       -- session file is saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
+      scratchmod.finish_queue(buf, not errors[buf])
     end
     local function handle_frame(frame)
       if frame.type == "text" then
@@ -676,6 +676,7 @@ function M.send(buf)
   end
 
   running[buf] = process
+  scratchmod.refresh(vim.b[buf].yap_scratch)
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
   -- empty list means unrestricted (all tools). `reasoning_level` is the
@@ -726,6 +727,7 @@ function M.stop(buf)
   if child then
     M.stop(child)
   end
+  scratchmod.finish_queue(buf, false) -- also retract a scheduled follow-up
   local proc = running[buf]
   if proc then
     stopped[buf] = true

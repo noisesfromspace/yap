@@ -159,7 +159,12 @@ end
 --- behind insert(name, { at_cursor = true })).
 function M.insert_snippet_at_cursor(buf, body)
   local row = vim.api.nvim_win_get_cursor(0)[1] - 1
-  vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
+  if vim.b[buf].yap_scratch_notes and vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]:match("^# @%a+%s*$") then
+    vim.api.nvim_buf_set_lines(buf, row + 1, row + 1, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { row + 2, 0 })
+  else
+    vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
+  end
   vim.snippet.expand(body .. "\n")
 end
 
@@ -211,6 +216,9 @@ end
 --- Insert `lines` as new lines above the cursor's line (the raw primitive).
 local function insert_at_cursor(buf, lines)
   local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  if vim.b[buf].yap_scratch_notes and vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]:match("^# @%a+%s*$") then
+    row = row + 1
+  end
   vim.api.nvim_buf_set_lines(buf, row, row, false, vim.deepcopy(lines))
 end
 
@@ -256,7 +264,7 @@ end
 function M.insert(name, opts)
   opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
-  if not vim.b[buf].yap then
+  if not (vim.b[buf].yap or (vim.b[buf].yap_scratch_notes and opts.at_cursor)) then
     vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
     return
   end

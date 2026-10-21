@@ -188,10 +188,9 @@ cancelled stop(), repairs any dangling streamed marker, appends a fresh
 `# @user` message, and saves that final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log
 (R-audit-log), the scratch notes file, and the `assets/` folder of dropped
-photos. `save()` follows buffer renames: a `:file` rename moves the
-sidecars lazily (audit at the next turn, notes at the next scratch toggle),
-while a `:saveas` copy rehomes them eagerly so the original session keeps its
-own files and the copy continues with full history. Why: no second
+photos. A session's directory is its identity: `:file` and `:saveas` do
+not move its sidecars or re-root its saves. Forking copies the transcript,
+audit log and assets into a new directory. Why: no second
 serialization format to keep in sync. Session buffers (and their live tail
 buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
 `<leader>r`, and a session's tool tail opens with live().
@@ -243,7 +242,10 @@ no `# @user`/`# @assistant` headings of their own (except an agent skill that
 quotes the message format). A skill's optional frontmatter may carry
 `description:` for the skills intro (skills_intro) and is stripped on insert.
 Nothing is auto-loaded and nothing is hidden: the inserted text is visible,
-editable buffer content like any other, and the intro is a short visible list,
+editable buffer content like any other. In scratch, `<C-t>` inserts either
+a template or a skill at the cursor as a draft, without sending it or
+merging it into the session's system message; skill frontmatter is stripped.
+The intro is a short visible list,
 never injected bodies. Why: the buffer stays the only state (R-buffer-only-state), and
 templates/skills are just text, so one insert command covers compaction,
 snippets and skills. Compaction folds the history into a visible summary,
@@ -253,14 +255,21 @@ either in context or gone, and folding it away would be hidden state.
 
 #### R-scratch-sections — Scratch sections are parsed from the live `notes.md` buffer, never re-read from the saved file during dispatch
 
-`# @notes` is an inert backlog; `# @steer` is a replaceable pending message
-that remains in the buffer until delivery (or follow-up dispatch), and the
-whole `# @queue` body is one message, sent and cleared on `<C-s>`.
-Editing/removing a pending steer sends an update/cancellation to the running
-backend. Queue removal and delivered-steer removal are reflected in the buffer
-and saved to the sidecar. The three sections fold independently. Why: pending
-work is retractable, and the visible buffer — not a stale disk snapshot — is
-the control surface.
+`# @notes` is inert; `# @steer` and `# @queue` each hold one message.
+`<C-s>` acts on the section under the cursor. In steer while running it
+submits a replaceable instruction for the next model boundary; if the turn
+ends first, the draft remains and can be sent as the next message while idle.
+In queue while idle it sends the whole body; while running it authorizes one
+follow-up after successful completion, using the live text at that time.
+Simply typing in queue never schedules a send. Clearing the body retracts
+an authorized queue; stopping or failing the turn does not send it.
+Only the three named headings delimit sections: any other `# @...` line is
+ordinary content. Editing/removing a pending steer updates/cancels it in
+the backend. Consumed bodies are removed and saved with a blank line under
+the heading; unsent edits still need `:write` and prompt on exit. Inline
+virtual text shows each section's action/status without modifying the file.
+The sections fold independently. Why: pending work is retractable, and the
+visible buffer — not a stale disk snapshot — is the control surface.
 
 #### R-eval — A selection can be replaced (or content generated) by a one-shot, no-tools model call
 

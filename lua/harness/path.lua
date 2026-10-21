@@ -154,8 +154,8 @@ end
 
 --- The session's scratch notes file: <dir>/notes.md, beside the session
 --- markdown. The `.md` extension gives it markdown highlighting in editors
---- that open it directly; the scratch buffer itself is created without
---- filetype detection, so no LSP clients attach to it.
+--- markdown. The scratch buffer sets that filetype explicitly when opened,
+--- marking itself first so markdown LSP clients cannot attach.
 function M.notes_path(buf)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
   return vim.fn.fnamemodify(path, ":h") .. "/notes.md"

@@ -357,6 +357,11 @@ function M.setup(opts)
         process:kill(15)
       end
       servers[args.buf] = nil
+      if vim.b[args.buf].yap_scratch and vim.api.nvim_buf_is_valid(vim.b[args.buf].yap_scratch) then
+        vim.b[vim.b[args.buf].yap_scratch].yap_queue_armed = false
+        vim.b[vim.b[args.buf].yap_scratch].yap_queue_dispatch = false
+      end
+      state.steer[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
       stream_flush[args.buf] = nil
@@ -582,7 +587,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(args)
-      if vim.b[args.buf].yap and args.data and args.data.client_id then
+      if (vim.b[args.buf].yap or vim.b[args.buf].yap_scratch_notes) and args.data and args.data.client_id then
         local client = vim.lsp.get_client_by_id(args.data.client_id)
         if client then
           pcall(client.stop, client)

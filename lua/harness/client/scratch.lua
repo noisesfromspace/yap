@@ -17,13 +17,20 @@ end
 local steer = state.steer
 local running = state.running
 
--- Scratch sections are explicit so notes never become an accidental prompt.
+-- Only the three control headings delimit sections. Other # @ lines are content.
 -- The queue body is one message; a steer is one multiline body.
+local function section_name(line)
+  local name = line:match("^# @([%a]+)%s*$")
+  if name == "notes" or name == "steer" or name == "queue" then
+    return name
+  end
+end
+
 local function scratch_section(scratch, name)
   local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
   local heading
   for i, line in ipairs(lines) do
-    local role = line:match("^# @([%a]+)%s*$")
+    local role = section_name(line)
     if role == name then
       heading = i
       break
@@ -34,7 +41,7 @@ local function scratch_section(scratch, name)
   end
   local finish = #lines
   for i = heading + 1, #lines do
-    if lines[i]:match("^# @[%a]+%s*$") then
+    if section_name(lines[i]) then
       finish = i - 1
       break
     end
@@ -66,7 +73,8 @@ function M.set_section(scratch, name, body)
   if not heading then
     return
   end
-  vim.api.nvim_buf_set_lines(scratch, heading, finish, false, body)
+  vim.api.nvim_buf_set_lines(scratch, heading, finish, false, #body > 0 and body or { "" })
+  M.refresh(scratch)
 end
 
 --- One scratch section's body as a single string.
@@ -92,6 +100,8 @@ end
 
 local function cancel_steer(buf)
   steer[buf] = nil
+  local scratch = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap_scratch
+  M.refresh(scratch)
   local proc = running[buf]
   if not proc then
     return
@@ -124,6 +134,9 @@ function M.steer(buf, text)
     return false
   end
   steer[buf] = text
+  if vim.api.nvim_buf_is_valid(buf) then
+    M.refresh(vim.b[buf].yap_scratch)
+  end
   return true
 end
 
@@ -138,7 +151,7 @@ local function sync_scratch_steer(owner, scratch)
   end
 end
 
-local function scratch_dispatch_queue(owner)
+local function scratch_dispatch_queue(owner, section)
   if not vim.api.nvim_buf_is_valid(owner) or state.is_running(owner) then
     return false
   end
@@ -146,12 +159,20 @@ local function scratch_dispatch_queue(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return false
   end
-  local section = M.section_text(scratch, "queue") ~= "" and "queue" or "steer"
   local item = M.section_text(scratch, section)
   if item == "" then
     return false
   end
-  document.append_message(owner, "user", vim.split(item, "\n", { plain = true }))
+  -- Keep pasted transcript headings/markers inside one user message. The
+  -- visible Markdown escape prevents the session parser treating them as
+  -- new messages or tool regions (the same rule as streamed prose).
+  local lines = vim.split(item, "\n", { plain = true })
+  for i, line in ipairs(lines) do
+    if line:match("^# @[%a]+%s*$") or line:match("^<!%-%- /?yap:") then
+      lines[i] = "\\" .. line
+    end
+  end
+  document.append_message(owner, "user", lines)
   if not harness().send(owner) then
     vim.notify("yap: send failed; scratch draft was not consumed", vim.log.levels.WARN)
     return true
@@ -161,9 +182,8 @@ local function scratch_dispatch_queue(owner)
   return true
 end
 
---- <C-s> dispatches by state: while running it submits the # @steer body;
---- while idle it sends the whole # @queue body as one message, falling back
---- to # @steer when the queue is empty. Notes remain an inert backlog.
+--- Dispatch the section under the cursor. A queued send while running is
+--- authorised now, but its live contents are read only when the turn ends.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -172,6 +192,29 @@ function M.scratch_send(scratch)
     return
   end
 
+  local section
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  for _, line in ipairs(vim.api.nvim_buf_get_lines(scratch, 0, row, false)) do
+    section = section_name(line) or section
+  end
+  if section == "notes" or not section then
+    vim.notify("yap: move to # @queue or # @steer to send", vim.log.levels.INFO)
+    return
+  end
+  if section == "queue" then
+    if M.section_text(scratch, "queue") == "" then
+      vim.b[scratch].yap_queue_armed = false
+      vim.b[scratch].yap_queue_dispatch = false
+      M.refresh(scratch)
+      vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
+    elseif state.is_running(owner) then
+      vim.b[scratch].yap_queue_armed = true
+      M.refresh(scratch)
+    else
+      scratch_dispatch_queue(owner, "queue")
+    end
+    return
+  end
   if state.is_running(owner) then
     local text = M.section_text(scratch, "steer")
     if text == "" and not steer[owner] then
@@ -182,13 +225,87 @@ function M.scratch_send(scratch)
     return
   end
 
-  if not scratch_dispatch_queue(owner) then
-    vim.notify("yap: # @queue and # @steer are empty", vim.log.levels.WARN)
+  if not scratch_dispatch_queue(owner, "steer") then
+    vim.notify("yap: # @steer is empty", vim.log.levels.WARN)
+  end
+end
+
+--- A running queue sends once at successful completion, never on stop,
+--- error or session close. Reading the live body here keeps edits retractable.
+function M.finish_queue(owner, successful)
+  local scratch = vim.api.nvim_buf_is_valid(owner) and vim.b[owner].yap_scratch
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return
+  end
+  if not successful then
+    vim.b[scratch].yap_queue_dispatch = false
+  end
+  if not vim.b[scratch].yap_queue_armed then
+    return
+  end
+  vim.b[scratch].yap_queue_armed = false
+  M.refresh(scratch)
+  if successful and M.section_text(scratch, "queue") ~= "" then
+    vim.b[scratch].yap_queue_dispatch = true
+    -- Let the backend return to its next-turn loop before writing to the pipe.
+    vim.schedule(function()
+      if
+        vim.api.nvim_buf_is_valid(owner)
+        and not state.is_running(owner)
+        and vim.api.nvim_buf_is_valid(scratch)
+        and vim.b[scratch].yap_queue_dispatch
+        and vim.b[owner].yap_scratch == scratch
+      then
+        vim.b[scratch].yap_queue_dispatch = false
+        scratch_dispatch_queue(owner, "queue")
+      end
+    end)
+  end
+end
+
+local status_ns = vim.api.nvim_create_namespace("yap_scratch_status")
+
+--- Display-only hints: the buffer/file remains plain editable Markdown.
+function M.refresh(scratch)
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(scratch, status_ns, 0, -1)
+  local owner = vim.b[scratch].yap_owner
+  local busy = owner and vim.api.nvim_buf_is_valid(owner) and state.is_running(owner)
+  for i, line in ipairs(vim.api.nvim_buf_get_lines(scratch, 0, -1, false)) do
+    local section = section_name(line)
+    if section then
+      local text = M.section_text(scratch, section)
+      local hint
+      if section == "notes" then
+        hint = "notes only"
+      elseif section == "steer" and text ~= "" then
+        if busy then
+          hint = state.steer[owner] and "pending · edit to revise or clear to cancel" or "<C-s> steers this turn"
+        else
+          hint = "<C-s> sends as next message"
+        end
+      elseif section == "queue" and text ~= "" then
+        if busy then
+          hint = vim.b[scratch].yap_queue_armed and "sends when this turn ends" or "<C-s> sends after this turn"
+        else
+          hint = "<C-s> sends as next message"
+        end
+      end
+      if hint then
+        vim.api.nvim_buf_set_extmark(scratch, status_ns, i - 1, 0, {
+          virt_text = { { "  " .. hint, "Comment" } },
+          virt_text_pos = "eol",
+          hl_mode = "combine",
+        })
+      end
+    end
   end
 end
 
 local function scratch_heading(line)
-  return line:match("^# @notes%s*$") or line:match("^# @steer%s*$") or line:match("^# @queue%s*$")
+  return section_name(line) ~= nil
 end
 
 function M.scratch_foldexpr(lnum)
@@ -231,14 +348,19 @@ function M.scratch_toggle(buf)
     local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
     local found = {}
     for _, line in ipairs(lines) do
-      local role = line:match("^# @([%a]+)%s*$")
+      local role = section_name(line)
       if role then
         found[role] = true
       end
     end
     if not found.notes and not found.steer and not found.queue then
-      -- No sections yet: seed the three explicit sections.
-      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "# @notes", "", "# @steer", "", "# @queue" })
+      -- Treat a pre-existing unstructured file as notes, never erase it.
+      if #lines == 1 and lines[1] == "" then
+        vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "# @notes", "", "# @steer", "", "# @queue" })
+      else
+        vim.api.nvim_buf_set_lines(scratch, 0, 0, false, { "# @notes", "" })
+        vim.api.nvim_buf_set_lines(scratch, -1, -1, false, { "", "# @steer", "", "# @queue" })
+      end
     else
       local missing = {}
       for _, role in ipairs({ "notes", "steer", "queue" }) do
@@ -252,7 +374,21 @@ function M.scratch_toggle(buf)
         vim.api.nvim_buf_set_lines(scratch, endline, endline, false, missing)
       end
     end
+    vim.b[scratch].yap_scratch_notes = true
+    vim.bo[scratch].filetype = "markdown"
+    for _, client in ipairs(vim.lsp.get_clients({ bufnr = scratch })) do
+      pcall(client.stop, client)
+    end
     vim.bo[scratch].bufhidden = "hide"
+    vim.api.nvim_create_autocmd("BufWinLeave", {
+      buffer = scratch,
+      callback = function()
+        local win = vim.api.nvim_get_current_win()
+        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == scratch then
+          vim.wo[win].spell = false
+        end
+      end,
+    })
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
@@ -265,6 +401,11 @@ function M.scratch_toggle(buf)
           if owner and vim.api.nvim_buf_is_valid(owner) then
             sync_scratch_steer(owner, scratch)
           end
+          if M.section_text(scratch, "queue") == "" then
+            vim.b[scratch].yap_queue_armed = false
+            vim.b[scratch].yap_queue_dispatch = false
+          end
+          M.refresh(scratch)
         end,
       })
     end
@@ -289,6 +430,21 @@ function M.scratch_toggle(buf)
         harness().insert_file({ from_insert = true })
       end, { buffer = scratch, silent = true, desc = "yap: insert file reference" })
     end
+    if cfg.keymaps.insert ~= "" then
+      local insert_template = function()
+        require("harness.client.template").insert(nil, { at_cursor = true })
+      end
+      vim.keymap.set(
+        "n",
+        cfg.keymaps.insert,
+        insert_template,
+        { buffer = scratch, silent = true, desc = "yap: insert template in scratch" }
+      )
+      vim.keymap.set("i", cfg.keymaps.insert, function()
+        vim.cmd.stopinsert()
+        insert_template()
+      end, { buffer = scratch, silent = true, desc = "yap: insert template in scratch" })
+    end
     if cfg.keymaps.send ~= "" then
       vim.keymap.set("n", cfg.keymaps.send, function()
         M.scratch_send(scratch)
@@ -297,9 +453,6 @@ function M.scratch_toggle(buf)
         vim.cmd.stopinsert()
         M.scratch_send(scratch)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
-      vim.keymap.set("x", cfg.keymaps.send, function()
-        M.scratch_send(scratch)
-      end, { buffer = scratch, silent = true, desc = "yap: send scratch selection" })
     end
     M.save(scratch)
   else
@@ -313,9 +466,11 @@ function M.scratch_toggle(buf)
   end
   vim.wo.foldmethod = "expr"
   vim.wo.foldexpr = "v:lua.require'harness'.scratch_foldexpr(v:lnum)"
-  vim.wo.foldtext = ""
+  vim.wo.foldtext = "getline(v:foldstart) . ' · ' . (v:foldend-v:foldstart) . ' lines'"
   vim.wo.foldlevel = 99
   vim.wo.foldenable = true
+  vim.wo.spell = true
+  M.refresh(scratch)
 end
 
 return M

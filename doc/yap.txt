@@ -278,7 +278,8 @@ Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
-  <C-t> (n, i)          Insert a template or skill (see insert()).
+  <C-t> (n, i)          Insert a template or skill (see insert()). In scratch,
+                        insert at the cursor without sending.
   <leader>T             Insert a template or skill at the cursor.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
@@ -448,15 +449,35 @@ File operations are the session operations:
 SCRATCH BUFFER
 
 <leader>s toggles the scratch buffer — a file-backed sibling (`notes.md`)
-with three independently foldable sections:
+with Markdown editing and spell checking in its window. Its three sections
+fold independently and have inline, display-only hints describing what
+<C-s> will do; the winbar is unchanged. Only these three headings delimit sections; other `# @...`
+lines are ordinary scratch content, including when pasted inside a queue or
+steer. When sent, role headings and yap marker lines are Markdown-escaped
+in the session transcript so they cannot split the message. Each queue or
+steer body is one message. Clearing a sent section leaves a
+blank line beneath its heading.
 
   # @notes    An inert backlog; never sent.
-  # @steer    A replaceable pending message for the RUNNING turn. <C-s>
-              submits it; it stays until delivered and can be revised or
-              canceled. If it misses the last model boundary or the turn is
-              stopped, it remains a draft (never auto-sent).
-  # @queue    Sent whole as one message on <C-s> while idle, cleared only
-              after the send starts. Never auto-dispatches after a turn.
+  # @steer    While running, <C-s> submits a replaceable pending message
+              for the next model boundary. Once delivered, it is cleared.
+              If the turn ends first, it stays as a draft; pressing <C-s>
+              here while idle sends it as the next message, even when queue
+              has text. Editing or deleting a pending steer revises or
+              cancels it while the turn runs.
+  # @queue    While idle, <C-s> sends the whole body as one message. While
+              running, <C-s> authorizes one follow-up: its live contents
+              are sent when that turn ends successfully. Edits before then
+              are included; clearing the queue cancels the follow-up. It
+              never auto-sends merely because text was typed, or after a
+              stop, failure, or session close.
+
+<C-s> acts on the section under the cursor, not the current turn state.
+In notes it only displays a hint; move to steer or queue to send. There is
+no selection-specific send. <C-t> in normal or insert mode picks a template
+or skill and inserts it at the cursor without sending it. Drafts still need
+|:write| to persist, and unsaved changes prompt on exit. Sending/consuming
+a section saves the updated file as before.
 
 AUDIT LOG                                                        *yap-audit*
 

@@ -37,6 +37,7 @@ assert(vim.wo.winfixbuf == false, "scratch should not be winfixbuf-pinned")
 local ok, err = pcall(vim.api.nvim_win_set_buf, vim.api.nvim_get_current_win(), target)
 assert(ok, "picker open (nvim_win_set_buf) failed on scratch: " .. tostring(err))
 assert(vim.api.nvim_get_current_buf() == target, "picker open did not land in the scratch window")
+assert(not vim.wo.spell, "scratch spell checking leaked into the picker window")
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped after picker open")
 
 -- Live tail: the original unpinned panel, still behaves like a plain window.

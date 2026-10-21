@@ -130,6 +130,7 @@ vim.api.nvim_buf_set_lines(scratch3, 0, -1, false, {
   "",
   "# @queue",
 })
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(scratch3)
 vim.api.nvim_buf_set_lines(scratch3, 3, 4, false, {})
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch3 }) -- API edits don't simulate typing
@@ -156,6 +157,7 @@ local scratch4 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch4, 0, -1, false, {
   "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
 })
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(scratch4)
 vim.api.nvim_buf_set_lines(scratch4, 3, 4, false, { "edited instruction" })
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch4 })
