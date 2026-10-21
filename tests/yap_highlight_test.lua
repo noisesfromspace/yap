@@ -24,6 +24,10 @@ if ok and parser and parser._children then
   assert(parser._children.markdown_inline == nil, "markdown_inline child not dropped")
   assert(parser._injection_query ~= nil, "injection query not set")
   assert(parser._injection_query ~= vim.treesitter.query.get("markdown", "injections"), "injection query not replaced")
+  -- The fenced-code injection must be marked combined so all fences of a
+  -- language collapse into one tree (the grammar-free observable of the
+  -- O(#fences)-per-scroll fix).
+  assert(parser._injection_query.has_combined_injections == true, "fenced-code injection not combined")
 end
 
 -- Re-applying is a safe no-op (drop_inline is idempotent).

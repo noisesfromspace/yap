@@ -7,27 +7,33 @@
 -- long transcript that is the jitter people feel holding j/k — not touchup,
 -- which renders from its own viewport cache.
 --
--- Block-level highlighting (headings, fences, quotes, lists, and the
--- syntax-coloured code inside fences) lives in the main tree and is
--- viewport-bounded, so it stays cheap. Yap therefore always drops the
--- `markdown_inline` injection, keeping the cheap block colours. Inline
--- emphasis is restored separately by harness.session.inline (a
--- viewport-bounded regex renderer). There is no public Neovim API to change
--- injections after a parser exists, so it swaps the LanguageTree's injection
--- query and removes the inline child directly (fields stable since Neovim
--- 0.5).
+-- Block-level highlighting (headings, quotes, lists) lives in the main tree;
+-- fenced-code token colours come from a combined per-language injection (one
+-- tree per language, not per fence), and inline emphasis is restored
+-- separately by harness.session.inline (a viewport-bounded regex renderer).
+-- Both stay cheap: the main tree is viewport-bounded and the combined
+-- injection collapses to a handful of trees, so the per-scroll
+-- for_each_tree walk is O(1) in the number of fences. There is no public
+-- Neovim API to change injections after a parser exists, so it swaps the
+-- LanguageTree's injection query and removes the inline child directly
+-- (fields stable since Neovim 0.5).
 
 local M = {}
 
 -- The runtime markdown injections query with the per-span
--- `(inline) / (pipe_table_cell) -> markdown_inline` injection removed.
--- Everything else (fenced code, html, yaml/toml frontmatter) is kept, so
--- fenced code still gets its own language's token colours.
+-- `(inline) / (pipe_table_cell) -> markdown_inline` injection removed and the
+-- fenced-code injection marked `combined`. Without `combined`, each fence is
+-- its own injected tree, and the highlighter re-walks every injected tree on
+-- every viewport change (O(#fences) per scroll); `combined` collapses all
+-- fences of a language into one tree (the same mechanism the upstream grammar
+-- already uses for HTML blocks), so scrolling is O(viewport) again. Fenced
+-- code still gets its own language's token colours.
 local block_injections = [==[
-(fenced_code_block
+((fenced_code_block
   (info_string
     (language) @injection.language)
   (code_fence_content) @injection.content)
+  (#set! injection.combined))
 
 ((html_block) @injection.content
   (#set! injection.language "html")
