@@ -211,7 +211,18 @@ function M.fork(buf, name, running)
     local src_uri = vim.uri_from_fname(src_assets) .. "/"
     local dst_uri = vim.uri_from_fname(dst_assets) .. "/"
     for _, entry in ipairs(vim.fn.readdir(src_assets)) do
-      vim.fn.copy(src_assets .. "/" .. entry, dst_assets .. "/" .. entry)
+      local from = src_assets .. "/" .. entry
+      local st = vim.uv.fs_stat(from)
+      -- vim.fn.copy() is Vim's value-copy builtin and takes one argument;
+      -- the filesystem copy is libuv's fs_copyfile.
+      if st and st.type == "file" then
+        local ok, copy_err = vim.uv.fs_copyfile(from, dst_assets .. "/" .. entry)
+        if not ok then
+          vim.uv.fs_close(fd)
+          vim.fn.delete(path)
+          return nil, "cannot copy fork asset: " .. tostring(copy_err)
+        end
+      end
     end
     for i, l in ipairs(lines) do
       lines[i] = l:gsub(vim.pesc(src_uri), function()

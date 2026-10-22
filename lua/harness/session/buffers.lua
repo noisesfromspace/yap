@@ -24,7 +24,6 @@ local function harness()
   return require("harness")
 end
 
-
 -- Most-recently-focused buffers, front first. Session buffers are unlisted,
 -- so Neovim's :bd/:bw/:close skip them when choosing where to land after
 -- deleting the current buffer and drop the user on an empty "No Name"
@@ -68,10 +67,7 @@ local function focus_fallback(buf)
     return false
   end
   local function open(b)
-    return b ~= buf
-      and vim.api.nvim_buf_is_valid(b)
-      and vim.api.nvim_buf_is_loaded(b)
-      and not shown(b)
+    return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b) and not shown(b)
   end
   for _, b in ipairs(focus_mru) do
     if open(b) and vim.b[b].yap and awaiting[b] then
@@ -87,11 +83,7 @@ local function focus_fallback(buf)
     -- Only real, listed file buffers count. Explorers (mini.files, netrw),
     -- quickfix, terminal, help and other special windows are skipped so :bd
     -- never parks the cursor in one.
-    if open(b)
-      and not vim.b[b].yap
-      and vim.bo[b].buftype == ""
-      and vim.bo[b].buflisted
-    then
+    if open(b) and not vim.b[b].yap and vim.bo[b].buftype == "" and vim.bo[b].buflisted then
       return b
     end
   end
@@ -120,9 +112,13 @@ local function setup_buffer(buf)
   vim.bo[buf].buflisted = false
 
   -- Apply the highlight policy (markdown syntax instead of the treesitter
-  -- highlighter). Deferred so the FileType autocommands have run: ftplugin/
-  -- markdown.lua starts the highlighter and creates the parser there, and the
-  -- policy stops the highlighter while leaving the parser for touchup.
+  -- highlighter). Applied here as well as deferred below: setting 'filetype'
+  -- above has already run the FileType autocommands synchronously, so this pass
+  -- cannot be lost if the scheduled one is dropped.
+  require("harness.session.highlight").apply(buf)
+  -- Deferred so a FileType handler that starts the highlighter later is also
+  -- stopped: ftplugin/markdown.lua starts it, and the policy keeps the parser
+  -- (touchup reads the tree) while stopping the highlighter.
   vim.schedule(function()
     if not vim.api.nvim_buf_is_valid(buf) then
       return

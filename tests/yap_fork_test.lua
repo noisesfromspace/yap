@@ -18,11 +18,31 @@ vim.fn.writefile({ '{"type":"turn_end","prompt":42,"completion":3}' }, original_
 vim.api.nvim_buf_set_lines(original_buf, -1, -1, false, { "fork-only unsaved change" })
 assert(vim.bo[original_buf].modified, "source should be dirty")
 
+-- A session with dropped photos carries its assets folder into the fork and
+-- re-points the references at the copy.
+local src_assets = paths.assets_dir(original_buf)
+vim.fn.mkdir(src_assets, "p")
+local image = "\137PNG\r\n\26\n" .. string.rep("x", 40)
+local src_image = src_assets .. "/photo.png"
+local ifd = assert(vim.uv.fs_open(src_image, "w", 384))
+assert(vim.uv.fs_write(ifd, image, 0) == #image)
+vim.uv.fs_close(ifd)
+vim.api.nvim_buf_set_lines(
+  original_buf,
+  -1,
+  -1,
+  false,
+  { "", "![FILE: photo.png](" .. vim.uri_from_fname(src_image) .. ")" }
+)
+
 vim.cmd("YapFork forked")
 local fork_buf = vim.api.nvim_get_current_buf()
 local fork = vim.b[fork_buf].yap_path
 local expected_dir = paths.session_dir(vim.b[original_buf].yap_project_cwd)
-assert(fork_buf ~= original_buf and fork == expected_dir .. "/forked/session.md", "fork must open an independent buffer")
+assert(
+  fork_buf ~= original_buf and fork == expected_dir .. "/forked/session.md",
+  "fork must open an independent buffer"
+)
 assert(
   vim.b[original_buf].yap_path == original and vim.api.nvim_buf_get_name(original_buf) == original,
   "source renamed"
@@ -36,6 +56,17 @@ assert(
 )
 assert(vim.deep_equal(frontmatter.parse(vim.fn.readfile(original)).forks, { fork }), "source fork link missing")
 assert(frontmatter.parse(vim.fn.readfile(fork)).forked_from == original, "fork parent link missing")
+local fork_image = paths.assets_dir(fork_buf) .. "/photo.png"
+assert(vim.fn.filereadable(fork_image) == 1, "fork did not copy the session assets")
+assert(
+  table.concat(vim.fn.readfile(fork_image), "\n") == table.concat(vim.fn.readfile(src_image), "\n"),
+  "fork asset copy differs from the source"
+)
+assert(
+  text(fork_buf):find(vim.uri_from_fname(fork_image), 1, true),
+  "fork asset reference was not re-pointed at the copy"
+)
+assert(not text(fork_buf):find(vim.uri_from_fname(src_image), 1, true), "fork still points at the source asset")
 local saved_items = require("harness.session").list("cwd")
 local source_index, fork_index
 for i, item in ipairs(saved_items) do
@@ -129,21 +160,32 @@ local function check_open_tree(pick, leaf_visible)
     positions[item.buf] = i
   end
   assert(
-    positions[original_buf] and positions[fork_buf] == positions[original_buf] + 1
-      and (leaf_visible and positions[nested_buf] == positions[fork_buf] + 1
-        or not leaf_visible and not positions[nested_buf]),
+    positions[original_buf]
+      and positions[fork_buf] == positions[original_buf] + 1
+      and (
+        leaf_visible and positions[nested_buf] == positions[fork_buf] + 1
+        or not leaf_visible and not positions[nested_buf]
+      ),
     "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
   )
-  assert(format(captured[positions[original_buf]]):find("^" .. yap.config.icons.waiting) == 1
+  assert(
+    format(captured[positions[original_buf]]):find("^" .. yap.config.icons.waiting) == 1
       or format(captured[positions[original_buf]]):find("^" .. yap.config.icons.idle) == 1,
-    "root icon should start the row")
-  assert(format(captured[positions[fork_buf]]):find("^" .. (leaf_visible and yap.config.icons.idle or yap.config.icons.waiting) .. "    ↳") == 1,
-    "fork status icon should align with root and indent its title")
+    "root icon should start the row"
+  )
+  assert(
+    format(captured[positions[fork_buf]]):find(
+      "^" .. (leaf_visible and yap.config.icons.idle or yap.config.icons.waiting) .. "    ↳"
+    ) == 1,
+    "fork status icon should align with root and indent its title"
+  )
   if leaf_visible then
     local leaf = captured[positions[nested_buf]]
     assert(leaf.text:find("↳ fork · ", 1, true) == 1, "nested open fork label wrong")
-    assert(leaf.depth == 2 and format(leaf):find("^" .. yap.config.icons.idle .. "      ↳") == 1,
-      "nested fork title should be indented twice after aligned status icon")
+    assert(
+      leaf.depth == 2 and format(leaf):find("^" .. yap.config.icons.idle .. "      ↳") == 1,
+      "nested fork title should be indented twice after aligned status icon"
+    )
   end
 end
 check_open_tree(yap.instances, true)
@@ -162,7 +204,8 @@ for i, item in ipairs(saved_capture or {}) do
   saved_positions[item.path] = i
 end
 assert(
-  saved_positions[original] and saved_positions[fork] == saved_positions[original] + 1
+  saved_positions[original]
+    and saved_positions[fork] == saved_positions[original] + 1
     and saved_positions[generated] == saved_positions[fork] + 1,
   "saved fork tree is broken from within its leaf: " .. vim.inspect(saved_capture)
 )
@@ -298,8 +341,7 @@ for i, item in ipairs(after_close) do
   positions[item.path] = i
 end
 assert(
-  positions[original] and positions[fork] == positions[original] + 1
-    and positions[generated] == positions[fork] + 1,
+  positions[original] and positions[fork] == positions[original] + 1 and positions[generated] == positions[fork] + 1,
   "saved history lost fork nesting after :bd"
 )
 print("OK fork")

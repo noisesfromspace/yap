@@ -203,6 +203,20 @@ function M.setup()
       end
     end,
   })
+  -- Self-heal a session buffer whose policy never landed. setup_buffer applies
+  -- it from a vim.schedule callback; when that callback is dropped (the buffer
+  -- was not displayed yet, or it raised) the buffer keeps an empty 'syntax',
+  -- so the whole transcript — and every decoration that depends on the syntax
+  -- groups — renders plain. Re-apply when such a buffer is shown.
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    callback = function(args)
+      local buf = tonumber(args.buf)
+      if buf and vim.b[buf].yap and vim.bo[buf].syntax ~= "markdown" then
+        M.apply(buf)
+      end
+    end,
+  })
 end
 
 return M

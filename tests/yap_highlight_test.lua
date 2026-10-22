@@ -194,4 +194,13 @@ vim.api.nvim_set_hl(0, "@markup.raw", { fg = "#123456" })
 highlight.apply(buf)
 assert(attrs("markdownCode").fg == tonumber("123456", 16), "merge did not survive hi clear")
 
+-- A session buffer whose policy never landed keeps an empty 'syntax' (what a
+-- dropped deferred apply leaves behind) and renders the whole transcript
+-- plain. Showing such a buffer re-applies the policy.
+highlight.setup()
+vim.bo[buf].syntax = ""
+assert(vim.bo[buf].syntax == "", "precondition: syntax cleared")
+vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = buf })
+assert(vim.bo[buf].syntax == "markdown", "BufWinEnter did not re-apply the markdown policy")
+
 print("OK highlight")
