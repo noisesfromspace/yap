@@ -26,9 +26,6 @@ var endpoint = "https://api.exa.ai/search"
 // apiKeyEnv names the env var holding the Exa API key.
 var apiKeyEnv = "EXA_API_KEY"
 
-// SetEndpoint overrides the API endpoint (tests).
-func SetEndpoint(url string) { endpoint = url }
-
 // SetAPIKeyEnv overrides the env var name from config.
 func SetAPIKeyEnv(name string) {
 	if name != "" {

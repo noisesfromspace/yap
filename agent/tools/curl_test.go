@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+func TestHeadBufferKeepsRuneBoundary(t *testing.T) {
+	var b headBuffer
+	body := strings.Repeat("x", readMaxBytes-1) + "日" + "tail"
+	if _, err := b.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	if !b.Truncated() || got != strings.Repeat("x", readMaxBytes-1) {
+		t.Fatalf("curl body split a rune at the byte cap: %q", got[len(got)-min(5, len(got)):])
+	}
+}
+
 func TestCurl(t *testing.T) {
 	var gotMethod, gotPath, gotBody, gotUA, gotAccept string
 	var gotHeaders http.Header

@@ -22,6 +22,43 @@ end
 local BOARD_NAME = "yap://guard"
 local MAX_HISTORY_ROWS = 30 -- cap the project's settled-history readback
 
+-- Audit logs are append-only. Reuse decoded entries while a log's size and
+-- mtime are unchanged; parked approvals and settled history share the same
+-- snapshot so a board refresh does not re-decode every past turn twice.
+local audit_cache = {}
+local function audit_entries(path)
+  local stat = vim.uv.fs_stat(path)
+  if not stat then
+    audit_cache[path] = nil
+    return {}
+  end
+  local cached = audit_cache[path]
+  if cached and cached.size == stat.size and cached.sec == stat.mtime.sec and cached.nsec == stat.mtime.nsec then
+    return cached.entries
+  end
+  local entries, calls, occurrences, last_call = {}, {}, {}, nil
+  for _, line in ipairs(vim.fn.readfile(path)) do
+    if line ~= "" then
+      local ok, ev = pcall(vim.json.decode, line)
+      if ok and type(ev) == "table" then
+        entries[#entries + 1] = ev
+        if ev.type == "tool_call" and ev.id then
+          occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+          last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+        elseif ev.type == "approval_request" and ev.id then
+          local key = ev.id .. ":" .. (ev.ts or "")
+          if calls[key] == nil then
+            calls[key] = last_call or false
+          end
+        end
+      end
+    end
+  end
+  audit_cache[path] =
+    { size = stat.size, sec = stat.mtime.sec, nsec = stat.mtime.nsec, entries = entries, calls = calls }
+  return entries
+end
+
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
 local HL = {
@@ -161,18 +198,9 @@ local function approval_call(buf, ev)
   if vim.fn.filereadable(path) ~= 1 then
     return nil
   end
-  local occurrences, last_call = {}, nil
-  for _, line in ipairs(vim.fn.readfile(path)) do
-    local ok, entry = pcall(vim.json.decode, line)
-    if ok and type(entry) == "table" then
-      if entry.type == "tool_call" and entry.id then
-        occurrences[entry.id] = (occurrences[entry.id] or 0) + 1
-        last_call = { id = entry.id, occurrence = occurrences[entry.id] }
-      elseif entry.type == "approval_request" and entry.id == ev.id and entry.ts == ev.ts then
-        return last_call
-      end
-    end
-  end
+  audit_entries(path)
+  local call = audit_cache[path] and audit_cache[path].calls[(ev.id or "") .. ":" .. (ev.ts or "")]
+  return call or nil
 end
 
 --- A settled approval read back from an audit log: granted/denied from an
@@ -246,23 +274,26 @@ local function scan_project(cleared)
     if vim.fn.filereadable(log) == 1 then
       local path = vim.fn.fnamemodify(log, ":h") .. "/session.md"
       local session_name = paths.session_name(path)
-      local occurrences, requests, last_call = {}, {}, nil
-      for _, line in ipairs(vim.fn.readfile(log)) do
-        if line ~= "" then
-          local ok, ev = pcall(vim.json.decode, line)
-          if ok and type(ev) == "table" then
-            if ev.type == "tool_call" and ev.id then
-              occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-              last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-            elseif ev.type == "approval_request" and ev.id then
-              requests[ev.id] = { ev = ev, call = last_call }
-            elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
-              if not is_cleared(ev, cleared) then
-                local req = requests[ev.id]
-                resolved[#resolved + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
-              end
-            end
+      audit_entries(log) -- refresh the cache before inspecting its rows
+      local cached = audit_cache[log]
+      if not cached.rows then
+        local occurrences, requests, last_call = {}, {}, nil
+        cached.rows = {}
+        for _, ev in ipairs(audit_entries(log)) do
+          if ev.type == "tool_call" and ev.id then
+            occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+            last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+          elseif ev.type == "approval_request" and ev.id then
+            requests[ev.id] = { ev = ev, call = last_call }
+          elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
+            local req = requests[ev.id]
+            cached.rows[#cached.rows + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
           end
+        cached.entries = nil -- keep decisions/call refs, not full decoded tool results
+      end
+      for _, row in ipairs(cached.rows) do
+        if not is_cleared(row, cleared) then
+          resolved[#resolved + 1] = row
         end
       end
     end
@@ -574,7 +605,10 @@ local function install_keymaps(buf)
   -- A click on a closed row opens it; open content keeps native mouse
   -- behavior (matches the session buffer).
   vim.keymap.set("n", "<LeftMouse>", view.mouse_fold, {
-    buffer = buf, expr = true, silent = true, desc = "yap: open guard row on click",
+    buffer = buf,
+    expr = true,
+    silent = true,
+    desc = "yap: open guard row on click",
   })
 
   local function act(action)

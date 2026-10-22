@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// FindLineOffsets returns the byte offsets at which s appears as a complete
+// findLineOffsets returns the byte offsets at which s appears as a complete
 // line in content: the match must start at the beginning of a line and end at
 // that line's newline (or end of file). s must not contain a newline.
-func FindLineOffsets(content, s string) []int {
+func findLineOffsets(content, s string) []int {
 	var offs []int
 	lineStart := 0
 	for lineStart < len(content) {
@@ -36,7 +36,7 @@ func FindLineOffsets(content, s string) []int {
 // end of file. end includes the `to` line's trailing newline (or is
 // len(content) at end of file).
 func ResolveSpan(content, from, to string) (start, end int, err error) {
-	fromOffs := FindLineOffsets(content, from)
+	fromOffs := findLineOffsets(content, from)
 	switch len(fromOffs) {
 	case 0:
 		return 0, 0, fmt.Errorf("from %q is not a complete line in the file", from)
@@ -49,7 +49,7 @@ func ResolveSpan(content, from, to string) (start, end int, err error) {
 	if to == "" || strings.EqualFold(to, "<eof>") {
 		return start, end, nil
 	}
-	for _, off := range FindLineOffsets(content, to) {
+	for _, off := range findLineOffsets(content, to) {
 		if off > start+len(from) {
 			end = off + len(to)
 			if end < len(content) && content[end] == '\n' {

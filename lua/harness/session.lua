@@ -69,25 +69,8 @@ local function stamp_updated_at(buf)
   if fm.updated_at == updated_at and fm.turns == turns then
     return -- unchanged: skip the rewrite so an untouched frontmatter stays clean
   end
-  local block = frontmatter.render(
-    fm.provider,
-    fm.model,
-    fm.models,
-    fm.created_at,
-    fm.title,
-    fm.description,
-    fm.agent,
-    fm.tools,
-    fm.subagents,
-    updated_at,
-    turns,
-    fm.created_cwd,
-    fm.forked_from,
-    fm.forks,
-    fm.subagent_parent,
-    fm.reasoning_level
-  )
-  vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+  fm.updated_at, fm.turns = updated_at, turns
+  vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render(fm))
 end
 
 function M.save(buf)
@@ -206,24 +189,15 @@ function M.fork(buf, name, running)
           turns = turns + 1
         end
       end
-      local block = frontmatter.render(
-        fm.provider,
-        fm.model,
-        fm.models,
-        created,
-        fm.title,
-        fm.description,
-        fm.agent,
-        fm.tools,
-        fm.subagents,
-        created,
-        turns,
-        fm.created_cwd,
-        vim.b[buf].yap_path,
-        {},
-        nil,
-        fm.reasoning_level
-      )
+      local fork_fm = vim.tbl_extend("force", fm, {
+        created_at = created,
+        updated_at = created,
+        turns = turns,
+        forked_from = vim.b[buf].yap_path,
+        forks = {},
+      })
+      fork_fm.subagent_parent = nil
+      local block = frontmatter.render(fork_fm)
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block
     end
@@ -290,32 +264,7 @@ function M.fork(buf, name, running)
     local source_fm = frontmatter.parse(source_lines)
     local forks = source_fm.forks or {}
     forks[#forks + 1] = path
-    local ending
-    for i = 2, #source_lines do
-      if source_lines[i]:match("^%-%-%-%s*$") then
-        ending = i
-        break
-      end
-    end
-    local block = frontmatter.render(
-      source_fm.provider,
-      source_fm.model,
-      source_fm.models,
-      source_fm.created_at,
-      source_fm.title,
-      source_fm.description,
-      source_fm.agent,
-      source_fm.tools,
-      source_fm.subagents,
-      source_fm.updated_at,
-      source_fm.turns,
-      source_fm.created_cwd,
-      source_fm.forked_from,
-      forks,
-      source_fm.subagent_parent,
-      source_fm.reasoning_level
-    )
-    vim.api.nvim_buf_set_lines(buf, 0, ending, false, block)
+    frontmatter.update(buf, { forks = forks })
   end
   return path
 end

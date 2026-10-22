@@ -283,9 +283,5 @@ func runGitHub(a *githubArgs) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	text := string(b)
-	if len(text) > githubMaxOutput {
-		text = text[:githubMaxOutput] + "\n[truncated; narrow the query or read a smaller file]"
-	}
-	return text, "", nil
+	return truncateBytes(string(b), githubMaxOutput, "\n[truncated; narrow the query or read a smaller file]"), "", nil
 }

@@ -214,35 +214,10 @@ Return only the title.]]
       if vim.fn.strchars(description) > 60 then
         description = vim.fn.strcharpart(description, 0, 59):gsub("%s+%S*$", "") .. "…"
       end
-      local e = frontmatter.end_line(buf)
-      if not e then
+      if not frontmatter.update(buf, { description = description }) then
         retry_later()
         return
       end
-      local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
-      if not fm then
-        retry_later()
-        return
-      end
-      local block = frontmatter.render(
-        fm.provider,
-        fm.model,
-        fm.models,
-        fm.created_at,
-        fm.title,
-        description,
-        fm.agent,
-        fm.tools,
-        fm.subagents,
-        fm.updated_at,
-        fm.turns,
-        fm.created_cwd,
-        fm.forked_from,
-        fm.forks,
-        fm.subagent_parent,
-        fm.reasoning_level
-      )
-      vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
       require("harness.session").save(buf)
     end)
   )

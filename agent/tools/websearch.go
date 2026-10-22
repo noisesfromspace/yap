@@ -140,9 +140,5 @@ func runWebsearch(a *websearchArgs) (string, string, error) {
 	}
 	// Cap the assembled result: 25 results in contentMode=text can carry
 	// hundreds of KB, and every byte of it lands in the transcript.
-	out := b.String()
-	if len(out) > readMaxBytes {
-		out = capBytes(out, readMaxBytes) + "\n[truncated at 50KB: lower limit or use contentMode=highlights]"
-	}
-	return out, "", nil
+	return truncateBytes(b.String(), readMaxBytes, "\n[truncated at 50KB: lower limit or use contentMode=highlights]"), "", nil
 }

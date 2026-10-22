@@ -15,7 +15,6 @@ local COMMENT_OPEN = structure.COMMENT_OPEN
 local parse = structure.parse
 local extend = structure.extend
 local mark_changed = structure.mark_changed
-local fence_run = structure.fence_run
 
 -- The three view levels, bound to <leader>1..3 (the system prompt stays
 -- folded in views 1 and 2, open in view 3):
@@ -799,9 +798,6 @@ function M.setup_buffer(buf, keys)
   end
 end
 
--- Exposed for the shared Go/Lua fence conformance test (see
--- tests/fence_cases.json) and the perf profiler. Not part of the public API.
-M.fence_run = fence_run
 M.parse = parse
 
 return M

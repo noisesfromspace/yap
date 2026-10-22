@@ -75,8 +75,6 @@ M.reveal_call = sessions.reveal_call
 -- Session maintenance (maintain).
 M.clear = maintain.clear
 M.compact = maintain.compact
-M.compact_offer = maintain.offer
-M.compact_delete = maintain.delete
 
 -- Session label (session).
 M.session_label = session.live_label
@@ -88,9 +86,6 @@ function M.parse_buffer(buf)
 end
 function M.insert(name, opts)
   return template.insert(name, opts)
-end
-function M.template_names()
-  return template.template_names()
 end
 function M.insert_file(opts)
   return template.insert_file(opts)

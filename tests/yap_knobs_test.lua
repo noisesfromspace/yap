@@ -14,11 +14,24 @@ vim.api.nvim_buf_set_lines(
   0,
   e,
   false,
-  frontmatter.render(
-    fm.provider, fm.model, fm.models, fm.created_at, fm.title, fm.description,
-    fm.agent, fm.tools, fm.subagents, fm.updated_at, fm.turns, fm.created_cwd,
-    fm.forked_from, fm.forks, fm.subagent_parent, "high"
-  )
+  frontmatter.render({
+    provider = fm.provider,
+    model = fm.model,
+    models = fm.models,
+    created_at = fm.created_at,
+    title = fm.title,
+    description = fm.description,
+    agent = fm.agent,
+    tools = fm.tools,
+    subagents = fm.subagents,
+    updated_at = fm.updated_at,
+    turns = fm.turns,
+    created_cwd = fm.created_cwd,
+    forked_from = fm.forked_from,
+    forks = fm.forks,
+    subagent_parent = fm.subagent_parent,
+    reasoning_level = "high",
+  })
 )
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "hi" })
 yap.send()

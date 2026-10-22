@@ -147,84 +147,67 @@ end
 
 --- Render the frontmatter for a combo + ordered history. The
 --- returned table has no trailing blank line (see module comment).
-function M.render(
-  provider,
-  model,
-  models,
-  created_at,
-  title,
-  description,
-  agent,
-  tools,
-  subagents,
-  updated_at,
-  turns,
-  created_cwd,
-  forked_from,
-  forks,
-  subagent_parent,
-  reasoning_level
-)
+function M.render(fm)
   local lines = { "---" }
   -- `title` is always written (empty by default) so a hand-edited value sits
   -- in the buffer ready to fill in; an empty title leaves the generated
   -- description in charge.
-  local t = title and title:gsub("[\r\n]+", " "):gsub(":%s*$", "") or ""
+  local t = fm.title and fm.title:gsub("[\r\n]+", " "):gsub(":%s*$", "") or ""
   lines[#lines + 1] = (t == "" and "title:" or ("title: " .. t))
-  if description and description ~= "" then
-    lines[#lines + 1] = "description: " .. description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
+  if fm.description and fm.description ~= "" then
+    lines[#lines + 1] = "description: " .. fm.description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
   end
-  lines[#lines + 1] = "model: " .. model
-  lines[#lines + 1] = "provider: " .. provider
+  lines[#lines + 1] = "model: " .. fm.model
+  lines[#lines + 1] = "provider: " .. fm.provider
   lines[#lines + 1] = "available_reasoning:"
   for _, level in ipairs(AVAILABLE_REASONING) do
     lines[#lines + 1] = "  - " .. level
   end
-  if reasoning_level and reasoning_level ~= "" then
-    lines[#lines + 1] = "reasoning_level: " .. reasoning_level
+  if fm.reasoning_level and fm.reasoning_level ~= "" then
+    lines[#lines + 1] = "reasoning_level: " .. fm.reasoning_level
   end
-  if created_cwd and created_cwd ~= "" then
-    lines[#lines + 1] = "created_cwd: " .. created_cwd
+  if fm.created_cwd and fm.created_cwd ~= "" then
+    lines[#lines + 1] = "created_cwd: " .. fm.created_cwd
   end
-  if agent then
-    lines[#lines + 1] = "agent: " .. agent
+  if fm.agent then
+    lines[#lines + 1] = "agent: " .. fm.agent
   end
-  if turns ~= nil then
-    lines[#lines + 1] = "turns: " .. turns
+  if fm.turns ~= nil then
+    lines[#lines + 1] = "turns: " .. fm.turns
   end
-  if created_at then
-    lines[#lines + 1] = "created_at: " .. created_at
+  if fm.created_at then
+    lines[#lines + 1] = "created_at: " .. fm.created_at
   end
-  if updated_at then
-    lines[#lines + 1] = "updated_at: " .. updated_at
+  if fm.updated_at then
+    lines[#lines + 1] = "updated_at: " .. fm.updated_at
   end
-  if models and #models > 0 then
+  if fm.models and #fm.models > 0 then
     lines[#lines + 1] = "models:"
-    for _, c in ipairs(models) do
+    for _, c in ipairs(fm.models) do
       lines[#lines + 1] = "  - " .. c
     end
   end
-  if forked_from then
-    lines[#lines + 1] = "forked_from: " .. forked_from
+  if fm.forked_from then
+    lines[#lines + 1] = "forked_from: " .. fm.forked_from
   end
-  if subagent_parent then
-    lines[#lines + 1] = "subagent_parent: " .. subagent_parent
+  if fm.subagent_parent then
+    lines[#lines + 1] = "subagent_parent: " .. fm.subagent_parent
   end
-  if subagents and #subagents > 0 then
+  if fm.subagents and #fm.subagents > 0 then
     lines[#lines + 1] = "subagents:"
-    for _, p in ipairs(subagents) do
+    for _, p in ipairs(fm.subagents) do
       lines[#lines + 1] = "  - " .. p
     end
   end
-  if forks and #forks > 0 then
+  if fm.forks and #fm.forks > 0 then
     lines[#lines + 1] = "forks:"
-    for _, p in ipairs(forks) do
+    for _, p in ipairs(fm.forks) do
       lines[#lines + 1] = "  - " .. p
     end
   end
-  if tools and #tools > 0 then
+  if fm.tools and #fm.tools > 0 then
     lines[#lines + 1] = "tools:"
-    for _, t in ipairs(tools) do
+    for _, t in ipairs(fm.tools) do
       lines[#lines + 1] = "  - " .. t
     end
   end
@@ -246,6 +229,22 @@ function M.end_line(buf)
     end
   end
   return nil
+end
+
+--- Update fields in an existing buffer frontmatter without rebuilding the
+--- other fields at every call site. Returns false when no block is present.
+--- Callers decide whether and when to save the buffer.
+function M.update(buf, changes)
+  local e = M.end_line(buf)
+  if not e then
+    return false
+  end
+  local fm = M.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  if not fm then
+    return false
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, e, false, M.render(vim.tbl_extend("force", fm, changes)))
+  return true
 end
 
 --- Rewrite the buffer's frontmatter to match the current combo, growing
@@ -273,24 +272,16 @@ function M.sync(buf)
   -- default.
   local defaults = require("harness").config
   local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
-  local block = M.render(
-    provider,
-    model,
-    models,
-    created_at,
-    fm and fm.title,
-    fm and fm.description,
-    fm and fm.agent or vim.b[buf].yap_agent,
-    fm and fm.tools or vim.b[buf].yap_tools or config.tool_names(),
-    fm and fm.subagents,
-    fm and fm.updated_at,
-    fm and fm.turns,
-    created_cwd,
-    fm and fm.forked_from,
-    fm and fm.forks,
-    fm and fm.subagent_parent,
-    reasoning_level
-  )
+  local block = M.render(vim.tbl_extend("force", fm or {}, {
+    provider = provider,
+    model = model,
+    models = models,
+    created_at = created_at,
+    agent = (fm and fm.agent) or vim.b[buf].yap_agent,
+    tools = (fm and fm.tools) or vim.b[buf].yap_tools or config.tool_names(),
+    created_cwd = created_cwd,
+    reasoning_level = reasoning_level,
+  }))
   if e then
     vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
   else
@@ -318,25 +309,8 @@ function M.record_subagent(parent, child_path)
     end
   end
   subagents[#subagents + 1] = child_path
-  local block = M.render(
-    fm.provider,
-    fm.model,
-    fm.models,
-    fm.created_at,
-    fm.title,
-    fm.description,
-    fm.agent,
-    fm.tools,
-    subagents,
-    fm.updated_at,
-    fm.turns,
-    fm.created_cwd,
-    fm.forked_from,
-    fm.forks,
-    fm.subagent_parent,
-    fm.reasoning_level
-  )
-  vim.api.nvim_buf_set_lines(parent, 0, e, false, block)
+  fm.subagents = subagents
+  vim.api.nvim_buf_set_lines(parent, 0, e, false, M.render(fm))
 end
 
 return M

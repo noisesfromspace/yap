@@ -19,7 +19,16 @@ vim.fn.mkdir(sess, "p")
 local f = io.open(sess .. "/audit.jsonl", "w")
 for i = 1, 31 do
   local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + i)
-  f:write(vim.json.encode({ type = "approval_request", id = "r" .. i, tool = "bash", command = '{"command":"echo"}', reason = "resolved-" .. i, ts = t }) .. "\n")
+  f:write(
+    vim.json.encode({
+      type = "approval_request",
+      id = "r" .. i,
+      tool = "bash",
+      command = '{"command":"echo"}',
+      reason = "resolved-" .. i,
+      ts = t,
+    }) .. "\n"
+  )
   f:write(vim.json.encode({ type = "approval_result", id = "r" .. i, approved = true, ts = t }) .. "\n")
 end
 f:close()
@@ -45,6 +54,26 @@ for _ in text:gmatch("resolved%-%d+") do
   n = n + 1
 end
 assert(n == 30, "expected 30 settled rows, got " .. n)
+
+-- Appending to the log invalidates the cached snapshot even when its mtime
+-- has the same second; a visible board must show the latest decision.
+local append = io.open(sess .. "/audit.jsonl", "a")
+local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + 40)
+append:write(
+  vim.json.encode({
+    type = "approval_request",
+    id = "r32",
+    tool = "bash",
+    command = "{}",
+    reason = "new-decision",
+    ts = t,
+  }) .. "\n"
+)
+append:write(vim.json.encode({ type = "approval_result", id = "r32", approved = false, ts = t }) .. "\n")
+append:close()
+guard.touch()
+text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
+assert(text:find("new-decision", 1, true), "append not reflected in cached board: " .. text)
 
 guard.toggle() -- close
 state.pending_approvals[a] = nil

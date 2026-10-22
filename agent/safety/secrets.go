@@ -25,8 +25,16 @@ import (
 //     (PEM keys, AGE-SECRET-KEY-…, bearer tokens, …), defense in depth
 //     behind surfaces 1 and 2.
 //
-// Adding a secret location means editing secretPaths below (and its shell
-// pattern twin in readSecretFileRE); every surface picks it up.
+// Adding a secret location here updates the path guard, sandbox shadows and
+// bash's reader-command guard together.
+
+// secretLocations is the single source of secret paths. Home-relative entries
+// expand against os.UserHomeDir for file checks and accept the usual shell
+// spellings in bash commands.
+var secretLocations = []string{
+	"~/.ssh", "~/.gnupg", "~/.aws", "~/.config/sops",
+	"/etc/ssh", "/run/agenix", "/run/agenix.d", "/etc/agenix",
+}
 
 // secretPaths are the secret directories read/write/edit/search must ask
 // about before touching. They are matched against BOTH the literal absolute
@@ -36,34 +44,54 @@ import (
 // and agenix keys. Decrypted agenix secrets are served from /run/agenix;
 // their encrypted .age files in a flake are safe to read and are NOT
 // blocked — age encryption is the point.
-var secretPaths = func() []string {
+//
+// `/run/agenix` is itself a symlink to `/run/agenix.d/<n>`, and the
+// resolved path does not sit under it, so both directories are listed (see
+// secretLocations) or a read of the resolved path (or of /run/agenix.d itself)
+// walks straight past the guard.
+var secretPaths = buildSecretPaths()
+
+func buildSecretPaths() []string {
+	home, _ := os.UserHomeDir()
 	var paths []string
-	if h, err := os.UserHomeDir(); err == nil && h != "" {
-		paths = append(paths,
-			filepath.Join(h, ".ssh"),
-			filepath.Join(h, ".gnupg"),
-			filepath.Join(h, ".aws"),
-			filepath.Join(h, ".config", "sops"),
-		)
+	for _, p := range secretLocations {
+		if strings.HasPrefix(p, "~/") {
+			if home == "" {
+				continue
+			}
+			p = filepath.Join(home, strings.TrimPrefix(p, "~/"))
+		}
+		paths = append(paths, p)
 	}
-	// `/run/agenix` is itself a symlink to `/run/agenix.d/<n>`, and the
-	// resolved path does not sit under it, so both directories must be
-	// listed or a read of the resolved path (or of `/run/agenix.d` itself)
-	// walks straight past the guard.
-	return append(paths, "/etc/ssh", "/run/agenix", "/run/agenix.d", "/etc/agenix")
-}()
+	return paths
+}
 
 // SecretPaths returns the secret directories read/write/edit/search must ask
 // about before touching — the same list IsSecretPath matches. The sandbox
 // (sandbox.go) shadows these directories with empty mounts so bash cannot
-// read them.
+// read them. The returned slice is a copy, so a caller cannot mutate the
+// process-wide policy out from under the path checks and shadow mounts.
 func SecretPaths() []string {
-	return secretPaths
+	out := make([]string, len(secretPaths))
+	copy(out, secretPaths)
+	return out
+}
+
+// pathIsUnder reports whether path equals dir or sits directly under it.
+// dir is cleaned; empty and root directories never match. Shared by
+// isSecretPath and sandbox.under so the two containment checks cannot drift.
+func pathIsUnder(path, dir string) bool {
+	sep := string(filepath.Separator)
+	dir = filepath.Clean(dir)
+	if dir == "" || dir == sep {
+		return false
+	}
+	return path == dir || strings.HasPrefix(path, dir+sep)
 }
 
 func isSecretPath(abs string) bool {
 	for _, s := range secretPaths {
-		if abs == s || strings.HasPrefix(abs, s+string(filepath.Separator)) {
+		if pathIsUnder(abs, s) {
 			return true
 		}
 	}
@@ -105,15 +133,39 @@ func SecretPathRule(name string) Rule {
 // use \b boundaries, dash-led flags match their literal dashes.
 const decryptRE = `(?i)\bage\b[ \t]+(?:--decrypt|-d)\b|\bgpg(?:2)?\b[^\n;&|]*(?:--decrypt|-d)\b|\bsops\b[^\n;&|]*(?:\bdecrypt\b|\bexec-env\b|\bexec-file\b|-d\b)|\bopenssl\b[^\n;&|]*\benc\b[^\n;&|]*(?:-d\b|--decrypt\b|-decrypt\b)`
 
+// readSecretReader is the reader-command prefix: a reader command followed
+// by up to a pipe/semicolon/command boundary.
+const readSecretReader = `(?i)\b(?:cat|less|more|head|tail|bat|batcat|grep|rg|sed|awk|strings|xxd|od|hexdump|jq|yq)\b[^\n;&|]*`
+
+// readSecretHomeRE prefixes a home-relative shell fragment with any spelling
+// of the home directory (`~`, `$HOME`, or `/home/<user>`).
+const readSecretHomeRE = `(?:~|\$HOME|/home/[^/\s"']+)?`
+
+// readSecretSuffix bounds a path after the location fragment.
+const readSecretSuffix = `(?:/|[\s"']|$)`
+
 // readSecretFileRE matches a reader command followed by a path under a secret
 // directory — the shell-expressed twin of secretPaths (a command spells
 // `~/.ssh`, `$HOME/.aws` or `/run/agenix`, never the resolved absolute path).
-// Inside the sandbox the deny-read shadow already makes such reads fail at the
-// kernel, so this rule is the BACKSTOP for the unsandboxed path: an approved
-// re-run after a sandbox violation, a pre-approved (guard-matched) command, or
-// a one-shot `yap send` with the sandbox disabled. It is not the primary read
-// barrier — the shadow mount is.
-const readSecretFileRE = `(?i)\b(?:cat|less|more|head|tail|bat|batcat|grep|rg|sed|awk|strings|xxd|od|hexdump|jq|yq)\b[^\n;&|]*(?:(?:~|\$HOME|/home/[^/\s"']+)?/\.(?:ssh|gnupg|aws|config/sops)|/(?:run/agenix(?:\.d)?|etc/(?:ssh|agenix)))(?:/|[\s"']|$)`
+// It is derived from secretLocations so the shell spelling and filesystem
+// paths cannot drift apart. Inside the sandbox the deny-read shadow already
+// makes such reads fail at the kernel, so this rule is the BACKSTOP for the
+// unsandboxed path: an approved re-run after a sandbox violation, a
+// pre-approved (guard-matched) command, or a one-shot `yap send` with the
+// sandbox disabled. It is not the primary read barrier — the shadow mount is.
+var readSecretFileRE = buildReadSecretFileRE()
+
+func buildReadSecretFileRE() string {
+	var frags []string
+	for _, path := range secretLocations {
+		if strings.HasPrefix(path, "~/") {
+			frags = append(frags, readSecretHomeRE+regexp.QuoteMeta(path[1:]))
+		} else {
+			frags = append(frags, regexp.QuoteMeta(path))
+		}
+	}
+	return readSecretReader + "(?:" + strings.Join(frags, "|") + ")" + readSecretSuffix
+}
 
 var (
 	ageKeygenRE       = regexp.MustCompile(`(?i)\bage-keygen\b`)

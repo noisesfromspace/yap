@@ -50,7 +50,7 @@ do
     "# @user",
     "",
   })
-  yap.compact_delete(buf)
+  require("harness.session.maintain").delete(buf)
   local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
   assert(text:match("^%-%-%-"), "frontmatter lost: " .. text)
   assert(text:match("# @system"), "system block lost: " .. text)

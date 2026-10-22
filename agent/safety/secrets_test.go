@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestSecretLocationSurfacesStayTogether(t *testing.T) {
+	for _, p := range secretLocations {
+		if !IsSecretPath(p) {
+			t.Errorf("path rule missed %s", p)
+		}
+		if got := MatchRules(SecretRevealRules(), "cat "+p+"/identity"); got != "reads a secret file" {
+			t.Errorf("bash rule missed %s: %q", p, got)
+		}
+	}
+	copyOfPaths := SecretPaths()
+	copyOfPaths[0] = "/tmp"
+	if SecretPaths()[0] == "/tmp" {
+		t.Fatal("SecretPaths exposed mutable policy")
+	}
+}
+
 func TestIsSecretPath(t *testing.T) {
 	// a direct secret path (via ~ expansion) matches even when it does not exist
 	if !IsSecretPath("~/.ssh/id_ed25519") {

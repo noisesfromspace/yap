@@ -229,32 +229,7 @@ function M.start(parent, ev)
   document.append_text(child, ev.task)
   vim.b[child].yap_subagent_parent = parent
   vim.b[child].yap_subagent_task = ev.task
-  local child_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(child, 0, -1, false))
-  local ending = frontmatter.end_line(child)
-  vim.api.nvim_buf_set_lines(
-    child,
-    0,
-    ending,
-    false,
-    frontmatter.render(
-      child_fm.provider,
-      child_fm.model,
-      child_fm.models,
-      child_fm.created_at,
-      child_fm.title,
-      child_fm.description,
-      child_fm.agent,
-      child_fm.tools,
-      child_fm.subagents,
-      child_fm.updated_at,
-      child_fm.turns,
-      child_fm.created_cwd,
-      child_fm.forked_from,
-      child_fm.forks,
-      parent_path,
-      child_fm.reasoning_level
-    )
-  )
+  frontmatter.update(child, { subagent_parent = parent_path })
   require("harness.session").save(child)
   subagent_children[parent] = child
   frontmatter.record_subagent(parent, child_path)

@@ -468,6 +468,7 @@ function M.send(buf)
       running[buf] = nil
       follow_override[buf] = nil
       scratchmod.refresh(vim.b[buf].yap_scratch)
+      local stderr = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
       stderr_chunks = {}
       local compact = vim.b[buf].yap_compact_pending
       vim.b[buf].yap_compact_pending = nil
@@ -498,7 +499,7 @@ function M.send(buf)
         if type(err) == "table" then
           code, err = err.code, err.message
         end
-        err = err or table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
+        err = err or stderr
         report_error(buf, err ~= "" and err or "backend exited", code)
         scratchmod.finish_queue(buf, false)
         close_stream(buf)

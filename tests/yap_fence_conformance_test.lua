@@ -1,8 +1,8 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
-local fold = require("harness.ui.fold")
+local structure = require("harness.model.structure")
 
--- Assert fold.fence_run classifies fence openers identically to Go's
+-- Assert structure.fence_run classifies fence openers identically to Go's
 -- fenceLine. The cases live in a shared JSON fixture so the two grammars
 -- cannot drift apart unnoticed.
 local path = ROOT .. "/tests/fence_cases.json"
@@ -15,7 +15,7 @@ local cases = vim.json.decode(data)
 assert(#cases > 0, "fence conformance fixture is empty")
 
 for _, c in ipairs(cases) do
-  local char, run, tail = fold.fence_run(c.line)
+  local char, run, tail = structure.fence_run(c.line)
   if c["null"] then
     assert(char == nil, string.format("fence_run(%q) = (%q, %s, %q), want no fence", c.line, char, tostring(run), tail))
   else

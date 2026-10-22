@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/utils"
@@ -388,7 +389,7 @@ type headBuffer struct {
 
 func (b *headBuffer) Write(p []byte) (int, error) {
 	b.total += int64(len(p))
-	if room := readMaxBytes - len(b.buf); room > 0 {
+	if room := readMaxBytes + utf8.UTFMax - 1 - len(b.buf); room > 0 {
 		n := len(p)
 		if n > room {
 			n = room
@@ -398,6 +399,6 @@ func (b *headBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (b *headBuffer) String() string { return string(b.buf) }
+func (b *headBuffer) String() string { return capBytes(string(b.buf), readMaxBytes) }
 
-func (b *headBuffer) Truncated() bool { return b.total > int64(len(b.buf)) }
+func (b *headBuffer) Truncated() bool { return b.total > readMaxBytes }

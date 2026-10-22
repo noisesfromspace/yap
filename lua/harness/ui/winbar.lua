@@ -222,6 +222,8 @@ local function render_winbar(buf)
     return stops
   end
 
+  local rollup_counts = not inactive and other_session_counts(buf) or nil
+
   -- Mandatory left cluster (never dropped; the description shrinks). Build
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
@@ -319,7 +321,7 @@ local function render_winbar(buf)
     -- inactive window hides it entirely: the only thing a background
     -- session is allowed to advertise is its own leftmost state icon.
     if not inactive then
-      local counts = other_session_counts(buf)
+      local counts = rollup_counts
       local order = {
         { icons.approval, counts.approval, "Approval" },
         { icons.running, counts.running, "Busy" },
@@ -573,12 +575,32 @@ local function render_winbar(buf)
 
   -- Preserve real centering: drop the middle when either edge cluster
   -- would collide with it, then degrade the right side as before.
+  -- Layout negotiation tries several widths synchronously. Only the title
+  -- limit, switch/model visibility and usage mode change between attempts;
+  -- reuse completed segments instead of re-counting sessions and usage for
+  -- each rejected layout.
+  local left_cache, center_cache, usage_cache = {}, {}, {}
+  local function cached(cache, key, build)
+    if cache[key] == nil then
+      cache[key] = build() or false
+    end
+    return cache[key] or nil
+  end
   local desc_max, mode, show_model, show_switch = 40, "full", true, true
   while true do
-    local left = left_segments(desc_max, inactive and show_switch)
+    local show_left_switch = inactive and show_switch
+    local left = cached(left_cache, desc_max .. ":" .. tostring(show_left_switch), function()
+      return left_segments(desc_max, show_left_switch)
+    end)
     local switch_in_center = not inactive and show_switch
-    local center = (show_model or switch_in_center) and center_segments(show_model, switch_in_center) or nil
-    local usage = not inactive and usage_segment(mode)
+    local center = (show_model or switch_in_center)
+        and cached(center_cache, tostring(show_model) .. ":" .. tostring(switch_in_center), function()
+          return center_segments(show_model, switch_in_center)
+        end)
+      or nil
+    local usage = not inactive and cached(usage_cache, mode, function()
+      return usage_segment(mode)
+    end) or nil
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
@@ -603,7 +625,11 @@ local function render_winbar(buf)
       mode = "compact"
     elseif mode == "compact" then
       mode = "prices"
-    elseif mode == "prices" and context_segment(false) then
+    elseif
+      mode == "prices" and cached(usage_cache, "gauge", function()
+        return usage_segment("gauge")
+      end)
+    then
       mode = "gauge"
     elseif desc_max > 15 then
       desc_max = desc_max - 5

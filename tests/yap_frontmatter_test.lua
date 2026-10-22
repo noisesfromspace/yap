@@ -15,7 +15,10 @@ assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid
 local fm = frontmatter.parse(lines)
 assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
-assert(fm.reasoning_level == "medium", "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level))
+assert(
+  fm.reasoning_level == "medium",
+  "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level)
+)
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.created_cwd))
@@ -32,7 +35,13 @@ vim.api.nvim_buf_set_lines(
   0,
   e,
   false,
-  frontmatter.render("zeta", "m1", fm.models, created, nil, "Implement session descriptions")
+  frontmatter.render({
+    provider = "zeta",
+    model = "m1",
+    models = fm.models,
+    created_at = created,
+    description = "Implement session descriptions",
+  })
 )
 
 -- 2. parse_buffer ignores the frontmatter (it is not a message)
@@ -45,13 +54,28 @@ lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
 assert(fm.provider == "alpha" and fm.model == "m2", "combo not updated: " .. vim.inspect(fm))
 assert(fm.created_at == created, "created_at changed: " .. vim.inspect(fm.created_at))
-assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not preserved across a rewrite: " .. vim.inspect(fm.created_cwd))
+assert(
+  fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()),
+  "cwd not preserved across a rewrite: " .. vim.inspect(fm.created_cwd)
+)
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
 assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
 local bar = yap.winbar(buf)
 assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
 local long_description = "Improve the session toolbar without crowding out important status information"
-vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render("alpha", "m2", fm.models, created, nil, long_description))
+vim.api.nvim_buf_set_lines(
+  buf,
+  0,
+  e,
+  false,
+  frontmatter.render({
+    provider = "alpha",
+    model = "m2",
+    models = fm.models,
+    created_at = created,
+    description = long_description,
+  })
+)
 bar = yap.winbar(buf)
 assert(bar:find("Improve the session toolbar without cro…", 1, true), "description not truncated: " .. bar)
 assert(not bar:find(long_description, 1, true), "full description leaked into winbar: " .. bar)
@@ -60,7 +84,13 @@ vim.api.nvim_buf_set_lines(
   0,
   e,
   false,
-  frontmatter.render("alpha", "m2", fm.models, created, nil, "Implement session descriptions")
+  frontmatter.render({
+    provider = "alpha",
+    model = "m2",
+    models = fm.models,
+    created_at = created,
+    description = "Implement session descriptions",
+  })
 )
 
 -- 4. switching to the same combo is a no-op for the history
@@ -100,20 +130,16 @@ assert(
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
 -- 7. subagents + updated_at + turns render and parse back
-local subagents_block = frontmatter.render(
-  "zeta",
-  "m1",
-  { "zeta/m1" },
-  created,
-  nil,
-  nil,
-  nil,
-  nil,
-  { "/tmp/a.md", "/tmp/b.md" },
-  "2025-09-29T19:24:01Z",
-  14,
-  "/tmp/project"
-)
+local subagents_block = frontmatter.render({
+  provider = "zeta",
+  model = "m1",
+  models = { "zeta/m1" },
+  created_at = created,
+  subagents = { "/tmp/a.md", "/tmp/b.md" },
+  updated_at = "2025-09-29T19:24:01Z",
+  turns = 14,
+  created_cwd = "/tmp/project",
+})
 local subagents_fm = frontmatter.parse(subagents_block)
 assert(subagents_fm.created_cwd == "/tmp/project", "cwd not roundtripped: " .. vim.inspect(subagents_fm.created_cwd))
 assert(
@@ -125,63 +151,66 @@ assert(
   "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at)
 )
 assert(subagents_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(subagents_fm.turns))
-local links = frontmatter.parse(
-  frontmatter.render(
-    "zeta",
-    "m1",
-    {},
-    created,
-    nil,
-    nil,
-    nil,
-    nil,
-    {},
-    nil,
-    0,
-    "/tmp/project",
-    "/tmp/source.md",
-    { "/tmp/fork.md" },
-    "/tmp/parent.md"
-  )
-)
+local links = frontmatter.parse(frontmatter.render({
+  provider = "zeta",
+  model = "m1",
+  models = {},
+  created_at = created,
+  subagents = {},
+  turns = 0,
+  created_cwd = "/tmp/project",
+  forked_from = "/tmp/source.md",
+  forks = { "/tmp/fork.md" },
+  subagent_parent = "/tmp/parent.md",
+}))
 assert(
   links.forked_from == "/tmp/source.md"
     and links.subagent_parent == "/tmp/parent.md"
     and links.forks[1] == "/tmp/fork.md",
   "links not roundtripped"
 )
-local tools_block = frontmatter.render(
-  "zeta",
-  "m1",
-  {},
-  created,
-  nil,
-  nil,
-  nil,
-  { "read", "search", "glob" },
-  {},
-  nil,
-  0,
-  "/tmp/project"
-)
+local tools_block = frontmatter.render({
+  provider = "zeta",
+  model = "m1",
+  models = {},
+  created_at = created,
+  tools = { "read", "search", "glob" },
+  subagents = {},
+  turns = 0,
+  created_cwd = "/tmp/project",
+})
 local tools_idx = nil
 for i, l in ipairs(tools_block) do
   if l == "tools:" then
     tools_idx = i
   end
 end
-assert(tools_idx and tools_block[tools_idx + 1] == "  - read", "tools must render as a YAML list: " .. vim.inspect(tools_block))
+assert(
+  tools_idx and tools_block[tools_idx + 1] == "  - read",
+  "tools must render as a YAML list: " .. vim.inspect(tools_block)
+)
 local tools_fm = frontmatter.parse(tools_block)
 assert(
   vim.deep_equal(tools_fm.tools, { "read", "search", "glob" }),
   "tools list not roundtripped: " .. vim.inspect(tools_fm.tools)
 )
 -- reasoning_level: the live choice; available_reasoning lists the options.
-local knobs_block = frontmatter.render(
-  "zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project", nil, {}, nil, "high"
-)
+local knobs_block = frontmatter.render({
+  provider = "zeta",
+  model = "m1",
+  models = {},
+  created_at = created,
+  subagents = {},
+  turns = 0,
+  created_cwd = "/tmp/project",
+  forks = {},
+  reasoning_level = "high",
+})
 local knobs_fm = frontmatter.parse(knobs_block)
-assert(knobs_fm.reasoning_level == "high", "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level))
+assert(
+  knobs_fm.reasoning_level == "high",
+  "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level)
+)
 local saw_level, saw_available = false, false
 local available = {}
 for _, l in ipairs(knobs_block) do
@@ -198,7 +227,15 @@ assert(
   saw_available and vim.deep_equal(available, { "low", "medium", "high" }),
   "available_reasoning list wrong: " .. vim.inspect(knobs_block)
 )
-local plain_fm = frontmatter.parse(frontmatter.render("zeta", "m1", {}, created, nil, nil, nil, nil, {}, nil, 0, "/tmp/project"))
+local plain_fm = frontmatter.parse(frontmatter.render({
+  provider = "zeta",
+  model = "m1",
+  models = {},
+  created_at = created,
+  subagents = {},
+  turns = 0,
+  created_cwd = "/tmp/project",
+}))
 assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
 -- 8. a `title` wins over the generated description; without a title the

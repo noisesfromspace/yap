@@ -82,6 +82,16 @@ func TestSearchSecretPathRule(t *testing.T) {
 	}
 }
 
+func TestTruncateBytesKeepsRuneBoundaryAndNotice(t *testing.T) {
+	got := truncateBytes("日abc", 2, "\n[cut]")
+	if got != "\n[cut]" || !utf8.ValidString(got) {
+		t.Fatalf("truncation split a rune: %q", got)
+	}
+	if got := truncateBytes("日abc", 6, "\n[cut]"); got != "日abc" {
+		t.Fatalf("short input changed: %q", got)
+	}
+}
+
 // The byte cap must not split a multi-byte character: half a rune in a tool
 // result makes Neovim read the transcript back as latin1 and re-encode it.
 func TestCapBytesKeepsRuneBoundary(t *testing.T) {

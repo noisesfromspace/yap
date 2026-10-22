@@ -438,10 +438,7 @@ func withChallenge(s string) string {
 }
 
 func capPW(s string) string {
-	if len(s) > pwMaxBytes {
-		return s[:pwMaxBytes] + "\n[truncated at 50KB]"
-	}
-	return s
+	return truncateBytes(s, pwMaxBytes, "\n[truncated at 50KB]")
 }
 
 func formatEval(v any) string {

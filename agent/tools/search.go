@@ -98,6 +98,15 @@ func truncateHead(s string) (string, bool) {
 	return s, truncated
 }
 
+// truncateBytes caps a text result and appends its tool-specific notice only
+// when content was cut. The cap is on content, not on the notice.
+func truncateBytes(s string, n int, notice string) string {
+	if len(s) > n {
+		return capBytes(s, n) + notice
+	}
+	return s
+}
+
 // capBytes cuts s to at most n bytes, backing off to the last rune boundary
 // so a multi-byte character is never split. The result is always valid UTF-8:
 // a tool result with half a rune in it makes Neovim read the transcript back

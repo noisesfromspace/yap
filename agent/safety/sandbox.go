@@ -239,13 +239,8 @@ func OutsideWritableRule(name string) Rule {
 
 // under reports whether path equals dir or sits under it.
 func under(path string, dirs []string) bool {
-	sep := string(filepath.Separator)
 	for _, d := range dirs {
-		d = filepath.Clean(d)
-		if d == "" || d == sep {
-			continue
-		}
-		if path == d || strings.HasPrefix(path, d+sep) {
+		if pathIsUnder(path, d) {
 			return true
 		}
 	}
