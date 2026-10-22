@@ -289,6 +289,7 @@ local function scan_project(cleared)
             local req = requests[ev.id]
             cached.rows[#cached.rows + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
           end
+        end
         cached.entries = nil -- keep decisions/call refs, not full decoded tool results
       end
       for _, row in ipairs(cached.rows) do
