@@ -103,6 +103,7 @@ local CASES = {
   { name = "yap_uidiff_test", port = 18132 },
   { name = "yap_fencefold_test", port = 18132 },
   { name = "yap_fence_conformance_test", port = 18132 },
+  { name = "yap_structure_test", port = 18132 },
   { name = "yap_parse_incremental_test", port = 18132 },
   { name = "yap_highlight_test", port = 18132 },
   { name = "yap_lsp_test", port = 18132 },

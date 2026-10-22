@@ -243,37 +243,24 @@ end
 --- stop() (or a backend that died) can end mid-way through an open
 --- region: a thinking comment (close with `-->`), a multi-line tool header
 --- (an unterminated comment: `-->`, then the region closer), or a tool region
---- whose header landed but whose result didn't (`<!-- /yap:tool -->`). Two
---- flags suffice: model text/thinking and tool regions never interleave.
+--- whose header landed but whose result didn't (`<!-- /yap:tool -->`). The
+--- structural parse already knows which regions are still open — and, unlike a
+--- raw line scan, is not fooled by a marker quoted inside a fence.
 --- Idempotent; cheap enough to run on every turn exit.
 local function repair_stream_tail(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local in_tool, comment_open = false, false
-  for _, line in ipairs(lines) do
-    if line:match("^<!%-%- /yap:tool") then
-      in_tool = false
-    elseif line:match("^<!%-%- yap:tool%s*$") then
-      in_tool, comment_open = true, true -- multi-line header comment
-    elseif line:match("^<!%-%- yap:tool .+ %-%-%>%s*$") then
-      in_tool = true -- single-line header: comment closed, region open
-    elseif line:match("^<!%-%- yap:%a+%s*$") then
-      comment_open = true
-    elseif line == "-->" then
-      comment_open = false
-    end
-  end
+  local open = require("harness.model.structure").open_tail(buf)
   local repair = {}
-  if comment_open then
+  if open.comment then
     table.insert(repair, "-->")
   end
-  if in_tool then
+  if open.tool then
     table.insert(repair, "<!-- /yap:tool -->")
   end
   if #repair > 0 then
-    vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, repair)
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, repair)
   end
 end
 
@@ -509,21 +496,24 @@ function M.send(buf)
       end
       -- The binary can complete "successfully" with an embedded error
       -- marker (e.g. empty completion, max tool iterations): surface it.
+      -- Read it from the structural parse, so a marker quoted inside a fenced
+      -- result is not mistaken for a real one.
       do
+        local p = require("harness.model.structure").parse(buf)
         local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-        for i = #lines, 1, -1 do
-          local l = lines[i]
-          if l:match("^# @%a+") then
-            break
+        local last_heading = p.headings[#p.headings]
+        local from = last_heading and last_heading.line or 0
+        local err
+        for _, r in ipairs(p.regions) do
+          if r.kind == "error" and r.start > from then
+            err = lines[r.start + 1] -- the marker's first content line
           end
-          local err = l:match("^<!%-%- yap:error$") and lines[i + 1]
-          if err then
-            errors[buf] = err
-            local parent = vim.b[buf].yap_subagent_parent
-            if not (parent and running[parent]) then
-              vim.notify("yap: " .. err, vim.log.levels.WARN)
-            end
-            break
+        end
+        if err then
+          errors[buf] = err
+          local parent = vim.b[buf].yap_subagent_parent
+          if not (parent and running[parent]) then
+            vim.notify("yap: " .. err, vim.log.levels.WARN)
           end
         end
       end

@@ -132,6 +132,28 @@ starts with a yap marker opener as `\<!-- yap:…`, and escapes `<style>` /
 `<script>` open tags, so character-based markdown renderers show the literal
 text and the line-start-anchored parser never matches.
 
+#### R-single-reader — One structural parser reads the session document
+
+`harness.model.structure` is the only reader of the session markdown. It does
+the fence-, comment- and marker-aware forward pass (incrementally for a
+streaming append) and every consumer derives from that one result:
+`messages()` for the request (R-markers-not-sent, R-role-alternation),
+`tool_regions()` for `:YapClear`, `headings` for `:YapCompact`'s history
+delete, message navigation and `trailing_role`, `role_body()` for picker
+labels, and `open_tail()` for the end-of-turn repair. Why: five hand-written
+line scanners had drifted apart, each with its own idea of where a region
+ends, and every bug in this area was one of them disagreeing with the others
+about the same buffer — an unclosed tool region swallowing the next message,
+or a `# @assistant` / `<!-- yap:tool` quoted inside a fenced result taken for
+structure. Never add a second line-level matcher for document structure;
+extend the parser instead.
+
+A tool region ends at its own closer. A `# @role` line inside a *closed* region
+is content (a model quoting a heading); an *unclosed* region is malformed and
+is bounded at its first inner heading, and a second opener while a region is
+still open means the first was never closed — both reset the boundary at the
+next real message so broken output cannot swallow the conversation.
+
 #### R-pre-heading-ignored — Lines before the first heading are ignored
 
 The session header lives there. The parser's flush must clear the accumulator

@@ -7,14 +7,12 @@
 local M = {}
 
 local state = require("harness.state")
+local structure = require("harness.model.structure")
 local template = require("harness.client.template")
 local paths = require("harness.path")
 local session = require("harness.session")
 
 local running = state.running
-
-local HEAD = "^# @(%a+)%s*$"
-
 
 --- :YapClear [keep] — replace the bodies of all but the last `keep`
 --- (default 2) yap:tool regions with a placeholder; the full output
@@ -60,37 +58,11 @@ function M.clear(buf, keep)
     end
     return vim.fn.fnamemodify(apath, ":~") .. ":?"
   end
-  -- collect tool regions as { first body line, last body line, header } (1-based,
-  -- inclusive); the body runs from after the header to the yap:ui
-  -- opener or the region closer
-  local regions = {}
-  local i = 1
-  while i <= #lines do
-    local body_start, header
-    if lines[i]:match("^<!%-%- yap:tool .+ %-%->%s*$") then
-      header = lines[i]:match("^<!%-%- yap:tool (.+) %-%->%s*$")
-      body_start = i + 1 -- single-line header
-    elseif lines[i]:match("^<!%-%- yap:tool%s*$") then
-      local acc = {}
-      local j = i + 1 -- multi-line header: body after its closing -->
-      while j <= #lines and not lines[j]:match("^%-%->%s*$") do
-        acc[#acc + 1] = lines[j]
-        j = j + 1
-      end
-      header = table.concat(acc, "\n")
-      body_start = j + 1
-    end
-    if body_start then
-      local j = body_start
-      while j <= #lines and not lines[j]:match("^<!%-%- yap:ui") and not lines[j]:match("^<!%-%- /yap:tool") do
-        j = j + 1
-      end
-      table.insert(regions, { body_start, j - 1, header = header })
-      i = j
-    else
-      i = i + 1
-    end
-  end
+  -- collect tool regions as { body first..last, header }; the body is the
+  -- result text only — the structural parse already excludes the header and
+  -- the paired `yap:ui` diff, and sees through fences (a `<!-- yap:tool`
+  -- quoted inside a fenced result is content, not a region).
+  local regions = structure.tool_regions(buf)
   -- Clear from the bottom up so earlier regions keep their line numbers:
   -- an edit at a region only shifts lines BELOW it, which have already been
   -- processed. The `lines` snapshot read above stays valid for the
@@ -100,14 +72,9 @@ function M.clear(buf, keep)
   -- of tool calls.
   local cleared = 0
   for r = #regions - keep, 1, -1 do
-    local s, e = regions[r][1], regions[r][2]
+    local s, e = regions[r].body_start, regions[r].body_finish
     if e >= s and not lines[s]:match("^%[output cleared") then
-      local id
-      local ok_h, h = pcall(vim.json.decode, regions[r].header or "")
-      if ok_h and type(h) == "table" then
-        id = h.id
-      end
-      local placeholder = ("[output cleared — full output in the audit log: %s]"):format(ref_for(id))
+      local placeholder = ("[output cleared — full output in the audit log: %s]"):format(ref_for(regions[r].id))
       vim.api.nvim_buf_set_lines(buf, s - 1, e, false, { placeholder })
       cleared = cleared + 1
     end
@@ -177,10 +144,11 @@ function M.delete(buf)
     return
   end
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local headings = structure.parse(buf).headings
   local ai
-  for i = #lines, 1, -1 do
-    if lines[i]:match("^# @assistant%s*$") then
-      ai = i
+  for i = #headings, 1, -1 do
+    if headings[i].role == "assistant" then
+      ai = headings[i].line
       break
     end
   end
@@ -192,22 +160,11 @@ function M.delete(buf)
   -- first heading after # @system; with no system message, keep only the
   -- frontmatter (everything before the first heading).
   local se = 0
-  for i = 1, #lines do
-    if lines[i]:match("^# @system%s*$") then
-      for j = i + 1, #lines do
-        if lines[j]:match(HEAD) then
-          se = j - 1
-          break
-        end
-      end
-      if se == 0 then
-        se = #lines -- system message runs to the end (no later heading)
-      end
-      break
-    elseif lines[i]:match(HEAD) then
-      se = i - 1 -- no system message: keep frontmatter only
-      break
-    end
+  local first = headings[1]
+  if first and first.role == "system" then
+    se = headings[2] and headings[2].line - 1 or #lines
+  elseif first then
+    se = first.line - 1
   end
   while se > 0 and lines[se]:match("^%s*$") do
     se = se - 1

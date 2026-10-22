@@ -16,6 +16,7 @@ local view = require("harness.ui.view")
 local M = {}
 
 local frontmatter = require("harness.model.frontmatter")
+local structure = require("harness.model.structure")
 local paths = require("harness.path")
 local picker = require("harness.ui.picker")
 
@@ -279,45 +280,15 @@ function M.fork(buf, name, running)
   end
   return path
 end
-
-local function trim_message(acc)
-  while #acc > 0 and acc[1]:match("^%s*$") do
-    table.remove(acc, 1)
-  end
-  while #acc > 0 and acc[#acc]:match("^%s*$") do
-    table.remove(acc)
-  end
-  return acc
-end
-
--- Body of the first/last `# @role` message, heading excluded, surrounding
--- blank lines trimmed. A last-message lookup resets at each matching heading.
-local function message_body(lines, role, last)
-  local acc = {}
-  local in_message = false
-  for _, line in ipairs(lines) do
-    local heading = line:match("^# @(%a+)%s*$")
-    if heading then
-      if in_message and not last then
-        break
-      end
-      in_message = heading == role
-      if in_message and last then
-        acc = {}
-      end
-    elseif in_message then
-      acc[#acc + 1] = line
-    end
-  end
-  return trim_message(acc)
-end
-
+-- Message bodies come from the shared structural parser, so a `# @user`
+-- quoted inside a fenced result (or inside a marker region) is content, not a
+-- message boundary. `lines` may be a short slice read from a file.
 local function first_message(lines, role)
-  return message_body(lines, role, false)
+  return structure.role_body(lines, role, false)
 end
 
 local function last_message(lines, role)
-  return message_body(lines, role, true)
+  return structure.role_body(lines, role, true)
 end
 
 --- True when the trailing `# @user` message holds an unsent prompt. `lines` is

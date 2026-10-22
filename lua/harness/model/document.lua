@@ -3,155 +3,19 @@
 
 local M = {}
 
-local roles = { system = "system", user = "user", assistant = "assistant" }
+local structure = require("harness.model.structure")
 
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
---- Parse a yap buffer into a message list.
---- Lines before the first heading are ignored (the YAML frontmatter
---- precedes the first message heading).
---- `<!-- yap:... -->` marker regions (thinking, error, ui) are excluded.
---- `<!-- yap:tool -->` regions are FLATTENED: a valid region inside an
---- assistant message becomes ordinary assistant transcript text — the tool
---- name, its JSON arguments, and the result — so the visible markdown IS
---- the conversation and persisted history never reconstructs native
---- tool-call/tool-result messages. Deleting/editing the region changes the
---- transcript directly.
---- Adjacent same-role messages are merged (providers require alternation).
---- Empty messages are dropped.
+--- Parse a yap buffer into a message list. The structural parser
+--- (`harness.model.structure`) owns the document format: it resolves fences,
+--- multi-line comments, marker regions and tool regions in one pass, and
+--- `structure.messages` turns that into the request. This stays as the name the
+--- rest of the harness calls.
+---@param buf integer
+---@return {role:string, content:string}[]
 function M.parse_buffer(buf)
-  local messages = {}
-  local role, acc = nil, {}
-  local tool = nil -- open region: { name = <string>, args = <value>, result = {lines} }
-  local skipping = false -- skipping a region (bad header / wrong role)
-  local in_marker = false
-  local ui_paired = false -- inside a paired `<!-- yap:ui --> … <!-- /yap:ui -->` diff
-  local header_acc = nil -- collecting a multi-line tool header
-
-  -- Flatten the open tool region into the assistant accumulator.
-  local function flush_tool()
-    if not tool then
-      return
-    end
-    local args = tool.args
-    if type(args) ~= "string" then
-      args = vim.json.encode(type(args) == "table" and args or {})
-    end
-    table.insert(acc, "Tool call: " .. tool.name)
-    table.insert(acc, "Arguments: " .. args)
-    table.insert(acc, "Tool result:")
-    for _, l in ipairs(tool.result) do
-      table.insert(acc, l)
-    end
-    tool = nil
-  end
-
-  local function flush()
-    if not role then
-      acc = {} -- pre-heading lines (the YAML frontmatter) are not a message
-      return
-    end
-    flush_tool() -- safety net for a dangling region
-    local text = table.concat(acc, "\n")
-    text = text:gsub("^%s+", ""):gsub("%s+$", "")
-    if text ~= "" then
-      local last = messages[#messages]
-      if last and last.role == role then
-        last.content = last.content .. "\n\n" .. text
-      else
-        table.insert(messages, { role = role, content = text })
-      end
-    end
-    acc = {}
-  end
-
-  local header_roles = {}
-  for _, h in ipairs(require("harness.model.structure").parse(buf).headings) do
-    header_roles[h.line] = roles[h.role]
-  end
-  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if tool then
-      -- Inside a yap:tool region: collect the result, skip the
-      -- display-only yap:ui section (the paired form:
-      -- `<!-- yap:ui -->` … fence … `<!-- /yap:ui -->`).
-      if line:match("^<!%-%- /yap:tool") then
-        flush_tool()
-        ui_paired = false
-      elseif line:match("^<!%-%- /yap:ui") then
-        ui_paired = false
-      elseif ui_paired then
-      -- block-level diff content between the paired markers
-      elseif line:match("^<!%-%- yap:ui %-%->%s*$") then
-        ui_paired = true
-      else
-        table.insert(tool.result, line)
-      end
-    elseif skipping then
-      if line:match("^<!%-%- /yap:tool") then
-        skipping = false
-      end
-    elseif header_acc then
-      -- Multi-line tool header: JSON lines until the closing `-->`.
-      if line:match("^%-%->%s*$") then
-        local ok, h = pcall(vim.json.decode, table.concat(header_acc, "\n"))
-        if ok and type(h) == "table" and h.id and h.name then
-          tool = { name = h.name, args = h.arguments, result = {} }
-        else
-          skipping = true
-          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
-        end
-        header_acc = nil
-      else
-        table.insert(header_acc, line)
-      end
-    elseif in_marker then
-      -- Markers close on a line that is exactly `-->`; content lines
-      -- merely containing `-->` (diffs, prose) must not close early.
-      -- An unclosed marker must not swallow the next message boundary.
-      if line:match("^%-%->$") then
-        in_marker = false
-      elseif header_roles[i] then
-        in_marker = false
-        flush()
-        role = header_roles[i]
-      end
-    else
-      local header = line:match("^<!%-%- yap:tool (.+) %-%->%s*$")
-      if header and role == "assistant" then
-        local ok, h = pcall(vim.json.decode, header)
-        if ok and type(h) == "table" and h.id and h.name then
-          tool = { name = h.name, args = h.arguments, result = {} }
-        else
-          skipping = true
-          vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
-        end
-      elseif line:match("^<!%-%- yap:tool%s*$") and role == "assistant" then
-        header_acc = {} -- multi-line header form (long calls)
-      elseif line:match("^<!%-%- yap:tool") then
-        skipping = true -- region outside an assistant message: orphan, skip
-      elseif line:match("^<!%-%- yap:%a+") then
-        -- Single-line markers (`<!-- yap:model {...} -->`) close on the
-        -- same line; otherwise the next content line would be swallowed.
-        in_marker = not line:match("%-%->")
-      elseif line:match("^<!%-%- /yap:") then
-        -- Orphan region closer (its opener was edited or deleted): a marker
-        -- line must never become message text (R-markers-not-sent).
-        in_marker = false
-        ui_paired = false
-      else
-        local r = header_roles[i]
-        if r then
-          flush()
-          role = r
-        else
-          table.insert(acc, line)
-        end
-      end
-    end
-  end
-  flush()
-
-  return messages
+  return structure.messages(buf)
 end
 
 -- ─── Streaming append ──────────────────────────────────────────────────────
@@ -276,14 +140,8 @@ function M.trailing_role(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return nil
   end
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i = #lines, 1, -1 do
-    local role = lines[i]:match("^# @(%a+)%s*$")
-    if role then
-      return role
-    end
-  end
-  return nil
+  local headings = structure.parse(buf).headings
+  return headings[#headings] and headings[#headings].role or nil
 end
 
 --- Append `lines` as a `# @<role>` message. If the buffer's last heading
@@ -300,14 +158,9 @@ function M.append_message(buf, role, lines)
     return
   end
   local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local heading
-  for i = #all, 1, -1 do
-    if all[i]:match("^# @%a+%s*$") then
-      heading = i
-      break
-    end
-  end
-  if not (heading and all[heading]:match("^# @" .. role .. "%s*$")) then
+  local headings = structure.parse(buf).headings
+  local heading = headings[#headings] and headings[#headings].line or nil
+  if not (heading and headings[#headings].role == role) then
     local message = { "# @" .. role, "" }
     vim.list_extend(message, lines)
     M.append_lines(buf, message)
