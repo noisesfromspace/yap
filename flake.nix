@@ -271,7 +271,8 @@
                 Agent configuration, written to
                 {file}`$XDG_CONFIG_HOME/yap/settings.json` (default
                 {file}`~/.config/yap/settings.json`).
-                Keys are `providers` (name → base_url + api_key_env),
+                Keys are `providers` (name → base_url + api_key_env, or
+                auth = "chatgpt" for a `yap login` subscription),
                 `websearch` (provider name + api_key_env for the search
                 tool). Model prices come from the committed catalog in
                 agent/price. API keys themselves are referenced by

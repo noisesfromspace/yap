@@ -64,7 +64,11 @@ func ListCombos() ([]tools.ModelCombo, []string, error) {
 		go func(i int, name string) {
 			defer wg.Done()
 			prov := cfg.Providers[name]
-			ids, err := ListModels(ctx, name, strings.TrimRight(prov.BaseURL, "/"), os.Getenv(prov.APIKeyEnv))
+			key, err := credential(ctx, prov)
+			var ids []string
+			if err == nil {
+				ids, err = ListModels(ctx, name, strings.TrimRight(prov.BaseURL, "/"), key)
+			}
 			if err != nil {
 				results[i].errs = append(results[i].errs, fmt.Sprintf("%s: %v", name, err))
 				return
@@ -181,14 +185,26 @@ func ListModels(ctx context.Context, providerName, baseURL, apiKey string) ([]st
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
+		// ChatGPT-plan model discovery (Sign in with ChatGPT) answers with a
+		// `models` array of slugs instead of the API's `data` array of ids;
+		// visibility "list" marks the ones meant for a picker.
+		Models []struct {
+			Slug       string `json:"slug"`
+			Visibility string `json:"visibility"`
+		} `json:"models"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("parse models: %w", err)
 	}
-	ids := make([]string, 0, len(out.Data))
+	ids := make([]string, 0, len(out.Data)+len(out.Models))
 	for _, m := range out.Data {
 		if m.ID != "" {
 			ids = append(ids, m.ID)
+		}
+	}
+	for _, m := range out.Models {
+		if m.Slug != "" && (m.Visibility == "" || m.Visibility == "list") {
+			ids = append(ids, m.Slug)
 		}
 	}
 	return ids, nil

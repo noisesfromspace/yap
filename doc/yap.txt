@@ -161,6 +161,26 @@ and each path is configurable via `setup()` / the Nix module options):
   vars; the github tool reads `GITHUB_TOKEN` directly. Prices come from
   `agent/price/pricing.json`.
 
+  A provider can authenticate with a subscription login instead of an API
+  key: set `"auth"` to a login method (`"chatgpt"` today) and drop
+  `api_key_env`. `yap login [METHOD]` runs the browser sign-in once; login
+  methods self-register, so adding one needs only a new file in agent/auth.
+
+    {
+      "providers": {
+        "openai": { "auth": "chatgpt" }
+      }
+    }
+
+  The `chatgpt` method charges requests to a ChatGPT Plus/Pro plan through
+  OpenAI's "Sign in with ChatGPT" flow, authorized once with
+  `yap login chatgpt` (~/.config/yap/chatgpt.json, mode 0600, access token
+  refreshed automatically). Requests go to the public Responses API with the
+  same model ids as an API key (`gpt-5.4`); `store` is forced to false, as
+  that route requires. Manage how much of the plan yap may use in ChatGPT
+  settings → Usage → App limits. `yap login chatgpt` again to reauthorize, or
+  delete the file to forget the account.
+
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   The `sandbox` block configures the bash tool's bubblewrap sandbox (Linux

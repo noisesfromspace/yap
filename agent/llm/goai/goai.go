@@ -39,11 +39,19 @@ func NewProvider(cfg llm.ProviderConfig) (llm.Provider, error) {
 		}
 	}
 	return &providerImpl{
-		name:    cfg.Name,
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
-		apiKey:  cfg.APIKey,
+		name:        cfg.Name,
+		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
+		apiKey:      cfg.APIKey,
+		token:       cfg.Token,
+		authOptions: cfg.AuthOptions,
 	}, nil
 }
+
+// tokenSource adapts Yap's token callback to the SDK's TokenSource interface,
+// so llm.ProviderConfig never has to import the SDK.
+type tokenSource func(ctx context.Context) (string, error)
+
+func (f tokenSource) Token(ctx context.Context) (string, error) { return f(ctx) }
 
 // IsRetryable reports whether err is a transient error worth retrying: a
 // provider API error flagged retryable (429, 5xx, OpenAI 404), or a
@@ -112,6 +120,12 @@ type providerImpl struct {
 	name    string
 	baseURL string
 	apiKey  string
+	// token, when set, is a refreshable login token (a subscription/plan
+	// login); it replaces the static API key.
+	token func(ctx context.Context) (string, error)
+	// authOptions are request options the login route requires (nil for
+	// API-key providers).
+	authOptions map[string]any
 }
 
 func (p *providerImpl) Model(modelID string) llm.LanguageModel {
@@ -119,7 +133,12 @@ func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 	switch p.name {
 	case "openai":
 		var opts []openai.Option
-		if p.apiKey != "" {
+		switch {
+		case p.token != nil:
+			// Sign in with ChatGPT: the SDK refreshes and sends this token as
+			// the bearer credential, exactly as the public API expects.
+			opts = append(opts, openai.WithTokenSource(tokenSource(p.token)))
+		case p.apiKey != "":
 			opts = append(opts, openai.WithAPIKey(p.apiKey))
 		}
 		if p.baseURL != "" {
@@ -128,7 +147,9 @@ func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 		m = openai.Chat(modelID, opts...)
 	case "anthropic":
 		var opts []anthropic.Option
-		if p.apiKey != "" {
+		if p.token != nil {
+			opts = append(opts, anthropic.WithTokenSource(tokenSource(p.token)))
+		} else if p.apiKey != "" {
 			opts = append(opts, anthropic.WithAPIKey(p.apiKey))
 		}
 		if p.baseURL != "" {
@@ -137,7 +158,9 @@ func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 		m = anthropic.Chat(modelID, opts...)
 	case "google", "gemini":
 		var opts []google.Option
-		if p.apiKey != "" {
+		if p.token != nil {
+			opts = append(opts, google.WithTokenSource(tokenSource(p.token)))
+		} else if p.apiKey != "" {
 			opts = append(opts, google.WithAPIKey(p.apiKey))
 		}
 		if p.baseURL != "" {
@@ -146,7 +169,9 @@ func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 		m = google.Chat(modelID, opts...)
 	case "deepseek":
 		var opts []deepseek.Option
-		if p.apiKey != "" {
+		if p.token != nil {
+			opts = append(opts, deepseek.WithTokenSource(tokenSource(p.token)))
+		} else if p.apiKey != "" {
 			opts = append(opts, deepseek.WithAPIKey(p.apiKey))
 		}
 		if p.baseURL != "" {
@@ -155,18 +180,23 @@ func (p *providerImpl) Model(modelID string) llm.LanguageModel {
 		m = deepseek.Chat(modelID, opts...)
 	default:
 		var opts []compat.Option
-		if p.apiKey != "" {
+		if p.token != nil {
+			opts = append(opts, compat.WithTokenSource(tokenSource(p.token)))
+		} else if p.apiKey != "" {
 			opts = append(opts, compat.WithAPIKey(p.apiKey))
 		}
 		opts = append(opts, compat.WithBaseURL(p.baseURL))
 		m = compat.Chat(modelID, opts...)
 	}
-	return &modelImpl{model: m, name: p.name}
+	return &modelImpl{model: m, name: p.name, authOptions: p.authOptions}
 }
 
 type modelImpl struct {
 	model provider.LanguageModel
 	name  string
+	// authOptions are request options the login route requires (e.g.
+	// store=false for ChatGPT plan usage), merged into every request.
+	authOptions map[string]any
 }
 
 // providerOptions returns the per-provider request options that make visible
@@ -293,7 +323,16 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))
 	}
-	if po := m.providerOptions(params.ReasoningLevel); po != nil {
+	po := m.providerOptions(params.ReasoningLevel)
+	if len(m.authOptions) > 0 {
+		if po == nil {
+			po = map[string]any{}
+		}
+		for k, v := range m.authOptions {
+			po[k] = v
+		}
+	}
+	if po != nil {
 		opts = append(opts, sdk.WithProviderOptions(po))
 	}
 

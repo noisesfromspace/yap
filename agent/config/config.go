@@ -6,10 +6,13 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"boers.email/yap/agent/auth"
 )
 
 // ─── Config (~/.config/yap/settings.json) ──────────────────────────────────
@@ -17,6 +20,37 @@ import (
 type Provider struct {
 	BaseURL   string `json:"base_url"`
 	APIKeyEnv string `json:"api_key_env"`
+	// Auth opts this provider into an interactive login instead of an API
+	// key. The value is a login method registered by agent/auth ("chatgpt"
+	// today), authorized once with `yap login`.
+	Auth string `json:"auth"`
+}
+
+// AuthToken returns the refreshable token callback for a provider that opts
+// into a login, or nil when it authenticates with a static API key.
+func AuthToken(prov Provider) func(context.Context) (string, error) {
+	if prov.Auth == "" {
+		return nil
+	}
+	return func(ctx context.Context) (string, error) { return auth.Token(ctx, prov.Auth) }
+}
+
+// AuthOptions returns the request options a login route requires (nil when
+// none, or when the provider uses an API key).
+func AuthOptions(prov Provider) map[string]any {
+	if prov.Auth == "" {
+		return nil
+	}
+	return auth.ProviderOptions(prov.Auth)
+}
+
+// credential resolves the bearer token a provider's model listing needs: a
+// refreshed login token, or the env-var API key.
+func credential(ctx context.Context, prov Provider) (string, error) {
+	if prov.Auth != "" {
+		return auth.Token(ctx, prov.Auth)
+	}
+	return os.Getenv(prov.APIKeyEnv), nil
 }
 
 // Websearch configures the websearch tool. Provider selects the search
@@ -77,6 +111,13 @@ func LoadConfig() (*Config, error) {
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", configPath(), err)
+	}
+	for name, prov := range cfg.Providers {
+		if prov.Auth != "" {
+			if err := auth.Validate(prov.Auth); err != nil {
+				return nil, fmt.Errorf("provider %q: %w", name, err)
+			}
+		}
 	}
 	return &cfg, nil
 }

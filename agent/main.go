@@ -9,6 +9,7 @@
 //
 //	yap send --provider NAME --model MODEL < request.json
 //	yap serve                     # persistent backend per session buffer
+//	yap login [METHOD]            # sign in with a subscription plan (no API key)
 //	yap models                    # list configured providers/models
 //	yap tools                     # list compiled-in tool names
 //	yap guard                     # list the compiled-in static guard rules (JSON)
@@ -24,6 +25,7 @@
 package main
 
 import (
+	"boers.email/yap/agent/auth"
 	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/tools"
@@ -38,6 +40,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -59,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}()
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json\n       yap serve | models | tools | guard")
+		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json\n       yap serve | models | tools | guard | login [METHOD]")
 		os.Exit(2)
 	}
 
@@ -81,6 +84,25 @@ func main() {
 	case "serve":
 		if err := serve(os.Stdin, os.Stdout); err != nil {
 			tools.CloseAll()
+			fmt.Fprintln(os.Stderr, "yap:", err)
+			os.Exit(1)
+		}
+	case "login":
+		// One method today, so `yap login` defaults to it; with more than one
+		// the method must be named explicitly.
+		method := ""
+		if len(os.Args) > 2 {
+			method = os.Args[2]
+		}
+		if method == "" {
+			if ms := auth.Methods(); len(ms) == 1 {
+				method = ms[0]
+			} else {
+				fmt.Fprintf(os.Stderr, "usage: yap login <%s>\n", strings.Join(ms, "|"))
+				os.Exit(2)
+			}
+		}
+		if err := auth.Login(context.Background(), method, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

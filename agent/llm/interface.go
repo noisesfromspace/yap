@@ -149,4 +149,10 @@ type ProviderConfig struct {
 	Name    string
 	BaseURL string
 	APIKey  string
+	// Token, when set, replaces APIKey with a refreshable login token (a
+	// subscription/plan login instead of a pay-per-token key).
+	Token func(ctx context.Context) (string, error)
+	// AuthOptions are request options a login route requires (nil for
+	// API-key providers); merged into every inference request.
+	AuthOptions map[string]any
 }

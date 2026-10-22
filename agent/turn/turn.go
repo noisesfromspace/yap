@@ -310,9 +310,11 @@ func trailingNL(s string) int {
 // providerFactory builds a Yap provider for the given configured provider.
 var providerFactory = func(name string, prov config.Provider) (llm.Provider, error) {
 	return goai.NewProvider(llm.ProviderConfig{
-		Name:    name,
-		BaseURL: prov.BaseURL,
-		APIKey:  os.Getenv(prov.APIKeyEnv),
+		Name:        name,
+		BaseURL:     prov.BaseURL,
+		APIKey:      os.Getenv(prov.APIKeyEnv),
+		Token:       config.AuthToken(prov),
+		AuthOptions: config.AuthOptions(prov),
 	})
 }
 
@@ -373,7 +375,9 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 			}
 			return nil, wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("unknown provider %q (configured: %s)", provName, strings.Join(names, ", "))}
 		}
-		if os.Getenv(prov.APIKeyEnv) == "" {
+		// A provider with "auth" set authenticates with the credentials
+		// `yap login` writes, so it needs no env-var API key.
+		if prov.Auth == "" && os.Getenv(prov.APIKeyEnv) == "" {
 			return nil, wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("provider %q: env var %s is not set", provName, prov.APIKeyEnv)}
 		}
 		p, err := providerFactory(provName, prov)
