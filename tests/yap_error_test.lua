@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 
 -- 1. parse excludes error regions (and thinking)
 local buf = yap.new()
@@ -20,7 +21,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local msgs = yap.parse_buffer(buf)
+local msgs = document.parse_buffer(buf)
 assert(msgs[2].content == "partial answer", "error region leaked: " .. vim.inspect(msgs[2].content))
 
 -- 2. real send against missing provider -> error surfaces in winbar + buffer
@@ -69,7 +70,7 @@ assert(found_error, "error session missing from session picker")
 assert(found_error.state == "error", "error state missing: " .. vim.inspect(found_error))
 assert(found_error.model == "m", "error model missing: " .. vim.inspect(found_error))
 -- next parse excludes the error
-local msgs2 = yap.parse_buffer(buf2)
+local msgs2 = document.parse_buffer(buf2)
 for _, m in ipairs(msgs2) do
   assert(not m.content:match("unknown provider"), "error text leaks into messages")
 end

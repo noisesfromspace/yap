@@ -159,6 +159,55 @@ func wireError(err error) *wire.WireError {
 	return &wire.WireError{Code: code, Message: err.Error(), Data: data}
 }
 
+// A turn polls its one-slot update channel at each model boundary. Keep the
+// latest model and steer independently when both arrive before that boundary.
+type boundaryUpdate struct {
+	steer    string
+	provider string
+	model    string
+}
+
+type boundaryQueue struct {
+	updates chan boundaryUpdate
+	steer   string
+	model   turn.Boundary
+}
+
+func (q *boundaryQueue) poll() turn.Boundary {
+	for {
+		select {
+		case u := <-q.updates:
+			if u.provider != "" {
+				q.model = turn.Boundary{Provider: u.provider, Model: u.model}
+			} else {
+				q.steer = u.steer // empty steer cancels a pending steer
+			}
+		default:
+			b := q.model
+			b.Steer = q.steer
+			q.model = turn.Boundary{}
+			q.steer = ""
+			return b
+		}
+	}
+}
+
+// emitTerminal closes one turn after all of its text and audit frames. A
+// cancelled turn is a stop rather than an error and leaves serve running.
+func emitTerminal(err error) {
+	if errors.Is(err, context.Canceled) {
+		wire.EmitTurnCancelled()
+		return
+	}
+	werr := wireError(err)
+	if werr != nil {
+		// Run already emitted turn_end (with usage); keep the classified
+		// failure durable as an audit event before the terminal frame.
+		wire.EmitEvent(map[string]any{"type": "error", "code": werr.Code, "message": werr.Message})
+	}
+	wire.EmitTurnComplete(err == nil, werr)
+}
+
 func serve(in io.Reader, out io.Writer) error {
 	tools.SubagentReplies = make(chan tools.SubagentReply, 1)
 	wire.ApprovalReplies = make(chan wire.ApprovalReply, 1)
@@ -179,13 +228,8 @@ func serve(in io.Reader, out io.Writer) error {
 	// an injection arriving while no turn is running is dropped, because the
 	// frontend only sends one while its buffer is streaming and degrades a
 	// missed steer into a follow-up turn itself.
-	type update struct {
-		steer    string
-		provider string
-		model    string
-	}
 	var updateMu sync.Mutex
-	var updateCh chan update
+	var updateCh chan boundaryUpdate
 
 	// The currently-running turn's cancel func. The `cancel` notification on
 	// stdin calls it; the turn's context cancellation then unwinds the agent
@@ -197,7 +241,7 @@ func serve(in io.Reader, out io.Writer) error {
 
 	// push delivers an update to the running turn, always keeping the latest
 	// one (an older pending steer/model is superseded, not queued).
-	push := func(ch chan update, u update) {
+	push := func(ch chan boundaryUpdate, u boundaryUpdate) {
 		select {
 		case ch <- u:
 		default:
@@ -248,7 +292,7 @@ func serve(in io.Reader, out io.Writer) error {
 					ch := updateCh
 					updateMu.Unlock()
 					if ch != nil {
-						push(ch, update{steer: reply.Text}) // empty text cancels
+						push(ch, boundaryUpdate{steer: reply.Text}) // empty text cancels
 					}
 					continue
 				case "model":
@@ -256,7 +300,7 @@ func serve(in io.Reader, out io.Writer) error {
 					ch := updateCh
 					updateMu.Unlock()
 					if ch != nil {
-						push(ch, update{provider: reply.Provider, model: reply.Model})
+						push(ch, boundaryUpdate{provider: reply.Provider, model: reply.Model})
 					}
 					continue
 				case "cancel":
@@ -286,43 +330,15 @@ func serve(in io.Reader, out io.Writer) error {
 			err = wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("provider and model are required")}
 		} else {
 			updateMu.Lock()
-			updateCh = make(chan update, 1)
+			updateCh = make(chan boundaryUpdate, 1)
 			ch := updateCh
 			updateMu.Unlock()
-			pendingSteer := ""
-			hasSteer := false
-			var pendProvider, pendModel string
-			hasModel := false
+			queue := boundaryQueue{updates: ch}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancelMu.Lock()
 			cancelFn = cancel
 			cancelMu.Unlock()
-			err = turn.Run(ctx, req.Provider, req.Model, req.Request, wire.TextWriter(), func() turn.Boundary {
-				for {
-					select {
-					case u := <-ch:
-						if u.provider != "" {
-							pendProvider, pendModel, hasModel = u.provider, u.model, true
-						} else {
-							pendingSteer = u.steer
-							hasSteer = pendingSteer != ""
-						}
-					default:
-						b := turn.Boundary{}
-						if hasModel {
-							b.Provider, b.Model = pendProvider, pendModel
-							hasModel = false
-							pendProvider, pendModel = "", ""
-						}
-						if hasSteer {
-							b.Steer = pendingSteer
-							hasSteer = false
-							pendingSteer = ""
-						}
-						return b
-					}
-				}
-			})
+			err = turn.Run(ctx, req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll)
 			updateMu.Lock()
 			if updateCh == ch {
 				updateCh = nil
@@ -334,22 +350,8 @@ func serve(in io.Reader, out io.Writer) error {
 			cancel()
 		}
 		// The terminal frame: every text/event/tool_output frame above is
-		// already on the channel (one channel, total ordering), so the
-		// frontend completes the turn on this frame alone. A cancelled turn
-		// is a stop, not a failure — the serve process stays alive.
-		if errors.Is(err, context.Canceled) {
-			wire.EmitTurnCancelled()
-		} else {
-			werr := wireError(err)
-			if werr != nil {
-				// Audit: a failed turn leaves an error record carrying the
-				// classified code, so auth/rate-limit/network/... failures are
-				// as durable as tool calls. The terminal turn_end (status
-				// "error") emitted inside Run carries usage and the raw message.
-				wire.EmitEvent(map[string]any{"type": "error", "code": werr.Code, "message": werr.Message})
-			}
-			wire.EmitTurnComplete(err == nil, werr)
-		}
+		// already on the channel (one channel, total ordering).
+		emitTerminal(err)
 	}
 	return <-readErr
 }

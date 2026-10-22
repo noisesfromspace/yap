@@ -367,15 +367,6 @@ function M.insert(name, opts)
   end)
 end
 
---- Completion list for insert() and its Lua counterpart.
-function M.template_names()
-  local names = {}
-  for _, e in ipairs(template_entries()) do
-    names[#names + 1] = e.name
-  end
-  return names
-end
-
 function M.named_lines(name)
   for _, entry in ipairs(list_md(config().templates_dir)) do
     if entry.name == name then

@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
@@ -88,7 +89,7 @@ assert(text:match("Summarize the conversation above%."), "template body missing:
 
 -- still parses: system + the template's user message
 local roles = {}
-local msgs = yap.parse_buffer(buf)
+local msgs = document.parse_buffer(buf)
 for _, m in ipairs(msgs) do
   roles[#roles + 1] = m.role
 end

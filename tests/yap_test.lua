@@ -1,8 +1,9 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 assert(type(require("harness.model.document").parse_buffer) == "function", "document module")
-assert(type(require("harness.client.template").template_names) == "function", "template module")
+assert(type(require("harness.client.template").named_lines) == "function", "template module")
 assert(type(require("harness.state").is_running) == "function", "state module")
 local session = require("harness.session")
 
@@ -81,7 +82,7 @@ end
 -- 4. reopen and parse back
 vim.cmd("bwipeout!")
 yap.open(path)
-local msgs = yap.parse_buffer(vim.api.nvim_get_current_buf())
+local msgs = document.parse_buffer(vim.api.nvim_get_current_buf())
 assert(#msgs == 3, "expected 3 messages, got " .. #msgs)
 assert(msgs[2].role == "user" and msgs[2].content:match("airspeed"), "msg 2 wrong")
 print("reopened and parsed: " .. #msgs .. " messages")

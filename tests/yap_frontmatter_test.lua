@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime! plugin/yap.lua")
 local yap = require("harness")
+local document = require("harness.model.document")
 local session = require("harness.session")
 local frontmatter = require("harness.model.frontmatter")
 local paths = require("harness.path")
@@ -45,7 +46,7 @@ vim.api.nvim_buf_set_lines(
 )
 
 -- 2. parse_buffer ignores the frontmatter (it is not a message)
-local msgs = yap.parse_buffer(buf)
+local msgs = document.parse_buffer(buf)
 assert(#msgs == 1 and msgs[1].role == "system", "frontmatter leaked into messages")
 
 -- 3. change_model appends to the history and updates the combo

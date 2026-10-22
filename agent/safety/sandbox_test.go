@@ -102,6 +102,34 @@ func TestShadowPaths(t *testing.T) {
 	}
 }
 
+// File deny-read entries must be shadowed too, not only directories.
+func TestSandboxShadowsConfiguredFile(t *testing.T) {
+	reset()
+	project := t.TempDir()
+	secret := filepath.Join(project, "token")
+	if err := os.WriteFile(secret, []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	SetSandboxConfig(SandboxConfig{Enabled: true, DenyRead: []string{secret}})
+	args := sandboxSetup(project)
+	found := false
+	for i := 0; i+2 < len(args); i++ {
+		if args[i] == "--ro-bind" && args[i+1] == "/dev/null" && args[i+2] == secret {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("deny-read file not shadowed by /dev/null: %v", args)
+	}
+	t.Run("runtime", func(t *testing.T) {
+		requireBwrap(t)
+		out, err := SandboxWrap("cat "+secret+"; echo done", project).CombinedOutput()
+		if err != nil || strings.Contains(string(out), "private") || !strings.Contains(string(out), "done") {
+			t.Fatalf("file shadow failed: %q (%v)", out, err)
+		}
+	})
+}
+
 func TestSandboxWrapArgs(t *testing.T) {
 	reset()
 	cmd := SandboxWrap("echo hi", "/srv/proj")

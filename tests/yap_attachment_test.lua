@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 yap.setup({ bin = ROOT .. "/yap" })
 
 local source = vim.fn.tempname() .. " photo.png"
@@ -46,7 +47,7 @@ assert(att.format == "png", "attachment format wrong: " .. vim.inspect(att))
 local adir = paths.assets_dir(buf)
 assert(path:sub(1, #adir + 1) == adir .. "/", "asset not in the session assets folder: " .. path)
 
-local messages = yap.parse_buffer(buf)
+local messages = document.parse_buffer(buf)
 assert(messages[#messages].role == "user" and messages[#messages].content == ref)
 
 -- A dropped standalone path is imported automatically by the send preflight.

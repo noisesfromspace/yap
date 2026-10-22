@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
@@ -18,7 +19,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local msgs = yap.parse_buffer(buf)
+local msgs = document.parse_buffer(buf)
 assert(#msgs == 2, "expected 2 messages, got " .. #msgs)
 assert(msgs[2].role == "assistant", "msg 2 should be assistant")
 assert(msgs[2].content == "The answer is 42.", "thinking leaked into content: " .. vim.inspect(msgs[2].content))
@@ -42,7 +43,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "next question",
   "",
 })
-local m2 = yap.parse_buffer(buf)
+local m2 = document.parse_buffer(buf)
 assert(#m2 == 3, "unclosed thinking swallowed messages: " .. vim.inspect(m2))
 assert(m2[2].role == "assistant" and m2[2].content == "intro", "assistant intro lost: " .. vim.inspect(m2[2]))
 assert(m2[3].role == "user" and m2[3].content == "next question", "user message lost: " .. vim.inspect(m2[3]))
@@ -64,7 +65,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local m3 = yap.parse_buffer(buf)
+local m3 = document.parse_buffer(buf)
 assert(#m3 == 1, "escaped marker split messages: " .. vim.inspect(m3))
 assert(m3[1].content:find("<!-- yap:tool", 1, true), "escaped marker text lost")
 print("OK")

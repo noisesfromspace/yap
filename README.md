@@ -21,7 +21,7 @@ Inspired by pi and gptel.
 - Scratch buffer that allows queueing and steering running conversations.
 - Subagents create new markdown files that inherit all regular session features.
 - Folding to collapse agent output or tool calls (`<leader>1/2/3`).
-- A winbar with session description, model, token totals, cost, and
+- A winbar with session description, model, token totals, cost, and context usage.
 - Options are presented with whatever picker you use (`vim.ui.select`).
 - Drop images into the chat and the will get interpreted by the model.
 

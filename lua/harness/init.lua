@@ -28,7 +28,6 @@ local describe = require("harness.client.describe")
 local subagent = require("harness.client.subagent")
 local template = require("harness.client.template")
 local guard = require("harness.ui.guard")
-local document = require("harness.model.document")
 local fold = require("harness.ui.fold")
 local audit = require("harness.client.audit")
 local session = require("harness.session")
@@ -81,9 +80,6 @@ M.session_label = session.live_label
 
 -- ─── Thin delegates ───────────────────────────────────────────────────────
 
-function M.parse_buffer(buf)
-  return document.parse_buffer(buf)
-end
 function M.insert(name, opts)
   return template.insert(name, opts)
 end

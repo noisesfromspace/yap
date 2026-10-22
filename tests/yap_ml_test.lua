@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 local fold = require("harness.ui.fold")
 
 local buf = yap.new({ provider = "mock", model = "m1" })
@@ -37,7 +38,7 @@ local lines = {
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 -- parse: multi-line header flattens to tool name + JSON args + result
-local msgs = yap.parse_buffer(buf)
+local msgs = document.parse_buffer(buf)
 local asst
 for _, m in ipairs(msgs) do
   if m.role == "assistant" then

@@ -279,35 +279,19 @@ local function trim_message(acc)
   return acc
 end
 
--- Body of the first `# @role` message, heading excluded, surrounding
--- blank lines trimmed.
-local function first_message(lines, role)
+-- Body of the first/last `# @role` message, heading excluded, surrounding
+-- blank lines trimmed. A last-message lookup resets at each matching heading.
+local function message_body(lines, role, last)
   local acc = {}
   local in_message = false
   for _, line in ipairs(lines) do
     local heading = line:match("^# @(%a+)%s*$")
     if heading then
-      if in_message then
+      if in_message and not last then
         break
       end
       in_message = heading == role
-    elseif in_message then
-      acc[#acc + 1] = line
-    end
-  end
-  return trim_message(acc)
-end
-
--- Body of the last `# @role` message, heading excluded, surrounding
--- blank lines trimmed.
-local function last_message(lines, role)
-  local acc = {}
-  local in_message = false
-  for _, line in ipairs(lines) do
-    local heading = line:match("^# @(%a+)%s*$")
-    if heading then
-      in_message = heading == role
-      if in_message then
+      if in_message and last then
         acc = {}
       end
     elseif in_message then
@@ -315,6 +299,14 @@ local function last_message(lines, role)
     end
   end
   return trim_message(acc)
+end
+
+local function first_message(lines, role)
+  return message_body(lines, role, false)
+end
+
+local function last_message(lines, role)
+  return message_body(lines, role, true)
 end
 
 --- True when the trailing `# @user` message holds an unsent prompt. `lines` is

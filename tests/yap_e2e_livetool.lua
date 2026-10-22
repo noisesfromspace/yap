@@ -7,6 +7,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
 
@@ -122,7 +123,7 @@ assert(
 
 -- the parsed assistant message carries the flattened result, marker line excluded
 local asst
-for _, m in ipairs(yap.parse_buffer(buf)) do
+for _, m in ipairs(document.parse_buffer(buf)) do
   if m.role == "assistant" then
     asst = m
   end
@@ -136,7 +137,7 @@ assert(
 -- Regression: a user follow-up after a tool turn must survive the
 -- round-trip (a dangling tool region would swallow it on the next send).
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "follow-up after tool run" })
-local msgs_rt = yap.parse_buffer(buf)
+local msgs_rt = document.parse_buffer(buf)
 local roles = {}
 for _, m in ipairs(msgs_rt) do
   roles[#roles + 1] = m.role
@@ -193,7 +194,7 @@ assert(
   "stopped stream did not end in a closed user block"
 )
 local t2 = table.concat(stopped_lines, "\n")
-local ok, msgs2 = pcall(yap.parse_buffer, buf2)
+local ok, msgs2 = pcall(document.parse_buffer, buf2)
 assert(ok, "buffer unparseable after stop")
 -- the tool-bearing assistant message still has its (empty) result flattened
 local last = msgs2[#msgs2]

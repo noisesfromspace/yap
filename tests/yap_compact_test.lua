@@ -1,6 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+local document = require("harness.model.document")
 
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
@@ -90,7 +91,7 @@ do
   assert(not text:match("original question"), "old history not deleted: " .. text)
   assert(not text:match("Summarize everything%."), "compact prompt not deleted: " .. text)
   local roles = {}
-  for _, m in ipairs(yap.parse_buffer(buf)) do
+  for _, m in ipairs(document.parse_buffer(buf)) do
     roles[#roles + 1] = m.role
   end
   assert(vim.deep_equal(roles, { "system", "assistant" }), "parse roles: " .. vim.inspect(roles))

@@ -434,7 +434,7 @@ arguments, result) when the buffer is sent. Editing or deleting the visible
 markdown changes the transcript directly; a region outside an assistant
 message is skipped.
 
-Tool results from content-bearing tools (read, bash, ls, fetch, curl, search,
+Tool results from content-bearing tools (read, bash, fetch, curl, search,
 glob) are wrapped in a fenced code block — read with a language info
 string detected from the path, fetch as ```markdown, the rest plain.
 write/edit return short confirmations and stay bare.
