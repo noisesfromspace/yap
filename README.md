@@ -118,7 +118,7 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | --------------------------- | ------------------------------------------------------------------------------------------- |
 | `:Yap`                      | Start a session.                                                                            |
 | `:YapClear [keep]`          | Replace older tool output with audit-log references.                                        |
-| `:YapCompact`               | Summarize, then optionally drop superseded history.                                         |
+| `:YapCompact [instructions]` | Summarize with optional custom instructions, then optionally drop superseded history.     |
 | `:YapEval[!] [instruction]` | Discuss the selection in a new session. `!` replaces the selection with the model's output. |
 | `:YapFork [name]`           | Copy the conversation to an independent buffer; edit it to branch.                          |
 

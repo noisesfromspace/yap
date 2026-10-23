@@ -87,7 +87,7 @@ end
 --- The compaction prompt: a `compact` template in templates_dir overrides
 --- the built-in default (compaction is the template mechanism applied,
 --- R-templates-skills). Returns trimmed body lines, never a leading # @role heading.
-local function compact_prompt_lines()
+local function compact_prompt_lines(instructions)
   local lines = template.named_lines("compact")
   if not lines then
     lines = vim.split(
@@ -97,6 +97,9 @@ local function compact_prompt_lines()
       "\n",
       { plain = true }
     )
+  end
+  if instructions and instructions:match("%S") then
+    vim.list_extend(lines, { "", "Additional instructions: " .. instructions })
   end
   vim.list_extend(lines, {
     "Do not use the colon character anywhere in the summary. Avoid YAML/frontmatter delimiters, Markdown headings, code fences, and HTML comments. Use simple prose or basic bullets so the summary stays safe for Markdown Tree-sitter parsing.",
@@ -109,7 +112,7 @@ end
 --- history once the summary has streamed in. The summary stays a visible
 --- # @assistant turn; the deletion is an ordinary (undoable) buffer edit,
 --- never a hidden archive (see |yap-compact|).
-function M.compact()
+function M.compact(instructions)
   local buf = vim.api.nvim_get_current_buf()
   if not vim.b[buf].yap then
     vim.notify("yap: not a yap buffer", vim.log.levels.WARN)
@@ -119,7 +122,7 @@ function M.compact()
     vim.notify("yap: turn running; stop it before compacting", vim.log.levels.WARN)
     return
   end
-  template.append_as_message(buf, compact_prompt_lines())
+  template.append_as_message(buf, compact_prompt_lines(instructions))
   vim.b[buf].yap_compact_pending = true
   require("harness").send()
 end

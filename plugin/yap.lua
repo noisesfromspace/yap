@@ -14,10 +14,11 @@ end, {
   desc = "Clear old tool results from the context (full output stays in the audit log); arg: how many to keep (default 2)",
 })
 
-vim.api.nvim_create_user_command("YapCompact", function()
-  require("harness").compact()
+vim.api.nvim_create_user_command("YapCompact", function(cmd)
+  require("harness").compact(cmd.args)
 end, {
-  desc = "Summarize the conversation into a compact context: insert the compact prompt, send, then offer to delete the superseded history",
+  nargs = "*",
+  desc = "Summarize the conversation with optional custom instructions, then offer to delete the superseded history",
 })
 
 vim.api.nvim_create_user_command("YapEval", function(cmd)

@@ -218,10 +218,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         (path:line-range) where the removed output lives.
                         Full output stays in the audit log (|yap-audit|).
 *:YapCompact*
-:YapCompact           Insert the compact prompt (a `compact` template, or a
-                        built-in prompt), send, and — once the summary has
-                        streamed in — offer to delete the superseded history
-                        (|yap-compact|).
+:YapCompact [instructions]
+                        Insert the compact prompt (a `compact` template, or a
+                        built-in prompt), append any custom instructions, send,
+                        and — once the summary has streamed in — offer to
+                        delete the superseded history (|yap-compact|).
 *:YapEval*
 :YapEval [instruction]
                         Open an interactive eval session in a split about
@@ -675,8 +676,10 @@ refreshed on every send.
 
 COMPACTION RECIPE                                           *yap-compact*
 
-|:YapCompact| automates compaction (insert, send, then offer to delete); the
-manual recipe:
+|:YapCompact| automates compaction (insert, send, then offer to delete). Pass
+free-form instructions, for example `:YapCompact Focus on unresolved bugs`,
+to add them to the compact prompt without replacing the template. The manual
+recipe:
 
   1. `<C-t>` and pick `compact` — if you have not created one in templates_dir
      a built-in prompt is used. Plain templates send automatically; a
