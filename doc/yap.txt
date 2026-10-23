@@ -765,6 +765,15 @@ denied-read list. It is on by default (disable with `sandbox.enabled = false`)
 and silently falls back to running bash unsandboxed when bwrap is
 absent or the platform is not Linux.
 
+Scope: this sandbox bounds the *tools*, not the session. `bash` writes are
+confined, but the backend, the editor and the other tools still run with the
+full rights of the user account. To contain a whole session — untrusted
+content, investigations — the flake ships `programs.yap.jail`, a launcher that
+runs the editor under bubblewrap with only the launch directory and yap's own
+config mounted (so nothing else of the home directory is reachable); see the
+"Sandboxed session" section of the README. The two compose: the per-tool
+sandbox still applies inside the jail.
+
 Parked approvals are live state, answered via Run/Deny. Once answered, the
 outcome is written to the audit log and read back as settled history —
 granted/denied/timed-out — so decisions persist across sessions. `c` in the

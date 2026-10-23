@@ -114,12 +114,20 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 ## Sandboxed session
 
-The flake ships a home-manager module (`homeManagerModules.default`) that can
-build a launcher running the editor inside a bubblewrap filesystem jail. The
-jail exposes the launch directory, the nix toolchain and yap's own config, and
-nothing else — so the rest of the home directory (other projects, notes,
-`~/.ssh` ...) is simply not mounted. That is what bounds a prompt-injected
-model; it is a filesystem boundary, **not** a network one.
+The per-tool sandbox above bounds what the *bash tool* may touch, but the
+backend, the other tools and the editor still run with full access to your
+user account. For work you want contained as a whole — untrusted content,
+investigations — the flake also ships a home-manager module
+(`homeManagerModules.default`) that builds a launcher running the editor (and
+therefore the backend and every tool it spawns) inside a bubblewrap
+filesystem jail. The jail exposes the launch directory, the nix toolchain and
+yap's own config, and nothing else — so the rest of the home directory (other
+projects, notes, `~/.ssh` ...) is simply not mounted. A prompt-injected model
+has nothing to read there and nothing to write outside the case directory.
+
+It is a filesystem boundary, **not** a network one: the jail keeps the host
+network namespace. Pair it with `preExec` (a VPN/netns wrapper) when you also
+want anonymity, and prefer the read-only tools over bash when investigating.
 
 ```nix
 programs.yap = {
@@ -134,16 +142,35 @@ programs.yap = {
 };
 ```
 
-`cd` into a case directory and run the launcher: its `:pwd` is that directory and
-sessions live in `$PWD/.yap-sessions` (bound onto the harness's sessions
-directory), so work stays with the case instead of the shared session store.
+The module adds the launcher to `home.packages`; `jail-nix` is an input of this
+flake, so nothing extra needs to be added to your own. Linux only (bubblewrap);
+the module asserts that at build time.
+
+What the jail binds, and why:
+
+- the launch directory read-write, as both `:pwd` and the session store:
+  `cd` into a case directory, run the launcher, and sessions live in
+  `$PWD/.yap-sessions` (bound onto the harness's sessions directory), so work
+  stays with the case instead of the shared session store. Add it to your
+  gitignore — yap does not write ignore files.
+- `$XDG_CONFIG_HOME/yap` read-write: subscription logins (`auth = "chatgpt"`)
+  store a rotating refresh token there and rewrite it on refresh. That also
+  means the credential is readable *inside* the jail.
+- the editor's own config (`$XDG_CONFIG_HOME/nvim`) read-only, so the jailed
+  editor is identical to your normal one. Editor *state* (shada, undo,
+  sessions, cache) stays on the jail's tmpfs home, so nothing leaks in or out.
+- yap's `skills`, `agents` and `templates` dirs read-only, plus `agentsFile`
+  bound over the harness's `agents_file` path — that is how a launcher gets
+  different rules while a normal session keeps the shared ones. The file
+  replaces the shared one; it is not merged.
+
 `preExec` is for hooks that must run outside the sandbox — bwrap sets
 `NoNewPrivs`, so a setuid network-namespace wrapper has to be outermost. The
 provider credentials named by `settings` (`api_key_env`) are forwarded through
-the jail; nothing else from the environment is.
-
+the jail; nothing else from the environment is. `network = false` drops the
+network entirely (exfiltration becomes impossible, but so do the providers).
 See `programs.yap.jail.*` in the flake for the full option set
-(`extraWritablePaths`, `extraReadOnlyPaths`, `network`, `sessionsInCwd`).
+(`package`, `extraWritablePaths`, `extraReadOnlyPaths`, `sessionsInCwd`).
 
 ## Commands
 
