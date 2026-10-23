@@ -112,6 +112,39 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    ```
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
 
+## Sandboxed session
+
+The flake ships a home-manager module (`homeManagerModules.default`) that can
+build a launcher running the editor inside a bubblewrap filesystem jail. The
+jail exposes the launch directory, the nix toolchain and yap's own config, and
+nothing else — so the rest of the home directory (other projects, notes,
+`~/.ssh` ...) is simply not mounted. That is what bounds a prompt-injected
+model; it is a filesystem boundary, **not** a network one.
+
+```nix
+programs.yap = {
+  enable = true;
+  jail = {
+    enable = true;
+    name = "nvim-investigate";
+    preExec = [ "/run/wrappers/bin/tunnel" ]; # optional: must stay outside bwrap
+    envFile = config.age.secrets.api-keys.path; # credentials, sourced before exec
+    agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
+  };
+};
+```
+
+`cd` into a case directory and run the launcher: its `:pwd` is that directory and
+sessions live in `$PWD/.yap-sessions` (bound onto the harness's sessions
+directory), so work stays with the case instead of the shared session store.
+`preExec` is for hooks that must run outside the sandbox — bwrap sets
+`NoNewPrivs`, so a setuid network-namespace wrapper has to be outermost. The
+provider credentials named by `settings` (`api_key_env`) are forwarded through
+the jail; nothing else from the environment is.
+
+See `programs.yap.jail.*` in the flake for the full option set
+(`extraWritablePaths`, `extraReadOnlyPaths`, `network`, `sessionsInCwd`).
+
 ## Commands
 
 | Command                     | Purpose                                                                                     |

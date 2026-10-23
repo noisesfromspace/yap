@@ -3,8 +3,13 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+  # Only used by `programs.yap.jail` (the optional bubblewrap launcher).
+  # jail.nix is a dependency-free Nix library, so this costs consumers a
+  # single small source fetch and nothing else.
+  inputs.jail-nix.url = "sourcehut:~alexdavid/jail.nix";
+
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -244,6 +249,148 @@
           json = pkgs.formats.json { };
           system = pkgs.stdenv.hostPlatform.system;
           defaultAgent = self.packages.${system}.agent;
+
+          # --- optional bubblewrap filesystem jail --------------------------
+          # `programs.yap.jail` builds a launcher that runs the editor (and
+          # therefore the yap backend it spawns) inside a bwrap namespace
+          # whose filesystem is reduced to the launch directory plus the
+          # binds below. That is what bounds a prompt-injected model: it can
+          # only touch the case directory, not the rest of the home dir.
+          jailCfg = cfg.jail;
+          jailHome = config.home.homeDirectory;
+          jailConfigHome = config.xdg.configHome;
+
+          # Sessions directory the harness has baked in at build time; the
+          # jail binds the per-directory store onto this exact path.
+          jailSessionsDir = if cfg.sessionsDir != null then cfg.sessionsDir else "${jailConfigHome}/yap/sessions";
+
+          # The system prompt file the harness reads (its baked-in
+          # `agents_file`). A jail can swap different rules in over it.
+          jailAgentsPath = if cfg.agentsFile != null then cfg.agentsFile else "${jailConfigHome}/yap/AGENTS.md";
+
+          # Env-var names the configured providers (and web search) read their
+          # credentials from, so the jail forwards exactly those and no more.
+          jailEnvNames = lib.unique (
+            lib.filter (v: v != null) (
+              lib.mapAttrsToList (_: p: p.api_key_env or null) (cfg.settings.providers or { })
+              ++ [ (cfg.settings.websearch.api_key_env or null) ]
+            )
+          );
+
+          jailLib = self.inputs.jail-nix.lib.extend {
+            inherit pkgs;
+            # jail.nix's default base permissions re-bind every store path in
+            # the command's runtime closure. That collides with the wholesale
+            # `--ro-bind /nix /nix` added below (a symlinked store path such
+            # as Chromium's sandbox cannot be mounted over read-only /nix),
+            # and the wholesale bind already exposes the whole closure.
+            basePermissions = combinators: with combinators; [ base fake-passwd ];
+          };
+
+          # What to run inside the jail. Defaults to the declarative Neovim
+          # build (with wrapRc = false the config itself lives on disk, which
+          # the module binds read-only below).
+          jailCommand =
+            if jailCfg.package != null then
+              jailCfg.package
+            else if config.programs.nixvim.enable or false then
+              config.programs.nixvim.build.package
+            else
+              throw "programs.yap.jail: `package` must be set (programs.nixvim is not enabled, so there is nothing to wrap)";
+
+          jailedPackage = jailLib "${jailCfg.name}-jailed" jailCommand (
+            with jailLib.combinators;
+            [
+              # nvim is a TUI: `--new-session` would break ^C and the tty.
+              no-new-session
+              # Bind the launch directory read-write at its real path. jails'
+              # base permissions tmpfs the home directory, which removes the
+              # parents of any cwd beneath it, so recreate the immediate
+              # parent first and then chdir back to the real path so `:pwd`
+              # (and the agent's cwd) is the directory you launched from.
+              (add-runtime ''
+                RUNTIME_ARGS+=(--dir "$(dirname "$PWD")")
+                RUNTIME_ARGS+=(--bind "$PWD" "$PWD")
+              '')
+              (unsafe-add-raw-args "--chdir \"$PWD\"")
+              # Expose the whole toolchain: the nix store read-only plus the
+              # system and user profile symlink-farms (resolved at runtime —
+              # they move on rebuild) and the host PATH.
+              (ro-bind "/nix" "/nix")
+              (add-runtime ''
+                for p in /run/current-system/sw ${escape "${jailHome}/.nix-profile"}; do
+                  if [ -e "$p" ] || [ -L "$p" ]; then
+                    t=$(readlink -f "$p" 2>/dev/null || true)
+                    [ -n "$t" ] && RUNTIME_ARGS+=(--ro-bind "$t" "$p")
+                  fi
+                done
+              '')
+              (fwd-env "PATH")
+              # Yap's config directory read-write: the ChatGPT subscription
+              # login keeps a rotating refresh token there and rewrites it on
+              # refresh. settings.json stays a symlink into the read-only
+              # store. Everything else yap reads is bound read-only below.
+              (add-runtime ''
+                mkdir -p ${escape "${jailConfigHome}/yap"}
+                RUNTIME_ARGS+=(--bind ${escape "${jailConfigHome}/yap"} ${escape "${jailConfigHome}/yap"})
+              '')
+              # The editor's own config (keymaps, theme, plugins). With
+              # wrapRc = false this is a directory in the config home; bind it
+              # only when it exists so non-nixvim setups still work.
+              (add-runtime ''
+                if [ -d ${escape "${jailConfigHome}/nvim"} ]; then
+                  RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/nvim"} ${escape "${jailConfigHome}/nvim"})
+                fi
+              '')
+            ]
+            ++ lib.optional jailCfg.network network
+            # Sessions: keep them next to the case instead of in the shared
+            # store, so investigation data is not synced/backed up with the
+            # rest of the sessions.
+            ++ lib.optional jailCfg.sessionsInCwd (add-runtime ''
+              mkdir -p "$PWD/.yap-sessions"
+              RUNTIME_ARGS+=(--bind "$PWD/.yap-sessions" ${escape jailSessionsDir})
+            '')
+            # Skills/agents/templates are instructions the model follows, so
+            # they are read-only inside the jail: a prompt-injected model
+            # must not be able to rewrite its own rules.
+            ++ lib.optionals (cfg.skillsDir != null) [ (ro-bind cfg.skillsDir cfg.skillsDir) ]
+            ++ lib.optionals (cfg.agentsDir != null) [ (ro-bind cfg.agentsDir cfg.agentsDir) ]
+            ++ lib.optionals (cfg.templatesDir != null) [ (ro-bind cfg.templatesDir cfg.templatesDir) ]
+            ++ lib.optionals (jailCfg.extraReadOnlyPaths != [ ]) (
+              map (p: try-ro-bind p p) jailCfg.extraReadOnlyPaths
+            )
+            ++ lib.optionals (jailCfg.extraWritablePaths != [ ]) [
+              (add-runtime (
+                lib.concatMapStrings (p: ''
+                  mkdir -p ${escape p}
+                  RUNTIME_ARGS+=(--bind ${escape p} ${escape p})
+                '') jailCfg.extraWritablePaths
+              ))
+            ]
+            # Last, so it wins over the config-directory bind above. Guarded at
+            # runtime: the override file is user-managed and may not exist yet.
+            ++ lib.optional (jailCfg.agentsFile != null) (add-runtime ''
+              if [ -f ${escape jailCfg.agentsFile} ]; then
+                RUNTIME_ARGS+=(--ro-bind ${escape jailCfg.agentsFile} ${escape jailAgentsPath})
+              fi
+            '')
+            ++ map (v: try-fwd-env v) jailEnvNames
+          );
+
+          jailLauncher = pkgs.writeShellScriptBin jailCfg.name ''
+            ${lib.optionalString (jailCfg.envFile != null) ''
+              # Double quotes, not shell-escaped: the path may contain shell
+              # variables that must expand at runtime (agenix secrets live
+              # under $XDG_RUNTIME_DIR).
+              if [ -f "${jailCfg.envFile}" ]; then
+                set -a
+                . "${jailCfg.envFile}"
+                set +a
+              fi
+            ''}
+            exec ${lib.concatStringsSep " " jailCfg.preExec} ${lib.getExe jailedPackage} "$@"
+          '';
         in
         {
           options.programs.yap = with lib; {
@@ -359,12 +506,136 @@
               default = "You are a helpful coding assistant. Answer concisely.";
               description = "Fallback system prompt when no AGENTS.md is present.";
             };
+
+            jail = {
+              enable = mkEnableOption ''
+                a bubblewrap launcher that runs the editor in a filesystem jail.
+                The jail exposes the launch directory (read-write), the nix
+                store and profile toolchain (read-only) and yap's own config,
+                and nothing else: the rest of the home directory — `~/.ssh`,
+                other projects, notes — simply is not mounted. This is what
+                bounds a prompt-injected model. Linux only, and NOT a network
+                boundary: it does not isolate the network namespace, so pair
+                it with a VPN wrapper (see {option}`preExec`) if you need
+                anonymity'';
+
+              name = mkOption {
+                type = types.str;
+                default = "yap-jail";
+                description = "Name of the launcher this adds to {file}`$PATH`.";
+              };
+
+              package = mkOption {
+                type = types.nullOr types.package;
+                default = null;
+                defaultText = literalExpression "config.programs.nixvim.build.package";
+                example = literalExpression "config.programs.nixvim.build.package";
+                description = ''
+                  Command to run inside the jail. Defaults to the declarative
+                  Neovim build when {option}`programs.nixvim.enable` is set.
+                  With `wrapRc = false` the editor config lives in
+                  {file}`$XDG_CONFIG_HOME/nvim`, which the jail binds
+                  read-only; editor *state* (shada/undo/sessions) stays
+                  ephemeral on the jail's tmpfs home.
+                '';
+              };
+
+              preExec = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                example = literalExpression ''[ "/run/wrappers/bin/tunnel" ]'';
+                description = ''
+                  Command words to place in front of the jailed command, for
+                  hooks that must run *outside* bubblewrap. A setuid network
+                  namespace wrapper belongs here: bwrap sets `NoNewPrivs`, so
+                  it has to be the outermost process, never the inner one.
+                '';
+              };
+
+              envFile = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                example = literalExpression ''"/run/agenix/my-api-keys"'';
+                description = ''
+                  Shell file sourced (outside the jail) before exec, for
+                  credentials the backend needs. The variable names are
+                  derived from {option}`settings`, so only those are forwarded
+                  through the jail.
+                '';
+              };
+
+              network = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Share the host network namespace (plus TLS/DNS files).
+                  Setting this to false removes network access entirely, which
+                  makes exfiltration from the jail impossible but also breaks
+                  model providers — it is only useful with a pre-populated
+                  local model endpoint.
+                '';
+              };
+
+              sessionsInCwd = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Keep sessions in {file}`$PWD/.yap-sessions` (bound onto the
+                  harness's sessions directory) instead of the shared
+                  sessions dir, so work stays with the case directory and is
+                  not synced or backed up with everything else. Remember to
+                  gitignore it (yap does not add to your ignore files).
+                '';
+              };
+
+              agentsFile = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = ''
+                  Bind this file over the harness's `agents_file` path inside
+                  the jail, so this launcher gets different system prompt
+                  rules while a normal session keeps the shared ones. The
+                  content is read by the harness at session creation; the
+                  file is not merged with {option}`agentsFile`.
+                '';
+              };
+
+              extraReadOnlyPaths = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                description = ''
+                  Additional host paths to bind read-only at the same path
+                  inside the jail. Missing paths are ignored.
+                '';
+              };
+
+              extraWritablePaths = mkOption {
+                type = types.listOf types.str;
+                default = [ ];
+                example = literalExpression ''[ "''${config.home.homeDirectory}/.local/share/nvim/site/spell" ]'';
+                description = ''
+                  Additional host paths to bind read-write at the same path
+                  inside the jail (created if absent). Use for data that is
+                  expensive to regenerate — spell dictionaries, for instance,
+                  are re-downloaded on every launch without this.
+                '';
+              };
+            };
           };
 
           config = lib.mkIf cfg.enable {
             xdg.configFile."yap/settings.json" = lib.mkIf (cfg.settings != { }) {
               source = json.generate "settings.json" cfg.settings;
             };
+
+            assertions = [
+              {
+                assertion = !jailCfg.enable || pkgs.stdenv.hostPlatform.isLinux;
+                message = "programs.yap.jail: bubblewrap jails are Linux-only.";
+              }
+            ];
+
+            home.packages = lib.optional (jailCfg.enable && pkgs.stdenv.hostPlatform.isLinux) jailLauncher;
           };
         };
     };
