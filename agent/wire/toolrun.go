@@ -56,11 +56,10 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": safety.Scrub(command)})
 	var tracker progressTracker
 	cmd.Stdin = nil // /dev/null
-	// Tee the child's merged output: it still lands in the temp log (the
-	// durable, truncation-referenced copy), and each chunk is also framed as
-	// a tool_output record so the live tail follows it in order. One pipe for
-	// stdout+stderr means the bytes are interleaved exactly as produced.
-	cmd.Stdout = io.MultiWriter(out, toolOutputFramer{log: outPath, tracker: &tracker})
+	// The merged output is normalized before writing to the temp log and
+	// framing for the live tail.
+	writer := &plainOutputWriter{out: out, log: outPath, tracker: &tracker}
+	cmd.Stdout = writer
 	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
@@ -86,8 +85,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 			}
 		}
 	}()
-	// The copy goroutine (cmd.Stdout is a MultiWriter over this file and the
-	// tool_output framer) writes to `out` until the child exits, so the file
+	// The copy goroutine writes to the output writer until the child exits,
 	// must stay open until Wait drains the pipe.
 	defer func() { _ = out.Close() }()
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
@@ -110,6 +108,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
+	writer.flush()
 	close(stop) // no progress frames after tool_end
 	// Let the Lua side drain the final bytes before an untruncated log is
 	// removed; deleting it here raced the drain.
@@ -151,20 +150,82 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	return text, nil
 }
 
-// toolOutputFramer frames each chunk of a running tool's output as a
-// tool_output record for the live tail (see RunStreamed's tee), and tallies
-// the bytes/lines for the progress frames.
-type toolOutputFramer struct {
+// plainOutputWriter removes terminal styling and keeps only the final version
+// of a carriage-return-overwritten line (e.g. a test runner's progress bar).
+// Escape sequences may span writes, so parsing happens before framing or
+// saving output. Newlines and the final unterminated line are emitted in order.
+type plainOutputWriter struct {
+	out     io.Writer
 	log     string
 	tracker *progressTracker
+	line    []byte
+	escape  int // 0: text, 1: ESC, 2: CSI, 3: OSC, 4: OSC ESC
 }
 
-func (f toolOutputFramer) Write(p []byte) (int, error) {
-	EmitToolOutput(f.log, string(p))
-	if f.tracker != nil {
-		f.tracker.add(p)
+func (w *plainOutputWriter) emit(p []byte) {
+	_, _ = w.out.Write(p)
+	EmitToolOutput(w.log, string(p))
+	w.tracker.add(p)
+}
+
+func (w *plainOutputWriter) Write(p []byte) (int, error) {
+	var completed []byte
+	for _, b := range p {
+		switch w.escape {
+		case 1:
+			switch b {
+			case '[':
+				w.escape = 2
+			case ']':
+				w.escape = 3
+			default:
+				w.escape = 0
+			}
+			continue
+		case 2: // CSI ends with a byte in 0x40..0x7e
+			if b >= 0x40 && b <= 0x7e {
+				w.escape = 0
+			}
+			continue
+		case 3:
+			if b == '\a' {
+				w.escape = 0
+			} else if b == 0x1b {
+				w.escape = 4
+			}
+			continue
+		case 4:
+			if b == '\\' {
+				w.escape = 0
+			} else {
+				w.escape = 3
+			}
+			continue
+		}
+		switch b {
+		case 0x1b:
+			w.escape = 1
+		case '\r':
+			w.line = w.line[:0]
+		case '\n':
+			completed = append(completed, w.line...)
+			completed = append(completed, '\n')
+			w.line = w.line[:0]
+		default:
+			w.line = append(w.line, b)
+		}
+	}
+	if len(completed) > 0 {
+		w.emit(completed)
 	}
 	return len(p), nil
+}
+
+func (w *plainOutputWriter) flush() {
+	if len(w.line) > 0 {
+		w.emit(w.line)
+		w.line = nil
+	}
 }
 
 // readToolTail keeps the last lines/bytes of command output.

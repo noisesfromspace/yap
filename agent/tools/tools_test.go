@@ -140,6 +140,33 @@ func TestBashToolStartEvent(t *testing.T) {
 	}
 }
 
+func TestBashTerminalOutput(t *testing.T) {
+	var frames bytes.Buffer
+	old := wire.SetFrameWriter(&frames)
+	defer wire.SetFrameWriter(old)
+
+	// Split an escape sequence across writes; progress updates use CR to
+	// replace the current line, not append hundreds of control characters.
+	result, _, err := run(t, "bash", `{"command":"printf 'tests/suite.lua: \\033[1;32mo\\033[0m\\r\\033['; sleep 0.02; printf '1;32mo\\033[0m\\nUTF-8: café\\n'"}`)
+	want := "o\nUTF-8: café\n"
+	if err != nil || result != want {
+		t.Fatalf("result = %q, %v; want %q", result, err, want)
+	}
+	var streamed strings.Builder
+	for _, line := range strings.Split(strings.TrimSpace(frames.String()), "\n") {
+		var frame struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+		if json.Unmarshal([]byte(line), &frame) == nil && frame.Type == "tool_output" {
+			streamed.WriteString(frame.Delta)
+		}
+	}
+	if streamed.String() != want {
+		t.Fatalf("live output = %q; want %q", streamed.String(), want)
+	}
+}
+
 func TestGuardRules(t *testing.T) {
 	// Dangerous bash commands produce a guard-rule reason.
 	if reason := Match("bash", json.RawMessage(`{"command":"rm -rf /"}`)); reason == "" {
