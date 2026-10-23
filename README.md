@@ -112,14 +112,15 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    ```
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
 
-## Sandboxed session
+## Session jail
 
-The bash sandbox above bounds the bash tool only; the backend, the other tools
-and the editor still run with your full rights. The flake's home-manager module
-(`homeManagerModules.default`) can instead build a launcher that runs the whole
-editor — and the backend and tools it spawns — in a bubblewrap filesystem jail:
-only the launch directory, the nix toolchain and yap's config are mounted, so
-nothing else of `$HOME` (other projects, notes, `~/.ssh`) is reachable.
+Yap already confines the bash tool per call (see `:help yap-sandbox`), but the
+backend, the other tools and the editor still run with your full rights. The flake's
+home-manager module (`homeManagerModules.default`) can instead build a launcher
+that runs the whole editor — and the backend and tools it spawns — in a
+bubblewrap filesystem jail: only the launch directory, the nix toolchain and
+yap's config are mounted, so nothing else of `$HOME` (other projects, notes,
+`~/.ssh`) is reachable.
 
 ```nix
 programs.yap.jail = {
