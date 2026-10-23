@@ -112,36 +112,6 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    ```
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
 
-## Session jail
-
-Yap already confines the bash tool per call (see `:help yap-sandbox`), but the
-backend, the other tools and the editor still run with your full rights. The flake's
-home-manager module (`homeManagerModules.default`) can instead build a launcher
-that runs the whole editor — and the backend and tools it spawns — in a
-bubblewrap filesystem jail: only the launch directory, the nix toolchain and
-yap's config are mounted, so nothing else of `$HOME` (other projects, notes,
-`~/.ssh`) is reachable.
-
-```nix
-programs.yap.jail = {
-  enable = true;
-  name = "nvim-investigate";
-  preExec = [ "/run/wrappers/bin/tunnel" ]; # optional: must run outside bwrap
-  envFile = config.age.secrets.api-keys.path; # credentials, sourced before exec
-  agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
-};
-```
-
-`cd` into a case directory and run the launcher: it is `:pwd` and holds the
-sessions in `$PWD/.yap-sessions` (gitignore it). `preExec` is for wrappers that
-must stay outside bwrap (it sets `NoNewPrivs`, so a setuid netns wrapper has to
-be outermost). Only the provider env vars named by `settings` are forwarded.
-
-Linux only. It is a filesystem boundary, **not** a network one — the host
-network namespace is shared — so pair it with `preExec` for anonymity, or set
-`network = false` to remove egress entirely. See `programs.yap.jail.*` for the
-rest (`package`, `extraWritablePaths`, `sessionsInCwd`).
-
 ## Commands
 
 | Command                     | Purpose                                                                                     |
@@ -169,6 +139,40 @@ rest (`package`, `extraWritablePaths`, `sessionsInCwd`).
 | `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
+
+## Session jail
+
+The bash sandbox confines one process. The editor, the backend and every other
+tool still run with your full rights. To contain a whole session, the flake's
+home-manager module starts Neovim inside bubblewrap, with only the launch
+directory, the nix toolchain and yap's config mounted. Other projects, notes
+and `~/.ssh` do not exist in there, so a prompt-injected model has nothing to
+read.
+
+```nix
+programs.yap.jail = {
+  enable = true;
+  name = "nvim-investigate";
+  preExec = [ "/run/wrappers/bin/tunnel" ]; # optional, runs outside bwrap
+  envFile = config.age.secrets.api-keys.path;
+  agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
+};
+```
+
+`cd` into a case directory before starting the launcher. That directory becomes
+`:pwd`, and sessions land in `.yap-sessions` beside it. Add that to your
+gitignore.
+
+`preExec` wraps the jail from outside. bubblewrap sets `NoNewPrivs`, so a setuid
+network namespace wrapper such as a VPN has to run before it, never inside.
+Only the provider variables named in `settings` reach the jail.
+
+Linux only. The jail bounds the filesystem, not the network, because the host
+network namespace is shared. Pair it with `preExec` when traffic must leave
+from a VPN, or set `network = false` to drop egress and accept that model
+providers stop answering. `programs.yap.jail.*` documents the remaining
+options.
+
 
 ## Rendering
 
