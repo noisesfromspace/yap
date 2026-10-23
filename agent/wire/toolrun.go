@@ -188,9 +188,10 @@ func (w *plainOutputWriter) Write(p []byte) (int, error) {
 			}
 			continue
 		case 3:
-			if b == '\a' {
+			switch b {
+			case '\a':
 				w.escape = 0
-			} else if b == 0x1b {
+			case 0x1b:
 				w.escape = 4
 			}
 			continue
