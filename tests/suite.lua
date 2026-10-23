@@ -130,6 +130,7 @@ local CASES = {
   { name = "yap_subagent_integration_test", port = 18132 },
   { name = "yap_view_test", port = 18132 },
   { name = "yap_tail_separator_test", port = 18132 },
+  { name = "yap_tail_follow_test", port = 18132 },
 
   -- A multi-turn stream on an 8s budget: last, so nothing else contends for
   -- the machine while it runs.

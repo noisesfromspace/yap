@@ -20,6 +20,7 @@ local paths = require("harness.path")
 local util = require("harness.util")
 local state = require("harness.state")
 local view = require("harness.ui.view")
+local document = require("harness.model.document")
 
 -- The `$ command` header is highlighted so it reads as a section marker
 -- against streamed output; a horizontal rule separates consecutive commands.
@@ -48,7 +49,7 @@ function M.ensure(buf)
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
-  t = { bufnr = tbuf, rules = {} }
+  t = { bufnr = tbuf, rules = {}, follow = document.following_windows(tbuf), expected = {} }
   tails[buf] = t
   if not resize_autocmd then
     resize_autocmd = true
@@ -63,23 +64,6 @@ function M.ensure(buf)
   return t
 end
 
--- Follow only windows already near the bottom: scrolling up to read must not
--- be yanked back down by each streaming chunk.
-local AUTOSCROLL_THRESHOLD = 10
-local function follow(buf)
-  local total = vim.api.nvim_buf_line_count(buf)
-  for _, w in ipairs(vim.fn.win_findbuf(buf)) do
-    if vim.api.nvim_win_is_valid(w) then
-      local botline = vim.api.nvim_win_call(w, function()
-        return vim.fn.line("w$")
-      end)
-      if total - botline <= AUTOSCROLL_THRESHOLD then
-        vim.api.nvim_win_set_cursor(w, { total, 0 })
-      end
-    end
-  end
-end
-
 --- Append lines to the tail, trimming old ones to keep only the newest.
 --- Returns the 0-based row where `lines[1]` landed (after any trim), or nil
 --- when nothing was appended.
@@ -88,6 +72,7 @@ local function append_lines(t, lines)
     return nil
   end
   local buf = t.bufnr
+  document.sync_followers(buf, t.follow, t.expected)
   vim.bo[buf].modifiable = true
   local cur = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local start_row
@@ -112,7 +97,7 @@ local function append_lines(t, lines)
     t.rules = shifted
   end
   vim.bo[buf].modifiable = false
-  follow(buf)
+  document.follow_windows(buf, t.follow, t.expected)
   return start_row
 end
 
