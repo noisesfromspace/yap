@@ -133,10 +133,55 @@ local function resolved(name)
   return vim.api.nvim_get_hl(0, { name = name, link = false }) or {}
 end
 
+--- Fenced blocks inside a thinking block. The model's reasoning is written as
+--- an HTML comment (`<!-- yap:thinking` … `-->`), and html.vim's comment region
+--- allows nothing but @Spell inside it, so a fence in the reasoning rendered as
+--- flat comment text. The colours only ever appeared by accident: when Vim's
+--- syntax sync started *below* the comment opener it never entered the comment,
+--- so the fence matched as a top level region instead — the same block was
+--- coloured or not depending on where the viewport happened to be.
+---
+--- yap owns this markup, so it can re-open the fences: the thinking comment gets
+--- a region of its own, defined after html.vim's and at the same position (so it
+--- wins on the opener line), that allows the fenced-code regions markdown.vim
+--- built from `g:markdown_fenced_languages`. The body keeps 'Comment' from the
+--- region's own highlight; only the fences inside it are recoloured.
+local function fence_contains()
+  -- Entries are `lang` or `file=lang` and markdown.vim names the region after
+  -- the right-hand side, without any `.suffix`.
+  local names = { "markdownCodeBlock" }
+  for _, spec in ipairs(vim.g.markdown_fenced_languages or {}) do
+    local lang = (spec:match("[^=]*$") or spec):match("^[^.]*")
+    if lang and lang ~= "" then
+      names[#names + 1] = "markdownHighlight_" .. lang
+    end
+  end
+  return table.concat(names, ",")
+end
+
+--- Syntax items yap adds on top of `syntax/markdown.vim`. Buffer-local, so it
+--- must run inside `nvim_buf_call`.
+local function define_regions()
+  vim.cmd(
+    "silent! syntax region markdownYapComment matchgroup=Comment"
+      .. " start=+^<!-- yap:thinking\\s*$+ end=+^-->\\s*$+ keepend contains="
+      .. fence_contains()
+  )
+  -- Vim marks `_` between word characters (`some_thing`) as a markdown error:
+  -- in CommonMark an underscore inside a word cannot open emphasis, and the
+  -- syntax file paints that as `Error`, background included. A transcript is
+  -- full of snake_case identifiers and none of them are mistakes.
+  vim.cmd("silent! syntax clear markdownError")
+end
+
 --- Merge each syntax group with the capture that describes the same construct.
 --- `nvim_get_hl` already resolved the chain, so a colourscheme's own styling of
 --- the syntax group survives; the capture only overrides what it defines.
 local function apply_captures()
+  -- The thinking region's own group (see define_regions) mirrors the html
+  -- comment it replaces. Set here rather than linked once, because a
+  -- colourscheme change clears user-defined highlights.
+  vim.api.nvim_set_hl(0, "markdownYapComment", { link = "Comment" })
   for _, entry in ipairs(capture_map) do
     local group, capture, extra = entry[1], entry[2], entry[3]
     local attrs = resolved(group)
@@ -184,6 +229,7 @@ function M.apply(buf)
   -- this also picks up the fenced-language list above.
   vim.api.nvim_buf_call(buf, function()
     vim.bo.syntax = "markdown"
+    define_regions()
   end)
   -- After the syntax file: its links are in place, so the merge starts from them.
   apply_captures()

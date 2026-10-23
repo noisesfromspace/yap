@@ -19,6 +19,15 @@ local lines = {
   "```lua", -- 9
   "local x = 42 -- note", -- 10
   "```", -- 11
+  "<!-- yap:thinking", -- 12
+  "Let me check the diff:", -- 13
+  "```diff", -- 14
+  "-thinking removed", -- 15
+  "+thinking added", -- 16
+  "```", -- 17
+  "-->", -- 18
+  "", -- 19
+  "Prose with some_thing and other_things.", -- 20
 }
 
 local buf = api.nvim_create_buf(false, true)
@@ -127,6 +136,22 @@ assert(added.diffAdded, "```diff added line not coloured as diffAdded")
 
 local lua = groups_in_line(10)
 assert(lua.luaStatement or lua.luaNumber or lua.luaComment, "```lua body not coloured by lua syntax")
+
+-- The model's reasoning is written as an HTML comment, and html.vim's comment
+-- region allows nothing inside it, so a fence in the reasoning used to render
+-- as flat comment text. yap's own region re-opens the fences: same dim body,
+-- language colouring inside the fence.
+local thinking_body = groups_in_line(13)
+assert(thinking_body.markdownYapComment, "thinking body is not the yap comment region: " .. vim.inspect(thinking_body))
+local thinking_removed, thinking_added = groups_in_line(15), groups_in_line(16)
+assert(thinking_removed.diffRemoved, "```diff inside a thinking block lost diffRemoved")
+assert(thinking_added.diffAdded, "```diff inside a thinking block lost diffAdded")
+
+-- `markdownError` marks `_` between word characters: CommonMark forbids an
+-- underscore emphasis marker inside a word, and Vim paints that as `Error`,
+-- background included. `snake_case` is not a mistake in a transcript.
+local prose_groups = groups_in_line(20)
+assert(not prose_groups.markdownError, "snake_case still flagged as markdownError")
 
 -- The syntax engine assigns its own group names, but Vim's markdown.vim
 -- borrows its colours from syntax/html.vim and never links some groups at all,
