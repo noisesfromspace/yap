@@ -230,9 +230,23 @@ function M.apply(buf)
   vim.api.nvim_buf_call(buf, function()
     vim.bo.syntax = "markdown"
     define_regions()
+    -- markdown.vim's default sync (`syn sync minlines=50` + `linebreaks=1`)
+    -- cannot see a fence opener more than ~500 lines above the line being
+    -- synced, so a long fence body re-synced mid-fence loses its language
+    -- colouring until the viewport scrolls back near the opener. That is the
+    -- intermittent "fence went plain" behaviour. Parse from the top instead:
+    -- Vim caches per-line syntax state, so this costs only the first paint of
+    -- a row (~0.04 ms/line worst case, measured on an injected language), not
+    -- every redraw — the per-redraw cost is what this whole policy exists to
+    -- avoid in the tree-sitter highlighter.
+    vim.cmd("syntax sync fromstart")
   end)
   -- After the syntax file: its links are in place, so the merge starts from them.
   apply_captures()
+  -- Record that the policy landed. BufWinEnter heals against this flag rather
+  -- than the 'syntax' option string, which stays "markdown" even after a
+  -- plugin re-sources the file and wipes yap's own regions.
+  vim.b[buf].yap_colour = true
 end
 
 local group = vim.api.nvim_create_augroup("YapMarkdownColour", { clear = true })
@@ -249,17 +263,50 @@ function M.setup()
       end
     end,
   })
-  -- Self-heal a session buffer whose policy never landed. setup_buffer applies
-  -- it from a vim.schedule callback; when that callback is dropped (the buffer
-  -- was not displayed yet, or it raised) the buffer keeps an empty 'syntax',
-  -- so the whole transcript — and every decoration that depends on the syntax
-  -- groups — renders plain. Re-apply when such a buffer is shown.
+  -- Self-heal a session buffer whose policy never landed, or whose yap
+  -- regions were wiped by a re-source that left the 'syntax' option at
+  -- "markdown". setup_buffer applies the policy from a vim.schedule callback;
+  -- when that callback is dropped (the buffer was not displayed yet, or it
+  -- raised) the buffer keeps an empty 'syntax', so the whole transcript — and
+  -- every decoration that depends on the syntax groups — renders plain.
+  -- Re-apply when such a buffer is shown.
   vim.api.nvim_create_autocmd("BufWinEnter", {
     group = group,
     callback = function(args)
       local buf = tonumber(args.buf)
-      if buf and vim.b[buf].yap and vim.bo[buf].syntax ~= "markdown" then
+      if buf and vim.b[buf].yap and (not vim.b[buf].yap_colour or vim.bo[buf].syntax ~= "markdown") then
         M.apply(buf)
+      end
+    end,
+  })
+  -- A re-source of the markdown syntax file (setting 'syntax', `:syntax on`,
+  -- another plugin forcing the filetype again) drops yap's own regions while
+  -- leaving 'syntax' set to "markdown"; the BufWinEnter heal cannot see that
+  -- from the option alone. Clear the flag on every re-source so the next
+  -- show re-applies.
+  vim.api.nvim_create_autocmd("Syntax", {
+    group = group,
+    callback = function(args)
+      local buf = tonumber(args.buf)
+      if buf and vim.b[buf].yap then
+        vim.b[buf].yap_colour = nil
+      end
+    end,
+  })
+  -- A late FileType handler (nvim-treesitter's indents query, another
+  -- ftplugin) can re-install the per-keystroke option hooks apply() clears.
+  -- Re-apply after those have run. Guarded on yap_colour so the initial
+  -- setup path (filetype set before apply) is not applied twice.
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    callback = function(args)
+      local buf = tonumber(args.buf)
+      if buf and vim.b[buf].yap and vim.b[buf].yap_colour then
+        vim.schedule(function()
+          if vim.api.nvim_buf_is_valid(buf) then
+            M.apply(buf)
+          end
+        end)
       end
     end,
   })

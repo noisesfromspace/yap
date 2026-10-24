@@ -20,6 +20,12 @@ assert(
 )
 assert(structure.strip_markers("<!-- yap:model {} -->\nout") == "out", "single-line marker not stripped")
 assert(structure.strip_markers("<!-- normal -->\nout") == "<!-- normal -->\nout", "non-yap comment stripped")
+-- A closer with trailing whitespace must still close the marker (the buffer
+-- scanner tolerates it; the raw-output counterpart must match).
+assert(
+  structure.strip_markers("<!-- yap:thinking\nhidden\n--> \n\nout") == "\nout",
+  "marker closer with trailing space not stripped"
+)
 
 os.remove("/tmp/yap-eval.log")
 

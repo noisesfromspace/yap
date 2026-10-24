@@ -422,7 +422,7 @@ function M.strip_markers(text)
   local in_marker = false
   for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
     if in_marker then
-      if line == "-->" then
+      if line:match("^%-%->%s*$") then
         in_marker = false
       end
     elseif line:match(MARKER_LINE) then

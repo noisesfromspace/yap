@@ -219,6 +219,34 @@ vim.api.nvim_set_hl(0, "@markup.raw", { fg = "#123456" })
 highlight.apply(buf)
 assert(attrs("markdownCode").fg == tonumber("123456", 16), "merge did not survive hi clear")
 
+-- A long fence must keep its language colouring even when the syntax engine
+-- syncs from mid-fence. Vim's default markdown sync (minlines=50) cannot reach
+-- a fence opener a few hundred lines back, so the body went plain until the
+-- viewport scrolled back to the opener — the intermittent "fence went plain"
+-- behaviour. `syntax sync fromstart` fixes it. Access the interior out of
+-- order so it is hit cold, as a fold jump or page-down would. The content
+-- replaces `buf` (rather than a new buffer) because the embedded suite child
+-- leaves a freshly-switched window with a stale w$ and synID returns empty.
+local long_lines = { "# @assistant", "", "```diff" }
+for i = 1, 1000 do
+  if i % 2 == 0 then
+    long_lines[#long_lines + 1] = "+added " .. i
+  else
+    long_lines[#long_lines + 1] = "-removed " .. i
+  end
+end
+long_lines[#long_lines + 1] = "```"
+api.nvim_buf_set_lines(buf, 0, -1, false, long_lines)
+highlight.apply(buf)
+-- Deep rows (well past the ~500-line sync horizon), hit out of order.
+for _, row in ipairs({ 600, 900, 700, 4 }) do
+  local g = groups_at(row, 3)
+  assert(
+    g == "diffAdded" or g == "diffRemoved",
+    ("long-fence row %d lost its diff colour, got %q"):format(row, g)
+  )
+end
+
 -- A session buffer whose policy never landed keeps an empty 'syntax' (what a
 -- dropped deferred apply leaves behind) and renders the whole transcript
 -- plain. Showing such a buffer re-applies the policy.
