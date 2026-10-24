@@ -2,12 +2,12 @@
 
 ## Contributor policy
 
-No large refactors. Changes are kept narrowly scoped and local, so each one
-is reviewable against the numbered rules below without sprawling across
-modules. When a change would touch many areas, restructure code, or rework
-behavior beyond the task at hand, do not edit this checkout in place: fork
-the project first (copy it to a separate directory) and make the change
-there, with permission of user. This applies to **AI agents**.
+Keep changes narrow and local, so each one is reviewable against the `R-...`
+rules below. When a change would touch many areas, restructure code, or rework
+behavior beyond the task at hand, do not edit this checkout: fork it (copy the
+directory elsewhere), get the user's permission, and change the fork.
+
+This applies to AI agents.
 
 ## Working with the rules
 
@@ -389,22 +389,25 @@ ever needed, add mark3labs/mcp-go additively.
 #### R-compiled-tools — Tools are compiled-in Go files, one per file in agent/tools/
 
 Each file self-registers via init(); adding a tool = adding a file and
-recompiling. Search providers are not tools and live outside
-agent/tools/ (agent/websearch/exa), self-registering through their
-package's exported registration function (tools.RegisterWebsearchProvider)
-so the directory stays one file per callable tool. Not config files (the author wants tool code, not opaque
-declarations), not external executable tool plugins: the tool interface is
-compiled in, although individual tools may spawn subprocesses. bash runs
-inside a bubblewrap (bwrap) sandbox on Linux (agent/safety/sandbox.go):
-the filesystem is bind-mounted read-only, a small allowlist (the live :pwd,
-the session assets dir, plus `sandbox.allow_write`) is re-mounted writable,
-/tmp is a private tmpfs, and the secret directories are shadowed with empty
-mounts so the sandboxed process cannot read them. A write outside the
-allowlist is refused by the kernel (EROFS) and escalates to the same Run/Deny
-approval the guard rules use — approve to re-run unsandboxed, deny to keep
-the read-only failure. The same allowlist (safety.IsWritablePath) bounds the
-`write` and `edit` tools via an OutsideWritableRule gate, so every mutating
-path shares one definition of "where the agent may write"; `read` is
+recompiling. Tools are Go code, not config files (the author wants tool code,
+not opaque declarations) and not external executable plugins, though a tool may
+spawn subprocesses.
+
+Search providers are not tools and live outside agent/tools/
+(agent/websearch/exa), self-registering through their package's exported
+registration function (tools.RegisterWebsearchProvider), so the directory stays
+one file per callable tool.
+
+bash runs inside a bubblewrap (bwrap) sandbox on Linux
+(agent/safety/sandbox.go): the filesystem is bind-mounted read-only, a small
+allowlist (the live :pwd, the session assets dir, plus `sandbox.allow_write`)
+is re-mounted writable, /tmp is a private tmpfs, and the secret directories are
+shadowed with empty mounts so the sandboxed process cannot read them. A write
+outside the allowlist is refused by the kernel (EROFS) and escalates to the
+same Run/Deny approval the guard rules use — approve to re-run unsandboxed,
+deny to keep the read-only failure. The same allowlist (safety.IsWritablePath)
+bounds the `write` and `edit` tools via an OutsideWritableRule gate, so every
+mutating path shares one definition of "where the agent may write"; `read` is
 deliberately not bounded. `curl` is not sandboxed — its local-file reach is a
 finite flag surface, so the local-file flags are approval-gated (the guard
 pauses for Run/Deny) and the SSRF / protocol-smuggling flags (curlDenyLong)

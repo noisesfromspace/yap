@@ -13,7 +13,8 @@ CONTENTS                                                     *yap-contents*
   9. Winbar ............... |yap-winbar|
  10. Templates & skills ... |yap-templates|
  11. The guard gate ....... |yap-guard-gate|
- 12. Glossary ............. |yap-glossary|
+ 12. Tools ................ |yap-tools|
+ 13. Glossary ............. |yap-glossary|
 
 ==============================================================================
 1. INTRODUCTION                                          *yap-introduction*
@@ -101,7 +102,7 @@ it follows:
            whole-session summary.
 
 Set a group to `""` to disable it. `title` defaults to `""` (titling off);
-set it to a cheap combo like `deepseek/deepseek-flash` to label sessions. An
+set it to a cheap combo like `deepseek/deepseek-flash` to label sessions.
 An empty `editor` group makes |:YapEval| inherit the buffer's current combo (a
 session's model, or the setup() default for a plain buffer); it defaults to
 `deepseek/deepseek-v4-pro`. A `title:` you type in the frontmatter wins over
@@ -374,16 +375,20 @@ as YAML frontmatter: >
 
 `title` (always present, empty by default) overrides `description` as the
 session's display name. `description` is the generated summary shown while the
-title is empty. `provider`/`model` is the combo to resume with;
-`available_reasoning` lists the reasoning levels on offer and
-`reasoning_level` (`low`/`medium`/`high`) is the live, hand-editable choice —
-seeded from the setup() defaults on new sessions and read on every send,
-empty means the provider's default; `created_cwd`
-the exact working directory the session was created in; `models` the ordered
-history of combos used (most-recent-last); `subagents` the subagent session
-paths; `tools` the per-session tool allowlist — remove a line to retract that
-tool on the next send. `turns` counts completed `# @assistant` replies so
-the picker can show depth without opening the file.
+title is empty. The rest of the frontmatter:
+
+  `provider`/`model`      The combo to resume with.
+  `available_reasoning`   The reasoning levels this model offers.
+  `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
+                          `high`), seeded from the setup() defaults and read on
+                          every send. Empty means the provider's default.
+  `created_cwd`           The exact directory the session was created in.
+  `models`                The combos used, most recent last.
+  `subagents`             The subagent session paths.
+  `tools`                 The per-session tool allowlist. Remove a line to
+                          retract that tool on the next send.
+  `turns`                 Completed `# @assistant` replies, so the picker can
+                          show depth without opening the file.
 
 The active combo comes from the frontmatter on open, then per-buffer vars set
 by change_model(), then the persisted default, then setup() defaults.
@@ -558,11 +563,11 @@ inside a fenced tool result is literal content, never a message boundary.
 ==============================================================================
 9. WINBAR                                                      *yap-winbar*
 
-The winbar is the session dashboard. Left: the buffer's own state icon —
-idle, awaiting your reply, stopped, error, or done (a finished subagent) — in
-the line-number gutter; while streaming, an animated beacon that escalates
-with how long the running tool has been grinding. When the window is inactive
-the beacon and title disappear; the state icon remains.
+The winbar is the session dashboard. On the left sits the buffer's state icon:
+idle, awaiting your reply, stopped, error, or done for a finished subagent.
+While a turn streams, an animated beacon replaces it and grows with how long
+the running tool has taken. When the window is inactive the beacon and the
+title disappear; the state icon stays.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
 (`bash 12s`); a pending `# @steer` adds a steer icon immediately left of
@@ -697,8 +702,7 @@ into the binary. `yap guard` prints the complete current list as JSON. When
 a rule matches, the turn pauses for a Run/Deny confirmation; otherwise the
 call runs.
 
-Which tools declare rules, and which rules each declares, is whatever the
-current binary compiled in — `yap guard` is authoritative. The set today:
+The set today:
 
   bash          a denylist of destructive or high-blast-radius commands —
                 `sudo`, `rm -rf /`, `curl | sh`, `git push --force`, and the
@@ -782,7 +786,39 @@ guard board clears that history view by writing a project watermark
 left intact. Parked approvals are not touched by `c`.
 
 ==============================================================================
-12. GLOSSARY                                                *yap-glossary*
+12. TOOLS                                                      *yap-tools*
+
+The agent ships a fixed set of compiled-in tools. `yap guard` lists the
+approval rules that sit in front of them (|yap-guard-gate|).
+
+  bash           Run a shell command. Sandboxed on Linux (|yap-sandbox|).
+  read           Read a text file, 2000 lines / 50KB at a time.
+  write          Write a whole file.
+  edit           Exact-text or anchor-to-boundary edits, several per call.
+  search         Ripgrep search; returns path:line:content.
+  glob           List files by pattern through ripgrep.
+  curl           Fetch a URL with curl; the response plus a status line.
+  fetch          Fetch a URL and return the readable content as markdown.
+  websearch      Web search; titles, URLs and excerpts.
+  github         Read GitHub: search code, repos, issues and PRs.
+  playwright     Drive Chromium and act through accessibility refs.
+  ssh            Run commands over OpenSSH. Every call needs approval.
+  subagent       Run a saved agent definition in a child session.
+  models         List provider/model combos and their prices.
+  quickfix       Replace Neovim's quickfix list with source locations.
+  close_session  Close the session buffer once the turn has finished.
+
+Two orchestration tools sit on top: `start_task` launches a slow bash, fetch
+or websearch call in the background and returns a handle, and `wait_tasks`
+collects the results. Independent read-only calls in one round run
+concurrently, up to four.
+
+A subagent is a separate session: it gets its own context, may run a different
+model, and returns only its answer to the parent. Definitions live in
+`agents_dir` (|yap-configuration|), one markdown file per agent.
+
+==============================================================================
+13. GLOSSARY                                                *yap-glossary*
 
 The canonical vocabulary for yap's features and mechanisms. Use these names in
 code, docs, and conversation; the right-hand column names the terms each

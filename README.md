@@ -4,26 +4,43 @@ An LLM agent that lives in a Neovim buffer. You chat with it, and it can
 edit files, run commands, search the web, and delegate to subagents. The
 conversation is a plain Markdown buffer you edit like any other file.
 
-Chat APIs are stateless: every request sends the whole conversation again.
-So the buffer is the conversation. Delete a message and the next request
-won't include it. Edit a reply and the model continues from your version.
-Branching, prefill, and undo navigation are just editing.
+Chat APIs are stateless: every request resends the whole conversation.
+Delete a message and the next request won't include it. Edit a reply and the
+model continues from your version. Branching, prefill and undo navigation are
+just editing.
 
 Inspired by pi and gptel.
 
 ## What you get
 
-- Text objects for messages, thinking, and tool regions (`dit` clears a
-  region, `dam` drops a message).
-- `]`/`[` navigation between messages and regions (`]m`, `]u`, `]a`, `]t`).
-  streaming status.
-- Templates and skills merged into (running) conversation.
-- Scratch buffer that allows queueing and steering running conversations.
-- Subagents create new markdown files that inherit all regular session features.
-- Folding to collapse agent output or tool calls (`<leader>1/2/3`).
-- A winbar with session description, model, token totals, cost, and context usage.
-- Options are presented with whatever picker you use (`vim.ui.select`).
-- Drop images into the chat and the will get interpreted by the model.
+- Text objects and motions: edit a message, a thinking block or a tool region
+  as text (`dam`, `]m`, `]u`, `]t`).
+- Folding that collapses agent output or tool calls (`<leader>1/2/3`).
+- Streaming replies, stoppable mid-turn (`<C-c>`).
+- A live tool tail in its own buffer (`<leader>l`), so the conversation never
+  takes the stream.
+- Approvals: destructive commands and secret paths pause for Run/Deny, and bash
+  runs inside a bubblewrap sandbox on Linux.
+- Context control: `:YapClear` swaps old tool output for audit-log pointers and
+  `:YapCompact` folds the history into a summary.
+- Prompt-cache breakpoints on the stable history, so a caching provider does
+  not re-bill the whole prefix every turn.
+- Templates and skills, injected into a conversation even while it runs.
+- A scratch buffer that queues one follow-up and steers the current turn
+  (`<leader>s`).
+- Subagents, each a markdown file that behaves like any other session.
+- Pickers for open, waiting and saved sessions (`<leader>r`, `<leader>w`,
+  `<leader>y`), all through `vim.ui.select`.
+- A winbar with the session title, model, token totals, cost and context use,
+  plus a rollup of your other sessions.
+- Per-session model switching (`<leader>m`) and model groups, so a cheap model
+  can title sessions and run `:YapEval`.
+- `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
+  with the model's output in any buffer.
+- Providers: native OpenAI, Anthropic, Gemini and DeepSeek, any
+  OpenAI-compatible endpoint, or a ChatGPT plan login.
+- An append-only audit log of every tool call, result and approval, per session.
+- Images dropped into the buffer, sent to the model as image parts.
 
 ## Tools
 
@@ -32,7 +49,7 @@ bash and ssh, searches the web, reads GitHub, drives a browser
 with Playwright, and delegates to subagents in separate sessions. Independent
 read-only calls in one round run concurrently (up to four). For slow bash,
 fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
-can continue independent work and later call `wait_tasks` for the result.\
+can continue independent work and later call `wait_tasks` for the result.
 See `:help yap-tools`.
 
 A turn is an agent loop: the model proposes the next action, the backend
@@ -176,11 +193,10 @@ options.
 
 ## Rendering
 
-Markdown renders should work, but output or user input could break it.
-[touchup](https://git.boers.email/martijn/touchup.nvim)
-adds yap-aware rendering: it colors the `yap:thinking` / `tool` / `error` /
-`usage` labels and draws each tool region as one region. Be aware that not
-every Markdown renderer is built to handle 50k+ line files.
+yap writes plain markdown, so your renderer applies. Some renderers stall on a
+50k-line buffer. [touchup](https://git.boers.email/martijn/touchup.nvim)
+understands yap's markers: it colors the `yap:thinking` / `tool` / `error` /
+`usage` labels and draws each tool region as one block.
 
 ## Terminology
 
@@ -213,6 +229,6 @@ The full vocabulary is in `:help yap-glossary`.
 
 The full reference is in `:help yap` (`doc/yap.txt`). Before changing behavior,
 anyone editing this repo, human or AI, should read `CONTRIBUTING.md`. It covers
-the Lua <-> Go wire protocol, the numbered business rules, and how to run the
+the Lua <-> Go wire protocol, the `R-...` design rules, and how to run the
 tests (`tests/run.sh`). Update that file when your change affects those
 details.
