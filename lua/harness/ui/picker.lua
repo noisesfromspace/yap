@@ -65,11 +65,11 @@ function M.icon_width(icons)
 end
 
 --- The fixed-column icon prefix: `icon` padded to `width`, then the
---- two-space gap before the title. An absent icon leaves no reserved
---- column, so the title sits flush against the picker's left edge.
+--- two-space gap before the title. An absent icon reserves the same column
+--- so closed sessions align with open ones.
 function M.prefix(icon, width)
   if not icon then
-    return ""
+    return string.rep(" ", width + 2)
   end
   return icon .. string.rep(" ", width - vim.fn.strdisplaywidth(icon)) .. "  "
 end

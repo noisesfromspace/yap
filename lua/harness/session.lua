@@ -513,15 +513,13 @@ function M.pick(opts, on_choice)
     return
   end
   local scope_label = scope == "all" and "all projects" or "cwd project"
-  local projects, statuses = {}, {}
+  local projects = {}
   for _, item in ipairs(items) do
     projects[vim.fn.fnamemodify(item.path, ":h:h")] = true
-    local status = opts.status and opts.status(item.path)
-    if status then
-      statuses[#statuses + 1] = status
-    end
   end
-  local icon_width = picker.icon_width(statuses)
+  -- Reserve the status column even for closed rows (and when every row is
+  -- closed), so descendants never shift as sessions open and close.
+  local icon_width = picker.icon_width(picker.glyphs())
   local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
