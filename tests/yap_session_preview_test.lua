@@ -107,6 +107,20 @@ assert(
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
 assert(not table.concat(live_preview):find("secret reasoning", 1, true), "instances leaked thinking")
 
+-- Removed display blocks must not leave empty paragraphs in the answer.
+-- Keep blank lines that genuinely separate answer paragraphs.
+local spaced = preview_text(session.preview({
+  "# @user", "", "question", "", "# @assistant", "",
+  "<!-- yap:thinking", "reasoning", "-->", "", "First paragraph", "",
+  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->", "result", "<!-- /yap:tool -->", "",
+  "<!-- yap:model m1 -->", "", "Second paragraph", "", "Third paragraph",
+  "", "<!-- yap:error failure -->", "", "Final line", "",
+  "<!-- yap:thinking", "trailing reasoning", "-->", "",
+}))
+assert(vim.deep_equal(vim.list_slice(spaced, 9), {
+  "First paragraph", "Second paragraph", "", "Third paragraph", "Final line",
+}), "display blocks left blank lines: " .. vim.inspect(spaced))
+
 -- A session can be wiped after the picker opens but before a queued preview
 -- or choose callback runs (for example, after close_session completes).
 local closed = yap.new()

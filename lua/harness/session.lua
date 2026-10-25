@@ -326,14 +326,21 @@ local function last_answer(lines)
       local stop = scan.headings[h + 1] and scan.headings[h + 1].line - 1 or #lines
       local content = {}
       local region = 1
+      local skipped_region = false
       for i = heading.line + 1, stop do
         while scan.regions[region] and (scan.regions[region].finish or #lines) < i do
           region = region + 1
         end
         local r = scan.regions[region]
-        if (not r or i < r.start or i > (r.finish or #lines))
-          and not lines[i]:match("^<!%-%- /?yap:") then
+        if (r and i >= r.start and i <= (r.finish or #lines))
+          or lines[i]:match("^<!%-%- /?yap:") then
+          while #content > 0 and content[#content]:match("^%s*$") do
+            table.remove(content)
+          end
+          skipped_region = true
+        elseif not (skipped_region and lines[i]:match("^%s*$")) then
           content[#content + 1] = lines[i]
+          skipped_region = false
         end
       end
       while #content > 0 and content[1]:match("^%s*$") do
