@@ -78,8 +78,8 @@ func startBackgroundBash(a *bashArgs, buildCmd func() *exec.Cmd, projectDir stri
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
-		log.Close()
-		os.Remove(log.Name())
+		_ = log.Close()
+		_ = os.Remove(log.Name())
 		return "", "", err
 	}
 	wire.Track(cmd.Process.Pid)
@@ -107,7 +107,7 @@ func startBackgroundBash(a *bashArgs, buildCmd func() *exec.Cmd, projectDir stri
 		} else {
 			runErr = <-wait
 		}
-		log.Close()
+		_ = log.Close()
 		wire.Untrack(cmd.Process.Pid)
 		result := "completed"
 		if runErr != nil {
@@ -136,7 +136,7 @@ func bashLog(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only
 	st, err := f.Stat()
 	if err != nil {
 		return "", err
