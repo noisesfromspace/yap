@@ -688,16 +688,32 @@ recipe:
 
 Every tool call passes a pre-execution approval gate made of static rules.
 Each rule is declared in the tool's own source file, next to the tool it
-guards (see tools.Gate and utils.Rule in the agent source), and is compiled
+guards (see tools.Gate and safety.Rule in the agent source), and is compiled
 into the binary. `yap guard` prints the complete current list as JSON. When
 a rule matches, the turn pauses for a Run/Deny confirmation; otherwise the
 call runs.
 
+bash is the one tool whose rules read the command line structurally: the
+command is parsed (mvdan.cc/sh, the shfmt parser) and a rule matches on the
+command word, its arguments, its pipeline and its command substitutions, not
+on the raw text. Wrappers are stripped, so `sudo -n ssh host`, `timeout 20 ssh
+host` and `cd /tmp && ssh host` are each one ssh, while `git commit -m "… ssh
+…"` and `rg -n 'crontab -e' docs/` are arguments — never commands. A command
+that does not parse trips no shell rule (bash would not run it either).
+
 The set today:
 
-  bash          a denylist of destructive or high-blast-radius commands —
-                `sudo`, `rm -rf /`, `curl | sh`, `git push --force`, and the
-                like — plus secret-reveal commands: decrypting
+  bash          what the sandbox cannot see. A raw network tool opening a
+                listener or running a command (`nc -l`, `socat … EXEC:`);
+                remote content executed by the shell that receives it
+                (`curl … | sh`, `$(curl …)`); reaching another host (`ssh`,
+                `scp`, `rsync host:`, `nc`); side effects on a remote
+                (`git push`, a registry publish/push, a `gh` merge or
+                release); local destruction the sandbox permits (`git reset
+                --hard`, `git clean -f`); data leaving the machine (`curl`
+                with a local-file flag, an `env`/`printenv` dump); machine
+                state and privilege (`shutdown`, `systemctl reboot`, `sudo`);
+                fork bombs; and secret-reveal commands — decrypting
                 (age/gpg/sops/openssl), generating or exporting a private
                 key, and reading a file under a secret directory.
   ssh           always pauses for a Run/Deny confirmation.
@@ -723,12 +739,23 @@ Secret paths and secret-reveal commands are one system (agent/safety/secrets.go)
 adding a location to its list drives both surfaces, and scrub.go redacts any
 secret that still reaches a result as the backstop.
 
+The list deliberately does NOT restate the sandbox. A write outside the
+writable allowlist — `rm -rf /`, a redirect onto /etc, `chmod -R`, `dd` onto a
+device — is refused by the kernel and escalates through the same Run/Deny
+(|yap-sandbox|), so a rule for it would be a second prompt for one decision,
+and it would hide the fact that egress, remote side effects and privilege are
+the things nothing else covers. Rules also stay away from ordinary work
+(`git commit`, in-project `rm -rf`, `npm run build`, `nix build`): a prompt
+that fires on routine commands teaches you to approve without reading.
+
 A matching rule supplies the reason shown in the approval notification, the
 audit log and the guard board. The gate is a steerable safety net, not a
-security boundary on its own: the denylist is bypassable. The hard boundary
-is the bubblewrap sandbox below (|yap-sandbox|), which the kernel enforces.
-Adding a rule is a one-file change in the tool's source (recompile to pick it
-up); nothing else needs editing — the rule then appears in `yap guard`
+security boundary on its own: a rule cannot see a command whose name is
+computed (`eval "$CMD"`, `xargs`, `bash -c "$VAR"` — the runner itself is what
+a rule can flag), and the path rules match text. The hard boundary is the
+bubblewrap sandbox below (|yap-sandbox|), which the kernel enforces. Adding a
+rule is a one-file change in the tool's source (recompile to pick it up);
+nothing else needs editing — the rule then appears in `yap guard`
 automatically.
 
 THE SANDBOX                                                     *yap-sandbox*
@@ -747,10 +774,12 @@ for Run/Deny) and the SSRF / protocol-smuggling flags are refused outright —
 there is no need for a second enforcement mechanism there.
 
 When a command's output contains "Read-only file system", the turn pauses
-with "bash hit read-only filesystem; rerun unsandboxed". This does not identify
-the failed path: approving re-runs the entire command unsandboxed, while
-denying returns the read-only failure to the model. A command that already
-matched a static guard rule (e.g. `sudo`, `git push --force`) was approved
+with "bash hit read-only filesystem; rerun unsandboxed". This is the single
+path for every blocked write — the guard has no rule for one, since the
+barrier already caught it — but it does not identify the failed path:
+approving re-runs the entire command unsandboxed, while denying returns the
+read-only failure to the model. A command that already
+matched a static guard rule (e.g. `sudo`, `git push`) was approved
 before it ran, so it runs unsandboxed
 outright — the approval is the blessing to run it unconfined, and it never
 prompts twice for the same command.

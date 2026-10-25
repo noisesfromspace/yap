@@ -25,7 +25,7 @@ local function park(buf, id, tool, command, reason)
     ts = os.date("%Y-%m-%dT%H:%M:%S"),
   }
 end
-park(a, "approval-1", "bash", vim.json.encode({ command = "rm -rf /" }), "recursive or forced deletion")
+park(a, "approval-1", "bash", vim.json.encode({ command = "rm -rf /" }), "publishes to a remote")
 
 -- `a`'s own bar shows the shield in the gutter, not the busy spinner.
 local bar_a = yap.winbar(a)
@@ -44,7 +44,7 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open: " .. vim.api.nvim_buf_get_name(board))
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("recursive or forced deletion", 1, true), "board missing first reason")
+assert(text:find("publishes to a remote", 1, true), "board missing first reason")
 assert(text:find("remote command execution", 1, true), "board missing second reason")
 assert(not vim.bo[board].modifiable, "guard board should be read-only")
 

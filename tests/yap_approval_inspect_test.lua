@@ -39,7 +39,7 @@ local notice = approval_notice()
 assert(notice, "no approval notification fired")
 assert(notice.level == vim.log.levels.ERROR, "approval notification not ERROR level")
 assert(notice.opts.icon == yap.config.icons.approval, "approval notification missing shield icon")
-assert(not notice.msg:find("rm -rf /", 1, true), "notification should not dump the full call")
+assert(not notice.msg:find("git push", 1, true), "notification should not dump the full call")
 assert(notice.msg:find("needs approval", 1, true), "notification should state approval is required")
 assert(not notice.msg:find("Run, Deny or Inspect", 1, true), "notification should not contain instructions")
 assert(not notice.msg:find("guard", 1, true), "notification should not reference the guard board")
@@ -49,7 +49,7 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("recursive deletion of critical paths", 1, true), "board missing approval reason")
+assert(text:find("publishes to a remote", 1, true), "board missing approval reason")
 guard.toggle() -- close (defer)
 
 -- Inspect focuses the session's tool region without touching the parked
@@ -58,7 +58,7 @@ guard.toggle()
 local board = vim.fn.bufnr("yap://guard")
 local row_line
 for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do
-  if l:find("recursive deletion of critical paths", 1, true) then
+  if l:find("publishes to a remote", 1, true) then
     row_line = i
     break
   end

@@ -10,6 +10,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sergi/go-diff v1.4.0
 	github.com/zendev-sh/goai v0.10.5
+	mvdan.cc/sh/v3 v3.12.0
 )
 
 require (

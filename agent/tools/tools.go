@@ -136,9 +136,11 @@ var guards []guardGate
 
 // Gate registers static approval rules for a tool, called from the tool's
 // init() after Register. `inspect` extracts the text the rules match on from
-// the tool's typed arguments; rules are matched in order and the first match
-// pauses the call for approval. Rules live in the tool's source file, so the
-// guard board and `yap guard` pick them up automatically.
+// the tool's typed arguments; a rule with a safety.Shell predicate instead
+// parses that text as a shell command line (see safety/shell.go). Rules are
+// matched in order and the first match pauses the call for approval. Rules
+// live in the tool's source file, so the guard board and `yap guard` pick them
+// up automatically.
 func Gate[T any](name string, inspect func(*T) string, rules ...safety.Rule) {
 	guards = append(guards, guardGate{
 		tool:  name,

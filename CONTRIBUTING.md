@@ -421,29 +421,50 @@ reason), so every mutating path shares one definition of "where the agent may
 write"; `read` is deliberately not bounded. `curl` is not sandboxed — its
 local-file reach is a finite flag surface, so the local-file flags are approval-gated (the guard
 pauses for Run/Deny) and the SSRF / protocol-smuggling flags (curlDenyLong)
-are refused outright, so a second enforcement mechanism is redundant. On top of
-that barrier sits a conservative denylist of
-irreversible / high-blast-radius operations (remote content piped into a
-shell, rm -rf, mkfs/dd onto block devices, sudo, git push --force / reset
---hard / clean -f, chmod -R / chown -R, redirects onto system or secret paths,
-shutdown/reboot, fork bombs, and secret-reveal commands — decrypting with
-age/gpg/sops/openssl, generating or exporting a private key, reading a file
-under a secret directory) that pauses the turn for an explicit human Run/Deny
-before the command executes; a command that matches one of these rules was
-already approved, so it runs unsandboxed outright and never prompts twice.
+are refused outright, so a second enforcement mechanism is redundant. On top of that barrier sit the static
+rules (`tools.Gate`), which cover what the barrier cannot see and deliberately
+do not restate it: filesystem writes are its job, and a rule for one
+(`rm -rf /`, a redirect onto /etc, `chmod -R`) would prompt twice for one
+decision. The bash list is: a raw network tool opening a listener or running a
+command (`nc -l`, `socat … EXEC:`), remote content executed by the shell that
+receives it (`curl … | sh`, `$(curl …)`), reaching another host (`ssh`, `scp`,
+`rsync host:`, `nc`), side effects on a remote (`git push`, a registry
+publish/push, a `gh` merge/release), local destruction the barrier permits
+(`git reset --hard`, `git clean -f`), data leaving the machine (`curl` with a
+local-file flag, an `env`/`printenv` dump), machine state and privilege
+(`shutdown`, `systemctl reboot`, `sudo`), fork bombs, and secret-reveal
+commands — decrypting with age/gpg/sops/openssl, generating or exporting a
+private key, reading a file under a secret directory. A command that matches
+one of these rules was already approved, so it runs unsandboxed outright and
+never prompts twice.
 ssh pauses for every call, curl (an explicit non-GET method, a request body,
 or a local-file flag) and playwright (`eval`) pause on their own
 targeted rules, and read/write/edit/search pause before touching a secret
 path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
 /etc/agenix) — secret paths are approvable, never silently read or written.
 Those rules
-are declared in the tool's own file via `Gate` (with `utils.Pattern` for a
-regex rule or `Always` for an unconditional pause); `yap guard` prints the
-compiled-in list and the guard board renders it, so a new rule is a one-file
-change and nothing else has to learn about it. Denial,
-timeout, and the absence of a serve process (yap send) all deny. The denylist
-is a pre-flight tripwire and remains bypassable by design (any string match
-can be obfuscated); the sandbox is the hard boundary. It is a write and read
+are declared in the tool's own file via `Gate` (with `safety.Pattern` for a
+regex rule over inspected text, `safety.Shell`/`safety.ShellAny` for a rule
+over the parsed command line, or `Always` for an unconditional pause);
+`yap guard` prints the compiled-in list and the guard board renders it, so a
+new rule is a one-file change and nothing else has to learn about it.
+
+bash's rules are structural, not textual: `safety.ParseShell`
+(`agent/safety/shell.go`, backed by `mvdan.cc/sh/v3`, the parser `shfmt` is
+built on) turns the command into the simple commands it would run — wrappers
+(`sudo`, `timeout 20`, `env FOO=1`) stripped, quoted text unquoted, `~` and
+`$HOME` expanded, `$(…)` bodies visited — and a rule matches on
+`ShellCmd{Name, Args, Pipe, Subst, Priv}`. That is what keeps `git commit -m
+"… ssh …"` and `rg -n 'crontab -e' docs/` out of the list (the word is an
+argument), and what makes `timeout 20 ssh host` and `cd /tmp && ssh host` one
+command instead of three patterns to keep in sync. Two costs to respect when
+adding a rule: a command whose name is computed (`eval "$CMD"`, `xargs`,
+`bash -c "$VAR"`) is invisible to it — flag the *runner* instead, as Crush
+does — and a command that does not parse trips no shell rule, so never write a
+rule that must fail closed. Denial,
+timeout, and the absence of a serve process (yap send) all deny. The rule list
+is a pre-flight tripwire, not a boundary: a rule cannot see a computed command
+name, and the path rules match text. The sandbox is the hard boundary. It is a write and read
 barrier, not a network or confidentiality boundary — the sandbox does not
 unshare the network namespace and still shows everything not on the
 denied-read list.
@@ -472,17 +493,19 @@ flowchart TD
 
     subgraph Rules[Rules — declared in each tool's source via Gate]
         RL[Always — ssh: every call]
-        RP[Pattern — bash denylist + secret-reveal commands]
-        RF[Match — curl non-GET/body, playwright eval]
+        RP[Pattern — text rules: fork bomb, playwright eval]
+        RSh["Shell — parsed command line: bash list + secret-reveal commands"]
+        RF[Match — curl non-GET/body]
         RS[SecretPathRule — read/write/edit/search]
         RS2["one secretPaths list drives both SecretPathRule and bash's secret-reveal rules"]
     end
     C -.-> Rules
 ```
 
-Rule matching (`tools.Match` → `utils.MatchRules`) walks the tool's rules in
+Rule matching (`tools.Match` → `safety.MatchRules`) walks the tool's rules in
 declaration order and returns the first matching rule's name as the reason
-shown in the approval dialog and audit log. `yap guard` and the guard board
+shown in the approval dialog and audit log; the command line is parsed at most
+once per call, and only when a `Shell` rule is reached. `yap guard` and the guard board
 both read the same registry (`tools.Rules`), so declaring a rule in a tool's
 source is the only step to surface it everywhere. Secret paths and
 secret-reveal commands share one location list in `agent/safety/secrets.go`;
