@@ -76,10 +76,11 @@ assert(full:match("No colon"), "answer title prompt missing colon guard: " .. fu
 
 -- The title model must be tool-less: a model that keeps the full tool set
 -- can execute the user's request instead of returning a title (an imperative
--- request like "count to 10" makes a reasoning model run `bash`), and its
--- fenced tool output is then rejected by the backtick guard — leaving the
--- session untitled. With `tools = {}` the backend sends the provider no tool
--- definitions, so the request carries no `tools` key at all.
+-- request like "count to 10" makes a reasoning model run `bash`). With
+-- `tools = {}` the backend sends the provider no tool definitions, so the
+-- request carries no `tools` key at all — and an attempted call comes back as
+-- plain-text markup, which the flat-phrase guard rejects (see the tool-call
+-- regression case below).
 for line in read_log():gmatch("[^\n]+") do
   local ok, decoded = pcall(vim.json.decode, line)
   if ok and type(decoded) == "table" and type(decoded.messages) == "table" then
@@ -129,6 +130,24 @@ assert(
   "tiny request included previous conversation: " .. tiny
 )
 
+-- The request is handed to the title model as JSON data, not as the bare
+-- instruction: a bare imperative gets followed instead of labelled.
+local tiny_req
+for line in read_log():gmatch("[^\n]+") do
+  local decoded_ok, decoded = pcall(vim.json.decode, line)
+  if decoded_ok and type(decoded) == "table" and type(decoded.messages) == "table" then
+    local system = decoded.messages[1] and decoded.messages[1].content or ""
+    if system:match("user's request") then
+      tiny_req = decoded.messages[2] and decoded.messages[2].content
+    end
+  end
+end
+local req_ok, req = pcall(vim.json.decode, tiny_req or "")
+assert(
+  req_ok and type(req) == "table" and type(req.request) == "string",
+  "instant title request is not data-framed: " .. tostring(tiny_req)
+)
+
 -- A title request never sees assistant tool output, and a fenced model reply
 -- is rejected rather than persisted as the session description.
 local fence_buf = yap.new({ provider = "mock", model = "m1" })
@@ -172,6 +191,33 @@ assert(
 )
 local fence_lines = vim.api.nvim_buf_get_lines(fence_buf, 0, 8, false)
 assert(not table.concat(fence_lines, "\n"):match("description:.*```"), "fenced title was persisted")
+
+-- A model that answers the request instead of labelling it returns its tool
+-- call as plain text (DeepSeek's <｜｜DSML｜｜…> markup); that must never end up
+-- as the session description.
+local call_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(call_buf, -1, -1, false, { "Tool call regression trigger" })
+yap.send(call_buf)
+ok = vim.wait(10000, function()
+  local text = table.concat(vim.api.nvim_buf_get_lines(call_buf, 0, -1, false), "\n")
+  return text:find("described%.") ~= nil
+end, 100)
+assert(ok, "tool-call-regression turn did not complete")
+ok = vim.wait(10000, function()
+  local seen = 0
+  for line in read_log():gmatch("[^\n]+") do
+    if line:match("Tool call regression trigger") and line:match("title") then
+      seen = seen + 1
+    end
+  end
+  return seen >= 2
+end, 100)
+assert(ok, "tool-call-regression title requests were not both logged")
+-- Both replies answer with markup and are rejected, so nothing is written; give
+-- the asynchronous callbacks a moment to (wrongly) land before asserting.
+vim.wait(500)
+local call_fm = table.concat(vim.api.nvim_buf_get_lines(call_buf, 0, 8, false), "\n")
+assert(not call_fm:match("description: %S"), "tool-call markup was persisted as the title: " .. call_fm)
 
 -- A title echoing the "Subject: change" pattern is sanitized before it is
 -- written to the YAML frontmatter: a colon followed by a space breaks YAML,

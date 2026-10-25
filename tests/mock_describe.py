@@ -14,7 +14,9 @@ class H(BaseHTTPRequestHandler):
         with open(LOG, "a") as f:
             f.write(json.dumps(body) + "\n")
         is_title = any("Write a short session title" in m.get("content", "") for m in messages)
+        is_any_title = any(m.get("role") == "system" and "title" in m.get("content", "") for m in messages)
         has_fence_case = any("Fence regression trigger" in m.get("content", "") for m in messages)
+        has_toolcall_case = any("Tool call regression trigger" in m.get("content", "") for m in messages)
         has_colon_case = any("Colon regression trigger" in m.get("content", "") for m in messages)
         has_credit_case = any("Out of credits trigger" in m.get("content", "") for m in messages)
         if is_title and has_credit_case:
@@ -29,7 +31,11 @@ class H(BaseHTTPRequestHandler):
                 },
             }).encode())
             return
-        if is_title and has_fence_case:
+        if is_any_title and has_toolcall_case:
+            # What a model produces when it answers the request instead of
+            # labelling it: a tool call as plain text, in DeepSeek's markup.
+            answer = '<｜｜DSML｜｜ calls> <｜｜DSML｜｜ invoke name="bash">'
+        elif is_title and has_fence_case:
             answer = "``` [main deadbee] git status ```"
         elif is_title and has_colon_case:
             answer = "Neovim 0.13: API migrations"

@@ -63,6 +63,15 @@ local function title_messages(messages)
   return filtered, housekeeping_only or replacement ~= nil, housekeeping_only
 end
 
+-- A title is a flat phrase. Every way a model can answer the request instead
+-- of labelling it carries a markup character: a fence (``` or ~~~) or inline
+-- code, DeepSeek's <｜｜DSML｜｜…> tool-call serialization, an XML
+-- <invoke>/<parameter> block, or JSON arguments. Real titles never need one
+-- (the frontmatter is YAML, the winbar and picker render it as plain text).
+local function is_flat_phrase(text)
+  return text:find("[`~<>{}]") == nil
+end
+
 local function current_description(buf)
   local e = frontmatter.end_line(buf)
   if not e then
@@ -104,6 +113,12 @@ Return only the title.]]
     if not content or content == "" then
       return
     end
+    -- Hand the request over as JSON data, not as the bare request: a
+    -- reasoning model given an imperative ("count to 10, just do it") follows
+    -- it instead of labelling it, and — since no tool schema is sent — its
+    -- tool call comes back as plain text. The whole-session prompt below
+    -- frames its input the same way.
+    content = vim.json.encode({ request = content })
   else
     if #title_input == 0 then
       return
@@ -154,9 +169,10 @@ Return only the title.]]
   -- Titling is a zero-tool task: the title model must only return a phrase.
   -- Without `tools = {}` the model keeps the full tool set, and a reasoning
   -- model handed an imperative request ("count to 10…") can ignore the title
-  -- instruction and run tools instead, so its reply comes back as fenced
-  -- tool output — which the backtick guard below then rejects, leaving the
-  -- session untitled.
+  -- instruction and run tools instead. With `tools = {}` the provider is sent
+  -- no tool definitions at all, so that attempt comes back as plain-text
+  -- markup — which the flat-phrase guard below rejects, leaving the session
+  -- untitled rather than titling it with a tool call.
   local payload = vim.json.encode({
     messages = {
       { role = "system", content = system },
@@ -201,7 +217,7 @@ Return only the title.]]
       -- reasoning model's thinking block in the title.
       local description = structure.strip_markers(result.stdout or "")
       description = view.collapse(description):gsub(":%s+", " – ")
-      if description == "" or description:find("`", 1, true) then
+      if description == "" or not is_flat_phrase(description) then
         retry_later()
         return
       end
