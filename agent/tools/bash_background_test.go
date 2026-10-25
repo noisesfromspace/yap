@@ -42,3 +42,23 @@ func TestBackgroundBashTimeout(t *testing.T) {
 		t.Fatalf("output: %q %v", out, err)
 	}
 }
+
+func TestBackgroundBashOutputIsTailed(t *testing.T) {
+	defer closeBackgroundBash()
+	result, _, err := run(t, "bash", `{"command":"seq 1 5000","background":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimSuffix(strings.Fields(result)[1], ".")
+	args, _ := json.Marshal(bashOutputArgs{ID: id, Wait: true})
+	out, _, err := run(t, "bash_output", string(args))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "truncated") || !strings.HasSuffix(out, "5000\n") && !strings.HasSuffix(out, "5000") {
+		t.Fatalf("output: %q", out)
+	}
+	if len(out) > bgOutputMaxBytes+512 {
+		t.Fatalf("output is %d bytes, want <= %d", len(out), bgOutputMaxBytes+512)
+	}
+}

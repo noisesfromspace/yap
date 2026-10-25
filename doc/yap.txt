@@ -798,8 +798,10 @@ approval rules that sit in front of them (|yap-guard-gate|).
 For long-running bash commands, set `background: true` to return immediately
 with a session-scoped ID. Use `bash_output` to inspect output, or set its
 `wait` flag to block until the command finishes. Background commands continue
-across turns and stop when the session backend exits. Independent read-only
-calls in one round run concurrently, up to four.
+across turns and stop when the session backend exits. `bash_output` returns
+only the last 200 lines / 8KB of the log to keep the conversation small; the
+full log lives in the session assets and the agent can `read` it there.
+Independent read-only calls in one round run concurrently, up to four.
 
 A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in

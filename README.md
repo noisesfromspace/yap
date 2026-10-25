@@ -48,7 +48,8 @@ The agent ships with a fixed set of tools. It reads and edits files, runs
 bash and ssh, searches the web, reads GitHub, drives a browser
 with Playwright, and delegates to subagents in separate sessions. Independent
 read-only calls in one round run concurrently (up to four). For slow commands, pass `background: true` to bash; it returns a session-scoped
-ID. Use `bash_output` to inspect its output or wait for its exit. Commands
+ID. Use `bash_output` to inspect its output or wait for its exit; it returns
+only the log's tail, keeping the conversation small. Commands
 continue across turns and stop when the session backend exits.
 See `:help yap-tools`.
 

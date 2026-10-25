@@ -40,7 +40,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. harness
 
 When you need several independent read-only results (read, search, glob, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 
-For long-running shell commands that can overlap other work, set `background: true` on `bash`. It returns an ID; use `bash_output` to inspect its log or wait for completion. Background commands survive turns but stop when this session's backend exits. Don't use shell `&` as a substitute: it hides exit status and bypasses job tracking.
+For long-running shell commands that can overlap other work, set `background: true` on `bash`. It returns an ID; use `bash_output` to inspect its log (only the tail is returned — `read` the log path for more) or wait for completion. Background commands survive turns but stop when this session's backend exits. Don't use shell `&` as a substitute: it hides exit status and bypasses job tracking.
 
 ## Subagents
 

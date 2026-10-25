@@ -38,8 +38,16 @@ type bashOutputArgs struct {
 	Stop bool   `json:"stop,omitempty" jsonschema:"description=stop a running background command and its process group"`
 }
 
+// A background log lives in the session assets, so the tool result itself can
+// stay small: only the tail is returned to the model, and the full log stays
+// readable with `read` (offset/limit) when more is needed.
+const (
+	bgOutputMaxLines = 200
+	bgOutputMaxBytes = 8 * 1024
+)
+
 func init() {
-	Register("bash_output", "Read the current output and exit status of a background bash command. Set wait=true only for a command expected to finish; stop=true kills a running command. Output is capped at the last 50KB; the full log is retained in session assets.", bashOutput, closeBackgroundBash)
+	Register("bash_output", "Read the current output and exit status of a background bash command. Set wait=true only for a command expected to finish; stop=true kills a running command. Returns the last 200 lines / 8KB of the log; the full log is retained in session assets and can be read with the read tool.", bashOutput, closeBackgroundBash)
 }
 
 func startBackgroundBash(a *bashArgs, buildCmd func() *exec.Cmd, projectDir string, preApproved bool) (string, string, error) {
@@ -120,6 +128,9 @@ func startBackgroundBash(a *bashArgs, buildCmd func() *exec.Cmd, projectDir stri
 	return fmt.Sprintf("Started %s. Log: %s. Use bash_output with id=%q to inspect progress or wait for completion. The command may continue after this turn.", job.id, job.log, job.id), "", nil
 }
 
+// bashLog returns the tail of a job's log: at most bgOutputMaxLines lines and
+// bgOutputMaxBytes bytes. Cut from the byte offset drops the partial first
+// line, which also avoids starting mid-rune.
 func bashLog(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -130,19 +141,28 @@ func bashLog(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	const limit = 50 * 1024
-	if st.Size() > limit {
-		if _, err := f.Seek(-limit, io.SeekEnd); err != nil {
+	truncated := st.Size() > bgOutputMaxBytes
+	if truncated {
+		if _, err := f.Seek(st.Size()-bgOutputMaxBytes, io.SeekStart); err != nil {
 			return "", err
 		}
 	}
-	b, err := io.ReadAll(io.LimitReader(f, limit))
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return "", err
 	}
 	text := string(b)
-	if st.Size() > limit {
-		text = fmt.Sprintf("[truncated: showing last 50KB; full output at %s]\n%s", path, text)
+	if truncated {
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			text = text[i+1:]
+		}
+	}
+	if lines := strings.Split(text, "\n"); len(lines) > bgOutputMaxLines {
+		text = strings.Join(lines[len(lines)-bgOutputMaxLines:], "\n")
+		truncated = true
+	}
+	if truncated {
+		text = fmt.Sprintf("[truncated: showing the last %d lines; full log at %s]\n%s", bgOutputMaxLines, path, text)
 	}
 	if strings.TrimSpace(text) == "" {
 		text = "(no output yet)"
