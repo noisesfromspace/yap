@@ -71,6 +71,27 @@ func requireSandbox(t *testing.T) {
 	}
 }
 
+// requireWritableHome skips when the home directory cannot be written to. The
+// sandbox tests use $HOME as the probe: a write there is read-only inside the
+// sandbox (EROFS) but must succeed once a run is unsandboxed. That
+// unsandboxed half is untestable when the test process itself cannot write to
+// home, e.g. when the suite runs inside yap's own sandbox.
+func requireWritableHome(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	probe := filepath.Join(home, fmt.Sprintf(".yap-writable-probe-%d", time.Now().UnixNano()))
+	f, err := os.Create(probe)
+	if err != nil {
+		t.Skipf("home dir not writable: %v", err)
+	}
+	f.Close()
+	_ = os.Remove(probe)
+	return home
+}
+
 // TestBashSandboxDenied: a write outside the allowlist (the read-only home) is
 // blocked by the kernel, and the denial stands when the human refuses the
 // unsandboxed re-run.
@@ -104,10 +125,7 @@ func TestBashSandboxDenied(t *testing.T) {
 // unsandboxed re-run, so the command executes for real.
 func TestBashSandboxApproved(t *testing.T) {
 	requireSandbox(t)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir")
-	}
+	home := requireWritableHome(t)
 	withSandboxApproval(t, true)
 	safety.SetSandboxConfig(safety.SandboxConfig{Enabled: true})
 
@@ -133,10 +151,7 @@ func TestBashSandboxApproved(t *testing.T) {
 // human a second time for the same command.
 func TestBashPreApprovedRunsUnsandboxed(t *testing.T) {
 	requireSandbox(t)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir")
-	}
+	home := requireWritableHome(t)
 	withSandboxApproval(t, false)
 	safety.SetSandboxConfig(safety.SandboxConfig{Enabled: true})
 
