@@ -72,6 +72,7 @@ local CASES = {
   { name = "yap_cwd_test", port = 18132 },
   { name = "yap_git_test", port = 18132 },
   { name = "yap_fork_test", port = 18164, mock = "mock_fork.py" },
+  { name = "yap_fork_shared_agents_test", port = 18132 },
 
   -- Buffer semantics, folds, winbar and parsing: no provider traffic.
   { name = "yap_fold_contract_test", port = 18132 },

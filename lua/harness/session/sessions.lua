@@ -16,7 +16,6 @@ local stopped = state.stopped
 local errors = state.errors
 local awaiting = state.awaiting
 local pending_approvals = state.pending_approvals
-local subagent_children = state.subagent_children
 local follow_override = state.follow_override
 
 local function harness()
@@ -196,31 +195,37 @@ end
 --- or errored children: a finished child need not be replied to. A current
 --- parent remains visible while it has an open subagent. Tail viewers are
 --- never here — use live() / <leader>l.
-local function has_open_child(parent)
-  local child = subagent_children[parent]
-  if child and vim.api.nvim_buf_is_valid(child) then
-    return true
-  end
-  local path = vim.fs.normalize(vim.b[parent].yap_path or vim.api.nvim_buf_get_name(parent))
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if buf ~= parent and vim.b[buf].yap then
-      if vim.b[buf].yap_subagent_parent == parent then
-        return true
-      end
-      local e = frontmatter.end_line(buf)
-      local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-      if
-        fm
-        and (
-          (fm.forked_from and vim.fs.normalize(fm.forked_from) == path)
-          or (fm.subagent_parent and vim.fs.normalize(fm.subagent_parent) == path)
-        )
-      then
-        return true
-      end
+local function has_open_child(parent, owners)
+  for _, parents in pairs(owners) do
+    if parents[parent] then
+      return true
     end
   end
   return false
+end
+
+-- Forks copy agent references, so an open agent can have several parents.
+local function open_owners(open_paths)
+  local owners = {}
+  local function link(child, parent)
+    if child and parent and child ~= parent then
+      owners[child] = owners[child] or {}
+      owners[child][parent] = true
+    end
+  end
+  for _, parent in pairs(open_paths) do
+    local e = frontmatter.end_line(parent)
+    local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false)) or nil
+    for _, child_path in ipairs(fm and fm.subagents or {}) do
+      link(open_paths[vim.fs.normalize(child_path)], parent)
+    end
+    if fm then
+      link(parent, fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)])
+      link(parent, fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
+    end
+    link(parent, vim.b[parent].yap_subagent_parent)
+  end
+  return owners
 end
 
 function M.instances(state)
@@ -239,25 +244,23 @@ function M.instances(state)
       open_paths[vim.fs.normalize(vim.b[b].yap_path or vim.api.nvim_buf_get_name(b))] = b
     end
   end
+  local owners = open_owners(open_paths)
   local attention_child = {}
   if needs_you then
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      local parent = vim.b[b].yap_subagent_parent
-      if parent and vim.b[b].yap and (stopped[b] or errors[b]) then
-        attention_child[parent] = true
+    for child, parents in pairs(owners) do
+      if vim.b[child].yap_agent and (stopped[child] or errors[child]) then
+        for parent in pairs(parents) do
+          attention_child[parent] = true
+        end
       end
     end
   end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    local subagent_parent = vim.b[b].yap_subagent_parent
     local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
-    subagent_parent = subagent_parent
-      or (fm and fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
-    local fork_parent = fm and fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)]
-    local parent = subagent_parent or fork_parent
+    local parent = owners[b] and next(owners[b])
     local is_subagent = fm and fm.agent or vim.b[b].yap_agent
-    local include_current = not needs_you or (b == current and has_open_child(b))
+    local include_current = not needs_you or (b == current and has_open_child(b, owners))
     local child_needs_you = is_subagent and (stopped[b] or errors[b])
     if
       (b ~= current or include_current)
@@ -298,14 +301,31 @@ function M.instances(state)
   end
   local roots = {}
   for _, item in ipairs(items) do
-    if item.parent and by_buf[item.parent] then
-      local siblings = children[item.parent] or {}
-      siblings[#siblings + 1] = item
-      children[item.parent] = siblings
+    local visible_parents = {}
+    for parent in pairs(owners[item.buf] or {}) do
+      if by_buf[parent] then
+        visible_parents[#visible_parents + 1] = parent
+      end
+    end
+    table.sort(visible_parents)
+    if #visible_parents > 0 then
+      for _, parent in ipairs(visible_parents) do
+        local row = vim.deepcopy(item)
+        row.parent = parent
+        row.path = ""
+        row.group_parent = parent
+        row.text = session.live_label(item.buf, true)
+        if item.child and vim.tbl_count(owners[item.buf] or {}) > 1 and not item.forked_from then
+          row.text = row.text .. " [shared: " .. vim.tbl_count(owners[item.buf]) .. " branches]"
+        end
+        local siblings = children[parent] or {}
+        siblings[#siblings + 1] = row
+        children[parent] = siblings
+      end
     else
       if item.parent then
         item.path = vim.b[item.buf].yap_project_cwd
-        item.text = item.text:sub(#"↳ " + 1) .. " (parent not shown)"
+        item.text = session.live_label(item.buf, false)
       end
       roots[#roots + 1] = item
     end
@@ -318,19 +338,24 @@ function M.instances(state)
     return a.text < b.text
   end)
   local ordered = {}
-  local function add(item, depth)
+  local function add(item, depth, ancestors)
+    if ancestors[item.buf] then
+      return
+    end
     item.depth = depth
     ordered[#ordered + 1] = item
     local siblings = children[item.buf] or {}
     table.sort(siblings, function(a, b)
       return a.text < b.text
     end)
+    ancestors[item.buf] = true
     for _, child in ipairs(siblings) do
-      add(child, depth + 1)
+      add(child, depth + 1, ancestors)
     end
+    ancestors[item.buf] = nil
   end
   for _, item in ipairs(roots) do
-    add(item, 0)
+    add(item, 0, {})
   end
   items = ordered
   -- Keep icons in a fixed column; indent titles, not the status column.

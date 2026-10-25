@@ -405,7 +405,7 @@ function M.list(scope)
     dirs = { paths.session_dir(vim.fn.getcwd()) }
   end
 
-  local items, children, parents = {}, {}, {}
+  local items, children, owned_by = {}, {}, {}
   for _, dir in ipairs(dirs) do
     -- Sessions live one per directory: <dir>/<session>/session.md. The
     -- `*/session.md` glob skips dotfiles (hidden sessions are never listed)
@@ -430,7 +430,9 @@ function M.list(scope)
       elseif fm and fm.forked_from then
         item.text = "↳ fork · " .. M.label(path, title, description)
         children[path] = item
-        parents[vim.fs.normalize(path)] = vim.fs.normalize(fm.forked_from)
+        local owner = vim.fs.normalize(fm.forked_from)
+        owned_by[owner] = owned_by[owner] or {}
+        table.insert(owned_by[owner], vim.fs.normalize(path))
       elseif
         title ~= ""
         or description ~= ""
@@ -441,7 +443,10 @@ function M.list(scope)
       end
       if fm then
         for _, child_path in ipairs(fm.subagents) do
-          parents[vim.fs.normalize(child_path)] = path
+          local owner = vim.fs.normalize(path)
+          local child = vim.fs.normalize(child_path)
+          owned_by[owner] = owned_by[owner] or {}
+          table.insert(owned_by[owner], child)
         end
       end
     end
@@ -451,31 +456,50 @@ function M.list(scope)
     return a.mtime > b.mtime
   end)
   local result, shown = {}, {}
-  local function add(item, depth)
-    if shown[item.path] then
-      return
+  local owners = {}
+  for _, paths_for_owner in pairs(owned_by) do
+    local unique = {}
+    for _, path in ipairs(paths_for_owner) do
+      if not unique[path] then
+        owners[path] = (owners[path] or 0) + 1
+        unique[path] = true
+      end
+    end
+  end
+  local function add(item, depth, ancestors)
+    if ancestors[item.path] then
+      return -- malformed cycle in hand-edited frontmatter
     end
     shown[item.path] = true
-    item.depth = depth
+    local row = vim.deepcopy(item)
+    row.depth = depth
     if depth > 0 then
-      item.text = string.rep("  ", depth) .. item.text
+      row.text = string.rep("  ", depth) .. row.text
+      if owners[vim.fs.normalize(item.path)] and owners[vim.fs.normalize(item.path)] > 1 and children[item.path] then
+        row.text = row.text .. " [shared: " .. owners[vim.fs.normalize(item.path)] .. " branches]"
+      end
     end
-    result[#result + 1] = item
+    result[#result + 1] = row
     local owned = {}
-    for path, child in pairs(children) do
-      if parents[vim.fs.normalize(path)] == vim.fs.normalize(item.path) then
+    local visited = {}
+    for _, path in ipairs(owned_by[vim.fs.normalize(item.path)] or {}) do
+      local child = children[path]
+      if child and not visited[path] then
         owned[#owned + 1] = child
+        visited[path] = true
       end
     end
     table.sort(owned, function(a, b)
       return a.mtime > b.mtime
     end)
+    ancestors[item.path] = true
     for _, child in ipairs(owned) do
-      add(child, depth + 1)
+      add(child, depth + 1, ancestors)
     end
+    ancestors[item.path] = nil
   end
   for _, item in ipairs(items) do
-    add(item, 0)
+    add(item, 0, {})
   end
   -- Preserve discoverability when a parent is missing or excluded by scope.
   local orphans = {}
@@ -489,11 +513,12 @@ function M.list(scope)
   end)
   for _, child in ipairs(orphans) do
     if not shown[child.path] then
-      child.text = child.text:sub(#"↳ " + 1) .. " (parent not shown)"
+      local orphan = vim.deepcopy(child)
+      orphan.text = orphan.text:sub(#"↳ " + 1) .. " (parent not shown)"
       if scope == "all" then
-        child.text = slug_cwd(vim.fn.fnamemodify(child.path, ":h:h")) .. "  " .. child.text
+        orphan.text = slug_cwd(vim.fn.fnamemodify(orphan.path, ":h:h")) .. "  " .. orphan.text
       end
-      add(child, 0)
+      add(orphan, 0, {})
     end
   end
   return result
