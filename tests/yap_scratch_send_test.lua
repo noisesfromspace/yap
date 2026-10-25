@@ -148,5 +148,8 @@ vim.api.nvim_win_set_cursor(0, { 6, 0 })
 yap.scratch_send(failed_scratch)
 assert(text(failed_scratch):find("keep this task", 1, true), "failed send consumed live queue")
 assert(table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(failed_scratch)), "\n"):find("keep this task", 1, true), "failed send consumed saved queue")
+-- The message the failed send appended is rolled back, so a retry from the
+-- draft cannot end up in the transcript twice.
+assert(not text(failed):find("keep this task", 1, true), "failed send left the message in the transcript")
 
 print("OK scratch_send, late steer, stop steer and failed send")

@@ -336,8 +336,10 @@ function M.setup(opts)
       if vim.b[args.buf].yap_scratch and vim.api.nvim_buf_is_valid(vim.b[args.buf].yap_scratch) then
         vim.b[vim.b[args.buf].yap_scratch].yap_queue_armed = false
         vim.b[vim.b[args.buf].yap_scratch].yap_queue_dispatch = false
+        vim.b[vim.b[args.buf].yap_scratch].yap_queue_held = nil
       end
       state.steer[args.buf] = nil
+      state.steer_delivered[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
       stream_flush[args.buf] = nil

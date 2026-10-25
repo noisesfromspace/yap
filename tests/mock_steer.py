@@ -1,4 +1,5 @@
 import json
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Steering mock: turn 1 calls a slow bash tool (so the frontend can steer
@@ -27,6 +28,15 @@ class H(BaseHTTPRequestHandler):
                 {"choices": [{"delta": {}, "finish_reason": "stop"}]},
                 {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
             ]
+        elif "slow steer answer" in json.dumps(msgs):
+            # Answer slowly, so the frontend can stop a turn that has already
+            # received a steer: the draft must survive that stop.
+            time.sleep(2)
+            chunks = [
+                {"choices": [{"delta": {"content": "final answer"}}]},
+                {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ]
         elif "also check the tests" in json.dumps(msgs):
             chunks = [
                 {"choices": [{"delta": {"content": "final answer"}}]},
@@ -39,10 +49,13 @@ class H(BaseHTTPRequestHandler):
                 {"choices": [{"delta": {}, "finish_reason": "stop"}]},
                 {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
             ]
-        for c in chunks:
-            self.wfile.write(b"data: " + json.dumps(c).encode() + b"\n\n")
-            self.wfile.flush()
-        self.wfile.write(b"data: [DONE]\n\n")
+        try:
+            for c in chunks:
+                self.wfile.write(b"data: " + json.dumps(c).encode() + b"\n\n")
+                self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the frontend cancelled mid-stream
 
     def log_message(self, *a):
         pass

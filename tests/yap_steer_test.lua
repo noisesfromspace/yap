@@ -291,4 +291,65 @@ assert(
   "stopped steer had no warning"
 )
 
-print("OK template steer, cancellation, edit, skill steer and stop with a queued steer")
+print("OK stop with a queued steer")
+
+
+
+-- A steer the turn already received survives a stop. The body stays in the
+-- draft (labelled `sent`) until that turn answers it, so killing the answer
+-- cannot drop an instruction the model never got to act on.
+local buf7 = yap.new()
+vim.api.nvim_buf_set_lines(buf7, -1, -1, false, { "slow steer answer" })
+assert(yap.send(buf7), "sent-steer turn did not start")
+assert(
+  vim.wait(10000, function()
+    return yap.is_running(buf7)
+  end, 50),
+  "sent-steer turn not running"
+)
+vim.wait(400) -- the mock's slow tool is in flight
+yap.scratch_toggle(buf7)
+local scratch7 = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(scratch7, 0, -1, false, {
+  "# @notes", "", "# @steer", "also check the tests", "", "# @queue",
+})
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+yap.scratch_send(scratch7)
+assert(
+  vim.wait(10000, function()
+    return chat_text(buf7):find("# @user\nalso check the tests", 1, true) ~= nil
+  end, 50),
+  "steer was never delivered:\n" .. chat_text(buf7)
+)
+local scratch7_text = function()
+  return table.concat(vim.api.nvim_buf_get_lines(scratch7, 0, -1, false), "\n")
+end
+assert(label(scratch7, 3) == "  · sent", "delivered steer is not labelled sent: " .. label(scratch7, 3))
+assert(
+  scratch7_text():find("# @steer\nalso check the tests", 1, true),
+  "delivered steer left the draft before the turn answered it"
+)
+local answered_notices = {}
+vim.notify = function(msg, ...)
+  answered_notices[#answered_notices + 1] = msg
+  return notify(msg, ...)
+end
+yap.stop(buf7)
+assert(
+  vim.wait(15000, function()
+    return not yap.is_running(buf7)
+  end, 50),
+  "stopped sent-steer turn did not stop"
+)
+vim.wait(200)
+vim.notify = notify
+local t7 = chat_text(buf7)
+assert(not t7:find("final answer", 1, true), "stopped turn still answered:\n" .. t7)
+assert(scratch7_text():find("# @steer\nalso check the tests", 1, true), "stop dropped the unanswered steer")
+assert(label(scratch7, 3) == "  · uncommitted", "unanswered steer is not a draft again: " .. label(scratch7, 3))
+assert(
+  table.concat(answered_notices, "\n"):find("before answering your steer", 1, true),
+  "unanswered steer had no warning"
+)
+
+print("OK ... and a stop before and after the steer was delivered")

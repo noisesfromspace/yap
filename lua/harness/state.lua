@@ -16,6 +16,7 @@ local M = {
   last_turn = {}, -- buf -> turn_end event (User YapTurnDone data)
   awaiting = {}, -- buf -> true (turn complete, awaiting user reply)
   steer = {}, -- buf -> pending steering text (sent mid-turn, not yet delivered)
+  steer_delivered = {}, -- buf -> steering text the running turn already received
   subagent_children = {}, -- parent buf -> child buf (the running subagent)
   subagent_done = {}, -- child buf -> function(success) to report its result
   pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer

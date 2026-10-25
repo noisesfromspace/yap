@@ -34,6 +34,7 @@ local errors = state.errors
 local last_turn = state.last_turn
 local awaiting = state.awaiting
 local steer = state.steer
+local steer_delivered = state.steer_delivered
 local servers = state.servers
 local subagent_children = state.subagent_children
 local subagent_done = state.subagent_done
@@ -166,12 +167,12 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "steer" then
     if steer[buf] == ev.text then
-      steer[buf] = nil -- delivered: remove only the matching live draft
-      local scratch = vim.b[buf].yap_scratch
-      if scratch and vim.api.nvim_buf_is_valid(scratch) and scratchmod.section_text(scratch, "steer") == ev.text then
-        scratchmod.set_section(scratch, "steer", {})
-        scratchmod.save(scratch)
-      end
+      -- Delivered: the turn now owes it an answer. The draft stays in place
+      -- (labelled `sent`) and is consumed by settle_delivered_steer() when the
+      -- turn ends, not here.
+      steer[buf] = nil
+      steer_delivered[buf] = ev.text
+      scratchmod.refresh(vim.b[buf].yap_scratch)
     end
     audit.append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "model_change" then
@@ -265,8 +266,10 @@ local function repair_stream_tail(buf)
 end
 
 -- Session titling (description generation) lives in harness.client.describe.
---- remains in its file; template steering without a scratch gets copied to
---- the empty user prompt so it cannot silently disappear.
+
+--- A steer that never reached a model boundary keeps its text in the scratch
+--- file; template steering without a scratch gets copied to the empty user
+--- prompt so it cannot silently disappear.
 local function leave_undelivered_steer(buf)
   local text = steer[buf]
   steer[buf] = nil
@@ -286,6 +289,47 @@ local function leave_undelivered_steer(buf)
   end
 end
 
+--- A steer is fulfilled by the turn that received it, not by the boundary that
+--- injected it: the body stays visible (`sent`) until that turn ends. Success
+--- consumes it; a stop or failure leaves it as an ordinary draft, so "stop now"
+--- cannot delete an instruction the model never got to act on.
+local function settle_delivered_steer(buf, answered)
+  local text = steer_delivered[buf]
+  steer_delivered[buf] = nil
+  if not text then
+    return
+  end
+  local scratch = vim.b[buf].yap_scratch
+  local kept = scratch and vim.api.nvim_buf_is_valid(scratch) and scratchmod.section_text(scratch, "steer") == text
+  if answered then
+    if kept then
+      scratchmod.set_section(scratch, "steer", {})
+      scratchmod.save(scratch)
+    end
+    return
+  end
+  -- A held-back instruction outranks an agent's close_session request, the same
+  -- way a late steer does in leave_undelivered_steer().
+  close_after_turn[buf] = nil
+  if kept then
+    scratchmod.save(scratch) -- the draft is the durable copy: save it
+    scratchmod.refresh(scratch) -- the label falls back from `sent` to a draft
+    vim.notify(
+      "yap: the turn ended before answering your steer; it stays in # @steer (send again with <C-s>)",
+      vim.log.levels.WARN
+    )
+  elseif not scratch or not vim.api.nvim_buf_is_valid(scratch) then
+    -- No draft to return to: park the text in the user prompt, where the next
+    -- <C-s> reads it, so it cannot silently disappear.
+    document.append_message(buf, "user", vim.split(text, "\n", { plain = true }))
+    session.save(buf)
+    vim.notify(
+      "yap: the turn ended before answering your steer; it was copied to the user prompt to send again",
+      vim.log.levels.WARN
+    )
+  end
+end
+
 --- Every stream exit, including errors and stop(), hands the buffer back
 --- to the user in the same writable shape as a successful turn.
 local function close_stream(buf)
@@ -293,6 +337,7 @@ local function close_stream(buf)
   document.append_lines(buf, { "# @user", "" })
   awaiting[buf] = true
   session.save(buf)
+  settle_delivered_steer(buf, false) -- after the fresh heading: a lost steer joins it
   leave_undelivered_steer(buf)
   if subagent_done[buf] then
     local done = subagent_done[buf]
@@ -521,6 +566,7 @@ function M.send(buf)
       -- automatically sent follow-up turn. An explicitly armed queue is
       -- independent of that draft and may start the next turn.
       document.append_lines(buf, { "# @user", "" })
+      settle_delivered_steer(buf, not errors[buf])
       leave_undelivered_steer(buf)
       follow_tail()
       awaiting[buf] = true
@@ -718,7 +764,7 @@ function M.stop(buf)
   if child then
     M.stop(child)
   end
-  scratchmod.finish_queue(buf, false) -- also retract a scheduled follow-up
+  scratchmod.hold_queue(buf) -- a scheduled follow-up does not survive a stop
   local proc = running[buf]
   if proc then
     stopped[buf] = true
@@ -736,6 +782,8 @@ function M.stop(buf)
       pending_approvals[buf] = nil
       spinner.stop_if_idle()
       repair_stream_tail(buf)
+      -- No turn_complete frame will arrive, so settle the queue here instead.
+      scratchmod.finish_queue(buf, false)
       close_stream(buf)
     end
   end

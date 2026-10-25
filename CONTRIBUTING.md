@@ -279,20 +279,27 @@ either in context or gone, and folding it away would be hidden state.
 
 `# @notes` is inert; `# @steer` and `# @queue` each hold one message.
 `<C-s>` acts on the section under the cursor. In steer while running it
-submits a replaceable instruction for the next model boundary; if the turn
-ends first, the draft remains and can be sent as the next message while idle.
+submits a replaceable instruction for the next model boundary. A steer is
+fulfilled by the turn that received it, not by that boundary: the body stays
+(labelled `sent`) until the turn answers it, so a stop or failure leaves it as
+a draft instead of dropping an instruction the model never acted on. While
+idle, `<C-s>` there sends it as the next message.
 In queue while idle it sends the whole body; while running it authorizes one
 follow-up after successful completion, using the live text at that time.
 Simply typing in queue never schedules a send. Clearing the body retracts
-an authorized queue; stopping or failing the turn does not send it.
+an authorized queue; stopping or failing the turn holds it (labelled `held`)
+until it is authorized again, and a steer the turn never answered holds it
+back too, so at most one item advances per turn end.
 Only the three named headings delimit sections: any other `# @...` line is
 ordinary content. Editing/removing a pending steer updates/cancels it in
-the backend. Consumed bodies are removed and saved with a blank line under
-the heading; unsent edits still need `:write` and prompt on exit. Inline
-virtual text shows each section's state (uncommitted / pending / scheduled)
-without modifying the file, never the key that would change it.
-The sections fold independently. Why: pending work is retractable, and the
-visible buffer — not a stale disk snapshot — is the control surface.
+the backend; a delivered one is already in the transcript. Consumed bodies are
+removed and saved with a blank line under the heading; unsent edits still need
+`:write` and prompt on exit. Inline virtual text shows each section's state
+(uncommitted / pending / sent / scheduled / held) without modifying the file,
+never the key that would change it.
+The sections fold independently. Why: pending work is retractable, text leaves
+the scratch only once a turn has acted on it, and the visible buffer — not a
+stale disk snapshot — is the control surface.
 
 #### R-eval — A selection can be replaced (or content generated) by a one-shot, no-tools model call
 
