@@ -47,6 +47,21 @@ func TestListModelsNativeShapes(t *testing.T) {
 	}
 }
 
+func TestModelsSkipMissingKey(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		fmt.Fprint(w, `{"data":[{"id":"m1"}]}`)
+	}))
+	defer srv.Close()
+	testutil.WriteConfig(t, `"alpha": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_MISSING_KEY"}`)
+	t.Setenv("YAP_TEST_MISSING_KEY", "")
+	combos, warnings, err := config.ListCombos()
+	if err != nil || len(combos) != 0 || len(warnings) != 1 || called {
+		t.Fatalf("missing key should skip provider: combos=%v warnings=%v err=%v called=%v", combos, warnings, err, called)
+	}
+}
+
 // TestModels: models() queries each configured provider, sorts output, and
 // skips a failing provider with a stderr warning.
 func TestModels(t *testing.T) {

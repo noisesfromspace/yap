@@ -50,7 +50,11 @@ func credential(ctx context.Context, prov Provider) (string, error) {
 	if prov.Auth != "" {
 		return auth.Token(ctx, prov.Auth)
 	}
-	return os.Getenv(prov.APIKeyEnv), nil
+	key := os.Getenv(prov.APIKeyEnv)
+	if prov.APIKeyEnv != "" && key == "" {
+		return "", fmt.Errorf("%s is not set", prov.APIKeyEnv)
+	}
+	return key, nil
 }
 
 // Websearch configures the websearch tool. Provider selects the search
