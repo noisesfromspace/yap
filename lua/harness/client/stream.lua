@@ -162,9 +162,6 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev) -- full result; bash output already streamed above
   elseif ev.type == "bash_background_start" or ev.type == "bash_background_end" then
     audit.append_event(buf, ev)
-    if ev.type == "bash_background_end" then
-      vim.notify("yap: background bash " .. (ev.id or "") .. " " .. (ev.status or "finished"), vim.log.levels.INFO)
-    end
   elseif ev.type == "retry" then
     audit.append_event(buf, ev) -- a transient generation error was retried
   elseif ev.type == "steer" then
