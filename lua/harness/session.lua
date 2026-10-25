@@ -315,6 +315,41 @@ function M.task(lines)
   end
 end
 
+-- The final user-facing answer, excluding display-only thinking, tool calls,
+-- errors and other yap regions. An in-progress assistant turn with no answer
+-- yet does not hide the last completed answer.
+local function last_answer(lines)
+  local scan = structure.scan_lines(lines)
+  for h = #scan.headings, 1, -1 do
+    local heading = scan.headings[h]
+    if heading.role == "assistant" then
+      local stop = scan.headings[h + 1] and scan.headings[h + 1].line - 1 or #lines
+      local content = {}
+      local region = 1
+      for i = heading.line + 1, stop do
+        while scan.regions[region] and (scan.regions[region].finish or #lines) < i do
+          region = region + 1
+        end
+        local r = scan.regions[region]
+        if (not r or i < r.start or i > (r.finish or #lines))
+          and not lines[i]:match("^<!%-%- /?yap:") then
+          content[#content + 1] = lines[i]
+        end
+      end
+      while #content > 0 and content[1]:match("^%s*$") do
+        table.remove(content, 1)
+      end
+      while #content > 0 and content[#content]:match("^%s*$") do
+        table.remove(content)
+      end
+      if #content > 0 then
+        return content
+      end
+    end
+  end
+  return {}
+end
+
 --- Markdown preview of a session: the initial `# @user` message followed by
 --- the last `# @assistant` answer, rendered in a scratch buffer with the
 --- `markdown` filetype so pickers show it with normal syntax highlighting
@@ -324,7 +359,7 @@ end
 function M.preview(lines)
   local content = {}
   local user = first_message(lines, "user")
-  local assistant = last_message(lines, "assistant")
+  local assistant = last_answer(lines)
   if #user > 0 then
     content[#content + 1] = "## First message"
     content[#content + 1] = ""

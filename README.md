@@ -131,13 +131,13 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 ## Commands
 
-| Command                     | Purpose                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| `:Yap`                      | Start a session.                                                                            |
-| `:YapClear [keep]`          | Replace older tool output with audit-log references.                                        |
-| `:YapCompact [instructions]` | Summarize with optional custom instructions, then optionally drop superseded history.     |
-| `:YapEval[!] [instruction]` | Discuss the selection in a new session. `!` replaces the selection with the model's output. |
-| `:YapFork [name]`           | Copy the conversation to an independent buffer; edit it to branch.                          |
+| Command                      | Purpose                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `:Yap`                       | Start a session.                                                                            |
+| `:YapClear [keep]`           | Replace older tool output with audit-log references.                                        |
+| `:YapCompact [instructions]` | Summarize with optional custom instructions, then optionally drop superseded history.       |
+| `:YapEval[!] [instruction]`  | Discuss the selection in a new session. `!` replaces the selection with the model's output. |
+| `:YapFork [name]`            | Copy the conversation to an independent buffer; edit it to branch.                          |
 
 ## Lua API
 
@@ -206,13 +206,15 @@ from a VPN, or set `network = false` to drop egress and accept that model
 providers stop answering. `programs.yap.jail.*` documents the remaining
 options.
 
-
 ## Rendering
 
-yap writes plain markdown, so your renderer applies. Some renderers stall on a
-50k-line buffer. [touchup](https://git.boers.email/martijn/touchup.nvim)
-understands yap's markers: it colors the `yap:thinking` / `tool` / `error` /
-`usage` labels and draws each tool region as one block.
+yap writes plain markdown, so your renderer applies. Not all renderers are
+written to handle 50k-line buffers, so there might be performance issues. Same
+for other plugin that hook into Markdown files. 
+
+[touchup](https://git.boers.email/martijn/touchup.nvim) understands yap's
+markers: it colors the `yap:thinking` / `tool` / `error` / `usage` labels and
+draws each tool region as one block.
 
 ## Terminology
 
@@ -245,6 +247,6 @@ The full vocabulary is in `:help yap-glossary`.
 
 The full reference is in `:help yap` (`doc/yap.txt`). Before changing behavior,
 anyone editing this repo, human or AI, should read `CONTRIBUTING.md`. It covers
-the Lua <-> Go wire protocol, the `R-...` design rules, and how to run the
+the Lua \<-> Go wire protocol, the `R-...` design rules, and how to run the
 tests (`tests/run.sh`). Update that file when your change affects those
 details.

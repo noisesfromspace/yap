@@ -54,9 +54,30 @@ assert(
 )
 assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty preview missing")
 
+-- The preview is the user-facing outcome, not the tool transcript or an
+-- unfinished thinking-only reply. Literal markdown and ordinary comments stay.
+local rich = vim.list_extend(vim.deepcopy(convo), {
+  "", "<!-- yap:thinking", "unfinished reasoning", "-->",
+  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->",
+  "tool output", "# @user", "quoted inside tool", "<!-- /yap:tool -->",
+  "<!-- yap:model m1 -->", "<!-- ordinary comment -->",
+  "", "# @user", "", "new question", "", "# @assistant", "",
+  "<!-- yap:thinking", "still working", "-->",
+})
+local rich_preview = table.concat(preview_text(session.preview(rich)), "\n")
+assert(rich_preview:find("last answer line 2", 1, true), "lost last completed answer")
+assert(rich_preview:find("ordinary comment", 1, true), "ordinary markdown comment lost")
+for _, hidden in ipairs({ "unfinished reasoning", "tool output", "quoted inside tool", "still working", "yap:model" }) do
+  assert(not rich_preview:find(hidden, 1, true), "display region leaked: " .. hidden)
+end
+
 -- The open-session picker previews another live buffer with the same excerpts.
 local buf = yap.new()
-vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @user", "", "hello", "", "# @assistant", "", "bye" })
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+  "# @user", "", "hello", "", "# @assistant", "",
+  "<!-- yap:thinking", "secret reasoning", "-->", "bye",
+  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->", "tool output", "<!-- /yap:tool -->",
+})
 yap.new() -- current session is included in the general picker
 local captured
 local orig_select = vim.ui.select
@@ -84,6 +105,7 @@ assert(
   "instances preview wrong: " .. vim.inspect(live_preview)
 )
 assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
+assert(not table.concat(live_preview):find("secret reasoning", 1, true), "instances leaked thinking")
 
 -- A session can be wiped after the picker opens but before a queued preview
 -- or choose callback runs (for example, after close_session completes).
@@ -302,7 +324,13 @@ vim.api.nvim_buf_set_lines(saved, 0, -1, false, {
   "",
   "# @assistant",
   "",
+  "<!-- yap:thinking",
+  "saved reasoning",
+  "-->",
   "history answer",
+  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->",
+  "saved tool result",
+  "<!-- /yap:tool -->",
 })
 session.save(saved)
 local path = vim.b[saved].yap_path
@@ -356,6 +384,7 @@ assert(
   "saved preview wrong: " .. vim.inspect(saved_preview)
 )
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
+assert(not table.concat(saved_preview):find("saved reasoning", 1, true), "saved preview leaked thinking")
 
 -- A frontmatter title wins over the generated description for saved and
 -- open sessions; a child still prefers its own title over the task when one
