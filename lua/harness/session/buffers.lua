@@ -111,6 +111,18 @@ local function setup_buffer(buf)
   -- with the open-session picker.
   vim.bo[buf].buflisted = false
 
+  -- Read-only drawers enable cursorline. Their windows are reusable (:e and
+  -- session picker), so clear that window-local option on session entry.
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    buffer = buf,
+    callback = function()
+      vim.wo.cursorline = false
+    end,
+  })
+  if vim.api.nvim_get_current_buf() == buf then
+    vim.wo.cursorline = false
+  end
+
   -- Apply the highlight policy (markdown syntax instead of the treesitter
   -- highlighter). Applied here as well as deferred below: setting 'filetype'
   -- above has already run the FileType autocommands synchronously, so this pass
@@ -184,6 +196,7 @@ function M.new(opts)
   -- mini.files explorer window pins its buffer. Clear it for the span of
   -- this function and restore it so a pinned window stays pinned.
   local fixed = vim.wo[win].winfixbuf
+  local cursorline = vim.wo[win].cursorline
   vim.wo[win].winfixbuf = false
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
@@ -223,6 +236,7 @@ function M.new(opts)
   setup_buffer(buf)
   if opts.hidden then
     vim.api.nvim_win_set_buf(win, previous)
+    vim.wo[win].cursorline = cursorline
   end
   vim.wo[win].winfixbuf = fixed
 
