@@ -35,6 +35,7 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
 vim.api.nvim_win_set_cursor(0, { 4, 0 })
 local notify = vim.notify
 local steer_notices = {}
+local stop_notices = {}
 vim.notify = function(msg)
   steer_notices[#steer_notices + 1] = msg
 end
@@ -237,3 +238,57 @@ assert(t3:match("final answer"), "skill steer final answer missing:\n" .. t3)
 assert(not t3:match("STEER MISSING"), "skill steer did not reach the model:\n" .. t3)
 
 print("OK template steer, cancellation, edit and skill steer")
+
+-- Ctrl-C with a steer already loaded stops the turn; the steer is not
+-- injected. "Stop now" wins over the queued instruction: it stays a draft
+-- in the scratch so the user can send it deliberately.
+local buf6 = yap.new()
+vim.api.nvim_buf_set_lines(buf6, -1, -1, false, { "do some work" })
+yap.send(buf6)
+assert(
+  vim.wait(10000, function()
+    return yap.is_running(buf6)
+  end, 50),
+  "stop-steer turn did not start"
+)
+vim.wait(400) -- the mock's slow tool is in flight
+yap.scratch_toggle(buf6)
+local scratch6 = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(scratch6, 0, -1, false, {
+  "# @notes",
+  "",
+  "# @steer",
+  "also check the tests",
+  "",
+  "# @queue",
+})
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+yap.scratch_send(scratch6)
+vim.notify = function(msg, ...)
+  stop_notices[#stop_notices + 1] = msg
+  return notify(msg, ...)
+end
+yap.stop(buf6)
+-- The cancel is a wire message, so completion is asynchronous: keep
+-- capturing notifications until the stopped turn has settled.
+assert(
+  vim.wait(15000, function()
+    return not yap.is_running(buf6)
+  end, 50),
+  "stopped turn did not stop"
+)
+vim.wait(200)
+vim.notify = notify
+local t6 = chat_text(buf6)
+assert(not t6:find("# @user\nalso check the tests", 1, true), "stopped turn injected the queued steer:\n" .. t6)
+assert(not t6:find("final answer", 1, true), "stopped turn kept going after the steer:\n" .. t6)
+assert(
+  table.concat(vim.api.nvim_buf_get_lines(scratch6, 0, -1, false), "\n"):find("also check the tests", 1, true),
+  "stop consumed the queued steer"
+)
+assert(
+  table.concat(stop_notices, "\n"):find("steer was not delivered", 1, true),
+  "stopped steer had no warning"
+)
+
+print("OK template steer, cancellation, edit, skill steer and stop with a queued steer")

@@ -481,10 +481,10 @@ beneath its heading.
   # @notes    An inert backlog; never sent.
   # @steer    While running, <C-s> submits a replaceable pending message
               for the next model boundary. Once delivered, it is cleared.
-              If the turn ends first, it stays as a draft; pressing <C-s>
-              here while idle sends it as the next message, even when queue
-              has text. Editing or deleting a pending steer revises or
-              cancels it while the turn runs.
+              If the turn ends first (a <C-c> stop included) it stays as a
+              draft; pressing <C-s> here while idle sends it as the next
+              message, even when queue has text. Editing or deleting a
+              pending steer revises or cancels it while the turn runs.
   # @queue    While idle, <C-s> sends the whole body as one message. While
               running, <C-s> authorizes one follow-up: its live contents
               are sent when that turn ends successfully. Edits before then

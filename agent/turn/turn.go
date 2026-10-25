@@ -498,6 +498,13 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		wire.EmitEvent(m)
 	}()
 	for iter := 0; ; iter++ {
+		// A cancelled turn stops here, before the boundary: Ctrl-C means stop
+		// now, so a queued steer (or model switch) must not be consumed and
+		// injected into a turn the user just killed. The queue slot stays
+		// untouched and the frontend keeps its draft for an explicit send.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// Mid-turn injections land at the next model boundary — after the
 		// previous round's tool batch, before the next generation. Steering
 		// appends a native user message; a model switch rebuilds the

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -187,5 +190,54 @@ func TestRunTurnModelSwitch(t *testing.T) {
 	}
 	if !strings.Contains(s, "switched") {
 		t.Fatalf("final answer missing:\n%s", s)
+	}
+}
+
+// TestRunTurnCancelKeepsQueuedSteer: Ctrl-C during a tool call means stop
+// now. The turn must not reach the next model boundary and inject a queued
+// steer — that would consume the frontend's draft and bury the instruction
+// in a cancelled turn. Cancelling wins; the steer stays undelivered so the
+// frontend keeps it as a draft.
+func TestRunTurnCancelKeepsQueuedSteer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The pages handler runs inside the fetch tool call, so cancelling there
+	// is a deterministic "cancel mid tool call" (no timing).
+	pages := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		fmt.Fprint(w, "page")
+	}))
+	defer pages.Close()
+	toolArgs, _ := json.Marshal(map[string]any{"url": pages.URL})
+	fetchCall := fmt.Sprintf(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"fetch","arguments":%s}}]}}]}`,
+		strconv.Quote(string(toolArgs)))
+	calls := 0
+	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			testutil.SSE(w, fetchCall, `{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`)
+			return
+		}
+		testutil.SSE(w, `{"choices":[{"delta":{"content":"done"}}]}`)
+	}))
+	defer chat.Close()
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+chat.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	polled := false
+	poll := func() Boundary {
+		polled = true
+		return Boundary{Steer: "keep me"}
+	}
+	err := Run(ctx, "mock", "m1", Request{Messages: []Message{{Role: "user", Content: "go"}}}, &out, poll)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if polled {
+		t.Error("cancelled turn polled for injections and ate the queued steer")
+	}
+	if s := out.String(); strings.Contains(s, "# @user\nkeep me") {
+		t.Fatalf("cancelled turn injected the queued steer:\n%s", s)
 	}
 }
