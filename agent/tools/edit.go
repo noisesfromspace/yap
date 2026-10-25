@@ -46,7 +46,7 @@ func init() {
 	// A target outside the writable allowlist (project + assets) also pauses.
 	Gate("edit", func(a *editArgs) string { return a.Path },
 		safety.SecretPathRule("edits a secret path"),
-		safety.OutsideWritableRule("edits outside the project"))
+		safety.OutsideWritableRule("edit target outside allowed write paths (pre-run)"))
 }
 
 func runEdit(a *editArgs) (string, string, error) {

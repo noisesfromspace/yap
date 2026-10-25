@@ -723,9 +723,10 @@ The set today:
                 read or written.
   write/edit    a target outside the writable allowlist (the live |:pwd|,
                 the session assets dir, `sandbox.allow_write`, and the temp
-                dir) — pauses for Run/Deny, so the mutating file tools stay
-                bounded to the project like the sandbox below. `read` is
-                deliberately NOT bounded — reading is not a write.
+                dir) — pauses *before execution* with "write target outside
+                allowed write paths (pre-run)" or the corresponding edit
+                reason. `read` is deliberately NOT bounded — reading is not
+                a write.
 
 Secret paths and secret-reveal commands are one system (agent/safety/secrets.go):
 adding a location to its list drives both surfaces, and scrub.go redacts any
@@ -754,11 +755,12 @@ flag surface, so the local-file flags are approval-gated (the guard pauses
 for Run/Deny) and the SSRF / protocol-smuggling flags are refused outright —
 there is no need for a second enforcement mechanism there.
 
-When a command still tries to write outside the allowlist, the kernel refuses
-it (EROFS) and the turn pauses for the same Run/Deny approval the guard rules
-use: approving re-runs the command unsandboxed, denying returns the read-only
-failure to the model. A command that already matched a static guard rule (e.g.
-`sudo`, `git push --force`) was approved before it ran, so it runs unsandboxed
+When a command's output contains "Read-only file system", the turn pauses
+with "bash hit read-only filesystem; rerun unsandboxed". This does not identify
+the failed path: approving re-runs the entire command unsandboxed, while
+denying returns the read-only failure to the model. A command that already
+matched a static guard rule (e.g. `sudo`, `git push --force`) was approved
+before it ran, so it runs unsandboxed
 outright — the approval is the blessing to run it unconfined, and it never
 prompts twice for the same command.
 

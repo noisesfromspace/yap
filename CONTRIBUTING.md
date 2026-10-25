@@ -403,13 +403,16 @@ bash runs inside a bubblewrap (bwrap) sandbox on Linux
 allowlist (the live :pwd, the session assets dir, plus `sandbox.allow_write`)
 is re-mounted writable, /tmp is a private tmpfs, and the secret directories are
 shadowed with empty mounts so the sandboxed process cannot read them. A write
-outside the allowlist is refused by the kernel (EROFS) and escalates to the
-same Run/Deny approval the guard rules use — approve to re-run unsandboxed,
-deny to keep the read-only failure. The same allowlist (safety.IsWritablePath)
-bounds the `write` and `edit` tools via an OutsideWritableRule gate, so every
-mutating path shares one definition of "where the agent may write"; `read` is
-deliberately not bounded. `curl` is not sandboxed — its local-file reach is a
-finite flag surface, so the local-file flags are approval-gated (the guard
+outside the allowlist is refused by the kernel (EROFS); if bash output
+contains "Read-only file system", the guard says "bash hit read-only
+filesystem; rerun unsandboxed" — approve to re-run the entire command
+unsandboxed, deny to keep the read-only failure. The output alone does not
+identify the failed path. The same allowlist (safety.IsWritablePath)
+bounds the `write` and `edit` tools via an OutsideWritableRule pre-run gate
+("write target outside allowed write paths (pre-run)" / corresponding edit
+reason), so every mutating path shares one definition of "where the agent may
+write"; `read` is deliberately not bounded. `curl` is not sandboxed — its
+local-file reach is a finite flag surface, so the local-file flags are approval-gated (the guard
 pauses for Run/Deny) and the SSRF / protocol-smuggling flags (curlDenyLong)
 are refused outright, so a second enforcement mechanism is redundant. On top of
 that barrier sits a conservative denylist of

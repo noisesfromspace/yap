@@ -146,7 +146,7 @@ func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout
 	if !safety.SandboxViolated(text) {
 		return text, nil
 	}
-	approved, aerr := wire.RequestApproval(command, "bash", "writes outside the sandbox")
+	approved, aerr := wire.RequestApproval(command, "bash", "bash hit read-only filesystem; rerun unsandboxed")
 	if aerr != nil {
 		return text, aerr // no serve process (yap send), cancelled, or timed out
 	}

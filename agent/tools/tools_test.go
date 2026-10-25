@@ -205,10 +205,10 @@ func TestGuardRules(t *testing.T) {
 	// write/edit are project-bound: a target outside the writable allowlist
 	// (project + assets + temp) pauses, mirroring the bash sandbox's write
 	// barrier. read is deliberately NOT bounded — reading is not a write.
-	if reason := Match("write", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "writes outside the project" {
+	if reason := Match("write", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "write target outside allowed write paths (pre-run)" {
 		t.Fatalf("write outside project: reason=%q", reason)
 	}
-	if reason := Match("edit", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "edits outside the project" {
+	if reason := Match("edit", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "edit target outside allowed write paths (pre-run)" {
 		t.Fatalf("edit outside project: reason=%q", reason)
 	}
 	if reason := Match("read", json.RawMessage(`{"path":"/etc/hostname"}`)); reason != "" {

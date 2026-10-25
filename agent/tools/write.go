@@ -45,5 +45,5 @@ func init() {
 	// so the purpose-built file tools stay bounded like the bash sandbox.
 	Gate("write", func(a *writeArgs) string { return a.Path },
 		safety.SecretPathRule("writes a secret path"),
-		safety.OutsideWritableRule("writes outside the project"))
+		safety.OutsideWritableRule("write target outside allowed write paths (pre-run)"))
 }
