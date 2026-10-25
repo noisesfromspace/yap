@@ -704,7 +704,7 @@ sequenceDiagram
     `tool_call` `{type,name,args}` (full arguments before the tool runs),
     `tool_result` `{type,name,bytes,result}` (full result),
     `approval_timeout` `{type,id}`, `subagent_timeout` `{type,id}`,
-    `task_start`/`task_end`, `retry` `{type,attempt,delay_ms,error}`,
+    `bash_background_start`/`bash_background_end` (session-scoped bash job), `retry` `{type,attempt,delay_ms,error}`,
     `steer`, `model_change`, `tool_text_warning`, `usage`,
     `error` `{type,code,message}` (a failed turn), and
     `turn_end` `{type,model,prompt,completion,context_prompt,cost?,context_window?,ms,status,error?}`

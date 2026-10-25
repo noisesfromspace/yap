@@ -47,9 +47,9 @@ Inspired by pi and gptel.
 The agent ships with a fixed set of tools. It reads and edits files, runs
 bash and ssh, searches the web, reads GitHub, drives a browser
 with Playwright, and delegates to subagents in separate sessions. Independent
-read-only calls in one round run concurrently (up to four). For slow bash,
-fetch, or websearch work, `start_task` returns a turn-scoped handle so the agent
-can continue independent work and later call `wait_tasks` for the result.
+read-only calls in one round run concurrently (up to four). For slow commands, pass `background: true` to bash; it returns a session-scoped
+ID. Use `bash_output` to inspect its output or wait for its exit. Commands
+continue across turns and stop when the session backend exits.
 See `:help yap-tools`.
 
 A turn is an agent loop: the model proposes the next action, the backend

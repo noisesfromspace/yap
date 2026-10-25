@@ -811,10 +811,11 @@ approval rules that sit in front of them (|yap-guard-gate|).
   quickfix       Replace Neovim's quickfix list with source locations.
   close_session  Close the session buffer once the turn has finished.
 
-Two orchestration tools sit on top: `start_task` launches a slow bash, fetch
-or websearch call in the background and returns a handle, and `wait_tasks`
-collects the results. Independent read-only calls in one round run
-concurrently, up to four.
+For long-running bash commands, set `background: true` to return immediately
+with a session-scoped ID. Use `bash_output` to inspect output, or set its
+`wait` flag to block until the command finishes. Background commands continue
+across turns and stop when the session backend exits. Independent read-only
+calls in one round run concurrently, up to four.
 
 A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in

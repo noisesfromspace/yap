@@ -40,7 +40,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. harness
 
 When you need several independent read-only results (read, search, glob, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 
-For independent slow work, `start_task` launches bash, fetch, or websearch in the background and returns a task ID. Launch the slow call, do other useful work, then call `wait_tasks` once to collect the result before relying on it. For example, start a long test run or build, then read files or research meanwhile. Tasks end within this turn; do not start commands that conflict with ongoing work.
+For long-running shell commands that can overlap other work, set `background: true` on `bash`. It returns an ID; use `bash_output` to inspect its log or wait for completion. Background commands survive turns but stop when this session's backend exits. Don't use shell `&` as a substitute: it hides exit status and bypasses job tracking.
 
 ## Subagents
 

@@ -338,9 +338,7 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 // transcript text.
 func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary) (retErr error) {
 	start := time.Now()
-	// Install the turn's context so tools (RunStreamed, fetch, curl, approval,
-	// subagent) can abort promptly when the frontend cancels the turn. Cleared
-	// after the background task pool has drained (see the defer below).
+	// Install the turn's context so foreground tools can abort on cancellation.
 	wire.SetTurnContext(ctx)
 	defer wire.SetTurnContext(context.Background())
 	cfg, err := config.LoadConfig()
@@ -471,19 +469,13 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 	}
 
-	pool := &taskPool{tasks: make(map[string]*backgroundTask)}
 	// A terminal anomaly that does not abort the loop (empty completion, tool
 	// iteration cap) is recorded here so the deferred recorder below marks the
 	// turn "error" rather than "ok". The serve loop still sees a successful
 	// turn (the model is shown the error marker), but the audit log must not
 	// call a no-answer turn a success.
 	var turnError error
-	// The terminal audit record: exactly one turn_end line per turn, whatever
-	// its outcome. Registered before the pool reap below so it runs after it
-	// (defers unwind LIFO), keeping turn_end the last record a turn writes —
-	// after any background task_end events. It carries the final usage and a
-	// status (ok|error|cancelled) so failed and cancelled turns are as durable
-	// as successful ones.
+	// A terminal audit record is written for every turn.
 	defer func() {
 		status := "ok"
 		var msg string
@@ -505,7 +497,6 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 		wire.EmitEvent(m)
 	}()
-	defer func() { pool.wait(nil) }() // also reap tasks on model errors or iteration limit
 	for iter := 0; ; iter++ {
 		// Mid-turn injections land at the next model boundary — after the
 		// previous round's tool batch, before the next generation. Steering
@@ -613,20 +604,6 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 
 		if len(t.calls) == 0 {
-			if ids := pool.pending(); len(ids) > 0 {
-				// A final answer cannot race outstanding checks. Complete them,
-				// show their output chronologically, and let the model revise its
-				// answer with actual results rather than treating launch as success.
-				results := pool.wait(ids)
-				injection := "Background task results (automatic turn-scoped wait):\n" + render.FenceResult("bash", "", results) + "\nReview these before your final answer."
-				pad()
-				fmt.Fprintf(out, "# @user\n%s\n\n# @assistant\n\n", injection)
-				out.Flush()
-				wrote, trail = true, 2
-				messages = append(messages, t.responseMessages...)
-				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: injection}}})
-				continue
-			}
 			if label, ok := detectTextToolCall(t.text); ok {
 				// The model wrote a tool call as prose (flattened transcript
 				// form, or <invoke> XML) instead of a native tool call, so
@@ -703,7 +680,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 			if parallel {
 				value = results[i]
 			} else {
-				value = pool.call(call, req.Tools)
+				value = callTool(call, req.Tools)
 			}
 			result, ui := value.result, value.ui
 			render.EmitToolResult(out, result, ui)

@@ -15,9 +15,10 @@ import (
 )
 
 type bashArgs struct {
-	Command string `json:"command" jsonschema:"description=bash command to execute"`
-	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
-	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	Command    string `json:"command" jsonschema:"description=bash command to execute"`
+	Timeout    int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
+	Cwd        string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	Background bool   `json:"background,omitempty" jsonschema:"description=run asynchronously across turns; returns an ID for bash_output. Use for long-running commands when independent work can continue"`
 }
 
 func init() {
@@ -25,7 +26,7 @@ func init() {
 		"Execute a bash command. Runs inside a bubblewrap sandbox (read-only filesystem; the project directory and session assets are writable); a command that tries to write elsewhere is paused for approval. High-risk commands require user confirmation. Returns combined stdout/stderr and the exit code "+
 			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
-			"Non-interactive: stdin is /dev/null. Default timeout 120s, adjustable.",
+			"Non-interactive: stdin is /dev/null. Default timeout 120s for foreground commands; background commands have no default timeout and survive turns until exit or backend shutdown.",
 		func(a *bashArgs) (string, string, error) { return runBash(a) })
 	Gate("bash", func(a *bashArgs) string { return a.Command }, bashRules...)
 }
@@ -119,6 +120,10 @@ func runBash(a *bashArgs) (string, string, error) {
 			cmd.Dir = a.Cwd
 		}
 		return cmd
+	}
+
+	if a.Background {
+		return startBackgroundBash(a, buildCmd, projectDir, preApproved)
 	}
 
 	if safety.SandboxActive() && !preApproved {
