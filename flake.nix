@@ -70,15 +70,17 @@
                 meta.mainProgram = "agent";
               };
             in
-            pkgs.runCommand "yap-agent" {
-              nativeBuildInputs = [ pkgs.makeWrapper ];
-              meta.mainProgram = "agent";
-            } ''
-              mkdir -p "$out/bin"
-              makeWrapper "${agentBin}/bin/agent" "$out/bin/agent" \
-                --set-default PLAYWRIGHT_NODEJS_PATH "${pkgs.nodejs}/bin/node" \
-                --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium"
-            '';
+            pkgs.runCommand "yap-agent"
+              {
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+                meta.mainProgram = "agent";
+              }
+              ''
+                mkdir -p "$out/bin"
+                makeWrapper "${agentBin}/bin/agent" "$out/bin/agent" \
+                  --set-default PLAYWRIGHT_NODEJS_PATH "${pkgs.nodejs}/bin/node" \
+                  --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium"
+              '';
 
           # Neovim plugin (the harness). Provides require("harness").
           harness = pkgs.vimUtils.buildVimPlugin {
@@ -260,22 +262,48 @@
           jailHome = config.home.homeDirectory;
           jailConfigHome = config.xdg.configHome;
 
-          # Sessions directory the harness has baked in at build time; the
-          # jail binds the per-directory store onto this exact path.
-          jailSessionsDir = if cfg.sessionsDir != null then cfg.sessionsDir else "${jailConfigHome}/yap/sessions";
+          # These targets must match harness.setup() when the consumer overrides
+          # the harness defaults.
+          jailSessionsDir =
+            if jailCfg.sessionsDir != null then jailCfg.sessionsDir else "${jailConfigHome}/yap/sessions";
+          jailAgentsPath =
+            if jailCfg.agentsTargetFile != null then
+              jailCfg.agentsTargetFile
+            else
+              "${jailConfigHome}/yap/AGENTS.md";
 
-          # The system prompt file the harness reads (its baked-in
-          # `agents_file`). A jail can swap different rules in over it.
-          jailAgentsPath = if cfg.agentsFile != null then cfg.agentsFile else "${jailConfigHome}/yap/AGENTS.md";
-
-          # Env-var names the configured providers (and web search) read their
-          # credentials from, so the jail forwards exactly those and no more.
+          # Env-var names the configured providers and tools read credentials
+          # from. GitHub defaults to GITHUB_TOKEN when no name is configured.
           jailEnvNames = lib.unique (
-            lib.filter (v: v != null) (
+            lib.filter (v: v != null && v != "") (
               lib.mapAttrsToList (_: p: p.api_key_env or null) (cfg.settings.providers or { })
-              ++ [ (cfg.settings.websearch.api_key_env or null) ]
+              ++ [
+                (cfg.settings.websearch.api_key_env or null)
+                (
+                  let
+                    name = cfg.settings.github.api_key_env or null;
+                  in
+                  if name == null || name == "" then "GITHUB_TOKEN" else name
+                )
+              ]
             )
           );
+
+          sourceEnv =
+            envFile:
+            lib.optionalString (envFile != null) ''
+              # Expand shell variables in paths such as $XDG_RUNTIME_DIR at launch.
+              if [ -f "${envFile}" ]; then
+                set -a
+                . "${envFile}"
+                set +a
+              fi
+            '';
+
+          backendLauncher = pkgs.writeShellScriptBin "yap" ''
+            ${sourceEnv cfg.envFile}
+            exec ${lib.getExe cfg.agentPackage} "$@"
+          '';
 
           jailLib = self.inputs.jail-nix.lib.extend {
             inherit pkgs;
@@ -284,7 +312,11 @@
             # `--ro-bind /nix /nix` added below (a symlinked store path such
             # as Chromium's sandbox cannot be mounted over read-only /nix),
             # and the wholesale bind already exposes the whole closure.
-            basePermissions = combinators: with combinators; [ base fake-passwd ];
+            basePermissions =
+              combinators: with combinators; [
+                base
+                fake-passwd
+              ];
           };
 
           # What to run inside the jail. Defaults to the declarative Neovim
@@ -344,19 +376,9 @@
               '')
             ]
             ++ lib.optional jailCfg.network network
-            # Sessions: keep them next to the case instead of in the shared
-            # store, so investigation data is not synced/backed up with the
-            # rest of the sessions.
-            ++ lib.optional jailCfg.sessionsInCwd (add-runtime ''
-              mkdir -p "$PWD/.yap-sessions"
-              RUNTIME_ARGS+=(--bind "$PWD/.yap-sessions" ${escape jailSessionsDir})
-            '')
             # Skills/agents/templates are instructions the model follows, so
             # they are read-only inside the jail: a prompt-injected model
             # must not be able to rewrite its own rules.
-            ++ lib.optionals (cfg.skillsDir != null) [ (ro-bind cfg.skillsDir cfg.skillsDir) ]
-            ++ lib.optionals (cfg.agentsDir != null) [ (ro-bind cfg.agentsDir cfg.agentsDir) ]
-            ++ lib.optionals (cfg.templatesDir != null) [ (ro-bind cfg.templatesDir cfg.templatesDir) ]
             ++ lib.optionals (jailCfg.extraReadOnlyPaths != [ ]) (
               map (p: try-ro-bind p p) jailCfg.extraReadOnlyPaths
             )
@@ -368,7 +390,13 @@
                 '') jailCfg.extraWritablePaths
               ))
             ]
-            # Last, so it wins over the config-directory bind above. Guarded at
+            # Mount sessions after the instruction directory binds so a
+            # read-only parent cannot hide the writable session target.
+            ++ lib.optional jailCfg.sessionsInCwd (add-runtime ''
+              mkdir -p "$PWD/.yap-sessions"
+              RUNTIME_ARGS+=(--bind "$PWD/.yap-sessions" ${escape jailSessionsDir})
+            '')
+            # Last, so it wins over the instruction-directory bind above. Guarded at
             # runtime: the override file is user-managed and may not exist yet.
             ++ lib.optional (jailCfg.agentsFile != null) (add-runtime ''
               if [ -f ${escape jailCfg.agentsFile} ]; then
@@ -379,16 +407,7 @@
           );
 
           jailLauncher = pkgs.writeShellScriptBin jailCfg.name ''
-            ${lib.optionalString (jailCfg.envFile != null) ''
-              # Double quotes, not shell-escaped: the path may contain shell
-              # variables that must expand at runtime (agenix secrets live
-              # under $XDG_RUNTIME_DIR).
-              if [ -f "${jailCfg.envFile}" ]; then
-                set -a
-                . "${jailCfg.envFile}"
-                set +a
-              fi
-            ''}
+            ${sourceEnv (if jailCfg.envFile != null then jailCfg.envFile else cfg.envFile)}
             exec ${lib.concatStringsSep " " jailCfg.preExec} ${lib.getExe jailedPackage} "$@"
           '';
         in
@@ -427,84 +446,21 @@
               '';
             };
 
-            agentsFile = mkOption {
+            envFile = mkOption {
               type = types.nullOr types.str;
               default = null;
+              example = literalExpression ''"/run/agenix/my-api-keys"'';
               description = ''
-                Path to the system-prompt file for new buffers, passed to
-                the harness as `agents_file`. The file is user-managed;
-                point it at a file outside the Nix store (for example
-                {file}`~/.config/yap/AGENTS.md`). When null the harness falls
-                back to its default ({file}`$XDG_CONFIG_HOME/yap/AGENTS.md`)
-                and then to `system`. The harness always prepends its own
-                `# About Yap` boilerplate to every turn, independent of this
-                file.
+                Shell file sourced by the generated backend launcher before
+                starting the agent. Keep key values out of Nix settings.
               '';
             };
 
-            templatesDir = mkOption {
-              type = types.nullOr types.str;
-              default = null;
-              description = ''
-                Directory of `insert()` templates, passed to the harness
-                as `templates_dir`. When null the harness default
-                ({file}`$XDG_CONFIG_HOME/yap/templates`, default
-                {file}`~/.config/yap/templates`) is used.
-              '';
-            };
-
-            skillsDir = mkOption {
-              type = types.nullOr types.str;
-              default = null;
-              description = ''
-                Directory of skill files merged into the system message,
-                passed to the harness as `skills_dir`. When null the
-                harness default ({file}`$XDG_CONFIG_HOME/yap/skills`, default
-                {file}`~/.config/yap/skills`) is used.
-              '';
-            };
-
-            agentsDir = mkOption {
-              type = types.nullOr types.str;
-              default = null;
-              description = ''
-                Directory of agent-definition files (subagents), passed to the harness
-                as `agents_dir`. When null the harness default
-                ({file}`$XDG_CONFIG_HOME/yap/agents`, default
-                {file}`~/.config/yap/agents`) is used.
-              '';
-            };
-
-            sessionsDir = mkOption {
-              type = types.nullOr types.str;
-              default = null;
-              description = ''
-                Directory where yap autosaves sessions and their scratch
-                queues, passed to the harness as `sessions_dir`. When null
-                the harness default ({file}`$XDG_CONFIG_HOME/yap/sessions`,
-                default {file}`~/.config/yap/sessions`) is used.
-              '';
-            };
-
-            # Harness (Lua) setup options; consumed by the Neovim config.
-            modelGroups = mkOption {
-              type = types.attrsOf types.str;
-              default = {
-                agent = "deepseek/deepseek-v4-pro";
-                editor = "deepseek/deepseek-v4-pro";
-                title = "deepseek/deepseek-flash";
-              };
-              description = ''
-                Named model tiers, each a "provider/model" combo, passed to
-                the harness as `model_groups`: `agent` (session worker),
-                `editor` (one-shot :YapEval model) and `title` (session
-                titling — instant label + final summary).
-              '';
-            };
-            system = mkOption {
-              type = types.str;
-              default = "You are a helpful coding assistant. Answer concisely.";
-              description = "Fallback system prompt when no AGENTS.md is present.";
+            backendPackage = mkOption {
+              type = types.package;
+              readOnly = true;
+              default = backendLauncher;
+              description = "Generated backend launcher; pass its executable to harness.setup({ bin = ... }).";
             };
 
             jail = {
@@ -555,12 +511,28 @@
               envFile = mkOption {
                 type = types.nullOr types.str;
                 default = null;
-                example = literalExpression ''"/run/agenix/my-api-keys"'';
                 description = ''
-                  Shell file sourced (outside the jail) before exec, for
-                  credentials the backend needs. The variable names are
-                  derived from {option}`settings`, so only those are forwarded
-                  through the jail.
+                  Override {option}`programs.yap.envFile` for the jail.
+                  Sourced outside bubblewrap; only configured credential
+                  variable names are forwarded inside.
+                '';
+              };
+
+              sessionsDir = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = ''
+                  Session mount target inside the jail. Set this when
+                  harness.setup() uses a non-default `sessions_dir`.
+                '';
+              };
+
+              agentsTargetFile = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = ''
+                  Target for the jail's `agentsFile` override. Set this when
+                  harness.setup() uses a non-default `agents_file`.
                 '';
               };
 
@@ -596,7 +568,7 @@
                   the jail, so this launcher gets different system prompt
                   rules while a normal session keeps the shared ones. The
                   content is read by the harness at session creation; the
-                  file is not merged with {option}`agentsFile`.
+                  file is not merged with the normal harness rules.
                 '';
               };
 
@@ -635,7 +607,10 @@
               }
             ];
 
-            home.packages = lib.optional (jailCfg.enable && pkgs.stdenv.hostPlatform.isLinux) jailLauncher;
+            home.packages = [
+              backendLauncher
+            ]
+            ++ lib.optional (jailCfg.enable && pkgs.stdenv.hostPlatform.isLinux) jailLauncher;
           };
         };
     };

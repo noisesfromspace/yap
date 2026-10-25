@@ -122,7 +122,7 @@ disable it. `templates_dir`/`skills_dir` configure
 
 Config and data files (defaults shown; the config home is
 `$XDG_CONFIG_HOME/yap` — `~/.config/yap` unless `$XDG_CONFIG_HOME` is set —
-and each path is configurable via `setup()` / the Nix module options):
+and each path is configurable via `setup()`):
 
   ~/.config/yap/settings.json   Providers: >json
 
@@ -159,7 +159,8 @@ and each path is configurable via `setup()` / the Nix module options):
   Native providers need no `base_url` (set one only for a proxy; Anthropic's
   takes no `/v1`, Google's no `/v1beta`). Direct Anthropic ids use dashes
   (`claude-sonnet-5-5`), OpenRouter's dots. API keys come from the named env
-  vars; the github tool reads `GITHUB_TOKEN` directly. Prices come from
+  vars; the github tool reads `GITHUB_TOKEN` by default (or the name set in
+  `github.api_key_env`). Prices come from
   `agent/price/pricing.json`.
 
   A provider can authenticate with a subscription login instead of an API

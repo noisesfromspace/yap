@@ -167,12 +167,15 @@ and `~/.ssh` do not exist in there, so a prompt-injected model has nothing to
 read.
 
 ```nix
-programs.yap.jail = {
+programs.yap = {
   enable = true;
-  name = "nvim-investigate";
-  preExec = [ "/run/wrappers/bin/tunnel" ]; # optional, runs outside bwrap
   envFile = config.age.secrets.api-keys.path;
-  agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
+  jail = {
+    enable = true;
+    name = "nvim-investigate";
+    preExec = [ "/run/wrappers/bin/tunnel" ]; # optional, runs outside bwrap
+    agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
+  };
 };
 ```
 
@@ -180,9 +183,22 @@ programs.yap.jail = {
 `:pwd`, and sessions land in `.yap-sessions` beside it. Add that to your
 gitignore.
 
+The module installs a `yap` backend launcher that sources `envFile` at runtime.
+Pass `${lib.getExe config.programs.yap.backendPackage}` as `bin` to
+`require('harness').setup()` in your Neovim config. Set harness options such
+as `model_groups`, `agents_file`, `skills_dir`, and `sessions_dir` there, not
+in `programs.yap`. The jail sources the same file outside bubblewrap; set
+`jail.envFile` only if it needs a different one. The jail forwards credential
+variables named by providers, websearch and GitHub (`GITHUB_TOKEN` by default).
+
+If `setup()` overrides the default `sessions_dir` or `agents_file`, set
+`jail.sessionsDir` or `jail.agentsTargetFile` to the matching path. Bind any
+non-default skills, agents and templates directories with
+`jail.extraReadOnlyPaths`.
+
 `preExec` wraps the jail from outside. bubblewrap sets `NoNewPrivs`, so a setuid
 network namespace wrapper such as a VPN has to run before it, never inside.
-Only the provider variables named in `settings` reach the jail.
+Only the configured credential variables reach the jail.
 
 Linux only. The jail bounds the filesystem, not the network, because the host
 network namespace is shared. Pair it with `preExec` when traffic must leave
