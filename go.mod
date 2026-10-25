@@ -1,6 +1,6 @@
 module boers.email/yap
 
-go 1.25.0
+go 1.26.0
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3
@@ -10,7 +10,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sergi/go-diff v1.4.0
 	github.com/zendev-sh/goai v0.10.5
-	mvdan.cc/sh/v3 v3.12.0
+	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (
