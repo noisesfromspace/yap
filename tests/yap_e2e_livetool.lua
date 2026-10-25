@@ -9,7 +9,7 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local document = require("harness.model.document")
 local state = require("harness.state")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
 -- The persistent tail viewer buffer of a session buffer (yap://<name>-tail).
 local function tail_buf(chat)

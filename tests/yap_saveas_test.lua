@@ -5,7 +5,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
 -- Run from a throwaway project directory so its permissions are what we
 -- assert on (a concurrent test must never chmod the repo root).

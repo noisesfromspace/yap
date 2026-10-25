@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
@@ -93,8 +93,7 @@ f:write("also check the tests\n")
 f:close()
 yap.setup({
   bin = ROOT .. "/yap",
-  provider = "mock",
-  model = "m1",
+  model_groups = { agent = "mock/m1", flash = ""},
   templates_dir = tmp .. "/templates",
   skills_dir = tmp .. "/skills",
 })
@@ -208,8 +207,7 @@ f2:write("---\ndescription: Interrupt the running turn\n---\nalso check the test
 f2:close()
 yap.setup({
   bin = ROOT .. "/yap",
-  provider = "mock",
-  model = "m1",
+  model_groups = { agent = "mock/m1", flash = ""},
   templates_dir = tmp2 .. "/templates",
   skills_dir = tmp2 .. "/skills",
 })

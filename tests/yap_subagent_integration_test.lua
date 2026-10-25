@@ -61,9 +61,7 @@ vim.fn.setfperm(script, "rwx------")
 local yap = require("harness")
 yap.setup({
   bin = script,
-  provider = "mock",
-  model = "working",
-  model_groups = { title = "" },
+  model_groups = { agent = "mock/working", flash = "" },
   agents_dir = home .. "/.config/yap/agents",
 })
 local parent = yap.new()

@@ -24,7 +24,7 @@ vim.notify = function(msg, level, opts)
   notified[#notified + 1] = { msg = msg, level = level, opts = opts }
 end
 
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 local icons = require("harness").config.icons
 assert(icons.waiting == "󰫁", "default waiting icon changed")
 

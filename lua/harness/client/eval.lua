@@ -28,13 +28,11 @@ local EVAL_SYSTEM = [[You follow the instruction exactly and return ONLY the res
 --- selection itself is the input, so a visual-mode eval just filters it.
 local DEFAULT_INSTRUCTION = "Improve this text"
 
---- The provider/model combo for an eval: the `editor` model group when set,
---- else the buffer's current combo (a session's model, or the setup()
---- default for a plain buffer).
-function M.combo(buf)
-  local provider, model = require("harness.config").group("editor")
+--- :YapEval! uses flash when set, otherwise agent.
+function M.combo()
+  local provider, model = require("harness.config").group("flash")
   if not provider then
-    provider, model = require("harness.config").current_combo(buf)
+    provider, model = require("harness.config").group("agent")
   end
   return provider, model
 end
@@ -163,19 +161,10 @@ function M.session(opts)
   if line1 and line2 and line1 > line2 then
     line1, line2 = line2, line1
   end
-  local provider, model = M.combo(buf)
-  if not provider then
-    vim.notify("yap eval: no model configured (set model_groups.editor)", vim.log.levels.ERROR)
-    return
-  end
   local instruction = opts.instruction ~= "" and opts.instruction or nil
   local user = M.session_user(buf, line1, line2, instruction)
   local yap = require("harness")
-  local sbuf = yap.new({
-    provider = provider,
-    model = model,
-    hidden = true,
-  })
+  local sbuf = yap.new({ hidden = true })
   vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
   -- Save the quoted selection now so the session is listed in sessions()
   -- before its first send.
@@ -225,9 +214,9 @@ function M.eval(opts)
     if instruction == "" then
       return
     end
-    local provider, model = M.combo(buf)
+    local provider, model = M.combo()
     if not provider then
-      vim.notify("yap eval: no model configured (set model_groups.editor)", vim.log.levels.ERROR)
+      vim.notify("yap eval: no model configured (set model_groups.flash)", vim.log.levels.ERROR)
       return
     end
     local payload = vim.json.encode({

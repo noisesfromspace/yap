@@ -2,7 +2,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ nerd_font = false, provider = "mock", model = "m1", icons = { steer = "→" } })
+yap.setup({ nerd_font = false, model_groups = { agent = "mock/m1", flash = "" }, icons = { steer = "→" }})
 local icons = yap.config.icons
 assert(icons.running == "▶" and icons.stopped == "⏹" and icons.error == "✗" and icons.waiting == "◉")
 assert(icons.idle == "○" and icons.done == "✓" and icons.approval == "⚠")

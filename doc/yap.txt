@@ -39,18 +39,11 @@ Because the buffer is the conversation, ordinary editing changes it:
 ==============================================================================
 2. SETUP & CONFIGURATION                                *yap-configuration*
 
-Lua setup (defaults shown; substitute your own provider/model): >lua
+Lua setup (example; substitute your own model groups): >lua
 
   require("harness").setup({
     bin = "yap",                  -- path to the Go binary
-    provider = "moonshot",        -- example; use your provider
-    model = "kimi-k3",            -- example; use your model
     reasoning_level = "medium",  -- low | medium | high
-    models = {                    -- optional: combos for the model picker
-      "moonshot/kimi-k3",
-      "deepseek/deepseek-v4-pro",
-      "openai/gpt-5.6-sol",
-    },
     system = "You are a helpful coding assistant. Answer concisely.",
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     agents_dir = "~/.config/yap/agents",       -- subagent definitions
@@ -59,9 +52,8 @@ Lua setup (defaults shown; substitute your own provider/model): >lua
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
     notify_done = true,           -- vim.notify when a hidden turn finishes
     model_groups = {              -- named model tiers (provider/model combos)
-      agent = "",                 -- session worker ("" -> provider/model above)
-      editor = "deepseek/deepseek-v4-pro", -- :YapEval one-shot
-      title = "",                 -- session titles ("" disables titling)
+      agent = "openai/gpt-6.1-sol", -- new sessions, including :YapEval
+      flash = "deepseek/deepseek-flash", -- :YapEval! and session titles
     },
     nerd_font = true,             -- false for plain-Unicode icons
     icons = { since = "󰅐", total = "󰆼" }, -- winbar/picker glyph overrides
@@ -91,22 +83,15 @@ v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the typographic
 spinner and the block gauge. Explicit `icons` entries win; set one to `""` to
 drop it.
 
-`model_groups` is the single place every model-using feature reads its
-"provider/model" combo from, so a tier is set once and every feature that uses
-it follows:
-
-  agent  — the session worker. Empty falls back to `provider`/`model` above
-           (and a persisted change_default_model() still wins over both).
-  editor — the one-shot, no-tools model behind |:YapEval|.
-  title  — session titling: both the instant on-send label and the final
-           whole-session summary.
-
-Set a group to `""` to disable it. `title` defaults to `""` (titling off);
-set it to a cheap combo like `deepseek/deepseek-flash` to label sessions.
-An empty `editor` group makes |:YapEval| inherit the buffer's current combo (a
-session's model, or the setup() default for a plain buffer); it defaults to
-`deepseek/deepseek-v4-pro`. A `title:` you type in the frontmatter wins over
-the `title` group.
+`model_groups` has two tiers. `agent` starts regular conversations, including
+`:YapEval` sessions. `flash` handles one-shot, no-tools `:YapEval!` edits and
+short session titles (the initial label and updates after each turn). Set
+`flash = ""` to disable automatic titles and use `agent` for `:YapEval!`.
+A `title:` you type in the frontmatter wins over automatic titles.
+The per-session |change_model()| picker discovers available models through
+`yap models`, which queries configured backend providers with their current
+credentials. It does not change the configured default for new sessions.
+Old `$XDG_CACHE_HOME/yap/default` selections are ignored.
 
 `reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
 into every new session's frontmatter as `reasoning_level` (with the full
@@ -237,7 +222,8 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         cursor waits in the user turn for your question.
 :YapEval! [instruction]
                         Replace the selected lines with the model's output: a
-                        one-shot, no-tools call to the `editor` model group. Acts on a
+                        one-shot, no-tools call to `model_groups.flash` (or
+                        `agent` when flash is empty). Acts on a
                         linewise range (a visual selection via `:'<,'>` or an
                         explicit `:1,5`); with a selection and no instruction
                         it applies a default transform ("Improve this text"),
@@ -272,7 +258,6 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
   require("harness").instances()            -- pick another open session
   require("harness").waiting()              -- pick a session awaiting your reply
-  require("harness").change_default_model() -- pick the default model for new sessions
   require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
 <
 `scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
@@ -284,14 +269,13 @@ for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>w, <leader>y, <leader>g
-and <leader>M, which are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except <leader>r, <leader>w, <leader>y and
+<leader>g, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
   <C-c>                 Cancel the in-flight request (see stop()).
   <leader>m             Change model (picker, see change_model()).
-  <leader>M             Change the default model for new buffers (picker).
   <leader>g             Open/close the guard board (see guard()).
   <leader>l             Watch the live tool tail (see live()).
 

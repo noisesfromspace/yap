@@ -5,7 +5,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ provider = "mock", model = "m1" })
+yap.setup({ model_groups = { agent = "mock/m1", flash = "" }})
 
 local win = vim.api.nvim_get_current_win()
 local parent = vim.api.nvim_get_current_buf()

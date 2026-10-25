@@ -1,5 +1,5 @@
 -- Session titling: generate the one-line description shown in the winbar and
--- session picker, by asking the `title` model group to label the latest user
+-- session picker, by asking the `flash` model group to label the latest user
 -- request ("user") and to summarize the whole session ("answer").
 
 local M = {}
@@ -85,7 +85,7 @@ function M.refresh(buf, kind, messages)
     if current_description(buf) ~= "" or description_started[buf] or (housekeeping and #title_input == 0) then
       return
     end
-    combo = harness().config.model_groups.title
+    combo = harness().config.model_groups.flash
     system = [[Write a short title for the user's request below.
 
 Rules:
@@ -108,7 +108,7 @@ Return only the title.]]
     if #title_input == 0 then
       return
     end
-    combo = harness().config.model_groups.title
+    combo = harness().config.model_groups.flash
     system = [[Write a short session title centered on the overall work, so the session is easy to find later.
 
 The input is the user's requests in order. The first request anchors the session's main goal; later requests may refine or extend it. Summarize the overall work, not just the final request or workflow.

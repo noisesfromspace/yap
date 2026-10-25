@@ -125,7 +125,7 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
 
    ```lua
-   require("harness").setup({ provider = "anthropic", model = "claude-sonnet-5-5" })
+   require("harness").setup({ model_groups = { agent = "anthropic/claude-sonnet-5-5" } })
    ```
 4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
 
@@ -151,7 +151,6 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)     |
 | `require("harness").instances()`                         | `<leader>r` | pick another open session                   |
 | `require("harness").waiting()`                           | `<leader>w` | pick a session awaiting your reply          |
-| `require("harness").change_default_model()`              | `<leader>M` | pick the default model for new sessions     |
 | `require("harness").insert(name, { at_cursor = false })` | `<C-t>`     | insert template / merge a skill             |
 | `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference |
 

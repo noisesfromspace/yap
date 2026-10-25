@@ -5,7 +5,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 local chat = yap.new()
 vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "try ssh" })
 

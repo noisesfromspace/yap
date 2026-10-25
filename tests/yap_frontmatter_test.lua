@@ -6,7 +6,7 @@ local document = require("harness.model.document")
 local session = require("harness.session")
 local frontmatter = require("harness.model.frontmatter")
 local paths = require("harness.path")
-yap.setup({ bin = ROOT .. "/yap", provider = "def", model = "default-m" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "def/default-m", flash = "" }})
 
 -- 1. new() writes the frontmatter with the initial combo + history
 local buf = yap.new({ provider = "zeta", model = "m1" })

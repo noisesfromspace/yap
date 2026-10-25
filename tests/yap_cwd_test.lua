@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/tests/mock_cwd.py" })
+yap.setup({ bin = ROOT .. "/tests/mock_cwd.py", model_groups = { flash = "" } })
 
 local original = vim.fn.getcwd()
 local buf = yap.new()

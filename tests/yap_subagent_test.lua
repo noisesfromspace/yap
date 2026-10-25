@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ provider = "mock", model = "m1" })
+yap.setup({ model_groups = { agent = "mock/m1", flash = "" }})
 local parent = yap.new()
 local parent_path = vim.b[parent].yap_path
 local name = require("harness.path").session_name(parent_path) .. "-abc123"

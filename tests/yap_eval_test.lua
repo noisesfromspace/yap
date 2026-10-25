@@ -2,14 +2,15 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 package.loaded.harness = nil
 local yap = require("harness")
-assert(yap.config.model_groups.editor == "deepseek/deepseek-v4-pro", "editor group should default to the one-shot model")
+assert(yap.config.model_groups.agent == "openai/gpt-6.1-sol", "agent default")
+assert(yap.config.model_groups.flash == "deepseek/deepseek-flash", "flash default")
 yap.setup({
   bin = ROOT .. "/yap",
-  model_groups = { editor = "mock/m1" },
-  models = { "mock/m1" },
+  model_groups = { agent = "mock/m1", flash = "mock/flash" },
 })
 
 local eval = require("harness.client.eval")
+assert(select(2, eval.combo()) == "flash", "one-shot eval should use flash")
 local structure = require("harness.model.structure")
 
 -- strip_markers removes the binary's thinking/model/error blocks but keeps
@@ -104,6 +105,7 @@ local wins_before = #vim.api.nvim_tabpage_list_wins(0)
 local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2 })
 assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "eval session did not open a split")
 assert(vim.api.nvim_get_current_buf() == sbuf, "focus did not move to the eval session")
+assert(vim.b[sbuf].yap_provider == "mock" and vim.b[sbuf].yap_model == "m1", "eval session did not use agent")
 assert(vim.b[sbuf].yap, "eval split is not a yap session")
 assert(
   vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }),
@@ -120,6 +122,8 @@ for _, item in ipairs(require("harness.session").list()) do
   listed = listed or item.path == spath
 end
 assert(listed, "eval session missing from sessions()")
+yap.config.model_groups.flash = ""
+assert(select(2, eval.combo()) == "m1", "empty flash should use agent")
 
 -- No tools were offered to the provider.
 local log = io.open("/tmp/yap-eval.log", "r")
@@ -129,6 +133,7 @@ log:close()
 for line in text:gmatch("[^\n]+") do
   local okj, req = pcall(vim.json.decode, line)
   if okj then
+    assert(req.model == "flash", "one-shot eval did not use flash: " .. line)
     assert(not (req.tools and type(req.tools) == "table" and #req.tools > 0), "eval offered tools: " .. line)
   end
 end

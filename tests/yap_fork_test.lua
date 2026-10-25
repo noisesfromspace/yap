@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ provider = "mock", model = "m1" })
+yap.setup({ model_groups = { agent = "mock/m1", flash = "" }})
 vim.cmd("runtime plugin/yap.lua")
 local paths = require("harness.path")
 local frontmatter = require("harness.model.frontmatter")

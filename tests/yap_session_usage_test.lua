@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "gpt-4o" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/gpt-4o", flash = "" }})
 
 -- A fresh session has no audit log yet, so no session total until a turn
 -- completes and its turn_end journal lands.

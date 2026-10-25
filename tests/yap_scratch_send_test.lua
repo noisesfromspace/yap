@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ bin = ROOT .. "/yap", provider = "mock", model = "m1" })
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
 local buf = yap.new()
 
@@ -135,7 +135,7 @@ assert(not text(stopped):find("unfinished instruction", 1, true), "stop sent pen
 
 -- A failed backend spawn must not consume the queued message on disk or
 -- in the live scratch buffer.
-yap.config.model_groups.title = ""
+yap.config.model_groups.flash = ""
 yap.config.bin = ROOT .. "/no-such-yap-binary"
 local failed = yap.new()
 yap.scratch_toggle(failed)

@@ -1,5 +1,5 @@
--- yap configuration: the defaults table, provider/model discovery and the
--- persisted default combo. Everything else reads the live table through
+-- yap configuration: the defaults table and provider/model discovery.
+-- Everything else reads the live table through
 -- `require("harness").config` (which init.lua points at M.defaults), so a
 -- setup() call extends this table in place and every reader sees it.
 
@@ -9,17 +9,11 @@ local paths = require("harness.path")
 
 M.defaults = {
   bin = "yap", -- path to the yap binary
-  provider = "anthropic",
-  model = "claude-sonnet-5-5",
   -- Default active reasoning level, seeded into a new session's frontmatter
   -- as `reasoning_level` so it is visible and hand-editable from the first
   -- line. Delete the line in a session (or set the default to nil) to fall
   -- back to the provider's own default.
   reasoning_level = "medium",
-  -- Optional override list of "provider/model" combos for
-  -- change_model(). When unset, the picker queries every provider
-  -- in config.json for its model list (GET /models).
-  models = nil,
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",
@@ -59,28 +53,21 @@ M.defaults = {
     cap_l = "", -- nf-ple-lower_right_triangle (island left cap)
     cap_r = "", -- nf-ple-lower_left_triangle  (island right cap)
   },
-  -- Named model tiers, one "provider/model" combo per role. Every feature
-  -- that needs a model reads its tier here, so a tier is set once and every
-  -- feature that uses it follows:
-  --   agent  — the session worker. Empty falls back to provider/model above
-  --            (and a persisted change_default_model() still wins over both).
-  --   editor — the one-shot, no-tools model behind :YapEval.
-  --   title  — session titling: both the instant on-send label and the
-  --            final whole-session summary. Empty disables titling.
+  -- Model tiers: regular sessions use agent; cheap one-shot work uses flash.
+  -- flash also generates short session descriptions; "" disables those
+  -- descriptions and makes :YapEval! use agent.
   model_groups = {
-    agent = "",
-    editor = "deepseek/deepseek-v4-pro",
-    title = "",
+    agent = "openai/gpt-6.1-sol",
+    flash = "deepseek/deepseek-flash",
   },
   -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
   -- to disable it. Buffer-local maps are applied when a session opens;
-  -- `instances`, `sessions`, `waiting`, `guard` and `change_default_model`
+  -- `instances`, `sessions`, `waiting` and `guard`
   -- are global (installed by setup()).
   keymaps = {
     send = "<C-s>",
     stop = "<C-c>",
     change_model = "<leader>m",
-    change_default_model = "<leader>M",
     live = "<leader>l",
     scratch = "<leader>s",
     insert = "<C-t>",
@@ -127,36 +114,6 @@ local function models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
--- The last default provider/model picked via change_default_model(),
--- persisted so new buffers reuse it without a rebuild of the (often
--- Nix-managed) setup() defaults. setup() reads it once;
--- change_default_model() rewrites it.
-M.default_combo = nil
-
-local function default_combo_path()
-  return vim.fn.stdpath("cache") .. "/yap/default"
-end
-
---- Read the persisted default combo, or nil when none is stored.
-function M.read_default_combo()
-  local path = default_combo_path()
-  if vim.fn.filereadable(path) == 1 then
-    local lines = vim.fn.readfile(path)
-    if #lines == 1 and M.parse_combo(lines[1]) then
-      return lines[1]
-    end
-  end
-  return nil
-end
-
---- Persist the default combo and keep the in-memory copy in step.
-function M.write_default_combo(combo)
-  M.default_combo = combo
-  local path = default_combo_path()
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  vim.fn.writefile({ combo }, path)
-end
-
 --- Refresh the cached provider/model list from `yap models`, then release
 --- every waiter waiting on it.
 function M.refresh_models()
@@ -201,8 +158,8 @@ function M.load_models_cache()
 end
 
 --- Open the provider/model picker and call `cb` with the chosen
---- "provider/model" combo (nothing on dismiss). Reuses setup()'s `models`
---- list when configured, otherwise `yap models` (cached, refreshed async).
+--- "provider/model" combo (nothing on dismiss). Uses the backend's cached
+--- discovery list, refreshed asynchronously during setup.
 function M.pick(cb)
   local function pick(items)
     vim.ui.select(items, { prompt = "yap model" }, function(choice)
@@ -210,11 +167,6 @@ function M.pick(cb)
         cb(choice)
       end
     end)
-  end
-  local configured = require("harness").config.models
-  if configured and #configured > 0 then
-    pick(configured)
-    return
   end
   if models_cache then
     pick(models_cache)
@@ -248,21 +200,9 @@ function M.group(name)
   end
 end
 
---- The combo a brand-new session starts on: the persisted default
---- (change_default_model()), else the `agent` model group, else setup()'s
---- provider/model.
+--- The combo a brand-new session starts on.
 function M.session_combo()
-  if M.default_combo then
-    local provider, model = M.parse_combo(M.default_combo)
-    if provider then
-      return provider, model
-    end
-  end
-  local provider, model = M.group("agent")
-  if provider then
-    return provider, model
-  end
-  return require("harness").config.provider, require("harness").config.model
+  return M.group("agent")
 end
 
 --- The combo yap will send with: per-buffer vars (set by new() /
@@ -277,8 +217,8 @@ end
 
 --- Split a "provider/model" combo into provider, model — or nil, nil when the
 --- string is not well-formed. The one place the combo grammar lives; used by
---- change_model, change_default_model, the persisted default and the subagent
---- model override. The provider is the first segment; the model may itself
+--- model groups, change_model and subagent overrides. The provider is the
+--- first segment; the model may itself
 --- contain `/` and `~`, because `yap models` prints provider + "/" + model and
 --- ids like `openrouter/anthropic/claude-sonnet-5` or
 --- `openrouter/~deepseek/deepseek-flash-latest` are published combos.

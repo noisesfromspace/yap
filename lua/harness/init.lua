@@ -211,9 +211,8 @@ function M.show_keymaps(buf)
 end
 
 --- Change the provider/model combo for the current buffer.
---- With an argument: "provider/model". Without: pick from setup()'s
---- models list, or — when that isn't configured — from `yap models`,
---- which queries every provider in config.json (GET /models).
+--- With an argument: "provider/model". Without: pick from `yap models`,
+--- which discovers reachable providers from the backend settings and credentials.
 function M.change_model(combo)
   if not combo then
     config.pick(function(choice)
@@ -244,25 +243,6 @@ function M.change_model(combo)
   end
 end
 
---- Change the default provider/model for NEW buffers, persisted to
---- `$XDG_CACHE_HOME/yap/default`. Does not touch the current buffer.
---- With an argument: "provider/model". Without: pick from the same list
---- as change_model().
-function M.change_default_model(combo)
-  if not combo then
-    config.pick(function(choice)
-      M.change_default_model(choice)
-    end)
-    return
-  end
-  if not config.parse_combo(combo) then
-    vim.notify("yap: expected provider/model, got: " .. combo, vim.log.levels.ERROR)
-    return
-  end
-  config.write_default_combo(combo)
-  vim.notify("yap: default model for new sessions: " .. combo, vim.log.levels.INFO)
-end
-
 -- ─── Setup / composition root ─────────────────────────────────────────────
 
 function M.setup(opts)
@@ -283,12 +263,22 @@ function M.setup(opts)
       cap_r = "]",
     })
   end
-  M.config = vim.tbl_deep_extend("force", M.config, opts)
-  config.default_combo = config.read_default_combo()
-  if not M.config.models or #M.config.models == 0 then
-    config.load_models_cache()
-    config.refresh_models()
+  for _, key in ipairs({ "provider", "model", "models" }) do
+    assert(opts[key] == nil, "yap: " .. key .. " is no longer a setup option; configure model_groups instead")
   end
+  for _, role in ipairs({ "editor", "title" }) do
+    assert(not (opts.model_groups and opts.model_groups[role] ~= nil),
+      "yap: model_groups." .. role .. " was replaced by model_groups.flash")
+  end
+  local merged = vim.tbl_deep_extend("force", M.config, opts)
+  for _, role in ipairs({ "agent", "flash" }) do
+    local combo = merged.model_groups[role]
+    assert(type(combo) == "string" and (role == "flash" and combo == "" or config.parse_combo(combo)),
+      "yap: model_groups." .. role .. " must be a provider/model combo" .. (role == "flash" and " or empty" or ""))
+  end
+  M.config = merged
+  config.load_models_cache()
+  config.refresh_models()
   -- Resolve every data path — defaults included — against the real home
   -- directory (R-data-paths): a relative or unset $HOME must never make yap
   -- read or write inside the project. `~` expands; a relative override is
@@ -302,9 +292,9 @@ function M.setup(opts)
   -- Propagate the (possibly overridden) data root to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
 
-  -- <leader>r, <leader>w, <leader>y, <leader>g and <leader>M are global:
-  -- they list sessions across every buffer or change the default model, so
-  -- they must work from any file, not just inside a session. The other
+  -- <leader>r, <leader>w, <leader>y and <leader>g are global:
+  -- they list sessions across every buffer, so they must work from any file.
+  -- The other
   -- keymaps act on the current buffer and stay buffer-local in setup_buffer.
   if M.config.keymaps.instances ~= "" then
     vim.keymap.set("n", M.config.keymaps.instances, function()
@@ -325,11 +315,6 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymaps.guard, function()
       guard.toggle()
     end, { silent = true, desc = "yap: guard board" })
-  end
-  if M.config.keymaps.change_default_model ~= "" then
-    vim.keymap.set("n", M.config.keymaps.change_default_model, function()
-      M.change_default_model()
-    end, { silent = true, desc = "yap: change default model" })
   end
 
   -- Opening a file under ~/.config/yap/sessions/ directly (e.g. from a file
