@@ -53,34 +53,15 @@
         in
         {
           # Go backend: provider client + agent loop, invoked by the harness.
-          # Wrapped with the Playwright runtime (Node driver + Chromium) so the
-          # playwright tool works out of the box, not only in the devShell. The
-          # driver JS itself is downloaded once by playwright-go into
-          # ~/.cache/ms-playwright-go on first use; the Node runtime and the
-          # browser come from nixpkgs, not npm or the devShell.
-          agent =
-            let
-              agentBin = pkgs.buildGoModule {
-                pname = "yap-agent";
-                version = self.shortRev or self.dirtyShortRev or "dev";
-                src = agentSrc;
-                subPackages = [ "agent" ];
-                vendorHash = "sha256-w1A3+0/EL7oStJx4WsNNThP5uzTyOGHcZjjPGdCRkFs=";
-                env.CGO_ENABLED = "0";
-                meta.mainProgram = "agent";
-              };
-            in
-            pkgs.runCommand "yap-agent"
-              {
-                nativeBuildInputs = [ pkgs.makeWrapper ];
-                meta.mainProgram = "agent";
-              }
-              ''
-                mkdir -p "$out/bin"
-                makeWrapper "${agentBin}/bin/agent" "$out/bin/agent" \
-                  --set-default PLAYWRIGHT_NODEJS_PATH "${pkgs.nodejs}/bin/node" \
-                  --set-default PLAYWRIGHT_CHROMIUM_PATH "${pkgs.chromium}/bin/chromium"
-              '';
+          agent = pkgs.buildGoModule {
+            pname = "yap-agent";
+            version = self.shortRev or self.dirtyShortRev or "dev";
+            src = agentSrc;
+            subPackages = [ "agent" ];
+            vendorHash = "sha256-vxU5iYr+E8ErWi+xhKIay5s2RZtAzIk+vml85OMu2Sc=";
+            env.CGO_ENABLED = "0";
+            meta.mainProgram = "agent";
+          };
 
           # Neovim plugin (the harness). Provides require("harness").
           harness = pkgs.vimUtils.buildVimPlugin {
@@ -200,10 +181,6 @@
               pkgs.neovim
               (pkgs.python3.withPackages (p: [ p.msgpack ])) # attached-UI regression tests
               pkgs.vimPlugins.mini-nvim # mini.test: the Lua suite's framework (tests/minitest.lua)
-              # Browser + runtime for the playwright tool (native Go client;
-              # it shells out to the Node driver and drives nixpkgs chromium).
-              pkgs.nodejs
-              pkgs.chromium
               # Test/lint tooling the suite shells out to: ripgrep backs the
               # search/glob tools' tests; golangci-lint enforces .golangci.yml.
               pkgs.ripgrep
@@ -272,20 +249,15 @@
             else
               "${jailConfigHome}/yap/AGENTS.md";
 
-          # Env-var names the configured providers and tools read credentials
-          # from. GitHub defaults to GITHUB_TOKEN when no name is configured.
+          # Env-var names the configured providers and MCP servers read
+          # credentials from. MCP servers reference them through their `env`
+          # and `headers` maps (values are source env-var names).
           jailEnvNames = lib.unique (
             lib.filter (v: v != null && v != "") (
               lib.mapAttrsToList (_: p: p.api_key_env or null) (cfg.settings.providers or { })
-              ++ [
-                (cfg.settings.websearch.api_key_env or null)
-                (
-                  let
-                    name = cfg.settings.github.api_key_env or null;
-                  in
-                  if name == null || name == "" then "GITHUB_TOKEN" else name
-                )
-              ]
+              ++ lib.concatMap
+                (s: lib.attrValues (s.env or { }) ++ lib.attrValues (s.headers or { }))
+                (lib.attrValues (cfg.settings.mcp or { }))
             )
           );
 
@@ -430,19 +402,22 @@
                   base_url = "https://api.moonshot.ai/v1";
                   api_key_env = "MOONSHOT_API_KEY";
                 };
-                websearch.provider = "exa";
-                websearch.api_key_env = "EXA_API_KEY";
+                mcp = {
+                  exa = {
+                    url = "https://mcp.exa.ai/mcp";
+                    headers = { "x-api-key" = "EXA_API_KEY"; };
+                  };
+                };
               };
               description = ''
                 Agent configuration, written to
                 {file}`$XDG_CONFIG_HOME/yap/settings.json` (default
                 {file}`~/.config/yap/settings.json`).
                 Keys are `providers` (name → base_url + api_key_env, or
-                auth = "chatgpt" for a `yap login` subscription),
-                `websearch` (provider name + api_key_env for the search
-                tool). Model prices come from the committed catalog in
-                agent/price. API keys themselves are referenced by
-                environment variable name in `api_key_env`.
+                auth = "chatgpt" for a `yap login` subscription) and `mcp`
+                (server name → stdio command/args/env or http url/headers,
+                with credentials referenced by environment-variable name).
+                Model prices come from the committed catalog in agent/price.
               '';
             };
 

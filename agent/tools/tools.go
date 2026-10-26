@@ -2,9 +2,9 @@
 // Every non-test Go file in this directory except tools.go (the registry
 // below) defines exactly one tool, self-registering via Register in init().
 // Adding or changing a tool = editing a file here and recompiling
-// (CGO_ENABLED=0). Tool *providers* — websearch backends — are not tools:
-// they live outside this directory (e.g. agent/websearch/exa) and register
-// through RegisterWebsearchProvider.
+// (CGO_ENABLED=0). MCP tools are not files here: they are discovered at
+// runtime from configured servers and registered through RegisterRaw by the
+// turn loop.
 //
 // A tool defines an Args struct; the JSON schema sent to the provider is
 // generated from it by reflection (invopop/jsonschema), and incoming
@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
@@ -71,26 +72,13 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 	if err != nil {
 		panic(fmt.Sprintf("tools: %s: reflect schema: %v", name, err))
 	}
-	doc, err := schema.UnmarshalJSON(bytes.NewReader(schemaJSON))
+	validate, err := compileSchema(schemaJSON)
 	if err != nil {
-		panic(fmt.Sprintf("tools: %s: parse schema: %v", name, err))
-	}
-	c := schema.NewCompiler()
-	if err := c.AddResource("schema.json", doc); err != nil {
 		panic(fmt.Sprintf("tools: %s: %v", name, err))
 	}
-	compiled, err := c.Compile("schema.json")
-	if err != nil {
-		panic(fmt.Sprintf("tools: %s: compile schema: %v", name, err))
-	}
 	validated := func(raw json.RawMessage) (string, string, error) {
-		var v any
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return "", "", fmt.Errorf("invalid arguments: %v", err)
-		}
-		if err := compiled.Validate(v); err != nil {
-			// The model sees this and can correct its call.
-			return "", "", fmt.Errorf("invalid arguments: %v", err)
+		if err := validate(raw); err != nil {
+			return "", "", err
 		}
 		var args T
 		if err := json.Unmarshal(raw, &args); err != nil {
@@ -106,6 +94,72 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 	}
 	if len(cleanup) > 0 {
 		registry[name].close = cleanup[0]
+	}
+}
+
+// compileSchema compiles a JSON schema and returns a validator over raw
+// arguments. The validator returns a model-readable error when the arguments
+// are not valid JSON or fail validation.
+func compileSchema(schemaJSON json.RawMessage) (func(json.RawMessage) error, error) {
+	doc, err := schema.UnmarshalJSON(bytes.NewReader(schemaJSON))
+	if err != nil {
+		return nil, err
+	}
+	c := schema.NewCompiler()
+	if err := c.AddResource("schema.json", doc); err != nil {
+		return nil, err
+	}
+	compiled, err := c.Compile("schema.json")
+	if err != nil {
+		return nil, err
+	}
+	return func(raw json.RawMessage) error {
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return fmt.Errorf("invalid arguments: %v", err)
+		}
+		if err := compiled.Validate(v); err != nil {
+			// The model sees this and can correct its call.
+			return fmt.Errorf("invalid arguments: %v", err)
+		}
+		return nil
+	}, nil
+}
+
+// RegisterRaw registers a tool whose schema is supplied directly instead of
+// reflected from a Go struct. The MCP integration uses it: schemas come from
+// external servers at runtime. It returns an error instead of panicking so a
+// malformed server schema cannot crash the backend.
+func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(json.RawMessage) (string, string, error), cleanup ...func()) error {
+	if _, exists := registry[name]; exists {
+		return fmt.Errorf("tools: %s is already registered", name)
+	}
+	validate, err := compileSchema(schemaJSON)
+	if err != nil {
+		return fmt.Errorf("tools: %s: %v", name, err)
+	}
+	validated := func(raw json.RawMessage) (string, string, error) {
+		if err := validate(raw); err != nil {
+			return "", "", err
+		}
+		return run(raw)
+	}
+	t := &Tool{Name: name, Description: description, Schema: schemaJSON, run: validated}
+	if len(cleanup) > 0 {
+		t.close = cleanup[0]
+	}
+	registry[name] = t
+	return nil
+}
+
+// UnregisterPrefix removes every registered tool whose name starts with
+// prefix. The MCP integration calls it before re-registering the turn's
+// discovered tools, so tools from a server that went away do not linger.
+func UnregisterPrefix(prefix string) {
+	for name := range registry {
+		if strings.HasPrefix(name, prefix) {
+			delete(registry, name)
+		}
 	}
 }
 

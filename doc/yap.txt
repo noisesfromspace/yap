@@ -144,8 +144,7 @@ and each path is configurable via `setup()`):
   Native providers need no `base_url` (set one only for a proxy; Anthropic's
   takes no `/v1`, Google's no `/v1beta`). Direct Anthropic ids use dashes
   (`claude-sonnet-5-5`), OpenRouter's dots. API keys come from the named env
-  vars; the github tool reads `GITHUB_TOKEN` by default (or the name set in
-  `github.api_key_env`). Prices come from
+  vars; API keys come from the named env vars. Prices come from
   `agent/price/pricing.json`.
 
   A provider can authenticate with a subscription login instead of an API
@@ -169,6 +168,30 @@ and each path is configurable via `setup()`):
   delete the file to forget the account.
 
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
+
+  The `mcp` block configures external MCP servers, whose tools are exposed to
+  the model as `mcp_<server>_<tool>`. Each entry is a stdio server (a local
+  `command`, optional `args` and `cwd`) or an HTTP server (`url`). Credentials
+  never appear literally: `env` maps a child variable name to a Yap env var,
+  and `headers` maps an HTTP header to a Yap env var. `tools` optionally lists
+  which of the server's tools to expose (omit for all): >json
+
+    {
+      "mcp": {
+        "exa": {
+          "url": "https://mcp.exa.ai/mcp",
+          "headers": { "x-api-key": "EXA_API_KEY" }
+        },
+        "github": {
+          "command": "github-mcp-server",
+          "env": { "GITHUB_TOKEN": "GITHUB_TOKEN" }
+        }
+      }
+    }
+<
+  MCP servers stay connected for the backend's lifetime; a stop() cancels the
+  in-flight call without closing them. MCP calls are not guarded: their reach
+  is whatever the server and its credentials permit.
 
   The `sandbox` block configures the bash tool's bubblewrap sandbox (Linux
   only; see |yap-sandbox|). `enabled` defaults to true — the sandbox is on
@@ -723,7 +746,6 @@ The set today:
                 approves it. The SSRF / protocol flags (`--resolve`,
                 `--unix-socket`, `--proxy`, `-L`, `--config`, …) are not
                 gated: they are refused outright in the tool.
-  playwright    the `eval` command (arbitrary JavaScript in the page).
   read/write    a path that is, or resolves into, a secret directory
   /edit/search  (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh,
                 /run/agenix, /etc/agenix) — approvable, never silently
@@ -821,14 +843,15 @@ approval rules that sit in front of them (|yap-guard-gate|).
   glob           List files by pattern through ripgrep.
   curl           Fetch a URL with curl; the response plus a status line.
   fetch          Fetch a URL and return the readable content as markdown.
-  websearch      Web search; titles, URLs and excerpts.
-  github         Read GitHub: search code, repos, issues and PRs.
-  playwright     Drive Chromium and act through accessibility refs.
   ssh            Run commands over OpenSSH. Every call needs approval.
   subagent       Run a saved agent definition in a child session.
   models         List provider/model combos and their prices.
   quickfix       Replace Neovim's quickfix list with source locations.
   close_session  Close the session buffer once the turn has finished.
+
+Configured MCP servers (see the `mcp` block in |yap-configuration|) add their
+tools at runtime, named `mcp_<server>_<tool>`; they are discovered each turn
+and are not part of this compiled-in list.
 
 For long-running bash commands, set `background: true` to return immediately
 with a session-scoped ID. Use `bash_output` to inspect output, or set its

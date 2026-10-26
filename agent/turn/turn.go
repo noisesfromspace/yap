@@ -21,7 +21,6 @@ import (
 	"boers.email/yap/agent/safety"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/utils"
-	"boers.email/yap/agent/websearch/exa"
 	"boers.email/yap/agent/wire"
 )
 
@@ -347,9 +346,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	}
 	utils.SetFrontendCwd(req.Cwd)
 	utils.SetAssetsBase(req.AssetsDir)
-	tools.SetWebsearchProvider(cfg.Websearch.Provider)
-	exa.SetAPIKeyEnv(cfg.Websearch.APIKeyEnv)
-	tools.SetGitHubAPIKeyEnv(cfg.GitHub.APIKeyEnv)
+	syncMCPTools(ctx, cfg.MCP)
 	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	enabled := cfg.Sandbox.Enabled == nil || *cfg.Sandbox.Enabled
 	safety.SetSandboxConfig(safety.SandboxConfig{

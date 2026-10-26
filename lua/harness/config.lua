@@ -226,10 +226,10 @@ function M.parse_combo(combo)
   return combo:match("^([%w_.:%-]+)/([%w_.:~/-]+)$")
 end
 
--- Cache of the compiled-in tool names, used to render the per-session
--- `tools` allowlist in the frontmatter. `yap tools` prints the registry
--- (sorted, one per line); nil when the binary cannot be reached, which
--- leaves a session unrestricted (no `tools:` line).
+-- Cache of the compiled-in tool names (`yap tools`). No longer seeded into
+-- new sessions: MCP tools are discovered at runtime, so a statically seeded
+-- allowlist would silently exclude them. Sessions now default to unrestricted
+-- (no `tools:` line); subagents and hand-added `tools:` blocks restrict.
 local tool_names = nil
 
 --- Names of every tool compiled into the binary, cached from `yap tools`.

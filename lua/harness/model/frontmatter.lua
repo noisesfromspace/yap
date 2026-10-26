@@ -278,7 +278,7 @@ function M.sync(buf)
     models = models,
     created_at = created_at,
     agent = (fm and fm.agent) or vim.b[buf].yap_agent,
-    tools = (fm and fm.tools) or vim.b[buf].yap_tools or config.tool_names(),
+    tools = (fm and fm.tools) or vim.b[buf].yap_tools,
     created_cwd = created_cwd,
     reasoning_level = reasoning_level,
   }))

@@ -268,14 +268,6 @@ func TestGuardRules(t *testing.T) {
 		t.Fatalf("subagent: reason=%q", reason)
 	}
 
-	// playwright gates only the eval command (arbitrary JavaScript).
-	if reason := Match("playwright", json.RawMessage(`{"command":"eval document.cookie"}`)); reason != "browser JavaScript eval" {
-		t.Fatalf("playwright eval: reason=%q", reason)
-	}
-	if reason := Match("playwright", json.RawMessage(`{"command":"goto https://example.com"}`)); reason != "" {
-		t.Fatalf("playwright goto: reason=%q", reason)
-	}
-
 	// Unknown and ungated tools run.
 	if reason := Match("nope", json.RawMessage(`{}`)); reason != "" {
 		t.Fatalf("unknown tool: reason=%q", reason)
@@ -407,7 +399,7 @@ func TestWriteEdit(t *testing.T) {
 
 func TestSchemasAndValidation(t *testing.T) {
 	// generated schemas are valid JSON; edit's mentions oldText; no leaks
-	for _, name := range []string{"bash", "close_session", "curl", "edit", "fetch", "glob", "models", "quickfix", "read", "search", "websearch", "write"} {
+	for _, name := range []string{"bash", "close_session", "curl", "edit", "fetch", "glob", "models", "quickfix", "read", "search", "write"} {
 		tl, ok := Get(name)
 		if !ok {
 			t.Fatalf("%s not registered", name)
@@ -538,10 +530,8 @@ func TestToolCleanup(t *testing.T) {
 
 // TestToolsOnlyToolFiles guards the package layout: every non-test .go file
 // except tools.go (the registry) must define exactly one tool and
-// self-register via Register. Tool providers (websearch backends, the
-// decision model) live outside this directory and register through
-// RegisterWebsearchProvider. Helpers that tools need belong in agent/utils,
-// not here.
+// self-register via Register. MCP tools are not files here (see the package
+// doc). Helpers that tools need belong in agent/utils, not here.
 func TestToolsOnlyToolFiles(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

@@ -51,6 +51,5 @@ func init() {
 		}
 	})
 	// No static gate: delegation is inert — the child's own tool calls
-	// (the bash rule list, ssh always, curl and playwright rules) carry the
-	// gates.
+	// (the bash rule list, ssh always, curl rules) carry the gates.
 }

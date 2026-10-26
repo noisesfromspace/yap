@@ -31,7 +31,6 @@ local ALLOWED_TOOLS = {
   "curl",
   "write",
   "edit",
-  "websearch",
   "quickfix",
   "ssh",
 }
@@ -40,7 +39,7 @@ local ALLOWED_TOOLS = {
 -- prompt-injection hop removed from the user's attention, so it must opt into
 -- write/bash/curl/ssh explicitly. Any agent definition may still request the full
 -- set (minus recursive `subagent`) via its `tools:` header.
-local DEFAULT_SUBAGENT_TOOLS = { "read", "search", "glob", "fetch", "websearch", "quickfix" }
+local DEFAULT_SUBAGENT_TOOLS = { "read", "search", "glob", "fetch", "quickfix" }
 
 local function subagent_result(parent, child, child_path, reply)
   return function(success)
@@ -197,7 +196,10 @@ function M.start(parent, ev)
     end
     for name in header.tools:gmatch("[^,%s]+") do
       name = aliases[name] or name
-      if not known[name] then
+      -- MCP tools are named mcp_<server>_<tool> and discovered at runtime,
+      -- so they cannot be validated against the compiled-in list; trust the
+      -- author of the agent definition to name a real one.
+      if not known[name] and not name:match("^mcp_") then
         reply("error: agent definition " .. ev.agent .. " requires unsupported tool " .. name)
         return
       end

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"boers.email/yap/agent/auth"
+	"boers.email/yap/agent/mcp"
 )
 
 // ─── Config (~/.config/yap/settings.json) ──────────────────────────────────
@@ -57,20 +58,9 @@ func credential(ctx context.Context, prov Provider) (string, error) {
 	return key, nil
 }
 
-// Websearch configures the websearch tool. Provider selects the search
-// backend (default "exa"; each provider is a self-registering file in
-// agent/tools). APIKeyEnv names the env var holding the Exa API key; the
-// key VALUE lives in the agenix secret env file sourced by the wrapper
-// before exec'ing the agent.
-type Websearch struct {
-	Provider  string `json:"provider"`
-	APIKeyEnv string `json:"api_key_env"`
-}
-
-// GitHub names the environment variable containing the GitHub read token.
-type GitHub struct {
-	APIKeyEnv string `json:"api_key_env"`
-}
+// MCP servers are consumed as tools: each configured server is connected once
+// per backend, its tools discovered at runtime, and exposed to the model as
+// mcp_<server>_<tool>.
 
 // SSH configures the ssh tool's trust boundary. KnownHosts overrides the
 // known_hosts file hosts are checked against; empty auto-detects (the
@@ -92,11 +82,10 @@ type Sandbox struct {
 }
 
 type Config struct {
-	Providers map[string]Provider `json:"providers"`
-	Websearch Websearch           `json:"websearch"`
-	GitHub    GitHub              `json:"github"`
-	SSH       SSH                 `json:"ssh"`
-	Sandbox   Sandbox             `json:"sandbox"`
+	Providers map[string]Provider       `json:"providers"`
+	MCP       map[string]mcp.ServerConfig `json:"mcp"`
+	SSH       SSH                       `json:"ssh"`
+	Sandbox   Sandbox                   `json:"sandbox"`
 }
 
 func configPath() string {

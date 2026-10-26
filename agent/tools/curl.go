@@ -20,9 +20,8 @@ import (
 
 // curl shell-outs to the system curl binary — the most versatile way to
 // fetch a URL without pulling curl's protocol matrix into Go. Its focus is
-// websearch follow-ups: sites that return 403s to Go's default client
-// (fetch) or need a browser-looking request. curl does not run JavaScript,
-// so JS-heavy pages still need websearch's contentMode=text (Exa renders).
+// fetch follow-ups: sites that return 403s to Go's default client (fetch) or
+// need a browser-looking request. curl does not run JavaScript.
 const (
 	curlDefaultTimeout = 30 * time.Second
 	// A current browser UA; the main defense against agent-blocking sites.
@@ -52,7 +51,7 @@ func init() {
 		"Fetch a URL with curl. Returns the response body plus a status line. "+
 			"Versatile: set method, headers, user-agent, request body, redirects, timeout, or pass extra curl flags. "+
 			"Sends a browser User-Agent by default to get past agent blocks. Returns the raw response body "+
-			"(curl does not execute JavaScript) — for JS-heavy pages prefer websearch with contentMode=text.",
+			"(curl does not execute JavaScript) — for JS-heavy pages prefer a search tool that renders page content.",
 		func(a *curlArgs) (string, string, error) { return runCurl(a) })
 	// Static rules, declared below: a request body, an explicit non-GET
 	// method, or a local-file flag. GET/HEAD fetches without file flags stay

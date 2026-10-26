@@ -63,7 +63,6 @@ func TestResultFence(t *testing.T) {
 		{"bash", `{"command":"ls"}`, "", true},
 		{"search", `{"pattern":"x"}`, "", true},
 		{"glob", `{"pattern":"*.go"}`, "", true},
-		{"github", `{"action":"read_file","owner":"o","repo":"r","path":"a.go"}`, "json", true},
 		{"write", `{"path":"/tmp/x","content":"y"}`, "", false},
 		{"edit", `{"path":"/tmp/x","edits":[]}`, "", false},
 	}

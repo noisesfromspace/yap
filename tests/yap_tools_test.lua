@@ -4,31 +4,27 @@ local yap = require("harness")
 local frontmatter = require("harness.model.frontmatter")
 yap.setup({ bin = ROOT .. "/tests/mock_tools.py" })
 
--- 1. a normal session's frontmatter lists every tool the binary reports
+-- 1. a normal session is unrestricted: no `tools:` frontmatter block, so the
+-- built-in tools and any runtime-discovered MCP tools are all available.
 local buf = yap.new()
 local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
-assert(
-  fm.tools and vim.deep_equal(fm.tools, { "bash", "ls", "read" }),
-  "normal session should list all tools: " .. vim.inspect(fm and fm.tools)
-)
+assert(fm.tools == nil, "normal session should be unrestricted: " .. vim.inspect(fm and fm.tools))
 
--- 2. removing a tool from the list retracts it on the next send
-local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-local kept = {}
-for _, l in ipairs(lines) do
-  if l ~= "  - bash" then
-    kept[#kept + 1] = l
-  end
-end
-vim.api.nvim_buf_set_lines(buf, 0, -1, false, kept)
-vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "hi" })
+-- 2. an explicit allowlist (as a subagent passes) is written and sent as-is.
+local buf2 = yap.new({ tools = { "ls", "read" } })
+local fm2 = frontmatter.parse(vim.api.nvim_buf_get_lines(buf2, 0, -1, false))
+assert(
+  fm2.tools and vim.deep_equal(fm2.tools, { "ls", "read" }),
+  "explicit allowlist not written: " .. vim.inspect(fm2 and fm2.tools)
+)
+vim.api.nvim_buf_set_lines(buf2, -1, -1, false, { "hi" })
 yap.send()
 assert(
   vim.wait(2000, function()
-    local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    local text = table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n")
     return text:find("received-tools:ls,read", 1, true) ~= nil
   end, 20),
-  "edited allowlist did not reach the binary"
+  "explicit allowlist did not reach the binary"
 )
 
 print("OK tools allowlist")

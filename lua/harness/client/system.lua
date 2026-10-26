@@ -28,7 +28,7 @@ You are running inside Yap, an agent harness for Neovim. The conversation is an 
 
 Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the plugin (]] .. yap_install_root .. [[) rather than guessing.
 
-For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the `github` tool rather than curl, fetch, websearch, bash, or `gh`. Use other tools only if the `github` tool cannot perform the needed operation; never pass the GitHub token in tool arguments.
+For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the configured MCP GitHub tools (prefixed `mcp_`) rather than curl, fetch, bash, or `gh`. Use other tools only if those cannot perform the needed operation; never pass a credential in tool arguments.
 
 ## Skills
 
@@ -38,7 +38,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. harness
   end
   about = about .. "\n\n" .. [[## Parallelism and background work
 
-When you need several independent read-only results (read, search, glob, fetch, websearch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
+When you need several independent read-only results (read, search, glob, fetch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 
 For long-running shell commands that can overlap other work, set `background: true` on `bash`. It returns an ID; use `bash_output` to inspect its log (only the tail is returned — `read` the log path for more) or wait for completion. Background commands survive turns but stop when this session's backend exits. Don't use shell `&` as a substitute: it hides exit status and bypasses job tracking.
 

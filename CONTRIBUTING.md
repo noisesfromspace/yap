@@ -400,10 +400,9 @@ recompiling. Tools are Go code, not config files (the author wants tool code,
 not opaque declarations) and not external executable plugins, though a tool may
 spawn subprocesses.
 
-Search providers are not tools and live outside agent/tools/
-(agent/websearch/exa), self-registering through their package's exported
-registration function (tools.RegisterWebsearchProvider), so the directory stays
-one file per callable tool.
+MCP tools are not files in agent/tools/: they are discovered at runtime from
+configured servers (agent/mcp) and registered through tools.RegisterRaw, so
+the directory stays one file per callable tool.
 
 bash runs inside a bubblewrap (bwrap) sandbox on Linux
 (agent/safety/sandbox.go): the filesystem is bind-mounted read-only, a small
@@ -438,7 +437,7 @@ private key, reading a file under a secret directory. A command that matches
 one of these rules was already approved, so it runs unsandboxed outright and
 never prompts twice.
 ssh pauses for every call, curl (an explicit non-GET method, a request body,
-or a local-file flag) and playwright (`eval`) pause on their own
+or a local-file flag) pauses on its own
 targeted rules, and read/write/edit/search pause before touching a secret
 path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
 /etc/agenix) — secret paths are approvable, never silently read or written.
@@ -493,7 +492,7 @@ flowchart TD
 
     subgraph Rules[Rules — declared in each tool's source via Gate]
         RL[Always — ssh: every call]
-        RP[Pattern — text rules: fork bomb, playwright eval]
+        RP[Pattern — text rules: fork bomb]
         RSh["Shell — parsed command line: bash list + secret-reveal commands"]
         RF[Match — curl non-GET/body]
         RS[SecretPathRule — read/write/edit/search]

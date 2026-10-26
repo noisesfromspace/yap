@@ -44,9 +44,10 @@ Inspired by pi and gptel.
 
 ## Tools
 
-The agent ships with a fixed set of tools. It reads and edits files, runs
-bash and ssh, searches the web, reads GitHub, drives a browser
-with Playwright, and delegates to subagents in separate sessions. Independent
+The agent ships with a fixed set of built-in tools, plus any tools exposed by
+configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
+files, runs bash and ssh, searches the web, reads GitHub, drives a browser,
+and delegates to subagents in separate sessions. Independent
 read-only calls in one round run concurrently (up to four). For slow commands, pass `background: true` to bash; it returns a session-scoped
 ID. Use `bash_output` to inspect its output or wait for its exit; it returns
 only the log's tail, keeping the conversation small. Commands
@@ -65,7 +66,7 @@ flowchart LR
     end
     subgraph BE["yap serve (Go backend)"]
         B["Agent loop: propose, run, feed back"]
-        C["Tools: files, bash, ssh, web, GitHub, browser, subagents"]
+        C["Tools: files, bash, ssh, MCP, subagents"]
     end
     subgraph P["Provider API"]
         D["The model"]
@@ -101,15 +102,19 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
          "api_key_env": "ANTHROPIC_API_KEY"
        }
      },
-     "websearch": {
-       "provider": "exa",
-       "api_key_env": "EXA_API_KEY"
+     "mcp": {
+       "exa": {
+         "url": "https://mcp.exa.ai/mcp",
+         "headers": { "x-api-key": "EXA_API_KEY" }
+       }
      }
    }
    ```
 
-   The `websearch` tool has a pluggable backend (default `exa`); each backend
-   is a self-registering Go package selected by name in the config.
+   MCP servers expose their tools as `mcp_<server>_<tool>`. Each entry is a
+   local stdio server (`command`, optional `args`/`cwd`) or an HTTP server
+   (`url`); credentials are referenced through `env` (child var → Yap env var)
+   or `headers` (header → Yap env var), never stored in the file.
 
    Native providers (no `base_url` needed): `openai`, `anthropic`,
    `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,
@@ -189,7 +194,7 @@ Pass `${lib.getExe config.programs.yap.backendPackage}` as `bin` to
 as `model_groups`, `agents_file`, `skills_dir`, and `sessions_dir` there, not
 in `programs.yap`. The jail sources the same file outside bubblewrap; set
 `jail.envFile` only if it needs a different one. The jail forwards credential
-variables named by providers, websearch and GitHub (`GITHUB_TOKEN` by default).
+variables named by providers and MCP servers (`env`/`headers` mappings).
 
 If `setup()` overrides the default `sessions_dir` or `agents_file`, set
 `jail.sessionsDir` or `jail.agentsTargetFile` to the matching path. Bind any

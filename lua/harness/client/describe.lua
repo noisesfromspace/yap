@@ -101,7 +101,7 @@ Rules:
 - 2-5 words, a specific noun phrase, not a sentence
 - No leading "The user", no "how to", no trailing period
 - No colon in the title (it breaks the YAML frontmatter)
-- Example: "Add websearch tool", "Fix fold lag on streaming"
+- Example: "Add an MCP tool", "Fix fold lag on streaming"
 
 Return only the title.]]
     for _, message in ipairs(title_input) do
