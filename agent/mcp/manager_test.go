@@ -368,7 +368,7 @@ func TestManagerSyncKeepsServerWhenToolNamesCollide(t *testing.T) {
 	}
 }
 
-func TestManagerLoaderFor(t *testing.T) {
+func TestManagerLazyServerFor(t *testing.T) {
 	a := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
 	b := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
 	m := NewManager(fakeDial(map[string]*fakeClient{"a": a, "b": b}))
@@ -379,15 +379,15 @@ func TestManagerLoaderFor(t *testing.T) {
 		t.Fatalf("sync: %v", errs)
 	}
 
-	if loader, ok := m.LoaderFor("mcp_a_search"); !ok || loader != "mcp_a" {
-		t.Fatalf("LoaderFor(mcp_a_search) = %q, %v; want mcp_a, true", loader, ok)
+	if loader, ok := m.LazyServerFor("mcp_a_search"); !ok || loader != "a" {
+		t.Fatalf("LazyServerFor(mcp_a_search) = %q, %v; want a, true", loader, ok)
 	}
 	// A non-lazy server's tool is registered every turn, so there is nothing
 	// to hint at; neither is a name no server owns.
-	if _, ok := m.LoaderFor("mcp_b_search"); ok {
+	if _, ok := m.LazyServerFor("mcp_b_search"); ok {
 		t.Fatal("non-lazy server reported a loader")
 	}
-	if _, ok := m.LoaderFor("mcp_a_nope"); ok {
+	if _, ok := m.LazyServerFor("mcp_a_nope"); ok {
 		t.Fatal("unknown tool reported a loader")
 	}
 }
@@ -466,5 +466,61 @@ func TestManagerSyncTimesOutHungServer(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("Sync took %v, want it bounded by syncTimeout", elapsed)
+	}
+}
+
+// Names can collide across sanitized server names, or because a loader's
+// name is also another server's tool name. Discovery, activation, and Call
+// must all pick the same deterministic owner, even while tools are unloaded.
+func TestManagerCrossServerOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name, first, second, firstTool, secondTool, shared string
+		firstLazy, secondLazy                              bool
+		loader                                             bool
+	}{
+		{name: "sanitized", first: "a!", second: "a?", firstTool: "search", secondTool: "search", shared: "mcp_a__search", firstLazy: true, secondLazy: true},
+		{name: "tool beats loader", first: "a", second: "a_search", firstTool: "search", secondTool: "other", shared: "mcp_a_search", firstLazy: true, secondLazy: true},
+		{name: "loader beats tool", first: "!_b", second: "_", firstTool: "other", secondTool: "b", shared: "mcp___b", firstLazy: true, secondLazy: false, loader: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &fakeClient{tools: []Tool{{Name: tc.firstTool, InputSchema: json.RawMessage(`{"type":"object"}`)}}, results: map[string]Result{tc.firstTool: textResult("first")}}
+			b := &fakeClient{tools: []Tool{{Name: tc.secondTool, InputSchema: json.RawMessage(`{"type":"object"}`)}}, results: map[string]Result{tc.secondTool: textResult("second")}}
+			m := NewManager(fakeDial(map[string]*fakeClient{"first": a, "second": b}))
+			cfg := map[string]ServerConfig{tc.first: {Command: "first", Lazy: tc.firstLazy}, tc.second: {Command: "second", Lazy: tc.secondLazy}}
+			for i := 0; i < 10; i++ {
+				_, errs := m.Sync(context.Background(), cfg)
+				if len(errs) == 0 {
+					t.Fatal("collision not reported")
+				}
+				list, err := m.Activate(tc.first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, tool := range list {
+					if tool.Name == tc.shared && tc.loader {
+						t.Fatal("loader exposed as real tool")
+					}
+				}
+				if tc.secondLazy {
+					list, err = m.Activate(tc.second)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, tool := range list {
+						if tool.Name == tc.shared {
+							t.Fatal("losing server exposed shared name")
+						}
+					}
+				}
+				out, err := m.Call(context.Background(), tc.shared, json.RawMessage(`{}`))
+				if tc.loader {
+					if err == nil {
+						t.Fatal("loader routed to a server tool")
+					}
+				} else if err != nil || out != "first" {
+					t.Fatalf("route = %q, %v", out, err)
+				}
+			}
+		})
 	}
 }

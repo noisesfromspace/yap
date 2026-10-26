@@ -42,9 +42,16 @@ type Manager struct {
 	dial    Dial
 	mu      sync.Mutex
 	servers map[string]*server
+	owners  map[string]owner
+}
+
+type owner struct {
+	server string
+	loader bool
 }
 
 type server struct {
+	active bool
 	name   string
 	cfg    ServerConfig
 	client Client
@@ -97,10 +104,11 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 	}
 	sort.Strings(names)
 
-	seen := map[string]string{} // public name -> "server/tool", for collisions
+	// Discover first, then reserve all names (including unloaded tools and
+	// loaders) in sorted server order. Every lookup uses this same ownership
+	// table, so a collision can never route to a different server at call time.
 	for _, name := range names {
-		sc := cfg[name]
-		s, err := m.ensureLocked(ctx, name, sc)
+		s, err := m.ensureLocked(ctx, name, cfg[name])
 		if err != nil {
 			errs = append(errs, fmt.Errorf("mcp server %q: %w", name, err))
 			continue
@@ -109,31 +117,47 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 			errs = append(errs, fmt.Errorf("mcp server %q: %s", name, w))
 		}
 		s.warnings = nil
-		if sc.Lazy {
-			// A lazy server exposes one loader tool until the model asks for
-			// its real tools (see Activate); its definitions stay out of
-			// context otherwise.
-			if len(s.order) == 0 {
-				continue // nothing to load
-			}
-			lt := loaderTool(name, s)
-			if prev, ok := seen[lt.Name]; ok {
-				errs = append(errs, fmt.Errorf("mcp loader %q collides with %s", lt.Name, prev))
-				continue
-			}
-			seen[lt.Name] = name + "/loader"
-			tools = append(tools, lt)
+	}
+	m.owners = map[string]owner{}
+	reserve := func(pub, name string, loader bool) {
+		if prev, ok := m.owners[pub]; ok {
+			errs = append(errs, fmt.Errorf("mcp name %q from %q collides with %q", pub, name, prev.server))
+			return
+		}
+		m.owners[pub] = owner{server: name, loader: loader}
+	}
+	for _, name := range names {
+		s := m.servers[name]
+		if s == nil {
 			continue
 		}
+		if s.cfg.Lazy && len(s.order) > 0 {
+			reserve(loaderName(name), name, true)
+		}
 		for _, pub := range s.order {
-			if prev, ok := seen[pub]; ok {
-				errs = append(errs, fmt.Errorf("mcp tool %q collides with %s", pub, prev))
+			reserve(pub, name, false)
+		}
+	}
+	for _, name := range names {
+		s := m.servers[name]
+		if s == nil {
+			continue
+		}
+		if s.cfg.Lazy {
+			if o, ok := m.owners[loaderName(name)]; ok && o.server == name && o.loader {
+				// Keep the loader callable after activation: explicit loading is idempotent.
+				summary := *s
+				summary.order = nil
+				for _, t := range m.toolsLocked(name) {
+					summary.order = append(summary.order, t.Name)
+				}
+				tools = append(tools, loaderTool(name, &summary))
+			}
+			if !s.active {
 				continue
 			}
-			seen[pub] = name + "/" + s.pub[pub].original
-			info := s.pub[pub]
-			tools = append(tools, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
 		}
+		tools = append(tools, m.toolsLocked(name)...)
 	}
 	return tools, errs
 }
@@ -203,9 +227,23 @@ func (s *server) load(ctx context.Context) error {
 	return nil
 }
 
-// Activate returns a lazy server's tools, ready to be registered mid-turn so
-// the model can call them in its next request. It errors for an unknown
-// server or one that is not lazy.
+// toolsLocked returns only tools this server owns, never collision losers.
+func (m *Manager) toolsLocked(name string) []Tool {
+	s := m.servers[name]
+	var out []Tool
+	for _, pub := range s.order {
+		if o, ok := m.owners[pub]; !ok || o.server != name || o.loader {
+			continue
+		}
+		info := s.pub[pub]
+		out = append(out, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
+	}
+	return out
+}
+
+// Activate exposes a lazy server's definitions for this connection's lifetime.
+// Registration still validates schemas; callers must report registration errors.
+// Repeated activation returns the same definitions.
 func (m *Manager) Activate(name string) ([]Tool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -216,30 +254,24 @@ func (m *Manager) Activate(name string) ([]Tool, error) {
 	if !s.cfg.Lazy {
 		return nil, fmt.Errorf("MCP server %q is not lazy", name)
 	}
-	out := make([]Tool, 0, len(s.order))
-	for _, pub := range s.order {
-		info := s.pub[pub]
-		out = append(out, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
-	}
-	return out, nil
+	s.active = true
+	return m.toolsLocked(name), nil
 }
 
-// LoaderFor reports whether publicName is a tool of a lazy server and, if so,
-// the loader tool that activates it. The agent loop uses it to turn a call to
-// an unregistered lazy tool (activation lasts one turn) into actionable
-// advice instead of a bare "unknown tool".
-func (m *Manager) LoaderFor(publicName string) (string, bool) {
+// LazyServerFor resolves a discovered lazy tool by actual ownership, not by
+// guessing a server prefix. Unknown names and loader names never activate.
+func (m *Manager) LazyServerFor(publicName string) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for name, s := range m.servers {
-		if !s.cfg.Lazy {
-			continue
-		}
-		if _, ok := s.pub[publicName]; ok {
-			return loaderName(name), true
-		}
+	o, ok := m.owners[publicName]
+	if !ok || o.loader {
+		return "", false
 	}
-	return "", false
+	s := m.servers[o.server]
+	if s == nil || !s.cfg.Lazy {
+		return "", false
+	}
+	return o.server, true
 }
 
 // Call invokes the tool behind publicName with args, returning the normalized
@@ -248,10 +280,9 @@ func (m *Manager) Call(ctx context.Context, publicName string, args json.RawMess
 	m.mu.Lock()
 	var cl Client
 	var original string
-	for _, s := range m.servers {
-		if info, ok := s.pub[publicName]; ok {
-			cl, original = s.client, info.original
-			break
+	if o, ok := m.owners[publicName]; ok && !o.loader {
+		if s := m.servers[o.server]; s != nil {
+			cl, original = s.client, s.pub[publicName].original
 		}
 	}
 	m.mu.Unlock()
@@ -269,6 +300,7 @@ func (m *Manager) Call(ctx context.Context, publicName string, args json.RawMess
 func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.owners = nil
 	for name, s := range m.servers {
 		_ = s.client.Close()
 		delete(m.servers, name)
@@ -290,14 +322,14 @@ func publicName(serverName, tool string) string {
 // loaderTool builds the single tool a lazy server exposes before activation.
 // Its description summarizes what the server offers (names + clipped one-line
 // descriptions) so the model can decide whether to pull the real definitions
-// in; the full schemas are only fetched when it does.
+// in; schemas are cached on connection but only exposed after activation.
 // The names it lists are the public ones, because those are what the model
 // can actually call; a truncated public name would be unusable to it.
 func loaderTool(name string, s *server) Tool {
 	var b strings.Builder
 	b.WriteString("Load the tools of the ")
 	b.WriteString(name)
-	b.WriteString(" MCP server. Call this tool first, then call the listed tools directly:")
+	b.WriteString(" MCP server into context. Calling a listed tool directly by name also loads them. Tools:")
 	listed := 0
 	for _, pub := range s.order {
 		entry := " " + pub + " — " + clip(s.pub[pub].desc, 60) + ";"

@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/invopop/jsonschema"
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
@@ -49,6 +50,8 @@ type Tool struct {
 	run         func(args json.RawMessage) (result, ui string, err error)
 	close       func()
 }
+
+var registryMu sync.RWMutex
 
 var registry = map[string]*Tool{}
 
@@ -86,6 +89,8 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		}
 		return run(&args)
 	}
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	registry[name] = &Tool{
 		Name:        name,
 		Description: description,
@@ -131,6 +136,8 @@ func compileSchema(schemaJSON json.RawMessage) (func(json.RawMessage) error, err
 // external servers at runtime. It returns an error instead of panicking so a
 // malformed server schema cannot crash the backend.
 func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(json.RawMessage) (string, string, error), cleanup ...func()) error {
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	if _, exists := registry[name]; exists {
 		return fmt.Errorf("tools: %s is already registered", name)
 	}
@@ -156,6 +163,8 @@ func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(
 // prefix. The MCP integration calls it before re-registering the turn's
 // discovered tools, so tools from a server that went away do not linger.
 func UnregisterPrefix(prefix string) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	for name := range registry {
 		if strings.HasPrefix(name, prefix) {
 			delete(registry, name)
@@ -165,6 +174,8 @@ func UnregisterPrefix(prefix string) {
 
 // Get returns a tool by name.
 func Get(name string) (*Tool, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	t, ok := registry[name]
 	return t, ok
 }
@@ -243,6 +254,8 @@ func Match(name string, args json.RawMessage) string {
 
 // All returns all registered tools, sorted by name (stable requests).
 func All() []*Tool {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	names := make([]string, 0, len(registry))
 	for n := range registry {
 		names = append(names, n)

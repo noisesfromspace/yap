@@ -39,10 +39,12 @@ type ServerConfig struct {
 
 	// Lazy defers a server's tool definitions: instead of exposing every tool
 	// in context every turn, a single loader tool (mcp_<server>) summarizes
-	// what the server offers, and calling it pulls the real tools into context
-	// for the rest of the turn. Use for situational servers (a debugger,
-	// reverse-engineering tool, ...) whose definitions would otherwise bloat
-	// every turn's context.
+	// what the server offers, and the definitions enter context only once they
+	// are needed. Calling a listed tool directly also works: the call activates
+	// the server and then runs, so lazy never costs a round-trip. Activation
+	// persists for the connection (the backend's lifetime); a config change
+	// re-arms it. Use for situational servers (a debugger, reverse-engineering
+	// tool, ...) whose definitions would otherwise bloat every turn's context.
 	Lazy bool `json:"lazy,omitempty"`
 }
 

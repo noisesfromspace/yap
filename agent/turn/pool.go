@@ -64,10 +64,13 @@ func callTool(call llm.ToolCall, allowed *[]string) taskResult {
 	}
 	tool, ok := tools.Get(call.Name)
 	if !ok {
-		if hint := lazyHint(call.Name); hint != "" {
-			return taskResult{result: hint}
+		if err := autoactivateMCP(call.Name); err != nil {
+			return taskResult{result: safety.Scrub("error: " + err.Error())}
 		}
-		return taskResult{result: "error: unknown tool " + call.Name}
+		tool, ok = tools.Get(call.Name)
+		if !ok {
+			return taskResult{result: "error: unknown tool " + call.Name}
+		}
 	}
 	if denial := staticGate(call); denial != "" {
 		return taskResult{result: denial}
