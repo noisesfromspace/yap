@@ -9,7 +9,7 @@ import (
 
 // fakeClient is an in-memory Client for Manager tests.
 type fakeClient struct {
-	tools []Tool
+	tools   []Tool
 	results map[string]Result
 	closed  bool
 }
@@ -174,5 +174,35 @@ func TestManagerSyncReconnectsOnConfigChange(t *testing.T) {
 	}
 	if !b.closed {
 		t.Fatal("b not closed after removal")
+	}
+}
+
+func TestSanitize(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"search", "search"},
+		{"get_host", "get_host"},
+		{"bad name!", "bad_name_"},
+		{"", "tool"},
+		{"list_repository_collaborator", "list_repository_collaborator"}, // exactly 28 runes, not truncated
+	}
+	for _, c := range cases {
+		if got := sanitize(c.in); got != c.want {
+			t.Errorf("sanitize(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// Long names sharing a prefix must not collide.
+	groups := sanitize("list_available_data_definition_groups")
+	defs := sanitize("list_available_data_definitions")
+	if groups == defs {
+		t.Fatalf("long names collide: %q", groups)
+	}
+	for _, n := range []string{groups, defs} {
+		if len(n) != 28 {
+			t.Errorf("sanitized long name %q is %d runes, want 28", n, len(n))
+		}
 	}
 }

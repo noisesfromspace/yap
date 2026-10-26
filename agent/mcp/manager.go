@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
@@ -19,11 +20,11 @@ type Manager struct {
 }
 
 type server struct {
-	name    string
-	cfg     ServerConfig
-	client  Client
-	pub     map[string]toolInfo // public name -> discovered tool
-	order   []string            // sorted public names
+	name   string
+	cfg    ServerConfig
+	client Client
+	pub    map[string]toolInfo // public name -> discovered tool
+	order  []string            // sorted public names
 }
 
 type toolInfo struct {
@@ -181,7 +182,10 @@ func publicName(serverName, tool string) string {
 
 // sanitize maps a name onto the conservative set model providers accept
 // (letters, digits, underscore, hyphen), truncating to 28 runes so the full
-// public name stays within a 64-character provider limit.
+// public name stays within a 64-character provider limit. Truncation keeps a
+// short hash of the full name so two distinct long names that share a prefix
+// (e.g. list_available_data_definition_groups vs ..._definitions) do not
+// collapse onto the same public name.
 func sanitize(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -197,7 +201,9 @@ func sanitize(s string) string {
 		out = "tool"
 	}
 	if len(out) > 28 {
-		out = out[:28]
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(out))
+		out = out[:19] + "_" + fmt.Sprintf("%08x", h.Sum32())
 	}
 	return out
 }
