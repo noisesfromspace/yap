@@ -173,7 +173,9 @@ and each path is configurable via `setup()`):
   the model as `mcp_<server>_<tool>`. Each entry is a stdio server (a local
   `command`, optional `args` and `cwd`) or an HTTP server (`url`). Credentials
   never appear literally: `env` maps a child variable name to a Yap env var,
-  and `headers` maps an HTTP header to a Yap env var. `tools` optionally lists
+  and `headers` maps an HTTP header to a Yap env var. A header value may carry
+  a literal scheme prefix, e.g. "Bearer CENSYS_API_KEY" sends
+  `Authorization: Bearer <value>`. `tools` optionally lists
   which of the server's tools to expose (omit for all): >json
 
     {

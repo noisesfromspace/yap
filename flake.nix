@@ -251,12 +251,15 @@
 
           # Env-var names the configured providers and MCP servers read
           # credentials from. MCP servers reference them through their `env`
-          # and `headers` maps (values are source env-var names).
+          # and `headers` maps (values are source env-var names; a header
+          # value may carry a literal scheme prefix such as "Bearer ").
           jailEnvNames = lib.unique (
             lib.filter (v: v != null && v != "") (
               lib.mapAttrsToList (_: p: p.api_key_env or null) (cfg.settings.providers or { })
               ++ lib.concatMap
-                (s: lib.attrValues (s.env or { }) ++ lib.attrValues (s.headers or { }))
+                (s:
+                  lib.attrValues (s.env or { })
+                  ++ map (v: lib.last (lib.splitString " " v)) (lib.attrValues (s.headers or { })))
                 (lib.attrValues (cfg.settings.mcp or { }))
             )
           );

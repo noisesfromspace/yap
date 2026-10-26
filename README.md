@@ -114,7 +114,9 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    MCP servers expose their tools as `mcp_<server>_<tool>`. Each entry is a
    local stdio server (`command`, optional `args`/`cwd`) or an HTTP server
    (`url`); credentials are referenced through `env` (child var → Yap env var)
-   or `headers` (header → Yap env var), never stored in the file.
+   or `headers` (header → Yap env var), never stored in the file. A header
+   value may carry a literal scheme prefix, e.g. `"Bearer CENSYS_API_KEY"`
+   sends `Authorization: Bearer <value>`.
 
    Native providers (no `base_url` needed): `openai`, `anthropic`,
    `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,

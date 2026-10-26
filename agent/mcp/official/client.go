@@ -45,17 +45,17 @@ func Dial(ctx context.Context, cfg mcp.ServerConfig) (mcp.Client, error) {
 		t = &sdk.CommandTransport{Command: cmd}
 	case "http":
 		headers := map[string]string{}
-		for name, src := range cfg.Headers {
-			v := os.Getenv(src)
-			if v == "" {
-				return nil, fmt.Errorf("env var %q (for header %q) is not set", src, name)
+		for name, spec := range cfg.Headers {
+			v, err := resolveHeader(spec)
+			if err != nil {
+				return nil, fmt.Errorf("header %q: %w", name, err)
 			}
 			headers[name] = v
 		}
 		t = &sdk.StreamableClientTransport{
-			Endpoint:            cfg.URL,
+			Endpoint:             cfg.URL,
 			DisableStandaloneSSE: true, // tools are request/response; no server push needed
-			HTTPClient:          headerClient(headers),
+			HTTPClient:           headerClient(headers),
 		}
 	}
 
@@ -113,6 +113,24 @@ func buildEnv(extra map[string]string) ([]string, error) {
 		env = append(env, dest+"="+v)
 	}
 	return env, nil
+}
+
+// resolveHeader turns a header spec into its literal value. A spec is an
+// environment-variable name, optionally prefixed by a literal scheme and a
+// single space (e.g. "Bearer CENSYS_API_KEY"); the prefix is sent verbatim, so
+// a server that needs "Authorization: Bearer <token>" can be expressed
+// without embedding the token in settings.json.
+func resolveHeader(spec string) (string, error) {
+	src := spec
+	var prefix string
+	if i := strings.IndexByte(spec, ' '); i >= 0 {
+		prefix, src = spec[:i+1], spec[i+1:]
+	}
+	v := os.Getenv(src)
+	if v == "" {
+		return "", fmt.Errorf("env var %q is not set", src)
+	}
+	return prefix + v, nil
 }
 
 // headerClient returns an HTTP client that sets headers on every request, or

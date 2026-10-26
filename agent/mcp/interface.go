@@ -29,6 +29,8 @@ type ServerConfig struct {
 	URL string `json:"url,omitempty"`
 	// Headers maps an HTTP header name to an environment-variable name whose
 	// value is sent with every request (e.g. "x-api-key" -> "EXA_API_KEY").
+	// A value may carry a literal scheme prefix separated by a single space
+	// (e.g. "Bearer CENSYS_API_KEY" sends "Authorization: Bearer <value>").
 	Headers map[string]string `json:"headers,omitempty"`
 
 	// Tools selects which of the server's tools to expose. nil (omitted)
