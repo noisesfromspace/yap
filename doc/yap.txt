@@ -176,7 +176,12 @@ and each path is configurable via `setup()`):
   and `headers` maps an HTTP header to a Yap env var. A header value may carry
   a literal scheme prefix, e.g. "Bearer CENSYS_API_KEY" sends
   `Authorization: Bearer <value>`. `tools` optionally lists
-  which of the server's tools to expose (omit for all): >json
+  which of the server's tools to expose (omit for all). `lazy` (default
+  false) defers a server's tool definitions: it exposes a single `mcp_<server>`
+  loader tool whose description summarizes what the server offers, and calling
+  that loader pulls the real tools into context for the rest of the turn. Use
+  it for situational servers (a debugger, reverse-engineering tool, ...)
+  whose definitions would otherwise bloat every turn's context. >json
 
     {
       "mcp": {

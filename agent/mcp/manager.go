@@ -77,6 +77,22 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 			errs = append(errs, fmt.Errorf("mcp server %q: %w", name, err))
 			continue
 		}
+		if sc.Lazy {
+			// A lazy server exposes one loader tool until the model asks for
+			// its real tools (see Activate); its definitions stay out of
+			// context otherwise.
+			if len(s.order) == 0 {
+				continue // nothing to load
+			}
+			lt := loaderTool(name, s)
+			if prev, ok := seen[lt.Name]; ok {
+				errs = append(errs, fmt.Errorf("mcp loader %q collides with %s", lt.Name, prev))
+				continue
+			}
+			seen[lt.Name] = name + "/loader"
+			tools = append(tools, lt)
+			continue
+		}
 		for _, pub := range s.order {
 			if prev, ok := seen[pub]; ok {
 				errs = append(errs, fmt.Errorf("mcp tool %q collides with %s", pub, prev))
@@ -84,7 +100,7 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 			}
 			seen[pub] = name + "/" + s.pub[pub].original
 			info := s.pub[pub]
-			tools = append(tools, Tool{Name: pub, Description: info.desc, InputSchema: info.schema})
+			tools = append(tools, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
 		}
 	}
 	return tools, errs
@@ -149,6 +165,27 @@ func (s *server) load(ctx context.Context) error {
 	return nil
 }
 
+// Activate returns a lazy server's tools, ready to be registered mid-turn so
+// the model can call them in its next request. It errors for an unknown
+// server or one that is not lazy.
+func (m *Manager) Activate(name string) ([]Tool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.servers[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown MCP server %q", name)
+	}
+	if !s.cfg.Lazy {
+		return nil, fmt.Errorf("MCP server %q is not lazy", name)
+	}
+	out := make([]Tool, 0, len(s.order))
+	for _, pub := range s.order {
+		info := s.pub[pub]
+		out = append(out, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
+	}
+	return out, nil
+}
+
 // Call invokes the tool behind publicName with args, returning the normalized
 // result text.
 func (m *Manager) Call(ctx context.Context, publicName string, args json.RawMessage) (string, error) {
@@ -187,6 +224,43 @@ func publicName(serverName, tool string) string {
 	return "mcp_" + sanitize(serverName) + "_" + sanitize(tool)
 }
 
+// loaderTool builds the single tool a lazy server exposes before activation.
+// Its description summarizes what the server offers (names + clipped one-line
+// descriptions) so the model can decide whether to pull the real definitions
+// in; the full schemas are only fetched when it does.
+func loaderTool(name string, s *server) Tool {
+	var b strings.Builder
+	b.WriteString("Load the tools of the ")
+	b.WriteString(name)
+	b.WriteString(" MCP server. Call this tool first, then call the listed tools directly:")
+	for i, pub := range s.order {
+		if i > 0 {
+			b.WriteString(";")
+		}
+		info := s.pub[pub]
+		b.WriteString(" ")
+		b.WriteString(info.original)
+		b.WriteString(" — ")
+		b.WriteString(clip(info.desc, 60))
+	}
+	return Tool{
+		Name:        "mcp_" + sanitize(name),
+		Description: b.String(),
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Server:      name,
+		Loader:      true,
+	}
+}
+
+// clip collapses whitespace and truncates s to at most n runes.
+func clip(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
+
 // sanitize maps a name onto the conservative set model providers accept
 // (letters, digits, underscore, hyphen), truncating to 28 runes so the full
 // public name stays within a 64-character provider limit. Truncation keeps a
@@ -216,7 +290,8 @@ func sanitize(s string) string {
 }
 
 func configEqual(a, b ServerConfig) bool {
-	return a.Transport == b.Transport &&
+	return a.Lazy == b.Lazy &&
+		a.Transport == b.Transport &&
 		a.Command == b.Command &&
 		strings.Join(a.Args, "\x00") == strings.Join(b.Args, "\x00") &&
 		a.Cwd == b.Cwd &&

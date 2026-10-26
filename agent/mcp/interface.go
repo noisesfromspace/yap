@@ -36,6 +36,14 @@ type ServerConfig struct {
 	// Tools selects which of the server's tools to expose. nil (omitted)
 	// exposes all; an explicit empty list exposes none.
 	Tools []string `json:"tools,omitempty"`
+
+	// Lazy defers a server's tool definitions: instead of exposing every tool
+	// in context every turn, a single loader tool (mcp_<server>) summarizes
+	// what the server offers, and calling it pulls the real tools into context
+	// for the rest of the turn. Use for situational servers (a debugger,
+	// reverse-engineering tool, ...) whose definitions would otherwise bloat
+	// every turn's context.
+	Lazy bool `json:"lazy,omitempty"`
 }
 
 // Tool is a discovered MCP tool, as exposed to the provider.
@@ -43,6 +51,11 @@ type Tool struct {
 	Name        string
 	Description string
 	InputSchema json.RawMessage
+	// Server is the originating server name (set for every MCP tool).
+	Server string
+	// Loader marks a lazy server's single loader tool: calling it activates
+	// the server's real tools rather than running a server tool.
+	Loader bool
 }
 
 // Result is one tool call's raw outcome. Content holds the server's content

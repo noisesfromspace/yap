@@ -116,7 +116,10 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    (`url`); credentials are referenced through `env` (child var → Yap env var)
    or `headers` (header → Yap env var), never stored in the file. A header
    value may carry a literal scheme prefix, e.g. `"Bearer CENSYS_API_KEY"`
-   sends `Authorization: Bearer <value>`.
+   sends `Authorization: Bearer <value>`. Set `"lazy": true` on a situational
+   server so its tool definitions stay out of context until the model asks
+   for them: it exposes a single `mcp_<server>` loader tool, and calling that
+   pulls the real tools in for the rest of the turn.
 
    Native providers (no `base_url` needed): `openai`, `anthropic`,
    `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,

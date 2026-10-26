@@ -206,6 +206,64 @@ func TestManagerSyncReconnectsOnConfigChange(t *testing.T) {
 	}
 }
 
+func TestManagerLazyServer(t *testing.T) {
+	a := &fakeClient{tools: []Tool{
+		{Name: "search", Description: "find things across the index", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "get", Description: "get one record", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	}}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+
+	// A lazy server exposes exactly one loader tool, not its real tools.
+	got, errs := m.Sync(context.Background(), map[string]ServerConfig{
+		"a": {Command: "a", Lazy: true},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("lazy server should expose one loader, got %d: %+v", len(got), got)
+	}
+	lt := got[0]
+	if !lt.Loader || lt.Server != "a" {
+		t.Fatalf("loader tool wrong: %+v", lt)
+	}
+	if lt.Name != "mcp_a" {
+		t.Fatalf("loader name = %q, want mcp_a", lt.Name)
+	}
+	if !strings.Contains(lt.Description, "search") || !strings.Contains(lt.Description, "get") {
+		t.Fatalf("loader description missing tool names: %q", lt.Description)
+	}
+
+	// Activate returns the server's real tools, ready to register.
+	act, err := m.Activate("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(act) != 2 {
+		t.Fatalf("activate returned %d tools, want 2: %+v", len(act), act)
+	}
+	names := map[string]bool{}
+	for _, x := range act {
+		names[x.Name] = true
+		if x.Loader {
+			t.Fatalf("activated tool %q still marked loader", x.Name)
+		}
+	}
+	if !names["mcp_a_search"] || !names["mcp_a_get"] {
+		t.Fatalf("activate names wrong: %v", names)
+	}
+
+	// Activating a non-lazy server is an error.
+	b := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+	m2 := NewManager(fakeDial(map[string]*fakeClient{"b": b}))
+	if _, errs := m2.Sync(context.Background(), map[string]ServerConfig{"b": {Command: "b"}}); len(errs) != 0 {
+		t.Fatalf("sync b: %v", errs)
+	}
+	if _, err := m2.Activate("b"); err == nil {
+		t.Fatal("Activate on a non-lazy server should error")
+	}
+}
+
 func TestSanitize(t *testing.T) {
 	cases := []struct {
 		in   string
