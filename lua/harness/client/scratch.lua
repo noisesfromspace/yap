@@ -15,7 +15,6 @@ local function harness()
 end
 
 local steer = state.steer
-local delivered = state.steer_delivered
 local running = state.running
 
 -- Only the three control headings delimit sections. Other # @ lines are content.
@@ -100,9 +99,6 @@ function M.save(scratch)
 end
 
 local function cancel_steer(buf)
-  if not steer[buf] then
-    return -- nothing is pending on the wire; a delivered steer cannot be recalled
-  end
   steer[buf] = nil
   local scratch = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap_scratch
   M.refresh(scratch)
@@ -144,21 +140,15 @@ function M.steer(buf, text)
   return true
 end
 
---- Mirror the live # @steer body onto the wire. A body that already went out
---- (pending or delivered) is not re-sent: only an edit is, so keeping the text
---- after delivery does not turn every redraw into a new steer.
 local function sync_scratch_steer(owner, scratch)
-  if not state.is_running(owner) then
+  local pending = steer[owner]
+  if not pending or not state.is_running(owner) then
     return
   end
   local current = M.section_text(scratch, "steer")
-  if current == steer[owner] or current == delivered[owner] then
-    return
+  if current ~= pending then
+    M.steer(owner, current)
   end
-  if not (steer[owner] or delivered[owner]) then
-    return -- nothing was submitted for this turn: editing is just a draft
-  end
-  M.steer(owner, current)
 end
 
 local function scratch_dispatch_queue(owner, section)
@@ -196,7 +186,6 @@ local function scratch_dispatch_queue(owner, section)
     return true
   end
   M.set_section(scratch, section, {})
-  vim.b[scratch].yap_queue_held = nil
   M.save(scratch)
   return true
 end
@@ -228,7 +217,6 @@ function M.scratch_send(scratch)
       vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
     elseif state.is_running(owner) then
       vim.b[scratch].yap_queue_armed = true
-      vim.b[scratch].yap_queue_held = nil
       M.refresh(scratch)
     else
       scratch_dispatch_queue(owner, "queue")
@@ -264,15 +252,8 @@ function M.finish_queue(owner, successful)
     return
   end
   vim.b[scratch].yap_queue_armed = false
-  local body = M.section_text(scratch, "queue")
-  -- Only one item advances per turn end, and a steer this turn never answered
-  -- is the newer intent, so it wins the follow-up slot. Anything not sent is
-  -- marked `held` rather than silently reverting to `uncommitted`: it was
-  -- authorized, and still needs an explicit <C-s>.
-  local dispatch = successful and body ~= "" and M.section_text(scratch, "steer") == ""
-  vim.b[scratch].yap_queue_held = (not dispatch and body ~= "") or nil
   M.refresh(scratch)
-  if dispatch then
+  if successful and M.section_text(scratch, "queue") ~= "" then
     vim.b[scratch].yap_queue_dispatch = true
     -- Let the backend return to its next-turn loop before writing to the pipe.
     vim.schedule(function()
@@ -290,23 +271,6 @@ function M.finish_queue(owner, successful)
   end
 end
 
---- Ctrl-C retracts a scheduled follow-up. The queue is authorized for the
---- running turn, so stopping it is decided here — not when the cancel happens
---- to land — which also keeps a late-arriving cancel from dispatching it.
-function M.hold_queue(owner)
-  local scratch = vim.api.nvim_buf_is_valid(owner) and vim.b[owner].yap_scratch
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    return
-  end
-  vim.b[scratch].yap_queue_dispatch = false
-  if not vim.b[scratch].yap_queue_armed then
-    return
-  end
-  vim.b[scratch].yap_queue_armed = false
-  vim.b[scratch].yap_queue_held = M.section_text(scratch, "queue") ~= "" or nil
-  M.refresh(scratch)
-end
-
 local status_ns = vim.api.nvim_create_namespace("yap_scratch_status")
 
 --- Display-only state labels: the buffer/file stays plain editable Markdown,
@@ -322,24 +286,12 @@ function M.refresh(scratch)
     local section = section_name(line)
     if section and section ~= "notes" and M.section_text(scratch, section) ~= "" then
       -- uncommitted: typed, not yet handed to a turn. pending: submitted to
-      -- the running turn. sent: the turn received it, no answer yet.
-      -- scheduled: authorized to send when that turn ends. held: authorized
-      -- for a turn that ended without running it (it needs <C-s> again).
+      -- the running turn. scheduled: authorized to send when that turn ends.
       local label
       if section == "steer" then
-        if state.steer[owner] then
-          label = "pending"
-        elseif delivered[owner] and M.section_text(scratch, "steer") == delivered[owner] then
-          label = "sent"
-        else
-          label = "uncommitted"
-        end
-      elseif vim.b[scratch].yap_queue_armed then
-        label = "scheduled"
-      elseif vim.b[scratch].yap_queue_held then
-        label = "held"
+        label = state.steer[owner] and "pending" or "uncommitted"
       else
-        label = "uncommitted"
+        label = vim.b[scratch].yap_queue_armed and "scheduled" or "uncommitted"
       end
       vim.api.nvim_buf_set_extmark(scratch, status_ns, i - 1, 0, {
         -- The leading dot keeps the label visibly separate from the
@@ -452,7 +404,6 @@ function M.scratch_toggle(buf)
           if M.section_text(scratch, "queue") == "" then
             vim.b[scratch].yap_queue_armed = false
             vim.b[scratch].yap_queue_dispatch = false
-            vim.b[scratch].yap_queue_held = nil
           end
           M.refresh(scratch)
         end,

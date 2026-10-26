@@ -151,40 +151,6 @@ assert(
   text(scratch):find("save for later", 1, true),
   "stop lost queue draft: " .. text(scratch) .. "\nowner: " .. text(owner)
 )
-assert(
-  hint(scratch, heading(scratch, "queue")) == "  · held",
-  "stopped queue is not marked held: " .. hint(scratch, heading(scratch, "queue"))
-)
-
--- An unanswered steer holds the authorized queue back: at most one item
--- advances per turn end, and the steer is the newer intent.
-vim.api.nvim_buf_set_lines(owner, -1, -1, false, { "hold the queue back" })
-assert(yap.send(owner), "hold-queue turn did not start")
-assert(
-  vim.wait(2000, function()
-    return yap.is_running(owner)
-  end),
-  "hold-queue turn not running"
-)
-vim.api.nvim_buf_set_lines(scratch, heading(scratch, "queue") + 1, -1, false, { "queued follow-up" })
-cursor(heading(scratch, "queue") + 1)
-yap.scratch_send(scratch)
-assert(vim.b[scratch].yap_queue_armed, "queue was not armed for the hold test")
-local steer_row = heading(scratch, "steer") + 1
-vim.api.nvim_buf_set_lines(scratch, steer_row, steer_row, false, { "steer after queue" })
-cursor(steer_row)
-yap.scratch_send(scratch)
-assert(require("harness.state").steer[owner] == "steer after queue", "late steer was not submitted")
-wait_done(owner, "parts.")
-vim.wait(100)
-assert(not yap.is_running(owner), "a held queue started a surprise follow-up")
-assert(not text(owner):find("queued follow-up", 1, true), "held queue reached the transcript")
-assert(text(scratch):find("queued follow-up", 1, true), "held queue lost its draft")
-assert(
-  hint(scratch, heading(scratch, "queue")) == "  · held",
-  "queue held back by a steer is not marked held: " .. hint(scratch, heading(scratch, "queue"))
-)
-assert(text(scratch):find("steer after queue", 1, true), "undelivered steer left the draft")
 require("harness.state").steer[owner] = "pending"
 vim.api.nvim_buf_delete(owner, { force = true })
 assert(require("harness.state").steer[owner] == nil, "wipe leaked pending steer")

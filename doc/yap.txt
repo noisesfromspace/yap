@@ -496,10 +496,8 @@ a `·` so it reads as an annotation rather than buffer text — nothing you have
 to press; the winbar is unchanged:
 
   uncommitted   The body is typed but not handed to a turn yet.
-  pending       (steer) Submitted to the running turn, not read yet.
-  sent          (steer) The running turn has it; the answer clears it.
+  pending       (steer) Submitted to the running turn.
   scheduled     (queue) Authorized to send when that turn ends.
-  held          (queue) Authorized for a turn that ended without running it.
 
 An empty section and # @notes show no label.
 
@@ -512,21 +510,17 @@ beneath its heading.
 
   # @notes    An inert backlog; never sent.
   # @steer    While running, <C-s> submits a replaceable pending message
-              for the next model boundary. The body then stays (labelled
-              `sent`) until that turn answers it, so a <C-c> stop or a
-              failure leaves it as a draft instead of dropping an
-              instruction the model never acted on. Pressing <C-s> here
-              while idle sends the body as the next message, even when queue
-              has text. Editing or deleting a pending steer revises or
-              cancels it while the turn runs.
+              for the next model boundary. Once delivered, it is cleared.
+              If the turn ends first (a <C-c> stop included) it stays as a
+              draft; pressing <C-s> here while idle sends it as the next
+              message, even when queue has text. Editing or deleting a
+              pending steer revises or cancels it while the turn runs.
   # @queue    While idle, <C-s> sends the whole body as one message. While
               running, <C-s> authorizes one follow-up: its live contents
               are sent when that turn ends successfully. Edits before then
-              are included; clearing the queue cancels the follow-up. A stop
-              or failure holds it (labelled `held`) until it is authorized
-              again, and an unanswered steer holds it back too, so at most
-              one item advances per turn end. It never auto-sends merely
-              because text was typed.
+              are included; clearing the queue cancels the follow-up. It
+              never auto-sends merely because text was typed, or after a
+              stop, failure, or session close.
 
 <C-s> acts on the section under the cursor, not the current turn state.
 In notes it only displays a hint; move to steer or queue to send. There is
