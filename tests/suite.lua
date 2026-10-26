@@ -34,7 +34,7 @@ local CASES = {
   { name = "yap_scratch_template_test", port = 18132 },
   { name = "yap_notify_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_block_test", port = 18132, mock = "mock_slow.py" },
-  { name = "yap_toolparse_test", port = 18133, mock = "mock_tool.py" },
+  { name = "yap_toolparse_test", port = 18132 },
   { name = "yap_close_session_test", port = 18142, mock = "mock_close.py" },
   { name = "yap_close_session_picker_test", port = 18142, mock = "mock_close.py" },
   { name = "yap_e2e_livetool", port = 18141, mock = "mock_stream.py" },
