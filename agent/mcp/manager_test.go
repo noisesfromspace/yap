@@ -3,8 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 // fakeClient is an in-memory Client for Manager tests.
@@ -267,29 +270,201 @@ func TestManagerLazyServer(t *testing.T) {
 func TestSanitize(t *testing.T) {
 	cases := []struct {
 		in   string
+		max  int
 		want string
 	}{
-		{"search", "search"},
-		{"get_host", "get_host"},
-		{"bad name!", "bad_name_"},
-		{"", "tool"},
-		{"list_repository_collaborator", "list_repository_collaborator"}, // exactly 28 runes, not truncated
+		{"search", 58, "search"},
+		{"get_host", 58, "get_host"},
+		{"bad name!", 58, "bad_name_"},
+		{"", 58, "tool"},
+		// Fits the budget exactly, so it is left alone.
+		{"list_repository_collaborator", 58, "list_repository_collaborator"},
 	}
 	for _, c := range cases {
-		if got := sanitize(c.in); got != c.want {
-			t.Errorf("sanitize(%q) = %q, want %q", c.in, got, c.want)
+		if got := sanitize(c.in, c.max); got != c.want {
+			t.Errorf("sanitize(%q, %d) = %q, want %q", c.in, c.max, got, c.want)
 		}
 	}
 
-	// Long names sharing a prefix must not collide.
-	groups := sanitize("list_available_data_definition_groups")
-	defs := sanitize("list_available_data_definitions")
+	// Long names sharing a prefix must not collide, and must respect the
+	// budget they were given.
+	groups := sanitize("list_available_data_definition_groups", 20)
+	defs := sanitize("list_available_data_definitions", 20)
 	if groups == defs {
 		t.Fatalf("long names collide: %q", groups)
 	}
 	for _, n := range []string{groups, defs} {
-		if len(n) != 28 {
-			t.Errorf("sanitized long name %q is %d runes, want 28", n, len(n))
+		if len(n) != 20 {
+			t.Errorf("sanitized long name %q is %d runes, want 20", n, len(n))
 		}
+	}
+
+	// A budget too small for the hash suffix still truncates, never panics.
+	if got := sanitize("abcdef", 5); got != "abcde" {
+		t.Errorf("sanitize(abcdef, 5) = %q, want abcde", got)
+	}
+}
+
+func TestPublicNameBudget(t *testing.T) {
+	// The budget covers the whole provider name, not a fixed slice of the
+	// tool part: this used to come out as decompile_function_<hash> even
+	// though the full name fits comfortably.
+	if got, want := publicName("ghidra", "decompile_function_by_address"), "mcp_ghidra_decompile_function_by_address"; got != want {
+		t.Fatalf("publicName = %q, want %q", got, want)
+	}
+
+	// A long server name spends the server part, not the tool part, and the
+	// total stays within the provider limit.
+	long := strings.Repeat("s", 40)
+	got := publicName(long, "decompile_function")
+	if len(got) > maxToolNameRunes {
+		t.Fatalf("public name %q is %d runes, want <= %d", got, len(got), maxToolNameRunes)
+	}
+	if !strings.HasSuffix(got, "decompile_function") {
+		t.Fatalf("tool part was truncated: %q", got)
+	}
+	if publicName(long+"a", "t") == publicName(long+"b", "t") {
+		t.Fatal("two long server names collapsed onto one public name")
+	}
+}
+
+func TestClipKeepsRunesWhole(t *testing.T) {
+	// Truncating by bytes would cut the third é in half.
+	got := clip("éééééééééé", 4)
+	if !utf8.ValidString(got) {
+		t.Fatalf("clip split a rune: %q", got)
+	}
+	if utf8.RuneCountInString(got) != 5 { // 4 runes + ellipsis
+		t.Fatalf("clip = %q, want 4 runes plus an ellipsis", got)
+	}
+	if got := clip("  a \n b  ", 20); got != "a b" {
+		t.Fatalf("clip whitespace = %q, want %q", got, "a b")
+	}
+}
+
+func TestManagerSyncKeepsServerWhenToolNamesCollide(t *testing.T) {
+	a := &fakeClient{tools: []Tool{
+		{Name: "get.host", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "get_host", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "other", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	}}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	cfg := map[string]ServerConfig{"a": {Command: "a"}}
+
+	// A collision costs one tool and a warning, never the server: it once
+	// failed Sync outright and left the server with no tools at all.
+	got, errs := m.Sync(context.Background(), cfg)
+	if len(got) != 2 {
+		t.Fatalf("got %d tools, want 2: %+v", len(got), got)
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "both map to") {
+		t.Fatalf("want one collision warning, got %v", errs)
+	}
+
+	// The warning is reported on the Sync that loads the server, not every
+	// turn afterwards.
+	if _, errs := m.Sync(context.Background(), cfg); len(errs) != 0 {
+		t.Fatalf("warning repeated on a later Sync: %v", errs)
+	}
+}
+
+func TestManagerLoaderFor(t *testing.T) {
+	a := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+	b := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": a, "b": b}))
+	if _, errs := m.Sync(context.Background(), map[string]ServerConfig{
+		"a": {Command: "a", Lazy: true},
+		"b": {Command: "b"},
+	}); len(errs) != 0 {
+		t.Fatalf("sync: %v", errs)
+	}
+
+	if loader, ok := m.LoaderFor("mcp_a_search"); !ok || loader != "mcp_a" {
+		t.Fatalf("LoaderFor(mcp_a_search) = %q, %v; want mcp_a, true", loader, ok)
+	}
+	// A non-lazy server's tool is registered every turn, so there is nothing
+	// to hint at; neither is a name no server owns.
+	if _, ok := m.LoaderFor("mcp_b_search"); ok {
+		t.Fatal("non-lazy server reported a loader")
+	}
+	if _, ok := m.LoaderFor("mcp_a_nope"); ok {
+		t.Fatal("unknown tool reported a loader")
+	}
+}
+
+func TestLoaderDescriptionListsCallableNames(t *testing.T) {
+	a := &fakeClient{tools: []Tool{{
+		Name:        "decompile_function_by_address",
+		Description: "decompile the function at an address",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}}}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	got, errs := m.Sync(context.Background(), map[string]ServerConfig{"a": {Command: "a", Lazy: true}})
+	if len(errs) != 0 {
+		t.Fatalf("sync: %v", errs)
+	}
+	// The summary must name the tool the model can call, not the server's
+	// internal name for it.
+	if !strings.Contains(got[0].Description, "mcp_a_decompile_function_by_address") {
+		t.Fatalf("loader summary lacks the callable name: %q", got[0].Description)
+	}
+}
+
+func TestLoaderDescriptionIsCapped(t *testing.T) {
+	var many []Tool
+	for i := 0; i < 200; i++ {
+		many = append(many, Tool{
+			Name:        fmt.Sprintf("tool_%03d", i),
+			Description: strings.Repeat("d", 80),
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		})
+	}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": {tools: many}}))
+	got, errs := m.Sync(context.Background(), map[string]ServerConfig{"a": {Command: "a", Lazy: true}})
+	if len(errs) != 0 {
+		t.Fatalf("sync: %v", errs)
+	}
+	// A big server must not put more text in context than the eager
+	// definitions lazy mode replaces.
+	if n := len(got[0].Description); n > maxLoaderDescription+100 {
+		t.Fatalf("loader description is %d bytes, want ~%d", n, maxLoaderDescription)
+	}
+	if !strings.Contains(got[0].Description, "more not listed here") {
+		t.Fatalf("capped summary does not say what is missing: %q", got[0].Description)
+	}
+}
+
+func TestManagerSyncTimesOutHungServer(t *testing.T) {
+	hanging := func(ctx context.Context, _ ServerConfig) (Client, error) {
+		<-ctx.Done() // never answers initialize
+		return nil, ctx.Err()
+	}
+	ok := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+
+	defer func(d time.Duration) { syncTimeout = d }(syncTimeout)
+	syncTimeout = 20 * time.Millisecond
+
+	m := NewManager(func(ctx context.Context, cfg ServerConfig) (Client, error) {
+		if cfg.URL == "hang" {
+			return hanging(ctx, cfg)
+		}
+		return ok, nil
+	})
+
+	start := time.Now()
+	got, errs := m.Sync(context.Background(), map[string]ServerConfig{
+		"hang": {URL: "hang"},
+		"ok":   {URL: "ok"},
+	})
+	// Sync holds the manager lock while dialing, so a server that never
+	// answers must be cut loose rather than stall the turn.
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "hang") {
+		t.Fatalf("want one error for the hung server, got %v", errs)
+	}
+	if len(got) != 1 || got[0].Name != "mcp_ok_t" {
+		t.Fatalf("healthy server lost: %+v", got)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Sync took %v, want it bounded by syncTimeout", elapsed)
 	}
 }

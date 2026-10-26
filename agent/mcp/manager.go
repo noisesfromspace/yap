@@ -8,7 +8,31 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 )
+
+const (
+	// maxToolNameRunes is the provider limit on a public tool name.
+	maxToolNameRunes = 64
+	// maxServerRunes caps the server part of a public name so a long server
+	// name cannot crowd out the tool name it prefixes.
+	maxServerRunes = 24
+	// nameHashLen is the length of the suffix that keeps two truncated names
+	// distinct: an underscore plus 8 hex digits.
+	nameHashLen = 9
+
+	// maxLoaderDescription caps the summary a lazy server puts in context on
+	// every turn. Without it a server with hundreds of tools could cost more
+	// there than the eager definitions lazy mode replaces.
+	maxLoaderDescription = 4000
+)
+
+// syncTimeout bounds connect + tools/list for one server. Sync runs with the
+// manager lock held, so a server that never answers would otherwise stall the
+// turn (and every tool call behind the lock). A timed-out server is retried
+// next turn, since nothing is cached for it. A var so tests can shorten it.
+var syncTimeout = 60 * time.Second
 
 // Manager keeps one connected client per configured server for the lifetime
 // of the backend. Tools are discovered once per connection and cached; a
@@ -26,6 +50,9 @@ type server struct {
 	client Client
 	pub    map[string]toolInfo // public name -> discovered tool
 	order  []string            // sorted public names
+	// warnings holds load-time problems (a dropped tool, ...) for the next
+	// Sync to report. An error that costs one tool must not cost the server.
+	warnings []string
 }
 
 type toolInfo struct {
@@ -45,10 +72,11 @@ func NewManager(dial Dial) *Manager {
 }
 
 // Sync reconciles the manager with cfg and returns the currently available
-// tools plus one error per unavailable server. Tools are still returned when
-// some servers fail, so an optional server never blocks the turn. Servers
-// whose config is unchanged keep their cached tool list; only a newly
-// connected (or reconnected) server lists tools.
+// tools plus one error per unavailable server (or per tool a server had to
+// drop). Tools are still returned when some servers fail, so an optional
+// server never blocks the turn. Servers whose config is unchanged keep their
+// cached tool list; only a newly connected (or reconnected) server lists
+// tools.
 func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool, []error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -77,6 +105,10 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 			errs = append(errs, fmt.Errorf("mcp server %q: %w", name, err))
 			continue
 		}
+		for _, w := range s.warnings {
+			errs = append(errs, fmt.Errorf("mcp server %q: %s", name, w))
+		}
+		s.warnings = nil
 		if sc.Lazy {
 			// A lazy server exposes one loader tool until the model asks for
 			// its real tools (see Activate); its definitions stay out of
@@ -116,6 +148,8 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 		_ = s.client.Close()
 		delete(m.servers, name)
 	}
+	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
+	defer cancel()
 	cl, err := m.dial(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -147,14 +181,17 @@ func (s *server) load(ctx context.Context) error {
 		}
 	}
 	pub := map[string]toolInfo{}
-	var order []string
+	var order, warnings []string
 	for _, t := range list {
 		if s.cfg.Tools != nil && !allow[t.Name] {
 			continue
 		}
 		p := publicName(s.name, t.Name)
 		if prev, ok := pub[p]; ok {
-			return fmt.Errorf("tools %q and %q collide on %q", prev.original, t.Name, p)
+			// Keep the first tool and drop the rest: one collision must not
+			// take the whole server down with it (it once did).
+			warnings = append(warnings, fmt.Sprintf("tools %q and %q both map to %q; exposing %q", prev.original, t.Name, p, prev.original))
+			continue
 		}
 		pub[p] = toolInfo{original: t.Name, desc: t.Description, schema: t.InputSchema}
 		order = append(order, p)
@@ -162,6 +199,7 @@ func (s *server) load(ctx context.Context) error {
 	sort.Strings(order)
 	s.pub = pub
 	s.order = order
+	s.warnings = warnings
 	return nil
 }
 
@@ -184,6 +222,24 @@ func (m *Manager) Activate(name string) ([]Tool, error) {
 		out = append(out, Tool{Name: pub, Description: info.desc, InputSchema: info.schema, Server: name})
 	}
 	return out, nil
+}
+
+// LoaderFor reports whether publicName is a tool of a lazy server and, if so,
+// the loader tool that activates it. The agent loop uses it to turn a call to
+// an unregistered lazy tool (activation lasts one turn) into actionable
+// advice instead of a bare "unknown tool".
+func (m *Manager) LoaderFor(publicName string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, s := range m.servers {
+		if !s.cfg.Lazy {
+			continue
+		}
+		if _, ok := s.pub[publicName]; ok {
+			return loaderName(name), true
+		}
+	}
+	return "", false
 }
 
 // Call invokes the tool behind publicName with args, returning the normalized
@@ -219,32 +275,43 @@ func (m *Manager) Close() {
 	}
 }
 
-// publicName namespaces a server's tool as mcp_<server>_<tool>.
+// loaderName is the public name of a lazy server's loader tool.
+func loaderName(serverName string) string {
+	return "mcp_" + sanitize(serverName, maxServerRunes)
+}
+
+// publicName namespaces a server's tool as mcp_<server>_<tool>, spending the
+// provider's name budget on the tool name rather than a fixed slice of it.
 func publicName(serverName, tool string) string {
-	return "mcp_" + sanitize(serverName) + "_" + sanitize(tool)
+	prefix := loaderName(serverName) + "_"
+	return prefix + sanitize(tool, maxToolNameRunes-len(prefix))
 }
 
 // loaderTool builds the single tool a lazy server exposes before activation.
 // Its description summarizes what the server offers (names + clipped one-line
 // descriptions) so the model can decide whether to pull the real definitions
 // in; the full schemas are only fetched when it does.
+// The names it lists are the public ones, because those are what the model
+// can actually call; a truncated public name would be unusable to it.
 func loaderTool(name string, s *server) Tool {
 	var b strings.Builder
 	b.WriteString("Load the tools of the ")
 	b.WriteString(name)
 	b.WriteString(" MCP server. Call this tool first, then call the listed tools directly:")
-	for i, pub := range s.order {
-		if i > 0 {
-			b.WriteString(";")
+	listed := 0
+	for _, pub := range s.order {
+		entry := " " + pub + " — " + clip(s.pub[pub].desc, 60) + ";"
+		if b.Len()+len(entry) > maxLoaderDescription {
+			break
 		}
-		info := s.pub[pub]
-		b.WriteString(" ")
-		b.WriteString(info.original)
-		b.WriteString(" — ")
-		b.WriteString(clip(info.desc, 60))
+		b.WriteString(entry)
+		listed++
+	}
+	if rest := len(s.order) - listed; rest > 0 {
+		fmt.Fprintf(&b, " and %d more not listed here.", rest)
 	}
 	return Tool{
-		Name:        "mcp_" + sanitize(name),
+		Name:        loaderName(name),
 		Description: b.String(),
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Server:      name,
@@ -252,22 +319,24 @@ func loaderTool(name string, s *server) Tool {
 	}
 }
 
-// clip collapses whitespace and truncates s to at most n runes.
+// clip collapses whitespace and truncates s to at most n runes, never
+// splitting a multi-byte character: half a rune makes a provider reject the
+// request, and makes Neovim read the transcript back as latin1.
 func clip(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > n {
-		return s[:n] + "…"
+	if utf8.RuneCountInString(s) <= n {
+		return s
 	}
-	return s
+	return string([]rune(s)[:n]) + "…"
 }
 
 // sanitize maps a name onto the conservative set model providers accept
-// (letters, digits, underscore, hyphen), truncating to 28 runes so the full
-// public name stays within a 64-character provider limit. Truncation keeps a
-// short hash of the full name so two distinct long names that share a prefix
-// (e.g. list_available_data_definition_groups vs ..._definitions) do not
-// collapse onto the same public name.
-func sanitize(s string) string {
+// (letters, digits, underscore, hyphen) and truncates it to at most max
+// runes. Truncation keeps a short hash of the full name so two distinct long
+// names that share a prefix (e.g. list_available_data_definition_groups vs
+// ..._definitions) do not collapse onto the same public name. Non-ASCII runs
+// become '_', so the result is pure ASCII and runes equal bytes.
+func sanitize(s string, max int) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
@@ -281,12 +350,15 @@ func sanitize(s string) string {
 	if out == "" {
 		out = "tool"
 	}
-	if len(out) > 28 {
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(out))
-		out = out[:19] + "_" + fmt.Sprintf("%08x", h.Sum32())
+	if len(out) <= max {
+		return out
 	}
-	return out
+	if max <= nameHashLen {
+		return out[:max]
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(out))
+	return out[:max-nameHashLen] + "_" + fmt.Sprintf("%08x", h.Sum32())
 }
 
 func configEqual(a, b ServerConfig) bool {

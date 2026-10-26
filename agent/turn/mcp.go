@@ -45,6 +45,21 @@ func syncMCPTools(ctx context.Context, cfg map[string]mcp.ServerConfig) {
 	}
 }
 
+// lazyHint explains a call to a tool name that is not registered. Activation
+// is per turn, so a lazy server's tools are the one case where the model can
+// name a real tool that is merely not loaded yet; telling it which loader to
+// call turns that dead end into one extra step.
+func lazyHint(name string) string {
+	if _, ok := tools.Get(name); ok {
+		return "" // registered, so a miss here is not ours to explain
+	}
+	loader, ok := mcpMgr.LoaderFor(name)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("error: unknown tool %s: that MCP server is lazy, so its tools must be loaded once per turn. Call %s first, then call %s again.", name, loader, name)
+}
+
 // registerMCPTool registers one discovered MCP tool, routed to mcpMgr.Call.
 func registerMCPTool(ctx context.Context, t mcp.Tool) {
 	name := t.Name

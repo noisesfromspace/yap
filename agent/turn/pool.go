@@ -64,6 +64,9 @@ func callTool(call llm.ToolCall, allowed *[]string) taskResult {
 	}
 	tool, ok := tools.Get(call.Name)
 	if !ok {
+		if hint := lazyHint(call.Name); hint != "" {
+			return taskResult{result: hint}
+		}
 		return taskResult{result: "error: unknown tool " + call.Name}
 	}
 	if denial := staticGate(call); denial != "" {
