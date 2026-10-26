@@ -131,7 +131,9 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    To bill a ChatGPT Plus/Pro plan instead of an API key, drop `api_key_env`
    and use `{"openai": {"auth": "chatgpt"}}`, then run `yap login chatgpt`
    once and approve access in the browser. Credentials land in
-   `~/.config/yap/chatgpt.json` and refresh themselves.
+   `~/.config/yap/chatgpt.json` and refresh themselves. Login and token renewal
+   are serialized across Yap processes for each auth method, so sessions can
+   safely share rotating refresh tokens.
 3. Install this repo as a Neovim plugin, or append
    `vim.opt.rtp:append("/path/to/yap")` to your config, then:
 

@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -43,10 +42,6 @@ const (
 	// starts just under the wire does not die mid-request.
 	refreshMargin = 5 * time.Minute
 )
-
-// authMu serializes refreshes inside one process: the refresh token rotates on
-// every use, so two concurrent refreshes would invalidate each other.
-var authMu sync.Mutex
 
 // Creds is the stored credential record for one ChatGPT account registration.
 type Creds struct {
@@ -113,8 +108,6 @@ func save(c *Creds) error {
 // token returns a valid access token, refreshing it when it is within
 // refreshMargin of expiry.
 func token(ctx context.Context) (string, error) {
-	authMu.Lock()
-	defer authMu.Unlock()
 	c, err := Load()
 	if err != nil {
 		return "", err
@@ -124,12 +117,6 @@ func token(ctx context.Context) (string, error) {
 	}
 	next, err := refresh(ctx, c)
 	if err != nil {
-		// Another yap process (one backend per session) may have rotated the
-		// refresh token while this one was mid-flight. If the file now holds a
-		// different, usable token, that process won the race: use its result.
-		if again, lerr := Load(); lerr == nil && again.RefreshToken != c.RefreshToken && !needsRefresh(again) {
-			return again.AccessToken, nil
-		}
 		return "", err
 	}
 	if err := save(next); err != nil {
@@ -327,6 +314,17 @@ func waitForCallback(ctx context.Context, ln net.Listener, state string) (*callb
 	}
 }
 
+// tokenEndpointError retains the server diagnostic and its OAuth error code.
+type tokenEndpointError struct {
+	status string
+	body   string
+	code   string
+}
+
+func (e *tokenEndpointError) Error() string {
+	return fmt.Sprintf("token endpoint: HTTP %s: %s", e.status, e.body)
+}
+
 // exchange swaps an authorization code (or, later, a refresh token) for tokens.
 func exchange(ctx context.Context, form url.Values) (*Creds, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
@@ -345,7 +343,21 @@ func exchange(ctx context.Context, form url.Values) (*Creds, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token endpoint: HTTP %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		var oauthError struct {
+			Error json.RawMessage `json:"error"`
+		}
+		var code string
+		if json.Unmarshal(body, &oauthError) == nil {
+			if json.Unmarshal(oauthError.Error, &code) != nil {
+				var detail struct {
+					Code string `json:"code"`
+				}
+				if json.Unmarshal(oauthError.Error, &detail) == nil {
+					code = detail.Code
+				}
+			}
+		}
+		return nil, &tokenEndpointError{status: resp.Status, body: strings.TrimSpace(string(body)), code: code}
 	}
 	var tok struct {
 		AccessToken  string `json:"access_token"`
@@ -382,6 +394,13 @@ func refresh(ctx context.Context, old *Creds) (*Creds, error) {
 		"resource":      {resource},
 	})
 	if err != nil {
+		var endpoint *tokenEndpointError
+		if errors.As(err, &endpoint) {
+			switch endpoint.code {
+			case "invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused":
+				return nil, fmt.Errorf("ChatGPT session is no longer renewable; run `yap login chatgpt`: %w", err)
+			}
+		}
 		return nil, err
 	}
 	next.ClientID, next.HostID = old.ClientID, old.HostID

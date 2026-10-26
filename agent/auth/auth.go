@@ -17,7 +17,11 @@ import (
 
 // Method is one interactive login. A provider opts in with "auth": "<name>";
 // `yap login <name>` runs the browser flow once, and every request
-// authenticates with the token Token returns.
+// authenticates with the token Token returns. The registry serializes Login
+// and Token across processes per method. Implementations must load credentials
+// inside these calls (not cache rotating tokens), and persist replacements
+// before returning. Call through the registry rather than invoking methods
+// directly; do not call back into Login or Token while holding this lock.
 type Method interface {
 	// Name is the method id in settings.json and `yap login` (e.g. "chatgpt").
 	Name() string
@@ -71,6 +75,11 @@ func Login(ctx context.Context, name string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := lockMethod(ctx, name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	return m.Login(ctx, out)
 }
 
@@ -80,6 +89,11 @@ func Token(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	unlock, err := lockMethod(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	return m.Token(ctx)
 }
 

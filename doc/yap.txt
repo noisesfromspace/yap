@@ -167,6 +167,11 @@ and each path is configurable via `setup()`):
   settings → Usage → App limits. `yap login chatgpt` again to reauthorize, or
   delete the file to forget the account.
 
+  All auth methods serialize login and token renewal across Yap processes.
+  Each method uses a persistent lock file under the Yap config directory;
+  waiting requests can be canceled, and process exit releases the lock.
+  Restart existing backends after upgrading so they also use this locking.
+
   `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   The `mcp` block configures external MCP servers, whose tools are exposed to
