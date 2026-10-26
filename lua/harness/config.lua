@@ -226,27 +226,4 @@ function M.parse_combo(combo)
   return combo:match("^([%w_.:%-]+)/([%w_.:~/-]+)$")
 end
 
--- Cache of the compiled-in tool names (`yap tools`). No longer seeded into
--- new sessions: MCP tools are discovered at runtime, so a statically seeded
--- allowlist would silently exclude them. Sessions now default to unrestricted
--- (no `tools:` line); subagents and hand-added `tools:` blocks restrict.
-local tool_names = nil
-
---- Names of every tool compiled into the binary, cached from `yap tools`.
---- Returns nil when the list is unavailable (then no `tools:` line is
---- written and the backend runs with its full, unrestricted set).
-function M.tool_names()
-  if tool_names ~= nil then
-    return tool_names
-  end
-  -- With a list argument, systemlist raises E475 when the binary is not
-  -- executable (unlike the string form, which reports shell_error). pcall
-  -- keeps the documented contract: nil when the binary is unreachable.
-  local ok, res = pcall(vim.fn.systemlist, { require("harness").config.bin, "tools" })
-  if ok and vim.v.shell_error == 0 and res and #res > 0 then
-    tool_names = res
-  end
-  return tool_names
-end
-
 return M

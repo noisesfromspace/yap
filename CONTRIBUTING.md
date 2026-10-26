@@ -239,9 +239,10 @@ The frontmatter holds `provider`/`model` (the combo to resume with),
 exact working directory the session was created in — the session dir slug is
 lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped
-on save for the picker), and `tools` (the per-session tool allowlist: a normal
-session lists every compiled-in tool so lines can be removed to retract
-access on the next send, while a subagent lists only its definition's tools).
+on save for the picker), and `tools` (the per-session tool allowlist: absent
+means unrestricted — every tool including runtime-discovered MCP tools; list
+names to restrict the session to only those, while a subagent lists only its
+definition's tools).
 yap writes the model fields only on `:Yap` and
 change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and

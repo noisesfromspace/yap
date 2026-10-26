@@ -43,9 +43,9 @@
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
 -- subagent session (its agent-definition name); `tools` is the per-session
--- tool allowlist — a normal session lists every compiled-in tool so lines can
--- be removed to retract access on the next send, while a subagent lists only
--- its definition's tools;
+-- tool allowlist — absent means unrestricted (every tool, including runtime-
+-- discovered MCP tools); list names to restrict the session to only those,
+-- while a subagent lists only its definition's tools;
 -- `turns` counts the completed replies (`# @assistant` messages) — a
 -- session-depth summary for the picker, stamped on save with `updated_at`;
 -- `created_at` records when the session was created; `updated_at` records
