@@ -18,10 +18,12 @@ var mcpMgr = mcp.NewManager(mcp.Dial(official.Dial))
 // CloseMCP disconnects every MCP server; called on backend shutdown.
 func CloseMCP() { mcpMgr.Close() }
 
-// syncMCPTools re-discovers MCP tools for this turn and registers them in the
-// tool registry, replacing whatever the previous turn discovered. An
-// unavailable server is a warning on stderr, not a failed turn: the tools it
-// would have contributed are simply absent.
+// syncMCPTools reconciles the MCP manager with cfg for this turn and registers
+// the resulting tools in the registry, replacing whatever the previous turn
+// registered. Discovery is cached per connection (see mcp.Manager): unchanged
+// servers contribute their cached tool list without re-listing. An unavailable
+// server is a warning on stderr, not a failed turn: the tools it would have
+// contributed are simply absent.
 func syncMCPTools(ctx context.Context, cfg map[string]mcp.ServerConfig) {
 	tools.UnregisterPrefix("mcp_")
 	if len(cfg) == 0 {

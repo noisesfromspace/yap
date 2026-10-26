@@ -9,12 +9,16 @@ import (
 
 // fakeClient is an in-memory Client for Manager tests.
 type fakeClient struct {
-	tools   []Tool
-	results map[string]Result
-	closed  bool
+	tools     []Tool
+	results   map[string]Result
+	closed    bool
+	listCalls int
 }
 
-func (f *fakeClient) ListTools(context.Context) ([]Tool, error) { return f.tools, nil }
+func (f *fakeClient) ListTools(context.Context) ([]Tool, error) {
+	f.listCalls++
+	return f.tools, nil
+}
 
 func (f *fakeClient) CallTool(_ context.Context, name string, _ json.RawMessage) (Result, error) {
 	return f.results[name], nil
@@ -147,6 +151,31 @@ func TestResultTextPreferences(t *testing.T) {
 	}}
 	if got := r.Text(); !strings.Contains(got, "unsupported content: image") {
 		t.Fatalf("got %q, want unsupported summary", got)
+	}
+}
+
+func TestManagerSyncCachesToolList(t *testing.T) {
+	a := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
+	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	cfg := map[string]ServerConfig{"s": {Command: "a"}}
+
+	// Two Syncs with unchanged config list tools once.
+	for i := 0; i < 2; i++ {
+		if _, errs := m.Sync(context.Background(), cfg); len(errs) != 0 {
+			t.Fatalf("sync%d: %v", i, errs)
+		}
+	}
+	if a.listCalls != 1 {
+		t.Fatalf("ListTools called %d times, want 1 (tools should be cached per connection)", a.listCalls)
+	}
+
+	// A config change reconnects and re-lists.
+	cfg["s"] = ServerConfig{Command: "a", Tools: []string{"t"}}
+	if _, errs := m.Sync(context.Background(), cfg); len(errs) != 0 {
+		t.Fatalf("sync after config change: %v", errs)
+	}
+	if a.listCalls != 2 {
+		t.Fatalf("ListTools called %d times after config change, want 2", a.listCalls)
 	}
 }
 

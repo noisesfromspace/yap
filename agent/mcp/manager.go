@@ -11,8 +11,9 @@ import (
 )
 
 // Manager keeps one connected client per configured server for the lifetime
-// of the backend and re-discovers tools each turn. The call path releases the
-// lock before talking to a server, so a slow tool never blocks Sync.
+// of the backend. Tools are discovered once per connection and cached; a
+// reconnect (config change) re-lists them. The call path releases the lock
+// before talking to a server, so a slow tool never blocks Sync.
 type Manager struct {
 	dial    Dial
 	mu      sync.Mutex
@@ -45,7 +46,9 @@ func NewManager(dial Dial) *Manager {
 
 // Sync reconciles the manager with cfg and returns the currently available
 // tools plus one error per unavailable server. Tools are still returned when
-// some servers fail, so an optional server never blocks the turn.
+// some servers fail, so an optional server never blocks the turn. Servers
+// whose config is unchanged keep their cached tool list; only a newly
+// connected (or reconnected) server lists tools.
 func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool, []error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -71,10 +74,6 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 		sc := cfg[name]
 		s, err := m.ensureLocked(ctx, name, sc)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("mcp server %q: %w", name, err))
-			continue
-		}
-		if err := s.refresh(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("mcp server %q: %w", name, err))
 			continue
 		}
@@ -106,13 +105,21 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 		return nil, err
 	}
 	s := &server{name: name, cfg: cfg, client: cl, pub: map[string]toolInfo{}}
+	if err := s.load(ctx); err != nil {
+		_ = cl.Close()
+		return nil, err
+	}
 	m.servers[name] = s
 	return s, nil
 }
 
-// refresh re-lists the server's tools and rebuilds the public-name mapping,
-// honoring the configured allowlist.
-func (s *server) refresh(ctx context.Context) error {
+// load lists the server's tools once and builds the public-name mapping,
+// honoring the configured allowlist. It runs only on connect/reconnect: the
+// list is cached for the connection's lifetime. tools/list_changed
+// notifications would let us refresh in place, but they are only negotiated
+// at protocol 2026-07-28+ (which Yap pins away from to skip the SDK's
+// server/discover probe), so a server's tools are re-read on reconnect only.
+func (s *server) load(ctx context.Context) error {
 	list, err := s.client.ListTools(ctx)
 	if err != nil {
 		return err

@@ -323,6 +323,15 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))
 	}
+	// Anthropic only: cache the stable [tools + system] prefix. Its cache
+	// prefix order is tools -> system -> messages, so a breakpoint on the
+	// system prompt also covers the tool definitions (the largest part of the
+	// prompt for MCP-heavy sessions). The 1h TTL survives gaps between turns
+	// (long tool runs, human thinking) that a 5m cache would not. Other
+	// providers ignore both options.
+	if m.name == "anthropic" {
+		opts = append(opts, sdk.WithPromptCaching(true), sdk.WithCacheTTL("1h"))
+	}
 	po := m.providerOptions(params.ReasoningLevel)
 	if len(m.authOptions) > 0 {
 		if po == nil {
