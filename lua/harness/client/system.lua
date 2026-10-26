@@ -26,7 +26,9 @@ function M.about(buf)
 
 You are running inside Yap, an agent harness for Neovim. The conversation is an editable Markdown buffer and the source of truth: `# @system`, `# @user`, and `# @assistant` headings delimit messages; editing or deleting a message branches or rewrites history, and the visible transcript is what is re-sent. Never emit one of those headings or a `<!-- yap:` marker line in a reply; indent or fence it instead.
 
-Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. When asked about Yap itself, read `README.md` / `doc/yap.txt` in the plugin (]] .. yap_install_root .. [[) rather than guessing.
+Between turns, tool calls and their results are plain text in the transcript, not re-executed or re-sent. Tool results are scrubbed of secrets before they enter the transcript: a `[REDACTED]` in a tool result means `agent/safety/scrub.go` in this plugin replaced a value that matched its secret patterns (named keys, tokens, private keys) — that is expected redaction, not a bug in the tool, and not worth investigating.
+
+When asked about Yap itself, read `README.md` / `doc/yap.txt` in the plugin (]] .. yap_install_root .. [[) rather than guessing.
 
 For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the configured MCP GitHub tools (prefixed `mcp_`) rather than curl, fetch, bash, or `gh`. Use other tools only if those cannot perform the needed operation; never pass a credential in tool arguments.
 
