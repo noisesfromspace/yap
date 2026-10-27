@@ -75,9 +75,9 @@ type Sandbox struct {
 }
 
 type Config struct {
-	Providers map[string]Provider       `json:"providers"`
+	Providers map[string]Provider         `json:"providers"`
 	MCP       map[string]mcp.ServerConfig `json:"mcp"`
-	Sandbox   Sandbox                   `json:"sandbox"`
+	Sandbox   Sandbox                     `json:"sandbox"`
 }
 
 func configPath() string {
