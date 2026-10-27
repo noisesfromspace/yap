@@ -164,7 +164,7 @@ end
 --- The session's assets folder: <dir>/assets, beside the session markdown.
 --- It is the session's single working-files folder: dropped photos are copied
 --- here (the `![FILE: …](file://…)` reference is the manifest), the backend
---- writes live-tail logs, inline scripts, header files and SSH sockets here
+--- writes live-tail logs, inline scripts and header files here
 --- instead of the system temp dir, and the agent writes its throwaway
 --- scripts, fetched downloads and generated artifacts here too — so nothing
 --- scatters into /tmp or the project, everything moves with the session, and

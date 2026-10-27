@@ -46,7 +46,7 @@ type Request struct {
 	// session was started in. Empty for a one-shot `yap send`.
 	Cwd string `json:"cwd,omitempty"`
 	// AssetsDir is the per-session folder for transient tool files (live-tail
-	// logs, inline scripts, header files, SSH control sockets) and the
+	// logs, inline scripts, header files) and the
 	// agent's scratch files. Set by the frontend from the session folder so
 	// those files live with the session instead of the system temp dir.
 	// Empty for a one-shot `yap send`.
@@ -347,7 +347,6 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	utils.SetFrontendCwd(req.Cwd)
 	utils.SetAssetsBase(req.AssetsDir)
 	syncMCPTools(ctx, cfg.MCP)
-	tools.SetSSHKnownHosts(cfg.SSH.KnownHosts)
 	enabled := cfg.Sandbox.Enabled == nil || *cfg.Sandbox.Enabled
 	safety.SetSandboxConfig(safety.SandboxConfig{
 		Enabled:    enabled,

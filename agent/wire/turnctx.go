@@ -5,8 +5,8 @@ import "context"
 // The currently-running turn's context. serve derives it per turn and hands
 // it to runTurn, which installs it here (and clears it on return). Tools
 // consult it to abort promptly when the frontend cancels a turn — instead of
-// the old kill-the-process model, which tore down SSH control masters and
-// every other tool state on stop(). Package-level mutable state, matching
+// the old kill-the-process model, which tore down every tool's state on
+// stop(). Package-level mutable state, matching
 // ApprovalReplies/SubagentReplies: the tool interface (Run(input) -> result)
 // carries no context, so this is the one place a tool can reach cancellation.
 var turnCtx context.Context = context.Background()

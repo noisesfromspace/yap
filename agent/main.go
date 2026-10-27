@@ -136,7 +136,8 @@ func main() {
 	}
 }
 
-// serve keeps tool state (including SSH connections) in this process across turns.
+// serve keeps tool state (including MCP connections and background jobs) in
+// this process across turns.
 // All Go→Lua traffic is newline-delimited JSON frames on one channel (see
 // agent/wire/frames.go): text, event, tool_output, request and turn_complete.
 // One channel means total ordering, so the frontend needs no cross-pipe
@@ -238,8 +239,7 @@ func serve(in io.Reader, out io.Writer) error {
 	// The currently-running turn's cancel func. The `cancel` notification on
 	// stdin calls it; the turn's context cancellation then unwinds the agent
 	// loop (LLM stream, in-flight tools, parked approvals/subagents) without
-	// killing the serve process, so SSH control masters and other tool state
-	// survive a stop().
+	// killing the serve process, so tool state survives a stop().
 	var cancelMu sync.Mutex
 	var cancelFn context.CancelFunc
 

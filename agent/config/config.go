@@ -62,13 +62,6 @@ func credential(ctx context.Context, prov Provider) (string, error) {
 // per backend, its tools discovered at runtime, and exposed to the model as
 // mcp_<server>_<tool>.
 
-// SSH configures the ssh tool's trust boundary. KnownHosts overrides the
-// known_hosts file hosts are checked against; empty auto-detects (the
-// system-wide file when present, else ~/.ssh/known_hosts).
-type SSH struct {
-	KnownHosts string `json:"known_hosts"`
-}
-
 // Sandbox configures the bash tool's bubblewrap sandbox (Linux only).
 // Enabled is a pointer so a missing key defaults to true: the sandbox is on
 // unless the settings file explicitly sets enabled=false. AllowWrite and
@@ -84,7 +77,6 @@ type Sandbox struct {
 type Config struct {
 	Providers map[string]Provider       `json:"providers"`
 	MCP       map[string]mcp.ServerConfig `json:"mcp"`
-	SSH       SSH                       `json:"ssh"`
 	Sandbox   Sandbox                   `json:"sandbox"`
 }
 

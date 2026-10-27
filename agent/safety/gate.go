@@ -26,11 +26,7 @@ type Rule struct {
 	// Name is the short human label ("sudo", "remote content executed by
 	// shell").
 	Name string
-	// Always pauses every call regardless of the inspected text (ssh — the
-	// one unconditional-approval tool today).
-	Always bool
 	// Match reports whether the call's inspected text trips the rule.
-	// Ignored when Always is true.
 	Match func(text string) bool
 	// Shell reports whether the parsed command line trips the rule. Build it
 	// with Shell or ShellAny instead of assigning directly. Only the tools
@@ -46,16 +42,13 @@ func Pattern(name, expr string) Rule {
 }
 
 // MatchRules returns the name of the first rule matching text, or "" when the
-// call may run. An always rule wins the moment it is reached (rules are
-// ordered). The command line is parsed at most once per call, and only when a
-// shell rule is reached.
+// call may run (rules are ordered). The command line is parsed at most once
+// per call, and only when a shell rule is reached.
 func MatchRules(rules []Rule, text string) string {
 	var cmds []ShellCmd
 	parsed := false
 	for _, r := range rules {
 		switch {
-		case r.Always:
-			return r.Name
 		case r.Shell != nil:
 			if !parsed {
 				cmds, _ = ParseShell(text)

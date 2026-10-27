@@ -175,7 +175,8 @@ func EmitTurnComplete(ok bool, werr *WireError) {
 
 // EmitTurnCancelled writes the terminal frame for a user-cancelled turn: the
 // frontend treats it as a stop (no error marker), not a failure. The serve
-// process stays alive, so SSH connections and other tool state survive.
+// process stays alive, so tool state (MCP connections, background jobs)
+// survives.
 func EmitTurnCancelled() {
 	frameMu.Lock()
 	defer frameMu.Unlock()

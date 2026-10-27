@@ -118,9 +118,6 @@ and each path is configurable via `setup()`):
 	"api_key_env": "MOONSHOT_API_KEY"
       }
     },
-    "ssh": {
-      "known_hosts": "~/.ssh/known_hosts"
-    },
     "sandbox": {
       "enabled": true,
       "allow_write": ["~/.cache"],
@@ -171,8 +168,6 @@ and each path is configurable via `setup()`):
   Each method uses a persistent lock file under the Yap config directory;
   waiting requests can be canceled, and process exit releases the lock.
   Restart existing backends after upgrading so they also use this locking.
-
-  `ssh.known_hosts` overrides the file the ssh tool checks hosts against.
 
   The `mcp` block configures external MCP servers, whose tools are exposed to
   the model as `mcp_<server>_<tool>`. Each entry is a stdio server (a local
@@ -748,7 +743,6 @@ The set today:
                 fork bombs; and secret-reveal commands — decrypting
                 (age/gpg/sops/openssl), generating or exporting a private
                 key, and reading a file under a secret directory.
-  ssh           always pauses for a Run/Deny confirmation.
   curl          an explicit non-GET method, a request body (data off the
                 machine), or a local-file flag (an `@file` read, a `-o`/
                 `-O` write, a client cert, a cookie jar, …) — the human
@@ -852,7 +846,6 @@ approval rules that sit in front of them (|yap-guard-gate|).
   glob           List files by pattern through ripgrep.
   curl           Fetch a URL with curl; the response plus a status line.
   fetch          Fetch a URL and return the readable content as markdown.
-  ssh            Run commands over OpenSSH. Every call needs approval.
   subagent       Run a saved agent definition in a child session.
   models         List provider/model combos and their prices.
   quickfix       Replace Neovim's quickfix list with source locations.

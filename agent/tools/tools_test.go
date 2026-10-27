@@ -207,11 +207,6 @@ func TestGuardRules(t *testing.T) {
 		}
 	}
 
-	// ssh always requires approval.
-	if reason := Match("ssh", json.RawMessage(`{"host":"db","command":"restart"}`)); reason != "remote command execution" {
-		t.Fatalf("ssh: reason=%q", reason)
-	}
-
 	// Secret paths are approvable for read/write/edit/search: a matching rule,
 	// never a silent read/write.
 	for _, tc := range []struct{ tool, args, want string }{
@@ -278,24 +273,13 @@ func TestGuardRules(t *testing.T) {
 }
 
 func TestGuardRulesListing(t *testing.T) {
-	// Rules() is the `yap guard` source: sorted by (tool, name), with the
-	// always flag set only for ssh (the one unconditional-approval tool).
-	sawSSH := false
+	// Rules() is the `yap guard` source: sorted by (tool, name).
 	var prev string
 	for _, r := range Rules() {
 		if r.Tool+"/"+r.Name < prev {
 			t.Fatalf("rules not sorted: %q before %q", prev, r.Tool+"/"+r.Name)
 		}
 		prev = r.Tool + "/" + r.Name
-		if r.Tool == "ssh" {
-			sawSSH = true
-			if !r.Always {
-				t.Fatalf("ssh rule should be marked always")
-			}
-		}
-	}
-	if !sawSSH {
-		t.Fatal("ssh rule missing from Rules()")
 	}
 }
 

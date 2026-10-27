@@ -223,7 +223,7 @@ func TestConcurrentLazyAutoactivation(t *testing.T) {
 // Use a distinct name: guard declarations live for the test process lifetime.
 func TestLazyAutoactivationStillRunsStaticGate(t *testing.T) {
 	c := useLazyServer(t, mcp.Tool{Name: "guarded", InputSchema: json.RawMessage(`{"type":"object"}`)})
-	tools.Gate[struct{}]("mcp_a_guarded", func(*struct{}) string { return "" }, safety.Rule{Name: "test guard", Always: true})
+	tools.Gate[struct{}]("mcp_a_guarded", func(*struct{}) string { return "" }, safety.Rule{Name: "test guard", Match: func(string) bool { return true }})
 	res := callTool(llm.ToolCall{Name: "mcp_a_guarded", Input: json.RawMessage(`{}`)}, nil)
 	if !strings.Contains(res.result, "approval requires") {
 		t.Fatal(res.result)

@@ -183,9 +183,8 @@ func Get(name string) (*Tool, bool) {
 // GuardRule is one registered guard rule, as surfaced to `yap guard` and the
 // frontend's guard board.
 type GuardRule struct {
-	Tool   string `json:"tool"`
-	Name   string `json:"name"`
-	Always bool   `json:"always,omitempty"`
+	Tool string `json:"tool"`
+	Name string `json:"name"`
 }
 
 // guardGate is a tool's static rule set: one inspect function that extracts
@@ -226,7 +225,7 @@ func Rules() []GuardRule {
 	var out []GuardRule
 	for _, g := range guards {
 		for _, r := range g.rules {
-			out = append(out, GuardRule{Tool: g.tool, Name: r.Name, Always: r.Always})
+			out = append(out, GuardRule{Tool: g.tool, Name: r.Name})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -74,7 +74,7 @@ func TestIsSecretPathSymlink(t *testing.T) {
 
 func TestSecretPathRule(t *testing.T) {
 	rule := SecretPathRule("reads a secret path")
-	if rule.Name != "reads a secret path" || rule.Match == nil || rule.Always {
+	if rule.Name != "reads a secret path" || rule.Match == nil {
 		t.Fatalf("rule shape: %+v", rule)
 	}
 	if got := MatchRules([]Rule{rule}, "~/.ssh/id_ed25519"); got != "reads a secret path" {

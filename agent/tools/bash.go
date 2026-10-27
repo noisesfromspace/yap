@@ -63,9 +63,9 @@ var bashRules = append([]safety.Rule{
 	safety.Shell("remote content executed by shell", remoteContentPipe),
 	safety.Shell("remote content command substitution", fetchInSubstitution),
 
-	// Reaching another machine: file transfer and remote shells. This is also
-	// the bash half of the ssh tool's unconditional gate, which `bash -c ssh`
-	// would otherwise sidestep.
+	// Reaching another machine: file transfer and remote shells. A shell
+	// command is the only way to drive ssh from the agent, so this rule is
+	// where a remote shell is gated.
 	safety.ShellAny("remote shell or file transfer", remoteTransfer),
 
 	// Side effects on a remote: publishing changed history or an artifact is

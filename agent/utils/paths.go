@@ -104,7 +104,7 @@ var assetsBase string
 func SetAssetsBase(dir string) { assetsBase = dir }
 
 // AssetsBase returns the directory for transient tool files (live-tail logs,
-// inline scripts, header files, SSH sockets), creating it when the frontend
+// inline scripts, header files), creating it when the frontend
 // supplied one. Falls back to the system temp dir (which honors $TMPDIR) so
 // a one-shot `yap send` behaves as before.
 func AssetsBase() string {

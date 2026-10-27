@@ -58,7 +58,7 @@ func TestServeMultipleTurnsAndFailure(t *testing.T) {
 // TestServeCancelKeepsProcessAlive: a `cancel` notification aborts only the
 // in-flight turn (its bash tool's process group is killed and the loop
 // unwinds with context.Canceled), and the serve loop then accepts a second
-// turn — proving SSH control masters and other tool state would survive.
+// turn — proving tool state survives a cancelled turn.
 func TestServeCancelKeepsProcessAlive(t *testing.T) {
 	firstCall := make(chan struct{}, 1)
 	calls := 0

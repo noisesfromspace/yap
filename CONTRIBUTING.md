@@ -430,15 +430,13 @@ commands — decrypting with age/gpg/sops/openssl, generating or exporting a
 private key, reading a file under a secret directory. A command that matches
 one of these rules was already approved, so it runs unsandboxed outright and
 never prompts twice.
-ssh pauses for every call, curl (an explicit non-GET method, a request body,
-or a local-file flag) pauses on its own
-targeted rules, and read/write/edit/search pause before touching a secret
-path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
+curl (an explicit non-GET method, a request body, or a local-file flag) pauses
+on its own targeted rules, and read/write/edit/search pause before touching a
+secret path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
 /etc/agenix) — secret paths are approvable, never silently read or written.
-Those rules
-are declared in the tool's own file via `Gate` (with `safety.Pattern` for a
-regex rule over inspected text, `safety.Shell`/`safety.ShellAny` for a rule
-over the parsed command line, or `Always` for an unconditional pause);
+Those rules are declared in the tool's own file via `Gate` (with
+`safety.Pattern` for a regex rule over inspected text, or
+`safety.Shell`/`safety.ShellAny` for a rule over the parsed command line);
 `yap guard` prints the compiled-in list and the guard board renders it, so a
 new rule is a one-file change and nothing else has to learn about it.
 
@@ -485,7 +483,6 @@ flowchart TD
     R --> S[Scrub result] --> F[Fence result] --> M[Back to the model]
 
     subgraph Rules[Rules — declared in each tool's source via Gate]
-        RL[Always — ssh: every call]
         RP[Pattern — text rules: fork bomb]
         RSh["Shell — parsed command line: bash list + secret-reveal commands"]
         RF[Match — curl non-GET/body]
@@ -697,7 +694,7 @@ sequenceDiagram
   after a `:cd`; absent for a one-shot `yap send`, whose tools then use the
   process cwd.
   `assets_dir` is the session's `assets/` folder; the backend writes transient tool
-  files (live-tail logs, inline scripts, header files, SSH sockets) there
+  files (live-tail logs, inline scripts, header files) there
   instead of the system temp dir, and the agent is told to put its scratch
   scripts and generated artifacts there too. Explicit user `![FILE: name](file:///...)`
   references stay in Markdown and Go converts them into ordered image parts
@@ -710,8 +707,8 @@ sequenceDiagram
   `{"type":"subagent_result","id":...,"result":...}`, and
   `{"type":"cancel"}` — cancels the in-flight turn (aborts the LLM stream
   and any running tool/approval/subagent through a context cancellation)
-  without killing the serve process, so SSH control masters and other tool
-  state survive for the next send.
+  without killing the serve process, so tool state survives for the next
+  send.
 - **argv** — `yap serve` (one persistent process per session buffer).
 - **stdout** — the single Go→Lua channel, JSON Lines, one record per line:
 

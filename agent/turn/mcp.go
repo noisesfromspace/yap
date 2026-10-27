@@ -15,8 +15,8 @@ import (
 
 var mcpRegistrationMu sync.Mutex
 
-// mcpMgr lives for the backend's lifetime, like SSH control masters: servers
-// stay connected across turns, and a stop() only cancels the in-flight call.
+// mcpMgr lives for the backend's lifetime: servers stay connected across
+// turns, and a stop() only cancels the in-flight call.
 var mcpMgr = mcp.NewManager(mcp.Dial(official.Dial))
 
 // CloseMCP disconnects every MCP server; called on backend shutdown.

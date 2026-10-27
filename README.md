@@ -46,7 +46,7 @@ Inspired by pi and gptel.
 
 The agent ships with a fixed set of built-in tools, plus any tools exposed by
 configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
-files, runs bash and ssh, searches the web, reads GitHub, drives a browser,
+files, runs bash, searches the web, reads GitHub, drives a browser,
 and delegates to subagents in separate sessions. Independent
 read-only calls in one round run concurrently (up to four). For slow commands, pass `background: true` to bash; it returns a session-scoped
 ID. Use `bash_output` to inspect its output or wait for its exit; it returns
@@ -66,7 +66,7 @@ flowchart LR
     end
     subgraph BE["yap serve (Go backend)"]
         B["Agent loop: propose, run, feed back"]
-        C["Tools: files, bash, ssh, MCP, subagents"]
+        C["Tools: files, bash, MCP, subagents"]
     end
     subgraph P["Provider API"]
         D["The model"]

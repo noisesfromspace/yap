@@ -1,7 +1,7 @@
 -- The turn lifecycle: send, cancel, and the framed-stream plumbing.
 --
 -- One persistent serve backend per session buffer, so several sessions can
--- stream at once. Each backend keeps its own tool state (SSH connections
+-- stream at once. Each backend keeps its own tool state (MCP connections
 -- above all) for the life of its buffer; a cancelled turn (stop())
 -- unwinds over the protocol while the process — and its tool state —
 -- survives. `servers` lives in harness.state (shared with the subagent and
@@ -469,7 +469,7 @@ function M.send(buf)
       repair_stream_tail(buf)
       if result.cancelled then
         -- A user-initiated stop: the turn was cancelled but the serve
-        -- process stays alive (SSH control masters and tool state survive).
+        -- process stays alive (tool state survives).
         -- No error marker — the user asked for this. Clear any parked
         -- approval so the guard board reflects the settled turn.
         pending_approvals[buf] = nil
@@ -698,7 +698,7 @@ function M.send(buf)
     -- "default: the Neovim cwd" true after a :cd.
     cwd = vim.fn.getcwd(),
     -- The session's assets/ folder: transient tool files (live-tail logs,
-    -- inline scripts, header files, SSH sockets) land here instead of /tmp.
+    -- inline scripts, header files) land here instead of /tmp.
     assets_dir = paths.assets_dir(buf),
   }) .. "\n"
   local ok, err = pcall(function()
@@ -723,7 +723,7 @@ function M.stop(buf)
   if proc then
     stopped[buf] = true
     -- Cancel just the in-flight turn, keeping the serve process alive so its
-    -- tool state (SSH control masters above all) survives for the next send.
+    -- tool state (MCP connections above all) survives for the next send.
     -- The cancelled turn completes via the normal turn_complete frame, which
     -- runs complete()'s cancelled path (no error marker).
     local ok = pcall(function()

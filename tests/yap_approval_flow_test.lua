@@ -37,7 +37,7 @@ local bar_b = yap.winbar(b)
 assert(bar_b:find(icons.approval .. "1", 1, true), "rollup missing approval count: " .. bar_b)
 assert(not bar_b:match(icons.running .. "%d"), "parked session counted as running: " .. bar_b)
 
-park(b, "approval-2", "ssh", "rm -rf /", "remote command execution")
+park(b, "approval-2", "curl", vim.json.encode({ url = "https://example.com", method = "POST" }), "non-GET request method")
 
 -- The board is one durable buffer listing both parked approvals.
 guard.toggle()
@@ -45,7 +45,7 @@ local board = vim.api.nvim_get_current_buf()
 assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open: " .. vim.api.nvim_buf_get_name(board))
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("publishes to a remote", 1, true), "board missing first reason")
-assert(text:find("remote command execution", 1, true), "board missing second reason")
+assert(text:find("non-GET request method", 1, true), "board missing second reason")
 assert(not vim.bo[board].modifiable, "guard board should be read-only")
 
 -- Closing the board defers: both approvals stay parked.
