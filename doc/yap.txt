@@ -458,8 +458,8 @@ arguments, result) when the buffer is sent. Editing or deleting the visible
 markdown changes the transcript directly; a region outside an assistant
 message is skipped.
 
-Tool results from content-bearing tools (read, bash, fetch, curl, search,
-glob) are wrapped in a fenced code block — read with a language info
+Tool results from content-bearing tools (read, bash, fetch, search, glob)
+are wrapped in a fenced code block — read with a language info
 string detected from the path, fetch as ```markdown, the rest plain.
 write/edit return short confirmations and stay bare.
 
@@ -743,12 +743,6 @@ The set today:
                 fork bombs; and secret-reveal commands — decrypting
                 (age/gpg/sops/openssl), generating or exporting a private
                 key, and reading a file under a secret directory.
-  curl          an explicit non-GET method, a request body (data off the
-                machine), or a local-file flag (an `@file` read, a `-o`/
-                `-O` write, a client cert, a cookie jar, …) — the human
-                approves it. The SSRF / protocol flags (`--resolve`,
-                `--unix-socket`, `--proxy`, `-L`, `--config`, …) are not
-                gated: they are refused outright in the tool.
   read/write    a path that is, or resolves into, a secret directory
   /edit/search  (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh,
                 /run/agenix, /etc/agenix) — approvable, never silently
@@ -793,10 +787,7 @@ writable allowlist is the live |:pwd| (so it follows |:cd|), the session's
 assets dir, and any `allow_write` entries from the `sandbox` config block.
 The same allowlist also bounds the `write` and `edit` tools (see above), so
 every mutating path — bash, write, edit — shares one definition of "where the
-agent may write". `curl` is not sandboxed: its local-file reach is a finite
-flag surface, so the local-file flags are approval-gated (the guard pauses
-for Run/Deny) and the SSRF / protocol-smuggling flags are refused outright —
-there is no need for a second enforcement mechanism there.
+agent may write".
 
 When a command's output contains "Read-only file system", the turn pauses
 with "bash hit read-only filesystem; rerun unsandboxed". This is the single
@@ -844,7 +835,6 @@ approval rules that sit in front of them (|yap-guard-gate|).
   edit           Exact-text or anchor-to-boundary edits, several per call.
   search         Ripgrep search; returns path:line:content.
   glob           List files by pattern through ripgrep.
-  curl           Fetch a URL with curl; the response plus a status line.
   fetch          Fetch a URL and return the readable content as markdown.
   subagent       Run a saved agent definition in a child session.
   models         List provider/model combos and their prices.

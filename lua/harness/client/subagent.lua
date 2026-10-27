@@ -28,7 +28,6 @@ local ALLOWED_TOOLS = {
   "glob",
   "fetch",
   "bash",
-  "curl",
   "write",
   "edit",
   "quickfix",
@@ -36,7 +35,7 @@ local ALLOWED_TOOLS = {
 
 -- An agent definition with no `tools:` header gets this read-only set: a subagent is one
 -- prompt-injection hop removed from the user's attention, so it must opt into
--- write/bash/curl explicitly. Any agent definition may still request the full
+-- write/bash/fetch explicitly. Any agent definition may still request the full
 -- set (minus recursive `subagent`) via its `tools:` header.
 local DEFAULT_SUBAGENT_TOOLS = { "read", "search", "glob", "fetch", "quickfix" }
 

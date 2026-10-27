@@ -32,8 +32,7 @@ func init() {
 	Register("fetch",
 		"Fetch a URL over HTTP(S) and return the main content as Markdown. "+
 			"HTML pages are run through readability extraction (strips nav, sidebars, ads, scripts) and converted to Markdown; "+
-			"non-HTML bodies (JSON, plain text, …) are returned as-is. Truncated to 50KB. "+
-			"Use curl for raw HTML inspection.",
+			"non-HTML bodies (JSON, plain text, …) are returned as-is. Truncated to 50KB.",
 		func(a *fetchArgs) (string, string, error) {
 			status, statusText, contentType, finalURL, body, err := fetchRaw(a.URL)
 			if err != nil {

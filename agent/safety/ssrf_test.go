@@ -2,7 +2,6 @@ package safety
 
 import (
 	"net"
-	"net/url"
 	"testing"
 )
 
@@ -43,27 +42,6 @@ func TestIsBlockedIP(t *testing.T) {
 		}
 		if isBlockedIP(ip) {
 			t.Errorf("%s should be allowed", s)
-		}
-	}
-}
-
-func TestCheckURLHost(t *testing.T) {
-	for _, raw := range []string{"http://127.0.0.1/", "http://[::1]/", "http://8.8.8.8/"} {
-		u, err := url.Parse(raw)
-		if err != nil {
-			t.Fatalf("parse %s: %v", raw, err)
-		}
-		if err := CheckURLHost(u); err != nil {
-			t.Errorf("%s should be allowed: %v", raw, err)
-		}
-	}
-	for _, raw := range []string{"http://169.254.169.254/", "http://192.168.1.1/", "http://10.0.0.1/", "http://[fd00::1]/"} {
-		u, err := url.Parse(raw)
-		if err != nil {
-			t.Fatalf("parse %s: %v", raw, err)
-		}
-		if err := CheckURLHost(u); err == nil {
-			t.Errorf("%s should be blocked", raw)
 		}
 	}
 }

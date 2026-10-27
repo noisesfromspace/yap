@@ -47,7 +47,7 @@ vim.api.nvim_feedkeys("r", "mtx", false)
 assert(state.pending_approvals[a] == nil, "r did not approve the approval under the cursor")
 
 -- x on the next approval denies directly.
-park(a, "key-2", "curl", vim.json.encode({ url = "https://example.com", method = "POST" }), "direct-deny")
+park(a, "key-2", "bash", vim.json.encode({ command = "git push origin main" }), "direct-deny")
 guard.touch()
 local line = row_line(board, "direct-deny")
 assert(line, "second approval summary not found")

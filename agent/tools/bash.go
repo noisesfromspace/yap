@@ -79,8 +79,8 @@ var bashRules = append([]safety.Rule{
 	// allowlist: dropping uncommitted work.
 	safety.ShellAny("irreversible git operation", rewritesGit),
 
-	// Data leaving the machine through a tool the sandbox does not cover:
-	// bash curl is outside the curl tool's local-file gate.
+	// Data leaving the machine: a fetch whose flags read a local file (an
+	// `@file` upload, a cookie jar, a client cert), and an environment dump.
 	safety.ShellAny("reads or writes a local file", curlTouchesLocalFile),
 	safety.ShellAny("pipes the environment out", dumpsEnvironment),
 
@@ -258,11 +258,87 @@ func rewritesGit(c safety.ShellCmd) bool {
 }
 
 // curlTouchesLocalFile reports whether a bash curl/wget names an option that
-// reads or writes a local file, including the `@file` marker. It reuses the
-// curl tool's flag list (curl.go), so the tool and the shell cannot disagree
-// about what "touches a local file" means.
+// reads or writes a local file, including the `@file` marker.
 func curlTouchesLocalFile(c safety.ShellCmd) bool {
 	return fetchTools[c.Name] && flagsTouchLocalFiles(strings.Join(c.Args, " "))
+}
+
+// curlFileLong / curlFileShort are the curl options that read or write a
+// local file (including the `@file` marker). Each has a legitimate use — save
+// a download, POST a file, present a client cert — but a prompt-injected
+// command could use one to read a file (including a secret) and send it off
+// the machine. They are therefore approval-gated rather than hard-blocked: the
+// human sees the exact flags and decides.
+var (
+	curlFileLong = []string{
+		// Local-file writes: responses, headers, traces, cookies, caches,
+		// generated code.
+		"--output", "--output-dir", "--remote-name", "--remote-name-all",
+		"--remote-header-name", "--dump-header", "--trace", "--trace-ascii",
+		"--stderr", "--cookie-jar", "--alt-svc", "--etag-save", "--libcurl",
+		"--hsts",
+		// Local-file reads and request bodies from files: uploads, cookies,
+		// credentials, TLS client material, and the body flags whose values
+		// may be `@file`.
+		"--upload-file", "--cookie", "--form", "--form-string",
+		"--data", "--data-ascii", "--data-binary", "--data-raw",
+		"--data-urlencode", "--json", "--netrc", "--netrc-file", "--write-out",
+		"--cert", "--key", "--cacert", "--capath", "--crlfile", "--pubkey",
+		"--proxy-cert", "--proxy-key", "--proxy-cacert", "--proxy-capath",
+		"--proxy-crlfile",
+	}
+	curlFileShort = "dFbcoODTw" // -d -F -b -c -o -O -D -T -w
+)
+
+// flagsTouchLocalFiles reports whether `flags` names an option that reads or
+// writes a local file, or uses the `@file` marker. It drives the "reads or
+// writes a local file" guard rule: the option itself is allowed, but the
+// human must approve it because a prompt-injected curl could use it to read a
+// file — including a secret — and send it off the machine.
+func flagsTouchLocalFiles(flags string) bool {
+	for _, f := range strings.Fields(flags) {
+		for _, d := range curlFileLong {
+			if f == d || strings.HasPrefix(f, d+"=") {
+				return true
+			}
+		}
+		if !strings.HasPrefix(f, "-") {
+			// A value for the preceding flag: `@file` reads a local file.
+			if strings.HasPrefix(f, "@") {
+				return true
+			}
+			continue
+		}
+		// The same marker glued onto a flag (-d@file, -w@file).
+		if strings.ContainsRune(f, '@') {
+			return true
+		}
+		if strings.HasPrefix(f, "--") {
+			continue
+		}
+		for _, c := range shortFlagLetters(f) {
+			if strings.ContainsRune(curlFileShort, c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// shortFlagLetters extracts the leading run of ASCII letters from a short
+// option field, so a glued value (starting at `/`, `@`, `=`, a digit, …) is
+// not scanned as further clustered flags: `-so/tmp/out` → "so", `-Axyz` →
+// "A" (a user-agent "xyz" must not read as clustered flags).
+func shortFlagLetters(f string) string {
+	i := 1
+	for i < len(f) {
+		c := f[i]
+		if c < 'A' || c > 'z' || (c > 'Z' && c < 'a') {
+			break
+		}
+		i++
+	}
+	return f[1:i]
 }
 
 // dumpsEnvironment reports whether the command prints the whole environment

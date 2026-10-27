@@ -113,27 +113,6 @@ local function decode_raw(args)
   end
   local ok, a = pcall(vim.json.decode, args)
   if ok and type(a) == "table" then
-    -- curl: the bare URL hides the flags/method/body that actually triggered
-    -- the gate (a file I/O flag, a non-GET method, a request body). Rebuild
-    -- the meaningful parts so the board shows what is being asked, not just
-    -- the target. `tool` already shows "curl", so no prefix here.
-    if a.url and (a.flags or a.method or a.data) then
-      local parts = {}
-      if a.method and a.method ~= "" then
-        local m = a.method:upper()
-        if m ~= "GET" and m ~= "HEAD" then
-          parts[#parts + 1] = "-X " .. a.method
-        end
-      end
-      if a.flags and a.flags ~= "" then
-        parts[#parts + 1] = a.flags
-      end
-      if a.data and a.data ~= "" then
-        parts[#parts + 1] = "--data " .. a.data
-      end
-      parts[#parts + 1] = a.url
-      return table.concat(parts, " ")
-    end
     return a.command or a.path or a.url or a.file or vim.inspect(a)
   end
   return tostring(args)

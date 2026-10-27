@@ -24,7 +24,7 @@ func resultFence(name, argsJSON string) (lang string, ok bool) {
 		return langForPath(a.Path), true
 	case "fetch":
 		return "markdown", true
-	case "bash", "curl":
+	case "bash":
 		return "", true // plain fence: command output is arbitrary text
 	case "search", "glob":
 		return "", true // plain fence: listing output is arbitrary text

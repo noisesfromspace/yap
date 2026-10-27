@@ -411,12 +411,9 @@ identify the failed path. The same allowlist (safety.IsWritablePath)
 bounds the `write` and `edit` tools via an OutsideWritableRule pre-run gate
 ("write target outside allowed write paths (pre-run)" / corresponding edit
 reason), so every mutating path shares one definition of "where the agent may
-write"; `read` is deliberately not bounded. `curl` is not sandboxed — its
-local-file reach is a finite flag surface, so the local-file flags are approval-gated (the guard
-pauses for Run/Deny) and the SSRF / protocol-smuggling flags (curlDenyLong)
-are refused outright, so a second enforcement mechanism is redundant. On top of that barrier sit the static
-rules (`tools.Gate`), which cover what the barrier cannot see and deliberately
-do not restate it: filesystem writes are its job, and a rule for one
+write"; `read` is deliberately not bounded. On top of that barrier sit the
+static rules (`tools.Gate`), which cover what the barrier cannot see and
+deliberately do not restate it: filesystem writes are its job, and a rule for one
 (`rm -rf /`, a redirect onto /etc, `chmod -R`) would prompt twice for one
 decision. The bash list is: a raw network tool opening a listener or running a
 command (`nc -l`, `socat … EXEC:`), remote content executed by the shell that
@@ -430,9 +427,7 @@ commands — decrypting with age/gpg/sops/openssl, generating or exporting a
 private key, reading a file under a secret directory. A command that matches
 one of these rules was already approved, so it runs unsandboxed outright and
 never prompts twice.
-curl (an explicit non-GET method, a request body, or a local-file flag) pauses
-on its own targeted rules, and read/write/edit/search pause before touching a
-secret path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
+read/write/edit/search pause before touching a secret path (~/.ssh, ~/.gnupg, ~/.aws, ~/.config/sops, /etc/ssh, /run/agenix,
 /etc/agenix) — secret paths are approvable, never silently read or written.
 Those rules are declared in the tool's own file via `Gate` (with
 `safety.Pattern` for a regex rule over inspected text, or
@@ -485,7 +480,6 @@ flowchart TD
     subgraph Rules[Rules — declared in each tool's source via Gate]
         RP[Pattern — text rules: fork bomb]
         RSh["Shell — parsed command line: bash list + secret-reveal commands"]
-        RF[Match — curl non-GET/body]
         RS[SecretPathRule — read/write/edit/search]
         RS2["one secretPaths list drives both SecretPathRule and bash's secret-reveal rules"]
     end

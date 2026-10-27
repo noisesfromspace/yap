@@ -83,7 +83,6 @@ flowchart LR
 Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 - `rg` (ripgrep) — the `search` and `glob` tools shell out to it.
-- `curl` — the `curl` command.
 - `bwrap` (bubblewrap) — the bash sandbox (Linux). Optional: without it the
   bash tool falls back to running unsandboxed.
 

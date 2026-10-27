@@ -8,7 +8,7 @@ import "regexp"
 // is no model in the loop and no advisory middle tier.
 //
 // A rule inspects one of two views of the call. A path-taking tool (read,
-// write, edit, search, curl) inspects the text the call names. A command-line
+// write, edit, search) inspects the text the call names. A command-line
 // tool (bash) inspects the parsed shell program (shell.go), so its rules talk
 // about the commands that will run rather than about words that happen to
 // appear in the line. Neither view is a security boundary: the sandbox

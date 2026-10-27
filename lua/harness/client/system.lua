@@ -30,7 +30,7 @@ Between turns, tool calls and their results are plain text in the transcript, no
 
 When asked about Yap itself, read `README.md` / `doc/yap.txt` in the plugin (]] .. yap_install_root .. [[) rather than guessing.
 
-For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the configured MCP GitHub tools (prefixed `mcp_`) rather than curl, fetch, bash, or `gh`. Use other tools only if those cannot perform the needed operation; never pass a credential in tool arguments.
+For GitHub searches and reading GitHub code, repositories, issues, pull requests, files, or Projects, use the configured MCP GitHub tools (prefixed `mcp_`) rather than fetch, bash, or `gh`. Use other tools only if those cannot perform the needed operation; never pass a credential in tool arguments.
 
 ## Skills
 

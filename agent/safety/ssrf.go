@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"time"
 )
 
-// SSRF guard for fetch/curl: reject targets that resolve to non-global
-// addresses (cloud metadata, private ranges, link-local, multicast, CGNAT).
+// SSRF guard for fetch: reject targets that resolve to non-global addresses
+// (cloud metadata, private ranges, link-local, multicast, CGNAT).
 // Deterministic local check — no model, nothing leaves the machine. It is
 // best-effort defense, not a security boundary (the bash sandbox is the hard
-// barrier for bash; fetch/curl's own SSRF check is additive).
+// barrier for bash; fetch's own SSRF check is additive).
 
 // isBlockedIP reports whether ip must not be fetched directly. Loopback is
 // deliberately allowed: the agent runs on the user's machine and
@@ -58,21 +56,6 @@ func resolveAllowed(ctx context.Context, host string) (net.IP, error) {
 		}
 	}
 	return ips[0], nil
-}
-
-// CheckURLHost validates an http(s) URL's host without dialing. It is the
-// curl guard: a single pre-exec check of the initial URL. curl does not use
-// -L; runCurl re-invokes curlOnce (and thus CheckURLHost) per redirect hop, so
-// every hop is re-checked. fetch's dialer below is the thorough path.
-func CheckURLHost(u *url.URL) error {
-	host := u.Hostname()
-	if host == "" {
-		return fmt.Errorf("missing host in URL")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := resolveAllowed(ctx, host)
-	return err
 }
 
 // CheckedTransport returns an http.Transport whose dialer resolves each
