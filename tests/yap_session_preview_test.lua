@@ -364,32 +364,34 @@ vim.ui.select = function(items, opts, on_choice)
   captured = { items = items, opts = opts, on_choice = on_choice }
 end
 session.pick({ scope = "cwd" }, function(selected)
-  assert(selected == saved_child_path, "saved child selection failed")
+  assert(selected == path, "saved session selection failed")
 end)
 vim.ui.select = orig_select
 assert(captured, "expected saved sessions")
-local saved_index, saved_child_index
+local saved_index
 for i, item in ipairs(captured.items) do
   if item.path == path then
     saved_index = i
-  end
-  if item.path == saved_child_path then
-    saved_child_index = i
+  elseif item.path == saved_child_path then
+    error("agent session leaked into saved history: " .. item.path)
   end
 end
-assert(
-  saved_index and saved_child_index == saved_index + 1,
-  "saved child should be selectable directly beneath its parent: " .. vim.inspect(captured.items)
-)
-captured.on_choice(captured.items[saved_child_index])
-local child_label = captured.opts.format_item(captured.items[saved_child_index])
+assert(saved_index, "saved parent missing: " .. vim.inspect(captured.items))
+-- The row counts completed replies and the agent sessions the conversation
+-- spawned, each with its own unit.
+local saved_row = captured.opts.format_item(captured.items[saved_index])
+assert(saved_row:find("(1 turn & 1 subagent)", 1, true), "counts label wrong: " .. saved_row)
+captured.on_choice(captured.items[saved_index])
+-- An agent session is internal: the open picker names it after its task, and
+-- that identity is never cut off however long the task is.
+local child_label = session.live_label(saved_child, true)
 assert(
   child_label:find(
     "↳ scout · Investigate a very long title that must stay searchable and never be artificially truncated",
     1,
     true
   ),
-  "saved child title was cut off: " .. child_label
+  "open child title was cut off: " .. child_label
 )
 assert(type(captured.opts.preview_item) == "function", "saved preview_item missing")
 local saved_preview = preview_text(captured.opts.preview_item(captured.items[saved_index]))
@@ -432,12 +434,13 @@ local titled_positions = {}
 for i, item in ipairs(titled_items) do
   titled_positions[item.path] = i
 end
-assert(titled_positions[titled_parent_path] and titled_positions[titled_child_path] == titled_positions[titled_parent_path] + 1,
-  "titled parent lost its child: " .. vim.inspect(titled_items))
+assert(titled_positions[titled_parent_path], "titled parent missing: " .. vim.inspect(titled_items))
+assert(
+  not titled_positions[titled_child_path],
+  "agent session leaked into saved history: " .. vim.inspect(titled_items)
+)
 assert(titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
   "title should win over description: " .. vim.inspect(titled_items))
-assert(titled_items[titled_positions[titled_child_path]].text == "  ↳ scout · Pinned child title",
-  "saved child should prefer its title over description/task: " .. vim.inspect(titled_items))
 vim.api.nvim_set_current_buf(titled_parent)
 local live_titled
 vim.ui.select = function(items, opts)
@@ -507,11 +510,11 @@ for _, item in ipairs(captured.items) do
   if item.path == path then
     assert(row:find("^   Preview test") == 1, "closed session title shifted: " .. row)
   elseif item.path == saved_child_path then
-    assert(row:find("^" .. icons.idle .. "    ↳") == 1, "sessions child title should be indented after status: " .. row)
+    error("agent session leaked into saved history: " .. row)
   end
 end
--- Closing the child must not move either title or the arrow. The saved
--- picker keeps its status column even when neither of these rows is open.
+-- Closing the child changes nothing in history: an agent session was never
+-- a row there.
 vim.api.nvim_buf_delete(saved_child, { force = true })
 captured = nil
 vim.ui.select = function(items, opts)
@@ -524,7 +527,7 @@ for _, item in ipairs(captured.items) do
   if item.path == path then
     assert(row:find("^   Preview test") == 1, "closed parent title moved: " .. row)
   elseif item.path == saved_child_path then
-    assert(row:find("^     ↳ scout") == 1, "closed child arrow moved: " .. row)
+    error("closed agent session leaked into saved history: " .. row)
   end
 end
 
@@ -549,8 +552,7 @@ for _, item in ipairs(captured.items) do
 end
 assert(all_parent and all_parent:find("^   Preview test") == 1
   and all_parent:find(paths.project_cwd(path), 1, true), "sessions cwd should follow root title: " .. tostring(all_parent))
-assert(all_child and all_child:find("^     ↳") == 1
-  and not all_child:find(vim.fn.getcwd(), 1, true), "sessions child should not repeat project: " .. tostring(all_child))
+assert(all_child == nil, "agent session leaked into the all-project picker: " .. tostring(all_child))
 assert(other_row and other_row:find("^   Preview test") == 1
   and other_row:find("/tmp/yap/other/project", 1, true), "other project prefix missing: " .. tostring(other_row))
 

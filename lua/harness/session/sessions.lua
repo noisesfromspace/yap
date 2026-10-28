@@ -248,7 +248,7 @@ function M.instances(state)
   local attention_child = {}
   if needs_you then
     for child, parents in pairs(owners) do
-      if vim.b[child].yap_agent and (stopped[child] or errors[child]) then
+      if picker.agent(nil, child) and (stopped[child] or errors[child]) then
         for parent in pairs(parents) do
           attention_child[parent] = true
         end
@@ -259,7 +259,7 @@ function M.instances(state)
     local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
     local parent = owners[b] and next(owners[b])
-    local is_subagent = fm and fm.agent or vim.b[b].yap_agent
+    local is_subagent = picker.agent(fm, b) ~= nil
     local include_current = not needs_you or (b == current and has_open_child(b, owners))
     local child_needs_you = is_subagent and (stopped[b] or errors[b])
     if

@@ -1,5 +1,7 @@
--- A fork retains links to existing agents, not copies of their files. Both
--- saved and open pickers must show those links under every referencing branch.
+-- A fork retains links to existing agents, not copies of their files. The
+-- open-session and waiting pickers show those links under every referencing
+-- branch; saved history never lists an agent session, since an agent belongs
+-- to the conversation that spawned it.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -17,16 +19,18 @@ local function agent(parent, title)
   return child, path
 end
 
--- A fork made before any agents has no shared references. A subsequent
--- agent belongs only to the branch that ran it.
-local empty_source = yap.new()
-fm.update(empty_source, { title = "Before agents" })
-local empty_path = vim.b[empty_source].yap_path
-vim.api.nvim_set_current_buf(empty_source)
-local empty_fork_path = assert(yap.fork("before-agents-fork"))
-local empty_fork = vim.api.nvim_get_current_buf()
-local _, new_agent_path = agent(empty_fork, "Only on fork")
-local before = session.list("cwd")
+local select = vim.ui.select
+--- Run a picker with a capturing vim.ui.select and return its rows.
+local function capture(call)
+  local captured
+  vim.ui.select = function(items, opts, callback)
+    captured = { items = items, opts = opts, callback = callback }
+  end
+  call()
+  vim.ui.select = select
+  return captured and captured.items or {}
+end
+
 local function below(rows, key, child, parent)
   for i, row in ipairs(rows) do
     if row[key] == parent then
@@ -42,8 +46,21 @@ local function below(rows, key, child, parent)
   end
   return false
 end
-assert(below(before, "path", new_agent_path, empty_fork_path), "fork-only agent missing")
-assert(not below(before, "path", new_agent_path, empty_path), "agent appeared on pre-fork source")
+
+-- A fork made before any agents has no shared references. A subsequent
+-- agent belongs only to the branch that ran it.
+local empty_source = yap.new()
+fm.update(empty_source, { title = "Before agents" })
+local empty_path = vim.b[empty_source].yap_path
+vim.api.nvim_set_current_buf(empty_source)
+local empty_fork_path = assert(yap.fork("before-agents-fork"))
+local empty_fork = vim.api.nvim_get_current_buf()
+local new_agent, new_agent_path = agent(empty_fork, "Only on fork")
+local before = capture(function()
+  yap.instances()
+end)
+assert(below(before, "buf", new_agent, empty_fork), "fork-only agent missing")
+assert(not below(before, "buf", new_agent, empty_source), "agent appeared on pre-fork source")
 
 local root = yap.new()
 fm.update(root, { title = "Original" })
@@ -103,24 +120,28 @@ local function check(rows, key, label)
   end
 end
 
-check(session.list("cwd"), "path", "saved")
+-- Saved history holds the branches and forks, never the agent sessions.
+local known_agents = { early_path, later_path, root_only_path, leaf_only_path, new_agent_path }
+local saved = session.list("cwd")
+for _, row in ipairs(saved) do
+  for _, path in ipairs(known_agents) do
+    assert(row.path ~= path, "agent session in saved history: " .. path)
+  end
+end
+assert(vim.tbl_count(saved) > 0, "saved history lost the branches")
+local saved_picker = capture(function()
+  yap.sessions()
+end)
+for _, row in ipairs(saved_picker) do
+  for _, path in ipairs(known_agents) do
+    assert(row.path ~= path, "agent session in the saved-session picker: " .. path)
+  end
+end
+
 local captured
-local select = vim.ui.select
 vim.ui.select = function(items, opts, callback)
   captured = { items = items, opts = opts, callback = callback }
 end
-yap.sessions()
-local saved_rows = 0
-for _, row in ipairs(captured.items) do
-  if row.path == early_path then
-    saved_rows = saved_rows + 1
-    assert(
-      captured.opts.format_item(row):find("^" .. yap.config.icons.idle .. " ") == 1,
-      "shared saved rows should show the same open status"
-    )
-  end
-end
-assert(saved_rows == 3, "saved picker lost shared references")
 yap.instances()
 vim.ui.select = select
 check(captured.items, "buf", "open")
@@ -158,27 +179,16 @@ end
 assert(waiting_early == 3, "waiting picker lost shared references")
 state.stopped[early] = nil
 
--- Closing that session leaves three selectable saved references; the status
--- column stays aligned and the open picker omits all three appearances.
+-- Closing the agent leaves no history row behind, and the open picker omits
+-- every one of its appearances.
 vim.api.nvim_buf_delete(early, { force = true })
-check(session.list("cwd"), "path", "saved after close")
-captured = nil
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
+for _, row in ipairs(session.list("cwd")) do
+  assert(row.path ~= early_path, "closed agent session in saved history")
 end
-yap.sessions()
-for _, row in ipairs(captured.items) do
-  if row.path == early_path then
-    assert(captured.opts.format_item(row):sub(1, 3 + #row.text) == "   " .. row.text, "closed shared row shifted")
-  end
-end
-captured = nil
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
-end
-yap.instances()
-vim.ui.select = select
-for _, row in ipairs(captured.items) do
+local after_close = capture(function()
+  yap.instances()
+end)
+for _, row in ipairs(after_close) do
   assert(row.buf ~= early, "closed shared agent in open picker")
 end
 print("OK fork_shared_agents")

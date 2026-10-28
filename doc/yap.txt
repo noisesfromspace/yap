@@ -855,7 +855,11 @@ Independent read-only calls in one round run concurrently, up to four.
 
 A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in
-`agents_dir` (|yap-configuration|), one markdown file per agent.
+`agents_dir` (|yap-configuration|), one markdown file per agent. An agent
+session is internal to the conversation that spawned it: saved history never
+lists it, while the open-session picker (<leader>r) and the waiting picker
+(<leader>w) show it under its parent while it is open. The tool result carries
+a link to the session file, so a finished agent stays reachable.
 
 ==============================================================================
 13. GLOSSARY                                                *yap-glossary*

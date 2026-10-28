@@ -70,7 +70,7 @@ local function other_session_counts(buf)
       b ~= buf
       and vim.api.nvim_buf_is_valid(b)
       and vim.b[b].yap
-      and not (vim.b[b].yap_subagent_parent or vim.b[b].yap_agent)
+      and not (vim.b[b].yap_subagent_parent or picker.agent(nil, b))
     then
       if pending_approvals[b] then
         counts.approval = counts.approval + 1
@@ -275,7 +275,7 @@ local function render_winbar(buf)
         state_icons[#state_icons + 1] = seg(icons.stopped, "Needs")
       elseif steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
-      elseif awaiting[buf] and vim.b[buf].yap_agent then
+      elseif awaiting[buf] and picker.agent(nil, buf) then
         state_icons[#state_icons + 1] = seg(icons.done, "Idle")
       elseif awaiting[buf] then
         state_icons[#state_icons + 1] = seg(icons.waiting, "Needs")

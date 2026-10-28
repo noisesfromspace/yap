@@ -1,13 +1,25 @@
 -- Shared session-picker presentation: buffer state classification, the
--- state -> icon table, and the fixed-column icon prefix. Both the
--- open-session picker (harness.instances) and the saved-session picker
--- (harness.session .pick) render these, and the winbar rollup classifies
--- other sessions with the same precedence — so the rule lives here once.
+-- agent-role lookup, the state -> icon table, and the fixed-column icon
+-- prefix. Both the open-session picker (harness.instances) and the
+-- saved-session picker (harness.session .pick) render these, and the winbar
+-- rollup classifies other sessions with the same precedence — so the rule
+-- lives here once.
 
 local M = {}
 
 local state = require("harness.state")
 local config = require("harness.config")
+
+--- The agent role of a session, or nil for an ordinary conversation. A saved
+--- session carries it in frontmatter; an open buffer also has the spawn-time
+--- `yap_agent` var, which is set before the session file is first written.
+function M.agent(fm, buf)
+  local role = fm and fm.agent
+  if (role == nil or role == "") and buf then
+    role = vim.b[buf].yap_agent
+  end
+  return (role ~= nil and role ~= "") and role or nil
+end
 
 --- Plain state token for a buffer: the key instances() filters on, and the
 --- word behind each picker status glyph.
@@ -21,7 +33,7 @@ function M.state(buf)
   elseif state.awaiting[buf] then
     -- A finished subagent has already reported its answer back to the
     -- parent; it is done, not waiting for a reply.
-    if vim.b[buf].yap_agent then
+    if M.agent(nil, buf) then
       return "done"
     end
     return "waiting"

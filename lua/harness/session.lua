@@ -6,10 +6,11 @@
 -- autosaved after every completed reply. Pickers identify sessions by their
 -- frontmatter `title` (always present, empty by default; a typed value wins)
 -- or generated `description`;
--- unnamed sessions (no title or description) are hidden unless they have
--- subagents or hold an unsent `# @user` prompt (a scheduled prompt); open
--- sessions stay visible in the open-session picker via the filename fallback.
--- Saved subagents appear beneath their parent in history.
+-- unnamed sessions (no title or description) are hidden unless they hold an
+-- unsent `# @user` prompt (a scheduled prompt); open sessions stay visible in
+-- the open-session picker via the filename fallback. Subagent sessions belong
+-- to the conversation that spawned them: saved history never lists them, while
+-- the open-session and waiting pickers show them under their parent.
 
 local view = require("harness.ui.view")
 
@@ -432,8 +433,9 @@ function M.label(path, title, description, project_cwd)
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all"
---- Items: { path, mtime, text, model, models? } sorted by parent recency;
---- `model`/`models` come from the session frontmatter.
+--- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
+--- recency; `model`/`models` and the turn and agent counts come from the
+--- session frontmatter.
 function M.list(scope)
   local dirs
   if scope == "all" then
@@ -453,42 +455,31 @@ function M.list(scope)
     -- `*/session.md` glob skips dotfiles (hidden sessions are never listed)
     -- and avoids picking up the notes.md sidecar, which is also a .md file.
     for _, path in ipairs(vim.fn.glob(dir .. "/*/session.md", false, true)) do
-      local name = paths.session_name(path)
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
-      local title = fm and fm.title or ""
-      local description = fm and fm.description or ""
-      local item = {
-        path = path,
-        mtime = vim.fn.getftime(path),
-        text = M.label(path, title, description, scope == "all" and slug_cwd(dir) or nil),
-        model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
-        models = fm and #fm.models > 1 and fm.models or nil,
-        turns = fm and fm.turns,
-      }
-      if fm and fm.agent then
-        item.text = "↳ " .. M.agent_label(fm.agent, title, description, M.task(lines), nil, name)
-        children[path] = item
-      elseif fm and fm.forked_from then
-        item.text = "↳ fork · " .. M.label(path, title, description)
-        children[path] = item
-        local owner = vim.fs.normalize(fm.forked_from)
-        owned_by[owner] = owned_by[owner] or {}
-        table.insert(owned_by[owner], vim.fs.normalize(path))
-      elseif
-        title ~= ""
-        or description ~= ""
-        or (fm and (#fm.subagents > 0 or fm.forked_from or #fm.forks > 0))
-        or has_pending_user_text(path, lines)
-      then
-        items[#items + 1] = item
-      end
-      if fm then
-        for _, child_path in ipairs(fm.subagents) do
-          local owner = vim.fs.normalize(path)
-          local child = vim.fs.normalize(child_path)
+      -- A subagent session is internal to the conversation that spawned it:
+      -- while open it sits under its parent in the open-session and waiting
+      -- pickers, and it is never part of saved history.
+      if not picker.agent(fm) then
+        local title = fm and fm.title or ""
+        local description = fm and fm.description or ""
+        local item = {
+          path = path,
+          mtime = vim.fn.getftime(path),
+          text = M.label(path, title, description, scope == "all" and slug_cwd(dir) or nil),
+          model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
+          models = fm and #fm.models > 1 and fm.models or nil,
+          turns = fm and fm.turns,
+          agents = fm and #fm.subagents or 0,
+        }
+        if fm and fm.forked_from then
+          item.text = "↳ fork · " .. M.label(path, title, description)
+          children[path] = item
+          local owner = vim.fs.normalize(fm.forked_from)
           owned_by[owner] = owned_by[owner] or {}
-          table.insert(owned_by[owner], child)
+          table.insert(owned_by[owner], vim.fs.normalize(path))
+        elseif title ~= "" or description ~= "" or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
+          items[#items + 1] = item
         end
       end
     end
@@ -570,6 +561,20 @@ local function preview_item(item)
   return M.preview(vim.fn.readfile(item.path))
 end
 
+--- "3 turns & 2 subagents" for a picker row: completed replies plus the agent
+--- sessions this conversation spawned. A zero count is omitted, and the whole
+--- clause disappears when both are zero.
+local function counts_label(turns, agents)
+  local parts = {}
+  if (turns or 0) > 0 then
+    parts[#parts + 1] = turns .. (turns == 1 and " turn" or " turns")
+  end
+  if (agents or 0) > 0 then
+    parts[#parts + 1] = agents .. (agents == 1 and " subagent" or " subagents")
+  end
+  return #parts > 0 and table.concat(parts, " & ") or nil
+end
+
 --- Pick a session; on_choice(path) is called with the selected file.
 function M.pick(opts, on_choice)
   opts = opts or {}
@@ -601,8 +606,9 @@ function M.pick(opts, on_choice)
         label = label:sub(#project + 3)
       end
       label = picker.prefix(icon, icon_width) .. label
-      if item.turns then
-        label = label .. "  (" .. item.turns .. (item.turns == 1 and " turn)" or " turns)")
+      local counts = counts_label(item.turns, item.agents)
+      if counts then
+        label = label .. "  (" .. counts .. ")"
       end
       if multiple_projects and item.depth == 0 then
         label = label .. "  " .. project
@@ -627,7 +633,7 @@ function M.live_label(buf, parent)
   local e = frontmatter.end_line(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
   local label = M.label(path, fm and fm.title, fm and fm.description)
-  local role = fm and fm.agent or vim.b[buf].yap_agent
+  local role = picker.agent(fm, buf)
   if role then
     local task = M.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = view.collapse(vim.b[buf].yap_subagent_task or "")
