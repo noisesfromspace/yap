@@ -109,6 +109,23 @@ func TestDiagnostics(t *testing.T) {
 	}
 }
 
+func TestDiagnosticsEmptyEncodesAsArray(t *testing.T) {
+	// A clean document must still publish `diagnostics: []`, never `null`:
+	// Neovim decodes `null` as vim.NIL (userdata) and its publishDiagnostics
+	// handler then fails on `#diagnostics`.
+	got := Diagnostics("# @user\nhi\n", false)
+	if got == nil {
+		t.Fatal("Diagnostics returned nil for a clean document")
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "[]" {
+		t.Fatalf("empty diagnostics marshaled to %s, want []", b)
+	}
+}
+
 func TestParseParity(t *testing.T) {
 	// Spot-check the document parser the LSP builds on, for the recovery that
 	// most affects symbols: a closed tool region keeps a quoted heading as

@@ -551,7 +551,10 @@ func fileCompletion(cwd, word string, line, wordStart, char int) []completionIte
 // suppresses incomplete-tail diagnostics while a reply is streaming.
 func Diagnostics(text string, streaming bool) []diagnostic {
 	doc := document.Parse(text)
-	var out []diagnostic
+	// Start non-nil: LSP requires publishDiagnostics.diagnostics to be an
+	// array, and a nil slice would marshal to `null`, which Neovim decodes
+	// as vim.NIL and chokes on (#diagnostics on a userdata).
+	out := []diagnostic{}
 	out = append(out, frontmatterDiagnostics(doc)...)
 	out = append(out, headingDiagnostics(doc)...)
 	out = append(out, toolHeaderDiagnostics(doc)...)
