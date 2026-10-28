@@ -512,10 +512,54 @@ function M.setup(opts)
         return
       end
       local id = args.data and args.data.client_id
-      if not id or lsp.is_yap_client(id) then
+      if not id then
+        return
+      end
+      if lsp.is_yap_client(id) then
+        -- Only Yap buffers get automatic popups; the server advertises @, #,
+        -- : and - and returns items only in file, role or frontmatter contexts.
+        vim.lsp.completion.enable(true, id, args.buf, { autotrigger = true })
         return
       end
       pcall(vim.lsp.buf_detach_client, args.buf, id)
+    end,
+  })
+  -- Punctuation triggers do not cover a partially typed frontmatter key.
+  -- Ask for completion only while typing a key, never in message prose.
+  vim.api.nvim_create_autocmd("InsertCharPre", {
+    group = group,
+    callback = function(args)
+      if not (vim.b[args.buf].yap or vim.b[args.buf].yap_scratch_notes) then
+        return
+      end
+      local char = vim.v.char
+      if not char:match("^[a-z_]$") then
+        return
+      end
+      local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+      if row < 2 or vim.api.nvim_buf_get_lines(args.buf, 0, 1, false)[1] ~= "---" then
+        return
+      end
+      local lines = vim.api.nvim_buf_get_lines(args.buf, 1, row, false)
+      for i = 1, #lines - 1 do
+        if lines[i] == "---" then
+          return
+        end
+      end
+      local line = lines[#lines]
+      if not line or not (line:sub(1, col) .. char):match("^[a-z_]+$") or line:find(":", 1, true) then
+        return
+      end
+      local client = vim.lsp.get_clients({ bufnr = args.buf, name = "yap" })[1]
+      if not client or not lsp.is_yap_client(client.id) then
+        return
+      end
+      vim.schedule(function()
+        if vim.api.nvim_get_current_buf() == args.buf and vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+          and vim.api.nvim_win_get_cursor(0)[1] == row then
+          vim.lsp.completion.get({ client_id = client.id })
+        end
+      end)
     end,
   })
   -- Completion of @path references follows the live project directory, so
