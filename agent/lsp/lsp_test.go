@@ -53,8 +53,8 @@ func TestSymbols(t *testing.T) {
 	if !strings.HasPrefix(asst.Name, "assistant:") {
 		t.Fatalf("symbol 2 = %q, want assistant preview", asst.Name)
 	}
-	if len(asst.Children) != 1 || asst.Children[0].Name != "tool: read" {
-		t.Fatalf("assistant children = %+v, want one tool: read", asst.Children)
+	if len(asst.Children) != 0 {
+		t.Fatalf("assistant children = %+v, want none (tool/thinking blocks are not symbols)", asst.Children)
 	}
 }
 

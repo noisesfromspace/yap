@@ -47,7 +47,6 @@ type diagnostic struct {
 // LSP SymbolKind / CompletionItemKind constants used here.
 const (
 	symStruct   = 23
-	symFunction = 12
 	symVariable = 13
 	symObject   = 19
 
@@ -133,7 +132,6 @@ func Symbols(text string) []symbol {
 		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
 	}
 
-	ri := 0
 	for i, h := range doc.Headings {
 		next := len(lines) // exclusive 0-based end of this message
 		if i+1 < len(doc.Headings) {
@@ -142,20 +140,12 @@ func Symbols(text string) []symbol {
 		if next < h.Line-1 {
 			next = h.Line - 1
 		}
-		sym := symbol{
+		out = append(out, symbol{
 			Name:           messageName(lines, h),
 			Kind:           symObject,
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
-		}
-		for ri < len(doc.Regions) && doc.Regions[ri].Start < h.Line {
-			ri++
-		}
-		for ri < len(doc.Regions) && doc.Regions[ri].Start <= next {
-			sym.Children = append(sym.Children, regionSymbol(lines, doc.Regions[ri], next))
-			ri++
-		}
-		out = append(out, sym)
+		})
 	}
 	return out
 }
@@ -192,40 +182,6 @@ func messageName(lines []string, h document.Heading) string {
 		}
 	}
 	return h.Role
-}
-
-func regionSymbol(lines []string, r document.Region, msgEnd int) symbol {
-	start := r.Start - 1
-	end := r.Finish
-	if end == 0 {
-		end = msgEnd
-	}
-	if end < start {
-		end = start
-	}
-	return symbol{
-		Name:           regionName(lines, r),
-		Kind:           regionKind(r.Kind),
-		Range:          rng{Start: position{Line: start}, End: position{Line: end}},
-		SelectionRange: rng{Start: position{Line: start}, End: position{Line: start + 1}},
-	}
-}
-
-func regionKind(kind string) int {
-	if kind == "tool" {
-		return symFunction
-	}
-	return symVariable
-}
-
-func regionName(lines []string, r document.Region) string {
-	if r.Kind != "tool" {
-		return r.Kind
-	}
-	if h := document.DecodeToolHeader(lines, r); h != nil && h.Name != "" {
-		return "tool: " + h.Name
-	}
-	return "tool"
 }
 
 // ─── Completion ─────────────────────────────────────────────────────────────
