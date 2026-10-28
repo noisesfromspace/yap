@@ -34,7 +34,7 @@ Inspired by pi and gptel.
 - A winbar with the session description, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
-  can title sessions and run `:YapEval`.
+  can title sessions and run `:YapEval!`.
 - `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
   with the model's output in any buffer.
 - Providers: native OpenAI, Anthropic, Gemini and DeepSeek, any
@@ -157,20 +157,24 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 ## Lua API
 
-| Function                                                 | Shortcut    | Purpose                                     |
-| -------------------------------------------------------- | ----------- | ------------------------------------------- |
-| `require("harness").send()`                              | `<C-s>`     | send the transcript                         |
-| `require("harness").stop()`                              | `<C-c>`     | stop the in-flight request                  |
-| `require("harness").live()`                              | `<leader>l` | open the live tool tail                     |
-| `require("harness").guard()`                             | `<leader>g` | open/close the guard board                  |
-| `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model           |
-| `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)     |
-| `require("harness").buffers()`                           |             | pick any listed buffer with Yap labels      |
-| `require("harness").instances()`                         |             | pick an open session from the session tree  |
-| `require("harness").insert(name, { at_cursor = false })` | `<C-t>`     | insert template / merge a skill             |
-| `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference |
+| Function                                                 | Shortcut    | Purpose                                          |
+| -------------------------------------------------------- | ----------- | ------------------------------------------------ |
+| `require("harness").send()`                              | `<C-s>`     | send the transcript                              |
+| `require("harness").stop()`                              | `<C-c>`     | stop the in-flight request                       |
+| `require("harness").live()`                              | `<leader>l` | open the live tool tail                          |
+| `require("harness").guard()`                             | `<leader>g` | open/close the guard board                       |
+| `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model                |
+| `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)          |
+| `require("harness").buffers()`                           |             | pick a listed buffer (MiniPick)                  |
+| `require("harness").instances()`                         |             | pick an open session from the session tree       |
+| `require("harness").insert(name)`                        | `<C-t>`     | insert a template (and send it) or merge a skill |
+| `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference      |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
+In a session buffer `<C-t>` calls `insert()`: a template is appended as a
+message and sent, a skill merges into `# @system`. In the scratch buffer it
+calls `insert(nil, { at_cursor = true })` instead, which drops the raw file at
+the cursor without sending it.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title; use your normal buffer navigation, file

@@ -7,17 +7,13 @@ import "regexp"
 // static and declared in the tool's own source file (see tools.Gate), so there
 // is no model in the loop and no advisory middle tier.
 //
-// A rule inspects one of two views of the call. A path-taking tool (read,
-// write, edit, search) inspects the text the call names. A command-line
-// tool (bash) inspects the parsed shell program (shell.go), so its rules talk
-// about the commands that will run rather than about words that happen to
-// appear in the line. Neither view is a security boundary: the sandbox
-// (sandbox.go) is, and it bounds exactly one thing — filesystem writes and
-// reads. The gate is the tripwire in front of what the sandbox cannot see:
-// network egress, remote side effects, privilege escalation and secret
-// material. A rule that only restates the write barrier (`rm -rf /`, a
-// redirect onto /etc) is deliberately not here — the kernel refuses it, the
-// refusal escalates, and the human decides once instead of twice.
+// A rule inspects one of two views of the call: the text a path-taking tool
+// names, or the parsed shell program of a bash call (shell.go), so its rules
+// talk about the commands that will run rather than words that happen to appear
+// in the line. Neither view is a security boundary — the sandbox (sandbox.go)
+// is — which is why the gate covers exactly what the sandbox cannot see:
+// network egress, remote side effects, privilege escalation, secret material.
+// Why a rule that only restates the write barrier is not here: :help yap-guard-gate.
 
 // Rule is one static approval rule for a tool call. Rules are declared in the
 // tool's source file, in order; the first match supplies the reason shown in

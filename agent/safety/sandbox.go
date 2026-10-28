@@ -3,21 +3,17 @@
 // filesystem is bind-mounted read-only, a small allowlist of directories (the
 // project dir and the session assets dir) is re-mounted writable, /tmp is a
 // private tmpfs, and the secret directories are shadowed by empty mounts so
-// they cannot be read. When a command still tries to write outside the
-// allowlist, the kernel refuses it (EROFS) and the bash tool escalates to the
+// they cannot be read. A write the kernel refuses (EROFS) escalates to the
 // human through the normal approval gate — the same Run/Deny the static guard
 // rules use.
 //
-// This is the write/read barrier. It is NOT a network boundary: the sandbox
-// does not unshare the network namespace, so a command can still reach the
-// internet (and exfiltrate anything it can read). It is also not a
-// confidentiality boundary against a determined model — the read-only view
-// still shows everything not on the deny-read list.
+// This is the write/read barrier. It is NOT a network or confidentiality
+// boundary: the network namespace is shared, so a command can still reach the
+// internet and exfiltrate anything it can read.
 //
-// The same writable-allowlist policy (WritableDirs / IsWritablePath) also
-// bounds the write and edit tools, so every mutating tool shares one
-// definition of "where the agent may write". The escalation decision
-// (re-run unsandboxed on approval) lives in the bash tool, next to the guard
+// The same allowlist (WritableDirs / IsWritablePath) bounds the write and edit
+// tools, so every mutating tool shares one definition of "where the agent may
+// write". The escalation decision lives in the bash tool, next to the guard
 // rules this complements.
 package safety
 

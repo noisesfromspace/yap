@@ -3,8 +3,7 @@
 // (paths.go), argument slimming for buffer-visible tool headers (slim.go),
 // and unified diffs (diff.go).
 //
-// The two larger clusters that used to live here now have their own
-// packages: the framed wire protocol and turn/process runtime (agent/wire)
-// and the security primitives — secret detection/redaction, SSRF checks and
-// the static guard-rule gate (agent/safety).
+// The framed wire protocol and turn/process runtime live in agent/wire; the
+// security primitives — secret detection/redaction, SSRF checks and the static
+// guard-rule gate — in agent/safety.
 package utils

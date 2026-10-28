@@ -63,9 +63,10 @@ Lua setup (example; substitute your own model groups): >lua
 <
 
 `agents_file` is the system prompt for new buffers, read per buffer (edits
-apply to the next session). When missing or empty, `system` is used. The path
-is used verbatim (no `~` expansion); the default is `$XDG_CONFIG_HOME/yap/AGENTS.md`
-(or `~/.config/yap/AGENTS.md`).
+apply to the next session). When missing or empty, `system` is used. Like the
+other data paths, a leading `~` resolves against your home directory; a
+relative path is refused. The default is
+`$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
 
 `agents_dir` and `sessions_dir` locate yap's data under the XDG config home —
 `$XDG_CONFIG_HOME/yap/` (default `~/.config/yap/`); a leading `~` resolves
@@ -93,7 +94,6 @@ automatically and take precedence in session views.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
 credentials. It does not change the configured default for new sessions.
-Old `$XDG_CACHE_HOME/yap/default` selections are ignored.
 
 `reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
 into every new session's frontmatter as `reasoning_level` so it is visible and
@@ -257,16 +257,16 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
 :YapEval! [instruction]
                         Replace the selected lines with the model's output: a
                         one-shot, no-tools call to `model_groups.flash` (or
-                        `agent` when flash is empty). Acts on a
-                        linewise range (a visual selection via `:'<,'>` or an
-                        explicit `:1,5`); with a selection and no instruction
-                        it applies a default transform ("Improve this text"),
-                        and with no range it prompts for one. In a yap buffer
-                        the replacement is wrapped as a single `# @assistant`
-                        message (select a run of turns
-                        to summarize them); in any other buffer it is plain
-                        text (refactor a function in place). With no range,
-                        the output is inserted at the cursor as new lines
+                        `agent` when flash is empty). Acts on a linewise range
+                        (a visual selection via `:'<,'>` or an explicit
+                        `:1,5`); with a selection and no instruction it
+                        applies a default transform ("Improve this text"),
+                        and with no range it prompts for an instruction. In a
+                        yap buffer the replacement is wrapped as a single
+                        `# @assistant` message (select a run of turns to
+                        summarize them); in any other buffer it is plain text
+                        (refactor a function in place). With no range, the
+                        output is inserted at the cursor as new lines
                         (generate content into a fresh, empty buffer). No
                         default keymap for either form.
 *:YapFork*
@@ -318,8 +318,9 @@ Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
   <leader>j             Toggle the scratch buffer (see |yap-sessions|).
-  <C-t> (n, i)          Insert a template or skill (see insert()). In scratch,
-                        insert at the cursor without sending.
+  <C-t> (n, i)          Pick a template or skill (see insert()). A template
+                        is inserted and sent; a skill merges into `# @system`.
+                        In scratch, insert the raw file at the cursor instead.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
   <leader>y             Pick a saved session to resume.
@@ -400,8 +401,9 @@ description exists. The rest of the frontmatter:
   `turns`                 Completed `# @assistant` replies, so the picker can
                           show depth without opening the file.
 
-The active combo comes from the frontmatter on open, then per-buffer vars set
-by change_model(), then the persisted default, then setup() defaults.
+The active combo is the buffer's own: read from the frontmatter when the
+session is opened, set by change_model(), else `model_groups.agent` for a new
+session.
 
 ==============================================================================
 6. MARKERS & TOOL REGIONS                                      *yap-markers*
@@ -466,8 +468,9 @@ and generated artifacts. Each session lives in its own directory,
 ~/.config/yap/sessions/<cwd-slug>/<session>/, containing session.md (the
 conversation), audit.jsonl (the audit log), notes.md (the scratch jotter),
 and assets/ (photos, fetched downloads, and working files).
-Sessions are saved after every turn; the file is created when the buffer
-opens, and every save goes through |:write| so 'modified', |:w| and the exit
+Sessions are saved after every turn and when the buffer stops being displayed
+in any window; the file is created when the buffer opens. A native |:w| is
+routed to that same save path (BufWriteCmd), so 'modified', |:w| and the exit
 prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
@@ -830,6 +833,7 @@ The agent ships a fixed set of compiled-in tools. `yap guard` lists the
 approval rules that sit in front of them (|yap-guard-gate|).
 
   bash           Run a shell command. Sandboxed on Linux (|yap-sandbox|).
+  bash_output    Read a background command's log tail, wait for it, or stop it.
   read           Read a text file, 2000 lines / 50KB at a time.
   write          Write a whole file.
   edit           Exact-text or anchor-to-boundary edits, several per call.

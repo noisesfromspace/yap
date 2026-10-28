@@ -27,34 +27,14 @@
 --     - ~/.config/yap/sessions/.../branch.md
 --   ---
 --
--- the session title is its filename (rename `session.md` to set it);
--- `description` is the generated one-line summary; `model` and
--- `provider` are the combo to resume with; `reasoning_level`
--- (low|medium|high) is the live, hand-editable choice — read on every send,
--- empty means the provider's own default;
--- `created_cwd` is the exact working
--- directory the session was created in (the directory slug is lossy, so
--- this is the only exact record of where a session ran); `agent` marks a
--- subagent session (its agent-definition name); `tools` is the per-session
--- tool allowlist — absent means unrestricted (every tool, including runtime-
--- discovered MCP tools); list names to restrict the session to only those,
--- while a subagent lists only its definition's tools;
--- `turns` counts the completed replies (`# @assistant` messages) — a
--- session-depth summary for the picker, stamped on save with `updated_at`;
--- `created_at` records when the session was created; `updated_at` records
--- its last write (stamped on every save); `models` is the ordered history
--- of every combo actually used (most-recent-last); `forked_from` and
--- `forks` link copied sessions in both directions; `subagent_parent` points
--- back to the owner; `subagents` is the ordered list of subagent session
--- paths this session ran (most-recent-last).
--- Token/cost
--- totals are NOT persisted here — the winbar accumulates them per-buffer,
--- and the durable session total is derived from the audit log, not the file.
--- yap owns the frontmatter, so parsing is a few pattern matches,
--- not a YAML library; Neovim has no YAML parser and does not need one.
+-- Field semantics and the write rules: R-frontmatter (CONTRIBUTING.md) and
+-- section 5 of doc/yap.txt. The session title is the transcript's filename;
+-- token and cost totals are not here — the winbar accumulates them per buffer
+-- and the durable total is derived from the audit log.
 --
--- render() returns ONLY the `--- ... ---` frontmatter (no trailing blank line);
--- callers own the blank separator that follows it.
+-- yap owns the frontmatter, so parsing is a few pattern matches, not a YAML
+-- library. render() returns ONLY the `--- ... ---` frontmatter (no trailing
+-- blank line); callers own the blank separator that follows it.
 
 local M = {}
 

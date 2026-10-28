@@ -36,20 +36,12 @@ func init() {
 // arguments, pipelines and substitutions decide — a commit message that
 // mentions `ssh`, or an rg pattern that quotes `crontab -e`, is not a match.
 //
-// The list deliberately does NOT restate the sandbox. The write barrier
-// (safety.SandboxWrap) already refuses every write outside the writable
-// allowlist — `rm -rf /`, a redirect onto /etc, chmod -R, dd onto a device,
-// mkfs — and the refusal escalates to the same Run/Deny. A rule for those was
-// a second prompt for one decision, and it made the list look like a write
-// barrier while the things the sandbox cannot see (egress, remote side
-// effects, privilege escalation, secret material) went unmentioned. The gate
-// now covers exactly that gap: what survives the sandbox.
-//
-// False positives cost one keypress; false negatives are the danger, so rules
-// err toward matching more — but a rule that fires on ordinary work teaches
-// the human to approve without reading, which is worse than no rule. Hence
-// `git commit`/`git add`/`npm run build`/`nix build`/in-project `rm -rf` stay
-// ungated on purpose.
+// They cover what the sandbox cannot see: egress, remote side effects,
+// privilege escalation and secret material. A rule that only restates the
+// write barrier (`rm -rf /`, a redirect onto /etc) is deliberately absent, and
+// so is one that fires on ordinary work (`git commit`, `npm run build`,
+// in-project `rm -rf`): a prompt on routine commands teaches the human to
+// approve without reading. See :help yap-guard-gate.
 var bashRules = append([]safety.Rule{
 	// A raw network tool opening a listener or running a program on the far
 	// side is the injected-payload shape, and the sandbox does not unshare the

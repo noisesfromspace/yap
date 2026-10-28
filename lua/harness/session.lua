@@ -21,27 +21,10 @@ local structure = require("harness.model.structure")
 local paths = require("harness.path")
 local picker = require("harness.ui.picker")
 
---- Write the buffer to its session file, creating one (named after the
---- current time) on first save. Also called when a buffer is opened so
---- the session is file-backed from the start. Renames the buffer to the
---- file so `:w` works as expected.
----
---- The write goes through `:write!` (not writefile()): the buffer then
---- OWNS the file in Neovim's eyes — mtime bookkeeping is set, so `:w`
---- keeps working and you never get E13 "file exists". `:write!` also
---- clears 'modified', so a clean buffer prompts nothing on exit; the
---- `[+]` flag is the real signal for "typed but not yet saved".
---- Writing without 'modified' is harmless.
---- Stamp `updated_at` and `turns` in the frontmatter immediately before
---- the buffer is written. This is the only place `updated_at` is set; every
---- other frontmatter rewrite preserves it, so the field means "last write".
---- `turns` (the count of `# @assistant` replies — completed turns, ignoring
---- the trailing empty `# @user` prompt) is recomputed here too so the picker
---- has an at-a-glance session depth without opening the file. One full-buffer
---- read feeds both the frontmatter parse and the turn count; the write
---- serializes the whole buffer anyway, so the extra scan is not new work.
---- The rewrite is skipped when neither field changed, or when the buffer
---- has no frontmatter to stamp.
+--- Stamp `updated_at` and `turns` in the frontmatter immediately before the
+--- buffer is written: the one place `updated_at` is set, so the field means
+--- "last write". `turns` (completed `# @assistant` replies) is the picker's
+--- session depth. Skipped when neither changed, or with no frontmatter.
 local function stamp_updated_at(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
@@ -97,6 +80,12 @@ function M.reconcile_name(buf)
   return renamed, path
 end
 
+--- Write the buffer to its session file, creating one (named after the current
+--- time) on first save. Also called when a buffer is opened so the session is
+--- file-backed from the start. Renames the buffer to the file so `:w` works as
+--- expected. The write goes through `write!` (not writefile()), so the buffer
+--- owns the file — mtime bookkeeping is set, `:w` keeps working, no E13 — and
+--- 'modified' is cleared, so a clean buffer prompts nothing on exit.
 function M.save(buf, previous_path)
   if not vim.api.nvim_buf_is_valid(buf) then
     return

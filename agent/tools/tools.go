@@ -6,25 +6,18 @@
 // runtime from configured servers and registered through RegisterRaw by the
 // turn loop.
 //
-// A tool defines an Args struct; the JSON schema sent to the provider is
-// generated from it by reflection (invopop/jsonschema), and incoming
-// model arguments are validated against the compiled schema
-// (santhosh-tekuri/jsonschema) before Run is called — hand-written
-// schemas and raw unmarshal errors are both gone.
+// A tool defines an Args struct; the provider-facing JSON schema is reflected
+// from it (invopop/jsonschema) and incoming arguments are validated against the
+// compiled schema (santhosh-tekuri/jsonschema) before run is called.
 //
-// Each tool may also declare static guard rules with Gate in its init().
-// A rule is a named, deterministic condition that pauses the call for a
-// human Run/Deny decision before it runs. Rules are declared next to the
-// tool they guard (in the tool's own source file), and every registered
-// rule is surfaced automatically by `yap guard` and the frontend's guard
-// board — adding one is a one-file change plus a recompile.
+// Each tool may also declare static guard rules with Gate in its init(). Rules
+// sit next to the tool they guard, and every registered rule is surfaced by
+// `yap guard` and the frontend's guard board — one file plus a recompile.
 //
-// Helpers do NOT belong here, even when only tools call them. Shared
-// helpers (path resolution, SSRF checks, secret scrubbing + the secrets
-// guard, unified diffs, events, process-group tracking, arg slimming, the
-// static rule matcher) live in agent/wire, agent/safety and agent/utils. If
-// you are adding something that does not call Register or Gate, it goes in
-// one of those packages.
+// Helpers do NOT belong here, even when only tools call them: path resolution,
+// SSRF checks, secret scrubbing, unified diffs, events, process groups, arg
+// slimming and the rule matcher live in agent/wire, agent/safety and
+// agent/utils. Anything that does not call Register or Gate goes there.
 package tools
 
 import (

@@ -1,47 +1,19 @@
--- Markdown colouring policy for yap session buffers: Vim's own
--- `syntax/markdown.vim` for the glyph colours, with the tree-sitter parser
--- left fully intact for decoration renderers (touchup, render-markdown).
+-- Markdown colouring for yap session buffers: Vim's own
+-- `syntax/markdown.vim`, with the tree-sitter parser left fully intact for
+-- decoration renderers (touchup, render-markdown).
 --
--- Why not the tree-sitter highlighter: it is not viewport-bounded on these
--- buffers. Its per-redraw parse range is line('w0')..line('w$') — *buffer*
--- rows, not screen rows — so with folds closed a 34-row window spans thousands
--- of rows and the markdown query is iterated over all of them on every redraw.
--- Measured on a 10.8k-line transcript with folds closed: 6.9k-row span, ~8.6k
--- captures, 7-23 ms per redraw, growing with session size. Holding j/k at
--- key-repeat rate then overruns the ~33 ms budget and the input queue backs up
--- (tapping is fine, holding stalls, and crossing a fold is a bigger jump). That
--- is why trimming injections — one tree per inline span, then one per fence,
--- then html — never fixed it: those shrink the tree count, not the row span.
+-- Why not the tree-sitter highlighter: its per-redraw parse range is
+-- line('w0')..line('w$') in *buffer* rows, so with folds closed a short window
+-- spans thousands of rows and the cost grows with session size — holding j/k
+-- overruns the input budget. Vim's syntax engine only evaluates displayed
+-- lines, and it covers inline emphasis plus embedded fence languages.
 --
--- Vim's syntax engine only evaluates displayed lines, so it is flat in session
--- size, and it covers what the transcript needs: inline emphasis
--- (bold/italic/code/links) plus embedded fence languages via
--- `g:markdown_fenced_languages`. Only the *highlighter* is stopped; the parser
--- keeps running.
+-- Why the parser and its injections stay: decoration renderers read the
+-- parsed tree, not the highlighter. The measurements, and the alternatives that
+-- were tried and rejected, are in R-presentation-hygiene (CONTRIBUTING.md).
 --
--- Why the injections stay: decoration renderers are consumers of the parsed
--- tree, not of the highlighter, so stopping the highlighter does not make them
--- redundant. touchup reads the main markdown tree for its block renderers
--- (headings, fences, quotes, bullets, checkboxes) and the `markdown_inline`
--- child for link/marker styling; render-markdown dispatches handlers per
--- injected language (`markdown`, `markdown_inline`, `html`, `yaml`, `latex`).
--- Dropping injections to speed up first render was measured at 25 -> 9 touchup
--- marks and 15 -> 11 render-markdown marks on the same buffer, so it is not
--- worth the saving: it silently deletes most of the visible decoration.
---
--- What that leaves is an open-time cost rather than a scroll cost: a renderer
--- parses the whole buffer synchronously on its first render (166 ms at 34.5k
--- lines, 420 ms at 92k for the main tree alone). That belongs to the renderer
--- — Neovim time-slices the same parse when a callback is passed — and is not
--- something this module can remove without breaking the renderers themselves.
---
--- Session buffers also drop the per-keystroke option hooks a markdown setup
--- installs. nvim-treesitter's FileType handling sets `indentexpr` for any
--- language with an `indents` query — markdown has one — and Vim evaluates it on
--- every new line (<CR>, `o`, `O`) and on `=`. Its query parses from the top of
--- the buffer, and folds make its `w0..w$` range span thousands of rows, so one
--- <CR> measured 577 ms on a 64k-line session versus 9 ms with the hook cleared.
--- A transcript is not code: plain 'autoindent' is the right behaviour.
+-- The rest of the file repairs what the syntax engine gets wrong on a
+-- transcript: unlinked groups, fences inside thinking comments, syntax sync.
 
 local M = {}
 
