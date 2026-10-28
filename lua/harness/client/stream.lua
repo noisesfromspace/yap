@@ -297,13 +297,13 @@ function M.send(buf)
     vim.notify("yap: " .. attach_err, vim.log.levels.WARN)
     return false
   end
-  -- Parse once for the empty-send guard and session titling. The send
-  -- itself ships the raw transcript and lets the backend flatten it
-  -- (R-single-reader: Go owns the send conversion); these two consumers are
-  -- the remaining synchronous Lua uses, locked to document.Messages by
-  -- tests/transcript_messages_cases.json.
-  local messages = document.parse_buffer(buf)
-  if #messages == 0 then
+  -- Ask the backend what this send would contain: the empty-send guard and
+  -- session titling both need real messages, and the transcript → request
+  -- conversion is Go-owned (R-single-reader). One query, two consumers.
+  -- nil means no document server is attached, so the backend validates the
+  -- request itself and titling is skipped.
+  local messages = document.messages(buf)
+  if messages and #messages == 0 then
     vim.notify("yap: no message to send; write under # @user", vim.log.levels.WARN)
     return
   end

@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// TestMessagesContract locks Messages against the shared fixture, and through
-// it against structure.lua's messages_from (see
-// tests/yap_transcript_messages_conformance_test.lua). The cases exercise the
-// send-path rules that historically drifted: tool flattening, marker
+// TestMessagesContract locks Messages against the send-path fixture. It is now
+// the only transcript → request implementation (R-single-reader), so the
+// cases record the rules that historically drifted: tool flattening, marker
 // stripping, adjacent-role merging, empty-drop and unclosed-region recovery.
 func TestMessagesContract(t *testing.T) {
 	b, err := os.ReadFile("../../tests/transcript_messages_cases.json")

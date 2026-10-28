@@ -26,7 +26,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local msgs = document.parse_buffer(buf)
+local msgs = document.messages(buf)
 assert(#msgs == 2, "expected 2 messages, got " .. #msgs .. ": " .. vim.inspect(msgs))
 local a = msgs[2]
 assert(a.role == "assistant" and not a.tool_calls, "msg 2 not a plain assistant message")
@@ -55,7 +55,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local m2 = document.parse_buffer(buf)
+local m2 = document.messages(buf)
 assert(#m2 == 2 and m2[2].content == "plain answer" and not m2[2].tool_calls, "delete-region case broken")
 
 -- sanitizer: region inside a user block is skipped
@@ -73,7 +73,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "answer",
   "",
 })
-local m3 = document.parse_buffer(buf)
+local m3 = document.messages(buf)
 assert(#m3 == 2, "user-block tool region not skipped: " .. vim.inspect(m3))
 
 -- sanitizer: missing result -> empty labelled result in the transcript
@@ -84,7 +84,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "<!-- /yap:tool -->",
   "",
 })
-local m4 = document.parse_buffer(buf)
+local m4 = document.messages(buf)
 assert(
   #m4 == 1 and m4[1].role == "assistant" and m4[1].content == "Tool call: noop\nArguments: {}\nTool result:",
   "empty result not flattened: " .. vim.inspect(m4)
@@ -111,7 +111,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local m5 = document.parse_buffer(buf)
+local m5 = document.messages(buf)
 assert(#m5 == 2 and m5[2].role == "assistant", "fake headings split messages: " .. vim.inspect(m5))
 assert(m5[2].content:find("```markdown\n# @user\n```", 1, true), "fenced heading lost")
 assert(m5[2].content:find("Tool result:\n# @user", 1, true), "tool result heading lost")

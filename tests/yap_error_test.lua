@@ -21,25 +21,38 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "# @user",
   "",
 })
-local msgs = document.parse_buffer(buf)
+local msgs = document.messages(buf)
 assert(msgs[2].content == "partial answer", "error region leaked: " .. vim.inspect(msgs[2].content))
 
 -- 2. real send against missing provider -> error surfaces in winbar + buffer
 local buf2 = yap.new({ provider = "nosuch", model = "m" })
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "hi" })
-local notified = nil
+-- Session titling runs on the same send and fails for the same reason (its
+-- model group is unconfigured here), so collect notifications and look for
+-- the send error instead of pinning the first one.
+local notified = {}
 local orig_notify = vim.notify
 vim.notify = function(msg, level)
-  notified = { msg = msg, level = level }
+  notified[#notified + 1] = { msg = msg, level = level }
 end
 yap.send()
 local done = vim.wait(5000, function()
-  return notified ~= nil
+  for _, n in ipairs(notified) do
+    if n.msg:match('unknown provider "nosuch"') then
+      return true
+    end
+  end
+  return false
 end, 50)
 vim.notify = orig_notify
-assert(done, "no error notification within 5s")
-assert(notified.level == vim.log.levels.ERROR, "notify level not ERROR")
-assert(notified.msg:match('unknown provider "nosuch"'), "unexpected notify: " .. notified.msg)
+assert(done, "no send error notification within 5s: " .. vim.inspect(notified))
+local send_err
+for _, n in ipairs(notified) do
+  if n.msg:match('unknown provider "nosuch"') then
+    send_err = n
+  end
+end
+assert(send_err.level == vim.log.levels.ERROR, "notify level not ERROR")
 local bar = yap.winbar(buf2)
 local icons = require("harness").config.icons
 assert(bar:find("%#YapError#" .. icons.error, 1, true), "winbar has no error state: " .. bar)
@@ -70,7 +83,7 @@ assert(found_error, "error session missing from session picker")
 assert(found_error.state == "error", "error state missing: " .. vim.inspect(found_error))
 assert(found_error.model == "m", "error model missing: " .. vim.inspect(found_error))
 -- next parse excludes the error
-local msgs2 = document.parse_buffer(buf2)
+local msgs2 = document.messages(buf2)
 for _, m in ipairs(msgs2) do
   assert(not m.content:match("unknown provider"), "error text leaks into messages")
 end

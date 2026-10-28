@@ -89,7 +89,7 @@ do
   assert(text:match("# @user"), "trailing user prompt lost: " .. text)
   assert(not text:match("original question"), "old history not deleted: " .. text)
   local roles = {}
-  for _, m in ipairs(document.parse_buffer(buf)) do
+  for _, m in ipairs(document.messages(buf)) do
     roles[#roles + 1] = m.role
   end
   assert(vim.deep_equal(roles, { "system", "assistant" }), "parse roles: " .. vim.inspect(roles))

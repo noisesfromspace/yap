@@ -41,10 +41,10 @@ type Request struct {
 	// Transcript is the raw session markdown for a serve turn. When set,
 	// System (the About Yap boilerplate) is prepended and Context (the
 	// transient cwd/git tail) is appended to the trailing user message.
-	Transcript string `json:"transcript,omitempty"`
-	System     string `json:"system,omitempty"`
-	Context    string `json:"context,omitempty"`
-	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
+	Transcript string    `json:"transcript,omitempty"`
+	System     string    `json:"system,omitempty"`
+	Context    string    `json:"context,omitempty"`
+	Tools      *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
 	// ReasoningLevel is the cross-provider reasoning-effort knob (low|medium|high).
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
 	// Cwd is the frontend's working directory at send time. Request-only,

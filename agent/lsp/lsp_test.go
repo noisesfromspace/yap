@@ -416,3 +416,84 @@ func TestDocWarmPopulatesCache(t *testing.T) {
 	}
 	t.Fatal("warm() never populated the cache")
 }
+
+// TestMessagesRequestServesGoConversion: the harness asks the server what a
+// send would contain instead of deriving it in Lua (R-single-reader). This
+// exercises the yap/messages request end to end, including an empty result
+// encoding as [] rather than null.
+func TestMessagesRequestServesGoConversion(t *testing.T) {
+	uri := "file:///tmp/sessions/a/session.md"
+	text := "# @user\nhello\n# @assistant\nreply\n"
+	send := func(in *bytes.Buffer, v any) { in.Write(frame(v)) }
+
+	var in bytes.Buffer
+	send(&in, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"initializationOptions": map[string]any{"sessions_dir": "/tmp/sessions"},
+		},
+	})
+	send(&in, map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params":  map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": text}},
+	})
+	send(&in, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "yap/messages", "params": map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+	}})
+	send(&in, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "shutdown"})
+	send(&in, map[string]any{"jsonrpc": "2.0", "method": "exit"})
+
+	var out bytes.Buffer
+	if err := Serve(&in, &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	for _, m := range splitFrames(out.Bytes()) {
+		var resp struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(m, &resp) != nil || resp.ID != 2 {
+			continue
+		}
+		var msgs []document.Message
+		if err := json.Unmarshal(resp.Result, &msgs); err != nil {
+			t.Fatalf("messages result: %v (%s)", err, resp.Result)
+		}
+		if len(msgs) != 2 || msgs[0].Content != "hello" || msgs[1].Content != "reply" {
+			t.Fatalf("messages = %+v", msgs)
+		}
+		return
+	}
+	t.Fatal("no yap/messages response")
+}
+
+// TestFileCompletionFiltersTypedPrefix pins the @path completion contract the
+// client relies on: the edit replaces the text after the `@` (so the client's
+// completion start column is the path itself) and filterText carries the same
+// path, which is what makes typing `@fla` narrow to flake.nix.
+func TestFileCompletionFiltersTypedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"flake.nix", "flake.lock", "readme.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := "# @user\n@fla\n"
+	items := Completion(text, 1, 4, CompletionCtx{Cwd: dir})
+	var labels []string
+	for _, it := range items {
+		labels = append(labels, it.Label)
+		if it.FilterText != it.Label {
+			t.Fatalf("filterText = %q, want %q", it.FilterText, it.Label)
+		}
+		if strings.HasPrefix(it.TextEdit.NewText, "@") {
+			t.Fatalf("newText must not re-insert the @: %q", it.TextEdit.NewText)
+		}
+		if it.TextEdit.Range.Start.Character != 1 {
+			t.Fatalf("edit starts at %d, want 1 (after the @)", it.TextEdit.Range.Start.Character)
+		}
+	}
+	if strings.Join(labels, ",") != "flake.lock,flake.nix" {
+		t.Fatalf("labels = %v, want the two flake files", labels)
+	}
+}

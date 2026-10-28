@@ -70,7 +70,7 @@ assert(text:match("%.jsonl:%?%]"), "placeholder missing audit path: " .. text)
 -- the context still parses: three tool regions flattened into one assistant
 -- transcript; the two cleared bodies are the placeholder, the last is /tmp
 local asst
-for _, m in ipairs(document.parse_buffer(buf)) do
+for _, m in ipairs(document.messages(buf)) do
   if m.role == "assistant" then
     asst = m
   end

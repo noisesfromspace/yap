@@ -85,9 +85,12 @@ end
 --- session picker. `kind` selects the model and what it summarizes:
 ---   "user"   — smallest model, only the first useful request (runs once)
 ---   "answer" — bigger model, the ordered user-request history (runs after turns)
+--- `messages` is the backend's view of what the buffer would send
+--- (document.messages); nil when no document server is attached, in which
+--- case there is nothing to title from.
 function M.refresh(buf, kind, messages)
   local combo, system, content
-  local title_input, housekeeping = title_messages(messages or document.parse_buffer(buf))
+  local title_input, housekeeping = title_messages(messages or document.messages(buf) or {})
   if kind == "user" then
     -- Generate an instant label only once, from the session's first useful
     -- request. Later turns are summarized by the whole-session stage below.

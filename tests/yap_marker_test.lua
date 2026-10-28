@@ -28,7 +28,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "",
 })
 local asst
-for _, m in ipairs(document.parse_buffer(buf)) do
+for _, m in ipairs(document.messages(buf)) do
   if m.role == "assistant" then
     asst = m
   end

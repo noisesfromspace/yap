@@ -22,12 +22,13 @@ for line in sys.stdin:
     req = json.loads(line)
     if req.get("type") == "subagent_result":
         continue
-    prompt = req["messages"][-1]["content"]
-    # The harness appends the Neovim cwd and git context to the user message,
-    # so substring-matching the whole prompt is fragile: a recent commit like
-    # "describe: notify on title/summary model failure" puts the word "failure"
-    # into a "delegate success" prompt and misclassifies it. Match on the task
-    # line only — the text before the injected context.
+    prompt = req.get("transcript") or ""
+    # The harness ships the raw transcript; the backend owns flattening it.
+    # The task is the body of the last `# @user` block, and request-only
+    # context (cwd, git) is appended to it there, so match the task line only.
+    body = prompt.rsplit("\n# @user\n", 1)[-1]
+    lines = [l for l in body.splitlines() if l.strip()]
+    prompt = lines[0] if lines else ""
     first = prompt.splitlines()[0]
     if first.startswith("delegate"):
         agent = "browser" if "unsupported" in first else "scout"

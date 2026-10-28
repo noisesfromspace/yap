@@ -56,7 +56,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "second question",
   "",
 })
-local msgs = document.parse_buffer(buf)
+local msgs = document.messages(buf)
 assert(#msgs == 3, "unclosed tool region swallowed the next message: " .. vim.inspect(msgs))
 assert(msgs[2].role == "assistant" and msgs[2].content:find("partial output", 1, true), "partial output lost")
 assert(msgs[3].role == "user" and msgs[3].content == "second question", "second question lost")

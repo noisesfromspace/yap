@@ -45,8 +45,8 @@ vim.api.nvim_buf_set_lines(
   })
 )
 
--- 2. parse_buffer ignores the frontmatter (it is not a message)
-local msgs = document.parse_buffer(buf)
+-- 2. document.messages ignores the frontmatter (it is not a message)
+local msgs = document.messages(buf)
 assert(#msgs == 1 and msgs[1].role == "system", "frontmatter leaked into messages")
 
 -- 3. change_model appends to the history and updates the combo

@@ -38,7 +38,7 @@ local lines = {
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 -- parse: multi-line header flattens to tool name + JSON args + result
-local msgs = document.parse_buffer(buf)
+local msgs = document.messages(buf)
 local asst
 for _, m in ipairs(msgs) do
   if m.role == "assistant" then

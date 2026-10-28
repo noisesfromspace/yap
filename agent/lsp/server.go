@@ -279,6 +279,15 @@ func (s *Server) dispatch(req request) bool {
 		if json.Unmarshal(req.Params, &p) == nil {
 			s.respond(req.ID, s.completionFor(p))
 		}
+	case "yap/messages":
+		// The transcript → request conversion is Go-owned
+		// (R-single-reader), so the frontend queries it rather than
+		// re-deriving the flatten/merge rules in Lua. Not part of LSP:
+		// a Yap extension on the same channel and document store.
+		var p textDocumentParams
+		if json.Unmarshal(req.Params, &p) == nil {
+			s.respond(req.ID, s.messagesFor(p.TextDocument.URI))
+		}
 	default:
 		s.respondError(req.ID, -32601, "method not found: "+req.Method)
 	}
@@ -325,6 +334,12 @@ func (s *Server) write(v any) {
 }
 
 func (s *Server) respond(id json.RawMessage, result any) {
+	if result == nil {
+		// A response must carry result or error. `shutdown` has a null result;
+		// omitting it makes Neovim report INVALID_SERVER_MESSAGE on every
+		// clean exit.
+		result = json.RawMessage("null")
+	}
 	s.write(response{JSONRPC: "2.0", ID: id, Result: result})
 }
 
@@ -464,6 +479,20 @@ func (s *Server) initializeResult() map[string]any {
 			"version": "0",
 		},
 	}
+}
+
+// messagesFor returns the messages a send would derive from the document.
+// Always an array: a nil slice marshals to `null`, which Lua's vim.json.decode
+// turns into vim.NIL and callers cannot iterate.
+func (s *Server) messagesFor(uri string) any {
+	if !s.isSession(uri) {
+		return []document.Message{}
+	}
+	d := s.doc(uri)
+	if d == nil {
+		return []document.Message{}
+	}
+	return document.Messages(d.text)
 }
 
 func (s *Server) symbolsFor(uri string) any {

@@ -2,28 +2,38 @@
 import json
 import sys
 
-# Same contract as the real binary: read one JSON request line, print a
-# framed `text` response record. Echo the injected git snapshot so the test
-# can assert on it, or a sentinel when none is present (i.e. :pwd is not a
-# git repo). The git snapshot is request-only context appended to the
-# trailing user message (not a system message); the title/describe request
-# has no "# About Yap" system message and must not echo a snapshot or
-# sentinel into the session title.
+# Backend test double with the real binary's `serve` contract: one JSON request
+# per line, framed records on stdout, one process for every turn in the
+# session. Echo the injected git snapshot so the test can assert on it, or a
+# sentinel when none is present (i.e. :pwd is not a git repo). The snapshot is
+# request-only context, never part of the transcript or the system prefix; a
+# request that is not a session turn (no "# About Yap" prefix, e.g. session
+# titling) must not echo either.
 def emit(text):
     print(json.dumps({"type": "text", "text": text}), flush=True)
 
-payload = json.loads(sys.stdin.readline())
-msgs = payload["messages"]
 
-if not msgs or msgs[0]["role"] != "system" or not msgs[0]["content"].startswith("# About Yap"):
-    emit("git test")
-    sys.exit(0)
+def complete():
+    print(json.dumps({"type": "turn_complete", "v": 1, "ok": True}), flush=True)
 
-for m in msgs:
-    if m["role"] == "user":
-        idx = m["content"].find("Git: ")
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    payload = json.loads(line)
+
+    if not (payload.get("system") or "").startswith("# About Yap"):
+        emit("git test")
+        complete()
+        continue
+
+    found = False
+    for ctx_line in (payload.get("context") or "").splitlines():
+        idx = ctx_line.find("Git: ")
         if idx >= 0:
-            emit(m["content"][idx:])
-            sys.exit(0)
-
-emit("NO_GIT")
+            emit(ctx_line[idx:])
+            found = True
+            break
+    if not found:
+        emit("NO_GIT")
+    complete()

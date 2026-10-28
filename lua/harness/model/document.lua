@@ -1,21 +1,22 @@
--- Conversation document primitives: parsing the editable markdown buffer and
+-- Conversation document primitives: what a buffer would send, plus
 -- appending/following streamed content. This is the buffer-is-state core.
+--
+-- Parsing is not here: the Go document server owns the transcript → request
+-- conversion (R-single-reader), so messages() is a query rather than a Lua
+-- implementation of the flatten/merge/marker rules.
 
 local M = {}
 
-local structure = require("harness.model.structure")
-
 -- ─── Buffer ↔ messages ─────────────────────────────────────────────────────
 
---- Parse a yap buffer into a message list. The structural parser
---- (`harness.model.structure`) owns the document format: it resolves fences,
---- multi-line comments, marker regions and tool regions in one pass, and
---- `structure.messages` turns that into the request. This stays as the name the
---- rest of the harness calls.
+--- The messages this buffer would send, asked of the document server.
+--- Returns nil when no client is attached (the backend then validates the
+--- request itself). Fold, motion and text-object consumers keep using the
+--- local structural scanner; only send semantics come from Go.
 ---@param buf integer
----@return {role:string, content:string}[]
-function M.parse_buffer(buf)
-  return structure.messages(buf)
+---@return {role:string, content:string}[]|nil
+function M.messages(buf)
+  return require("harness.client.lsp").messages(buf)
 end
 
 -- ─── Streaming append ──────────────────────────────────────────────────────
@@ -140,7 +141,7 @@ function M.trailing_role(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return nil
   end
-  local headings = structure.parse(buf).headings
+  local headings = require("harness.model.structure").parse(buf).headings
   return headings[#headings] and headings[#headings].role or nil
 end
 
@@ -158,7 +159,7 @@ function M.append_message(buf, role, lines)
     return
   end
   local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local headings = structure.parse(buf).headings
+  local headings = require("harness.model.structure").parse(buf).headings
   local heading = headings[#headings] and headings[#headings].line or nil
   if not (heading and headings[#headings].role == role) then
     local message = { "# @" .. role, "" }

@@ -413,10 +413,10 @@ end
 --- Strip `<!-- yap:* -->` marker regions (thinking/model/error/ui) from raw
 --- text, keeping all other lines — including ordinary HTML comments — intact.
 --- A single-line marker (ends in `-->`) is dropped; a multi-line marker opens
---- on its own line and is dropped through its bare `-->` closer. This is the
---- raw-output counterpart of document.lua's buffer parser, which drops the
---- same markers while splitting a buffer into messages; eval.lua uses it to
---- clean one-shot `yap send` responses.
+--- on its own line and is dropped through its bare `-->` closer. The Go
+--- document server drops the same markers when it builds the request; this is
+--- the raw-output counterpart, used by eval.lua to clean one-shot
+--- `yap send` responses.
 function M.strip_markers(text)
   local out = {}
   local in_marker = false
@@ -477,98 +477,6 @@ function M.scan_lines(lines)
     step(ctx, i, line)
   end
   return view(ctx, #lines, frontmatter_end(lines))
-end
-
---- The conversation a buffer sends: one entry per message, with marker regions
---- stripped and tool regions flattened into ordinary assistant transcript text
---- (tool name, JSON arguments, result) — the visible markdown IS the
---- conversation, so persisted history never reconstructs native tool
---- call/result messages. Adjacent same-role messages merge (R-role-alternation)
---- and empty ones drop.
----
---- A tool region is flattened only inside an assistant message and only with a
---- decodable header; anything else (orphan, user-block, malformed) is skipped
---- whole. Driven entirely by the structural parse, so fences, comments and
---- inner headings are already resolved.
----@param lines string[]
----@param p table|nil a scan_lines()/parse() result for `lines`
----@return {role:string, content:string}[]
-function M.messages_from(lines, p)
-  p = p or M.scan_lines(lines)
-  local heading_at = {}
-  for _, h in ipairs(p.headings) do
-    heading_at[h.line] = h.role
-  end
-  local out, acc, role = {}, {}, nil
-  local function flush()
-    if not role then
-      acc = {}
-      return
-    end
-    local text = table.concat(acc, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-    if text ~= "" then
-      local last = out[#out]
-      if last and last.role == role then
-        last.content = last.content .. "\n\n" .. text
-      else
-        out[#out + 1] = { role = role, content = text }
-      end
-    end
-    acc = {}
-  end
-  local ri, i = 1, 1
-  while i <= #lines do
-    local r = p.regions[ri]
-    if r and r.start == i then
-      local finish = math.max(r.finish or #lines, r.start)
-      local h = r.kind == "tool" and decode_header(lines, r) or nil
-      if h and role == "assistant" then
-        local args = h.arguments
-        if type(args) ~= "string" then
-          args = vim.json.encode(type(args) == "table" and args or {})
-        end
-        acc[#acc + 1] = "Tool call: " .. h.name
-        acc[#acc + 1] = "Arguments: " .. args
-        acc[#acc + 1] = "Tool result:"
-        -- The result body excludes the header and the display-only yap:ui diff.
-        local first = (r.header_finish or r.start) + 1
-        local last = (r.ui_start and r.ui_start - 1) or (finish - 1)
-        for k = first, last do
-          acc[#acc + 1] = lines[k]
-        end
-      elseif r.kind == "tool" and not h then
-        vim.notify("yap: malformed yap:tool header, region skipped", vim.log.levels.WARN)
-      end
-      i = finish + 1
-      ri = ri + 1
-    else
-      local line = lines[i]
-      local hr = heading_at[i]
-      if hr then
-        flush()
-        role = hr
-      elseif line:match(MARKER_LINE) then
-        -- A single-line marker (`<!-- yap:model {…} -->`) or an orphan
-        -- closer: never message text (R-markers-not-sent). Multi-line markers
-        -- are regions and were skipped above.
-      else
-        acc[#acc + 1] = line
-      end
-      i = i + 1
-    end
-  end
-  flush()
-  return out
-end
-
---- M.messages_from over a live buffer (uses the incremental parse cache).
----@param buf integer
----@return {role:string, content:string}[]
-function M.messages(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return {}
-  end
-  return M.messages_from(vim.api.nvim_buf_get_lines(buf, 0, -1, false), parse(buf))
 end
 
 --- Tool regions of a buffer with their header and body line ranges, for

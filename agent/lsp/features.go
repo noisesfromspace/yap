@@ -28,6 +28,7 @@ type completionItem struct {
 	Kind       int       `json:"kind,omitempty"`
 	Detail     string    `json:"detail,omitempty"`
 	SortText   string    `json:"sortText,omitempty"`
+	FilterText string    `json:"filterText,omitempty"`
 	InsertText string    `json:"insertText,omitempty"`
 	TextEdit   *textEdit `json:"textEdit,omitempty"`
 }
@@ -483,6 +484,14 @@ func fileCompletion(cwd, word string, line, wordStart, char int) []completionIte
 	paths := listUnder(cwd, afterAt)
 	seen := map[string]bool{}
 	var out []completionItem
+	// The inserted text replaces everything AFTER the `@`, which the client
+	// leaves in place. That keeps the completion start column at the path
+	// itself, so Neovim filters on what the user typed ("fla" against
+	// "flake.nix") instead of against a prefixed "@fla".
+	start := wordStart + 1
+	if start > char {
+		start = char
+	}
 	for _, p := range paths {
 		if !strings.HasPrefix(p, afterAt) {
 			continue
@@ -491,16 +500,17 @@ func fileCompletion(cwd, word string, line, wordStart, char int) []completionIte
 			continue
 		}
 		seen[p] = true
-		ref := "@" + p
+		insert := p
 		if strings.Contains(p, " ") {
-			ref = `@"` + p + `"`
+			insert = `"` + p + `"`
 		}
 		out = append(out, completionItem{
 			Label:      p,
 			Kind:       complFile,
 			SortText:   p,
-			InsertText: ref,
-			TextEdit:   &textEdit{Range: rng{Start: position{Line: line, Character: wordStart}, End: position{Line: line, Character: char}}, NewText: ref},
+			FilterText: p,
+			InsertText: insert,
+			TextEdit:   &textEdit{Range: rng{Start: position{Line: line, Character: start}, End: position{Line: line, Character: char}}, NewText: insert},
 		})
 		if len(out) >= 200 {
 			break
@@ -741,9 +751,11 @@ func listAgentStems(agentsDir string) []string {
 	return out
 }
 
-// listUnder lists files under root (bounded depth/result count), filtered to
-// those whose relative path starts with prefix. Directories are returned with
-// a trailing slash so the client can complete further segments.
+// listUnder lists files under root (bounded depth/result count) as paths
+// relative to root. Paths are relative to root even when prefix names a
+// subdirectory, so a caller filtering by prefix sees the whole relative path
+// and can insert it verbatim. Directories carry a trailing slash so the client
+// can complete further segments.
 func listUnder(root, prefix string) []string {
 	var out []string
 	var walk func(dir, rel string, depth int)
@@ -775,11 +787,7 @@ func listUnder(root, prefix string) []string {
 			}
 		}
 	}
-	base := root
-	if prefix != "" {
-		base = filepath.Join(root, filepath.Dir(prefix))
-	}
-	walk(base, "", 0)
+	walk(root, "", 0)
 	sort.Strings(out)
 	return out
 }

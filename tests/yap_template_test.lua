@@ -89,7 +89,7 @@ assert(text:match("Summarize the conversation above%."), "template body missing:
 
 -- still parses: system + the template's user message
 local roles = {}
-local msgs = document.parse_buffer(buf)
+local msgs = document.messages(buf)
 for _, m in ipairs(msgs) do
   roles[#roles + 1] = m.role
 end

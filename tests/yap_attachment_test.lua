@@ -47,7 +47,7 @@ assert(att.format == "png", "attachment format wrong: " .. vim.inspect(att))
 local adir = paths.assets_dir(buf)
 assert(path:sub(1, #adir + 1) == adir .. "/", "asset not in the session assets folder: " .. path)
 
-local messages = document.parse_buffer(buf)
+local messages = document.messages(buf)
 assert(messages[#messages].role == "user" and messages[#messages].content == ref)
 
 -- A dropped standalone path is imported automatically by the send preflight.

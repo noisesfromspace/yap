@@ -26,7 +26,7 @@ vim.api.nvim_set_current_win(chat_win)
 yap.live()
 assert(#vim.fn.win_findbuf(tail) == 0, "live from chat did not toggle visible tail view closed")
 -- the session buffer is untouched and still parseable
-assert(#document.parse_buffer(buf) == 1, "session buffer changed")
+assert(#document.messages(buf) == 1, "session buffer changed")
 
 -- The tail view is a drawer too: under the session's own column, and
 -- closing it from the chat refocuses the session window.

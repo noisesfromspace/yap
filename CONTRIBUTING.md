@@ -137,12 +137,15 @@ text and the line-start-anchored parser never matches.
 `harness.model.structure` (Lua) and `agent/document` (Go) are the two readers
 of the session markdown — one per runtime, never two in the same language. The
 Lua parser does the fence-, comment- and marker-aware forward pass
-(incrementally for a streaming append) and every editor consumer derives from
-that one result: `messages()` for the request (R-markers-not-sent,
-R-role-alternation), `tool_regions()` for `:YapClear`, `headings` for
+(incrementally for a streaming append) and every *editor* consumer derives from
+that one result: `tool_regions()` for `:YapClear`, `headings` for
 `:YapCompact`'s history delete, message navigation and `trailing_role`,
 `role_body()` for picker labels, and `open_tail()` for the end-of-turn repair.
-The Go parser feeds the language server (R-language-intelligence). The two are
+The *send* conversion — marker stripping, tool flattening, adjacent-role
+merging and empty-drop (R-markers-not-sent, R-role-alternation) — belongs to
+Go's `agent/document.Messages`, which serves it to the harness over the
+`yap/messages` request; `harness.model.document.messages()` is a query, not an
+implementation, and returns nil when no server is attached. The two are
 locked together by the shared fixtures in `tests/transcript_cases.json`
 (asserted by `agent/document/document_test.go` and
 tests/yap_transcript_conformance_test.lua), and the fence grammar is shared by
@@ -171,10 +174,11 @@ scratch notes or ordinary Markdown), and sending editor context (live cwd and
 streaming state) over `yap/context`. Folding, text objects, navigation and
 their synchronous structural parse stay in Lua; the language server is
 optional and its failure or absence must not affect editing. Send-time
-transcript-to-request conversion remains in Lua (`structure.messages_from`)
-until a deliberate migration moves it to Go. Feature logic must not creep into
-Lua: no completion or diagnostic rules, no second frontmatter field list, no
-re-implementation of document structure in the harness.
+transcript-to-request conversion is Go's (`agent/document.Messages`), reached
+over the `yap/messages` request; the harness asks and forwards, it never
+re-derives the rules. Feature logic must not creep into Lua: no completion or
+diagnostic rules, no second frontmatter field list, no re-implementation of
+document structure or message conversion in the harness.
 
 #### R-pre-heading-ignored — Lines before the first heading are ignored
 
