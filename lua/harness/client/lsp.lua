@@ -37,6 +37,7 @@ function M.ensure()
     init_options = {
       sessions_dir = c.sessions_dir,
       agents_dir = c.agents_dir,
+      models_cache = require("harness.config").models_cache_path(),
     },
     on_exit = function()
       client_id = nil

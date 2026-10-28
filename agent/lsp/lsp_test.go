@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,6 +77,70 @@ func TestCompletionRole(t *testing.T) {
 	items := Completion(text, 0, 4, CompletionCtx{})
 	if len(items) == 0 || items[0].Label != "user" {
 		t.Fatalf("role completion = %+v, want user", items)
+	}
+}
+
+func TestCompletionNoMatchesEncodesAsArray(t *testing.T) {
+	// A completion request with no matches must still return items: [], never
+	// null: Neovim rejects null for a CompletionList.items field.
+	var in bytes.Buffer
+	in.Write(frame(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{"initializationOptions": map[string]any{"sessions_dir": "/tmp/sessions"}},
+	}))
+	uri := "file:///tmp/sessions/a/session.md"
+	in.Write(frame(map[string]any{
+		"jsonrpc": "2.0", "method": "textDocument/didOpen",
+		"params": map[string]any{"textDocument": map[string]any{
+			"uri": uri, "version": 1, "text": "# @user\njust some prose\n",
+		}},
+	}))
+	in.Write(frame(map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "textDocument/completion",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"position":     map[string]any{"line": 1, "character": 5},
+		},
+	}))
+	in.Write(frame(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "shutdown"}))
+	in.Write(frame(map[string]any{"jsonrpc": "2.0", "method": "exit"}))
+
+	var out bytes.Buffer
+	if err := Serve(&in, &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	for _, m := range splitFrames(out.Bytes()) {
+		var resp struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(m, &resp) != nil || resp.ID != 2 {
+			continue
+		}
+		var res struct {
+			Items json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal(resp.Result, &res); err != nil {
+			t.Fatalf("unmarshal completion result: %v", err)
+		}
+		if string(res.Items) != "[]" {
+			t.Fatalf("completion items = %s, want []", res.Items)
+		}
+		return
+	}
+	t.Fatal("no completion response with id 2")
+}
+
+func TestModelCompletionFromCache(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "models")
+	if err := os.WriteFile(cache, []byte("openai/gpt-6.1-sol\ndeepseek/deepseek-flash\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// `model:` completion strips the provider prefix from cached combos.
+	text := "---\nprovider: openai\nmodel:\n---\n# @user\nhi\n"
+	items := Completion(text, 2, 6, CompletionCtx{ModelsCache: cache})
+	if len(items) != 1 || items[0].Label != "gpt-6.1-sol" {
+		t.Fatalf("model completion = %+v, want [gpt-6.1-sol]", items)
 	}
 }
 

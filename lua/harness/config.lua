@@ -109,7 +109,10 @@ local models_cache = nil
 local models_waiters = {}
 local models_refreshing = false
 
-local function models_cache_path()
+--- Path of the cached provider/model list, written by refresh_models from
+--- `yap models`. Exported so the yap LSP client can hand it to the server
+--- (the Go side cannot derive Neovim's cache directory).
+function M.models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
 end
 
@@ -131,7 +134,7 @@ function M.refresh_models()
       end
       if #combos > 0 then
         models_cache = combos
-        local path = models_cache_path()
+        local path = M.models_cache_path()
         vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
         vim.fn.writefile(combos, path)
       end
@@ -146,7 +149,7 @@ end
 --- Load the cached model list from disk, so the picker has an immediate
 --- list before the async refresh finishes. Returns the cached list (or nil).
 function M.load_models_cache()
-  local path = models_cache_path()
+  local path = M.models_cache_path()
   if vim.fn.filereadable(path) == 1 then
     local cached = vim.fn.readfile(path)
     if #cached > 0 then

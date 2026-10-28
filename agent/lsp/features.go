@@ -233,8 +233,9 @@ func regionName(lines []string, r document.Region) string {
 // CompletionCtx carries editor-owned context the server cannot derive from the
 // document itself.
 type CompletionCtx struct {
-	Cwd       string
-	AgentsDir string
+	Cwd         string
+	AgentsDir   string
+	ModelsCache string
 }
 
 // Completion returns completion items for the cursor position.
@@ -405,9 +406,9 @@ func fieldValueCompletion(f fieldDef, startCol, char, line int, provider string,
 	case "tools":
 		return toolCompletion(r)
 	case "model":
-		return modelCompletion(provider, r)
+		return modelCompletion(provider, ctx.ModelsCache, r)
 	case "combos":
-		return combosCompletion(r)
+		return combosCompletion(ctx.ModelsCache, r)
 	}
 	return nil
 }
@@ -418,7 +419,7 @@ func listValueCompletion(key string, startCol, char, line int, ctx CompletionCtx
 	case "tools":
 		return toolCompletion(r)
 	case "models":
-		return combosCompletion(r)
+		return combosCompletion(ctx.ModelsCache, r)
 	case "agent":
 		return agentCompletion(ctx.AgentsDir, r)
 	}
@@ -458,9 +459,9 @@ func agentCompletion(agentsDir string, r rng) []completionItem {
 	return fixedCompletions(listAgentStems(agentsDir), complModule, r)
 }
 
-func modelCompletion(provider string, r rng) []completionItem {
+func modelCompletion(provider, cachePath string, r rng) []completionItem {
 	var names []string
-	for _, combo := range loadModelsCache() {
+	for _, combo := range loadModelsCache(cachePath) {
 		if provider == "" {
 			names = append(names, combo)
 		} else if rest, ok := strings.CutPrefix(combo, provider+"/"); ok {
@@ -470,8 +471,8 @@ func modelCompletion(provider string, r rng) []completionItem {
 	return fixedCompletions(names, complValue, r)
 }
 
-func combosCompletion(r rng) []completionItem {
-	return fixedCompletions(loadModelsCache(), complValue, r)
+func combosCompletion(cachePath string, r rng) []completionItem {
+	return fixedCompletions(loadModelsCache(cachePath), complValue, r)
 }
 
 // ─── Role completion ───────────────────────────────────────────────────────
@@ -731,12 +732,15 @@ func frontmatterClose(lines []string) int {
 	return 0
 }
 
-func loadModelsCache() []string {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return nil
+func loadModelsCache(path string) []string {
+	if path == "" {
+		dir, err := os.UserCacheDir()
+		if err != nil {
+			return nil
+		}
+		path = filepath.Join(dir, "yap", "models")
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "yap", "models"))
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}

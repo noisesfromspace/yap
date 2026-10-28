@@ -115,6 +115,11 @@ type contextParams struct {
 type InitOptions struct {
 	SessionsDir string `json:"sessions_dir"`
 	AgentsDir   string `json:"agents_dir"`
+	// ModelsCache is the path of the provider/model cache the frontend
+	// writes from `yap models` (vim.fn.stdpath("cache") .. "/yap/models").
+	// The server cannot derive it from os.UserCacheDir, which returns the
+	// non-nvim-scoped XDG cache root.
+	ModelsCache string `json:"models_cache"`
 }
 
 // ─── Document store ────────────────────────────────────────────────────────
@@ -131,6 +136,7 @@ type docState struct {
 type Server struct {
 	opts   InitOptions
 	docs   map[string]*docState
+	pending map[string]contextParams // context received before didOpen
 	outMu  sync.Mutex
 	out    *bufio.Writer
 	diagDelay time.Duration
@@ -141,6 +147,7 @@ func New(out io.Writer, opts InitOptions) *Server {
 	return &Server{
 		opts:   opts,
 		docs:   map[string]*docState{},
+		pending: map[string]contextParams{},
 		out:    bufio.NewWriter(out),
 		diagDelay: 200 * time.Millisecond,
 	}
@@ -300,6 +307,14 @@ func (s *Server) isSession(uri string) bool {
 
 func (s *Server) didOpen(p didOpenParams) {
 	d := &docState{text: p.TextDocument.Text, version: p.TextDocument.Version}
+	// The frontend may have sent yap/context before didOpen was processed
+	// (buf_attach_client sends didOpen asynchronously). Apply any pending
+	// context now instead of dropping the cwd, which file completion needs.
+	if c, ok := s.pending[p.TextDocument.URI]; ok {
+		d.cwd = c.Cwd
+		d.streaming = c.Streaming
+		delete(s.pending, p.TextDocument.URI)
+	}
 	s.docs[p.TextDocument.URI] = d
 	if s.isSession(p.TextDocument.URI) {
 		s.scheduleDiagnostics(p.TextDocument.URI, d)
@@ -331,6 +346,9 @@ func (s *Server) didClose(p didCloseParams) {
 func (s *Server) setContext(p contextParams) {
 	d := s.doc(p.URI)
 	if d == nil {
+		// didOpen has not arrived yet (buf_attach_client schedules it);
+		// keep the context for didOpen to apply.
+		s.pending[p.URI] = p
 		return
 	}
 	wasStreaming := d.streaming
@@ -407,9 +425,15 @@ func (s *Server) completionFor(p completionParams) any {
 		return map[string]any{"isIncomplete": false, "items": []any{}}
 	}
 	items := Completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
-		Cwd:       d.cwd,
-		AgentsDir: s.opts.AgentsDir,
+		Cwd:         d.cwd,
+		AgentsDir:   s.opts.AgentsDir,
+		ModelsCache: s.opts.ModelsCache,
 	})
+	if items == nil {
+		// A nil slice marshals to `null`, which Neovim rejects for a
+		// CompletionList.items (expected a CompletionItem[]).
+		items = []completionItem{}
+	}
 	return map[string]any{"isIncomplete": false, "items": items}
 }
 
