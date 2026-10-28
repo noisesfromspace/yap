@@ -319,8 +319,7 @@ function M.label(buf)
       break
     end
   end
-  return "yap:// "
-    .. picker.status(buf)
+  return picker.status(buf)
     .. " "
     .. title
     .. (duplicate and (" [" .. buf .. "]") or "")
@@ -331,7 +330,7 @@ function M.pick()
   local pick = require("mini.pick")
   local items = {}
   -- Match the builtin buffer source's ordering and names, preserving bufnr
-  -- for preview/selection rather than treating the display URI as a filename.
+  -- for preview/selection rather than treating the display label as a filename.
   local output = vim.api.nvim_exec2("buffers", { output = true }).output
   for _, line in ipairs(vim.split(output, "\n")) do
     local buf = tonumber(line:match("^%s*(%d+)"))
@@ -352,13 +351,14 @@ function M.pick()
         for i, item in ipairs(entries) do
           local entry = vim.tbl_extend("force", {}, item)
           local icon, hl = " ", "Normal"
-          if not vim.b[item.bufnr].yap and has_icons then
+          if has_icons then
             local ft = vim.bo[item.bufnr].filetype
-            if vim.bo[item.bufnr].buftype == "terminal" then
-              icon, hl = icons.get("filetype", "terminal")
-            elseif ft == "man" then
+            if ft == "man" then
+              -- man:// URIs have no "file" entry; the filetype does.
               icon, hl = icons.get("filetype", "man")
             else
+              -- "file" resolves a terminal's shell (term://…/zsh -> the zsh
+              -- glyph), ssh configs, and ordinary paths by extension/filetype.
               icon, hl = icons.get("file", vim.api.nvim_buf_get_name(item.bufnr))
             end
           end
@@ -378,21 +378,12 @@ function M.pick()
         }
         for i, item in ipairs(entries) do
           local h = highlights[i]
+          vim.api.nvim_buf_add_highlight(buf, ns, h.hl, i - 1, 0, h.width)
           if vim.b[item.bufnr].yap then
-            vim.api.nvim_buf_add_highlight(buf, ns, "Comment", i - 1, h.prefix, h.prefix + #"yap://")
             local glyph = picker.status(item.bufnr)
             local status = state.pending_approvals[item.bufnr] and "approval"
               or picker.state(item.bufnr)
-            vim.api.nvim_buf_add_highlight(
-              buf,
-              ns,
-              colors[status],
-              i - 1,
-              h.prefix + #"yap:// ",
-              h.prefix + #"yap:// " + #glyph
-            )
-          else
-            vim.api.nvim_buf_add_highlight(buf, ns, h.hl, i - 1, 0, h.width)
+            vim.api.nvim_buf_add_highlight(buf, ns, colors[status], i - 1, h.prefix, h.prefix + #glyph)
           end
         end
       end,

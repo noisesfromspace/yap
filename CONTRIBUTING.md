@@ -249,7 +249,8 @@ session status must not redirect focus.
 `buffers()` lists ordinary listed buffers through MiniPick, preserving file, terminal
 and man items and selecting by buffer number. The shared
 `require("harness.session.buffers").label(buf)` returns
-`yap:// {status icon} {title}` for Yap buffers and `nil` otherwise. Labels are
+`{status icon} {title}` for Yap buffers and `nil` otherwise; the picker
+prepends the buffer's filetype icon. Labels are
 presentation only, never buffer names. Add a buffer-number suffix only when
 titles collide. `instances()` retains the open-session tree and carries no
 default keymap; `sessions()` retains the saved-session tree. Why: sessions belong in ordinary buffer navigation without sacrificing

@@ -175,8 +175,9 @@ All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-ke
 Ordinary sessions are listed buffers with their real `session.md` filenames.
 Use your normal buffer navigation, file explorer, and Neovim deletion commands.
 `require("harness").buffers()` opens MiniPick's regular buffer picker with
-`yap:// {status icon} {title}` labels for Yap sessions; file, terminal and man
-buffers keep their usual labels. Selection uses the buffer number, not the label.
+filetype icons and `{status icon} {title}` labels for Yap sessions; file,
+terminal and man buffers keep their usual labels. Selection uses the buffer
+number, not the label.
 `require("harness.session.buffers").label(buf)` returns that label for a Yap
 buffer and `nil` otherwise. Only duplicate titles gain a buffer-number suffix.
 Subagent buffers stay unlisted and do not count in the winbar overview.

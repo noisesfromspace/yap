@@ -26,7 +26,7 @@ end
 local a = yap.new()
 local path = vim.b[a].yap_path
 title(a, "Pinned", "Generated")
-assert(buffers.label(a) == "yap:// " .. yap.config.icons.idle .. " Pinned", "title label missing")
+assert(buffers.label(a) == yap.config.icons.idle .. " Pinned", "title label missing")
 assert(vim.api.nvim_buf_get_name(a) == path, "label renamed the session buffer")
 assert(vim.fn.filereadable(path) == 1, "real session file missing")
 assert(vim.fn.expand("%:p:h") == vim.fn.fnamemodify(path, ":h"), "explorer directory is not the session directory")
@@ -46,7 +46,7 @@ for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_appr
     running = "running",
     pending_approvals = "approval",
   })[key]
-  assert(buffers.label(a) == "yap:// " .. yap.config.icons[icon] .. " Pinned", "label state missing: " .. key)
+  assert(buffers.label(a) == yap.config.icons[icon] .. " Pinned", "label state missing: " .. key)
 end
 for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_approvals" }) do
   state[key][a] = nil
@@ -59,9 +59,9 @@ assert(la ~= lb, "duplicate titles need distinct labels")
 assert(la:find("Pinned", 1, true) and lb:find("Pinned", 1, true), "duplicates lost their title")
 assert(la:match(tostring(a) .. "%D*$") and lb:match(tostring(b) .. "%D*$"), "duplicates need buffer-number suffixes")
 title(b, "Other")
-assert(buffers.label(a) == "yap:// " .. yap.config.icons.idle .. " Pinned", "unique title kept its suffix")
+assert(buffers.label(a) == yap.config.icons.idle .. " Pinned", "unique title kept its suffix")
 title(b, "", "Generated title")
-assert(buffers.label(b) == "yap:// " .. yap.config.icons.idle .. " Generated title", "description fallback missing")
+assert(buffers.label(b) == yap.config.icons.idle .. " Generated title", "description fallback missing")
 local lines = vim.api.nvim_buf_get_lines(b, 0, -1, false)
 lines = vim.tbl_filter(function(line)
   return not line:match("^description:")
@@ -69,7 +69,7 @@ end, lines)
 vim.api.nvim_buf_set_lines(b, 0, -1, false, lines)
 assert(
   buffers.label(b)
-    == "yap:// " .. yap.config.icons.idle .. " " .. require("harness.path").session_name(vim.b[b].yap_path),
+    == yap.config.icons.idle .. " " .. require("harness.path").session_name(vim.b[b].yap_path),
   "session directory fallback missing"
 )
 
@@ -120,17 +120,24 @@ for _, buf in ipairs({ a, b }) do
   assert(items[buf].text == buffers.label(buf), "picker disagrees with shared label API")
 end
 assert(not items[child], "unlisted subagent leaked into buffer picker")
--- Rendering keeps one status icon, with a muted URI prefix.
+-- Rendering gives every entry its filetype icon; a Yap session keeps its
+-- status glyph in the label and the markdown filetype icon on the left.
 local display = vim.api.nvim_create_buf(false, true)
 captured.source.show(display, { items[a], items[term], items[man], items[filebuf] }, {})
 local shown = vim.api.nvim_buf_get_lines(display, 0, -1, false)
-assert(shown[1] == "  " .. buffers.label(a), "Yap entry gained a redundant file icon")
+local has_icons, icons = pcall(require, "mini.icons")
+local yap_icon = has_icons and icons.get("file", vim.api.nvim_buf_get_name(a)) or " "
+assert(shown[1] == yap_icon .. " " .. buffers.label(a), "Yap entry missing its filetype icon")
+-- A terminal resolves its shell by name (term://…/zsh -> the shell glyph),
+-- not the generic terminal filetype, which has no icon of its own.
+local term_icon = has_icons and icons.get("file", vim.api.nvim_buf_get_name(term)) or " "
+assert(shown[2] == term_icon .. " " .. items[term].text, "terminal lost its shell icon")
 vim.api.nvim_buf_delete(display, { force = true })
 for _, buf in ipairs({ filebuf, term, man }) do
   assert(items[buf] and items[buf].text == baseline[buf], "ordinary picker item changed: " .. buf)
 end
 
--- Choosing a synthetic label must switch by bufnr, never try to edit yap://.
+-- Choosing a synthetic label must switch by bufnr, never try to edit the label.
 local choose = captured.source.choose or pick.default_choose
 choose(items[a])
 assert(vim.api.nvim_get_current_buf() == a, "picker did not select by buffer number")

@@ -480,9 +480,9 @@ buffer behavior, without preferring waiting or running sessions.
 
                                                         *harness.buffers()*
 require("harness").buffers() opens MiniPick's regular buffer picker. Yap items
-show `yap:// {status icon} {title}`; file, terminal and man items keep their
-normal labels. Selection uses the buffer number. MiniPick must be installed.
-There is no default keymap for this function.
+show the filetype icon followed by `{status icon} {title}`; file, terminal and
+man items keep their normal labels. Selection uses the buffer number. MiniPick
+must be installed. There is no default keymap for this function.
 
                                          *harness.session.buffers.label()*
 require("harness.session.buffers").label(buf) returns the same display label for
