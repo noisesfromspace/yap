@@ -132,27 +132,49 @@ starts with a yap marker opener as `\<!-- yap:…`, and escapes `<style>` /
 `<script>` open tags, so character-based markdown renderers show the literal
 text and the line-start-anchored parser never matches.
 
-#### R-single-reader — One structural parser reads the session document
+#### R-single-reader — One structural parser per runtime
 
-`harness.model.structure` is the only reader of the session markdown. It does
-the fence-, comment- and marker-aware forward pass (incrementally for a
-streaming append) and every consumer derives from that one result:
-`messages()` for the request (R-markers-not-sent, R-role-alternation),
-`tool_regions()` for `:YapClear`, `headings` for `:YapCompact`'s history
-delete, message navigation and `trailing_role`, `role_body()` for picker
-labels, and `open_tail()` for the end-of-turn repair. Why: five hand-written
+`harness.model.structure` (Lua) and `agent/document` (Go) are the two readers
+of the session markdown — one per runtime, never two in the same language. The
+Lua parser does the fence-, comment- and marker-aware forward pass
+(incrementally for a streaming append) and every editor consumer derives from
+that one result: `messages()` for the request (R-markers-not-sent,
+R-role-alternation), `tool_regions()` for `:YapClear`, `headings` for
+`:YapCompact`'s history delete, message navigation and `trailing_role`,
+`role_body()` for picker labels, and `open_tail()` for the end-of-turn repair.
+The Go parser feeds the language server (R-language-intelligence). The two are
+locked together by the shared fixtures in `tests/transcript_cases.json`
+(asserted by `agent/document/document_test.go` and
+tests/yap_transcript_conformance_test.lua), and the fence grammar is shared by
+`agent/render.FenceLine` and `tests/fence_cases.json`. Why: five hand-written
 line scanners had drifted apart, each with its own idea of where a region
 ends, and every bug in this area was one of them disagreeing with the others
 about the same buffer — an unclosed tool region swallowing the next message,
 or a `# @assistant` / `<!-- yap:tool` quoted inside a fenced result taken for
-structure. Never add a second line-level matcher for document structure;
-extend the parser instead.
+structure. Never add a second line-level matcher for document structure in
+either runtime; extend that runtime's parser instead, and keep the shared
+fixtures covering the new case.
 
 A tool region ends at its own closer. A `# @role` line inside a *closed* region
 is content (a model quoting a heading); an *unclosed* region is malformed and
 is bounded at its first inner heading, and a second opener while a region is
 still open means the first was never closed — both reset the boundary at the
 next real message so broken output cannot swallow the conversation.
+
+#### R-language-intelligence — Language features live in Go, editor structure in Lua
+
+The `yap lsp` server (agent/lsp) owns document symbols, completion and
+diagnostics, plus the Go-owned frontmatter field inventory and the
+provider/model/tool catalogs those features draw on. The Lua harness owns only
+the plumbing: starting the client, attaching it to `b:yap` buffers (never
+scratch notes or ordinary Markdown), and sending editor context (live cwd and
+streaming state) over `yap/context`. Folding, text objects, navigation and
+their synchronous structural parse stay in Lua; the language server is
+optional and its failure or absence must not affect editing. Send-time
+transcript-to-request conversion remains in Lua (`structure.messages_from`)
+until a deliberate migration moves it to Go. Feature logic must not creep into
+Lua: no completion or diagnostic rules, no second frontmatter field list, no
+re-implementation of document structure in the harness.
 
 #### R-pre-heading-ignored — Lines before the first heading are ignored
 
@@ -551,9 +573,11 @@ caught and reported the same way.
 
 Session buffers are unlisted (`buflisted = false`), which makes mini.diff's
 `BufEnter` auto-enable skip them — its guard requires a listed buffer — so no
-`minidiff_disable` flag is needed. An LspAttach guard stops any markdown LSP
-client, so semantic-token/inlay-hint streams — meaningless on a transcript —
-don't pay per-redraw cost. Session buffers are coloured by Vim's markdown syntax
+`minidiff_disable` flag is needed. An LspAttach guard detaches any non-yap LSP
+client buffer-locally, so semantic-token/inlay-hint streams — meaningless on a
+transcript — don't pay per-redraw cost, while the `yap lsp` client (symbols,
+completion, diagnostics) stays attached (R-language-intelligence). Session
+buffers are coloured by Vim's markdown syntax
 (`syntax/markdown.vim`) instead of the tree-sitter highlighter: the
 highlighter's per-redraw range is `line('w0')..line('w$')`, which with folds
 closed spans thousands of *buffer* rows on a long transcript, so its cost

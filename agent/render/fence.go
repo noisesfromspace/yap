@@ -120,13 +120,14 @@ func fenceRun(s string) (byte, int, string) {
 	return s[0], i, s[i:]
 }
 
-// fenceLine classifies a RAW line as a fence opener: up to 3 leading
+// FenceLine classifies a RAW line as a fence opener: up to 3 leading
 // spaces, then a run of >=3 backticks or tildes. Returns (char, run,
 // tail, ok). This is the CommonMark "is this line a fence" primitive;
 // Lua's fold.fence_run must agree with it — they are locked together by
 // the shared table in tests/fence_cases.json (see fence_conformance_test.go
-// and yap_fence_conformance_test.lua).
-func fenceLine(line string) (byte, int, string, bool) {
+// and yap_fence_conformance_test.lua). Exported so the document parser
+// (agent/document) reuses the one fence grammar instead of a second copy.
+func FenceLine(line string) (byte, int, string, bool) {
 	t := strings.TrimLeft(line, " ")
 	if len(line)-len(t) > 3 {
 		return 0, 0, "", false
@@ -157,7 +158,7 @@ func unclosedFence(lines []string) string {
 	var char byte
 	var n int
 	for _, l := range lines {
-		c, k, tail, ok := fenceLine(l)
+		c, k, tail, ok := FenceLine(l)
 		if !ok {
 			continue
 		}

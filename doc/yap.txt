@@ -14,7 +14,8 @@ CONTENTS                                                     *yap-contents*
  10. Templates & skills ... |yap-templates|
  11. The guard gate ....... |yap-guard-gate|
  12. Tools ................ |yap-tools|
- 13. Glossary ............. |yap-glossary|
+ 13. Language server ....... |yap-lsp|
+ 14. Glossary ............. |yap-glossary|
 
 ==============================================================================
 1. INTRODUCTION                                          *yap-introduction*
@@ -838,7 +839,36 @@ while it is open. The tool result carries a link to the session file, so a
 finished agent stays reachable.
 
 ==============================================================================
-13. GLOSSARY                                                *yap-glossary*
+13. LANGUAGE SERVER                                            *yap-lsp*
+
+A managed session buffer carries one language server, `yap lsp`, started and
+attached by the harness. It provides three language features over standard
+LSP, backed by the Go document parser (agent/document):
+
+  Document symbols  An outline of the conversation: frontmatter, then one
+                    symbol per message (role + a short body preview) with
+                    tool/thinking/error regions as children.
+  Completion        Frontmatter keys and values (`provider`, `model`,
+                    `reasoning_level`, `agent`, `tools`, ...), role headings,
+                    and `@path` file references.
+  Diagnostics       Structural warnings: unterminated or duplicate frontmatter,
+                    invalid `reasoning_level`/`turns`, unknown message roles,
+                    malformed tool headers, and unclosed regions.
+
+The server is session-only: the client attaches to buffers that carry `b:yap`,
+never scratch notes or ordinary Markdown. Model completion reads the cached
+`yap models` list; it never hits the network, and opening a session never
+starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
+are suppressed while a reply is streaming.
+
+The language server is optional: if the binary is unavailable (or predates
+`yap lsp`), editing is unaffected and the features simply stay off. Folding,
+text objects and navigation remain local and synchronous; the server does not
+participate in them. See R-language-intelligence in CONTRIBUTING.md for the
+Lua/Go ownership boundary.
+
+==============================================================================
+14. GLOSSARY                                                *yap-glossary*
 
 The canonical vocabulary for yap's features and mechanisms. Use these names in
 code, docs, and conversation; the right-hand column names the terms each

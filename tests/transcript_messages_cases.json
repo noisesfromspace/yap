@@ -1,0 +1,130 @@
+[
+ {
+  "name": "basic",
+  "text": "# @user\nhello\n# @assistant\nanswer\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "hello"
+   },
+   {
+    "role": "assistant",
+    "content": "answer"
+   }
+  ]
+ },
+ {
+  "name": "pre-heading-ignored",
+  "text": "preamble\n# @user\nhi\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "hi"
+   }
+  ]
+ },
+ {
+  "name": "adjacent-merge",
+  "text": "# @user\nfirst\n# @user\nsecond\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "first\n\nsecond"
+   }
+  ]
+ },
+ {
+  "name": "empty-drop",
+  "text": "# @user\n\n# @assistant\nreply\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "reply"
+   }
+  ]
+ },
+ {
+  "name": "tool-flatten-object",
+  "text": "# @assistant\n<!-- yap:tool {\"id\":\"t1\",\"name\":\"read\",\"arguments\":{\"path\":\"/x\"}} -->\nresult\n<!-- /yap:tool -->\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: read\nArguments: {\"path\":\"/x\"}\nTool result:\nresult"
+   }
+  ]
+ },
+ {
+  "name": "tool-flatten-string-args",
+  "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"bash\",\"arguments\":\"echo hi\"} -->\noutput\n<!-- /yap:tool -->\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: bash\nArguments: echo hi\nTool result:\noutput"
+   }
+  ]
+ },
+ {
+  "name": "tool-in-user-skipped",
+  "text": "# @user\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\",\"arguments\":{}} -->\nx\n<!-- /yap:tool -->\nafter\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "after"
+   }
+  ]
+ },
+ {
+  "name": "marker-stripped",
+  "text": "# @assistant\n<!-- yap:thinking\nsecret\n-->\nvisible\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "visible"
+   }
+  ]
+ },
+ {
+  "name": "heading-in-closed-tool",
+  "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\",\"arguments\":{}} -->\n# @user\n<!-- /yap:tool -->\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: read\nArguments: {}\nTool result:\n# @user"
+   }
+  ]
+ },
+ {
+  "name": "unclosed-tool-promotes-heading",
+  "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\",\"arguments\":{}} -->\npartial\n# @user\nquestion\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: read\nArguments: {}\nTool result:"
+   },
+   {
+    "role": "user",
+    "content": "question"
+   }
+  ]
+ },
+ {
+  "name": "tool-with-ui",
+  "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"write\",\"arguments\":{\"path\":\"/x\"}} -->\nresult\n<!-- yap:ui -->\ndiff\n<!-- /yap:ui -->\n<!-- /yap:tool -->\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: write\nArguments: {\"path\":\"/x\"}\nTool result:\nresult"
+   }
+  ]
+ },
+ {
+  "name": "multi-line-header",
+  "text": "# @assistant\n<!-- yap:tool\n{\n  \"id\": \"t\",\n  \"name\": \"read\",\n  \"arguments\": {\n    \"path\": \"/x\"\n  }\n}\n-->\nresult\n<!-- /yap:tool -->\n",
+  "messages": [
+   {
+    "role": "assistant",
+    "content": "Tool call: read\nArguments: {\"path\":\"/x\"}\nTool result:\nresult"
+   }
+  ]
+ }
+]

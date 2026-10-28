@@ -1,0 +1,92 @@
+[
+  {
+    "name": "basic",
+    "text": "preamble\n# @user\nhello\n# @assistant\nanswer\n",
+    "headings": [{ "role": "user", "line": 2 }, { "role": "assistant", "line": 4 }],
+    "regions": [],
+    "frontmatter": 0
+  },
+  {
+    "name": "fence-and-tool-ui",
+    "text": "# @assistant\n```\n# @user\n<!-- yap:tool fake -->\n```\n<!-- yap:tool {x} -->\n<!-- yap:ui -->\ndiff\n<!-- /yap:ui -->\nresult\n<!-- /yap:tool -->\n",
+    "headings": [{ "role": "assistant", "line": 1 }],
+    "regions": [{ "kind": "tool", "start": 6, "finish": 11, "header_finish": 6, "ui_start": 7, "ui_finish": 9 }],
+    "frontmatter": 0
+  },
+  {
+    "name": "unfinished-tool",
+    "text": "# @assistant\n<!-- yap:tool {x} -->\npartial\n# @user\nquestion\n",
+    "headings": [{ "role": "assistant", "line": 1 }, { "role": "user", "line": 4 }],
+    "regions": [{ "kind": "tool", "start": 2, "finish": 3, "header_finish": 2, "unclosed": true }],
+    "frontmatter": 0
+  },
+  {
+    "name": "frontmatter-comment",
+    "text": "---\ntitle: x\n---\n# @user\n<!-- yap:thinking\nhidden\n-->\n",
+    "headings": [{ "role": "user", "line": 4 }],
+    "regions": [{ "kind": "thinking", "start": 5, "finish": 7 }],
+    "frontmatter": 3
+  },
+  {
+    "name": "closed-tool-quotes-heading",
+    "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\",\"arguments\":{}} -->\nresult quoting a heading:\n# @user\nmore result\n<!-- /yap:tool -->\n",
+    "headings": [{ "role": "assistant", "line": 1 }],
+    "regions": [{ "kind": "tool", "start": 2, "finish": 6, "header_finish": 2 }],
+    "frontmatter": 0
+  },
+  {
+    "name": "second-opener",
+    "text": "# @assistant\n<!-- yap:tool {\"id\":\"a\"} -->\nfirst\n<!-- yap:tool {\"id\":\"b\"} -->\nsecond\n<!-- /yap:tool -->\n",
+    "headings": [{ "role": "assistant", "line": 1 }],
+    "regions": [
+      { "kind": "tool", "start": 2, "finish": 3, "header_finish": 2 },
+      { "kind": "tool", "start": 4, "finish": 6, "header_finish": 4 }
+    ],
+    "frontmatter": 0
+  },
+  {
+    "name": "second-opener-with-inner",
+    "text": "# @assistant\n<!-- yap:tool {\"id\":\"a\"} -->\n# @user\nquoted\n<!-- yap:tool {\"id\":\"b\"} -->\nsecond\n<!-- /yap:tool -->\n",
+    "headings": [{ "role": "assistant", "line": 1 }, { "role": "user", "line": 3 }],
+    "regions": [
+      { "kind": "tool", "start": 2, "finish": 2, "header_finish": 2 },
+      { "kind": "tool", "start": 5, "finish": 7, "header_finish": 5 }
+    ],
+    "frontmatter": 0
+  },
+  {
+    "name": "multi-line-tool-header",
+    "text": "# @assistant\n<!-- yap:tool\n{\"id\":\"t\",\"name\":\"read\",\"arguments\":{\"path\":\"/x\"}}\n-->\nresult\n<!-- /yap:tool -->\n",
+    "headings": [{ "role": "assistant", "line": 1 }],
+    "regions": [{ "kind": "tool", "start": 2, "finish": 6, "header_finish": 4 }],
+    "frontmatter": 0
+  },
+  {
+    "name": "unclosed-thinking-bounded-by-heading",
+    "text": "# @user\n<!-- yap:thinking\nhidden text\n# @assistant\nanswer\n",
+    "headings": [{ "role": "user", "line": 1 }, { "role": "assistant", "line": 4 }],
+    "regions": [{ "kind": "thinking", "start": 2, "finish": 3 }],
+    "frontmatter": 0
+  },
+  {
+    "name": "open-tool-no-inner",
+    "text": "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"bash\",\"arguments\":{}} -->\npartial result\n",
+    "headings": [{ "role": "assistant", "line": 1 }],
+    "regions": [{ "kind": "tool", "start": 2, "header_finish": 2 }],
+    "frontmatter": 0
+  },
+  {
+    "name": "tilde-fence",
+    "text": "# @user\n~~~\n# @assistant\n~~~\nanswer\n",
+    "headings": [{ "role": "user", "line": 1 }],
+    "regions": [],
+    "frontmatter": 0
+  },
+  {
+    "name": "tool-header-interrupted",
+    "text": "# @assistant\n<!-- yap:tool\n{\"id\":\"t\"}\n# @user\nquestion\n",
+    "headings": [{ "role": "assistant", "line": 1 }, { "role": "user", "line": 4 }],
+    "regions": [{ "kind": "tool", "start": 2, "finish": 3 }],
+    "frontmatter": 0
+  }
+]

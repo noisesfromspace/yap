@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"boers.email/yap/agent/config"
+	"boers.email/yap/agent/document"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/llm/goai"
 	"boers.email/yap/agent/price"
@@ -34,7 +35,15 @@ type Message struct {
 }
 
 type Request struct {
+	// Messages is the one-shot `yap send` shape: already-flattened messages.
+	// A serve turn instead sends Transcript and lets the backend flatten it.
 	Messages []Message `json:"messages"`
+	// Transcript is the raw session markdown for a serve turn. When set,
+	// System (the About Yap boilerplate) is prepended and Context (the
+	// transient cwd/git tail) is appended to the trailing user message.
+	Transcript string `json:"transcript,omitempty"`
+	System     string `json:"system,omitempty"`
+	Context    string `json:"context,omitempty"`
 	Tools    *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
 	// ReasoningLevel is the cross-provider reasoning-effort knob (low|medium|high).
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
@@ -77,6 +86,53 @@ func providerToolDefs(allowed *[]string) []llm.Tool {
 		})
 	}
 	return defs
+}
+
+// buildLLMMessages converts flattened transcript messages (role + text) into
+// the adapter message list: image references in user content become parts,
+// and any unsupported role is rejected.
+func buildLLMMessages(msgs []document.Message) ([]llm.Message, error) {
+	out := make([]llm.Message, 0, len(msgs))
+	for _, m := range msgs {
+		var role llm.Role
+		switch m.Role {
+		case "system":
+			role = llm.RoleSystem
+		case "user":
+			role = llm.RoleUser
+		case "assistant":
+			role = llm.RoleAssistant
+		default:
+			return nil, wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("unsupported message role %q", m.Role)}
+		}
+		var content []llm.Part
+		if m.Content != "" {
+			if role == llm.RoleUser {
+				c, err := userParts(m.Content)
+				if err != nil {
+					return nil, err
+				}
+				content = c
+			} else {
+				content = append(content, llm.Part{Type: llm.PartText, Text: m.Content})
+			}
+		}
+		out = append(out, llm.Message{Role: role, Content: content})
+	}
+	return out, nil
+}
+
+// appendContextTail appends the transient per-send context (cwd, git) to the
+// trailing user message, or adds a trailing user message when there is none
+// (R-request-context-tail). Mirrors the Lua send path's context-tail append.
+func appendContextTail(msgs []document.Message, tail string) []document.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			msgs[i].Content += "\n\n" + tail
+			return msgs
+		}
+	}
+	return append(msgs, document.Message{Role: "user", Content: tail})
 }
 
 // ─── Agent loop ──────────────────────────────────────────────────────────────
@@ -229,11 +285,13 @@ var (
 
 // stripFences removes fenced code blocks (``` and ~~~) so a quoted example
 // of the tool-call syntax is not mistaken for a live call. A model that
-// really wants to run a tool emits the XML bare, never fenced.
+// really wants to run a tool emits the XML bare, never fenced. Fence tracking
+// follows render.FenceLine (the shared CommonMark grammar), not the old
+// exactly-three-char heuristic.
 func stripFences(text string) string {
 	var out []byte
-	inFence := false
-	fence := ""
+	var fence byte
+	var fenceN int
 	for len(text) > 0 {
 		i := strings.IndexByte(text, '\n')
 		var line, rest string
@@ -242,17 +300,16 @@ func stripFences(text string) string {
 		} else {
 			line, rest = text[:i], text[i+1:]
 		}
-		trimmed := strings.TrimLeft(line, " \t")
-		if !inFence {
-			if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-				inFence = true
-				fence = trimmed[:3]
+		c, n, tail, ok := render.FenceLine(line)
+		if fence == 0 {
+			if ok {
+				fence, fenceN = c, n
 			} else {
 				out = append(out, line...)
 				out = append(out, '\n')
 			}
-		} else if strings.HasPrefix(trimmed, fence) {
-			inFence = false
+		} else if ok && c == fence && n >= fenceN && strings.TrimSpace(tail) == "" {
+			fence = 0
 		}
 		text = rest
 	}
@@ -386,39 +443,36 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		return err
 	}
 
-	if len(req.Messages) == 0 {
+	// Build the flattened request messages. A serve turn carries the raw
+	// transcript and the backend flattens it (R-single-reader: Go owns the
+	// send conversion); the one-shot `yap send` path carries already-flattened
+	// messages.
+	var src []document.Message
+	if req.Transcript != "" {
+		src = document.Messages(req.Transcript)
+		if req.System != "" {
+			src = append([]document.Message{{Role: "system", Content: req.System}}, src...)
+		}
+		if req.Context != "" {
+			src = appendContextTail(src, req.Context)
+		}
+	} else {
+		src = make([]document.Message, 0, len(req.Messages))
+		for _, m := range req.Messages {
+			if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
+				return wire.CodedError{Code: wire.CodeInvalidParam, Err: errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")}
+			}
+			src = append(src, document.Message{Role: m.Role, Content: m.Content})
+		}
+	}
+	if len(src) == 0 {
 		return wire.CodedError{Code: wire.CodeInvalidParam, Err: errors.New("request contains no messages")}
 	}
 
 	out := bufio.NewWriter(outw)
-	messages := make([]llm.Message, 0, len(req.Messages))
-	for _, m := range req.Messages {
-		if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
-			return wire.CodedError{Code: wire.CodeInvalidParam, Err: errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")}
-		}
-		var role llm.Role
-		switch m.Role {
-		case "system":
-			role = llm.RoleSystem
-		case "user":
-			role = llm.RoleUser
-		case "assistant":
-			role = llm.RoleAssistant
-		default:
-			return wire.CodedError{Code: wire.CodeInvalidParam, Err: fmt.Errorf("unsupported message role %q", m.Role)}
-		}
-		var content []llm.Part
-		if m.Content != "" {
-			if role == llm.RoleUser {
-				content, err = userParts(m.Content)
-				if err != nil {
-					return err
-				}
-			} else {
-				content = append(content, llm.Part{Type: llm.PartText, Text: m.Content})
-			}
-		}
-		messages = append(messages, llm.Message{Role: role, Content: content})
+	messages, err := buildLLMMessages(src)
+	if err != nil {
+		return err
 	}
 	var totPrompt, totCompletion int
 	lastPrompt := 0

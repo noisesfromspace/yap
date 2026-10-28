@@ -11,7 +11,26 @@ import (
 // `# @system`) — the message-boundary syntax the harness emits and the Lua
 // parser treats as structure. Any ASCII word after `# @`, then only
 // whitespace.
-var roleHeadingRe = regexp.MustCompile(`^# @[A-Za-z]+\s*$`)
+var roleHeadingRe = regexp.MustCompile(`^# @([A-Za-z]+)\s*$`)
+
+// RoleHeading reports whether line is a bare role heading and returns the
+// role. It is the single Go definition of the message-boundary grammar:
+// both the writer (which neutralizes it) and the document parser (which
+// treats it as structure) call this, and Lua's structure.HEAD must agree.
+func RoleHeading(line string) (string, bool) {
+	m := roleHeadingRe.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// IsMarkerLine reports whether line starts a yap marker opener or closer
+// (`<!-- yap:...` or `<!-- /yap:...`). Shared with the document parser so the
+// tokens the writer escapes are exactly the tokens the parser skips.
+func IsMarkerLine(line string) bool {
+	return strings.HasPrefix(line, "<!-- yap:") || strings.HasPrefix(line, "<!-- /yap:")
+}
 
 // escapeProseLine neutralizes structural tokens in a streamed prose line
 // that is NOT inside a fenced code block. Inside a fence the caller does not
@@ -21,10 +40,10 @@ var roleHeadingRe = regexp.MustCompile(`^# @[A-Za-z]+\s*$`)
 // the line-start-anchored Lua parsers (and treesitter for tags) no longer
 // match.
 func escapeProseLine(line string) string {
-	if strings.HasPrefix(line, "<!-- yap:") || strings.HasPrefix(line, "<!-- /yap:") {
+	if IsMarkerLine(line) {
 		return "\\" + line
 	}
-	if roleHeadingRe.MatchString(line) {
+	if _, ok := RoleHeading(line); ok {
 		return "\\" + line
 	}
 	return rawTextTagRe.ReplaceAllString(line, "\\<$1$2")
@@ -101,13 +120,13 @@ func (p *ProseEscaper) writeLine(line string, nl bool) {
 		suffix = "\n"
 	}
 	if p.inFence {
-		if c, k, tail, ok := fenceLine(line); ok && c == p.fenceChar && k >= p.fenceLen && strings.TrimSpace(tail) == "" {
+		if c, k, tail, ok := FenceLine(line); ok && c == p.fenceChar && k >= p.fenceLen && strings.TrimSpace(tail) == "" {
 			p.inFence = false
 		}
 		p.w.WriteString(line + suffix)
 		return
 	}
-	if c, k, _, ok := fenceLine(line); ok {
+	if c, k, _, ok := FenceLine(line); ok {
 		p.inFence = true
 		p.fenceChar = c
 		p.fenceLen = k

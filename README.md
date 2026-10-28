@@ -40,6 +40,8 @@ Inspired by pi and gptel.
 - Providers: native OpenAI, Anthropic, Gemini and DeepSeek, any
   OpenAI-compatible endpoint, or a ChatGPT plan login.
 - An append-only audit log of every tool call, result and approval, per session.
+- A session-only language server (`yap lsp`) for document symbols, completion
+  and structural diagnostics, scoped to managed sessions.
 - Images dropped into the buffer, sent to the model as image parts.
 
 ## Tools

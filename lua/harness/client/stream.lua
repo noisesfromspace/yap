@@ -24,6 +24,7 @@ local paths = require("harness.path")
 local session = require("harness.session")
 local system = require("harness.client.system")
 local maintain = require("harness.session.maintain")
+local lsp = require("harness.client.lsp")
 
 -- Per-buffer state aliases (kept in harness.state so winbar/picker/setup
 -- reach the same tables).
@@ -296,39 +297,27 @@ function M.send(buf)
     vim.notify("yap: " .. attach_err, vim.log.levels.WARN)
     return false
   end
+  -- Parse once for the empty-send guard and session titling. The send
+  -- itself ships the raw transcript and lets the backend flatten it
+  -- (R-single-reader: Go owns the send conversion); these two consumers are
+  -- the remaining synchronous Lua uses, locked to document.Messages by
+  -- tests/transcript_messages_cases.json.
   local messages = document.parse_buffer(buf)
   if #messages == 0 then
     vim.notify("yap: no message to send; write under # @user", vim.log.levels.WARN)
     return
   end
 
-  -- The harness's own boilerplate is a stable system prefix, kept first so
-  -- it never perturbs the prompt cache. Transient environment context (cwd,
-  -- git status) is appended to the trailing user message below instead.
-  table.insert(messages, 1, { role = "system", content = system.about(buf) })
-
   -- Label the session from the latest user message before transient context
   -- is appended, so the title model never sees cwd/git.
   describe.refresh(buf, "user", messages)
 
+  -- Transient environment context (cwd, git status) is appended to the
+  -- trailing user message by the backend (R-request-context-tail), not here.
   local extra = context.snapshot()
-  if extra then
-    -- Append to the most recent user message: normally the trailing prompt,
-    -- but a hand-written `# @assistant` prefill stays last so its prefill
-    -- semantics survive.
-    local target
-    for i = #messages, 1, -1 do
-      if messages[i].role == "user" then
-        target = messages[i]
-        break
-      end
-    end
-    if target then
-      target.content = target.content .. "\n\n" .. extra
-    else
-      messages[#messages + 1] = { role = "user", content = extra }
-    end
-  end
+  -- The harness's own boilerplate is a stable system prefix, kept first so
+  -- it never perturbs the prompt cache.
+  local system_prompt = system.about(buf)
 
   errors[buf] = nil
   state.error_code[buf] = nil
@@ -431,6 +420,7 @@ function M.send(buf)
       finish_flush()
       sync_followers()
       running[buf] = nil
+      lsp.notify_streaming(buf, false)
       follow_override[buf] = nil
       scratchmod.refresh(vim.b[buf].yap_scratch)
       local stderr = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
@@ -643,6 +633,7 @@ function M.send(buf)
   end
 
   running[buf] = process
+  lsp.notify_streaming(buf, true)
   scratchmod.refresh(vim.b[buf].yap_scratch)
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
@@ -666,7 +657,13 @@ function M.send(buf)
     v = 1,
     provider = provider,
     model = model,
-    messages = messages,
+    -- The raw transcript, not flattened messages: the backend owns the
+    -- send conversion (R-single-reader). System is the About Yap prefix;
+    -- context is the transient cwd/git tail appended to the trailing user
+    -- message by the backend (R-request-context-tail).
+    transcript = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"),
+    system = system_prompt,
+    context = extra,
     tools = tools,
     reasoning_level = reasoning_level,
     -- Request-only (like the context tail): the backend's own cwd is fixed

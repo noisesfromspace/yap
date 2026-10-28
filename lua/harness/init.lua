@@ -31,6 +31,7 @@ local guard = require("harness.ui.guard")
 local fold = require("harness.ui.fold")
 local audit = require("harness.client.audit")
 local session = require("harness.session")
+local lsp = require("harness.client.lsp")
 
 local stream = require("harness.client.stream")
 local buffers = require("harness.session.buffers")
@@ -549,19 +550,32 @@ function M.setup(opts)
     end
   end
 
-  -- yap buffers carry no language server: the buffer is the conversation
-  -- (R-buffer-only-state), and a markdown LSP streaming semantic-token/inlay-hint updates is
-  -- pure per-redraw cost. The guard stops any client that attaches to a
-  -- marked buffer; setup_buffer marks the buffer and stops clients that
-  -- attached during :edit before the mark existed.
+  -- Session buffers carry only the yap language server (symbols, completion,
+  -- diagnostics). Any other client that attaches is detached buffer-locally,
+  -- so a shared markdown server keeps serving ordinary files while its
+  -- semantic-token/inlay-hint stream stays off the large session buffer.
   local group = vim.api.nvim_create_augroup("YapLsp", { clear = true })
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(args)
-      if (vim.b[args.buf].yap or vim.b[args.buf].yap_scratch_notes) and args.data and args.data.client_id then
-        local client = vim.lsp.get_client_by_id(args.data.client_id)
-        if client then
-          pcall(client.stop, client)
+      if not (vim.b[args.buf].yap or vim.b[args.buf].yap_scratch_notes) then
+        return
+      end
+      local id = args.data and args.data.client_id
+      if not id or lsp.is_yap_client(id) then
+        return
+      end
+      pcall(vim.lsp.buf_detach_client, args.buf, id)
+    end,
+  })
+  -- Completion of @path references follows the live project directory, so
+  -- refresh the server's context when :cd moves the working directory.
+  vim.api.nvim_create_autocmd("DirChanged", {
+    group = group,
+    callback = function()
+      for buf in pairs(state.sessions) do
+        if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap then
+          lsp.notify_context(buf)
         end
       end
     end,

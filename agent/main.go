@@ -9,6 +9,7 @@
 //
 //	yap send --provider NAME --model MODEL < request.json
 //	yap serve                     # persistent backend per session buffer
+//	yap lsp                       # language server for session transcripts
 //	yap login [METHOD]            # sign in with a subscription plan (no API key)
 //	yap models                    # list configured providers/models
 //	yap tools                     # list compiled-in tool names
@@ -28,6 +29,7 @@ import (
 	"boers.email/yap/agent/auth"
 	"boers.email/yap/agent/config"
 	"boers.email/yap/agent/llm/goai"
+	"boers.email/yap/agent/lsp"
 	"boers.email/yap/agent/tools"
 	"boers.email/yap/agent/turn"
 	"boers.email/yap/agent/wire"
@@ -64,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}()
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json\n       yap serve | models | tools | guard | login [METHOD]")
+		fmt.Fprintln(os.Stderr, "usage: yap send --provider NAME --model MODEL < request.json\n       yap serve | lsp | models | tools | guard | login [METHOD]")
 		os.Exit(2)
 	}
 
@@ -88,6 +90,11 @@ func main() {
 		if err := serve(os.Stdin, os.Stdout); err != nil {
 			tools.CloseAll()
 			turn.CloseMCP()
+			fmt.Fprintln(os.Stderr, "yap:", err)
+			os.Exit(1)
+		}
+	case "lsp":
+		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

@@ -32,7 +32,7 @@ func TestFenceConformance(t *testing.T) {
 		t.Fatal("conformance fixture is empty")
 	}
 	for _, c := range cases {
-		char, run, tail, ok := fenceLine(c.Line)
+		char, run, tail, ok := FenceLine(c.Line)
 		if c.Null {
 			if ok {
 				t.Errorf("fenceLine(%q) = (%q, %d, %q), want no fence", c.Line, char, run, tail)

@@ -35,7 +35,7 @@ const toolHeaderMaxSingle = 120
 // inside its thinking must not read as a real message boundary.
 func escapeComment(s string) string {
 	s = strings.ReplaceAll(s, "-->", "-- >")
-	if roleHeadingRe.MatchString(s) {
+	if _, ok := RoleHeading(s); ok {
 		return "\\" + s
 	}
 	return s
@@ -143,7 +143,7 @@ func escapeMarkerPrefixes(s string) string {
 	s = rawTextTagRe.ReplaceAllString(s, "\\<$1$2")
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		if strings.HasPrefix(l, "<!-- yap:") || strings.HasPrefix(l, "<!-- /yap:") {
+		if IsMarkerLine(l) {
 			lines[i] = "\\" + l
 		}
 	}

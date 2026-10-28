@@ -16,6 +16,7 @@ local textobj = require("harness.ui.textobj")
 local paths = require("harness.path")
 local session = require("harness.session")
 local system = require("harness.client.system")
+local lsp = require("harness.client.lsp")
 
 local running = state.running
 local awaiting = state.awaiting
@@ -97,12 +98,17 @@ local function setup_buffer(buf)
   vim.b[buf].yap = true
   state.sessions[buf] = true
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
-  -- runs, so a markdown client may already be attached; stop it.
+  -- runs, so a markdown client may already be attached; detach it from this
+  -- buffer (buffer-locally, so a shared server keeps serving other files).
+  -- The yap client is the exception: it is re-attached below.
   if vim.lsp and vim.lsp.get_clients then
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
-      pcall(client.stop, client)
+      if not lsp.is_yap_client(client.id) then
+        pcall(vim.lsp.buf_detach_client, buf, client.id)
+      end
     end
   end
+  lsp.attach(buf)
 
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
