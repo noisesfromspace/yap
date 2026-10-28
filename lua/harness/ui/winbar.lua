@@ -63,6 +63,17 @@ end
 -- picker states. Iterating a tiny module map, not a full buffer scan, keeps
 -- the winbar cheap on every redraw; stale entries are skipped via the
 -- validity check.
+-- A queued message: the session's scratch has an armed `# @queue`, sent when
+-- the running turn ends. Reading the scratch flag keeps one source of truth
+-- with the scratch's own "scheduled" label.
+local function queued(buf)
+  local scratch = vim.b[buf].yap_scratch
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return false
+  end
+  return vim.b[scratch].yap_queue_armed and true or false
+end
+
 local function other_session_counts(buf)
   local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0, approval = 0 }
   for b in pairs(sessions) do
@@ -257,22 +268,34 @@ local function render_winbar(buf)
       -- inactive window too.
       state_icons[#state_icons + 1] = seg(icons.approval, "Approval")
     elseif not inactive and busy then
-      -- A pending steer advertises itself immediately left of the running
-      -- beacon, so both stay visible in the gutter while streaming.
+      -- A queued message and a pending steer advertise themselves immediately
+      -- left of the running beacon, so all stay visible in the gutter while
+      -- streaming (the queue sends first, then the steer is injected).
+      if queued(buf) then
+        state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
+      end
       if steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
       end
       local glyph = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
       state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
-    elseif inactive and busy and steer[buf] then
-      -- A generating session drops its spinner when inactive, but a pending
-      -- steer still advertises itself through the leftmost state icon.
-      state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
+    elseif inactive and busy and (queued(buf) or steer[buf]) then
+      -- A generating session drops its spinner when inactive, but a queued
+      -- message or a pending steer still advertises itself through the
+      -- leftmost state icon.
+      if queued(buf) then
+        state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
+      end
+      if steer[buf] then
+        state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
+      end
     elseif not busy then
       if errors[buf] then
         state_icons[#state_icons + 1] = seg(icons.error, "Error")
       elseif stopped[buf] then
         state_icons[#state_icons + 1] = seg(icons.stopped, "Needs")
+      elseif queued(buf) then
+        state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
       elseif steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
       elseif awaiting[buf] and picker.agent(nil, buf) then
@@ -306,8 +329,9 @@ local function render_winbar(buf)
       add_item(fold_switch_segs())
     end
 
-    -- Tool text belongs to the text region, ahead of the rollup. A pending
-    -- steer icon instead joins the leftmost state icon (see above).
+    -- Tool text belongs to the text region, ahead of the rollup. A queued
+    -- message or pending steer icon instead joins the leftmost state icon
+    -- (see above).
     if not inactive and busy then
       local l = live and live[buf]
       if l and l.ms and l.ms >= 2000 then

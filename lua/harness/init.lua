@@ -258,6 +258,7 @@ function M.setup(opts)
       idle = "○",
       done = "✓",
       steer = "⌁",
+      queue = "↧",
       approval = "⚠", -- plain-Unicode backup for the shield_alert glyph
       cap_l = "[",
       cap_r = "]",

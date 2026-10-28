@@ -336,8 +336,32 @@ assert(
   yap.winbar(target):find("%#YapNeeds#" .. icons.steer, 1, true) == 1,
   "inactive generating session with a pending steer should keep its steer icon leftmost"
 )
+-- A queued follow-up (the armed # @queue on the session's scratch) gets the
+-- same leftmost treatment, and keeps the pending steer beside it.
+local scratch = vim.api.nvim_create_buf(false, true)
+vim.b[scratch].yap_queue_armed = true
+vim.b[target].yap_scratch = scratch
+local queued_left = yap.winbar(target):match("^(.-)%%=")
+local q_at = assert(
+  queued_left:find(icons.queue, 1, true),
+  "inactive generating session with a queued message should show the queue icon: " .. queued_left
+)
+local s_at = assert(
+  queued_left:find(icons.steer, 1, true),
+  "a queued message should keep the pending steer icon: " .. queued_left
+)
+assert(q_at < s_at, "the queue icon should sit left of the steer icon: " .. queued_left)
 state.steer[target] = nil
 state.running[target] = nil
+state.awaiting[target] = true
+assert(
+  yap.winbar(target):find("%#YapNeeds#" .. icons.queue, 1, true) == 1,
+  "a queued message outranks the awaiting icon while it waits to send"
+)
+state.awaiting[target] = nil
+vim.b[scratch].yap_queue_armed = false
+vim.b[target].yap_scratch = nil
+vim.api.nvim_buf_delete(scratch, { force = true })
 vim.b[target].yap_usage, state.last_turn[target] = saved_target_usage, saved_target_turn
 state.running[target], state.running[other], state.awaiting[waiting] =
   saved_running_target, saved_running_other, saved_waiting
