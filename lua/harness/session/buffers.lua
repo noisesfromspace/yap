@@ -307,6 +307,8 @@ function M.open(path)
 end
 
 --- Display only: the real filename remains available to :write and explorers.
+--- A `[RUN]`/`[WAIT]`-style tag, not a status icon: the picker filters on the
+--- label text, so the state has to be typeable to find sessions by it.
 function M.label(buf)
   if not vim.api.nvim_buf_is_valid(buf) or not vim.b[buf].yap then
     return nil
@@ -319,8 +321,7 @@ function M.label(buf)
       break
     end
   end
-  return picker.status(buf)
-    .. " "
+  return picker.tag(buf)
     .. title
     .. (duplicate and (" [" .. buf .. "]") or "")
 end
@@ -380,10 +381,10 @@ function M.pick()
           local h = highlights[i]
           vim.api.nvim_buf_add_highlight(buf, ns, h.hl, i - 1, 0, h.width)
           if vim.b[item.bufnr].yap then
-            local glyph = picker.status(item.bufnr)
+            local _, tag_width = picker.tag(item.bufnr)
             local status = state.pending_approvals[item.bufnr] and "approval"
               or picker.state(item.bufnr)
-            vim.api.nvim_buf_add_highlight(buf, ns, colors[status], i - 1, h.prefix, h.prefix + #glyph)
+            vim.api.nvim_buf_add_highlight(buf, ns, colors[status], i - 1, h.prefix, h.prefix + tag_width)
           end
         end
       end,

@@ -480,14 +480,19 @@ buffer behavior, without preferring waiting or running sessions.
 
                                                         *harness.buffers()*
 require("harness").buffers() opens MiniPick's regular buffer picker. Yap items
-show the filetype icon followed by `{status icon} {title}`; file, terminal and
-man items keep their normal labels. Selection uses the buffer number. MiniPick
-must be installed. There is no default keymap for this function.
+show the filetype icon followed by `{status tag} {title}`; file, terminal and
+man items keep their normal labels. The tag is a padded, typeable word — one of
+`[RUN]`, `[WAIT]`, `[APPR]`, `[ERR]`, `[STOP]`, `[DONE]`, `[IDLE]` — so the
+picker's query filters by state (`[WAIT]`; `[` for every session at once).
+Selection uses the buffer number. MiniPick must be installed. There is no
+default keymap for this function.
 
                                          *harness.session.buffers.label()*
 require("harness.session.buffers").label(buf) returns the same display label for
 a Yap buffer, or nil for other buffers. Only duplicate titles gain a
-buffer-number suffix. Labels do not rename the buffers.
+buffer-number suffix. Labels do not rename the buffers. The open-session tree
+(|harness.instances()|) keeps the state icons; only the buffer picker's labels
+are spelled out, because that is the picker you filter by typing.
 
                                                       *harness.instances()*
 require("harness").instances() retains the open-session tree, including open

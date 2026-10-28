@@ -23,10 +23,18 @@ local function title(buf, text, description)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 end
 
+-- Status is a tag, not an icon: a picker filters on the label text, so
+-- `[WAIT]` must be typeable to find the sessions awaiting a reply. Padding
+-- follows the tag, so the tag itself stays contiguous for the query.
+local function tag(word)
+  local t = "[" .. word .. "]"
+  return t .. string.rep(" ", 7 - #t)
+end
+
 local a = yap.new()
 local path = vim.b[a].yap_path
 title(a, "Pinned", "Generated")
-assert(buffers.label(a) == yap.config.icons.idle .. " Pinned", "title label missing")
+assert(buffers.label(a) == tag("IDLE") .. "Pinned", "title label missing")
 assert(vim.api.nvim_buf_get_name(a) == path, "label renamed the session buffer")
 assert(vim.fn.filereadable(path) == 1, "real session file missing")
 assert(vim.fn.expand("%:p:h") == vim.fn.fnamemodify(path, ":h"), "explorer directory is not the session directory")
@@ -39,14 +47,14 @@ files.close()
 -- Shared labels follow the current state, including approval precedence.
 for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_approvals" }) do
   state[key][a] = key == "running" and {} or true
-  local icon = ({
-    awaiting = "waiting",
-    stopped = "stopped",
-    errors = "error",
-    running = "running",
-    pending_approvals = "approval",
+  local word = ({
+    awaiting = "WAIT",
+    stopped = "STOP",
+    errors = "ERR",
+    running = "RUN",
+    pending_approvals = "APPR",
   })[key]
-  assert(buffers.label(a) == yap.config.icons[icon] .. " Pinned", "label state missing: " .. key)
+  assert(buffers.label(a) == tag(word) .. "Pinned", "label state missing: " .. key)
 end
 for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_approvals" }) do
   state[key][a] = nil
@@ -59,9 +67,9 @@ assert(la ~= lb, "duplicate titles need distinct labels")
 assert(la:find("Pinned", 1, true) and lb:find("Pinned", 1, true), "duplicates lost their title")
 assert(la:match(tostring(a) .. "%D*$") and lb:match(tostring(b) .. "%D*$"), "duplicates need buffer-number suffixes")
 title(b, "Other")
-assert(buffers.label(a) == yap.config.icons.idle .. " Pinned", "unique title kept its suffix")
+assert(buffers.label(a) == tag("IDLE") .. "Pinned", "unique title kept its suffix")
 title(b, "", "Generated title")
-assert(buffers.label(b) == yap.config.icons.idle .. " Generated title", "description fallback missing")
+assert(buffers.label(b) == tag("IDLE") .. "Generated title", "description fallback missing")
 local lines = vim.api.nvim_buf_get_lines(b, 0, -1, false)
 lines = vim.tbl_filter(function(line)
   return not line:match("^description:")
@@ -69,7 +77,7 @@ end, lines)
 vim.api.nvim_buf_set_lines(b, 0, -1, false, lines)
 assert(
   buffers.label(b)
-    == yap.config.icons.idle .. " " .. require("harness.path").session_name(vim.b[b].yap_path),
+    == tag("IDLE") .. require("harness.path").session_name(vim.b[b].yap_path),
   "session directory fallback missing"
 )
 
@@ -121,7 +129,7 @@ for _, buf in ipairs({ a, b }) do
 end
 assert(not items[child], "unlisted subagent leaked into buffer picker")
 -- Rendering gives every entry its filetype icon; a Yap session keeps its
--- status glyph in the label and the markdown filetype icon on the left.
+-- status tag in the label and the markdown filetype icon on the left.
 local display = vim.api.nvim_create_buf(false, true)
 captured.source.show(display, { items[a], items[term], items[man], items[filebuf] }, {})
 local shown = vim.api.nvim_buf_get_lines(display, 0, -1, false)
