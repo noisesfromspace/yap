@@ -316,7 +316,7 @@ inside the live tail, <leader>g opens the guard board directly above it.
 Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
-  <leader>s             Toggle the scratch buffer (see |yap-sessions|).
+  <leader>j             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see insert()). In scratch,
                         insert at the cursor without sending.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
@@ -484,7 +484,7 @@ File operations are the session operations:
 
 SCRATCH BUFFER
 
-<leader>s toggles the scratch buffer — a file-backed sibling (`notes.md`)
+<leader>j toggles the scratch buffer — a file-backed sibling (`notes.md`)
 with Markdown editing and spell checking in its window. Its two sections
 fold independently and carry an inline, display-only state label preceded by
 a `·` so it reads as an annotation rather than buffer text — nothing you have

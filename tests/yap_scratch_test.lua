@@ -5,7 +5,7 @@ yap.setup()
 local buf = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
 
--- <leader>s is bound in the session buffer
+-- <leader>j is bound in the session buffer
 yap.scratch_toggle()
 local scratch_win = vim.api.nvim_get_current_win()
 assert(scratch_win ~= chat_win, "scratch did not open a new window")
@@ -76,7 +76,7 @@ yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(scratch) == 1, "scratch did not reopen")
 assert(vim.api.nvim_get_current_buf() == scratch, "scratch did not focus on reopen")
 assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @steer", "scratch content lost on reopen")
-assert(vim.fn.maparg("<leader>s", "n", false, true).buffer == 1, "scratch has no <leader>s map")
+assert(vim.fn.maparg("<leader>j", "n", false, true).buffer == 1, "scratch has no <leader>j map")
 
 -- a recreated scratch buffer loads the persisted sections
 vim.api.nvim_set_current_win(chat_win)

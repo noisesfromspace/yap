@@ -1,5 +1,5 @@
 -- The scratch queue and mid-turn steering: a file-backed `notes.md` jotter
--- (<leader>s) with two explicit sections (# @steer / # @queue)
+-- (<leader>j) with two explicit sections (# @steer / # @queue)
 -- and the # @steer mechanism that redirects a running turn.
 
 local M = {}
@@ -321,7 +321,7 @@ function M.scratch_foldexpr(lnum)
   return "0"
 end
 
---- Toggle the session's scratch buffer (<leader>s): a fixed-height jotter
+--- Toggle the session's scratch buffer (<leader>j): a fixed-height jotter
 --- opened below the session window. It is a real, file-backed buffer — a
 --- sibling `notes.md` file of the session — so `:write` saves it and an
 --- unsaved notes file prompts on exit like any other modified buffer. It is a

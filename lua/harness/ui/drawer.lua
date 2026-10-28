@@ -1,6 +1,6 @@
 -- Fixed-height bottom drawers: the ONE window pattern shared by every Yap
 -- panel — the live tool tail (live()), the guard board (guard()) and the
--- scratch queue (<leader>s). A single persistent buffer per panel, never
+-- scratch queue (<leader>j). A single persistent buffer per panel, never
 -- duplicated, always a bottom split under the panel's own anchor window,
 -- closed back to the window it was toggled from. All three share the same
 -- window options so they look and behave alike.
@@ -33,7 +33,7 @@ function M.style(win, opts)
   -- Panels are plain windows, never 'winfixbuf'-pinned: :e and file pickers
   -- must be able to reuse them like any other window. Their buffers survive
   -- (bufhidden = hide) and reopen via their toggle (<leader>g / <leader>l /
-  -- <leader>s), so clobbering a panel view never loses data.
+  -- <leader>j), so clobbering a panel view never loses data.
   vim.wo[win].winbar = "" -- the yap winbar is for sessions, not panels
   if not opts.editable then
     vim.wo[win].number = false

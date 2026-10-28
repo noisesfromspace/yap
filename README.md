@@ -27,7 +27,7 @@ Inspired by pi and gptel.
   not re-bill the whole prefix every turn.
 - Templates and skills, injected into a conversation even while it runs.
 - A scratch buffer that queues one follow-up and steers the current turn
-  (`<leader>s`).
+  (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
 - Pickers for open and saved sessions (`<leader>r`, `<leader>y`), all
   through `vim.ui.select`.
