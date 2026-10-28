@@ -72,7 +72,6 @@ M.defaults = {
     live = "<leader>l",
     scratch = "<leader>s",
     insert = "<C-t>",
-    insert_here = "<leader>T",
     insert_file = "<C-f>",
     instances = "<leader>r",
     sessions = "<leader>y",

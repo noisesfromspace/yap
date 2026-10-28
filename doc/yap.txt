@@ -318,7 +318,6 @@ regardless of which one you open first.
   <leader>s             Toggle the scratch buffer (see |yap-sessions|).
   <C-t> (n, i)          Insert a template or skill (see insert()). In scratch,
                         insert at the cursor without sending.
-  <leader>T             Insert a template or skill at the cursor.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
   <leader>r             Pick an open session.
@@ -617,8 +616,8 @@ the name in the picker, the body is what gets inserted. They live in:
   ~/.config/yap/skills/        system-prompt material (insert())
 
 Both configurable via `templates_dir` / `skills_dir`. Create the directory,
-drop a file in, then `<C-t>` (or insert(name)) to insert it;
-`<leader>T` inserts the raw file at the cursor.
+drop a file in, then `<C-t>` (or insert(name)) to insert it. In scratch,
+`<C-t>` inserts the raw file at the cursor instead of sending it.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
 

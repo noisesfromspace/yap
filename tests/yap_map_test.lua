@@ -42,7 +42,7 @@ end
 for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "instances" }) do
   assert(type(yap[name]) == "function", name .. " Lua API missing")
 end
-for _, key in ipairs({ "insert_here", "instances", "sessions" }) do
+for _, key in ipairs({ "instances", "sessions" }) do
   assert(yap.config.keymaps[key] ~= "", key .. " keymap disabled")
 end
 print("OK map")
