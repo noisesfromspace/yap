@@ -1,9 +1,4 @@
--- :bd on a yap session buffer lands on a session awaiting a reply when one
--- is open, otherwise on a running session, then the last file accessed —
--- never on the empty "No Name" buffer Neovim's "deleting the last listed
--- buffer" path produces.
--- Session buffers are unlisted, so Neovim's own replacement-buffer search
--- skips them.
+-- Session deletion uses native Neovim landing and still cleans up child drawers.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -25,81 +20,27 @@ local function open_file()
   return current()
 end
 
--- Only sessions open: deleting B lands on the waiting session A, and the
--- empty [No Name] buffer Neovim fabricates is dropped.
-local a = yap.new()
-state.awaiting[a] = true -- A's turn completed and awaits a reply
-local b = yap.new()
-assert(current() == b, "B should be current")
+-- Status must not override Neovim's alternate-buffer choice. In particular,
+-- a waiting or running session must not steal focus from a recent file.
+local waiting = yap.new()
+state.awaiting[waiting] = true
+local running = yap.new()
+state.running[running] = { kill = function() end }
+local file = open_file()
+yap.new()
+assert(vim.fn.bufnr("#") == file, "file should be the alternate buffer")
 vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return current() == a
-  end),
-  "after :bd B, expected waiting session A, got " .. cur_name()
-)
-for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_is_loaded(buf) and buf ~= current() then
-    assert(vim.api.nvim_buf_get_name(buf) ~= "", "stray [No Name] buffer left after :bd")
-  end
-end
+vim.wait(50)
+assert(current() == file, "session status overrode ordinary :bd landing: " .. cur_name())
+state.running[running] = nil
 
--- A waiting session is preferred over a listed file.
-open_file()
-local b2 = yap.new()
+-- An idle session is a normal alternate buffer, too.
+local idle = yap.new()
+yap.new()
+assert(vim.fn.bufnr("#") == idle, "idle session should be the alternate buffer")
 vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return current() == a
-  end),
-  "after :bd B2, expected waiting session A over the file, got " .. cur_name()
-)
-
--- A running session is preferred over a listed file when no session is
--- awaiting a reply.
-state.awaiting[a] = nil -- A is now idle
-local running_session = yap.new()
-state.running[running_session] = { kill = function() end }
-open_file()
-local c = yap.new()
-vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return current() == running_session
-  end),
-  "after :bd C, expected the running session, got " .. cur_name()
-)
-state.running[running_session] = nil
-
--- An idle session is not a landing spot: go to the last file instead.
-local filebuf3 = open_file()
-local d = yap.new()
-vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return current() == filebuf3
-  end),
-  "after :bd D, expected the last file, got " .. cur_name()
-)
-
--- A special window (explorer/quickfix/nofile) is not a landing spot either:
--- :bd skips it and lands on the last ordinary file buffer.
-local function open_special()
-  local special = vim.api.nvim_create_buf(true, false)
-  vim.bo[special].buftype = "nofile"
-  vim.api.nvim_set_current_buf(special)
-  return special
-end
-local filebuf4 = open_file()
-open_special() -- focus the explorer-like buffer after the file
-local e = yap.new()
-vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return current() == filebuf4
-  end),
-  "after :bd E, expected the last file over the explorer, got " .. cur_name()
-)
+vim.wait(50)
+assert(current() == idle, "ordinary :bd skipped the idle session: " .. cur_name())
 
 -- An unloaded parent also closes its hidden child sessions.
 local parent = yap.new()
@@ -136,24 +77,16 @@ assert(
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch buffer was wiped on :bd")
 assert(vim.api.nvim_buf_is_valid(tail), "tail viewer buffer was wiped on :bd")
 
--- A split already showing the fallback session must not be duplicated: the
--- fallback is skipped, so closing the current session collapses its
--- now-empty window and leaves the other split untouched.
+-- Split handling belongs to Neovim too; the alternate listed session
+-- remains usable whether Neovim reuses or closes a duplicate window.
 local visible = yap.new()
-state.awaiting[visible] = true
 vim.cmd("vsplit")
-local closing = yap.new()
-state.awaiting[closing] = true
-assert(vim.api.nvim_get_current_buf() == closing, "closing session should be current")
+yap.new()
 vim.cmd("bd")
-assert(
-  vim.wait(2000, function()
-    return #vim.api.nvim_list_wins() == 1
-      and vim.api.nvim_get_current_buf() == visible
-      and #vim.fn.win_findbuf(visible) == 1
-  end),
-  "closing a session whose fallback is already visible should collapse the split, not duplicate"
-)
+vim.wait(50)
+assert(vim.api.nvim_buf_is_valid(visible), ":bd deleted the alternate session")
+assert(current() == visible, ":bd did not use the listed alternate session")
+vim.cmd("only")
 
 -- A forced reload unloads and re-reads the file-backed buffer too, but is
 -- not a session close: the session must remain current and usable afterward.

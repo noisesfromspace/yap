@@ -29,8 +29,8 @@ Inspired by pi and gptel.
 - A scratch buffer that queues one follow-up and steers the current turn
   (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
-- Pickers for open and saved sessions (`<leader>r`, `<leader>y`), all
-  through `vim.ui.select`.
+- Listed session buffers for normal buffer navigation; open and saved session
+  trees through `vim.ui.select` (`<leader>y` for saved sessions).
 - A winbar with the session title, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
@@ -165,11 +165,25 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").guard()`                             | `<leader>g` | open/close the guard board                  |
 | `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model           |
 | `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)     |
-| `require("harness").instances()`                         | `<leader>r` | pick another open session                   |
+| `require("harness").buffers()`                           |             | pick any listed buffer with Yap labels      |
+| `require("harness").instances()`                         |             | pick an open session from the session tree  |
 | `require("harness").insert(name, { at_cursor = false })` | `<C-t>`     | insert template / merge a skill             |
 | `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
+
+Ordinary sessions are listed buffers with their real `session.md` filenames.
+Use your normal buffer navigation, file explorer, and Neovim deletion commands.
+`require("harness").buffers()` opens MiniPick's regular buffer picker with
+`yap:// {status icon} {title}` labels for Yap sessions; file, terminal and man
+buffers keep their usual labels. Selection uses the buffer number, not the label.
+`require("harness.session.buffers").label(buf)` returns that label for a Yap
+buffer and `nil` otherwise. Only duplicate titles gain a buffer-number suffix.
+Subagent buffers stay unlisted and do not count in the winbar overview.
+
+`instances()` retains the open-session tree, including subagents; `sessions()`
+retains the saved-session tree. Neither `buffers()` nor `instances()` has a
+default shortcut; bind them in your own configuration.
 
 ## Session jail
 

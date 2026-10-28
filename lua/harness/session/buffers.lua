@@ -1,8 +1,7 @@
 -- Session buffer lifecycle: create, open, adopt, fork, focus and teardown.
 --
--- A yap session buffer is unlisted and file-backed by ~/.config/yap/sessions/;
--- this module owns turning raw buffers into managed sessions and the
--- focus-mru bookkeeping that decides where the cursor lands after a close.
+-- Conversations are listed, file-backed buffers. Delegated agents remain
+-- unlisted and are reachable through the session tree.
 
 local M = {}
 
@@ -17,79 +16,14 @@ local paths = require("harness.path")
 local session = require("harness.session")
 local system = require("harness.client.system")
 local lsp = require("harness.client.lsp")
+local picker = require("harness.ui.picker")
 
 local running = state.running
-local awaiting = state.awaiting
 
 local function harness()
   return require("harness")
 end
 
--- Most-recently-focused buffers, front first. Session buffers are unlisted,
--- so Neovim's :bd/:bw/:close skip them when choosing where to land after
--- deleting the current buffer and drop the user on an empty "No Name"
--- buffer instead (the "deleting the last listed buffer" path). This order
--- redirects that landing back to the buffer the user came from.
-local focus_mru = {}
-
-local function focus_touch(buf)
-  for i, b in ipairs(focus_mru) do
-    if b == buf then
-      table.remove(focus_mru, i)
-      break
-    end
-  end
-  table.insert(focus_mru, 1, buf)
-end
-
-local function focus_forget(buf)
-  for i, b in ipairs(focus_mru) do
-    if b == buf then
-      table.remove(focus_mru, i)
-      return
-    end
-  end
-end
-
--- Landing spot after closing the current session: the most recently focused
--- session awaiting a reply, otherwise a running session, otherwise the last
--- ordinary file buffer. Idle sessions are not a landing spot.
-local function focus_fallback(buf)
-  -- A buffer already on screen in another window of this tab is not a
-  -- landing spot: switching the current window to it would duplicate it
-  -- across a split.
-  local function shown(b)
-    local tab = vim.api.nvim_get_current_tabpage()
-    for _, w in ipairs(vim.fn.win_findbuf(b)) do
-      if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_tabpage(w) == tab then
-        return true
-      end
-    end
-    return false
-  end
-  local function open(b)
-    return b ~= buf and vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_is_loaded(b) and not shown(b)
-  end
-  for _, b in ipairs(focus_mru) do
-    if open(b) and vim.b[b].yap and awaiting[b] then
-      return b
-    end
-  end
-  for _, b in ipairs(focus_mru) do
-    if open(b) and vim.b[b].yap and running[b] then
-      return b
-    end
-  end
-  for _, b in ipairs(focus_mru) do
-    -- Only real, listed file buffers count. Explorers (mini.files, netrw),
-    -- quickfix, terminal, help and other special windows are skipped so :bd
-    -- never parks the cursor in one.
-    if open(b) and not vim.b[b].yap and vim.bo[b].buftype == "" and vim.bo[b].buflisted then
-      return b
-    end
-  end
-  return nil
-end
 local function setup_buffer(buf)
   -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
@@ -112,10 +46,9 @@ local function setup_buffer(buf)
 
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
-  -- Sessions are managed, not workspace files: unlisted so they never
-  -- clutter :ls or buffer pickers (MiniPick.buffers etc.); reach them
-  -- with the open-session picker.
-  vim.bo[buf].buflisted = false
+  -- Keep agents in the session tree, not the ordinary workspace list.
+  vim.bo[buf].buflisted = not picker.agent(nil, buf)
+  vim.b[buf].minidiff_disable = true
 
   -- Read-only drawers enable cursorline. Their windows are reusable (:e and
   -- session picker), so clear that window-local option on session entry.
@@ -249,7 +182,7 @@ end
 -- Subagent spawning and child teardown live in harness.client.subagent.
 
 --- Open a saved session file as a yap buffer.
---- Turn a session-file buffer into a managed yap buffer: unlisted,
+--- Turn a session-file buffer into a managed yap buffer: listed (except agents),
 --- keymapped, live tool tail attached, model combo resumed from
 --- frontmatter. Shared by sessions()/history() resume and by directly opening
 --- a file under ~/.config/yap/sessions/.
@@ -296,7 +229,7 @@ local function switch_buf(buf)
 end
 
 --- Focus an already-loaded buffer: jump to an existing window, otherwise
---- show it in the current one (unlisted sessions have no other way back).
+--- show it in the current one.
 local function focus_buf(buf)
   local wins = vim.fn.win_findbuf(buf)
   if wins[1] then
@@ -373,10 +306,101 @@ function M.open(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
+--- Display only: the real filename remains available to :write and explorers.
+function M.label(buf)
+  if not vim.api.nvim_buf_is_valid(buf) or not vim.b[buf].yap then
+    return nil
+  end
+  local title = session.live_label(buf)
+  local duplicate = false
+  for _, other in ipairs(vim.api.nvim_list_bufs()) do
+    if other ~= buf and vim.bo[other].buflisted and vim.b[other].yap and session.live_label(other) == title then
+      duplicate = true
+      break
+    end
+  end
+  return "yap:// "
+    .. picker.status(buf)
+    .. " "
+    .. title
+    .. (duplicate and (" [" .. buf .. "]") or "")
+end
+
+--- The ordinary MiniPick buffer list, with conversation labels instead of paths.
+function M.pick()
+  local pick = require("mini.pick")
+  local items = {}
+  -- Match the builtin buffer source's ordering and names, preserving bufnr
+  -- for preview/selection rather than treating the display URI as a filename.
+  local output = vim.api.nvim_exec2("buffers", { output = true }).output
+  for _, line in ipairs(vim.split(output, "\n")) do
+    local buf = tonumber(line:match("^%s*(%d+)"))
+    if buf then
+      items[#items + 1] = { bufnr = buf, text = M.label(buf) or line:match('"(.*)"') }
+    end
+  end
+  return pick.start({
+    source = {
+      name = "Buffers",
+      items = items,
+      show = function(buf, entries, query)
+        local rendered = {}
+        local ns = vim.api.nvim_create_namespace("yap.buffer_labels")
+        vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+        local highlights = {}
+        local has_icons, icons = pcall(require, "mini.icons")
+        for i, item in ipairs(entries) do
+          local entry = vim.tbl_extend("force", {}, item)
+          local icon, hl = " ", "Normal"
+          if not vim.b[item.bufnr].yap and has_icons then
+            local ft = vim.bo[item.bufnr].filetype
+            if vim.bo[item.bufnr].buftype == "terminal" then
+              icon, hl = icons.get("filetype", "terminal")
+            elseif ft == "man" then
+              icon, hl = icons.get("filetype", "man")
+            else
+              icon, hl = icons.get("file", vim.api.nvim_buf_get_name(item.bufnr))
+            end
+          end
+          entry.text = icon .. " " .. item.text
+          rendered[i] = entry
+          highlights[i] = { width = #icon, hl = hl, prefix = #icon + 1 }
+        end
+        pick.default_show(buf, rendered, query)
+        local colors = {
+          running = "DiagnosticInfo",
+          error = "DiagnosticError",
+          stopped = "DiagnosticWarn",
+          waiting = "DiagnosticHint",
+          approval = "DiagnosticWarn",
+          done = "Comment",
+          idle = "Comment",
+        }
+        for i, item in ipairs(entries) do
+          local h = highlights[i]
+          if vim.b[item.bufnr].yap then
+            vim.api.nvim_buf_add_highlight(buf, ns, "Comment", i - 1, h.prefix, h.prefix + #"yap://")
+            local glyph = picker.status(item.bufnr)
+            local status = state.pending_approvals[item.bufnr] and "approval"
+              or picker.state(item.bufnr)
+            vim.api.nvim_buf_add_highlight(
+              buf,
+              ns,
+              colors[status],
+              i - 1,
+              h.prefix + #"yap:// ",
+              h.prefix + #"yap:// " + #glyph
+            )
+          else
+            vim.api.nvim_buf_add_highlight(buf, ns, h.hl, i - 1, 0, h.width)
+          end
+        end
+      end,
+    },
+  })
+end
+
 -- Reachable from the facade/setup and from sessions.lua (focus_buf).
-M.touch = focus_touch
-M.forget = focus_forget
-M.fallback = focus_fallback
 M.switch_buf = switch_buf
 M.focus_buf = focus_buf
 

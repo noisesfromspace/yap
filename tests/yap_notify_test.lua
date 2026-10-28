@@ -132,10 +132,9 @@ state.awaiting[stopped] = nil
 state.errors[stopped] = nil
 vim.api.nvim_buf_delete(stopped, { force = true })
 
--- Yap buffers are unlisted: they never appear in :ls or buffer pickers
--- (MiniPick.buffers etc.); the pickers are the way back.
-assert(not vim.bo[buf].buflisted, "session buffer should be unlisted")
-assert(not vim.bo[buf2].buflisted, "second session buffer should be unlisted")
+-- Ordinary Yap buffers participate in native buffer navigation; live tails do not.
+assert(vim.bo[buf].buflisted, "session buffer should be listed")
+assert(vim.bo[buf2].buflisted, "second session buffer should be listed")
 local tails_unlisted = true
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
   if vim.api.nvim_buf_get_name(b):match("%-tail$") then
@@ -200,7 +199,7 @@ vim.notify = orig_notify
 vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
--- <leader>r lists every other open session with its status;
+-- instances() lists every other open session with its status;
 -- waiting sessions sort last.
 vim.cmd("enew")
 local items, fmt

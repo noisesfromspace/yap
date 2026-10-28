@@ -289,7 +289,8 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").insert(name)           -- insert a template / merge a skill
   require("harness").change_model(combo)    -- set this session's provider/model
   require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
-  require("harness").instances()            -- pick another open session
+  require("harness").buffers()              -- MiniPick buffers with Yap labels
+  require("harness").instances()            -- open-session tree
   require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
 <
 `scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
@@ -301,8 +302,7 @@ for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>y and <leader>g, which
-are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except <leader>y and <leader>g, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
@@ -321,7 +321,6 @@ regardless of which one you open first.
                         insert at the cursor without sending.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
-  <leader>r             Pick an open session.
   <leader>y             Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
@@ -471,8 +470,30 @@ opens, and every save goes through |:write| so 'modified', |:w| and the exit
 prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
-it as a managed session (unlisted, keymapped, live tool tail attached), the same
+it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume.
+
+Ordinary sessions are listed buffers. Their real session.md filenames stay
+intact, so file explorers can open the session directory and native buffer
+navigation works. Deleting a session buffer uses Neovim's ordinary replacement
+buffer behavior, without preferring waiting or running sessions.
+
+                                                        *harness.buffers()*
+require("harness").buffers() opens MiniPick's regular buffer picker. Yap items
+show `yap:// {status icon} {title}`; file, terminal and man items keep their
+normal labels. Selection uses the buffer number. MiniPick must be installed.
+There is no default keymap for this function.
+
+                                         *harness.session.buffers.label()*
+require("harness.session.buffers").label(buf) returns the same display label for
+a Yap buffer, or nil for other buffers. Only duplicate titles gain a
+buffer-number suffix. Labels do not rename the buffers.
+
+                                                      *harness.instances()*
+require("harness").instances() retains the open-session tree, including open
+subagents. It has no default keymap; bind it in your own configuration. The
+saved-session tree (sessions(), <leader>y) is unchanged. Subagents (`b:yap_agent`) remain unlisted and excluded from the
+winbar overview.
 
 File operations are the session operations:
 
@@ -834,7 +855,7 @@ A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in
 `agents_dir` (|yap-configuration|), one markdown file per agent. An agent
 session is internal to the conversation that spawned it: saved history never
-lists it, while the open-session picker (<leader>r) shows it under its parent
+lists it, while the open-session picker (instances()) shows it under its parent
 while it is open. The tool result carries a link to the session file, so a
 finished agent stays reachable.
 

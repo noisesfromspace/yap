@@ -3,8 +3,8 @@
 -- file is written, then the buffer is deleted — so "close the session when
 -- done" works as a tool call and the conversation stays resumable from disk.
 --
--- Two landing behaviors, matching :bd's fallback (yap_bd_test):
---   * closing the CURRENT session redirects the user to a waiting session;
+-- Two landing behaviors, matching native buffer deletion (yap_bd_test):
+--   * closing the CURRENT session returns to the alternate listed buffer;
 --   * a turn finishing in the BACKGROUND wipes the buffer quietly and leaves
 --     the user where they are (no redirect, no notification).
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -40,12 +40,16 @@ local function assert_saved(path)
   )
 end
 
--- ── Foreground: closing the current session lands on the waiting one ──────
--- The close_session tool should use the same fallback order as :bd.
+-- Foreground: session status must not override native deletion landing.
 local waiting = yap.new()
 state.awaiting[waiting] = true
 local running = yap.new()
 state.running[running] = { kill = function() end }
+
+local file = vim.fn.tempname()
+vim.fn.writefile({ "workspace file" }, file)
+vim.cmd("edit " .. vim.fn.fnameescape(file))
+local alternate = current()
 
 local buf = yap.new()
 set_prompt(buf, "when you are done, close the session")
@@ -55,9 +59,9 @@ assert(path ~= "" and vim.fn.filereadable(path) == 1, "session file missing up f
 yap.send() -- stay on buf: the turn completes while it is current
 
 local closed = vim.wait(30000, function()
-  return not vim.api.nvim_buf_is_valid(buf) and current() == waiting
+  return not vim.api.nvim_buf_is_valid(buf) and current() == alternate
 end, 50)
-assert(closed, "buffer not closed onto the waiting session after close_session turn")
+assert(closed, "buffer not closed onto the alternate file after close_session turn")
 assert_saved(path)
 
 -- ── Background: a close_session turn elsewhere is silent ──────────────────

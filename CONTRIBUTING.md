@@ -239,9 +239,21 @@ message history, but a session is a small set of sibling files: the audit log
 photos. A session's directory is its identity: `:file` and `:saveas` do
 not move its sidecars or re-root its saves. Forking copies the transcript,
 audit log and assets into a new directory. Why: no second
-serialization format to keep in sync. Session buffers (and their live tail
-buffers) are unlisted — never in `:ls` or buffer pickers — so navigation uses
-`<leader>r`, and a session's tool tail opens with live().
+serialization format to keep in sync. Ordinary session buffers are listed
+and keep their real `session.md` names, so native buffer navigation and file
+explorers work. Subagents (`b:yap_agent`) and live tail buffers remain unlisted;
+subagents remain excluded from the winbar overview. A session's tool tail opens
+with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
+session status must not redirect focus.
+
+`buffers()` lists ordinary listed buffers through MiniPick, preserving file, terminal
+and man items and selecting by buffer number. The shared
+`require("harness.session.buffers").label(buf)` returns
+`yap:// {status icon} {title}` for Yap buffers and `nil` otherwise. Labels are
+presentation only, never buffer names. Add a buffer-number suffix only when
+titles collide. `instances()` retains the open-session tree and carries no
+default keymap; `sessions()` retains the saved-session tree. Why: sessions belong in ordinary buffer navigation without sacrificing
+real file paths or the separate session trees.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -575,10 +587,9 @@ caught and reported the same way.
 
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 
-Session buffers are unlisted (`buflisted = false`), which makes mini.diff's
-`BufEnter` auto-enable skip them — its guard requires a listed buffer — so no
-`minidiff_disable` flag is needed. An LspAttach guard detaches any non-yap LSP
-client buffer-locally, so semantic-token/inlay-hint streams — meaningless on a
+Session buffers set `b:minidiff_disable = true` so mini.diff does not attach
+to transcripts, even though ordinary sessions are listed. An LspAttach guard
+detaches any non-yap LSP client buffer-locally, so semantic-token/inlay-hint streams — meaningless on a
 transcript — don't pay per-redraw cost, while the `yap lsp` client (symbols,
 completion, diagnostics) stays attached (R-language-intelligence). Session
 buffers are coloured by Vim's markdown syntax

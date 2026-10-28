@@ -1,8 +1,5 @@
--- E2E: close_session while the session picker (vim.ui.select's default
--- inputlist prompt) is open. The command-line prompt keeps the session as
--- the current buffer while the user is really in the picker, so the landing
--- logic must NOT redirect to another session — the close should be as quiet
--- as a background turn.
+-- E2E: closing a listed session during a blocking picker must finish without
+-- breaking the prompt. Neovim chooses the replacement buffer normally.
 --
 -- Unlike the other headless suites this one needs a *blocking* command-line
 -- prompt (inputlist) so `getcmdtype()` is non-empty while the turn finishes,
@@ -17,11 +14,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local state = require("harness.state")
-yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
-
-local function current()
-  return vim.api.nvim_get_current_buf()
-end
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
 
 local function set_prompt(b, text)
   local lines = vim.api.nvim_buf_get_lines(b, 0, -1, false)
@@ -33,7 +26,7 @@ local function set_prompt(b, text)
   end
 end
 
--- A waiting session to land on if the redirect logic fires (it must not).
+-- A listed alternate buffer remains available after the close.
 local waiting = yap.new()
 state.awaiting[waiting] = true
 
@@ -64,9 +57,6 @@ vim.fn.inputlist({ "yap sessions", "1: waiting", "2: current" })
 
 if not close_happened_in_picker then
   fail("close_session did not complete while the picker was open")
-end
-if current() == waiting then
-  fail("close_session redirected to the waiting session while the picker was open")
 end
 if not vim.b[waiting].yap then
   fail("waiting session should still be open")

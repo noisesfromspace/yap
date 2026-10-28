@@ -73,7 +73,6 @@ M.defaults = {
     scratch = "<leader>j",
     insert = "<C-t>",
     insert_file = "<C-f>",
-    instances = "<leader>r",
     sessions = "<leader>y",
     guard = "<leader>g",
     help = "g?",

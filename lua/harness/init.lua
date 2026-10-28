@@ -66,6 +66,7 @@ M.adopt = buffers.adopt
 -- Session listing and navigation (sessions).
 M.sessions = sessions.sessions
 M.instances = sessions.instances
+M.buffers = buffers.pick
 M.live = sessions.live
 M.tail_buffer = sessions.tail_buffer
 M.session_of = sessions.session_of
@@ -268,14 +269,18 @@ function M.setup(opts)
     assert(opts[key] == nil, "yap: " .. key .. " is no longer a setup option; configure model_groups instead")
   end
   for _, role in ipairs({ "editor", "title" }) do
-    assert(not (opts.model_groups and opts.model_groups[role] ~= nil),
-      "yap: model_groups." .. role .. " was replaced by model_groups.flash")
+    assert(
+      not (opts.model_groups and opts.model_groups[role] ~= nil),
+      "yap: model_groups." .. role .. " was replaced by model_groups.flash"
+    )
   end
   local merged = vim.tbl_deep_extend("force", M.config, opts)
   for _, role in ipairs({ "agent", "flash" }) do
     local combo = merged.model_groups[role]
-    assert(type(combo) == "string" and (role == "flash" and combo == "" or config.parse_combo(combo)),
-      "yap: model_groups." .. role .. " must be a provider/model combo" .. (role == "flash" and " or empty" or ""))
+    assert(
+      type(combo) == "string" and (role == "flash" and combo == "" or config.parse_combo(combo)),
+      "yap: model_groups." .. role .. " must be a provider/model combo" .. (role == "flash" and " or empty" or "")
+    )
   end
   M.config = merged
   config.load_models_cache()
@@ -293,15 +298,9 @@ function M.setup(opts)
   -- Propagate the (possibly overridden) data root to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
 
-  -- <leader>r, <leader>y and <leader>g are global:
-  -- they list sessions across every buffer, so they must work from any file.
-  -- The other
+  -- Configured sessions and guard mappings are global: they act on state
+  -- shared by every buffer, so they must work from any file. The other
   -- keymaps act on the current buffer and stay buffer-local in setup_buffer.
-  if M.config.keymaps.instances ~= "" then
-    vim.keymap.set("n", M.config.keymaps.instances, function()
-      M.instances()
-    end, { silent = true, desc = "yap: instances" })
-  end
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.sessions()
@@ -313,13 +312,7 @@ function M.setup(opts)
     end, { silent = true, desc = "yap: guard board" })
   end
 
-  -- Opening a file under ~/.config/yap/sessions/ directly (e.g. from a file
-  -- explorer) adopts it as a managed yap session. Session buffers stay
-  -- out of :ls no matter how they got in: BufAdd fires whenever a buffer
-  -- enters the buffer list (new buffers, :badd, :args/:next, and plugins
-  -- that relist), so unlisting there is the single consistent guard. It
-  -- does not fire during startup, so the BufReadPost adopt below and the
-  -- lazy-setup scan after it own that path.
+  -- Direct file/explorer opens adopt the same file-backed session.
   local adopt_group = vim.api.nvim_create_augroup("YapAdopt", { clear = true })
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = adopt_group,
@@ -352,7 +345,6 @@ function M.setup(opts)
       describe.forget(args.buf)
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
-      buffers.forget(args.buf)
     end,
   })
   vim.api.nvim_create_autocmd("BufWinLeave", {
@@ -407,22 +399,7 @@ function M.setup(opts)
       end
     end,
   })
-  -- Record focus order so closing a session can land on a waiting session,
-  -- then a running session, else the last file buffer (unlisted sessions are
-  -- invisible to Neovim's own replacement-buffer search).
-  vim.api.nvim_create_autocmd("BufEnter", {
-    group = adopt_group,
-    callback = function(args)
-      buffers.touch(args.buf)
-    end,
-  })
-  -- harness.ui.fold owns synchronous window-entry reconciliation; scheduling
-  -- it here would expose an unfolded frame when a hidden stream is shown.
-  -- Redirect :bd/:bw/:bdelete/:bunload of the current session buffer. The
-  -- deletion itself fires BufUnload while curbuf is still the session; by
-  -- the time a scheduled callback runs, Neovim has moved curbuf to another
-  -- listed buffer or to the fresh empty buffer its "last listed buffer"
-  -- path creates. Switch to the fallback and drop that empty buffer.
+  -- Native listed-buffer replacement handles navigation after deletion.
   vim.api.nvim_create_autocmd("BufUnload", {
     group = adopt_group,
     callback = function(args)
@@ -431,65 +408,6 @@ function M.setup(opts)
         subagent.close_children(buf)
         M.stop(buf)
       end
-      if vim.api.nvim_get_current_buf() ~= buf or not vim.b[buf].yap then
-        return
-      end
-      -- A blocking command-line prompt (vim.ui.select's inputlist/input)
-      -- keeps the session as the current buffer while the user is really in
-      -- the picker; close quietly like a background turn instead of
-      -- redirecting the user to another session mid-pick.
-      if vim.fn.getcmdtype() ~= "" then
-        return
-      end
-      local target = buffers.fallback(buf)
-      vim.schedule(function()
-        -- `:edit!` (and any reload) unloads then reloads the same buffer, so
-        -- it is loaded again by the time this runs: that is a reload, not a
-        -- close. Leave the session in place instead of redirecting it away.
-        if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
-          return
-        end
-        local win = vim.api.nvim_get_current_win()
-        local cur = vim.api.nvim_get_current_buf()
-        if not target or not vim.api.nvim_buf_is_valid(target) then
-          -- Every fallback is already visible in another split (or there is
-          -- nothing left to land on): collapse this now-empty window instead
-          -- of duplicating the session already on screen.
-          if vim.api.nvim_buf_get_name(cur) == "" and not vim.bo[cur].modified then
-            local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
-            if #lines <= 1 and (#lines == 0 or lines[1] == "") then
-              local tab = vim.api.nvim_get_current_tabpage()
-              local normal = 0
-              for _, w in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-                if vim.api.nvim_win_get_config(w).relative == "" then
-                  normal = normal + 1
-                end
-              end
-              if normal > 1 then
-                vim.api.nvim_win_close(win, true)
-                if not vim.api.nvim_win_is_valid(win) then
-                  pcall(vim.api.nvim_buf_delete, cur, { force = true })
-                end
-              end
-            end
-          end
-          return
-        end
-        if cur == target then
-          return
-        end
-        -- Drop the empty buffer :bd just created so no stray [No Name]
-        -- lingers in :ls.
-        if vim.api.nvim_buf_get_name(cur) == "" and not vim.bo[cur].modified then
-          local lines = vim.api.nvim_buf_get_lines(cur, 0, -1, false)
-          if #lines <= 1 and (#lines == 0 or lines[1] == "") then
-            buffers.switch_buf(target)
-            pcall(vim.api.nvim_buf_delete, cur, { force = true })
-            return
-          end
-        end
-        buffers.switch_buf(target)
-      end)
     end,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -514,8 +432,8 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,
     callback = function(args)
-      local _, session_path = is_session_path(args.buf)
-      if session_path then
+      -- :badd must not promote an already managed agent into workspace navigation.
+      if vim.b[args.buf].yap and require("harness.ui.picker").agent(nil, args.buf) then
         vim.bo[args.buf].buflisted = false
       end
     end,
@@ -541,12 +459,11 @@ function M.setup(opts)
       vim.cmd.redrawstatus()
     end,
   })
-  -- Session files loaded before setup() ran (lazy loading) missed both
-  -- BufAdd and BufReadPost; unlist them once, when setup() finally runs.
+  -- Adopt sessions that were loaded before setup (lazy plugin loading).
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    local _, session_path = is_session_path(b)
-    if session_path then
-      vim.bo[b].buflisted = false
+    local name, session_path = is_session_path(b)
+    if session_path and vim.api.nvim_buf_is_loaded(b) then
+      buffers.adopt(b, name)
     end
   end
 
