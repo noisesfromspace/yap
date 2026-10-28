@@ -307,7 +307,7 @@ local function has_pending_user_text(path, lines)
   return false
 end
 
---- First task line for a subagent's stable picker identity, even after follow-ups.
+--- First task line for a subagent's stable picker identity.
 function M.task(lines)
   for _, line in ipairs(first_message(lines, "user")) do
     if line:match("%S") then

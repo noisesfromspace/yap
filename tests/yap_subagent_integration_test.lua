@@ -31,21 +31,14 @@ for line in sys.stdin:
     first = prompt.splitlines()[0]
     if first.startswith("delegate"):
         agent = "browser" if "unsupported" in first else "scout"
-        session = first.split("session=", 1)[1].split()[0] if "session=" in first else ""
         model = ""
         if "override" in first:
             model = "other/model-b"
         elif "badmodel" in first:
             model = "nonsense"
-        elif "followupmodel" in first:
-            model = "other/model-c"
-        print(json.dumps({"type":"subagent_request","id":"1","agent":"" if session else agent,"model":model,"session":session,"task":"follow up" if session else ("fail" if "failure" in first else "succeed")}), flush=True)
+        print(json.dumps({"type":"subagent_request","id":"1","agent":agent,"model":model,"task":"fail" if "failure" in first else "succeed"}), flush=True)
         response = json.loads(sys.stdin.readline())
         print(json.dumps({"type":"text","text":"\n" + response['result'] + "\n"}), flush=True)
-    elif "follow up" in first:
-        assert "Scout agent" in str(req["messages"]), "system prompt lost on follow-up"
-        assert "succeed" in str(req["messages"]), "first question lost on follow-up"
-        print(json.dumps({"type":"text","text":"\nfollow-up answered\n"}), flush=True)
     elif "fail" in first:
         print(json.dumps({"type":"text","text":"\n<!-- yap:error\nchild model failed\n-->\n"}), flush=True)
     else:
@@ -93,15 +86,6 @@ assert(
   "parent frontmatter did not record the subagent"
 )
 assert(parent_fm.subagents[1] == child_path, "parent frontmatter subagent path mismatch")
-local followup = delegate("delegate session=" .. child_path)
-assert(followup:find("follow-up answered", 1, true), followup)
-local child_text = table.concat(vim.fn.readfile(child_path), "\n")
-assert(child_text:find("# @user\n\nfollow up", 1, true), "follow-up not appended as user message")
-assert(child_text:find("# @system\n\nScout agent", 1, true), "child system prompt changed")
-local after = require("harness.model.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
-assert(#after.subagents == 1, "follow-up created another child session")
-local unknown = delegate("delegate session=" .. home .. "/other.md")
-assert(unknown:find("error: subagent session not found", 1, true), unknown)
 local failure = delegate("delegate failure")
 assert(failure:find("error: child model failed", 1, true), failure)
 -- A per-call model wins over the agent definition's `model` header; a
@@ -115,14 +99,6 @@ end
 assert(over_path and over_path ~= child_path, "override spawned no new child")
 local over_fm = require("harness.model.frontmatter").parse(vim.fn.readfile(over_path))
 assert(over_fm.provider == "other" and over_fm.model == "model-b", "per-call model ignored: " .. vim.inspect(over_fm.model))
--- A follow-up ignores `model`: the child keeps the combo in its frontmatter.
-local followup_model = delegate("delegate session=" .. over_path .. " followupmodel")
-assert(followup_model:find("follow-up answered", 1, true), followup_model)
-local over_after = require("harness.model.frontmatter").parse(vim.fn.readfile(over_path))
-assert(
-  over_after.provider == "other" and over_after.model == "model-b",
-  "follow-up changed the child's combo: " .. vim.inspect(over_after.provider .. "/" .. over_after.model)
-)
 local bad_model = delegate("delegate badmodel")
 assert(bad_model:find("error: invalid subagent model", 1, true), bad_model)
 local unsupported = delegate("delegate unsupported")

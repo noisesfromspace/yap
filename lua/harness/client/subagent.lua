@@ -81,8 +81,8 @@ local function subagent_result(parent, child, child_path, reply)
   end
 end
 
---- Handle a `subagent_request` event: resume an owned child session, or
---- create a new one from an agent-definition file.
+--- Handle a `subagent_request` event: create a child session from an
+--- agent-definition file.
 function M.start(parent, ev)
   local function reply(text)
     local process = servers[parent]
@@ -92,43 +92,6 @@ function M.start(parent, ev)
   end
   if type(ev.task) ~= "string" or ev.task:match("^%s*$") then
     reply("error: invalid subagent request")
-    return
-  end
-  if ev.session and ev.session ~= "" then
-    local parent_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
-    local child_path = vim.fs.normalize(ev.session)
-    local owned = false
-    for _, path in ipairs(parent_fm and parent_fm.subagents or {}) do
-      if vim.fs.normalize(path) == child_path then
-        owned = true
-        break
-      end
-    end
-    if not owned or vim.fn.filereadable(child_path) == 0 then
-      reply("error: subagent session not found in parent's subagents list")
-      return
-    end
-    local child_fm = frontmatter.parse(vim.fn.readfile(child_path))
-    if not child_fm or not child_fm.agent or (ev.agent and ev.agent ~= "" and ev.agent ~= child_fm.agent) then
-      reply("error: subagent definition mismatch")
-      return
-    end
-    local child = vim.fn.bufadd(child_path)
-    vim.fn.bufload(child)
-    if not vim.b[child].yap then
-      harness().adopt(child, child_path)
-    end
-    if running[child] then
-      reply("error: subagent session is already running")
-      return
-    end
-    document.append_message(child, "user", vim.split(ev.task, "\n", { plain = true }))
-    vim.b[child].yap_subagent_parent = parent
-    vim.b[child].yap_subagent_task = ev.task
-    require("harness.session").save(child)
-    subagent_children[parent] = child
-    subagent_done[child] = subagent_result(parent, child, child_path, reply)
-    harness().send(child)
     return
   end
   if type(ev.agent) ~= "string" or not ev.agent:match("^[%w_-]+$") then
@@ -173,8 +136,7 @@ function M.start(parent, ev)
   local provider, model = config.current_combo(parent)
   -- Pi agent definitions commonly use bare model names; Yap cannot infer their provider.
   -- Only a provider/model pair overrides the known-working parent combo, and an
-  -- explicit per-call `model` overrides the definition (follow-ups never get here:
-  -- a resumed child keeps the combo in its frontmatter).
+  -- explicit per-call `model` overrides the definition.
   if header.model and header.model ~= "" then
     local p, m = header.model:match("^([^/]+)/(.+)$")
     if p then

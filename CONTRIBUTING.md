@@ -737,7 +737,7 @@ sequenceDiagram
     — a guard rule matched, so the call parks until the Lua side replies
     `{"type":"approval_result","id","approved"}` on stdin (or auto-accepts, or
     the backend times out and emits `approval_timeout`).
-  - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...,"session":...}`
+  - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...}`
     — the Lua side spawns/runs a child session and replies
     `{"type":"subagent_result","id","result"}`.
   - `quickfix` `{"type":"quickfix","entries":[...]}` — a frontend side

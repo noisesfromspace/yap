@@ -291,8 +291,7 @@ function M.sync(buf)
 end
 
 --- Append a subagent session path to the parent's frontmatter `subagents`
---- list. It records ownership for tool follow-ups; saved children also appear
---- in the session history picker.
+--- list. Saved children appear in the session picker under their parent.
 function M.record_subagent(parent, child_path)
   local e = M.end_line(parent)
   if not e then
