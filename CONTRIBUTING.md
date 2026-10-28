@@ -233,7 +233,7 @@ never make yap write its data folder into the project directory
 #### R-frontmatter — The model state is durable YAML frontmatter; everything else is ephemeral
 
 The frontmatter holds `provider`/`model` (the combo to resume with),
-`available_reasoning` (the reasoning levels on offer) and `reasoning_level`
+`reasoning_level`
 (the live, hand-editable choice — empty means the provider default),
 `created_cwd` (the
 exact working directory the session was created in — the session dir slug is
@@ -278,7 +278,7 @@ either in context or gone, and folding it away would be hidden state.
 
 #### R-scratch-sections — Scratch sections are parsed from the live `notes.md` buffer, never re-read from the saved file during dispatch
 
-`# @notes` is inert; `# @steer` and `# @queue` each hold one message.
+`# @steer` and `# @queue` each hold one message.
 `<C-s>` acts on the section under the cursor. In steer while running it
 submits a replaceable instruction for the next model boundary; if the turn
 ends first, the draft remains and can be sent as the next message while idle.
@@ -286,7 +286,7 @@ In queue while idle it sends the whole body; while running it authorizes one
 follow-up after successful completion, using the live text at that time.
 Simply typing in queue never schedules a send. Clearing the body retracts
 an authorized queue; stopping or failing the turn does not send it.
-Only the three named headings delimit sections: any other `# @...` line is
+Only the two named headings delimit sections: any other `# @...` line is
 ordinary content. Editing/removing a pending steer updates/cancels it in
 the backend. Consumed bodies are removed and saved with a blank line under
 the heading; unsent edits still need `:write` and prompt on exit. Inline
@@ -740,9 +740,6 @@ sequenceDiagram
   - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...}`
     — the Lua side spawns/runs a child session and replies
     `{"type":"subagent_result","id","result"}`.
-  - `quickfix` `{"type":"quickfix","entries":[...]}` — a frontend side
-    effect: the Lua side replaces the Neovim quickfix list with these entries
-    (only a live frame creates a list, so persisted tool regions never replay).
   - `close_session` `{"type":"close_session"}` — a frontend side effect: the
     Lua side closes the session buffer once the turn completes and the session
     file is saved.

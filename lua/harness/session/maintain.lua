@@ -84,20 +84,15 @@ function M.clear(buf, keep)
   end
 end
 
---- The compaction prompt: a `compact` template in templates_dir overrides
---- the built-in default (compaction is the template mechanism applied,
---- R-templates-skills). Returns trimmed body lines, never a leading # @role heading.
+--- The compaction prompt. Returns body lines, never a leading # @role heading.
 local function compact_prompt_lines(instructions)
-  local lines = template.named_lines("compact")
-  if not lines then
-    lines = vim.split(
-      "Summarize the conversation above into a compact markdown summary that\n"
-        .. "preserves all facts, decisions, open todos, and current file state.\n"
-        .. "I will use that summary to continue the conversation with full context.",
-      "\n",
-      { plain = true }
-    )
-  end
+  local lines = vim.split(
+    "Summarize the conversation above into a compact markdown summary that\n"
+      .. "preserves all facts, decisions, open todos, and current file state.\n"
+      .. "I will use that summary to continue the conversation with full context.",
+    "\n",
+    { plain = true }
+  )
   if instructions and instructions:match("%S") then
     vim.list_extend(lines, { "", "Additional instructions: " .. instructions })
   end

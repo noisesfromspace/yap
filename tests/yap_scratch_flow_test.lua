@@ -44,9 +44,6 @@ assert(vim.wo.spell, "notes window needs spell checking")
 assert(vim.fn.maparg("<C-t>", "n", false, true).buffer == 1, "notes need template picker")
 assert(vim.fn.maparg("<C-s>", "x", false, true).buffer ~= 1, "visual mode should have no selection send")
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes",
-  "not sent",
-  "",
   "# @steer",
   "next turn",
   "",
@@ -58,15 +55,10 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
 require("harness.client.scratch").refresh(scratch)
 assert(vim.bo[scratch].modified, "draft should stay unsaved and prompt on exit")
 assert(not text(scratch):find("uncommitted", 1, true), "virtual state label leaked into file")
-assert(hint(scratch, 7) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 7))
--- # @notes is inert and carries no label at all.
-assert(hint(scratch, 2) == "", "notes section grew a state label")
-assert(vim.fn.foldlevel(9) == 1, "unknown heading incorrectly ended queue fold")
--- A notes keypress does not send anything; idle steer does, even with queue filled.
+assert(hint(scratch, 4) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 4))
+assert(vim.fn.foldlevel(6) == 1, "unknown heading incorrectly ended queue fold")
+-- Sending the steer while idle dispatches it, even with queue filled.
 cursor(2)
-yap.scratch_send(scratch)
-assert(not yap.is_running(owner), "notes sent unexpectedly")
-cursor(5)
 yap.scratch_send(scratch)
 wait_done(owner, "next turn")
 assert(text(scratch):find("# @queue\nqueue one\n# @user\nqueue two", 1, true), "steer send ate queue")
@@ -114,7 +106,6 @@ assert(text(owner):find("\\# @user\nkept as content", 1, true), "pasted role hea
 assert(text(owner):find("\\<!-- yap:tool -->", 1, true), "pasted marker became a tool region")
 assert(text(scratch):find("# @queue\n?$"), "queue was not cleared")
 assert(text(scratch):find("# @steer\n# @queue", 1, true) == nil, "queue clear lost section spacing")
-assert(text(scratch):find("not sent", 1, true), "notes were consumed")
 
 -- Clearing an armed queue before the turn ends cancels the follow-up.
 vim.api.nvim_buf_set_lines(owner, -1, -1, false, { "one more in-flight turn" })

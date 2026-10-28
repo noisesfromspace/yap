@@ -367,17 +367,6 @@ function M.insert(name, opts)
   end)
 end
 
-function M.named_lines(name)
-  for _, entry in ipairs(list_md(config().templates_dir)) do
-    if entry.name == name then
-      local text = read_file(entry.path)
-      if text then
-        return trim_blank(vim.split(text, "\n", { plain = true }))
-      end
-    end
-  end
-end
-
 local function file_items(cwd)
   local items = {}
   local function scan(dir, prefix)

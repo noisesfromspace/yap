@@ -195,7 +195,7 @@ assert(
   vim.deep_equal(tools_fm.tools, { "read", "search", "glob" }),
   "tools list not roundtripped: " .. vim.inspect(tools_fm.tools)
 )
--- reasoning_level: the live choice; available_reasoning lists the options.
+-- reasoning_level is the live, hand-editable choice.
 local knobs_block = frontmatter.render({
   provider = "zeta",
   model = "m1",
@@ -212,22 +212,13 @@ assert(
   knobs_fm.reasoning_level == "high",
   "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level)
 )
-local saw_level, saw_available = false, false
-local available = {}
+local saw_level = false
 for _, l in ipairs(knobs_block) do
   if l == "reasoning_level: high" then
     saw_level = true
-  elseif l == "available_reasoning:" then
-    saw_available = true
-  elseif l:match("^%s+%-%s+%S+$") then
-    available[#available + 1] = l:match("^%s+%-%s+(%S+)$")
   end
 end
 assert(saw_level, "reasoning_level line missing: " .. vim.inspect(knobs_block))
-assert(
-  saw_available and vim.deep_equal(available, { "low", "medium", "high" }),
-  "available_reasoning list wrong: " .. vim.inspect(knobs_block)
-)
 local plain_fm = frontmatter.parse(frontmatter.render({
   provider = "zeta",
   model = "m1",

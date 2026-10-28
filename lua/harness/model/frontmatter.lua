@@ -7,10 +7,6 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   available_reasoning:
---     - low
---     - medium
---     - high
 --   reasoning_level: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
@@ -35,10 +31,9 @@
 -- `title` is always present (empty by default) and wins over `description`
 -- when you type a value into it; `description` is the generated one-line
 -- summary the picker shows while the title is empty; `model` and
--- `provider` are the combo to resume with; `available_reasoning` lists the
--- reasoning levels on offer and `reasoning_level` (low|medium|high) is the
--- live, hand-editable choice — read on every send, empty means the
--- provider's own default;
+-- `provider` are the combo to resume with; `reasoning_level`
+-- (low|medium|high) is the live, hand-editable choice — read on every send,
+-- empty means the provider's own default;
 -- `created_cwd` is the exact working
 -- directory the session was created in (the directory slug is lossy, so
 -- this is the only exact record of where a session ran); `agent` marks a
@@ -66,11 +61,6 @@
 local M = {}
 
 local config = require("harness.config")
-
--- The reasoning levels a session can select. Rendered into the frontmatter as
--- `available_reasoning` so the options are visible next to the active choice;
--- the active value itself is what gets sent.
-local AVAILABLE_REASONING = { "low", "medium", "high" }
 
 local function is_list_key(k)
   return k == "models" or k == "subagents" or k == "forks"
@@ -159,10 +149,6 @@ function M.render(fm)
   end
   lines[#lines + 1] = "model: " .. fm.model
   lines[#lines + 1] = "provider: " .. fm.provider
-  lines[#lines + 1] = "available_reasoning:"
-  for _, level in ipairs(AVAILABLE_REASONING) do
-    lines[#lines + 1] = "  - " .. level
-  end
   if fm.reasoning_level and fm.reasoning_level ~= "" then
     lines[#lines + 1] = "reasoning_level: " .. fm.reasoning_level
   end

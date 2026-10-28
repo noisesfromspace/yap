@@ -88,8 +88,7 @@ vim.api.nvim_buf_delete(subagent, { force = true })
 
 -- A stopped or errored turn also sets `awaiting` when its stream closes,
 -- but it is not "waiting" for a reply: it is counted as stopped/error in
--- the rollup, and overview() still excludes it (<leader>w also lists
--- stopped sessions, unlike the rollup).
+-- the rollup, and overview() still excludes it.
 local stopped = vim.api.nvim_create_buf(false, true)
 vim.b[stopped].yap = true
 state.sessions[stopped] = true
@@ -202,7 +201,7 @@ vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
 -- <leader>r lists every other open session with its status;
--- waiting sessions sort last because they have a dedicated <leader>w picker.
+-- waiting sessions sort last.
 vim.cmd("enew")
 local items, fmt
 local orig_select = vim.ui.select
@@ -226,41 +225,6 @@ assert(not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize
   "single-project open picker should show neither model nor cwd: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
 
--- <leader>w lists just the sessions awaiting a reply.
-local waiting_items, waiting_fmt
-vim.ui.select = function(list, opts)
-  waiting_items = list
-  waiting_fmt = opts.format_item
-end
-yap.waiting()
-vim.ui.select = orig_select
-assert(waiting_items and #waiting_items == 1, "expected one waiting session, got " .. vim.inspect(waiting_items))
-assert(waiting_items[1].buf == buf, "waiting picker should list the awaiting session")
-assert(waiting_items[1].state == "waiting", "waiting state missing: " .. vim.inspect(waiting_items[1]))
-assert(waiting_items[1].model == "m1", "waiting model missing: " .. vim.inspect(waiting_items[1]))
-assert(not waiting_fmt(waiting_items[1]):find("(m1)", 1, true), "waiting picker should hide the model")
-
--- If the only waiting session is already current, explain that instead of
--- claiming nothing is waiting.
-vim.api.nvim_set_current_buf(buf)
-local current_notice
-local orig_notify_waiting = vim.notify
-vim.notify = function(message)
-  current_notice = message
-end
-waiting_items = nil
-vim.ui.select = function(list)
-  waiting_items = list
-end
-yap.waiting()
-vim.ui.select = orig_select
-vim.notify = orig_notify_waiting
-assert(not waiting_items, "current waiting session should not appear in the picker")
-assert(
-  current_notice == "yap: this conversation is already open and waiting for your reply",
-  "unexpected empty waiting message: " .. tostring(current_notice)
-)
-vim.cmd("enew")
 
 -- A description replaces the name fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

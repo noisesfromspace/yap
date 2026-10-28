@@ -3,7 +3,6 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local document = require("harness.model.document")
 assert(type(require("harness.model.document").parse_buffer) == "function", "document module")
-assert(type(require("harness.client.template").named_lines) == "function", "template module")
 assert(type(require("harness.state").is_running) == "function", "state module")
 local session = require("harness.session")
 

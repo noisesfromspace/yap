@@ -2,7 +2,7 @@ package tools
 
 import "boers.email/yap/agent/wire"
 
-// close_session is a frontend side effect (like quickfix): the tool itself
+// close_session is a frontend side effect: the tool itself
 // performs no Go-side action beyond emitting the close_session frame; the
 // Neovim side sees it and closes the session buffer once the turn has fully
 // completed and the session file has been saved, so the request survives as

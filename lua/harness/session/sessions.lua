@@ -12,9 +12,6 @@ local audit = require("harness.client.audit")
 local guard = require("harness.ui.guard")
 local buffers = require("harness.session.buffers")
 
-local stopped = state.stopped
-local errors = state.errors
-local awaiting = state.awaiting
 local pending_approvals = state.pending_approvals
 local follow_override = state.follow_override
 
@@ -169,8 +166,8 @@ function M.sessions(scope)
     buffers.open(path)
   end)
 end
---- Sort waiting sessions last; their dedicated <leader>w picker
---- makes them easy to reach without letting them crowd the general list.
+--- Sort sessions by state: errors first, then running, then stopped, then
+--- idle and done, with sessions awaiting a reply last.
 local function session_rank(buf)
   local s = picker.state(buf)
   if s == "error" then
@@ -183,25 +180,6 @@ local function session_rank(buf)
     return 5
   end
   return 4 -- idle and done
-end
-
---- Every open yap session buffer, annotated with its live state and sorted with
---- waiting sessions last. The needs-you picker omits the current leaf session,
---- but keeps a current parent when it has open children to group beneath it.
---- An optional `state` narrows the list: a state name ("running", "error",
---- "waiting", "stopped" or "idle"), a set of them (a table keyed by state
---- name), or nil for all. The
---- "needs you" includes ordinary waiting/stopped parents, but only stopped
---- or errored children: a finished child need not be replied to. A current
---- parent remains visible while it has an open subagent. Tail viewers are
---- never here — use live() / <leader>l.
-local function has_open_child(parent, owners)
-  for _, parents in pairs(owners) do
-    if parents[parent] then
-      return true
-    end
-  end
-  return false
 end
 
 -- Forks copy agent references, so an open agent can have several parents.
@@ -228,16 +206,11 @@ local function open_owners(open_paths)
   return owners
 end
 
-function M.instances(state)
-  -- Normalize `state` to a set keyed by state name, or nil for "all".
-  local states = state
-  if type(state) == "string" then
-    states = { [state] = true }
-  end
-  -- The "needs you" picker is the waiting + stopped set.
-  local needs_you = states ~= nil and states.waiting == true and states.stopped == true
+--- Every open yap session buffer, annotated with its live state and sorted by
+--- state. Subagents and forks are indented under their parent. Tail viewers
+--- are never here — use live() / <leader>l.
+function M.instances()
   local items = {}
-  local current = vim.api.nvim_get_current_buf()
   local open_paths = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[b].yap then
@@ -245,29 +218,12 @@ function M.instances(state)
     end
   end
   local owners = open_owners(open_paths)
-  local attention_child = {}
-  if needs_you then
-    for child, parents in pairs(owners) do
-      if picker.agent(nil, child) and (stopped[child] or errors[child]) then
-        for parent in pairs(parents) do
-          attention_child[parent] = true
-        end
-      end
-    end
-  end
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
     local parent = owners[b] and next(owners[b])
     local is_subagent = picker.agent(fm, b) ~= nil
-    local include_current = not needs_you or (b == current and has_open_child(b, owners))
-    local child_needs_you = is_subagent and (stopped[b] or errors[b])
-    if
-      (b ~= current or include_current)
-      and vim.b[b].yap
-      and (not needs_you or not is_subagent or child_needs_you)
-      and (states == nil or states[picker.state(b)] or (needs_you and (child_needs_you or attention_child[b])))
-    then
+    if vim.b[b].yap then
       items[#items + 1] = {
         buf = b,
         text = session.live_label(b, parent ~= nil),
@@ -283,15 +239,7 @@ function M.instances(state)
     end
   end
   if #items == 0 then
-    if needs_you then
-      local message = "yap: no conversations need a reply"
-      if vim.b[current].yap and states[picker.state(current)] then
-        message = "yap: this conversation is already open and waiting for your reply"
-      end
-      vim.notify(message, vim.log.levels.INFO)
-    else
-      vim.notify("yap: no open conversations", vim.log.levels.INFO)
-    end
+    vim.notify("yap: no open conversations", vim.log.levels.INFO)
     return
   end
   -- Sort roots by state; keep each child directly below its parent.
@@ -368,7 +316,7 @@ function M.instances(state)
   local glyph = picker.glyphs()
   local icon_width = picker.icon_width(glyph)
   vim.ui.select(items, {
-    prompt = needs_you and "yap waiting" or "yap sessions",
+    prompt = "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
       local icon = (item.approval and glyph.approval) or glyph[item.state]
@@ -388,12 +336,6 @@ function M.instances(state)
       buffers.focus_buf(choice.buf)
     end
   end)
-end
-
---- Just the sessions needing a reply — waiting for one or manually stopped —
---- the "needs you" set (<leader>w).
-function M.waiting()
-  M.instances({ waiting = true, stopped = true })
 end
 
 return M

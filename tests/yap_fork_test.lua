@@ -189,10 +189,6 @@ local function check_open_tree(pick, leaf_visible)
   end
 end
 check_open_tree(yap.instances, true)
-local state = require("harness.state")
-state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true, true
-check_open_tree(yap.waiting, false)
-state.awaiting[original_buf], state.awaiting[fork_buf], state.awaiting[nested_buf] = nil, nil, nil
 local saved_capture
 vim.ui.select = function(items)
   saved_capture = items
@@ -303,11 +299,8 @@ local function check_orphan(pick, root_buf, child_buf, title)
   end
 end
 check_orphan(yap.instances, fork_buf, nested_buf, "fork · forked (parent not shown)")
-state.awaiting[fork_buf], state.awaiting[nested_buf] = true, true
--- The current leaf is omitted only from needs-you, even with an open parent.
-check_orphan(yap.waiting, fork_buf, nil, "fork · forked (parent not shown)")
 vim.cmd("bdelete! " .. fork_buf)
--- A lone current fork appears in the general picker but not needs-you.
+-- A lone current fork appears in the general picker.
 captured = nil
 vim.ui.select = function(items)
   captured = items
@@ -320,21 +313,8 @@ for _, item in ipairs(captured or {}) do
     or (item.buf == nested_buf and item.text == "fork · " .. paths.session_name(generated) .. " (parent not shown)")
 end
 assert(found_current, "current orphan fork missing from open picker")
--- A current leaf is hidden by needs-you even when other sessions need attention.
-state.awaiting[nested_buf] = true
-captured = nil
-vim.ui.select = function(items)
-  captured = items
-end
-yap.waiting()
-vim.ui.select = select
-for _, item in ipairs(captured or {}) do
-  assert(item.buf ~= nested_buf, "current leaf should be hidden from needs-you")
-end
 vim.cmd("enew")
 check_orphan(yap.instances, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
-check_orphan(yap.waiting, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
-state.awaiting[nested_buf] = nil
 local after_close = require("harness.session").list("cwd")
 local positions = {}
 for i, item in ipairs(after_close) do

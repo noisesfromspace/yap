@@ -10,7 +10,7 @@
 -- unsent `# @user` prompt (a scheduled prompt); open sessions stay visible in
 -- the open-session picker via the filename fallback. Subagent sessions belong
 -- to the conversation that spawned them: saved history never lists them, while
--- the open-session and waiting pickers show them under their parent.
+-- the open-session picker shows them under their parent.
 
 local view = require("harness.ui.view")
 

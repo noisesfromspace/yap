@@ -25,14 +25,12 @@ vim.wait(400)
 yap.scratch_toggle()
 local scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes",
-  "",
   "# @steer",
   "also check the tests",
   "",
   "# @queue",
 })
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 local notify = vim.notify
 local steer_notices = {}
 local stop_notices = {}
@@ -54,7 +52,7 @@ local function label(buf, row)
   end
   return table.concat(parts)
 end
-assert(label(scratch, 3) == "  · pending", "submitted steer is not labelled pending: " .. label(scratch, 3))
+assert(label(scratch, 1) == "  · pending", "submitted steer is not labelled pending: " .. label(scratch, 1))
 
 -- Steering stays pending in the live section until the backend confirms it.
 assert(
@@ -136,16 +134,14 @@ vim.wait(400)
 yap.scratch_toggle(buf3)
 local scratch3 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch3, 0, -1, false, {
-  "# @notes",
-  "",
   "# @steer",
   "also check the tests",
   "",
   "# @queue",
 })
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(scratch3)
-vim.api.nvim_buf_set_lines(scratch3, 3, 4, false, {})
+vim.api.nvim_buf_set_lines(scratch3, 1, 2, false, {})
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch3 }) -- API edits don't simulate typing
 vim.wait(100) -- let the backend reader receive the cancellation
 local ok6 = vim.wait(15000, function()
@@ -173,16 +169,14 @@ vim.wait(400)
 yap.scratch_toggle(buf4)
 local scratch4 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch4, 0, -1, false, {
-  "# @notes",
-  "",
   "# @steer",
   "also check the tests",
   "",
   "# @queue",
 })
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(scratch4)
-vim.api.nvim_buf_set_lines(scratch4, 3, 4, false, { "edited instruction" })
+vim.api.nvim_buf_set_lines(scratch4, 1, 2, false, { "edited instruction" })
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch4 })
 assert(
   vim.wait(15000, function()
@@ -255,14 +249,12 @@ vim.wait(400) -- the mock's slow tool is in flight
 yap.scratch_toggle(buf6)
 local scratch6 = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch6, 0, -1, false, {
-  "# @notes",
-  "",
   "# @steer",
   "also check the tests",
   "",
   "# @queue",
 })
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(scratch6)
 vim.notify = function(msg, ...)
   stop_notices[#stop_notices + 1] = msg

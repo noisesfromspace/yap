@@ -29,8 +29,8 @@ Inspired by pi and gptel.
 - A scratch buffer that queues one follow-up and steers the current turn
   (`<leader>s`).
 - Subagents, each a markdown file that behaves like any other session.
-- Pickers for open, waiting and saved sessions (`<leader>r`, `<leader>w`,
-  `<leader>y`), all through `vim.ui.select`.
+- Pickers for open and saved sessions (`<leader>r`, `<leader>y`), all
+  through `vim.ui.select`.
 - A winbar with the session title, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
@@ -164,7 +164,6 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model           |
 | `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)     |
 | `require("harness").instances()`                         | `<leader>r` | pick another open session                   |
-| `require("harness").waiting()`                           | `<leader>w` | pick a session awaiting your reply          |
 | `require("harness").insert(name, { at_cursor = false })` | `<C-t>`     | insert template / merge a skill             |
 | `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference |
 

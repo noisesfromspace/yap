@@ -19,7 +19,7 @@ assert(vim.fn.maparg("<C-t>", "n", false, true).buffer == 1, "scratch has no tem
 assert(vim.api.nvim_buf_get_name(scratch):match("/notes%.md$") ~= nil, "scratch buffer is not a notes.md file")
 local notes_file = vim.api.nvim_buf_get_name(scratch)
 assert(vim.fn.filereadable(notes_file) == 1, "new notes file was not saved automatically")
-local initial = { "# @notes", "", "# @steer", "", "# @queue" }
+local initial = { "# @steer", "", "# @queue" }
 assert(
   table.concat(vim.fn.readfile(notes_file), "\n") == table.concat(initial, "\n"),
   "new notes file has unexpected initial content"
@@ -46,20 +46,18 @@ assert(vim.wo.foldenable, "scratch folding is disabled")
 
 -- Each control section has its own fold; closing one leaves the others open.
 vim.api.nvim_win_call(scratch_win, function()
-  assert(vim.fn.foldlevel(1) == 1, "notes heading has no fold")
-  assert(vim.fn.foldlevel(3) == 1, "steer heading has no fold")
-  assert(vim.fn.foldlevel(5) == 1, "queue heading has no fold")
+  assert(vim.fn.foldlevel(1) == 1, "steer heading has no fold")
+  assert(vim.fn.foldlevel(3) == 1, "queue heading has no fold")
   vim.api.nvim_win_set_cursor(scratch_win, { 1, 0 })
   vim.cmd("normal! zc")
-  assert(vim.fn.foldclosed(1) == 1, "notes section did not fold")
-  assert(vim.fn.foldtextresult(1):find("# @notes", 1, true), "closed fold lost its section label")
-  assert(vim.fn.foldclosed(3) == -1, "folding notes also closed steer")
-  assert(vim.fn.foldclosed(5) == -1, "folding notes also closed queue")
+  assert(vim.fn.foldclosed(1) == 1, "steer section did not fold")
+  assert(vim.fn.foldtextresult(1):find("# @steer", 1, true), "closed fold lost its section label")
+  assert(vim.fn.foldclosed(3) == -1, "folding steer also closed queue")
   vim.cmd("normal! zo")
 end)
 
 -- the scratch buffer is a real file: :write saves the live control buffer
-local saved = { "# @notes", "a note", "", "# @steer", "", "# @queue", "task one", "task two" }
+local saved = { "# @steer", "next task", "", "# @queue", "task one", "task two" }
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, saved)
 local ok = pcall(vim.cmd, "write")
 assert(ok, "scratch buffer rejected :write")
@@ -71,13 +69,13 @@ vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(scratch) == 0, "scratch did not close")
 assert(vim.api.nvim_buf_is_valid(scratch), "scratch was wiped on close")
-assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @notes", "scratch content not preserved")
+assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @steer", "scratch content not preserved")
 
 -- reopening reuses the same buffer and content
 yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(scratch) == 1, "scratch did not reopen")
 assert(vim.api.nvim_get_current_buf() == scratch, "scratch did not focus on reopen")
-assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @notes", "scratch content lost on reopen")
+assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @steer", "scratch content lost on reopen")
 assert(vim.fn.maparg("<leader>s", "n", false, true).buffer == 1, "scratch has no <leader>s map")
 
 -- a recreated scratch buffer loads the persisted sections

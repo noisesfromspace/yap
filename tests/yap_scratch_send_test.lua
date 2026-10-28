@@ -18,9 +18,6 @@ end
 yap.scratch_toggle()
 local scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes",
-  "remember this",
-  "",
   "# @steer",
   "",
   "# @queue",
@@ -28,9 +25,6 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
 })
 vim.cmd("write")
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
-  "# @notes",
-  "remember this",
-  "",
   "# @steer",
   "follow up after queue",
   "",
@@ -38,7 +32,7 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "task one",
   "task two",
 })
-vim.api.nvim_win_set_cursor(0, { 7, 0 })
+vim.api.nvim_win_set_cursor(0, { 5, 0 })
 yap.scratch_send(scratch)
 local current = text(scratch)
 assert(
@@ -60,7 +54,7 @@ assert(not chat:match("stale disk task"), "dispatch read stale saved file conten
 
 -- Once the turn ends, send the steer body as a follow-up by placing the
 -- cursor there. Queue and steer never override each other.
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
 yap.scratch_send(scratch)
 assert(not text(scratch):match("follow up after queue"), "idle steer was not consumed")
 local steer_done = vim.wait(15000, function()
@@ -70,7 +64,7 @@ end, 100)
 assert(steer_done, "idle steer did not run:\n" .. text(buf))
 
 -- A further <C-s> with both sections empty starts nothing.
-vim.api.nvim_win_set_cursor(0, { 7, 0 })
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(scratch)
 assert(not yap.is_running(buf), "empty scratch dispatched a turn")
 assert(
@@ -80,7 +74,7 @@ assert(
 
 local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), "\n")
 assert(not saved:match("task one") and not saved:match("task two") and not saved:match("follow up after queue"), "consumed scratch text reappeared in saved file")
-assert(saved:match("# @notes") and saved:match("# @queue"), "scratch section structure was not saved")
+assert(saved:match("# @steer") and saved:match("# @queue"), "scratch section structure was not saved")
 
 -- A steer submitted during a final-answer stream has no further model
 -- boundary. It stays in scratch and does not start a surprise follow-up.
@@ -90,7 +84,7 @@ assert(yap.send(late), "late-steer turn did not start")
 yap.scratch_toggle(late)
 local late_scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(late_scratch, 0, -1, false, {
-  "# @notes", "", "# @steer", "late instruction", "", "# @queue",
+  "# @steer", "late instruction", "", "# @queue",
 })
 local late_notices = {}
 local original_notify = vim.notify
@@ -98,7 +92,7 @@ vim.notify = function(msg, ...)
   late_notices[#late_notices + 1] = msg
   return original_notify(msg, ...)
 end
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(late_scratch)
 assert(vim.wait(15000, function() return not yap.is_running(late) end, 100), "late-steer turn did not finish")
 vim.notify = original_notify
@@ -114,14 +108,14 @@ assert(yap.send(stopped), "stop-steer turn did not start")
 yap.scratch_toggle(stopped)
 local stop_scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(stop_scratch, 0, -1, false, {
-  "# @notes", "", "# @steer", "unfinished instruction", "", "# @queue",
+  "# @steer", "unfinished instruction", "", "# @queue",
 })
 local stop_notices = {}
 vim.notify = function(msg, ...)
   stop_notices[#stop_notices + 1] = msg
   return original_notify(msg, ...)
 end
-vim.api.nvim_win_set_cursor(0, { 4, 0 })
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(stop_scratch)
 yap.stop(stopped)
 -- stop() cancels the turn via a message to the backend (which stays alive for
@@ -141,10 +135,10 @@ local failed = yap.new()
 yap.scratch_toggle(failed)
 local failed_scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(failed_scratch, 0, -1, false, {
-  "# @notes", "", "# @steer", "", "# @queue", "keep this task",
+  "# @steer", "", "# @queue", "keep this task",
 })
 vim.cmd("write")
-vim.api.nvim_win_set_cursor(0, { 6, 0 })
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(failed_scratch)
 assert(text(failed_scratch):find("keep this task", 1, true), "failed send consumed live queue")
 assert(table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(failed_scratch)), "\n"):find("keep this task", 1, true), "failed send consumed saved queue")

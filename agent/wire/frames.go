@@ -23,7 +23,6 @@ import (
 //   - tool_output       — streamed bytes of a running tool (live tail)
 //   - approval_request  — request: the frontend replies approval_result
 //   - subagent_request  — request: the frontend replies subagent_result
-//   - quickfix          — frontend side effect: replace the quickfix list
 //   - close_session     — frontend side effect: close the buffer after the turn
 //   - turn_complete     — the terminal frame for one turn (ok + error, or cancelled)
 
@@ -186,15 +185,6 @@ func EmitTurnCancelled() {
 		"ok":        false,
 		"cancelled": true,
 	})
-}
-
-// EmitQuickfix writes one `quickfix` frame — a frontend side effect that
-// replaces the Neovim quickfix list. The audit tool_call/tool_result events
-// still carry the full record; this frame is the UI action only.
-func EmitQuickfix(entries any) {
-	frameMu.Lock()
-	defer frameMu.Unlock()
-	writeFrameLocked(map[string]any{"type": "quickfix", "entries": entries})
 }
 
 // EmitCloseSession writes one `close_session` frame — a frontend side effect

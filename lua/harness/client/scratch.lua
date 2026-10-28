@@ -1,5 +1,5 @@
 -- The scratch queue and mid-turn steering: a file-backed `notes.md` jotter
--- (<leader>s) with three explicit sections (# @notes / # @steer / # @queue)
+-- (<leader>s) with two explicit sections (# @steer / # @queue)
 -- and the # @steer mechanism that redirects a running turn.
 
 local M = {}
@@ -17,11 +17,11 @@ end
 local steer = state.steer
 local running = state.running
 
--- Only the three control headings delimit sections. Other # @ lines are content.
+-- Only the two control headings delimit sections. Other # @ lines are content.
 -- The queue body is one message; a steer is one multiline body.
 local function section_name(line)
   local name = line:match("^# @([%a]+)%s*$")
-  if name == "notes" or name == "steer" or name == "queue" then
+  if name == "steer" or name == "queue" then
     return name
   end
 end
@@ -205,7 +205,7 @@ function M.scratch_send(scratch)
   for _, line in ipairs(vim.api.nvim_buf_get_lines(scratch, 0, row, false)) do
     section = section_name(line) or section
   end
-  if section == "notes" or not section then
+  if not section then
     vim.notify("yap: move to # @queue or # @steer to send", vim.log.levels.INFO)
     return
   end
@@ -275,7 +275,7 @@ local status_ns = vim.api.nvim_create_namespace("yap_scratch_status")
 
 --- Display-only state labels: the buffer/file stays plain editable Markdown,
 --- and the label says where a section stands (never what to press). An empty
---- section and the inert # @notes carry no label.
+--- section carries no label.
 function M.refresh(scratch)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return
@@ -284,7 +284,7 @@ function M.refresh(scratch)
   local owner = vim.b[scratch].yap_owner
   for i, line in ipairs(vim.api.nvim_buf_get_lines(scratch, 0, -1, false)) do
     local section = section_name(line)
-    if section and section ~= "notes" and M.section_text(scratch, section) ~= "" then
+    if section and M.section_text(scratch, section) ~= "" then
       -- uncommitted: typed, not yet handed to a turn. pending: submitted to
       -- the running turn. scheduled: authorized to send when that turn ends.
       local label
@@ -353,17 +353,17 @@ function M.scratch_toggle(buf)
         found[role] = true
       end
     end
-    if not found.notes and not found.steer and not found.queue then
-      -- Treat a pre-existing unstructured file as notes, never erase it.
+    if not found.steer and not found.queue then
+      -- Treat a pre-existing unstructured file as content above the sections,
+      -- never erase it. Headings are separated by a blank line.
       if #lines == 1 and lines[1] == "" then
-        vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "# @notes", "", "# @steer", "", "# @queue" })
+        vim.api.nvim_buf_set_lines(scratch, 0, -1, false, { "# @steer", "", "# @queue" })
       else
-        vim.api.nvim_buf_set_lines(scratch, 0, 0, false, { "# @notes", "" })
         vim.api.nvim_buf_set_lines(scratch, -1, -1, false, { "", "# @steer", "", "# @queue" })
       end
     else
       local missing = {}
-      for _, role in ipairs({ "notes", "steer", "queue" }) do
+      for _, role in ipairs({ "steer", "queue" }) do
         if not found[role] then
           missing[#missing + 1] = ""
           missing[#missing + 1] = "# @" .. role

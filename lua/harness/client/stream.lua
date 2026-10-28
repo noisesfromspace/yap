@@ -104,28 +104,6 @@ local function handle_approval_request(buf, ev)
   end
 end
 
--- A first-class quickfix frame (a frontend side effect, not an audit event):
--- replaces the Neovim quickfix list. Only a live frame creates a list, so
--- persisted tool regions never replay on reopen.
-local function handle_quickfix(frame)
-  local entries = frame.entries
-  if type(entries) ~= "table" then
-    return
-  end
-  local items = {}
-  for _, entry in ipairs(entries) do
-    table.insert(items, {
-      filename = entry.file,
-      lnum = entry.line,
-      col = entry.column or 0,
-      text = entry.text,
-    })
-  end
-  -- ' ' creates a new stack entry: it replaces the visible list while
-  -- preserving the previous one for :colder/:cnewer.
-  vim.fn.setqflist({}, " ", { title = "Yap", context = { yap = true }, items = items })
-end
-
 local function handle_event(buf, ev)
   if type(ev) ~= "table" then
     return
@@ -542,9 +520,9 @@ function M.send(buf)
       if compact then
         maintain.offer(buf)
       end
-      -- close_session is a frontend side effect (like quickfix): the agent
-      -- asked to end the session, so once the turn is fully done and the
-      -- session file is saved, wipe the buffer. The BufWipeout autocmd in
+      -- close_session is a frontend side effect: the agent asked to end the
+      -- session, so once the turn is fully done and the session file is
+      -- saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
       scratchmod.finish_queue(buf, not errors[buf])
@@ -570,8 +548,6 @@ function M.send(buf)
         handle_approval_request(buf, frame)
       elseif frame.type == "subagent_request" then
         subagent.start(buf, frame)
-      elseif frame.type == "quickfix" then
-        handle_quickfix(frame)
       elseif frame.type == "close_session" then
         -- Defer to turn completion so the reply streams out and the session
         -- file is saved before the buffer is wiped (complete() below).

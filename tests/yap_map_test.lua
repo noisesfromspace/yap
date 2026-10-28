@@ -31,7 +31,6 @@ for _, name in ipairs({
   "YapInsertHere",
   "YapSessions",
   "YapInstances",
-  "YapWaiting",
   "YapChangeDefaultModel",
   "YapReload",
 }) do
@@ -40,10 +39,10 @@ end
 for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
-for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "instances", "waiting" }) do
+for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "instances" }) do
   assert(type(yap[name]) == "function", name .. " Lua API missing")
 end
-for _, key in ipairs({ "insert_here", "instances", "sessions", "waiting" }) do
+for _, key in ipairs({ "insert_here", "instances", "sessions" }) do
   assert(yap.config.keymaps[key] ~= "", key .. " keymap disabled")
 end
 print("OK map")

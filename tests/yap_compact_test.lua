@@ -12,7 +12,6 @@ local function w(path, text)
   f:write(text)
   f:close()
 end
-w(tmp .. "/templates/compact.md", "Summarize everything.\n")
 
 yap.setup({
   bin = ROOT .. "/yap",
@@ -89,7 +88,6 @@ do
   assert(text:match("The summary%."), "summary lost: " .. text)
   assert(text:match("# @user"), "trailing user prompt lost: " .. text)
   assert(not text:match("original question"), "old history not deleted: " .. text)
-  assert(not text:match("Summarize everything%."), "compact prompt not deleted: " .. text)
   local roles = {}
   for _, m in ipairs(document.parse_buffer(buf)) do
     roles[#roles + 1] = m.role
@@ -135,7 +133,6 @@ do
   local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
   assert(text:match("The slow answer arrives in parts%."), "summary lost: " .. text)
   assert(text:match("# @system"), "system lost: " .. text)
-  assert(not text:match("Summarize everything%."), "compact prompt not deleted: " .. text)
   assert(text:match("# @user"), "trailing user prompt lost: " .. text)
 end
 
@@ -156,7 +153,7 @@ do
   assert(sent_text:match("Avoid YAML/frontmatter delimiters"), "frontmatter-safe constraint missing")
 end
 
--- ── :YapCompact accepts free-form instructions alongside the template ──
+-- ── :YapCompact accepts free-form instructions alongside the built-in prompt ──
 do
   vim.cmd("runtime plugin/yap.lua")
   local buf = yap.new({ provider = "mock", model = "m1" })
@@ -167,7 +164,7 @@ do
   end
   vim.cmd("YapCompact Focus on unresolved bugs and next steps")
   yap.send = original_send
-  assert(sent_text:match("Summarize everything%."), "template missing")
+  assert(sent_text:match("compact markdown summary"), "built-in prompt missing")
   assert(sent_text:find("Additional instructions: Focus on unresolved bugs and next steps", 1, true), "instructions missing")
   assert(sent_text:match("Do not use the colon character anywhere in the summary"), "output constraint missing")
 end

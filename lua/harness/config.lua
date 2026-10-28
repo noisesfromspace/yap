@@ -63,7 +63,7 @@ M.defaults = {
   },
   -- Every keymap is a config key (see doc/yap.txt §3); set one to ""
   -- to disable it. Buffer-local maps are applied when a session opens;
-  -- `instances`, `sessions`, `waiting` and `guard`
+  -- `instances`, `sessions` and `guard`
   -- are global (installed by setup()).
   keymaps = {
     send = "<C-s>",
@@ -76,7 +76,6 @@ M.defaults = {
     insert_file = "<C-f>",
     instances = "<leader>r",
     sessions = "<leader>y",
-    waiting = "<leader>w",
     guard = "<leader>g",
     help = "g?",
 

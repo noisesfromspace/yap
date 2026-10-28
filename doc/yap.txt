@@ -94,12 +94,12 @@ credentials. It does not change the configured default for new sessions.
 Old `$XDG_CACHE_HOME/yap/default` selections are ignored.
 
 `reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
-into every new session's frontmatter as `reasoning_level` (with the full
-choice listed under `available_reasoning`) so it is visible and hand-editable
-from the first line. Delete `reasoning_level` in a session to fall back to
-the provider's own default. `reasoning_level` is a cross-provider effort
-knob: it maps to OpenAI's `reasoning.effort`, Anthropic's `effort`/thinking
-budget, Gemini's `thinkingLevel`, and DeepSeek has no equivalent (ignored).
+into every new session's frontmatter as `reasoning_level` so it is visible and
+hand-editable from the first line. Delete `reasoning_level` in a session to
+fall back to the provider's own default. `reasoning_level` is a cross-provider
+effort knob: it maps to OpenAI's `reasoning.effort`, Anthropic's
+`effort`/thinking budget, Gemini's `thinkingLevel`, and DeepSeek has no
+equivalent (ignored).
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
 disable it. `templates_dir`/`skills_dir` configure
@@ -237,12 +237,11 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         placeholder naming the audit-log lines
                         (path:line-range) where the removed output lives.
                         Full output stays in the audit log (|yap-audit|).
-*:YapCompact*
+*:YapCompact* *yap-compact*
 :YapCompact [instructions]
-                        Insert the compact prompt (a `compact` template, or a
-                        built-in prompt), append any custom instructions, send,
-                        and — once the summary has streamed in — offer to
-                        delete the superseded history (|yap-compact|).
+                        Insert the built-in compact prompt, append any custom
+                        instructions, send, and — once the summary has
+                        streamed in — offer to delete the superseded history.
 *:YapEval*
 :YapEval [instruction]
                         Open an interactive eval session in a split about
@@ -290,7 +289,6 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").change_model(combo)    -- set this session's provider/model
   require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
   require("harness").instances()            -- pick another open session
-  require("harness").waiting()              -- pick a session awaiting your reply
   require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
 <
 `scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
@@ -302,8 +300,8 @@ for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>r, <leader>w, <leader>y and
-<leader>g, which are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except <leader>r, <leader>y and <leader>g, which
+are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
@@ -324,7 +322,6 @@ regardless of which one you open first.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
   <leader>r             Pick an open session.
-  <leader>w             Pick a session awaiting a reply or manually stopped.
   <leader>y             Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
@@ -370,10 +367,6 @@ as YAML frontmatter: >
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
-  available_reasoning:
-    - low
-    - medium
-    - high
   reasoning_level: high
   created_cwd: ~/code/project
   turns: 14
@@ -396,7 +389,6 @@ session's display name. `description` is the generated summary shown while the
 title is empty. The rest of the frontmatter:
 
   `provider`/`model`      The combo to resume with.
-  `available_reasoning`   The reasoning levels this model offers.
   `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
                           `high`), seeded from the setup() defaults and read on
                           every send. Empty means the provider's default.
@@ -493,7 +485,7 @@ File operations are the session operations:
 SCRATCH BUFFER
 
 <leader>s toggles the scratch buffer — a file-backed sibling (`notes.md`)
-with Markdown editing and spell checking in its window. Its three sections
+with Markdown editing and spell checking in its window. Its two sections
 fold independently and carry an inline, display-only state label preceded by
 a `·` so it reads as an annotation rather than buffer text — nothing you have
 to press. A section handed to a turn also shows its icon in the winbar:
@@ -502,16 +494,15 @@ to press. A section handed to a turn also shows its icon in the winbar:
   pending       (steer) Submitted to the running turn.
   scheduled     (queue) Authorized to send when that turn ends.
 
-An empty section and # @notes show no label.
+An empty section shows no label.
 
-Only these three headings delimit sections; other `# @...` lines are
+Only these two headings delimit sections; other `# @...` lines are
 ordinary scratch content, including when pasted inside a queue or steer.
 When sent, role headings and yap marker lines are Markdown-escaped in the
 session transcript so they cannot split the message. Each queue or steer
 body is one message, and clearing a sent section leaves a blank line
 beneath its heading.
 
-  # @notes    An inert backlog; never sent.
   # @steer    While running, <C-s> submits a replaceable pending message
               for the next model boundary. Once delivered, it is cleared.
               If the turn ends first (a <C-c> stop included) it stays as a
@@ -526,10 +517,10 @@ beneath its heading.
               stop, failure, or session close.
 
 <C-s> acts on the section under the cursor, not the current turn state.
-In notes it only displays a hint; move to steer or queue to send. There is
-no selection-specific send. <C-t> in normal or insert mode picks a template
-or skill and inserts it at the cursor without sending it. Drafts still need
-|:write| to persist, and unsaved changes prompt on exit. Sending/consuming
+Outside a section it only displays a hint; move to steer or queue to send.
+There is no selection-specific send. <C-t> in normal or insert mode picks a
+template or skill and inserts it at the cursor without sending it. Drafts still
+need |:write| to persist, and unsaved changes prompt on exit. Sending/consuming
 a section saves the updated file as before.
 
 AUDIT LOG                                                        *yap-audit*
@@ -697,19 +688,6 @@ tool boundary as a `# @user` message, exactly like a <C-s> steer
 The `## Skills` section of the About Yap prefix lists names + descriptions,
 refreshed on every send.
 
-COMPACTION RECIPE                                           *yap-compact*
-
-|:YapCompact| automates compaction (insert, send, then offer to delete). Pass
-free-form instructions, for example `:YapCompact Focus on unresolved bugs`,
-to add them to the compact prompt without replacing the template. The manual
-recipe:
-
-  1. `<C-t>` and pick `compact` — if you have not created one in templates_dir
-     a built-in prompt is used. Plain templates send automatically; a
-     hand-written prompt needs `<C-s>`.
-  2. Delete the history above the summary (deletion = branching,
-     |yap-introduction|). The summary message is the new context.
-
 ==============================================================================
 11. THE GUARD GATE                                        *yap-guard-gate*
 
@@ -838,7 +816,6 @@ approval rules that sit in front of them (|yap-guard-gate|).
   fetch          Fetch a URL and return the readable content as markdown.
   subagent       Run a saved agent definition in a child session.
   models         List provider/model combos and their prices.
-  quickfix       Replace Neovim's quickfix list with source locations.
   close_session  Close the session buffer once the turn has finished.
 
 Configured MCP servers (see the `mcp` block in |yap-configuration|) add their
@@ -857,9 +834,9 @@ A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in
 `agents_dir` (|yap-configuration|), one markdown file per agent. An agent
 session is internal to the conversation that spawned it: saved history never
-lists it, while the open-session picker (<leader>r) and the waiting picker
-(<leader>w) show it under its parent while it is open. The tool result carries
-a link to the session file, so a finished agent stays reachable.
+lists it, while the open-session picker (<leader>r) shows it under its parent
+while it is open. The tool result carries a link to the session file, so a
+finished agent stays reachable.
 
 ==============================================================================
 13. GLOSSARY                                                *yap-glossary*
@@ -897,7 +874,7 @@ replaces.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
   scratch             The file-backed `notes.md` control buffer holding
-                      `# @notes` / `# @steer` / `# @queue`. (Not "jotter",
+                      `# @steer` / `# @queue`. (Not "jotter",
                       "sidecar".)
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer

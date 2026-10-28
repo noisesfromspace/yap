@@ -1,5 +1,5 @@
 -- A fork retains links to existing agents, not copies of their files. The
--- open-session and waiting pickers show those links under every referencing
+-- open-session picker shows those links under every referencing
 -- branch; saved history never lists an agent session, since an agent belongs
 -- to the conversation that spawned it.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -166,17 +166,17 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.waiting()
+yap.instances()
 vim.ui.select = select
-assert(captured and captured.items, "waiting picker missing")
+assert(captured and captured.items, "open picker missing")
 local waiting_early = 0
 for _, row in ipairs(captured.items) do
   if row.buf == early then
     waiting_early = waiting_early + 1
-    assert(row.text:find("[shared: 3 branches]", 1, true), "waiting picker lost shared label")
+    assert(row.text:find("[shared: 3 branches]", 1, true), "open picker lost shared label")
   end
 end
-assert(waiting_early == 3, "waiting picker lost shared references")
+assert(waiting_early == 3, "open picker lost shared references")
 state.stopped[early] = nil
 
 -- Closing the agent leaves no history row behind, and the open picker omits

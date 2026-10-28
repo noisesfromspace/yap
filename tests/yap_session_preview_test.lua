@@ -216,23 +216,12 @@ assert(captured.opts.format_item(captured.items[child_position]):find("^" .. yap
   "running child title should be indented after aligned icon")
 state.running[child] = nil
 
--- Completed children do not need attention; stopped or errored ones do.
+-- A completed subagent is shown as "done" rather than "waiting": its
+-- answer already went back to the parent.
 state.awaiting[buf] = true
 state.awaiting[child] = true
 local picker = yap.new()
 vim.api.nvim_set_current_buf(picker)
-captured = nil
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
-end
-yap.waiting()
-vim.ui.select = orig_select
-assert(
-  captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "waiting picker should show the parent but not its completed subagent: " .. vim.inspect(captured and captured.items)
-)
--- The general picker still lists the completed subagent, but as "done"
--- rather than "waiting": its answer already went back to the parent.
 captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
@@ -253,34 +242,20 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.waiting()
+yap.instances()
 vim.ui.select = orig_select
-assert(
-  captured and #captured.items == 2 and captured.items[1].buf == buf and captured.items[2].buf == child,
-  "stopped child needs attention beneath its parent: " .. vim.inspect(captured and captured.items)
-)
-assert(captured.opts.format_item(captured.items[1]):find("^" .. yap.config.icons.waiting .. " ") == 1,
+local stopped_parent, stopped_child
+for _, item in ipairs(captured.items) do
+  if item.buf == buf then stopped_parent = item end
+  if item.buf == child then stopped_child = item end
+end
+assert(stopped_parent and stopped_child, "stopped child should stay grouped with its parent: " .. vim.inspect(captured.items))
+assert(captured.opts.format_item(stopped_parent):find("^" .. yap.config.icons.waiting .. " ") == 1,
   "waiting parent's icon should start the row")
-assert(captured.opts.format_item(captured.items[2]):find("^" .. yap.config.icons.stopped .. "    ↳") == 1,
-  "stopped child's title should be indented in waiting picker")
+assert(captured.opts.format_item(stopped_child):find("^" .. yap.config.icons.stopped .. "    ↳") == 1,
+  "stopped child's title should be indented under its parent")
 state.stopped[child] = nil
 state.awaiting[buf], state.awaiting[child] = nil, nil
-
--- A manually stopped session is also part of the "needs you" set: <leader>w
--- lists it alongside waiting sessions.
-state.stopped[buf] = true
-captured = nil
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
-end
-yap.waiting()
-vim.ui.select = orig_select
-assert(
-  captured and #captured.items == 1 and captured.items[1].buf == buf,
-  "waiting picker should list a stopped session: " .. vim.inspect(captured and captured.items)
-)
-assert(captured.items[1].state == "stopped", "stopped state missing: " .. vim.inspect(captured.items[1]))
-state.stopped[buf] = nil
 
 -- Across projects, keep the cwd after root titles rather than before icons.
 local other_project = "/tmp/yap-other-project"
@@ -301,26 +276,6 @@ assert(root_row and root_row:find("^" .. yap.config.icons.idle .. " ") == 1
   and not root_row:find("(m1)", 1, true), "project path should replace model in parentheses: " .. tostring(root_row))
 assert(child_row and child_row:find("^" .. yap.config.icons.idle .. "    ↳") == 1
   and not child_row:find(vim.fn.getcwd(), 1, true), "project path displaced child title: " .. tostring(child_row))
--- The waiting picker uses the same mixed-project labels, with no model.
-state.awaiting[buf] = true
-state.awaiting[picker] = true
-vim.cmd("enew") -- neither project is current, so both waiting roots are listed
-captured = nil
-vim.ui.select = function(items, opts)
-  captured = { items = items, opts = opts }
-end
-yap.waiting()
-vim.ui.select = orig_select
-local waiting_root, waiting_other
-for _, item in ipairs(captured.items) do
-  if item.buf == buf then waiting_root = captured.opts.format_item(item) end
-  if item.buf == picker then waiting_other = captured.opts.format_item(item) end
-end
-assert(waiting_root and waiting_root:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
-  and not waiting_root:find("(m1)", 1, true), "waiting row should show cwd instead of model: " .. tostring(waiting_root))
-assert(waiting_other and waiting_other:find(" (" .. other_project .. ")", 1, true)
-  and not waiting_other:find("(m1)", 1, true), "other project's waiting row should show its cwd: " .. tostring(waiting_other))
-state.awaiting[buf], state.awaiting[picker] = nil, nil
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 
 -- sessions() previews the saved file with the same excerpts.
