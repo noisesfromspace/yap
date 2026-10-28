@@ -37,19 +37,14 @@ print("saved: " .. path)
 local items = session.list("cwd")
 assert(#items == 0, "expected no listed sessions, got " .. #items)
 
--- 3b. A frontmatter title names a session and keeps it visible before a
+-- 3b. A renamed transcript names a session and keeps it visible before a
 -- description is generated; the directory name is not the display name.
 local frontmatter = require("harness.model.frontmatter")
 frontmatter.sync(buf) -- the fake conversation above replaced the frontmatter
--- Type the title into the always-present `title:` line, as a user would.
-local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-for i, l in ipairs(lines) do
-  if l:match("^title:") then
-    vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { "title: named-session" })
-    break
-  end
-end
+-- Rename the transcript; the filename is the title.
+vim.cmd("file named-session.md")
 session.save(buf)
+path = vim.b[buf].yap_path -- the renamed transcript
 items = session.list("cwd")
 assert(#items == 1, "expected titled session, got " .. #items)
 assert(items[1].text == "named-session", "titled session should show its title: " .. items[1].text)

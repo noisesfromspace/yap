@@ -244,7 +244,6 @@ type fieldDef struct {
 // and validation). Lua's frontmatter.lua remains the buffer writer; this list
 // is the canonical set for language services.
 var fields = []fieldDef{
-	{"title", "text", "display title"},
 	{"description", "text", "generated summary"},
 	{"model", "model", "model id"},
 	{"provider", "provider", "provider name"},

@@ -88,7 +88,8 @@ to `""` to drop it.
 `:YapEval` sessions. `flash` handles one-shot, no-tools `:YapEval!` edits and
 short session titles (the initial label and updates after each turn). Set
 `flash = ""` to disable automatic titles and use `agent` for `:YapEval!`.
-A `title:` you type in the frontmatter wins over automatic titles.
+Rename `session.md` to give the session a title; descriptions are generated
+automatically and take precedence in session views.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
 credentials. It does not change the configured default for new sessions.
@@ -362,7 +363,6 @@ heading is ignored by the parser — that is where the session's state lives,
 as YAML frontmatter: >
 
   ---
-  title: Fix the session picker
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
@@ -383,9 +383,10 @@ as YAML frontmatter: >
   ---
 <
 
-`title` (always present, empty by default) overrides `description` as the
-session's display name. `description` is the generated summary shown while the
-title is empty. The rest of the frontmatter:
+`description` is the generated summary. The transcript filename is the
+session's title: rename `session.md` with |:file|, |:saveas| or your file
+explorer. Views prefer the description and use the filename only when no
+description exists. The rest of the frontmatter:
 
   `provider`/`model`      The combo to resume with.
   `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
@@ -473,9 +474,9 @@ Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume.
 
-Ordinary sessions are listed buffers. Their real session.md filenames stay
-intact, so file explorers can open the session directory and native buffer
-navigation works. Deleting a session buffer uses Neovim's ordinary replacement
+Ordinary sessions are listed buffers backed by writable markdown files.
+Rename `session.md` to set a title without losing normal file operations.
+Deleting a session buffer uses Neovim's ordinary replacement
 buffer behavior, without preferring waiting or running sessions.
 
                                                         *harness.buffers()*
@@ -502,9 +503,8 @@ winbar overview.
 
 File operations are the session operations:
 
-  edit the `title:` line  Type a value after the always-present, empty
-                         `title:` key to name the session; leave it empty for
-                         the generated description to win.
+  rename the transcript   Rename `session.md` to set the session title. It
+                         remains an ordinary writable markdown file.
   |:YapFork|              Copy the conversation into a new session directory.
   delete a region + send  Branch the conversation within the active session.
 
@@ -610,8 +610,7 @@ tray icon and a steer icon immediately left of that beacon. A three-stop
 fold-view switch (`1  2  3`) highlights the selected preset; click a stop or
 use <leader>1..3. Then a rollup island totals ALL OTHER yap sessions by state
 (streaming, awaiting you, stopped, errored, idle). After the island: the
-session title (the `title:` frontmatter value when set, else the generated
-description), truncated to 40 display columns. A provider/model island sits
+session title (the generated description), truncated to 40 display columns. A provider/model island sits
 centered in the bar. Right: two usage chips and a context-fill meter.
 
 Reading the numbers                                    *yap-winbar-numbers*

@@ -357,32 +357,24 @@ assert(
 assert(saved_preview[#saved_preview] == "history answer", "saved last answer wrong: " .. vim.inspect(saved_preview))
 assert(not table.concat(saved_preview):find("saved reasoning", 1, true), "saved preview leaked thinking")
 
--- A frontmatter title wins over the generated description for saved and
--- open sessions; a child still prefers its own title over the task when one
--- is present.
+-- A description wins in session views; renamed children still prefer their
+-- filename title over the task when they have no description yet.
 local dir = require("harness.path").session_dir(vim.fn.getcwd())
 local titled_parent = yap.new({ path = dir .. "/titled-history-parent/session.md" })
-local titled_parent_path = vim.b[titled_parent].yap_path
 local titled_child = yap.new({ agent = "scout", hidden = true })
-local titled_child_path = vim.b[titled_child].yap_path
--- Type the title into the always-present `title:` line, then add the child's
--- description and parent link into its frontmatter.
+-- Rename each transcript to set its title (the filename is the title).
 local function type_title(buf, value)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i, l in ipairs(lines) do
-    if l:match("^title:") then
-      vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { "title: " .. value })
-      return
-    end
-  end
-  error("no title line to edit")
+  local d = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h")
+  vim.api.nvim_buf_set_name(buf, d .. "/" .. value .. ".md")
 end
 vim.api.nvim_buf_set_lines(titled_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
 type_title(titled_child, "Pinned child title")
-vim.api.nvim_buf_set_lines(titled_child, 3, 3, false, { "description: Generated follow-up description", "subagent_parent: " .. titled_parent_path })
-session.save(titled_child)
 type_title(titled_parent, "Pinned parent title")
+local titled_child_path = vim.api.nvim_buf_get_name(titled_child)
+local titled_parent_path = vim.api.nvim_buf_get_name(titled_parent)
+vim.api.nvim_buf_set_lines(titled_child, 3, 3, false, { "subagent_parent: " .. titled_parent_path })
 vim.api.nvim_buf_set_lines(titled_parent, 3, 3, false, { "subagents:", "  - " .. titled_child_path })
+session.save(titled_child)
 session.save(titled_parent)
 local titled_items = session.list("cwd")
 local titled_positions = {}
@@ -395,7 +387,7 @@ assert(
   "agent session leaked into saved history: " .. vim.inspect(titled_items)
 )
 assert(titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
-  "title should win over description: " .. vim.inspect(titled_items))
+  "filename fallback missing without a description: " .. vim.inspect(titled_items))
 vim.api.nvim_set_current_buf(titled_parent)
 local live_titled
 vim.ui.select = function(items, opts)

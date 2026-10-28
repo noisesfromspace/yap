@@ -131,11 +131,9 @@ function M.seed_awaiting(buf)
   end
 end
 
---- The un-truncated frontmatter title for a buffer: `title` when set, else
---- the generated `description`. Cached per changedtick; the winbar
---- re-evaluates on every screen draw and the title only changes when the
---- buffer is edited, so re-reading and re-parsing the frontmatter each
---- redraw is wasted work.
+--- The un-truncated session title: the generated `description`. Cached per
+--- changedtick; re-reading and re-parsing frontmatter on every redraw is
+--- wasted work.
 local title_cache = {} -- buf -> { tick, full }
 
 local function full_title(buf)
@@ -149,7 +147,7 @@ local function full_title(buf)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
     if fm then
-      full = session.identity(fm.title, fm.description)
+      full = session.identity(nil, fm.description)
     end
   end
   title_cache[buf] = { tick = tick, full = full }
@@ -537,7 +535,7 @@ local function render_winbar(buf)
     if show_model then
       local text = provider .. "/" .. model
       if inactive then
-        local label = session.label(vim.b[buf].yap_path, nil, full_title(buf))
+        local label = session.label(vim.b[buf].yap_path, full_title(buf))
         text = view.truncate_display(label, 40)
       end
       if switch_segs then

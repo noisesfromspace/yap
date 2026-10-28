@@ -31,7 +31,7 @@ Inspired by pi and gptel.
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
   trees through `vim.ui.select` (`<leader>y` for saved sessions).
-- A winbar with the session title, model, token totals, cost and context use,
+- A winbar with the session description, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
   can title sessions and run `:YapEval`.
@@ -172,8 +172,9 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 
-Ordinary sessions are listed buffers with their real `session.md` filenames.
-Use your normal buffer navigation, file explorer, and Neovim deletion commands.
+Ordinary sessions are listed buffers backed by writable markdown files.
+Rename `session.md` to set a title; use your normal buffer navigation, file
+explorer, and Neovim deletion commands.
 `require("harness").buffers()` opens MiniPick's regular buffer picker with
 filetype icons and `{status tag} {title}` labels for Yap sessions; file,
 terminal and man buffers keep their usual labels. The tag is one of `[RUN]`,

@@ -131,9 +131,21 @@ end
 
 --- The session's directory name (the directory immediately above the
 --- markdown file). It is the final fallback identity, not the display name:
---- the frontmatter `title`/`description` win.
+--- the title (a renamed transcript) or the description win.
 function M.session_name(path)
   return vim.fn.fnamemodify(path, ":h:t")
+end
+
+--- The transcript markdown file inside a session directory: the one `.md`
+--- file that is not the scratch notes sidecar. Defaults to `session.md`.
+--- The transcript is renamed to set the session title.
+function M.transcript_in(dir)
+  for _, f in ipairs(vim.fn.glob(dir .. "/*.md", false, true)) do
+    if vim.fn.fnamemodify(f, ":t") ~= "notes.md" then
+      return f
+    end
+  end
+  return dir .. "/session.md"
 end
 
 --- The live tool tail buffer's name; mirrors the session directory name so a

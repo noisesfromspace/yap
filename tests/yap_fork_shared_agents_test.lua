@@ -9,10 +9,19 @@ yap.setup({ model_groups = { agent = "mock/m1", flash = "" }})
 local session = require("harness.session")
 local fm = require("harness.model.frontmatter")
 
-local function agent(parent, title)
+local function title(buf, text)
+  local dir = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h")
+  local path = dir .. "/" .. text .. ".md"
+  vim.api.nvim_buf_set_name(buf, path)
+  session.save(buf)
+end
+
+local function agent(parent, text)
   local child = yap.new({ agent = "audit", hidden = true })
   local path = vim.b[child].yap_path
-  fm.update(child, { title = title, subagent_parent = vim.b[parent].yap_path })
+  title(child, text)
+  path = vim.b[child].yap_path
+  fm.update(child, { subagent_parent = vim.b[parent].yap_path })
   fm.record_subagent(parent, path)
   session.save(child)
   session.save(parent)
@@ -50,7 +59,7 @@ end
 -- A fork made before any agents has no shared references. A subsequent
 -- agent belongs only to the branch that ran it.
 local empty_source = yap.new()
-fm.update(empty_source, { title = "Before agents" })
+title(empty_source, "Before agents")
 local empty_path = vim.b[empty_source].yap_path
 vim.api.nvim_set_current_buf(empty_source)
 local empty_fork_path = assert(yap.fork("before-agents-fork"))
@@ -63,20 +72,20 @@ assert(below(before, "buf", new_agent, empty_fork), "fork-only agent missing")
 assert(not below(before, "buf", new_agent, empty_source), "agent appeared on pre-fork source")
 
 local root = yap.new()
-fm.update(root, { title = "Original" })
+title(root, "Original")
 local early, early_path = agent(root, "Early review")
 local root_path = vim.b[root].yap_path
 vim.api.nvim_set_current_buf(root)
 local fork_path = assert(yap.fork("refactor-audit"))
 local fork = vim.api.nvim_get_current_buf()
-fm.update(fork, { title = "Refactor audit" })
+title(fork, "Refactor audit")
 session.save(fork)
 local later, later_path = agent(fork, "Go safety")
 local root_only, root_only_path = agent(root, "Fix review")
 vim.api.nvim_set_current_buf(fork)
 local leaf_path = assert(yap.fork("follow-up"))
 local leaf = vim.api.nvim_get_current_buf()
-fm.update(leaf, { title = "Follow-up" })
+title(leaf, "Follow-up")
 session.save(leaf)
 local leaf_only, leaf_only_path = agent(leaf, "Lua UI review")
 

@@ -1,6 +1,6 @@
 -- Renaming a session means renaming its directory: the audit log and notes
 -- move with the directory (they live inside it), while the display name comes
--- from the frontmatter title, not the directory name.
+-- from the transcript filename (the title), not the directory name.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -23,38 +23,33 @@ local old = vim.b[buf].yap_path
 local old_dir = vim.fn.fnamemodify(old, ":h")
 assert(vim.fn.filereadable(paths.audit_path(buf)) == 1, "audit log not written")
 
--- Give the session an explicit title before it moves (typed into the
--- always-present empty `title:` line).
-local buf_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-for i, l in ipairs(buf_lines) do
-  if l:match("^title:") then
-    vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { "title: My titled session" })
-    break
-  end
-end
+-- Give the session a title by renaming its transcript (the filename is the
+-- title).
+vim.cmd("file my-titled-session.md")
 require("harness.session").save(buf)
 
 -- Close the buffer so no later save re-points it at the stale path.
 vim.cmd("bwipeout!")
 
--- Rename the session directory; history derives the name from the directory.
+-- Rename the session directory; the title comes from the filename, not the
+-- directory name.
 local project = vim.fn.fnamemodify(old, ":h:h")
 local new_dir = project .. "/renamed-session"
 assert(vim.fn.rename(old_dir, new_dir) == 0, "directory rename failed")
-local new = new_dir .. "/session.md"
-assert(vim.fn.filereadable(new) == 1, "session.md missing after rename")
+local new = new_dir .. "/my-titled-session.md"
+assert(vim.fn.filereadable(new) == 1, "renamed transcript missing after directory rename")
 
 -- The audit log and notes move with the directory.
 assert(vim.fn.filereadable(new_dir .. "/audit.jsonl") == 1, "audit log did not follow the directory")
 assert(vim.fn.filereadable(old_dir .. "/audit.jsonl") == 0, "old audit log left behind")
 
--- History shows the session under its title, not the directory name.
+-- History shows the session under its filename title, not the directory name.
 local found
 for _, item in ipairs(require("harness.session").list("cwd")) do
   if item.path == new then
     found = item
   end
 end
-assert(found and found.text == "My titled session", "titled session missing or mislabeled: " .. vim.inspect(found))
+assert(found and found.text == "my-titled-session", "titled session missing or mislabeled: " .. vim.inspect(found))
 
 print("OK audit-rename")

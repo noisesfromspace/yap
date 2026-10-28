@@ -421,13 +421,14 @@ function M.setup(opts)
   local function is_session_path(buf)
     local name = vim.api.nvim_buf_get_name(buf)
     local root = paths.sessions_root()
-    -- Only the session Markdown itself is a session: the sidecar files in
-    -- the same directory (notes.md and audit.jsonl) must never be adopted,
-    -- or the scratch jotter becomes a session (its own winbar, its own
-    -- <C-s> send, a rollup entry) instead of dispatching to its owner. The
-    -- session file is always named `session.md`; a `.md` suffix alone no
-    -- longer marks a session (notes.md is also `.md`).
-    return name, name:sub(1, #root + 1) == root .. "/" and vim.fn.fnamemodify(name, ":t") == "session.md"
+    -- Only the session transcript is a session: the sidecar files in the
+    -- same directory (notes.md and audit.jsonl) must never be adopted, or
+    -- the scratch jotter becomes a session (its own winbar, its own <C-s>
+    -- send, a rollup entry) instead of dispatching to its owner. The
+    -- transcript is any `.md` file except the notes.md sidecar: it is
+    -- usually `session.md`, but is renamed to set the session title.
+    local base = vim.fn.fnamemodify(name, ":t")
+    return name, name:sub(1, #root + 1) == root .. "/" and base:match("%.md$") ~= nil and base ~= "notes.md"
   end
   vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,
@@ -447,10 +448,40 @@ function M.setup(opts)
       end
     end,
   })
-  -- The session's identity is its directory, so a `:file`/`:saveas` rename no
-  -- longer renames or copies a session; renaming the directory does, and
-  -- |:YapFork| copies. save() re-points the buffer at its canonical
-  -- <dir>/session.md, so a stray buffer name is never followed or written to.
+  -- A `:file`/`:saveas` rename sets the transcript filename, which is the
+  -- session title. Commit that basename within the session directory once,
+  -- when Neovim reports the rename; routine saves must not call set_name,
+  -- since doing so resets the alternate-buffer tracking used by :bd.
+  -- |:YapFork| copies the conversation into a new directory.
+  vim.api.nvim_create_autocmd("BufFilePost", {
+    group = adopt_group,
+    callback = function(args)
+      local buf = args.buf
+      if not vim.b[buf].yap then
+        return
+      end
+      local path = vim.b[buf].yap_path
+      local base = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t")
+      if not path or base == "" or base == "notes.md" or not base:match("%.md$") then
+        return
+      end
+      local renamed = vim.fn.fnamemodify(path, ":h") .. "/" .. base
+      if renamed ~= path then
+        if vim.b[buf].yap_path ~= renamed then
+          if vim.fn.filereadable(path) == 1 and vim.fn.filereadable(renamed) == 0 then
+            vim.fn.rename(path, renamed)
+          end
+          vim.b[buf].yap_path = renamed
+          lsp.attach(buf)
+        end
+        -- An immediate save after :file may precede the deferred rename
+        -- event. Re-point only that pending rename, never on ordinary saves.
+        if vim.api.nvim_buf_get_name(buf) ~= renamed then
+          vim.api.nvim_buf_set_name(buf, renamed)
+        end
+      end
+    end,
+  })
   -- The winbar degrades with window width (see render_winbar); re-evaluate
   -- its `%!` expression whenever a window is resized.
   vim.api.nvim_create_autocmd("WinResized", {

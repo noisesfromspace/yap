@@ -240,11 +240,12 @@ photos. A session's directory is its identity: `:file` and `:saveas` do
 not move its sidecars or re-root its saves. Forking copies the transcript,
 audit log and assets into a new directory. Why: no second
 serialization format to keep in sync. Ordinary session buffers are listed
-and keep their real `session.md` names, so native buffer navigation and file
+and keep their real markdown filenames, so native buffer navigation and file
 explorers work. Subagents (`b:yap_agent`) and live tail buffers remain unlisted;
 subagents remain excluded from the winbar overview. A session's tool tail opens
 with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
-session status must not redirect focus.
+session status must not redirect focus. The transcript filename is the title;
+the generated description remains the primary label in session views.
 
 `buffers()` lists ordinary listed buffers through MiniPick, preserving file, terminal
 and man items and selecting by buffer number. The shared

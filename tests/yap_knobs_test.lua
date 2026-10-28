@@ -19,7 +19,6 @@ vim.api.nvim_buf_set_lines(
     model = fm.model,
     models = fm.models,
     created_at = fm.created_at,
-    title = fm.title,
     description = fm.description,
     agent = fm.agent,
     tools = fm.tools,

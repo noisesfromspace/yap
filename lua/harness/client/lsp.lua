@@ -122,10 +122,12 @@ function M.messages(buf)
       return nil
     end
   end
-  -- A request flushes pending didChange notifications before it is sent, so
-  -- the server answers for the buffer's current text.
+  -- Include the current snapshot: buffer adoption/rename can race core's
+  -- didOpen/didChange tracking, but send conversion must always see the text
+  -- that is actually in this buffer. Go still owns all parsing.
   local res = client:request_sync("yap/messages", {
     textDocument = { uri = vim.uri_from_bufnr(buf) },
+    text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"),
   }, 5000, buf)
   if type(res) ~= "table" or res.err or type(res.result) ~= "table" then
     return nil

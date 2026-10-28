@@ -290,10 +290,10 @@ assert(
   "inactive session shows model instead of name: " .. inactive_center
 )
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
--- A frontmatter `title` wins over the generated description in the center.
-vim.api.nvim_buf_set_lines(target, 3, 3, false, { "title: Inactive title" })
+-- A renamed transcript wins over the generated description in the center.
+vim.api.nvim_buf_set_name(target, vim.fn.fnamemodify(vim.b[target].yap_path, ":h") .. "/Inactive title.md")
 local titled_inactive_center = yap.winbar(target):match("%%=(.-)%%=")
-assert(titled_inactive_center:find("Inactive title"), "inactive title should win over description: " .. titled_inactive_center)
+assert(not titled_inactive_center:find("Inactive title"), "inactive winbar should not use a filename title: " .. titled_inactive_center)
 -- An inactive session keeps its leftmost state icon (idle/waiting/error/
 -- stopped) so attention states are visible from another window, but drops
 -- the busy beacon: a generating session needs no attention.

@@ -129,7 +129,7 @@ local kept = text(buf)
 assert(kept:find("the summary", 1, true), "summary was deleted: " .. kept)
 assert(not kept:find("old answer", 1, true), "superseded history survived: " .. kept)
 assert(kept:find("# @system\n\nsys", 1, true), "system message lost: " .. kept)
-assert(kept:find("title:", 1, true), "frontmatter lost: " .. kept)
+assert(kept:find("model:", 1, true), "frontmatter lost: " .. kept)
 
 -- 5. End-of-turn repair reads the structural state, so a marker quoted inside a
 -- fence is not an open region.

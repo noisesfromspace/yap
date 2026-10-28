@@ -1,7 +1,7 @@
--- A `:file`/`:saveas` rename no longer re-roots a session into the current
--- working directory: save() re-points the buffer at its canonical
--- <dir>/session.md, so the write stays in the session directory and the
--- project directory's permissions are untouched.
+-- A `:file`/`:saveas` rename names the transcript without re-rooting the
+-- session into the current working directory: save() keeps its basename in
+-- the session directory, so the write stays there and the project directory's
+-- permissions are untouched.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
@@ -15,21 +15,28 @@ vim.cmd("cd " .. vim.fn.fnameescape(project))
 
 local buf = yap.new()
 local session_path = vim.b[buf].yap_path
+local session_dir = vim.fn.fnamemodify(session_path, ":h")
 local before_perm = vim.fn.getfperm(project)
 
-vim.cmd("file stray-name.md")
+-- A `:file` rename re-roots into the session directory, keeping the new
+-- basename as the session title, and never writes into the project cwd.
+vim.cmd("file my-title.md")
 require("harness.session").save(buf)
-assert(vim.b[buf].yap_path == session_path, "save() re-rooted the session after :file")
-assert(vim.api.nvim_buf_get_name(buf) == session_path, "buffer name not re-pointed to session.md")
-assert(vim.fn.filereadable(session_path) == 1, "session.md not written")
+local renamed = session_dir .. "/my-title.md"
+assert(vim.b[buf].yap_path == renamed, "save() did not keep the renamed basename")
+assert(vim.api.nvim_buf_get_name(buf) == renamed, "buffer name not re-pointed to the renamed transcript")
+assert(vim.fn.filereadable(renamed) == 1, "renamed transcript not written")
+assert(vim.fn.filereadable(session_path) == 0, "stale session.md left behind")
 assert(vim.fn.getfperm(project) == before_perm, "project directory permissions changed after :file")
+assert(require("harness.session").file_title(renamed) == "my-title", "filename title missing")
 
--- :saveas also leaves the session put (save() re-points the buffer back).
+-- :saveas also re-roots into the session directory, keeping the basename.
 local copy_target = vim.fn.tempname() .. ".md"
 vim.cmd("saveas " .. vim.fn.fnameescape(copy_target))
 require("harness.session").save(buf)
 vim.fn.delete(copy_target)
-assert(vim.api.nvim_buf_get_name(buf) == session_path, ":saveas re-rooted the session")
+local saveas_renamed = session_dir .. "/" .. vim.fn.fnamemodify(copy_target, ":t")
+assert(vim.api.nvim_buf_get_name(buf) == saveas_renamed, ":saveas re-rooted the session")
 assert(vim.fn.getfperm(project) == before_perm, "project directory permissions changed after :saveas")
 
 print("OK saveas-guard")

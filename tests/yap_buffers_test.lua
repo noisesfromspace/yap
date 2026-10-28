@@ -10,13 +10,15 @@ local buffers = require("harness.session.buffers")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }, nerd_font = false })
 
+-- The session title is the transcript filename: rename the buffer to set it.
 local function title(buf, text, description)
+  local dir = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h")
+  local base = (text ~= "" and text) and (text .. ".md") or "session.md"
+  vim.api.nvim_buf_set_name(buf, dir .. "/" .. base)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i, line in ipairs(lines) do
-    if line:match("^title:") then
-      lines[i] = "title: " .. text
-    end
-  end
+  lines = vim.tbl_filter(function(line)
+    return not line:match("^description:")
+  end, lines)
   if description then
     table.insert(lines, 2, "description: " .. description)
   end
@@ -34,13 +36,13 @@ end
 local a = yap.new()
 local path = vim.b[a].yap_path
 title(a, "Pinned", "Generated")
-assert(buffers.label(a) == tag("IDLE") .. "Pinned", "title label missing")
-assert(vim.api.nvim_buf_get_name(a) == path, "label renamed the session buffer")
-assert(vim.fn.filereadable(path) == 1, "real session file missing")
+assert(buffers.label(a) == tag("IDLE") .. "Generated", "description should win over the filename title")
+assert(vim.b[a].yap_path == vim.fn.fnamemodify(path, ":h") .. "/Pinned.md", "filename title not recorded")
+assert(vim.fn.filereadable(vim.b[a].yap_path) == 1, "real session file missing")
 assert(vim.fn.expand("%:p:h") == vim.fn.fnamemodify(path, ":h"), "explorer directory is not the session directory")
 local files = require("mini.files")
 files.setup()
-files.open(vim.api.nvim_buf_get_name(0)) -- the user's '-' mapping
+files.open(vim.b[a].yap_path) -- the user's '-' mapping
 assert(files.get_explorer_state().anchor == vim.fn.fnamemodify(path, ":h"), "MiniFiles opened the wrong directory")
 files.close()
 
@@ -54,7 +56,7 @@ for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_appr
     running = "RUN",
     pending_approvals = "APPR",
   })[key]
-  assert(buffers.label(a) == tag(word) .. "Pinned", "label state missing: " .. key)
+  assert(buffers.label(a) == tag(word) .. "Generated", "label state missing: " .. key)
 end
 for _, key in ipairs({ "awaiting", "stopped", "errors", "running", "pending_approvals" }) do
   state[key][a] = nil
@@ -62,6 +64,12 @@ end
 
 local b = yap.new()
 title(b, "Pinned")
+-- Drop a's description so both labels use the same filename title.
+local a_lines = vim.api.nvim_buf_get_lines(a, 0, -1, false)
+a_lines = vim.tbl_filter(function(line)
+  return not line:match("^description:")
+end, a_lines)
+vim.api.nvim_buf_set_lines(a, 0, -1, false, a_lines)
 local la, lb = buffers.label(a), buffers.label(b)
 assert(la ~= lb, "duplicate titles need distinct labels")
 assert(la:find("Pinned", 1, true) and lb:find("Pinned", 1, true), "duplicates lost their title")
@@ -147,9 +155,10 @@ end
 
 -- Choosing a synthetic label must switch by bufnr, never try to edit the label.
 local choose = captured.source.choose or pick.default_choose
+local name_before = vim.api.nvim_buf_get_name(a)
 choose(items[a])
 assert(vim.api.nvim_get_current_buf() == a, "picker did not select by buffer number")
-assert(vim.api.nvim_buf_get_name(a) == path, "picker selection replaced the real filename")
+assert(vim.api.nvim_buf_get_name(a) == name_before, "picker selection replaced the filename")
 pick.start = original_start
 
 -- Directly reopening a saved subagent must retain its unlisted status, too.

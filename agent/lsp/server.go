@@ -5,7 +5,7 @@
 // structural parser); no feature here scans the transcript independently.
 //
 // The server is deliberately session-only: it serves a document only when its
-// path is session.md beneath initializationOptions.sessions_dir. The Neovim
+// path is a session transcript beneath initializationOptions.sessions_dir. The Neovim
 // frontend additionally attaches the client only to managed (b:yap) buffers,
 // so ordinary Markdown never reaches this server in practice.
 package lsp
@@ -284,9 +284,16 @@ func (s *Server) dispatch(req request) bool {
 		// (R-single-reader), so the frontend queries it rather than
 		// re-deriving the flatten/merge rules in Lua. Not part of LSP:
 		// a Yap extension on the same channel and document store.
-		var p textDocumentParams
+		var p struct {
+			textDocumentParams
+			Text string `json:"text"`
+		}
 		if json.Unmarshal(req.Params, &p) == nil {
-			s.respond(req.ID, s.messagesFor(p.TextDocument.URI))
+			if p.Text != "" {
+				s.respond(req.ID, document.Messages(p.Text))
+			} else {
+				s.respond(req.ID, s.messagesFor(p.TextDocument.URI))
+			}
 		}
 	default:
 		s.respondError(req.ID, -32601, "method not found: "+req.Method)
@@ -360,10 +367,13 @@ func (s *Server) doc(uri string) *docState {
 	return nil
 }
 
-// isSession reports whether uri points at session.md beneath sessions_dir.
+// isSession reports whether uri points at a session transcript beneath
+// sessions_dir: any markdown file except the scratch notes.md sidecar (the
+// transcript is renamed to set the session title).
 func (s *Server) isSession(uri string) bool {
 	p := uriToPath(uri)
-	if p == "" || filepath.Base(p) != "session.md" {
+	base := filepath.Base(p)
+	if p == "" || !strings.HasSuffix(base, ".md") || base == "notes.md" {
 		return false
 	}
 	if s.opts.SessionsDir == "" {

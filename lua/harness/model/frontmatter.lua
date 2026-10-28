@@ -3,7 +3,6 @@
 -- Scope is deliberately narrow — only durable per-session state lives here:
 --
 --   ---
---   title: Fix session picker labels
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
@@ -28,9 +27,8 @@
 --     - ~/.config/yap/sessions/.../branch.md
 --   ---
 --
--- `title` is always present (empty by default) and wins over `description`
--- when you type a value into it; `description` is the generated one-line
--- summary the picker shows while the title is empty; `model` and
+-- the session title is its filename (rename `session.md` to set it);
+-- `description` is the generated one-line summary; `model` and
 -- `provider` are the combo to resume with; `reasoning_level`
 -- (low|medium|high) is the live, hand-editable choice — read on every send,
 -- empty means the provider's own default;
@@ -67,7 +65,7 @@ local function is_list_key(k)
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
---- { provider, model, created_cwd, created_at, updated_at, turns, title, description, agent,
+--- { provider, model, created_cwd, created_at, updated_at, turns, description, agent,
 ---   tools = {name,...}, models = {combo,...}, subagents = {path,...},
 ---   forks = {path,...}, forked_from = path?, subagent_parent = path? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
@@ -103,8 +101,6 @@ function M.parse(lines)
         fm.forked_from = v
       elseif k == "turns" then
         fm.turns = tonumber(v)
-      elseif k == "title" then
-        fm.title = v
       elseif k == "description" then
         fm.description = v
       elseif k == "agent" then
@@ -139,11 +135,6 @@ end
 --- returned table has no trailing blank line (see module comment).
 function M.render(fm)
   local lines = { "---" }
-  -- `title` is always written (empty by default) so a hand-edited value sits
-  -- in the buffer ready to fill in; an empty title leaves the generated
-  -- description in charge.
-  local t = fm.title and fm.title:gsub("[\r\n]+", " "):gsub(":%s*$", "") or ""
-  lines[#lines + 1] = (t == "" and "title:" or ("title: " .. t))
   if fm.description and fm.description ~= "" then
     lines[#lines + 1] = "description: " .. fm.description:gsub("[\r\n]+", " "):gsub(":%s*$", "")
   end

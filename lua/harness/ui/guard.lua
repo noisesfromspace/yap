@@ -251,8 +251,10 @@ local function scan_project(cleared)
   local session_dir = paths.session_dir(vim.fn.getcwd())
   for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
     if vim.fn.filereadable(log) == 1 then
-      local path = vim.fn.fnamemodify(log, ":h") .. "/session.md"
-      local session_name = paths.session_name(path)
+      local dir = vim.fn.fnamemodify(log, ":h")
+      local path = paths.transcript_in(dir)
+      local fm = vim.fn.filereadable(path) == 1 and require("harness.model.frontmatter").parse(vim.fn.readfile(path, "", 200)) or nil
+      local session_name = require("harness.session").label(path, fm and fm.description)
       audit_entries(log) -- refresh the cache before inspecting its rows
       local cached = audit_cache[log]
       if not cached.rows then

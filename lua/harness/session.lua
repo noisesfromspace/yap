@@ -3,10 +3,10 @@
 -- A yap session is just the buffer's markdown written to a file — the
 -- buffer IS the conversation, so the file is a lossless serialization.
 -- Sessions live under ~/.config/yap/sessions/<cwd-slug>/ and are
--- autosaved after every completed reply. Pickers identify sessions by their
--- frontmatter `title` (always present, empty by default; a typed value wins)
--- or generated `description`;
--- unnamed sessions (no title or description) are hidden unless they hold an
+-- autosaved after every completed reply. The transcript filename is the
+-- session title: rename session.md with :file, :saveas or your file explorer.
+-- Views prefer the generated description and fall back to that filename;
+-- unnamed sessions (neither) are hidden unless they hold an
 -- unsent `# @user` prompt (a scheduled prompt); open sessions stay visible in
 -- the open-session picker via the filename fallback. Subagent sessions belong
 -- to the conversation that spawned them: saved history never lists them, while
@@ -93,13 +93,24 @@ function M.save(buf)
     vim.b[buf].yap_path = path
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
-  -- The session file is always <dir>/session.md, so re-point the buffer at
-  -- its canonical file before writing: a `:file` rename moves the buffer's
-  -- name, not the session file. This also stops a relative `:file` target
-  -- from re-rooting the write into the cwd (and chmod'ing it 0700).
+  -- A relative :file rename has not fired BufFilePost yet when save() is
+  -- called directly afterwards. Record that pending title here; BufFilePost
+  -- handles the normal interactive path. Ordinary saves never set_name,
+  -- which would reset Neovim's alternate-buffer tracking.
   local bufname = vim.api.nvim_buf_get_name(buf)
   if bufname ~= path and bufname ~= "" and not bufname:match("^%a+://") then
-    pcall(vim.api.nvim_buf_set_name, buf, path)
+    local base = vim.fn.fnamemodify(bufname, ":t")
+    if base ~= "" and base ~= "notes.md" and base:match("%.md$") then
+      local renamed = vim.fn.fnamemodify(path, ":h") .. "/" .. base
+      if vim.fn.filereadable(path) == 1 and vim.fn.filereadable(renamed) == 0 then
+        vim.fn.rename(path, renamed)
+      end
+      vim.b[buf].yap_path = renamed
+      path = renamed
+      -- Rename only for an actual title change. This is required before
+      -- :write, otherwise a relative :file target is written into cwd.
+      pcall(vim.api.nvim_buf_set_name, buf, path)
+    end
   end
   stamp_updated_at(buf)
   paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
@@ -399,19 +410,31 @@ local function slug_cwd(dir)
   return paths.slug_cwd(dir)
 end
 
---- The first non-empty of title, description, then name — or nil when all
---- are empty. Shared by |M.label| and the winbar's session title, so the
---- title-wins-over-description precedence lives once.
-function M.identity(title, description, name)
-  return (title and title ~= "" and title)
-    or (description and description ~= "" and description)
-    or (name and name ~= "" and name)
-    or nil
+--- The title a session's filename carries: the basename without `.md` when
+--- the transcript was renamed away from the default `session.md`, else nil.
+function M.file_title(path)
+  local base = path and vim.fn.fnamemodify(path, ":t") or ""
+  if base == "" or base == "session.md" then
+    return nil
+  end
+  return base:gsub("%.md$", "")
+end
+
+--- The description shown in session views, or nil when there is none.
+function M.identity(_, description)
+  return description and description ~= "" and description or nil
+end
+
+--- The saved-history identity: the description, falling back to a filename
+--- title for a renamed session that has no description yet.
+function M.saved_identity(path, description)
+  return M.identity(path, description) or M.file_title(path)
 end
 
 --- "agent · <identity>" for a subagent row. The identity is the first
---- non-empty of title, description, task, fallback and fallback_label, so
---- the open picker and the saved history list build the same chain.
+--- non-empty of the filename title, description, task, fallback and
+--- fallback_label, so the open picker and the saved history list build the
+--- same chain.
 function M.agent_label(agent, title, description, task, fallback, fallback_label)
   local identity = (title and title ~= "" and title)
     or (description and description ~= "" and description)
@@ -422,13 +445,14 @@ function M.agent_label(agent, title, description, task, fallback, fallback_label
   return agent .. " · " .. identity
 end
 
---- Shared picker identity. A non-empty frontmatter `title` wins over the
---- generated `description`; otherwise the description wins, and the
---- directory name is only the final fallback. Project overviews prefix the
---- cwd so sessions from different worktrees are obvious.
-function M.label(path, title, description, project_cwd)
-  local name = path and path ~= "" and paths.session_name(path) or nil
-  local identity = M.identity(title, description, name) or "session"
+--- Shared picker identity: description, renamed filename, then directory.
+--- Project overviews prefix the cwd so sessions from different worktrees are
+--- obvious.
+function M.label(path, description, project_cwd)
+  local identity = M.saved_identity(path, description)
+  if not identity then
+    identity = (path and path ~= "" and paths.session_name(path)) or "session"
+  end
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
@@ -451,37 +475,41 @@ function M.list(scope)
 
   local items, children, owned_by = {}, {}, {}
   for _, dir in ipairs(dirs) do
-    -- Sessions live one per directory: <dir>/<session>/session.md. The
-    -- `*/session.md` glob skips dotfiles (hidden sessions are never listed)
-    -- and avoids picking up the notes.md sidecar, which is also a .md file.
-    for _, path in ipairs(vim.fn.glob(dir .. "/*/session.md", false, true)) do
+    -- Sessions live one per directory: <dir>/<session>/<transcript>.md. The
+    -- transcript is usually `session.md` but is renamed to set the session
+    -- title, so glob every markdown file and skip the notes.md scratch
+    -- sidecar (also a .md file).
+    for _, path in ipairs(vim.fn.glob(dir .. "/*/*.md", false, true)) do
+      if vim.fn.fnamemodify(path, ":t") == "notes.md" then
+        goto continue
+      end
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
       -- A subagent session is internal to the conversation that spawned it:
       -- while open it sits under its parent in the open-session and waiting
       -- pickers, and it is never part of saved history.
       if not picker.agent(fm) then
-        local title = fm and fm.title or ""
         local description = fm and fm.description or ""
         local item = {
           path = path,
           mtime = vim.fn.getftime(path),
-          text = M.label(path, title, description, scope == "all" and slug_cwd(dir) or nil),
+          text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil, true),
           model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
           models = fm and #fm.models > 1 and fm.models or nil,
           turns = fm and fm.turns,
           agents = fm and #fm.subagents or 0,
         }
         if fm and fm.forked_from then
-          item.text = "↳ fork · " .. M.label(path, title, description)
+          item.text = "↳ fork · " .. M.label(path, description, nil, true)
           children[path] = item
           local owner = vim.fs.normalize(fm.forked_from)
           owned_by[owner] = owned_by[owner] or {}
           table.insert(owned_by[owner], vim.fs.normalize(path))
-        elseif title ~= "" or description ~= "" or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
+        elseif description ~= "" or M.file_title(path) ~= nil or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
           items[#items + 1] = item
         end
       end
+      ::continue::
     end
   end
 
@@ -623,21 +651,30 @@ function M.pick(opts, on_choice)
   end)
 end
 
---- Session title for the picker and notifications: `title` when set, else
---- `description`, else the filename. Subagents and forks are indented under
---- their parent when it is open. The project cwd is rendered separately by
---- |harness.instances|.
-function M.live_label(buf, parent)
+--- The path a session's display name derives from: the buffer name when it is
+--- a real file path (so a `:file` rename is reflected immediately), else the
+--- recorded session path (for scheme-named scratch buffers).
+function M.display_path(buf)
   local name = vim.api.nvim_buf_get_name(buf)
-  local path = (name ~= "" and not name:match("^%a+://")) and name or (vim.b[buf].yap_path or name)
+  if name ~= "" and not name:match("^%a+://") then
+    return name
+  end
+  return vim.b[buf].yap_path or name
+end
+
+--- Session label for the picker and notifications: the generated
+--- `description`, else the renamed filename, else the directory name. Subagents and forks are indented under their parent when
+--- it is open. The project cwd is rendered separately by |harness.instances|.
+function M.live_label(buf, parent)
+  local path = M.display_path(buf)
   local e = frontmatter.end_line(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  local label = M.label(path, fm and fm.title, fm and fm.description)
+  local label = M.label(path, fm and fm.description)
   local role = picker.agent(fm, buf)
   if role then
     local task = M.task(vim.api.nvim_buf_get_lines(buf, 0, -1, false))
     local fallback = view.collapse(vim.b[buf].yap_subagent_task or "")
-    label = M.agent_label(role, fm and fm.title, fm and fm.description, task, fallback, label)
+    label = M.agent_label(role, M.file_title(path), fm and fm.description, task, fallback, label)
   end
   if role and parent then
     return "↳ " .. label

@@ -12,9 +12,8 @@ yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "def/default-m", flas
 local buf = yap.new({ provider = "zeta", model = "m1" })
 local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 assert(lines[1] == "---", "new buffer must start with frontmatter: " .. tostring(lines[1]))
-assert(lines[2] == "title:", "frontmatter must carry an empty title: line (valid YAML null): " .. tostring(lines[2]))
 local fm = frontmatter.parse(lines)
-assert(fm and fm.title == "", "title should default to empty: " .. vim.inspect(fm and fm.title))
+assert(fm and fm.description == nil, "fresh session should have no description: " .. vim.inspect(fm and fm.description))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
 assert(
   fm.reasoning_level == "medium",
@@ -230,25 +229,36 @@ local plain_fm = frontmatter.parse(frontmatter.render({
 }))
 assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
--- 8. a `title` wins over the generated description; without a title the
--- description wins, and the directory name is only the final fallback.
-local named_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/session.md"
+-- 8. the filename is the session title. Every view prefers the generated
+-- description and falls back to a renamed filename only when it is absent.
+local renamed_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/my-title.md"
+local plain_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/session.md"
+assert(session.file_title(renamed_path) == "my-title", "filename title: " .. tostring(session.file_title(renamed_path)))
+assert(session.file_title(plain_path) == nil, "session.md carries no filename title")
 assert(
-  session.label(named_path, "Pinned title", "Generated description") == "Pinned title",
-  "title should win over description: " .. session.label(named_path, "Pinned title", "Generated description")
+  session.label(renamed_path, "Generated description") == "Generated description",
+  "description should win even when renamed: " .. session.label(renamed_path, "Generated description")
 )
 assert(
-  session.label(named_path, nil, "Generated description") == "Generated description",
-  "description should win when no title: " .. session.label(named_path, nil, "Generated description")
+  session.label(plain_path, "Generated description") == "Generated description",
+  "description should win live when not renamed: " .. session.label(plain_path, "Generated description")
 )
 assert(
-  session.label(named_path, nil, nil) == "fix-picker",
-  "directory name should be the fallback: " .. session.label(named_path, nil, nil)
+  session.label(plain_path, nil) == "fix-picker",
+  "directory name should be the fallback: " .. session.label(plain_path, nil)
 )
 assert(
-  session.label(named_path, "Pinned title", "Generated description", "/srv/app") == "/srv/app  Pinned title",
-  "title label should keep the cwd prefix: "
-    .. session.label(named_path, "Pinned title", "Generated description", "/srv/app")
+  session.label(renamed_path, "Generated description", nil, true) == "Generated description",
+  "saved picker prefers the description: " .. session.label(renamed_path, "Generated description", nil, true)
+)
+assert(
+  session.label(renamed_path, nil, nil, true) == "my-title",
+  "saved picker falls back to the filename: " .. session.label(renamed_path, nil, nil, true)
+)
+assert(
+  session.label(renamed_path, "Generated description", "/srv/app") == "/srv/app  Generated description",
+  "description should keep the cwd prefix: "
+    .. session.label(renamed_path, "Generated description", "/srv/app")
 )
 
 -- 9. save stamps a turn count from the `# @user` headings

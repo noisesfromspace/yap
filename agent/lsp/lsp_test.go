@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -421,8 +422,21 @@ func TestDocWarmPopulatesCache(t *testing.T) {
 // send would contain instead of deriving it in Lua (R-single-reader). This
 // exercises the yap/messages request end to end, including an empty result
 // encoding as [] rather than null.
+func TestSessionTranscriptRecognition(t *testing.T) {
+	s := New(io.Discard, InitOptions{SessionsDir: "/tmp/sessions"})
+	if !s.isSession("file:///tmp/sessions/a/my-title.md") {
+		t.Fatal("renamed transcript was not recognized")
+	}
+	if s.isSession("file:///tmp/sessions/a/notes.md") {
+		t.Fatal("scratch notes were recognized as a session")
+	}
+	if s.isSession("file:///tmp/other/my-title.md") {
+		t.Fatal("markdown outside the session root was recognized")
+	}
+}
+
 func TestMessagesRequestServesGoConversion(t *testing.T) {
-	uri := "file:///tmp/sessions/a/session.md"
+	uri := "file:///tmp/sessions/a/renamed-transcript.md"
 	text := "# @user\nhello\n# @assistant\nreply\n"
 	send := func(in *bytes.Buffer, v any) { in.Write(frame(v)) }
 
@@ -435,7 +449,7 @@ func TestMessagesRequestServesGoConversion(t *testing.T) {
 	})
 	send(&in, map[string]any{
 		"jsonrpc": "2.0", "method": "textDocument/didOpen",
-		"params":  map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": text}},
+		"params": map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": text}},
 	})
 	send(&in, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "yap/messages", "params": map[string]any{
 		"textDocument": map[string]any{"uri": uri},
