@@ -77,6 +77,23 @@ end
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
+
+-- Defer scheduled callbacks (the setup warm-up and the guard's deferred
+-- detach) so the test can flush them deterministically instead of racing
+-- the real event loop.
+local real_schedule = vim.schedule
+local pending = {}
+vim.schedule = function(fn)
+  pending[#pending + 1] = fn
+end
+local function flush()
+  local q = pending
+  pending = {}
+  for _, fn in ipairs(q) do
+    fn()
+  end
+end
+
 yap.setup({ bin = ROOT .. "/yap" })
 
 -- 1. a new yap buffer is marked; a pre-attached markdown client is detached
@@ -94,6 +111,7 @@ vim.api.nvim_exec_autocmds("LspAttach", {
   buffer = buf,
   data = { client_id = 99 },
 })
+flush()
 assert(detached[99] == 1, "LspAttach guard did not detach a late client")
 assert(#enabled == 0, "completion enabled for a non-yap client")
 vim.api.nvim_exec_autocmds("LspAttach", {
@@ -114,18 +132,14 @@ assert(detached[100] == nil, "LspAttach guard detached a client on a non-yap buf
 assert(#enabled == 1, "completion enabled on a non-yap buffer")
 
 -- Key completion is requested on typed frontmatter keys, not values or prose.
-local real_schedule = vim.schedule
-local pending = {}
-vim.schedule = function(fn) pending[#pending + 1] = fn end
 local function type_at(row, col, text)
   vim.api.nvim_set_current_buf(buf)
   vim.api.nvim_win_set_cursor(0, { row, col })
   vim.api.nvim_feedkeys("i" .. text, "xt", false)
   local real_mode = vim.api.nvim_get_mode
   vim.api.nvim_get_mode = function() return { mode = "i" } end
-  for _, fn in ipairs(pending) do fn() end
+  flush()
   vim.api.nvim_get_mode = real_mode
-  pending = {}
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
 end
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "---", "prov", "model: foo", "---", "# @user", "hello" })

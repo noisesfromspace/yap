@@ -491,7 +491,7 @@ function M.list(scope)
     -- transcript is usually `session.md` but is renamed to set the session
     -- title, so glob every markdown file and skip the notes.md scratch
     -- sidecar (also a .md file).
-    for _, path in ipairs(vim.fn.glob(dir .. "/*/*.md", false, true)) do
+    for _, path in ipairs(vim.fn.glob(dir .. "/**/*.md", false, true)) do
       if vim.fn.fnamemodify(path, ":t") == "notes.md" then
         goto continue
       end
@@ -589,7 +589,7 @@ function M.list(scope)
       local orphan = vim.deepcopy(child)
       orphan.text = orphan.text:sub(#"↳ " + 1) .. " (parent not shown)"
       if scope == "all" then
-        orphan.text = slug_cwd(vim.fn.fnamemodify(orphan.path, ":h:h")) .. "  " .. orphan.text
+        orphan.text = paths.project_cwd(orphan.path) .. "  " .. orphan.text
       end
       add(orphan, 0, {})
     end
@@ -627,7 +627,7 @@ function M.pick(opts, on_choice)
   local scope_label = scope == "all" and "all projects" or "cwd project"
   local projects = {}
   for _, item in ipairs(items) do
-    projects[vim.fn.fnamemodify(item.path, ":h:h")] = true
+    projects[paths.project_cwd(item.path)] = true
   end
   -- Reserve the status column even for closed rows (and when every row is
   -- closed), so descendants never shift as sessions open and close.
@@ -638,7 +638,7 @@ function M.pick(opts, on_choice)
     kind = "yap_session",
     format_item = function(item)
       local icon = opts.status and opts.status(item.path)
-      local project = slug_cwd(vim.fn.fnamemodify(item.path, ":h:h"))
+      local project = paths.project_cwd(item.path)
       local label = item.text
       -- list("all") prefixes roots for callers; move that identity to a
       -- suffix in the picker so titles remain aligned across projects.

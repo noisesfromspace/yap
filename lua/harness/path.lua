@@ -100,9 +100,20 @@ function M.ensure_session_dir(dir)
 end
 
 --- Originating cwd for a persisted session file, from its directory slug.
---- A session lives at <sessions>/<cwd-slug>/<session>/session.md, so the
---- slug is two levels up from the markdown file.
+--- Auto-generated sessions nest one level deeper
+--- (<cwd-slug>/<yy-mm>/<session>/session.md), so the slug is not a fixed
+--- depth from the file; walk up to the sessions root's immediate child.
 function M.project_cwd(path)
+  local root = M.sessions_root()
+  local dir = vim.fn.fnamemodify(path, ":h")
+  local parent = vim.fn.fnamemodify(dir, ":h")
+  while parent ~= "" and parent ~= "/" and parent ~= root do
+    dir = parent
+    parent = vim.fn.fnamemodify(dir, ":h")
+  end
+  if parent == root then
+    return unscream(vim.fn.fnamemodify(dir, ":t"))
+  end
   return unscream(vim.fn.fnamemodify(path, ":h:h:t"))
 end
 
@@ -117,14 +128,27 @@ function M.session_path(buf)
   return vim.b[buf].yap_path
 end
 
---- A fresh session path under `dir`: <dir>/<name>/session.md, with the
---- session stored in a directory named by `name`. `name` (optional) is the
---- session base name; without it an auto-generated timestamp+hex name is
---- used. The session directory is created here (0700), ready for the first
---- write.
+--- A fresh session path under `dir`: <dir>/<name>/session.md when `name` is
+--- given, else <dir>/<yy-mm>/<dd-hh.mm.ss>/session.md (auto sessions group by
+--- month). A same-second collision would silently overwrite the first
+--- transcript, so only then is a `-2`, `-3`, ... suffix appended. The session
+--- directory is created here (0700), ready for the first write.
 function M.new_session_path(dir, name)
-  name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y-%m-%d_%H.%M.%S"), math.random(0, 0xffff))
-  local sdir = dir .. "/" .. name
+  if name then
+    name = name:gsub("%.md$", "")
+    local sdir = dir .. "/" .. name
+    M.ensure_session_dir(sdir)
+    return sdir .. "/session.md"
+  end
+  local month_dir = dir .. "/" .. os.date("%y-%m")
+  M.ensure_session_dir(month_dir) -- 0700; holds this month's sessions
+  local stamp = os.date("%d-%H.%M.%S")
+  local sdir = month_dir .. "/" .. stamp
+  local n = 2
+  while vim.fn.isdirectory(sdir) == 1 do
+    sdir = month_dir .. "/" .. stamp .. "-" .. n
+    n = n + 1
+  end
   M.ensure_session_dir(sdir)
   return sdir .. "/session.md"
 end

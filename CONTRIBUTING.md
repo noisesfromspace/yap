@@ -564,7 +564,8 @@ moment, and the buffer format has no transient states to repair.
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
 `audit.jsonl` beside the session markdown (in its own
-`<cwd-slug>/<session>/` directory, `<session>/session.md`), JSON Lines (one timestamped JSON object per line),
+`<cwd-slug>/<yy-mm>/<dd-hh.mm.ss>/` directory, `<dd-hh.mm.ss>/session.md`; named forks live
+at `<cwd-slug>/<name>/`), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from event frames: full tool arguments,
 full results, `attachment` events for image imports (success metadata or the
 failure), approval decisions, and one journal line per turn (model,

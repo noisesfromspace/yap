@@ -249,7 +249,7 @@ end
 local function scan_project(cleared)
   local resolved = {}
   local session_dir = paths.session_dir(vim.fn.getcwd())
-  for _, log in ipairs(vim.fn.glob(session_dir .. "/*/*.jsonl", false, true)) do
+  for _, log in ipairs(vim.fn.glob(session_dir .. "/**/*.jsonl", false, true)) do
     if vim.fn.filereadable(log) == 1 then
       local dir = vim.fn.fnamemodify(log, ":h")
       local path = paths.transcript_in(dir)

@@ -247,7 +247,7 @@ end
 assert(labels["Finished mock turn"], "description missing from picker: " .. vim.inspect(items))
 local has_name_fallback = false
 for label in pairs(labels) do
-  has_name_fallback = has_name_fallback or label:match("^%d%d%d%d%-%d%d%-%d%d_%d%d%.%d%d%.%d%d%-%x%x%x%x$") ~= nil
+  has_name_fallback = has_name_fallback or label:match("^%d%d%-%d%d%.%d%d%.%d%d%-?%d*$") ~= nil
 end
 assert(has_name_fallback, "name fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

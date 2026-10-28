@@ -276,7 +276,6 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         original; the copy opens in the current window. No
                         name generates a filename; a name uses `name.md`.
                         Existing files are never replaced.
-
 LUA API                                                  *yap-lua-api*
 
 The per-buffer actions below are Lua functions on `require("harness")`; there
@@ -464,10 +463,12 @@ A session is the conversation markdown file plus a few sidecar files: an
 append-only audit log, an optional scratch notes file, and an `assets/`
 folder holding the photos the conversation references, the backend's
 transient tool files, and the agent's throwaway scripts, fetched downloads
-and generated artifacts. Each session lives in its own directory,
-~/.config/yap/sessions/<cwd-slug>/<session>/, containing session.md (the
-conversation), audit.jsonl (the audit log), notes.md (the scratch jotter),
-and assets/ (photos, fetched downloads, and working files).
+and generated artifacts. Each session lives in its own directory under
+~/.config/yap/sessions/<cwd-slug>/: auto-named sessions group by month
+(<yy-mm>/<dd-hh.mm.ss>/), and named forks live at <cwd-slug>/<name>/. Each
+contains session.md (the conversation), audit.jsonl (the audit log), notes.md
+(the scratch jotter), and assets/ (photos, fetched downloads, and working
+files).
 Sessions are saved after every turn and when the buffer stops being displayed
 in any window; the file is created when the buffer opens. A native |:w| is
 routed to that same save path (BufWriteCmd), so 'modified', |:w| and the exit

@@ -129,7 +129,7 @@ assert(vim.api.nvim_get_current_buf() == fork_buf, "failed fork changed focus")
 assert(not require("harness.session").fork(fork_buf, "../outside"), "path escape accepted")
 local generated = assert(yap.fork())
 assert(
-  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%d%d%-%d%d%-%d%d_%d%d%.%d%d%.%d%d%-%x%x%x%x/session%.md$"),
+  generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%-%d%d/%d%d%-%d%d%.%d%d%.%d%d%-?%d*/session%.md$"),
   "unexpected generated fork name: " .. generated
 )
 assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == fork, "nested fork parent missing")

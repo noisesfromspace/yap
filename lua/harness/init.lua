@@ -521,7 +521,14 @@ function M.setup(opts)
         vim.lsp.completion.enable(true, id, args.buf, { autotrigger = true })
         return
       end
-      pcall(vim.lsp.buf_detach_client, args.buf, id)
+      -- Detach after LspAttach completes: Neovim 0.13's Client:on_attach()
+      -- re-adds the buffer to attached_buffers *after* firing LspAttach, so a
+      -- synchronous detach here is silently undone and a foreign markdown
+      -- server (markdown_oxide) keeps answering documentSymbol, shadowing the
+      -- yap outline with its all-"struct" headings and racing mini.pick.
+      vim.schedule(function()
+        pcall(vim.lsp.buf_detach_client, args.buf, id)
+      end)
     end,
   })
   -- Punctuation triggers do not cover a partially typed frontmatter key.
