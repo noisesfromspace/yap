@@ -50,12 +50,12 @@ const (
 	symVariable = 13
 	symObject   = 19
 
-	complModule     = 9
-	complKeyword    = 14
-	complFile       = 17
-	complField      = 5
-	complFunction   = 3
-	complValue      = 12
+	complModule   = 9
+	complKeyword  = 14
+	complFile     = 17
+	complField    = 5
+	complFunction = 3
+	complValue    = 12
 )
 
 // LSP DiagnosticSeverity.
@@ -124,7 +124,12 @@ func utf16ColToByte(s string, col int) int {
 // Symbols returns the document-symbol outline of a session transcript:
 // frontmatter, then one symbol per message with its regions as children.
 func Symbols(text string) []symbol {
-	doc := document.Parse(text)
+	return symbolsFromDoc(document.Parse(text))
+}
+
+// symbolsFromDoc is Symbols over an already-parsed document, so a caller that
+// holds a cached parse does not re-scan the transcript.
+func symbolsFromDoc(doc *document.Document) []symbol {
 	lines := doc.Lines
 
 	var out []symbol
@@ -510,7 +515,11 @@ func fileCompletion(cwd, word string, line, wordStart, char int) []completionIte
 // keys, adjacent same-role messages and historical tool/model names, and it
 // suppresses incomplete-tail diagnostics while a reply is streaming.
 func Diagnostics(text string, streaming bool) []diagnostic {
-	doc := document.Parse(text)
+	return diagnosticsFromDoc(document.Parse(text), streaming)
+}
+
+// diagnosticsFromDoc is Diagnostics over an already-parsed document.
+func diagnosticsFromDoc(doc *document.Document, streaming bool) []diagnostic {
 	// Start non-nil: LSP requires publishDiagnostics.diagnostics to be an
 	// array, and a nil slice would marshal to `null`, which Neovim decodes
 	// as vim.NIL and chokes on (#diagnostics on a userdata).

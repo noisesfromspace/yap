@@ -620,6 +620,14 @@ function M.setup(opts)
   -- treesitter highlighter, whose per-redraw range spans every folded row and
   -- so grows with session size. See session/highlight.lua.
   require("harness.session.highlight").setup()
+
+  -- Start the yap language server now rather than when the first session
+  -- buffer opens, so its spawn and initialize handshake overlap with the
+  -- user's next keystrokes instead of the first symbol request. Scheduled so
+  -- setup() never blocks; a missing binary just leaves the client unmade.
+  vim.schedule(function()
+    lsp.ensure()
+  end)
 end
 
 return M

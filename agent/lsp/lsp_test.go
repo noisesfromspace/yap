@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"boers.email/yap/agent/document"
 )
@@ -342,4 +343,76 @@ func BenchmarkApplyChangeTail(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkSymbols isolates the documentSymbol request cost: structural
+// parse, symbol-tree build and JSON encoding, at transcript sizes where the
+// picker is asked for thousands of symbols.
+func BenchmarkSymbols(b *testing.B) {
+	for _, turns := range []int{2000, 5000} {
+		text := benchmarkTranscript(turns)
+		b.Run(fmt.Sprintf("turns=%d", turns), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				syms := Symbols(text)
+				if _, err := json.Marshal(syms); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func benchmarkTranscript(turns int) string {
+	var sb strings.Builder
+	sb.WriteString("---\ntitle: bench\nprovider: openai\nmodel: m1\n---\n")
+	for i := 0; i < turns; i++ {
+		fmt.Fprintf(&sb, "# @user\nInvestigate the session parser and navigation for issue %d.\n\n", i)
+		fmt.Fprintf(&sb, "# @assistant\n<!-- yap:tool {\"id\":\"t%d\",\"name\":\"read\",\"arguments\":{\"path\":\"/tmp/x\"}} -->\n", i)
+		sb.WriteString("Here is a representative result line with some prose to parse.\n```\ndef f(x):\n    return x\n```\n<!-- /yap:tool -->\n\n")
+	}
+	return sb.String()
+}
+
+// TestDocParseCachesPerVersion: the cached parse is reused while the version
+// is unchanged and invalidated as soon as an edit lands, so symbols and
+// diagnostics never read a stale structure.
+func TestDocParseCachesPerVersion(t *testing.T) {
+	d := &docState{text: "# @user\nhi\n", version: 1}
+	p1 := d.parse()
+	if p1 != d.parse() {
+		t.Fatal("parse() did not reuse the cached parse for the same version")
+	}
+
+	d.mu.Lock()
+	d.text = "# @user\nhi\n# @assistant\nreply\n"
+	d.version = 2
+	d.mu.Unlock()
+
+	p2 := d.parse()
+	if p2 == p1 {
+		t.Fatal("parse() returned the cached parse after an edit")
+	}
+	if len(p2.Headings) != 2 {
+		t.Fatalf("reparsed headings = %+v, want 2", p2.Headings)
+	}
+}
+
+// TestDocWarmPopulatesCache: warm() parses off the read loop, so the first
+// symbol request after a load finds the structure ready.
+func TestDocWarmPopulatesCache(t *testing.T) {
+	d := &docState{text: "# @user\nhi\n# @assistant\nreply\n", version: 1}
+	d.warm()
+	for i := 0; i < 500; i++ {
+		d.mu.Lock()
+		warm := d.parsed
+		d.mu.Unlock()
+		if warm != nil {
+			if got := d.parse(); got != warm {
+				t.Fatal("parse() did not reuse the warmed parse")
+			}
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("warm() never populated the cache")
 }

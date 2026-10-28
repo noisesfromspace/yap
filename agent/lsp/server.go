@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"boers.email/yap/agent/document"
 )
 
 // ─── JSON-RPC / LSP wire types ─────────────────────────────────────────────
@@ -125,30 +127,80 @@ type InitOptions struct {
 // ─── Document store ────────────────────────────────────────────────────────
 
 type docState struct {
-	text      string
-	version   int
-	streaming bool
-	cwd       string
-	timer     *time.Timer
+	// mu guards text/version/parsed, which a background warm parse reads
+	// while the read loop keeps applying edits.
+	mu            sync.Mutex
+	text          string
+	version       int
+	streaming     bool
+	cwd           string
+	timer         *time.Timer
+	parsed        *document.Document // cached parse of parsedVersion
+	parsedVersion int
+}
+
+// parse returns the structural parse for the current text, reusing a warm
+// result when one was computed for this version. Symbols and diagnostics both
+// go through it, so a symbol request after a load reuses the warm parse (and
+// vice versa).
+func (d *docState) parse() *document.Document {
+	d.mu.Lock()
+	if d.parsed != nil && d.parsedVersion == d.version {
+		p := d.parsed
+		d.mu.Unlock()
+		return p
+	}
+	text, version := d.text, d.version
+	d.mu.Unlock()
+
+	p := document.Parse(text)
+
+	d.mu.Lock()
+	if d.version == version {
+		d.parsed, d.parsedVersion = p, version
+	}
+	d.mu.Unlock()
+	return p
+}
+
+// warm parses in the background so the first symbol request after a session
+// loads does not pay for it. The parse runs off the read loop and only lands
+// when the document has not moved on in the meantime.
+func (d *docState) warm() {
+	d.mu.Lock()
+	if d.parsed != nil && d.parsedVersion == d.version {
+		d.mu.Unlock()
+		return
+	}
+	text, version := d.text, d.version
+	d.mu.Unlock()
+	go func() {
+		p := document.Parse(text)
+		d.mu.Lock()
+		if d.version == version {
+			d.parsed, d.parsedVersion = p, version
+		}
+		d.mu.Unlock()
+	}()
 }
 
 // Server owns open documents and the output channel.
 type Server struct {
-	opts   InitOptions
-	docs   map[string]*docState
-	pending map[string]contextParams // context received before didOpen
-	outMu  sync.Mutex
-	out    *bufio.Writer
+	opts      InitOptions
+	docs      map[string]*docState
+	pending   map[string]contextParams // context received before didOpen
+	outMu     sync.Mutex
+	out       *bufio.Writer
 	diagDelay time.Duration
 }
 
 // New returns a server writing responses/notifications to out.
 func New(out io.Writer, opts InitOptions) *Server {
 	return &Server{
-		opts:   opts,
-		docs:   map[string]*docState{},
-		pending: map[string]contextParams{},
-		out:    bufio.NewWriter(out),
+		opts:      opts,
+		docs:      map[string]*docState{},
+		pending:   map[string]contextParams{},
+		out:       bufio.NewWriter(out),
 		diagDelay: 200 * time.Millisecond,
 	}
 }
@@ -317,6 +369,8 @@ func (s *Server) didOpen(p didOpenParams) {
 	}
 	s.docs[p.TextDocument.URI] = d
 	if s.isSession(p.TextDocument.URI) {
+		// Parse ahead of the first symbol request; the read loop stays free.
+		d.warm()
 		s.scheduleDiagnostics(p.TextDocument.URI, d)
 	}
 }
@@ -327,9 +381,13 @@ func (s *Server) didChange(p didChangeParams) {
 		return
 	}
 	for _, ch := range p.ContentChanges {
+		d.mu.Lock()
 		d.text = applyChange(d.text, ch)
+		d.mu.Unlock()
 	}
+	d.mu.Lock()
 	d.version = p.TextDocument.Version
+	d.mu.Unlock()
 	if s.isSession(p.TextDocument.URI) {
 		s.scheduleDiagnostics(p.TextDocument.URI, d)
 	}
@@ -375,10 +433,13 @@ func (s *Server) publishDiagnostics(uri string, d *docState) {
 	if _, ok := s.docs[uri]; !ok {
 		return
 	}
-	diags := Diagnostics(d.text, d.streaming)
+	diags := diagnosticsFromDoc(d.parse(), d.streaming)
+	d.mu.Lock()
+	version := d.version
+	d.mu.Unlock()
 	s.notify("textDocument/publishDiagnostics", map[string]any{
 		"uri":         uri,
-		"version":     d.version,
+		"version":     version,
 		"diagnostics": diags,
 	})
 }
@@ -413,7 +474,7 @@ func (s *Server) symbolsFor(uri string) any {
 	if d == nil {
 		return []any{}
 	}
-	return Symbols(d.text)
+	return symbolsFromDoc(d.parse())
 }
 
 func (s *Server) completionFor(p completionParams) any {
