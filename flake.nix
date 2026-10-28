@@ -103,12 +103,8 @@
             ];
           };
 
-          # render-markdown.nvim (bundles its own queries; needs the parsers).
-          renderMarkdown = pkgs.vimPlugins.render-markdown-nvim;
-
-          # Clean dev Neovim, this plugin only. Extra launchers below add
-          # treesitter highlighting or the touchup renderer on top of the
-          # same clean base.
+          # Clean dev Neovim, this plugin only. The launcher below adds
+          # treesitter highlighting on top of the same clean base.
           yap-nvim = pkgs.writeShellApplication {
             name = "yap-nvim";
             runtimeInputs = [ pkgs.neovim ];
@@ -136,43 +132,6 @@
                 "$@"
             '';
           };
-
-          # Clean + touchup renderer (needs the markdown grammars).
-          yap-nvim-touchup = pkgs.writeShellApplication {
-            name = "yap-nvim-touchup";
-            runtimeInputs = [ pkgs.neovim ];
-            text = ''
-              root="''${YAP_ROOT:-$(pwd)}"
-              tu="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
-              if [ ! -d "$tu" ]; then
-                echo "yap-nvim-touchup: TOUCHUP_ROOT not found: $tu" >&2
-              fi
-              unset VIM VIMRUNTIME
-              exec nvim -u NONE -i NONE \
-                --cmd "set rtp^=$root,$tu,${markdownParsers}" \
-                -c "runtime! plugin/yap.lua" \
-                -c "lua require('harness').setup()" \
-                -c "lua require('touchup').setup()" \
-                "$@"
-            '';
-          };
-
-          # Clean + render-markdown.nvim (bundles its own queries; needs the
-          # markdown grammars). Sources its plugin file like yap does.
-          yap-nvim-render-markdown = pkgs.writeShellApplication {
-            name = "yap-nvim-render-markdown";
-            runtimeInputs = [ pkgs.neovim ];
-            text = ''
-              root="''${YAP_ROOT:-$(pwd)}"
-              unset VIM VIMRUNTIME
-              exec nvim -u NONE -i NONE \
-                --cmd "set rtp^=$root,${renderMarkdown},${markdownParsers}" \
-                -c "runtime! plugin/yap.lua" \
-                -c "lua require('harness').setup()" \
-                -c "runtime! plugin/render-markdown.lua" \
-                "$@"
-            '';
-          };
         in
         {
           default = pkgs.mkShell {
@@ -187,13 +146,10 @@
               pkgs.golangci-lint
               yap-nvim
               yap-nvim-treesitter
-              yap-nvim-touchup
-              yap-nvim-render-markdown
             ];
 
             shellHook = ''
               export YAP_ROOT="$(pwd)"
-              export TOUCHUP_ROOT="''${TOUCHUP_ROOT:-/opt/code/touchup.nvim}"
               # The Lua suite runs under mini.test; tests/run.sh falls back to
               # nixpkgs when this is unset (and outside the devShell).
               export YAP_MINI_NVIM="${pkgs.vimPlugins.mini-nvim}"
@@ -210,7 +166,7 @@
               else
                 echo "yap: run 'nix develop' from the repo root (agent/ not found)" >&2
               fi
-              echo "yap: yap-nvim (clean) | yap-nvim-treesitter | yap-nvim-touchup | yap-nvim-render-markdown"
+              echo "yap: yap-nvim (clean) | yap-nvim-treesitter"
             '';
           };
         }
@@ -256,11 +212,11 @@
           jailEnvNames = lib.unique (
             lib.filter (v: v != null && v != "") (
               lib.mapAttrsToList (_: p: p.api_key_env or null) (cfg.settings.providers or { })
-              ++ lib.concatMap
-                (s:
-                  lib.attrValues (s.env or { })
-                  ++ map (v: lib.last (lib.splitString " " v)) (lib.attrValues (s.headers or { })))
-                (lib.attrValues (cfg.settings.mcp or { }))
+              ++ lib.concatMap (
+                s:
+                lib.attrValues (s.env or { })
+                ++ map (v: lib.last (lib.splitString " " v)) (lib.attrValues (s.headers or { }))
+              ) (lib.attrValues (cfg.settings.mcp or { }))
             )
           );
 
@@ -408,7 +364,9 @@
                 mcp = {
                   exa = {
                     url = "https://mcp.exa.ai/mcp";
-                    headers = { "x-api-key" = "EXA_API_KEY"; };
+                    headers = {
+                      "x-api-key" = "EXA_API_KEY";
+                    };
                   };
                 };
               };
