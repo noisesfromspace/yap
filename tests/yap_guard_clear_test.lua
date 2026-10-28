@@ -44,7 +44,7 @@ state.pending_approvals[a] = {
 
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("clear-me parked", 1, true), "parked approval missing")
 assert(text:find("clear-me resolved", 1, true), "settled approval missing")

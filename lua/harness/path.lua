@@ -123,7 +123,7 @@ end
 --- used. The session directory is created here (0700), ready for the first
 --- write.
 function M.new_session_path(dir, name)
-  name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y%m%d-%H%M%S"), math.random(0, 0xffff))
+  name = (name and name:gsub("%.md$", "")) or string.format("%s-%04x", os.date("%Y-%m-%d_%H.%M.%S"), math.random(0, 0xffff))
   local sdir = dir .. "/" .. name
   M.ensure_session_dir(sdir)
   return sdir .. "/session.md"
@@ -148,11 +148,11 @@ function M.transcript_in(dir)
   return dir .. "/session.md"
 end
 
---- The live tool tail buffer's name; mirrors the session directory name so a
---- renamed directory keeps its tail buffer.
-function M.tail_buf_name(buf)
+--- The live tool tail buffer's display name. The description is preferred;
+--- the transcript filename and session directory are the fallbacks.
+function M.tail_buf_name(buf, label)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return "yap://" .. M.session_name(path) .. "-tail"
+  return "Yap Log: " .. (label or M.session_name(path))
 end
 
 --- The session's JSON Lines audit log: <dir>/audit.jsonl, beside the session

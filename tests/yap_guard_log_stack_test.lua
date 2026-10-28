@@ -15,7 +15,7 @@ local s = yap.new()
 local chat_win = vim.api.nvim_get_current_win()
 
 local function buf_name(win)
-  return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win))
+  return vim.fn.bufname(vim.api.nvim_win_get_buf(win))
 end
 
 local function row(win)
@@ -31,7 +31,7 @@ local full = height(chat_win)
 -- Open the board from the session: it lands below the session window.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 local board_win = vim.api.nvim_get_current_win()
 assert(row(board_win) > row(chat_win), "board is not below the session")
 assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "board has no <leader>l map")
@@ -51,7 +51,7 @@ if leader == nil or leader == "" then
 end
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
 local log = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(log):match("%-tail$"), "board <leader>l did not open the log")
+assert(vim.fn.bufname(log):match("^Yap Log: "), "board <leader>l did not open the log")
 local log_win = vim.api.nvim_get_current_win()
 assert(row(chat_win) < row(board_win), "session is not above the board")
 assert(row(board_win) < row(log_win), "log is not below the board")
@@ -72,12 +72,12 @@ assert(#vim.fn.win_findbuf(log) == 0, "log did not close")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 local log_win2 = vim.api.nvim_get_current_win()
-assert(buf_name(log_win2):match("%-tail$"), "log did not reopen")
+assert(buf_name(log_win2):match("^Yap Log: "), "log did not reopen")
 assert(vim.fn.maparg("<leader>g", "n", false, true).buffer == 1, "log has no <leader>g map")
 
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "g", true, false, true), "mtx", false)
 local board_win2 = vim.api.nvim_get_current_win()
-assert(buf_name(board_win2) == "yap://guard", "log <leader>g did not open the board")
+assert(buf_name(board_win2) == "Yap Guard", "log <leader>g did not open the board")
 assert(row(chat_win) < row(board_win2), "board is not below the session")
 assert(row(board_win2) < row(log_win2), "board is not above the log")
 

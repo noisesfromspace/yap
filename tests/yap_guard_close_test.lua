@@ -14,7 +14,7 @@ local chat_win = vim.api.nvim_get_current_win()
 local full = vim.api.nvim_win_get_height(chat_win)
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "board did not open")
 assert(#vim.api.nvim_list_wins() == 2, "board did not open in a split")
 assert(
   vim.api.nvim_win_get_height(0) == math.floor(full / 2),

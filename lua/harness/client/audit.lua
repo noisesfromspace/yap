@@ -39,18 +39,46 @@ local tails = {}
 local resize_autocmd = false
 local resync -- defined after the rule helpers; used by the resize autocmd
 
+local function tail_label(buf)
+  local session = require("harness.session")
+  local path = session.display_path(buf)
+  return session.label(path, session.description(buf))
+end
+
+--- Refresh an existing tail's display name when the session description or
+--- transcript title changes. The buffer number remains the stable identity.
+function M.rename(buf)
+  local t = tails[buf]
+  if not (t and vim.api.nvim_buf_is_valid(t.bufnr)) then
+    return
+  end
+  local name = paths.tail_buf_name(buf, tail_label(buf))
+  for other, other_tail in pairs(tails) do
+    if other ~= buf and vim.api.nvim_buf_is_valid(other_tail.bufnr) and other_tail.name == name then
+      name = name .. " [" .. buf .. "]"
+      break
+    end
+  end
+  if t.name ~= name then
+    t.name = name
+    pcall(vim.api.nvim_buf_set_name, t.bufnr, name)
+  end
+end
+
 --- The session's tail buffer, created on first use. Empty until a tool runs.
 function M.ensure(buf)
   local t = tails[buf]
   if t and vim.api.nvim_buf_is_valid(t.bufnr) then
+    M.rename(buf)
     return t
   end
-  local name = paths.tail_buf_name(buf)
+  local name = paths.tail_buf_name(buf, tail_label(buf))
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
   t = { bufnr = tbuf, rules = {}, follow = document.following_windows(tbuf), expected = {} }
   tails[buf] = t
+  M.rename(buf)
   if not resize_autocmd then
     resize_autocmd = true
     vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {

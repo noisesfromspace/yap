@@ -11,16 +11,9 @@ local document = require("harness.model.document")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
--- The persistent tail viewer buffer of a session buffer (yap://<name>-tail).
+-- The persistent tail viewer buffer of a session buffer (`Yap Log: <session>`).
 local function tail_buf(chat)
-  local name = vim.api.nvim_buf_get_name(chat)
-  name = name:match("^yap://") and (name .. "-tail")
-    or ("yap://" .. require("harness.path").session_name(name) .. "-tail")
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_get_name(b) == name then
-      return b
-    end
-  end
+  return require("harness.client.audit").view(chat).bufnr
 end
 
 -- Replace the typing line under the LAST # @user heading (a positional
@@ -166,7 +159,7 @@ local tb2 = tail_buf(buf2)
 assert(tb2, "no tail viewer buffer for the second session")
 yap.live()
 assert(
-  vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()):match("%-tail$"),
+  vim.fn.bufname(vim.api.nvim_get_current_buf()):match("^Yap Log: "),
   "live() did not open the tail viewer"
 )
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail viewer window not at the bottom")

@@ -135,6 +135,7 @@ function M.save(buf, previous_path)
   if view then
     vim.fn.winrestview(view)
   end
+  require("harness.client.audit").rename(buf)
 end
 
 --- Copy the current in-memory transcript to a new session file. Do not rename
@@ -430,6 +431,16 @@ end
 --- title for a renamed session that has no description yet.
 function M.saved_identity(path, description)
   return M.identity(path, description) or M.file_title(path)
+end
+
+--- The live frontmatter description for a session buffer.
+function M.description(buf)
+  local e = frontmatter.end_line(buf)
+  if not e then
+    return nil
+  end
+  local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
+  return fm and fm.description or nil
 end
 
 --- "agent · <identity>" for a subagent row. The identity is the first

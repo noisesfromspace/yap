@@ -137,7 +137,7 @@ assert(vim.bo[buf].buflisted, "session buffer should be listed")
 assert(vim.bo[buf2].buflisted, "second session buffer should be listed")
 local tails_unlisted = true
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.api.nvim_buf_get_name(b):match("%-tail$") then
+  if vim.fn.bufname(b):match("^Yap Log: ") then
     tails_unlisted = tails_unlisted and not vim.bo[b].buflisted
   end
 end
@@ -247,7 +247,7 @@ end
 assert(labels["Finished mock turn"], "description missing from picker: " .. vim.inspect(items))
 local has_name_fallback = false
 for label in pairs(labels) do
-  has_name_fallback = has_name_fallback or label:match("^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x$") ~= nil
+  has_name_fallback = has_name_fallback or label:match("^%d%d%d%d%-%d%d%-%d%d_%d%d%.%d%d%.%d%d%-%x%x%x%x$") ~= nil
 end
 assert(has_name_fallback, "name fallback missing from picker: " .. vim.inspect(items))
 print("OK notify")

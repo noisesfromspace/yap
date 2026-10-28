@@ -22,7 +22,7 @@ local notes_path = vim.api.nvim_buf_get_name(scratch)
 vim.api.nvim_set_current_win(session_win)
 yap.live(session)
 local tail = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(tail):match("%-tail$"), "live tail viewer did not open")
+assert(vim.fn.bufname(tail):match("^Yap Log: "), "live tail viewer did not open")
 
 -- Replacing the session in its window means it is no longer visible. The
 -- drawer windows close, but their buffers and the queued work remain intact.

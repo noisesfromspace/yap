@@ -1,5 +1,5 @@
 -- Shared presentation primitives for Yap's read-only "board" buffers: the
--- guard board (yap://guard), the live tool tail (yap://<session>-tail), and
+-- guard board (Yap Guard), the live tool tail (Yap Log: <session>), and
 -- any future projection. Both are rebuilt-from-events buffers opened as a
 -- bottom drawer with a two-line header (title + counts), linked highlight
 -- groups, and manual folds. New views reuse these so they look and behave

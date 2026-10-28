@@ -1,4 +1,4 @@
--- The guard board (yap://guard): one read-only, global projection of
+-- The guard board (Yap Guard): one read-only, global projection of
 -- everything that needs attention — parked approvals (live, answered in
 -- place) and the project's settled decision history (granted/denied/
 -- timed-out approvals read back from the audit logs so decisions persist
@@ -19,7 +19,7 @@ local function harness()
   return require("harness")
 end
 
-local BOARD_NAME = "yap://guard"
+local BOARD_NAME = "Yap Guard"
 local MAX_HISTORY_ROWS = 30 -- cap the project's settled-history readback
 
 -- Audit logs are append-only. Reuse decoded entries while a log's size and

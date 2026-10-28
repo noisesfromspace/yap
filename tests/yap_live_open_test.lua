@@ -10,7 +10,7 @@ local full = vim.api.nvim_win_get_height(chat_win)
 -- fills as tools execute)
 yap.live()
 local tail = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(tail):match("%-tail$"), "live did not open the tail buffer")
+assert(vim.fn.bufname(tail):match("^Yap Log: "), "live did not open the tail buffer")
 assert(not vim.bo[tail].modifiable, "fresh tail view should be read-only")
 assert(
   vim.api.nvim_win_get_height(0) == math.floor(full / 2),

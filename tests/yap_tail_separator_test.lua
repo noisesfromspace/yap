@@ -40,6 +40,34 @@ assert(hl_on(2), "first header continuation not highlighted")
 assert(not hl_on(4), "rule separator should not be highlighted")
 assert(hl_on(5), "second header not highlighted")
 
+-- Tail names follow the session description and filename title. A suffix
+-- keeps two sessions with the same display name distinct.
+local yap = require("harness")
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
+local frontmatter = require("harness.model.frontmatter")
+local session = require("harness.session")
+local function set_description(buf, description)
+  frontmatter.update(buf, { description = description })
+  session.save(buf)
+end
+local first = yap.new()
+local first_tail = audit.ensure(first).bufnr
+local fallback = "Yap Log: " .. require("harness.path").session_name(vim.b[first].yap_path)
+assert(vim.fn.bufname(first_tail) == fallback, "tail fallback name wrong: " .. vim.fn.bufname(first_tail) .. " expected " .. fallback)
+set_description(first, "Fix buffer picker")
+assert(vim.fn.bufname(first_tail) == "Yap Log: Fix buffer picker", "description did not rename tail")
+local second = yap.new()
+local second_tail = audit.ensure(second).bufnr
+set_description(second, "Fix buffer picker")
+assert(
+  vim.fn.bufname(second_tail) == "Yap Log: Fix buffer picker [" .. second .. "]",
+  "duplicate tail name was not disambiguated: " .. vim.fn.bufname(second_tail)
+)
+frontmatter.update(second, { description = "" })
+vim.api.nvim_buf_set_name(second, vim.fn.fnamemodify(vim.b[second].yap_path, ":h") .. "/Pinned title.md")
+session.save(second)
+assert(vim.fn.bufname(second_tail) == "Yap Log: Pinned title", "filename title fallback wrong")
+
 -- A rule drawn with no window uses the background fallback width; once a
 -- window shows the tail, refresh() re-renders it to that window's width.
 assert(vim.fn.strchars(lines[4]) == 80, "expected the background fallback width, got: " .. vim.fn.strchars(lines[4]))

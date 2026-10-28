@@ -35,7 +35,7 @@ park(a, "key-1", "bash", "rm -rf /", "direct-run")
 
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 
 for _, key in ipairs({ "r", "x", "i", "c" }) do
   local m = vim.fn.maparg(key, "n", false, true)

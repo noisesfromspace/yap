@@ -13,7 +13,7 @@ local chat = yap.new()
 vim.api.nvim_buf_set_lines(chat, -1, -1, false, { "try auto-accept" })
 
 local function board_text()
-  return table.concat(vim.api.nvim_buf_get_lines(vim.fn.bufnr("yap://guard"), 0, -1, false), "\n")
+  return table.concat(vim.api.nvim_buf_get_lines(vim.fn.bufnr("Yap Guard"), 0, -1, false), "\n")
 end
 
 -- Park an approval with no backend so the `a` sweep clears it without
@@ -29,7 +29,7 @@ state.pending_approvals[chat] = {
 
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 local text = board_text()
 assert(text:find("Parked 1", 1, true), "header missing parked approval count")
 assert(not text:find("auto-accept on", 1, true), "auto-accept marker shown while off")

@@ -47,7 +47,7 @@ assert(not notice.msg:find("guard", 1, true), "notification should not reference
 -- The board lists the parked approval with its decoded command and reason.
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "guard board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("publishes to a remote", 1, true), "board missing approval reason")
 guard.toggle() -- close (defer)
@@ -55,7 +55,7 @@ guard.toggle() -- close (defer)
 -- Inspect focuses the session's tool region without touching the parked
 -- approval: it navigates the session, never a modal or the audit log.
 guard.toggle()
-local board = vim.fn.bufnr("yap://guard")
+local board = vim.fn.bufnr("Yap Guard")
 local row_line
 for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do
   if l:find("publishes to a remote", 1, true) then

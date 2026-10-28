@@ -47,7 +47,7 @@ park(b, "newer", "focus-me", 1)
 
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
-assert(vim.api.nvim_buf_get_name(board) == "yap://guard", "board did not open")
+assert(vim.fn.bufname(board) == "Yap Guard", "board did not open")
 
 local function line_of(reason)
   for i, l in ipairs(vim.api.nvim_buf_get_lines(board, 0, -1, false)) do

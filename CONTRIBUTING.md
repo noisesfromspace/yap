@@ -545,7 +545,7 @@ before it; the audit log is left intact and parked approvals are untouched.
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
-each session has ONE persistent live tail (yap://<session>-tail): bash
+each session has ONE persistent live tail (`Yap Log: <session>`): bash
 announces its temp log via a `tool_start` frame and streams its output as
 `tool_output` delta frames on the single channel, the Lua side appends new
 bytes into the tail (a `$ command` header per call), and live() opens it.
