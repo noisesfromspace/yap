@@ -505,7 +505,10 @@ func roleCompletion(cur string, char, line int) ([]completionItem, bool) {
 // ─── File reference completion ─────────────────────────────────────────────
 
 func isFileRef(cur string, wordStart int) bool {
-	if wordStart <= 0 || wordStart >= len(cur) || cur[wordStart] != '@' {
+	// wordStart 0 means the reference begins the line (a fresh message body
+	// starts with `@`), which is a valid reference position. Only reject a
+	// negative start (no word) or a start past the end (empty line).
+	if wordStart < 0 || wordStart >= len(cur) || cur[wordStart] != '@' {
 		return false
 	}
 	return wordStart == 0 || isSpace(cur[wordStart-1])

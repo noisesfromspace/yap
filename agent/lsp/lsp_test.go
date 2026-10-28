@@ -80,6 +80,28 @@ func TestCompletionRole(t *testing.T) {
 	}
 }
 
+func TestCompletionFileRefAtLineStart(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A bare `@` at the start of a message body line: the word begins at
+	// column 0, which isFileRef must accept as a reference position.
+	items := Completion("# @user\n@\n", 1, 1, CompletionCtx{Cwd: dir})
+	if len(items) == 0 {
+		t.Fatal("no file completions for bare @ at line start")
+	}
+	found := false
+	for _, it := range items {
+		if it.Label == "readme.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("readme.txt not offered for bare @: %+v", items)
+	}
+}
+
 func TestCompletionNoMatchesEncodesAsArray(t *testing.T) {
 	// A completion request with no matches must still return items: [], never
 	// null: Neovim rejects null for a CompletionList.items field.
