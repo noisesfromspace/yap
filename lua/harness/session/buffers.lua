@@ -306,9 +306,12 @@ function M.open(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
 end
 
---- Display only: the real filename remains available to :write and explorers.
---- A `[RUN]`/`[WAIT]`-style tag, not a status icon: the picker filters on the
---- label text, so the state has to be typeable to find sessions by it.
+--- MiniPick's ordinary buffer list: real paths, native icons, bufnr selection.
+function M.pick()
+  return require("mini.pick").builtin.buffers()
+end
+
+--- Display only: a session's state and description for other UI consumers.
 function M.label(buf)
   if not vim.api.nvim_buf_is_valid(buf) or not vim.b[buf].yap then
     return nil
@@ -324,72 +327,6 @@ function M.label(buf)
   return picker.tag(buf)
     .. title
     .. (duplicate and (" [" .. buf .. "]") or "")
-end
-
---- The ordinary MiniPick buffer list, with conversation labels instead of paths.
-function M.pick()
-  local pick = require("mini.pick")
-  local items = {}
-  -- Match the builtin buffer source's ordering and names, preserving bufnr
-  -- for preview/selection rather than treating the display label as a filename.
-  local output = vim.api.nvim_exec2("buffers", { output = true }).output
-  for _, line in ipairs(vim.split(output, "\n")) do
-    local buf = tonumber(line:match("^%s*(%d+)"))
-    if buf then
-      items[#items + 1] = { bufnr = buf, text = M.label(buf) or line:match('"(.*)"') }
-    end
-  end
-  return pick.start({
-    source = {
-      name = "Buffers",
-      items = items,
-      show = function(buf, entries, query)
-        local rendered = {}
-        local ns = vim.api.nvim_create_namespace("yap.buffer_labels")
-        vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-        local highlights = {}
-        local has_icons, icons = pcall(require, "mini.icons")
-        for i, item in ipairs(entries) do
-          local entry = vim.tbl_extend("force", {}, item)
-          local icon, hl = " ", "Normal"
-          if has_icons then
-            local ft = vim.bo[item.bufnr].filetype
-            if ft == "man" then
-              -- man:// URIs have no "file" entry; the filetype does.
-              icon, hl = icons.get("filetype", "man")
-            else
-              -- "file" resolves a terminal's shell (term://…/zsh -> the zsh
-              -- glyph), ssh configs, and ordinary paths by extension/filetype.
-              icon, hl = icons.get("file", vim.api.nvim_buf_get_name(item.bufnr))
-            end
-          end
-          entry.text = icon .. " " .. item.text
-          rendered[i] = entry
-          highlights[i] = { width = #icon, hl = hl, prefix = #icon + 1 }
-        end
-        pick.default_show(buf, rendered, query)
-        local colors = {
-          running = "DiagnosticInfo",
-          error = "DiagnosticError",
-          stopped = "DiagnosticWarn",
-          waiting = "DiagnosticHint",
-          approval = "DiagnosticWarn",
-          done = "Comment",
-          idle = "Comment",
-        }
-        for i, item in ipairs(entries) do
-          local h = highlights[i]
-          vim.api.nvim_buf_add_highlight(buf, ns, h.hl, i - 1, 0, h.width)
-          if vim.b[item.bufnr].yap then
-            local _, tag_width = picker.tag(item.bufnr)
-            local status = state.pending_approvals[item.bufnr] and "approval"
-              or picker.state(item.bufnr)
-            vim.api.nvim_buf_add_highlight(buf, ns, colors[status], i - 1, h.prefix, h.prefix + tag_width)
-          end
-        end
-      end,
-    },
-  })
 end
 
 -- Reachable from the facade/setup and from sessions.lua (focus_buf).

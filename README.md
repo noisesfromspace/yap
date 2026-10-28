@@ -175,14 +175,12 @@ All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-ke
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title; use your normal buffer navigation, file
 explorer, and Neovim deletion commands.
-`require("harness").buffers()` opens MiniPick's regular buffer picker with
-filetype icons and `{status tag} {title}` labels for Yap sessions; file,
-terminal and man buffers keep their usual labels. The tag is one of `[RUN]`,
-`[WAIT]`, `[APPR]`, `[ERR]`, `[STOP]`, `[DONE]` and `[IDLE]`, so a query can
-filter by state (`[WAIT]`) or to every session at once (`[`). Selection uses
-the buffer number, not the label.
-`require("harness.session.buffers").label(buf)` returns that label for a Yap
-buffer and `nil` otherwise. Only duplicate titles gain a buffer-number suffix.
+`require("harness").buffers()` opens MiniPick's builtin buffer picker. Every
+entry keeps its real filepath and filetype icon, including renamed session
+transcripts, and selection uses the buffer number. Session descriptions and
+state labels remain in the separate Yap session pickers.
+`require("harness.session.buffers").label(buf)` returns a Yap session's state
+and description for UI consumers, or `nil` for ordinary buffers.
 Subagent buffers stay unlisted and do not count in the winbar overview.
 
 `instances()` retains the open-session tree, including subagents; `sessions()`

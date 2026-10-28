@@ -30,6 +30,16 @@ assert(vim.fn.filereadable(session_path) == 0, "stale session.md left behind")
 assert(vim.fn.getfperm(project) == before_perm, "project directory permissions changed after :file")
 assert(require("harness.session").file_title(renamed) == "my-title", "filename title missing")
 
+-- Native :w does not call session.save(), but it must still re-root a
+-- relative :file rename before writing.
+vim.cmd("file native-write.md")
+vim.cmd("write")
+local native_renamed = session_dir .. "/native-write.md"
+assert(vim.api.nvim_buf_get_name(buf) == native_renamed, "native :w did not re-root :file")
+assert(vim.b[buf].yap_path == native_renamed, "native :w lost the session path")
+assert(vim.fn.filereadable(native_renamed) == 1, "native :w did not write in the session directory")
+assert(vim.fn.filereadable(project .. "/native-write.md") == 0, "native :w created a transcript in :pwd")
+
 -- :saveas also re-roots into the session directory, keeping the basename.
 local copy_target = vim.fn.tempname() .. ".md"
 vim.cmd("saveas " .. vim.fn.fnameescape(copy_target))

@@ -75,7 +75,29 @@ local function stamp_updated_at(buf)
   vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render(fm))
 end
 
-function M.save(buf)
+--- Keep a pending :file/:saveas basename inside the session directory.
+--- Return the session path and whether it changed. Ordinary saves never call
+--- set_name, since that resets Neovim's alternate-buffer tracking.
+function M.reconcile_name(buf)
+  local path = vim.b[buf].yap_path
+  if not path then
+    return nil, false
+  end
+  local bufname = vim.api.nvim_buf_get_name(buf)
+  if bufname == path or bufname == "" or bufname:match("^%a+://") then
+    return path, false
+  end
+  local base = vim.fn.fnamemodify(bufname, ":t")
+  if base == "" or base == "notes.md" or not base:match("%.md$") then
+    return path, false
+  end
+  local renamed = vim.fn.fnamemodify(path, ":h") .. "/" .. base
+  vim.b[buf].yap_path = renamed
+  pcall(vim.api.nvim_buf_set_name, buf, renamed)
+  return renamed, path
+end
+
+function M.save(buf, previous_path)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
@@ -94,24 +116,9 @@ function M.save(buf)
     pcall(vim.api.nvim_buf_set_name, buf, path)
   end
   -- A relative :file rename has not fired BufFilePost yet when save() is
-  -- called directly afterwards. Record that pending title here; BufFilePost
-  -- handles the normal interactive path. Ordinary saves never set_name,
-  -- which would reset Neovim's alternate-buffer tracking.
-  local bufname = vim.api.nvim_buf_get_name(buf)
-  if bufname ~= path and bufname ~= "" and not bufname:match("^%a+://") then
-    local base = vim.fn.fnamemodify(bufname, ":t")
-    if base ~= "" and base ~= "notes.md" and base:match("%.md$") then
-      local renamed = vim.fn.fnamemodify(path, ":h") .. "/" .. base
-      if vim.fn.filereadable(path) == 1 and vim.fn.filereadable(renamed) == 0 then
-        vim.fn.rename(path, renamed)
-      end
-      vim.b[buf].yap_path = renamed
-      path = renamed
-      -- Rename only for an actual title change. This is required before
-      -- :write, otherwise a relative :file target is written into cwd.
-      pcall(vim.api.nvim_buf_set_name, buf, path)
-    end
-  end
+  -- called directly afterwards. Reconcile it before choosing the write path.
+  previous_path = previous_path or vim.b[buf].yap_path
+  path = M.reconcile_name(buf) or path
   stamp_updated_at(buf)
   paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
   -- Pre-create the file 0600: `:write!` would create it 0644 under the umask
@@ -131,6 +138,11 @@ function M.save(buf)
   -- keys into the conversation); keep it 0600 like the audit log. :write
   -- preserves the mode on later saves.
   vim.fn.setfperm(path, "rw-------")
+  -- Write the new transcript before removing the old one. Moving the old
+  -- file first would make native :write report E13 (file already exists).
+  if path ~= previous_path and vim.fn.filereadable(previous_path) == 1 then
+    vim.fn.delete(previous_path)
+  end
   if view then
     vim.fn.winrestview(view)
   end

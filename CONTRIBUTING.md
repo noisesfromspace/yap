@@ -247,17 +247,14 @@ with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
 session status must not redirect focus. The transcript filename is the title;
 the generated description remains the primary label in session views.
 
-`buffers()` lists ordinary listed buffers through MiniPick, preserving file, terminal
-and man items and selecting by buffer number. The shared
-`require("harness.session.buffers").label(buf)` returns
-`{status tag} {title}` for Yap buffers and `nil` otherwise; the picker
-prepends the buffer's filetype icon. The tag spells the state out (`[WAIT]`,
-`[RUN]`, …) rather than drawing an icon, so a typed query can filter by it.
-Labels are
-presentation only, never buffer names. Add a buffer-number suffix only when
-titles collide. `instances()` retains the open-session tree and carries no
-default keymap; `sessions()` retains the saved-session tree. Why: sessions belong in ordinary buffer navigation without sacrificing
-real file paths or the separate session trees.
+`buffers()` delegates to MiniPick's builtin buffer source. Every entry keeps
+its real filepath and filetype icon, and selection uses the buffer number.
+`require("harness.session.buffers").label(buf)` remains the state/description
+label API for Yap-specific UI; it does not replace buffer-picker paths.
+`instances()` retains the open-session tree and carries no default keymap;
+`sessions()` retains the saved-session tree. Sessions belong in ordinary
+buffer navigation without sacrificing real file paths or the separate session
+trees.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 

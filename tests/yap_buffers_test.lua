@@ -133,21 +133,15 @@ for _, item in ipairs(captured.source.items) do
 end
 for _, buf in ipairs({ a, b }) do
   assert(items[buf], "listed Yap buffer missing from mixed picker")
-  assert(items[buf].text == buffers.label(buf), "picker disagrees with shared label API")
+  assert(items[buf].text == baseline[buf], "Yap picker lost its real filepath")
 end
 assert(not items[child], "unlisted subagent leaked into buffer picker")
--- Rendering gives every entry its filetype icon; a Yap session keeps its
--- status tag in the label and the markdown filetype icon on the left.
+-- Native MiniPick rendering supplies the icons for every buffer kind.
 local display = vim.api.nvim_create_buf(false, true)
 captured.source.show(display, { items[a], items[term], items[man], items[filebuf] }, {})
 local shown = vim.api.nvim_buf_get_lines(display, 0, -1, false)
-local has_icons, icons = pcall(require, "mini.icons")
-local yap_icon = has_icons and icons.get("file", vim.api.nvim_buf_get_name(a)) or " "
-assert(shown[1] == yap_icon .. " " .. buffers.label(a), "Yap entry missing its filetype icon")
--- A terminal resolves its shell by name (term://…/zsh -> the shell glyph),
--- not the generic terminal filetype, which has no icon of its own.
-local term_icon = has_icons and icons.get("file", vim.api.nvim_buf_get_name(term)) or " "
-assert(shown[2] == term_icon .. " " .. items[term].text, "terminal lost its shell icon")
+assert(shown[1]:find("Pinned.md", 1, true), "Yap entry lost its real filepath: " .. shown[1])
+assert(shown[2]:find(items[term].text, 1, true), "terminal lost its label")
 vim.api.nvim_buf_delete(display, { force = true })
 for _, buf in ipairs({ filebuf, term, man }) do
   assert(items[buf] and items[buf].text == baseline[buf], "ordinary picker item changed: " .. buf)

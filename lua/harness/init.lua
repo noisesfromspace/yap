@@ -460,25 +460,27 @@ function M.setup(opts)
       if not vim.b[buf].yap then
         return
       end
-      local path = vim.b[buf].yap_path
-      local base = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t")
-      if not path or base == "" or base == "notes.md" or not base:match("%.md$") then
-        return
+      local path, previous = session.reconcile_name(buf)
+      if previous then
+        if vim.fn.filereadable(path) == 0 then
+          session.save(buf, previous)
+        elseif vim.fn.filereadable(previous) == 1 then
+          vim.fn.delete(previous)
+        end
+        lsp.attach(buf)
       end
-      local renamed = vim.fn.fnamemodify(path, ":h") .. "/" .. base
-      if renamed ~= path then
-        if vim.b[buf].yap_path ~= renamed then
-          if vim.fn.filereadable(path) == 1 and vim.fn.filereadable(renamed) == 0 then
-            vim.fn.rename(path, renamed)
-          end
-          vim.b[buf].yap_path = renamed
-          lsp.attach(buf)
-        end
-        -- An immediate save after :file may precede the deferred rename
-        -- event. Re-point only that pending rename, never on ordinary saves.
-        if vim.api.nvim_buf_get_name(buf) ~= renamed then
-          vim.api.nvim_buf_set_name(buf, renamed)
-        end
+    end,
+  })
+  -- Route native :write through the same save path as autosaves. In
+  -- particular, a pending :file rename must be re-rooted before the write;
+  -- session.save() uses noautocmd write!, so this does not recurse.
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    group = adopt_group,
+    callback = function(args)
+      if vim.b[args.buf].yap_owner then
+        scratchmod.save(args.buf)
+      elseif vim.b[args.buf].yap then
+        session.save(args.buf)
       end
     end,
   })
