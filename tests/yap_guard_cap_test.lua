@@ -16,6 +16,7 @@ local a = yap.new({ provider = "mock", model = "m1" })
 local sdir = paths.session_dir(vim.fn.getcwd())
 local sess = sdir .. "/capcheck"
 vim.fn.mkdir(sess, "p")
+vim.fn.writefile({}, sess .. "/session.md") -- a session dir must hold a transcript
 local f = io.open(sess .. "/audit.jsonl", "w")
 for i = 1, 31 do
   local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + i)

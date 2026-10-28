@@ -487,14 +487,12 @@ function M.list(scope)
 
   local items, children, owned_by = {}, {}, {}
   for _, dir in ipairs(dirs) do
-    -- Sessions live one per directory: <dir>/<session>/<transcript>.md. The
-    -- transcript is usually `session.md` but is renamed to set the session
-    -- title, so glob every markdown file and skip the notes.md scratch
-    -- sidecar (also a .md file).
-    for _, path in ipairs(vim.fn.glob(dir .. "/**/*.md", false, true)) do
-      if vim.fn.fnamemodify(path, ":t") == "notes.md" then
-        goto continue
-      end
+    -- Sessions live one per directory: a session directory directly holds the
+    -- transcript (usually `session.md`, renamed to set the title). Walk the
+    -- tree so month-nested auto sessions and top-level named forks are both
+    -- found, while `assets/` working files are never read as sessions.
+    for _, sdir in ipairs(paths.session_dirs(dir)) do
+      local path = paths.transcript_in(sdir)
       local lines = vim.fn.readfile(path, "", 200)
       local fm = frontmatter.parse(lines)
       -- A subagent session is internal to the conversation that spawned it:
@@ -521,7 +519,6 @@ function M.list(scope)
           items[#items + 1] = item
         end
       end
-      ::continue::
     end
   end
 

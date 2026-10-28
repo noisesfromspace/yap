@@ -172,6 +172,37 @@ function M.transcript_in(dir)
   return dir .. "/session.md"
 end
 
+--- All session directories under a cwd-slug `dir`. A session directory is one
+--- that directly contains a transcript markdown file (any `.md` that is not
+--- the scratch notes.md). Auto-named sessions nest one month-folder deep and
+--- named forks/subagents sit at the top level, so the tree is walked rather
+--- than assumed; `assets/` working-file folders are skipped, never sessions.
+function M.session_dirs(dir)
+  local out = {}
+  local function walk(d)
+    local transcript = false
+    local subdirs = {}
+    for name, type in vim.fs.dir(d) do
+      if type == "directory" then
+        if name ~= "assets" then
+          subdirs[#subdirs + 1] = d .. "/" .. name
+        end
+      elseif type == "file" and name ~= "notes.md" and name:match("%.md$") then
+        transcript = true
+      end
+    end
+    if transcript then
+      out[#out + 1] = d
+      return
+    end
+    for _, sub in ipairs(subdirs) do
+      walk(sub)
+    end
+  end
+  walk(dir)
+  return out
+end
+
 --- The live tool tail buffer's display name. The description is preferred;
 --- the transcript filename and session directory are the fallbacks.
 function M.tail_buf_name(buf, label)

@@ -249,9 +249,9 @@ end
 local function scan_project(cleared)
   local resolved = {}
   local session_dir = paths.session_dir(vim.fn.getcwd())
-  for _, log in ipairs(vim.fn.glob(session_dir .. "/**/*.jsonl", false, true)) do
+  for _, dir in ipairs(paths.session_dirs(session_dir)) do
+    local log = dir .. "/audit.jsonl"
     if vim.fn.filereadable(log) == 1 then
-      local dir = vim.fn.fnamemodify(log, ":h")
       local path = paths.transcript_in(dir)
       local fm = vim.fn.filereadable(path) == 1 and require("harness.model.frontmatter").parse(vim.fn.readfile(path, "", 200)) or nil
       local session_name = require("harness.session").label(path, fm and fm.description)

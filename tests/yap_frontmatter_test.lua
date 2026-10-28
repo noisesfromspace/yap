@@ -129,6 +129,12 @@ assert(
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
+-- Assets working files (e.g. a fetched .md) are never sessions: the list must
+-- not grow when a stray markdown lands inside a session's assets folder.
+vim.fn.mkdir(paths.assets_dir(buf2), "p")
+vim.fn.writefile({ "# not a transcript" }, paths.assets_dir(buf2) .. "/stray.md")
+assert(#session.list("cwd") == 1, "assets markdown leaked into the session list")
+
 -- 7. subagents + updated_at + turns render and parse back
 local subagents_block = frontmatter.render({
   provider = "zeta",
