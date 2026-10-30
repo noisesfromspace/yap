@@ -36,7 +36,7 @@ local function face()
   error("missing spinner glyph: " .. bar)
 end
 
-assert(#spinner.spinner_frames == 30, "expected 30 circle glyphs")
+assert(#spinner.spinner_frames == 40, "expected 40 circle glyphs")
 
 local glyph = face()
 local seen = { [glyph] = true }
@@ -56,6 +56,15 @@ for _ in pairs(seen) do
   n_distinct = n_distinct + 1
 end
 assert(n_distinct >= 5, "beacon did not vary its glyph: " .. n_distinct)
+
+state.live[buf].ms = 3000
+local slow = face()
+for _ = 1, 6 do
+  tick()
+  vim.wait(1)
+  assert(face() == slow, "long tool changed glyph before the 420 ms beat")
+end
+state.live[buf] = nil
 
 state.running[buf] = nil
 spinner.stop_if_idle()

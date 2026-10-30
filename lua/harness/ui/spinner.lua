@@ -1,9 +1,6 @@
--- Busy beacon animation, extracted from the winbar: the circle glyphs, the
--- plain-unicode fallback glyphs and the Ember hue tween that tints them. The
--- beacon picks a random glyph each tick from a single uniform set — every
--- glyph renders at the same cell size (1.00×1.00 em) and the same filled
--- weight, so there is no size jumping. The hue tween is independent of the
--- glyph, so it keeps cycling amber → coral → rose the whole time a turn runs.
+-- Busy beacon animation: uniform circle glyphs, a short arrival and
+-- completion hold, and an independent amber → coral → rose hue tween.
+-- A long tool call slows the face changes without slowing the color.
 
 local M = {}
 
@@ -18,7 +15,7 @@ local function pick(t)
   return t[rng_state % #t + 1]
 end
 
--- Uniform spinner set: 30 Material Design circle glyphs that all render at
+-- Uniform spinner set: 40 Material Design circle glyphs that all render at
 -- the same size (measured 1.00×1.00 em) and the same filled weight, so random
 -- picks never jump between sizes.
 local function nf(cp)
@@ -55,6 +52,16 @@ local NF_SPINNER = {
   nf(0xF0CE1), -- arrow-up-circle
   nf(0xF0CDB), -- arrow-down-circle
   nf(0xF0B94), -- eye-circle
+  nf(0xF0A8C), -- account-supervisor-circle
+  nf(0xF0C2E), -- alpha-w-circle
+  nf(0xF1853), -- circle-opacity
+  nf(0xF02B1), -- google-circles-communities
+  nf(0xF0E25), -- comma-circle
+  nf(0xF0197), -- contrast-circle
+  nf(0xF1421), -- incognito-circle
+  nf(0xF1A04), -- percent-circle
+  nf(0xF185D), -- radioactive-circle
+  nf(0xF0FE1), -- swap-horizontal-circle
 }
 local PLAIN_SPINNER_FRAMES = { "※", "⁕", "⁜", "⁑", "✳", "✦", "✧", "⋆", "⁂" }
 
@@ -92,26 +99,74 @@ end
 M.spinner_frames = NF_SPINNER -- exported for tests: every glyph the beacon can show
 
 local spinner_timer = nil
-local spin_tick = 0
-local glyph_cache = { tick = -1, glyph = nil, plain = nil }
+local glyph_cache = {} -- per-buffer pacing avoids coupling simultaneous sessions
+local started = {} -- buf -> arrival timestamp
+local settled = {} -- buf -> brief successful-turn check
+local settle_id = 0
+local ARRIVAL_NS = 500 * 1e6
+local SETTLE_MS = 700
+local FAST_TICKS, TOOL_TICKS = 3, 7 -- 60 ms timer: 180 / 420 ms
 
--- Random glyph per tick, from a single uniform set. Cached per tick so a
--- redraw or an elapsed-tool-time change cannot alter the glyph between timer
--- fires.
-function M.glyph()
-  if glyph_cache.tick ~= spin_tick then
-    glyph_cache = {
-      tick = spin_tick,
-      glyph = pick(NF_SPINNER),
-      plain = pick(PLAIN_SPINNER_FRAMES),
-    }
-  end
-  return glyph_cache.glyph
+function M.begin(buf)
+  started[buf] = vim.uv.hrtime()
+  glyph_cache[buf] = nil
+  settled[buf] = nil -- a queued follow-up replaces the old turn's check
 end
 
-function M.plain_glyph()
-  M.glyph() -- fill the cache on this tick
-  return glyph_cache.plain
+function M.finish(buf)
+  started[buf] = nil
+  settle_id = settle_id + 1
+  local id = settle_id
+  settled[buf] = { glyph = nf(0xF05E0), color = M.color(), id = id }
+  vim.api.nvim_set_hl(0, "YapBusySettle", { fg = settled[buf].color })
+  vim.defer_fn(function()
+    if settled[buf] and settled[buf].id == id then
+      settled[buf] = nil
+      vim.cmd.redrawstatus()
+    end
+  end, SETTLE_MS)
+  vim.cmd.redrawstatus()
+end
+
+function M.cancel(buf)
+  started[buf] = nil
+  glyph_cache[buf] = nil
+  settled[buf] = nil
+end
+
+function M.settle(buf)
+  return settled[buf]
+end
+local spin_tick = 0
+
+-- Random glyph per beat, cached per buffer so redraws cannot change the face.
+-- The hue continues independently even while a long tool slows the beat.
+function M.glyph(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  if started[buf] and vim.uv.hrtime() - started[buf] < ARRIVAL_NS then
+    return nf(0xF0765)
+  end
+  local l = state.live[buf]
+  local interval = l and l.ms and l.ms >= 2000 and TOOL_TICKS or FAST_TICKS
+  local cache = glyph_cache[buf]
+  if cache and cache.interval ~= interval then
+    cache.tick = spin_tick -- start the new beat from the current face
+    cache.interval = interval
+  end
+  if not cache or spin_tick - cache.tick >= interval then
+    cache = { tick = spin_tick, interval = interval, glyph = pick(NF_SPINNER), plain = pick(PLAIN_SPINNER_FRAMES) }
+    glyph_cache[buf] = cache
+  end
+  return cache.glyph
+end
+
+function M.plain_glyph(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  if started[buf] and vim.uv.hrtime() - started[buf] < ARRIVAL_NS then
+    return "※"
+  end
+  M.glyph(buf)
+  return glyph_cache[buf].plain
 end
 
 function M.stop_if_idle()
@@ -126,11 +181,11 @@ function M.start()
   if spinner_timer then
     return
   end
-  glyph_cache.tick = -1
+  glyph_cache = {}
   spinner_timer = vim.uv.new_timer()
   spinner_timer:start(
     0,
-    180,
+    60,
     vim.schedule_wrap(function()
       spin_tick = spin_tick + 1
       local c = M.color()

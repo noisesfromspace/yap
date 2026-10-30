@@ -275,7 +275,7 @@ local function render_winbar(buf)
       if steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
       end
-      local glyph = require("harness").config.nerd_font and spinner.glyph() or spinner.plain_glyph()
+      local glyph = require("harness").config.nerd_font and spinner.glyph(buf) or spinner.plain_glyph(buf)
       state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
     elseif inactive and busy and (queued(buf) or steer[buf]) then
       -- A generating session drops its spinner when inactive, but a queued
@@ -287,6 +287,12 @@ local function render_winbar(buf)
       if steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
       end
+    elseif not busy and spinner.settle(buf) and not (errors[buf] or stopped[buf] or queued(buf) or steer[buf]) then
+      -- The check borrows the last busy hue; real attention states and a
+      -- queued follow-up always take precedence over this short afterglow.
+      local last = spinner.settle(buf)
+      local glyph = require("harness").config.nerd_font and last.glyph or "✓"
+      state_icons[#state_icons + 1] = seg(glyph, "BusySettle")
     elseif not busy then
       if errors[buf] then
         state_icons[#state_icons + 1] = seg(icons.error, "Error")
@@ -736,6 +742,7 @@ local function define_winbar_hl()
   -- animated face and "bash 12s" tint in lockstep; the tick re-tints both.
   local busy = spinner.color()
   vim.api.nvim_set_hl(0, "YapBusySpin", { default = true, fg = busy })
+  vim.api.nvim_set_hl(0, "YapBusySettle", { default = true, fg = busy })
   vim.api.nvim_set_hl(0, "YapBusyText", { default = true, fg = busy, italic = true })
   -- The island is a raised pill: a theme-aware background (NormalFloat,
   -- falling back to Visual) with the chip foregrounds pulled from the

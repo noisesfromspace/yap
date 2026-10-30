@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yap spinner glyphs</title>
+<style>
+  :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #171923; color: #eee9e3; }
+  body { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  h1 { margin-bottom: .4rem; }
+  p { color: #bbb5b0; line-height: 1.5; }
+  input { box-sizing: border-box; width: 100%; padding: .8rem 1rem; margin: 1rem 0; border: 1px solid #6b6066; border-radius: .5rem; background: #242632; color: inherit; font: inherit; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: .7rem; }
+  button { min-height: 120px; padding: .7rem; border: 1px solid #49454d; border-radius: .6rem; background: #242632; color: inherit; cursor: pointer; }
+  button:hover, button:focus-visible { border-color: #eb9584; background: #34303a; }
+  .glyph { display: block; font-family: 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'Symbols Nerd Font', monospace; font-size: 42px; line-height: 1.4; color: #eb9584; }
+  .name { display: block; font-size: .82rem; overflow-wrap: anywhere; }
+  code { color: #d6bab3; }
+  #notice { min-height: 1.5em; }
+</style>
+</head>
+<body>
+<h1>Yap spinner glyphs</h1>
+<p>Filled Material Design circle glyphs with the same outline bounds as the current spinner (plus clock). Requires a Nerd Font installed in your browser. Search by name or hex codepoint; click a tile to copy <code>nf(0x…)</code> for <code>lua/harness/ui/spinner.lua</code>. Outline variants are excluded because their weight differs.</p>
+<input id="search" type="search" placeholder="Filter glyphs (e.g. arrow, heart, F1378)" aria-label="Filter glyphs">
+<p><span id="count"></span> <span id="notice" role="status"></span></p>
+<div id="grid"></div>
+<script>
+const icons = [["F0A8A", "account-child-circle"], ["F0009", "account-circle"], ["F0A8C", "account-supervisor-circle"], ["F0028", "alert-circle"], ["F0BEC", "alpha-a-circle"], ["F0BEF", "alpha-b-circle"], ["F0BF2", "alpha-c-circle"], ["F0BF5", "alpha-d-circle"], ["F0BF8", "alpha-e-circle"], ["F0BFB", "alpha-f-circle"], ["F0BFE", "alpha-g-circle"], ["F0C01", "alpha-h-circle"], ["F0C04", "alpha-i-circle"], ["F0C07", "alpha-j-circle"], ["F0C0A", "alpha-k-circle"], ["F0C0D", "alpha-l-circle"], ["F0C10", "alpha-m-circle"], ["F0C13", "alpha-n-circle"], ["F0C16", "alpha-o-circle"], ["F0C19", "alpha-p-circle"], ["F0C1C", "alpha-q-circle"], ["F0C1F", "alpha-r-circle"], ["F0C22", "alpha-s-circle"], ["F0C25", "alpha-t-circle"], ["F0C28", "alpha-u-circle"], ["F0C2B", "alpha-v-circle"], ["F0C2E", "alpha-w-circle"], ["F0C31", "alpha-x-circle"], ["F0C34", "alpha-y-circle"], ["F0C37", "alpha-z-circle"], ["F0047", "arrow-down-bold-circle"], ["F0CDB", "arrow-down-circle"], ["F004A", "arrow-down-drop-circle"], ["F004F", "arrow-left-bold-circle"], ["F0CDD", "arrow-left-circle"], ["F0052", "arrow-left-drop-circle"], ["F0056", "arrow-right-bold-circle"], ["F0CDF", "arrow-right-circle"], ["F0059", "arrow-right-drop-circle"], ["F005F", "arrow-up-bold-circle"], ["F0CE1", "arrow-up-circle"], ["F0062", "arrow-up-drop-circle"], ["F0D5A", "bell-circle"], ["F05E0", "check-circle"], ["F0E20", "check-underline-circle"], ["F012F", "checkbox-blank-circle"], ["F0133", "checkbox-marked-circle"], ["F0B26", "chevron-down-circle"], ["F0B28", "chevron-left-circle"], ["F0B2A", "chevron-right-circle"], ["F0B2C", "chevron-up-circle"], ["F0765", "circle"], ["F0E95", "circle-double"], ["F1396", "circle-half-full"], ["F1853", "circle-opacity"], ["F0A9E", "circle-slice-1"], ["F0A9F", "circle-slice-2"], ["F0AA0", "circle-slice-3"], ["F0AA1", "circle-slice-4"], ["F0AA2", "circle-slice-5"], ["F0AA3", "circle-slice-6"], ["F0AA4", "circle-slice-7"], ["F0AA5", "circle-slice-8"], ["F0954", "clock"], ["F0159", "close-circle"], ["F0161", "cloud-circle"], ["F0E25", "comma-circle"], ["F0321", "contactless-payment-circle"], ["F0197", "contrast-circle"], ["F17DC", "crown-circle"], ["F0683", "delete-circle"], ["F07C3", "dots-horizontal-circle"], ["F07C4", "dots-vertical-circle"], ["F1464", "download-circle"], ["F0B94", "eye-circle"], ["F1807", "fire-circle"], ["F02B1", "google-circles-communities"], ["F0971", "heart-circle"], ["F02D7", "help-circle"], ["F1421", "incognito-circle"], ["F1AB4", "land-plots-circle"], ["F1AB5", "land-plots-circle-variant"], ["F1905", "leaf-circle"], ["F0820", "lightning-bolt-circle"], ["F034F", "map-marker-circle"], ["F0376", "minus-circle"], ["F0386", "music-circle"], ["F0C9E", "numeric-0-circle"], ["F0CA0", "numeric-1-circle"], ["F0FEC", "numeric-10-circle"], ["F0CA2", "numeric-2-circle"], ["F0CA4", "numeric-3-circle"], ["F0CA6", "numeric-4-circle"], ["F0CA8", "numeric-5-circle"], ["F0CAA", "numeric-6-circle"], ["F0CAC", "numeric-7-circle"], ["F0CAE", "numeric-8-circle"], ["F0CB0", "numeric-9-circle"], ["F0CB2", "numeric-9-plus-circle"], ["F03E5", "pause-circle"], ["F06FF", "pencil-circle"], ["F1A04", "percent-circle"], ["F040C", "play-circle"], ["F0417", "plus-circle"], ["F185D", "radioactive-circle"], ["F0EC2", "record-circle"], ["F1377", "refresh-circle"], ["F11AE", "reply-circle"], ["F0DF8", "send-circle"], ["F11AD", "share-circle"], ["F0661", "skip-next-circle"], ["F0663", "skip-previous-circle"], ["F1500", "square-circle"], ["F04CF", "star-circle"], ["F0666", "stop-circle"], ["F0FE1", "swap-horizontal-circle"], ["F0FE3", "swap-vertical-circle"], ["F1378", "sync-circle"], ["F0556", "vector-circle"], ["F1806", "water-circle"]];
+const grid = document.querySelector('#grid');
+const search = document.querySelector('#search');
+const count = document.querySelector('#count');
+const notice = document.querySelector('#notice');
+function render() {
+  const query = search.value.trim().toLowerCase();
+  const filtered = icons.filter(([hex, name]) => name.includes(query) || hex.toLowerCase().includes(query));
+  grid.replaceChildren(...filtered.map(([hex, name]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = `Copy nf(0x${hex})`;
+    const glyph = document.createElement('span');
+    glyph.className = 'glyph';
+    glyph.textContent = String.fromCodePoint(parseInt(hex, 16));
+    const label = document.createElement('span');
+    label.className = 'name';
+    label.textContent = `${name} · ${hex}`;
+    button.append(glyph, label);
+    button.addEventListener('click', async () => {
+      const text = `nf(0x${hex})`;
+      try {
+        await navigator.clipboard.writeText(text);
+        notice.textContent = `Copied ${text}`;
+      } catch {
+        notice.textContent = `Copy manually: ${text}`;
+      }
+    });
+    return button;
+  }));
+  count.textContent = `${filtered.length} of ${icons.length} glyphs`;
+}
+search.addEventListener('input', render);
+render();
+</script>
+</body>
+</html>

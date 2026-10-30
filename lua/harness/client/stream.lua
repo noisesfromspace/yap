@@ -418,6 +418,7 @@ function M.send(buf)
       finish_flush()
       sync_followers()
       running[buf] = nil
+      spinner.cancel(buf)
       lsp.notify_streaming(buf, false)
       follow_override[buf] = nil
       scratchmod.refresh(vim.b[buf].yap_scratch)
@@ -513,6 +514,9 @@ function M.send(buf)
       -- saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
+      if not errors[buf] and vim.api.nvim_buf_is_valid(buf) then
+        spinner.finish(buf)
+      end
       scratchmod.finish_queue(buf, not errors[buf])
     end
     local function handle_frame(frame)
@@ -631,6 +635,7 @@ function M.send(buf)
   end
 
   running[buf] = process
+  spinner.begin(buf)
   lsp.notify_streaming(buf, true)
   scratchmod.refresh(vim.b[buf].yap_scratch)
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
@@ -704,6 +709,7 @@ function M.stop(buf)
       -- Backend gone (killed externally): fall back to the old hard cleanup.
       servers[buf] = nil
       running[buf] = nil
+      spinner.cancel(buf)
       pending_approvals[buf] = nil
       spinner.stop_if_idle()
       repair_stream_tail(buf)

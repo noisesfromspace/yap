@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yap beacon motion study</title>
+<style>
+  :root { color-scheme: dark; background: #11131a; color: #ede9e6; font: 15px system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { max-width: 1000px; margin: auto; padding: clamp(20px, 5vw, 56px); }
+  h1 { font-size: clamp(1.6rem, 4vw, 2.5rem); margin: 0 0 8px; letter-spacing: -.03em; }
+  p { color: #b8b0b5; line-height: 1.55; }
+  .hint { margin: 0 0 32px; }
+  .terminal { border: 1px solid #41404b; border-radius: 12px; overflow: hidden; background: #1b1c26; box-shadow: 0 20px 60px #0005; }
+  .chrome { display: flex; gap: 7px; padding: 13px 16px; background: #23242f; border-bottom: 1px solid #383844; }
+  .chrome i { width: 8px; height: 8px; border-radius: 50%; background: #575562; }
+  .winbar { display: flex; align-items: center; min-height: 42px; padding: 0 16px 0 0; white-space: nowrap; overflow: hidden; border-bottom: 1px solid #343441; font: 14px 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', 'Symbols Nerd Font Mono', monospace; }
+  .gutter { width: 48px; flex: none; text-align: center; }
+  .beacon { display: inline-block; width: 1em; color: #ebc984; font-size: 19px; line-height: 1; transition: color .35s ease; }
+  .tool { color: #ebc984; font-style: italic; transition: color .35s ease; }
+  .title { color: #d1bec8; font-style: italic; overflow: hidden; text-overflow: ellipsis; }
+  .island { padding: 5px 12px; margin: 0 auto; background: #33313b; border-radius: 6px; color: #efb4aa; }
+  .usage { color: #b1a9b5; font-size: 12px; }
+  .buffer { min-height: 194px; padding: 16px 22px; font: 13px/1.8 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font', monospace; color: #aaa3b2; }
+  .buffer .heading { color: #e3abb3; } .buffer .body { color: #ded9de; }
+  .caret { display: inline-block; width: 7px; height: 15px; vertical-align: -3px; background: #e1b8a8; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .panel { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 26px; }
+  h2 { font-size: 1rem; margin: 0 0 13px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-content: start; }
+  button { border: 1px solid #57505a; border-radius: 7px; background: #292832; color: #f1e8e7; padding: 10px 13px; font: inherit; cursor: pointer; }
+  button:hover, button:focus-visible { border-color: #eb9584; background: #383039; }
+  button.primary { background: #53373d; border-color: #a66068; }
+  .readout { padding: 16px; border-radius: 8px; background: #24242e; }
+  .readout strong { color: #f3d2bc; } .readout p { margin: 8px 0 0; }
+  .timeline { margin-top: 27px; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .timeline li { border-top: 3px solid #5c505a; padding: 11px 6px; color: #b8b0b5; font-size: 13px; }
+  .timeline li.active { border-color: #ef9d85; color: #fff0e6; }
+  .timeline small { display: block; margin-top: 4px; color: #ada3aa; line-height: 1.4; }
+  .note { font-size: 13px; margin-top: 25px; }
+  @media (max-width: 700px) { .panel { grid-template-columns: 1fr; } .island, .usage { display: none; } .title { margin-left: 12px; } .timeline { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<h1>A turn, in one cell</h1>
+<p class="hint">A motion sketch of the Yap winbar. Press <b>Play sequence</b> to watch a turn, or jump to a state. The icon stays in the gutter; the surrounding layout doesn't move.</p>
+<div class="terminal">
+  <div class="chrome" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="winbar">
+    <span class="gutter"><span class="beacon" id="beacon" aria-hidden="true"></span></span>
+    <span class="tool" id="tool"></span>
+    <span class="title" id="title">Refine the winbar beacon</span>
+    <span class="island"> claude / sonnet  &nbsp; 1 &nbsp;2&nbsp; 3</span>
+    <span class="usage">12k · 24% ▉▉▏░░░░░</span>
+  </div>
+  <div class="buffer"><span class="heading"># @assistant</span><br><span class="body" id="message">Waiting for a turn.</span><span class="caret" id="caret" hidden></span></div>
+</div>
+<div class="panel">
+  <section>
+    <h2>Try the transitions</h2>
+    <div class="controls">
+      <button class="primary" id="play">Play sequence</button>
+      <button data-state="arrival">Send</button>
+      <button data-state="stream">Stream</button>
+      <button data-state="tool">Long tool call</button>
+      <button data-state="done">Complete</button>
+      <button data-state="approval">Approval</button>
+      <button data-state="error">Error</button>
+    </div>
+  </section>
+  <section class="readout" aria-live="polite">
+    <strong id="phase">Idle</strong>
+    <p id="detail">Start a turn to see the beacon.</p>
+  </section>
+</div>
+<ol class="timeline" id="timeline">
+  <li data-phase="arrival">Arrival<small>Fixed circle for 500 ms.</small></li>
+  <li data-phase="stream">Streaming<small>Random faces every 180 ms; amber → coral → rose.</small></li>
+  <li data-phase="tool">Long tool call<small>Same palette, slower 420 ms beat.</small></li>
+  <li data-phase="done">Settle<small>Check in the last hue for 700 ms, then idle.</small></li>
+</ol>
+<p class="note">Approval keeps Yap's shield icon and warning color. Error keeps its own state icon. Neither changes the queue and steer badges beside the busy beacon. This is a visual prototype, not a change to Yap.</p>
+<script>
+  const $ = id => document.getElementById(id);
+  const beacon = $('beacon'), tool = $('tool'), title = $('title'), message = $('message');
+  const faces = [0xF0765, 0xF0A8C, 0xF1853, 0xF0197, 0xF0E25, 0xF04CF, 0xF185D, 0xF0FE1, 0xF0971, 0xF1807, 0xF0C2E];
+  const glyph = code => String.fromCodePoint(code);
+  const stops = [[235,201,132], [235,149,132], [235,132,175]];
+  const blend = (a,b,t) => a.map((n,i) => Math.round(n + (b[i]-n)*t));
+  const rgb = a => `rgb(${a.join(',')})`;
+  let mode = 'idle', started = 0, lastTick = 0, face = -1, hue = stops[0], fromHue = stops[0], targetHue = null, targetAt = 0;
+  let timers = [], raf;
+  function cancel() { timers.forEach(clearTimeout); timers = []; cancelAnimationFrame(raf); }
+  function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
+  function setPhase(phase, detail, text) {
+    $('phase').textContent = phase;
+    $('detail').textContent = detail;
+    message.textContent = text;
+    document.querySelectorAll('[data-phase]').forEach(li => li.classList.toggle('active', li.dataset.phase === mode));
+    $('caret').hidden = !['arrival', 'stream', 'tool'].includes(mode);
+  }
+  function showColor(color) { beacon.style.color = color; tool.style.color = color; }
+  function loop(now) {
+    if (mode === 'stream' || mode === 'tool') {
+      const t = ((now - started) / 3000) % 1 * 3;
+      const i = Math.floor(t), f = t % 1, ease = f*f*(3-2*f);
+      hue = blend(stops[i], stops[(i+1)%3], ease);
+      showColor(rgb(hue));
+      if (now - lastTick >= (mode === 'tool' ? 420 : 180)) {
+        let next = Math.floor(Math.random() * faces.length);
+        if (next === face) next = (next + 1) % faces.length;
+        face = next;
+        beacon.textContent = glyph(faces[face]);
+        lastTick = now;
+      }
+    } else if (targetHue) {
+      const t = Math.min(1, (now - targetAt) / 350);
+      hue = blend(fromHue, targetHue, t*t*(3-2*t));
+      showColor(rgb(hue));
+      if (t === 1) targetHue = null;
+    }
+    raf = requestAnimationFrame(loop);
+  }
+  function startLoop() { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+  function transition(color) { fromHue = hue.slice(); targetHue = color; targetAt = performance.now(); }
+  function enter(next) {
+    cancel(); mode = next;
+    tool.textContent = ''; tool.style.marginRight = ''; title.style.marginLeft = '';
+    if (next === 'arrival') {
+      started = performance.now(); face = -1;
+      hue = stops[0]; targetHue = null; showColor(rgb(hue));
+      beacon.textContent = glyph(0xF0765);
+      setPhase('Arrival', 'A fixed circle holds for 500 ms before the first random face.', 'Starting a turn…');
+      later(500, () => enter('stream'));
+    } else if (next === 'stream' || next === 'tool') {
+      if (next === 'stream' && !started) started = performance.now();
+      if (next === 'tool' && !started) started = performance.now();
+      lastTick = 0;
+      tool.textContent = next === 'tool' ? 'bash 12s' : '';
+      if (tool.textContent) tool.style.marginRight = '18px';
+      setPhase(next === 'tool' ? 'Long tool call' : 'Streaming', next === 'tool' ? '420 ms between faces. The hue still moves at the original speed.' : '180 ms between faces. The color loops independently of the icon.', next === 'tool' ? 'Running tests…' : 'Working through the response…');
+    } else if (next === 'done') {
+      beacon.textContent = glyph(0xF05E0);
+      setPhase('Settling', 'The check holds for 700 ms in the last live hue, then returns to idle.', 'Turn complete.');
+      later(700, () => enter('idle'));
+    } else if (next === 'approval' || next === 'error') {
+      beacon.textContent = next === 'approval' ? '󰻌' : '󰚌';
+      transition(next === 'approval' ? [244, 190, 101] : [239, 115, 121]);
+      setPhase(next === 'approval' ? 'Approval needed' : 'Error', 'The existing state icon replaces the beacon; its color eases into the state color.', next === 'approval' ? 'Waiting for your decision.' : 'The turn ended with an error.');
+    } else {
+      beacon.textContent = glyph(0xF0765);
+      transition([132, 129, 145]);
+      setPhase('Idle', 'The settled check has yielded to the normal idle icon.', 'Waiting for a turn.');
+    }
+    startLoop();
+  }
+  let sequence = 0;
+  document.querySelectorAll('button[data-state]').forEach(button => button.addEventListener('click', () => { sequence++; enter(button.dataset.state); }));
+  $('play').addEventListener('click', async () => {
+    const run = ++sequence;
+    enter('arrival');
+    for (const [delay, state] of [[2700, 'tool'], [2400, 'stream'], [1300, 'done']]) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (run !== sequence) return;
+      enter(state);
+    }
+  });
+  enter('idle');
+</script>
+</body>
+</html>

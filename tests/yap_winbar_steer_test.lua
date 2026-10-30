@@ -27,7 +27,17 @@ assert(not rendered:find(icons.steer, 1, true), "steer icon without pending stee
 -- With a pending steer while running, the steer icon sits left of the
 -- running beacon; the model island stays bare.
 state.running[buf] = {}
+spinner.begin(buf)
+assert(winbar_at(60):find(vim.fn.nr2char(0xF0765), 1, true), "arrival should hold the circle")
 state.steer[buf] = "check the tests"
+local scratch = vim.api.nvim_create_buf(false, true)
+vim.b[buf].yap_scratch = scratch
+vim.b[scratch].yap_queue_armed = true
+local paired = winbar_at(60)
+local q_at, s_at = paired:find(icons.queue, 1, true), paired:find(icons.steer, 1, true)
+local b_at = paired:find(spinner.glyph(buf), 1, true)
+assert(q_at and s_at and b_at and q_at < s_at and s_at < b_at, "queue/steer/beacon order lost: " .. paired)
+vim.b[scratch].yap_queue_armed = false
 local wb = winbar_at(60)
 local glyph = spinner.glyph() -- the same cached frame the bar rendered
 local left, center = wb:match("^(.-)%%=(.-)%%=")
@@ -43,5 +53,19 @@ assert(rendered_center:find(" mock/m1 ", 1, true), "model island missing: " .. r
 assert(not rendered_center:find(icons.steer, 1, true), "steer icon leaked into the model island: " .. rendered_center)
 
 state.running[buf] = nil
+spinner.cancel(buf)
+spinner.finish(buf)
+vim.b[scratch].yap_queue_armed = true
+assert(winbar_at(60):find(icons.queue, 1, true), "settle hid armed queue")
+vim.b[scratch].yap_queue_armed = false
+assert(winbar_at(60):find(icons.steer, 1, true), "settle hid pending steer")
 state.steer[buf] = nil
+assert(winbar_at(60):find("%#YapBusySettle#" .. vim.fn.nr2char(0xF05E0), 1, true), "completion check missing")
+state.pending_approvals[buf] = { id = "parked" }
+assert(winbar_at(60):find(icons.approval, 1, true), "settle replaced approval shield")
+assert(not winbar_at(60):find("%#YapBusySettle#", 1, true), "settle leaked into approval")
+state.pending_approvals[buf] = nil
+spinner.begin(buf) -- the next turn (including an armed queue) clears the hold
+assert(not winbar_at(60):find("%#YapBusySettle#", 1, true), "old check leaked into next turn")
+spinner.cancel(buf)
 print("OK winbar_steer")
