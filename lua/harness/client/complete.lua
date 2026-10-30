@@ -44,7 +44,8 @@ local function wants(buf)
   if not (vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap) then
     return false
   end
-  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor[1], cursor[2]
   local cur = vim.api.nvim_get_current_line()
   -- Frontmatter: cursor strictly between the opening and closing `---`. Read
   -- only the first 200 lines — the server caps its frontmatter scan the same
@@ -80,7 +81,8 @@ function M.items(buf, callback)
     callback({})
     return
   end
-  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row, col = cursor[1], cursor[2]
   local cur = vim.api.nvim_get_current_line()
   client:request("textDocument/completion", {
     textDocument = { uri = vim.uri_from_bufnr(buf) },

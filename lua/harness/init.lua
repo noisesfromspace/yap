@@ -548,7 +548,8 @@ function M.setup(opts)
       if not char:match("^[a-z_]$") then
         return
       end
-      local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      local row, col = cursor[1], cursor[2]
       if row < 2 or vim.api.nvim_buf_get_lines(args.buf, 0, 1, false)[1] ~= "---" then
         return
       end

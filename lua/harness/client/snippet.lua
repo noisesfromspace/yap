@@ -30,7 +30,8 @@ function M.setup_buffer(buf)
         return
       end
       local line = vim.api.nvim_get_current_line()
-      local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+      local cursor = vim.api.nvim_win_get_cursor(0)
+      local row, col = cursor[1], cursor[2]
       if col ~= #line then
         return
       end
