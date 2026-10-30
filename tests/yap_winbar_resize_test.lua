@@ -86,7 +86,8 @@ assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. to
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Narrower: the model island goes first; chips keep tokens + cost.
+-- Narrower: the fold switch yields first, then the model island; chips keep
+-- tokens + cost.
 wb = winbar_at(42)
 assert(not wb:match("mock/m1"), "42-col winbar kept the model: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "42-col winbar missing tokens: " .. wb)
@@ -186,20 +187,22 @@ for mask = 0, 15 do
   local center = bar:match("%%=(.-)%%=")
   if center then
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    if centered_text:find(" mock/m1 ", 1, true) then
-      -- Model island present: the switch rides beside it and the island
-      -- surface carries the model plus its padding.
+    if centered_text:find(" 1  2  3 ", 1, true) then
+      -- The switch rides beside the model island and the island surface
+      -- carries the model plus its padding.
       assert(not centered_text:find("󰘖", 1, true), "fold island leaked into center: " .. centered_text)
-      assert(centered_text:find(" 1  2  3 ", 1, true), "fold switch missing from center: " .. centered_text)
+      assert(centered_text:find(" mock/m1 ", 1, true), "switch present without the model island: " .. centered_text)
       assert(
         center:find("%#YapIslandCursiveModel#", 1, true) and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
         "model and padding must use the island surface: " .. center
       )
     else
-      -- The model island has yielded to the crowded layout; the fold
-      -- switch stays visible on its own.
-      assert(not centered_text:find("mock/m1", 1, true), "model should drop before the switch: " .. centered_text)
-      assert(centered_text:find(" 1  2  3 ", 1, true), "fold switch missing after the model dropped: " .. centered_text)
+      -- The fold switch yields first; the model island survives on its own.
+      assert(centered_text:find(" mock/m1 ", 1, true), "model island missing after the switch dropped: " .. centered_text)
+      assert(
+        center:find("%#YapIslandCursiveModel#", 1, true),
+        "model should keep its island surface after the switch drops: " .. center
+      )
     end
   else
     assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)

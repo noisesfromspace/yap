@@ -169,9 +169,10 @@ end
 -- the description on the left; a centered provider/model island with the
 -- three-stop fold view switch to its right (in the active bar only — an
 -- inactive bar keeps the switch on the left); usage counters and context
--- meter on the right. As the window narrows the center island drops, then
--- the switch; usage counters and context meter retain their existing width
--- priorities.
+-- meter on the right. As the window narrows the active bar drops the fold
+-- switch before the model island; an inactive bar keeps the switch and drops
+-- its session label instead. Usage counters and context meter retain their
+-- existing width priorities.
 local function render_winbar(buf)
   local provider, model = config.current_combo(buf)
   local icons = require("harness").config.icons
@@ -530,8 +531,8 @@ local function render_winbar(buf)
   -- identity instead of a model that is only useful while that session is
   -- selected. The switch is added with a matching blank on the left so the
   -- model name stays centered even though the whole section grows. When the
-  -- window is too narrow for the island, it drops alone and leaves the
-  -- switch behind (see render_winbar).
+  -- window is too narrow, the active bar drops the switch and keeps the island;
+  -- an inactive bar drops its label and keeps the switch (see render_winbar).
   local function center_segments(show_model, switch_in_center)
     local switch_segs = switch_in_center and fold_switch_segs() or nil
     if not show_model and not switch_segs then
@@ -615,6 +616,28 @@ local function render_winbar(buf)
     return cache[key] or nil
   end
   local desc_max, mode, show_model, show_switch = 40, "full", true, true
+  -- Shared tail of the drop order: once both the model/label and the fold
+  -- switch are gone, degrade the right cluster and finally the description.
+  local function degrade()
+    if mode == "full" then
+      mode = "compact"
+      return true
+    elseif mode == "compact" then
+      mode = "prices"
+      return true
+    elseif
+      mode == "prices" and cached(usage_cache, "gauge", function()
+        return usage_segment("gauge")
+      end)
+    then
+      mode = "gauge"
+      return true
+    elseif desc_max > 15 then
+      desc_max = desc_max - 5
+      return true
+    end
+    return false
+  end
   while true do
     local show_left_switch = inactive and show_switch
     local left = cached(left_cache, desc_max .. ":" .. tostring(show_left_switch), function()
@@ -645,24 +668,25 @@ local function render_winbar(buf)
     if fits then
       return render(left, center, usage, left_width, right_width, show_model)
     end
-    if show_model then
-      show_model = false
-    elseif show_switch then
-      show_switch = false
-    elseif mode == "full" then
-      mode = "compact"
-    elseif mode == "compact" then
-      mode = "prices"
-    elseif
-      mode == "prices" and cached(usage_cache, "gauge", function()
-        return usage_segment("gauge")
-      end)
-    then
-      mode = "gauge"
-    elseif desc_max > 15 then
-      desc_max = desc_max - 5
+    -- The model name is this session's identity, so the active bar drops the
+    -- fold switch first; an inactive bar has no model to show (only its
+    -- label) and keeps the switch, dropping the label first instead.
+    if inactive then
+      if show_model then
+        show_model = false
+      elseif show_switch then
+        show_switch = false
+      elseif not degrade() then
+        return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
+      end
     else
-      return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
+      if show_switch then
+        show_switch = false
+      elseif show_model then
+        show_model = false
+      elseif not degrade() then
+        return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
+      end
     end
   end
 end
