@@ -50,11 +50,7 @@ The agent ships with a fixed set of built-in tools, plus any tools exposed by
 configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
 files, runs bash, searches the web, reads GitHub, drives a browser,
 and delegates to subagents in separate sessions. Independent
-read-only calls in one round run concurrently (up to four). For slow commands, pass `background: true` to bash; it returns a session-scoped
-ID. Use `bash_output` to inspect its output or wait for its exit; it returns
-only the log's tail, keeping the conversation small. Commands
-continue across turns and stop when the session backend exits.
-See `:help yap-tools`.
+read-only calls in one round run concurrently (up to four). See `:help yap-tools`.
 
 A turn is an agent loop: the model proposes the next action, the backend
 runs it, and the result feeds back until the model stops asking. The loop

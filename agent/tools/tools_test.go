@@ -37,6 +37,19 @@ func (w approvalIDWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func TestBashHasNoBackgroundMode(t *testing.T) {
+	bash, ok := Get("bash")
+	if !ok {
+		t.Fatal("bash not registered")
+	}
+	if bytes.Contains(bash.Schema, []byte(`"background"`)) {
+		t.Fatal("bash schema still advertises background mode")
+	}
+	if _, ok := Get("bash_output"); ok {
+		t.Fatal("bash_output still registered")
+	}
+}
+
 func TestBash(t *testing.T) {
 	// basic + exit code reported as text, not a tool error
 	r, _, err := run(t, "bash", `{"command":"echo hello; exit 3"}`)
