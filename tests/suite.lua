@@ -94,6 +94,7 @@ local CASES = {
   { name = "yap_model_cache_test", port = 18132 },
   { name = "yap_map_test", port = 18132 },
   { name = "yap_keymap_test", port = 18132 },
+  { name = "yap_snippet_test", port = 18132 },
   { name = "yap_file_picker_test", port = 18132 },
   { name = "yap_clear_test", port = 18132 },
   { name = "yap_default_model_test", port = 18132 },

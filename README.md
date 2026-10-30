@@ -15,6 +15,8 @@ Inspired by pi and gptel.
 
 - Text objects and motions: edit a message, a thinking block or a tool region
   as text (`dam`, `]m`, `]u`, `]t`).
+- A role-heading shorthand: `# @` + space opens a fresh `# @user` message,
+  `# @a` / `# @s` prefill `# @assistant` / `# @system`.
 - Folding that collapses agent output or tool calls (`<leader>1/2/3`).
 - Streaming replies, stoppable mid-turn (`<C-c>`).
 - A live tool tail in its own buffer (`<leader>l`), so the conversation never
