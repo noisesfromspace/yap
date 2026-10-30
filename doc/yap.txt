@@ -52,6 +52,7 @@ Lua setup (example; substitute your own model groups): >lua
     templates_dir = vim.fn.expand("~/.config/yap/templates"), -- insert() files
     skills_dir = vim.fn.expand("~/.config/yap/skills"),       -- system-prompt files
     notify_done = true,           -- vim.notify when a hidden turn finishes
+    builtin_completion = true,    -- false when cmp/blink owns completion
     model_groups = {              -- named model tiers (provider/model combos)
       agent = "openai/gpt-6.1-sol", -- new sessions, including :YapEval
       flash = "deepseek/deepseek-flash", -- :YapEval! and session titles
@@ -77,6 +78,11 @@ buffer not visible in any window. The turn's `turn_end` payload (model,
 tokens, cost, ms) is also emitted on the `User YapTurnDone` autocmd so other
 plugins can hook completion (e.g. noice/nf-notify rendering, or chaining a
 next send). Disable with `notify_done = false` and hook that event yourself.
+
+`builtin_completion` (default true) enables Neovim's native LSP completion
+popup for Yap sessions. Set it to false when using nvim-cmp or blink.cmp; the
+language server still serves their completion requests, symbols and
+diagnostics. See |yap-lsp| for the optional completion source.
 
 `nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
 Icon keys include `since`, `total`, `running`, `waiting`, `stopped`, `error`,
@@ -880,6 +886,34 @@ never scratch notes or ordinary Markdown. Model completion reads the cached
 `yap models` list; it never hits the network, and opening a session never
 starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
 are suppressed while a reply is streaming.
+
+The built-in `vim.lsp.completion` is enabled on Yap buffers by default. Set
+`require("harness").setup({ builtin_completion = false })` when using an
+external completion engine so two popup menus do not compete. If you use
+nvim-cmp or blink.cmp, their ordinary LSP source can already consume Yap's
+completion items. An opt-in dedicated source is also available when you want
+Yap completion without relying on the engine's generic LSP source:
+
+>lua
+  -- nvim-cmp: register once, then add { name = "yap" } to your sources
+  local cmp = require("cmp")
+  cmp.register_source("yap", require("harness.client.complete").cmp())
+
+  -- blink.cmp: keep generic LSP elsewhere; use only Yap in sessions
+  sources = {
+    default = function(ctx)
+      local base = { "path", "snippets", "buffer" }
+      table.insert(base, 1, vim.b[ctx.bufnr].yap and "yap" or "lsp")
+      return base
+    end,
+    providers = { yap = { module = "harness.client.complete", name = "Yap" } },
+  }
+<
+
+Choose either the generic LSP source or the dedicated Yap source for session
+buffers, not both, to avoid duplicate items. The source is active only at
+frontmatter, role headings and `@path` references; it delegates item lookup
+to `yap lsp`. Neither completion engine is a Yap dependency.
 
 The language server is optional: if the binary is unavailable (or predates
 `yap lsp`), editing is unaffected and the features simply stay off. Folding,

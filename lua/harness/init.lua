@@ -518,7 +518,9 @@ function M.setup(opts)
       if lsp.is_yap_client(id) then
         -- Only Yap buffers get automatic popups; the server advertises @, #,
         -- : and - and returns items only in file, role or frontmatter contexts.
-        vim.lsp.completion.enable(true, id, args.buf, { autotrigger = true })
+        if M.config.builtin_completion then
+          vim.lsp.completion.enable(true, id, args.buf, { autotrigger = true })
+        end
         return
       end
       -- Detach after LspAttach completes: Neovim 0.13's Client:on_attach()
@@ -537,6 +539,9 @@ function M.setup(opts)
     group = group,
     callback = function(args)
       if not (vim.b[args.buf].yap or vim.b[args.buf].yap_scratch_notes) then
+        return
+      end
+      if not M.config.builtin_completion then
         return
       end
       local char = vim.v.char

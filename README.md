@@ -41,7 +41,9 @@ Inspired by pi and gptel.
   OpenAI-compatible endpoint, or a ChatGPT plan login.
 - An append-only audit log of every tool call, result and approval, per session.
 - A session-only language server (`yap lsp`) for document symbols, completion
-  and structural diagnostics, scoped to managed sessions.
+  and structural diagnostics, scoped to managed sessions. nvim-cmp and
+  blink.cmp can use it through their LSP source or an optional dedicated Yap
+  source (see `:help yap-lsp`).
 - Images dropped into the buffer, sent to the model as image parts.
 
 ## Tools

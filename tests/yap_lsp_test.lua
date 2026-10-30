@@ -149,6 +149,16 @@ type_at(3, 9, "i")
 type_at(6, 4, "i")
 assert(#requested == 1, "completion requested in frontmatter value or prose")
 
+-- With an external completion engine configured, Yap skips its native UI
+-- when future LspAttach events fire. The language server stays attached.
+yap.setup({ bin = ROOT .. "/yap", builtin_completion = false })
+local enabled_before = #enabled
+local requested_before = #requested
+vim.api.nvim_exec_autocmds("LspAttach", { buffer = buf, data = { client_id = yap_client_id } })
+type_at(2, 3, "i")
+assert(#enabled == enabled_before, "builtin completion enabled despite opt-out")
+assert(#requested == requested_before, "builtin key completion requested despite opt-out")
+
 -- Restore the real functions before exit (see the comment at the top of the
 -- original test: core vim.lsp's VimLeavePre iterates get_clients()).
 vim.lsp.start = real.start

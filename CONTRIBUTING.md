@@ -171,7 +171,10 @@ diagnostics, plus the Go-owned frontmatter field inventory and the
 provider/model/tool catalogs those features draw on. The Lua harness owns only
 the plumbing: starting the client, attaching it to `b:yap` buffers (never
 scratch notes or ordinary Markdown), and sending editor context (live cwd and
-streaming state) over `yap/context`. Folding, text objects, navigation and
+streaming state) over `yap/context`. Neovim's built-in completion is enabled
+by default; the optional cmp/blink sources in `harness.client.complete` route
+requests to the same server and gate triggers outside Yap completion contexts,
+without computing items in Lua. Folding, text objects, navigation and
 their synchronous structural parse stay in Lua; the language server is
 optional and its failure or absence must not affect editing. Send-time
 transcript-to-request conversion is Go's (`agent/document.Messages`), reached
