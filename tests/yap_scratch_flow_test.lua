@@ -107,6 +107,33 @@ assert(text(owner):find("\\<!-- yap:tool -->", 1, true), "pasted marker became a
 assert(text(scratch):find("# @queue\n?$"), "queue was not cleared")
 assert(text(scratch):find("# @steer\n# @queue", 1, true) == nil, "queue clear lost section spacing")
 
+-- A second <C-s> disarms the queue without removing its draft; a third
+-- <C-s> arms it again, with the same live text.
+vim.api.nvim_buf_set_lines(owner, -1, -1, false, { "toggle an in-flight queue" })
+assert(yap.send(owner))
+vim.api.nvim_buf_set_lines(scratch, heading(scratch, "queue"), -1, false, { "keep this draft" })
+cursor(heading(scratch, "queue") + 1)
+yap.scratch_send(scratch)
+assert(vim.b[scratch].yap_queue_armed, "queue was not armed for toggle")
+yap.scratch_send(scratch)
+assert(not vim.b[scratch].yap_queue_armed, "second send did not disarm queue")
+assert(hint(scratch, heading(scratch, "queue")) == "  · uncommitted", "disarmed queue lost draft label")
+wait_done(owner, "toggle an in-flight queue")
+vim.wait(100)
+assert(not text(owner):find("keep this draft", 1, true), "disarmed queue was sent")
+assert(text(scratch):find("keep this draft", 1, true), "disarming removed queue draft")
+
+-- Re-arm the same draft during another turn.
+vim.api.nvim_buf_set_lines(owner, -1, -1, false, { "rearm an in-flight queue" })
+assert(yap.send(owner))
+yap.scratch_send(scratch)
+assert(vim.b[scratch].yap_queue_armed, "third send did not re-arm queue")
+yap.scratch_send(scratch)
+assert(not vim.b[scratch].yap_queue_armed, "re-armed queue could not be disarmed")
+wait_done(owner, "rearm an in-flight queue")
+vim.wait(100)
+assert(not text(owner):find("keep this draft", 1, true), "retracted re-arm was sent")
+
 -- Clearing an armed queue before the turn ends cancels the follow-up.
 vim.api.nvim_buf_set_lines(owner, -1, -1, false, { "one more in-flight turn" })
 assert(yap.send(owner))

@@ -210,6 +210,12 @@ function M.scratch_send(scratch)
     return
   end
   if section == "queue" then
+    if vim.b[scratch].yap_queue_armed or vim.b[scratch].yap_queue_dispatch then
+      vim.b[scratch].yap_queue_armed = false
+      vim.b[scratch].yap_queue_dispatch = false
+      M.refresh(scratch)
+      return
+    end
     if M.section_text(scratch, "queue") == "" then
       vim.b[scratch].yap_queue_armed = false
       vim.b[scratch].yap_queue_dispatch = false
@@ -224,6 +230,10 @@ function M.scratch_send(scratch)
     return
   end
   if state.is_running(owner) then
+    if steer[owner] then
+      cancel_steer(owner)
+      return
+    end
     local text = M.section_text(scratch, "steer")
     if text == "" and not steer[owner] then
       vim.notify("yap: # @steer is empty", vim.log.levels.WARN)

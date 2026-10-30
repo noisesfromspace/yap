@@ -537,20 +537,23 @@ body is one message, and clearing a sent section leaves a blank line
 beneath its heading.
 
   # @steer    While running, <C-s> submits a replaceable pending message
-              for the next model boundary. Once delivered, it is cleared.
+              for the next model boundary. Press <C-s> again to retract it
+              without deleting the draft. Once delivered, it is cleared.
               If the turn ends first (a <C-c> stop included) it stays as a
               draft; pressing <C-s> here while idle sends it as the next
               message, even when queue has text. Editing or deleting a
               pending steer revises or cancels it while the turn runs.
   # @queue    While idle, <C-s> sends the whole body as one message. While
-              running, <C-s> authorizes one follow-up: its live contents
+              running, <C-s> schedules one follow-up; press it again to
+              unschedule without deleting the draft. The live contents
               are sent when that turn ends successfully. Edits before then
               are included; clearing the queue cancels the follow-up. It
               never auto-sends merely because text was typed, or after a
               stop, failure, or session close.
 
-<C-s> acts on the section under the cursor, not the current turn state.
-Outside a section it only displays a hint; move to steer or queue to send.
+<C-s> toggles a pending steer or scheduled queue while the turn runs; while
+idle it sends the section under the cursor. Outside a section it only displays
+a hint; move to steer or queue to send.
 There is no selection-specific send. <C-t> in normal or insert mode picks a
 template or skill and inserts it at the cursor without sending it. Drafts still
 need |:write| to persist, and unsaved changes prompt on exit. Sending/consuming

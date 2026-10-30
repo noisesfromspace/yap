@@ -141,8 +141,19 @@ vim.api.nvim_buf_set_lines(scratch3, 0, -1, false, {
 })
 vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(scratch3)
-vim.api.nvim_buf_set_lines(scratch3, 1, 2, false, {})
-vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch3 }) -- API edits don't simulate typing
+-- A second <C-s> retracts the pending steer without deleting the draft.
+yap.scratch_send(scratch3)
+assert(require("harness.state").steer[buf3] == nil, "second send did not retract steer")
+assert(
+  table.concat(vim.api.nvim_buf_get_lines(scratch3, 0, -1, false), "\n"):find("also check the tests", 1, true),
+  "retracting steer deleted draft"
+)
+vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch3 })
+assert(require("harness.state").steer[buf3] == nil, "draft edits rearmed retracted steer")
+yap.scratch_send(scratch3)
+assert(require("harness.state").steer[buf3] == "also check the tests", "third send did not rearm steer")
+yap.scratch_send(scratch3)
+assert(require("harness.state").steer[buf3] == nil, "rearmed steer could not be retracted")
 vim.wait(100) -- let the backend reader receive the cancellation
 local ok6 = vim.wait(15000, function()
   return not yap.is_running(buf3) and chat_text(buf3):match("STEER MISSING") ~= nil
@@ -150,8 +161,8 @@ end, 100)
 assert(ok6, "canceled steer was still injected:\n" .. chat_text(buf3))
 assert(not chat_text(buf3):match("# @user\nalso check the tests"), "canceled steer remains in transcript")
 assert(
-  not table.concat(vim.api.nvim_buf_get_lines(scratch3, 0, -1, false), "\n"):match("also check the tests"),
-  "retracted steer remained in scratch"
+  table.concat(vim.api.nvim_buf_get_lines(scratch3, 0, -1, false), "\n"):find("also check the tests", 1, true),
+  "retracted steer draft was lost"
 )
 
 -- Editing a submitted steer while a tool runs replaces the pending wire
