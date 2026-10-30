@@ -1,6 +1,6 @@
--- Busy beacon animation: uniform circle glyphs, a short arrival and
--- completion hold, and an independent amber → coral → rose hue tween.
--- A long tool call slows the face changes without slowing the color.
+-- Busy beacon animation: uniform circle glyphs, a short arrival, and an
+-- independent amber → coral → rose hue tween. A long tool call slows the
+-- face changes without slowing the color.
 
 local M = {}
 
@@ -97,45 +97,22 @@ function M.color()
 end
 
 M.spinner_frames = NF_SPINNER -- exported for tests: every glyph the beacon can show
+M.plain_spinner_frames = PLAIN_SPINNER_FRAMES
 
 local spinner_timer = nil
 local glyph_cache = {} -- per-buffer pacing avoids coupling simultaneous sessions
 local started = {} -- buf -> arrival timestamp
-local settled = {} -- buf -> brief successful-turn check
-local settle_id = 0
 local ARRIVAL_NS = 500 * 1e6
-local SETTLE_MS = 700
 local FAST_TICKS, TOOL_TICKS = 3, 7 -- 60 ms timer: 180 / 420 ms
 
 function M.begin(buf)
   started[buf] = vim.uv.hrtime()
   glyph_cache[buf] = nil
-  settled[buf] = nil -- a queued follow-up replaces the old turn's check
-end
-
-function M.finish(buf)
-  started[buf] = nil
-  settle_id = settle_id + 1
-  local id = settle_id
-  settled[buf] = { glyph = nf(0xF05E0), color = M.color(), id = id }
-  vim.api.nvim_set_hl(0, "YapBusySettle", { fg = settled[buf].color })
-  vim.defer_fn(function()
-    if settled[buf] and settled[buf].id == id then
-      settled[buf] = nil
-      vim.cmd.redrawstatus()
-    end
-  end, SETTLE_MS)
-  vim.cmd.redrawstatus()
 end
 
 function M.cancel(buf)
   started[buf] = nil
   glyph_cache[buf] = nil
-  settled[buf] = nil
-end
-
-function M.settle(buf)
-  return settled[buf]
 end
 local spin_tick = 0
 

@@ -610,9 +610,11 @@ inside a fenced tool result is literal content, never a message boundary.
 
 The winbar is the session dashboard. On the left sits the buffer's state icon:
 idle, awaiting your reply, stopped, error, or done for a finished subagent.
-While a turn streams, an animated beacon replaces it and grows with how long
-the running tool has taken. When the window is inactive the beacon and the
-title disappear; the state icon stays.
+While a turn streams, an animated beacon replaces it: a fixed circle for
+half a second, then a random circle face every 180 ms, slowing to 420 ms once
+a tool has run 2s. When the turn ends the beacon gives way to the awaiting
+icon. When the window is inactive the beacon and the title disappear; the
+state icon stays.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
 (`bash 12s`); a queued `# @queue` follow-up and a pending `# @steer` add a

@@ -77,9 +77,9 @@
   <li data-phase="arrival">Arrival<small>Fixed circle for 500 ms.</small></li>
   <li data-phase="stream">Streaming<small>Random faces every 180 ms; amber → coral → rose.</small></li>
   <li data-phase="tool">Long tool call<small>Same palette, slower 420 ms beat.</small></li>
-  <li data-phase="done">Settle<small>Check in the last hue for 700 ms, then idle.</small></li>
+  <li data-phase="done">Complete<small>Switch directly to the waiting icon. No intermediate check.</small></li>
 </ol>
-<p class="note">Approval keeps Yap's shield icon and warning color. Error keeps its own state icon. Neither changes the queue and steer badges beside the busy beacon. This is a visual prototype, not a change to Yap.</p>
+<p class="note">Completion switches straight to Yap's waiting icon. Approval keeps its shield, error keeps its own state icon, and queue and steer remain beside the busy beacon. This is a visual prototype.</p>
 <script>
   const $ = id => document.getElementById(id);
   const beacon = $('beacon'), tool = $('tool'), title = $('title'), message = $('message');
@@ -140,17 +140,17 @@
       if (tool.textContent) tool.style.marginRight = '18px';
       setPhase(next === 'tool' ? 'Long tool call' : 'Streaming', next === 'tool' ? '420 ms between faces. The hue still moves at the original speed.' : '180 ms between faces. The color loops independently of the icon.', next === 'tool' ? 'Running tests…' : 'Working through the response…');
     } else if (next === 'done') {
-      beacon.textContent = glyph(0xF05E0);
-      setPhase('Settling', 'The check holds for 700 ms in the last live hue, then returns to idle.', 'Turn complete.');
-      later(700, () => enter('idle'));
+      beacon.textContent = '󰫁';
+      transition([244, 190, 101]);
+      setPhase('Waiting', 'The busy beacon gives way to Yap’s waiting icon immediately.', 'Turn complete. Your turn.');
     } else if (next === 'approval' || next === 'error') {
       beacon.textContent = next === 'approval' ? '󰻌' : '󰚌';
       transition(next === 'approval' ? [244, 190, 101] : [239, 115, 121]);
       setPhase(next === 'approval' ? 'Approval needed' : 'Error', 'The existing state icon replaces the beacon; its color eases into the state color.', next === 'approval' ? 'Waiting for your decision.' : 'The turn ended with an error.');
     } else {
-      beacon.textContent = glyph(0xF0765);
+      beacon.textContent = '󰝦';
       transition([132, 129, 145]);
-      setPhase('Idle', 'The settled check has yielded to the normal idle icon.', 'Waiting for a turn.');
+      setPhase('Idle', 'No turn is in progress.', 'Waiting for a turn.');
     }
     startLoop();
   }

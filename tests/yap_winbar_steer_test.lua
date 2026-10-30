@@ -54,18 +54,19 @@ assert(not rendered_center:find(icons.steer, 1, true), "steer icon leaked into t
 
 state.running[buf] = nil
 spinner.cancel(buf)
-spinner.finish(buf)
 vim.b[scratch].yap_queue_armed = true
-assert(winbar_at(60):find(icons.queue, 1, true), "settle hid armed queue")
+assert(winbar_at(60):find(icons.queue, 1, true), "armed queue should replace the beacon")
 vim.b[scratch].yap_queue_armed = false
-assert(winbar_at(60):find(icons.steer, 1, true), "settle hid pending steer")
+assert(winbar_at(60):find(icons.steer, 1, true), "pending steer should replace the beacon")
 state.steer[buf] = nil
-assert(winbar_at(60):find("%#YapBusySettle#" .. vim.fn.nr2char(0xF05E0), 1, true), "completion check missing")
+state.awaiting[buf] = true
+assert(winbar_at(60):find("%#YapNeeds#" .. icons.waiting, 1, true), "completion should show waiting immediately")
 state.pending_approvals[buf] = { id = "parked" }
-assert(winbar_at(60):find(icons.approval, 1, true), "settle replaced approval shield")
-assert(not winbar_at(60):find("%#YapBusySettle#", 1, true), "settle leaked into approval")
+assert(winbar_at(60):find(icons.approval, 1, true), "approval should keep its shield")
 state.pending_approvals[buf] = nil
-spinner.begin(buf) -- the next turn (including an armed queue) clears the hold
-assert(not winbar_at(60):find("%#YapBusySettle#", 1, true), "old check leaked into next turn")
+spinner.begin(buf)
+state.running[buf] = {}
+assert(winbar_at(60):find(vim.fn.nr2char(0xF0765), 1, true), "next turn should start with arrival")
+state.running[buf] = nil
 spinner.cancel(buf)
 print("OK winbar_steer")

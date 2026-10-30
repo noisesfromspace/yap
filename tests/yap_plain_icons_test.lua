@@ -22,7 +22,12 @@ assert(bar:find("▊", 1, true) and bar:find("░", 1, true), "plain gauge missi
 assert(not bar:find("", 1, true), "Nerd Font gauge in plain mode: " .. bar)
 state.running[buf] = {}
 bar = yap.winbar(buf)
-assert(bar:find("※", 1, true), "plain spinner missing: " .. bar)
+local plain_frames = require("harness.ui.spinner").plain_spinner_frames
+local shown = false
+for _, frame in ipairs(plain_frames) do
+  shown = shown or bar:find("%#YapBusySpin#" .. frame, 1, true) ~= nil
+end
+assert(shown, "plain spinner missing: " .. bar)
 assert(not bar:find(vim.fn.nr2char(0xEE4B), 1, true), "Nerd Font spinner in plain mode: " .. bar)
 state.running[buf] = nil
 state.awaiting[other] = nil

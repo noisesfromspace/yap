@@ -514,10 +514,8 @@ function M.send(buf)
       -- saved, wipe the buffer. The BufWipeout autocmd in
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
-      if not errors[buf] and vim.api.nvim_buf_is_valid(buf) then
-        spinner.finish(buf)
-      end
       scratchmod.finish_queue(buf, not errors[buf])
+      vim.cmd.redrawstatus()
     end
     local function handle_frame(frame)
       if frame.type == "text" then
