@@ -81,6 +81,29 @@ reset()
 type("# @")
 assert(table.concat(lines(), "\n") == "# @", "bare shorthand without space was expanded")
 
+-- 6. A bare `# @` whose line was rewritten by the completion's auto-select
+-- (completeopt without `noselect` inserts `# @assistant`) still expands to the
+-- default `# @user` on space. The trigger tracks the keystrokes, not the line.
+reset()
+type("# @") -- opens the bare shorthand
+vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# @assistant" }) -- completion auto-selected
+local function append(str)
+  vim.api.nvim_feedkeys("A" .. str, "xt", false)
+  flush()
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
+end
+append(" ")
+assert(
+  table.concat(lines(), "\n") == "# @user\n\n",
+  "auto-selected role was not expanded to the default: " .. vim.inspect(lines())
+)
+
+-- 7. The same heading typed out letter by letter is not a bare shorthand and
+-- stays put (the `a` after `# @` ended the bare state).
+reset()
+type("# @assistant ")
+assert(table.concat(lines(), "\n") == "# @assistant ", "typed heading was collapsed")
+
 -- Restore vim.schedule before exit (VimLeavePre handlers rely on it).
 vim.schedule = real_schedule
 
