@@ -16,7 +16,6 @@ local paths = require("harness.path")
 local session = require("harness.session")
 local system = require("harness.client.system")
 local lsp = require("harness.client.lsp")
-local snippet = require("harness.client.snippet")
 local picker = require("harness.ui.picker")
 
 local running = state.running
@@ -117,7 +116,6 @@ local function setup_buffer(buf)
   end, "yap: show shortcuts")
   require("harness.ui.fold").setup_buffer(buf, keys)
   require("harness.ui.textobj").setup_buffer(buf, keys)
-  snippet.setup_buffer(buf)
 
   -- Self-evaluating winbar: a pure function of buffer state, refreshed
   -- by Neovim on every redraw.

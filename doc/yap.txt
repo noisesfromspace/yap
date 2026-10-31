@@ -364,12 +364,6 @@ A yap buffer is plain markdown. Headings delimit messages: >
   # @assistant
 <
 
-Typing `# @` then a space expands to a `# @user` heading with a blank line
-and the cursor in the body: the fast path for starting a message. `# @a`
-expands to `# @assistant` (prefill) and `# @s` to `# @system`. A fully typed
-heading is left alone, and a bare `# @` (before the space) still triggers the
-role completion menu (|yap-lsp|) as the fallback.
-
 Everything between headings is message content. Everything before the first
 heading is ignored by the parser — that is where the session's state lives,
 as YAML frontmatter: >
