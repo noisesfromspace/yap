@@ -55,8 +55,8 @@ func TestSymbols(t *testing.T) {
 	if !strings.HasPrefix(asst.Name, "assistant:") {
 		t.Fatalf("symbol 2 = %q, want assistant preview", asst.Name)
 	}
-	if len(asst.Children) != 0 {
-		t.Fatalf("assistant children = %+v, want none (tool/thinking blocks are not symbols)", asst.Children)
+	if len(asst.Children) != 1 || asst.Children[0].Name != "tool: read" || asst.Children[0].Range.Start.Line != 6 {
+		t.Fatalf("assistant children = %+v, want read tool at line 6", asst.Children)
 	}
 }
 
@@ -230,6 +230,87 @@ func TestParseParity(t *testing.T) {
 	}
 	if !open.Regions[0].Unclosed {
 		t.Fatal("open tool region should be marked unclosed")
+	}
+}
+
+func TestCodeActions(t *testing.T) {
+	uri := "file:///tmp/sessions/a/session.md"
+	var in bytes.Buffer
+	in.Write(frame(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
+		"initializationOptions": map[string]any{"sessions_dir": "/tmp/sessions"},
+	}}))
+	text := "---\ntitle: x\n# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\"} -->\nresult\n# @user\nhello\n"
+	in.Write(frame(map[string]any{"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": map[string]any{
+		"textDocument": map[string]any{"uri": uri, "text": text, "version": 1},
+	}}))
+	for id, line := range []int{0, 3, 6} {
+		in.Write(frame(map[string]any{"jsonrpc": "2.0", "id": id + 2, "method": "textDocument/codeAction", "params": map[string]any{
+			"textDocument": map[string]any{"uri": uri},
+			"range":        rng{Start: position{Line: line}, End: position{Line: line}},
+		}}))
+	}
+	in.Write(frame(map[string]any{"jsonrpc": "2.0", "method": "exit"}))
+	var out bytes.Buffer
+	if err := Serve(&in, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := map[int]string{2: "---\n", 3: "<!-- /yap:tool -->\n"}
+	for _, raw := range splitFrames(out.Bytes()) {
+		var resp struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(raw, &resp) != nil || resp.ID < 2 || resp.ID > 4 {
+			continue
+		}
+		var actions []struct {
+			Edit struct {
+				Changes map[string][]textEdit `json:"changes"`
+			} `json:"edit"`
+		}
+		if err := json.Unmarshal(resp.Result, &actions); err != nil {
+			t.Fatal(err)
+		}
+		if resp.ID == 4 {
+			if len(actions) != 0 {
+				t.Fatalf("unrelated range: %+v", actions)
+			}
+			continue
+		}
+		if len(actions) != 1 || len(actions[0].Edit.Changes[uri]) != 1 || actions[0].Edit.Changes[uri][0].NewText != want[resp.ID] {
+			t.Fatalf("action %d: %+v", resp.ID, actions)
+		}
+		edit := actions[0].Edit.Changes[uri][0]
+		fixed := applyChange(text, changeEvent{Range: edit.Range, Text: edit.NewText})
+		if resp.ID == 2 && !strings.Contains(fixed, "---\n# @assistant") || resp.ID == 3 && !strings.Contains(fixed, "<!-- /yap:tool -->\n# @user") {
+			t.Fatalf("action %d did not close boundary: %q", resp.ID, fixed)
+		}
+	}
+}
+
+func TestCodeActionsGuarded(t *testing.T) {
+	uri := "file:///tmp/sessions/a/session.md"
+	s := New(&bytes.Buffer{}, InitOptions{SessionsDir: "/tmp/sessions"})
+	p := codeActionParams{Range: rng{Start: position{Line: 1}, End: position{Line: 1}}}
+	p.TextDocument.URI = uri
+	for _, tc := range []struct {
+		name, text string
+		streaming  bool
+	}{
+		{"clean", "# @user\nhello\n", false},
+		{"unfinished header", "# @assistant\n<!-- yap:tool\npartial\n", false},
+		{"streaming", "# @assistant\n<!-- yap:tool {\"id\":\"t\",\"name\":\"read\"} -->\npartial\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.docs[uri] = &docState{text: tc.text, streaming: tc.streaming}
+			if actions := s.codeActionsFor(p).([]any); len(actions) != 0 {
+				t.Fatalf("unsafe actions: %+v", actions)
+			}
+		})
+	}
+	p.TextDocument.URI = "file:///tmp/ordinary.md"
+	if actions := s.codeActionsFor(p).([]any); len(actions) != 0 {
+		t.Fatalf("non-session actions: %+v", actions)
 	}
 }
 

@@ -878,13 +878,15 @@ LSP, backed by the Go document parser (agent/document):
 
   Document symbols  An outline of the conversation: frontmatter, then one
                     symbol per message (role + a short body preview) with
-                    tool/thinking/error regions as children.
+                    tool regions as children.
   Completion        Frontmatter keys and values (`provider`, `model`,
                     `reasoning_level`, `agent`, `tools`, ...), role headings,
                     and `@path` file references.
   Diagnostics       Structural warnings: unterminated or duplicate frontmatter,
                     invalid `reasoning_level`/`turns`, unknown message roles,
                     malformed tool headers, and unclosed regions.
+  Code actions      Quick fixes for an unterminated frontmatter block or an
+                    unclosed tool region with a complete header.
 
 The server is session-only: the client attaches to buffers that carry `b:yap`,
 never scratch notes or ordinary Markdown. Model completion reads the cached

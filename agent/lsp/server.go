@@ -104,6 +104,11 @@ type completionParams struct {
 	Position position `json:"position"`
 }
 
+type codeActionParams struct {
+	textDocumentParams
+	Range rng `json:"range"`
+}
+
 // contextParams is the yap/context notification: editor-owned state the
 // server cannot infer from the session file (the live project cwd, and whether
 // a reply is streaming into the tail).
@@ -273,6 +278,11 @@ func (s *Server) dispatch(req request) bool {
 		var p textDocumentParams
 		if json.Unmarshal(req.Params, &p) == nil {
 			s.respond(req.ID, s.symbolsFor(p.TextDocument.URI))
+		}
+	case "textDocument/codeAction":
+		var p codeActionParams
+		if json.Unmarshal(req.Params, &p) == nil {
+			s.respond(req.ID, s.codeActionsFor(p))
 		}
 	case "textDocument/completion":
 		var p completionParams
@@ -480,6 +490,7 @@ func (s *Server) initializeResult() map[string]any {
 				"change":    2, // incremental
 			},
 			"documentSymbolProvider": true,
+			"codeActionProvider":     true,
 			"completionProvider": map[string]any{
 				"triggerCharacters": []string{"@", "#", ":", "-"},
 			},
@@ -535,6 +546,64 @@ func (s *Server) completionFor(p completionParams) any {
 		items = []completionItem{}
 	}
 	return map[string]any{"isIncomplete": false, "items": items}
+}
+
+// codeActionsFor offers only repairs whose insertion point is determined by
+// the structural parse. In particular, a tool with an unfinished header is
+// not safe to close with a tool-region marker.
+func (s *Server) codeActionsFor(p codeActionParams) any {
+	out := []any{}
+	uri := p.TextDocument.URI
+	if !s.isSession(uri) {
+		return out
+	}
+	d := s.doc(uri)
+	if d == nil || d.streaming {
+		return out
+	}
+	doc := d.parse()
+	if len(doc.Lines) > 0 && doc.Lines[0] == "---" && doc.Frontmatter == 0 && p.Range.Start.Line == 0 {
+		line := len(doc.Lines) - 1
+		if len(doc.Headings) > 0 {
+			line = doc.Headings[0].Line - 1
+		}
+		insert := position{Line: line}
+		text := "---\n"
+		if line == len(doc.Lines)-1 && len(doc.Headings) == 0 {
+			insert.Character = len(doc.Lines[line])
+			text = "\n---"
+		}
+		out = append(out, map[string]any{
+			"title": "Close frontmatter", "kind": "quickfix",
+			"edit": map[string]any{"changes": map[string]any{uri: []textEdit{{Range: rng{Start: insert, End: insert}, NewText: text}}}},
+		})
+	}
+	for _, r := range doc.Regions {
+		if r.Kind != "tool" || (r.Finish != 0 && !r.Unclosed) || r.HeaderFinish == 0 {
+			continue
+		}
+		where := regionRange(doc.Lines, r)
+		if p.Range.End.Line < where.Start.Line || p.Range.Start.Line > where.End.Line {
+			continue
+		}
+		line := len(doc.Lines) - 1
+		if r.Unclosed {
+			line = r.Finish - 1
+		}
+		// Insert after the last tool line, before a recovered heading if
+		// present. At EOF, reuse the trailing empty line when available.
+		insert := position{Line: line + 1}
+		text := "<!-- /yap:tool -->\n"
+		if line == len(doc.Lines)-1 {
+			insert = position{Line: line, Character: len(doc.Lines[line])}
+			text = "\n<!-- /yap:tool -->"
+		}
+		out = append(out, map[string]any{
+			"title": "Close tool region", "kind": "quickfix",
+			"edit": map[string]any{"changes": map[string]any{uri: []textEdit{{Range: rng{Start: insert, End: insert}, NewText: text}}}},
+		})
+	}
+	return out
 }
 
 // uriToPath converts a file:// URI to a filesystem path.

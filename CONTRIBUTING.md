@@ -166,9 +166,9 @@ next real message so broken output cannot swallow the conversation.
 
 #### R-language-intelligence — Language features live in Go, editor structure in Lua
 
-The `yap lsp` server (agent/lsp) owns document symbols, completion and
-diagnostics, plus the Go-owned frontmatter field inventory and the
-provider/model/tool catalogs those features draw on. The Lua harness owns only
+The `yap lsp` server (agent/lsp) owns document symbols, completion,
+diagnostics and code actions, plus the Go-owned frontmatter field inventory
+and the provider/model/tool catalogs those features draw on. The Lua harness owns only
 the plumbing: starting the client, attaching it to `b:yap` buffers (never
 scratch notes or ordinary Markdown), and sending editor context (live cwd and
 streaming state) over `yap/context`. Neovim's built-in completion is enabled

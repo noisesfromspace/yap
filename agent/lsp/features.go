@@ -50,6 +50,7 @@ const (
 	symStruct   = 23
 	symVariable = 13
 	symObject   = 19
+	symFunction = 12
 
 	complModule   = 9
 	complKeyword  = 14
@@ -123,7 +124,7 @@ func utf16ColToByte(s string, col int) int {
 // ─── Document symbols ──────────────────────────────────────────────────────
 
 // Symbols returns the document-symbol outline of a session transcript:
-// frontmatter, then one symbol per message with its regions as children.
+// frontmatter, then one symbol per message with tool regions as children.
 func Symbols(text string) []symbol {
 	return symbolsFromDoc(document.Parse(text))
 }
@@ -138,6 +139,7 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
 	}
 
+	region := 0
 	for i, h := range doc.Headings {
 		next := len(lines) // exclusive 0-based end of this message
 		if i+1 < len(doc.Headings) {
@@ -146,12 +148,37 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 		if next < h.Line-1 {
 			next = h.Line - 1
 		}
-		out = append(out, symbol{
+		s := symbol{
 			Name:           messageName(lines, h),
 			Kind:           symObject,
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
-		})
+		}
+		for region < len(doc.Regions) && doc.Regions[region].Start <= h.Line {
+			region++
+		}
+		for region < len(doc.Regions) && doc.Regions[region].Start-1 < next {
+			r := doc.Regions[region]
+			region++
+			if r.Kind != "tool" || r.Start <= h.Line || r.Start-1 >= next {
+				continue
+			}
+			name := "tool"
+			if header := document.DecodeToolHeader(lines, r); header != nil && header.Name != "" {
+				name = "tool: " + header.Name
+			}
+			finish := r.Finish
+			if finish == 0 || finish > next {
+				finish = next
+			}
+			s.Children = append(s.Children, symbol{
+				Name:           name,
+				Kind:           symFunction,
+				Range:          rng{Start: position{Line: r.Start - 1}, End: position{Line: finish}},
+				SelectionRange: lineRange(lines, r.Start-1),
+			})
+		}
+		out = append(out, s)
 	}
 	return out
 }
