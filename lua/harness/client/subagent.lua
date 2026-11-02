@@ -172,7 +172,7 @@ function M.start(parent, ev)
   repeat
     local random = vim.uv.random(3)
     local hex = string.format("%02x%02x%02x", random:byte(1, 3))
-    child_path = paths.new_session_path(dir, parent_name .. "-" .. hex)
+    child_path = paths.new_session_path(paths.child_session_dir(dir, parent_path), parent_name .. "-" .. hex)
   until vim.fn.filereadable(child_path) == 0
   local ok, child = pcall(harness().new, {
     path = child_path,

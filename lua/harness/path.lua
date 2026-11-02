@@ -153,6 +153,19 @@ function M.new_session_path(dir, name)
   return sdir .. "/session.md"
 end
 
+--- The directory a subagent session belongs in: the parent's month folder
+--- (<dir>/<yy-mm>) when the parent lives in one, else the current month. A
+--- child is grouped with the conversation that spawned it, so subagent
+--- sessions never litter the project root.
+function M.child_session_dir(dir, parent_path)
+  local month = vim.fn.fnamemodify(parent_path or "", ":h:h:t")
+  if not month:match("^%d%d%-%d%d$") then
+    -- The parent is a root-level (named) session: group by this month.
+    month = os.date("%y-%m")
+  end
+  return dir .. "/" .. month
+end
+
 --- The session's directory name (the directory immediately above the
 --- markdown file). It is the final fallback identity, not the display name:
 --- the title (a renamed transcript) or the description win.
