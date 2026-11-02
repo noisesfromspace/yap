@@ -31,6 +31,13 @@ local function setup_buffer(buf)
   -- add per-redraw cost on a large session and buy nothing (R-buffer-only-state).
   vim.b[buf].yap = true
   state.sessions[buf] = true
+  -- Native :write uses the session save path, including pending :file renames.
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      session.save(buf)
+    end,
+  })
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
   -- runs, so a markdown client may already be attached; detach it from this
   -- buffer (buffer-locally, so a shared server keeps serving other files).

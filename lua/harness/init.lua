@@ -471,19 +471,6 @@ function M.setup(opts)
       end
     end,
   })
-  -- Route native :write through the same save path as autosaves. In
-  -- particular, a pending :file rename must be re-rooted before the write;
-  -- session.save() uses noautocmd write!, so this does not recurse.
-  vim.api.nvim_create_autocmd("BufWriteCmd", {
-    group = adopt_group,
-    callback = function(args)
-      if vim.b[args.buf].yap_owner then
-        scratchmod.save(args.buf)
-      elseif vim.b[args.buf].yap then
-        session.save(args.buf)
-      end
-    end,
-  })
   -- The winbar degrades with window width (see render_winbar); re-evaluate
   -- its `%!` expression whenever a window is resized.
   vim.api.nvim_create_autocmd("WinResized", {

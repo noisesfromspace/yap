@@ -13,10 +13,19 @@ local project = vim.fn.tempname()
 vim.fn.mkdir(project, "p")
 vim.cmd("cd " .. vim.fn.fnameescape(project))
 
+local before_perm = vim.fn.getfperm(project)
+
+-- Yap's write handler must not swallow ordinary project file writes.
+local ordinary = project .. "/ordinary.md"
+vim.cmd("edit " .. vim.fn.fnameescape(ordinary))
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "ordinary content" })
+vim.cmd("write")
+assert(vim.fn.readfile(ordinary)[1] == "ordinary content", "ordinary :write was intercepted by Yap")
+assert(not vim.bo.modified, "ordinary buffer remains modified after :write")
+
 local buf = yap.new()
 local session_path = vim.b[buf].yap_path
 local session_dir = vim.fn.fnamemodify(session_path, ":h")
-local before_perm = vim.fn.getfperm(project)
 
 -- A `:file` rename re-roots into the session directory, keeping the new
 -- basename as the session title, and never writes into the project cwd.

@@ -402,6 +402,12 @@ function M.scratch_toggle(buf)
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
+    vim.api.nvim_create_autocmd("BufWriteCmd", {
+      buffer = scratch,
+      callback = function()
+        M.save(scratch)
+      end,
+    })
     if not vim.b[scratch].yap_steer_watch then
       vim.b[scratch].yap_steer_watch = true
       vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
