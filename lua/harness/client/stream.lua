@@ -42,6 +42,27 @@ local pending_approvals = state.pending_approvals
 local close_after_turn = state.close_after_turn
 local stream_flush = state.stream_flush
 local follow_override = state.follow_override
+local stop_focus = {} -- buf -> window that pressed the stop key
+
+local function focus_stopped_prompt(buf)
+  local win = stop_focus[buf]
+  stop_focus[buf] = nil
+  if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win
+    or vim.api.nvim_win_get_buf(win) ~= buf then
+    return
+  end
+  local row = vim.api.nvim_buf_line_count(buf)
+  vim.api.nvim_win_set_cursor(win, { row, 0 })
+  -- Cancellation completes asynchronously. Don't pull the user back if they
+  -- navigated away before entering insert mode.
+  vim.schedule(function()
+    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win
+      and vim.api.nvim_win_get_buf(win) == buf and not running[buf]
+      and vim.api.nvim_win_get_cursor(win)[1] == row then
+      vim.cmd("startinsert")
+    end
+  end)
+end
 
 -- The live (user-merged) config table and the facade commands are reached
 -- through the harness facade so this module never loads init at import time.
@@ -415,6 +436,9 @@ function M.send(buf)
       end
     end
     local function complete(result)
+      if not result.cancelled then
+        stop_focus[buf] = nil
+      end
       finish_flush()
       sync_followers()
       running[buf] = nil
@@ -445,6 +469,7 @@ function M.send(buf)
         close_stream(buf)
         follow_tail()
         close_if_requested(buf)
+        focus_stopped_prompt(buf)
         return
       end
       if not result.ok then
@@ -685,8 +710,11 @@ function M.send(buf)
   return true
 end
 --- Cancel the in-flight turn for the current buffer (the backend survives).
-function M.stop(buf)
+function M.stop(buf, opts)
   buf = buf or vim.api.nvim_get_current_buf()
+  if opts and opts.focus and running[buf] then
+    stop_focus[buf] = vim.api.nvim_get_current_win()
+  end
   local child = subagent_children[buf]
   subagent_children[buf] = nil
   if child then
@@ -712,6 +740,7 @@ function M.stop(buf)
       spinner.stop_if_idle()
       repair_stream_tail(buf)
       close_stream(buf)
+      focus_stopped_prompt(buf)
     end
   end
 end
