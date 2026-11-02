@@ -55,7 +55,7 @@ local function stamp_updated_at(buf)
     return -- unchanged: skip the rewrite so an untouched frontmatter stays clean
   end
   fm.updated_at, fm.turns = updated_at, turns
-  vim.api.nvim_buf_set_lines(buf, 0, e, false, frontmatter.render(fm))
+  frontmatter.write(buf, e, fm)
 end
 
 --- Keep a pending :file/:saveas basename inside the session directory.

@@ -50,4 +50,17 @@ fold.set_view_level(3)
 assert(vim.fn.foldclosed(1) == -1, "view 3 unfolds the frontmatter")
 assert(vim.fn.foldclosed(6) == -1, "view 3 unfolds the system")
 
+-- A save re-stamps `updated_at` and `turns`. It must rewrite only the lines
+-- that differ: replacing the whole block deletes the window's manual fold
+-- over it, so every save closed the options fold the user had opened.
+fold.set_view_level(2)
+fold.open(1)
+assert(vim.fn.foldclosed(1) == -1, "frontmatter open after fold.open")
+require("harness.session").save(buf)
+vim.wait(300)
+local stamped = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+assert(stamped[4] == "turns: 1", "turns not stamped: " .. tostring(stamped[4]))
+assert(vim.fn.foldclosed(1) == -1, "a save must not close the options fold")
+assert(vim.fn.foldclosed(8) == 8, "a save must not open the system fold")
+
 print("OK fold_frontmatter")

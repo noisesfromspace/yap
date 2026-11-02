@@ -188,6 +188,32 @@ function M.end_line(buf)
   return nil
 end
 
+--- Rewrite the existing block, lines 1..e, with `block`, touching only the
+--- lines that differ. An unchanged `---` line keeps both the window's manual
+--- `options` fold over the block and the anchor carrying its open/closed
+--- choice: replacing the whole block (as every re-stamp of `updated_at` did)
+--- deletes the fold, so a save collapsed the frontmatter under the cursor.
+local function write_block(buf, e, block)
+  local old = vim.api.nvim_buf_get_lines(buf, 0, e, false)
+  local first, last_old, last_new = 1, #old, #block
+  while first <= last_old and first <= last_new and old[first] == block[first] do
+    first = first + 1
+  end
+  while last_old >= first and last_new >= first and old[last_old] == block[last_new] do
+    last_old, last_new = last_old - 1, last_new - 1
+  end
+  if first > last_old and first > last_new then
+    return -- nothing differs: no edit, so no 'modified' flag and no fold reconcile
+  end
+  vim.api.nvim_buf_set_lines(buf, first - 1, last_old, false, vim.list_slice(block, first, last_new))
+end
+
+--- Replace the frontmatter block ending at line `e` with `fm`, keeping every
+--- line that does not change.
+function M.write(buf, e, fm)
+  write_block(buf, e, M.render(fm))
+end
+
 --- Update fields in an existing buffer frontmatter without rebuilding the
 --- other fields at every call site. Returns false when no block is present.
 --- Callers decide whether and when to save the buffer.
@@ -200,7 +226,7 @@ function M.update(buf, changes)
   if not fm then
     return false
   end
-  vim.api.nvim_buf_set_lines(buf, 0, e, false, M.render(vim.tbl_extend("force", fm, changes)))
+  M.write(buf, e, vim.tbl_extend("force", fm, changes))
   return true
 end
 
@@ -229,7 +255,7 @@ function M.sync(buf)
   -- default.
   local defaults = require("harness").config
   local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
-  local block = M.render(vim.tbl_extend("force", fm or {}, {
+  local merged = vim.tbl_extend("force", fm or {}, {
     provider = provider,
     model = model,
     models = models,
@@ -238,10 +264,11 @@ function M.sync(buf)
     tools = (fm and fm.tools) or vim.b[buf].yap_tools,
     created_cwd = created_cwd,
     reasoning_level = reasoning_level,
-  }))
+  })
   if e then
-    vim.api.nvim_buf_set_lines(buf, 0, e, false, block)
+    M.write(buf, e, merged)
   else
+    local block = M.render(merged)
     table.insert(block, "")
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
   end
@@ -266,7 +293,7 @@ function M.record_subagent(parent, child_path)
   end
   subagents[#subagents + 1] = child_path
   fm.subagents = subagents
-  vim.api.nvim_buf_set_lines(parent, 0, e, false, M.render(fm))
+  M.write(parent, e, fm)
 end
 
 return M
