@@ -59,6 +59,7 @@ M.guard = guard.toggle
 
 -- Buffer lifecycle (buffers).
 M.new = buffers.new
+M.new_session = buffers.new_session
 M.fork = buffers.fork
 M.open = buffers.open
 M.adopt = buffers.adopt
@@ -298,13 +299,19 @@ function M.setup(opts)
   -- Propagate the (possibly overridden) data root to the path resolver.
   paths.dirs.sessions_dir = M.config.sessions_dir
 
-  -- Configured sessions and guard mappings are global: they act on state
-  -- shared by every buffer, so they must work from any file. The other
-  -- keymaps act on the current buffer and stay buffer-local in setup_buffer.
+  -- Configured sessions, new-session and guard mappings are global: they
+  -- act on state shared by every buffer, so they must work from any file. The
+  -- other keymaps act on the current buffer and stay buffer-local in
+  -- setup_buffer.
   if M.config.keymaps.sessions ~= "" then
     vim.keymap.set("n", M.config.keymaps.sessions, function()
       M.sessions()
     end, { silent = true, desc = "yap: sessions" })
+  end
+  if M.config.keymaps.new_session ~= "" then
+    vim.keymap.set("n", M.config.keymaps.new_session, function()
+      M.new_session()
+    end, { silent = true, desc = "yap: new session" })
   end
   if M.config.keymaps.guard ~= "" then
     vim.keymap.set("n", M.config.keymaps.guard, function()

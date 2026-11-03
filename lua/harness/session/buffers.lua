@@ -205,6 +205,85 @@ function M.new(opts)
   return buf
 end
 
+--- The new-session destination chooser (<leader>y). Global keeps the default
+--- `:Yap` location; every other choice creates a portable transcript (a
+--- frontmatter `data_dir` points its audit log and assets at ~/.yap/sessions).
+local function session_destinations()
+  local cwd = vim.fs.normalize(vim.fn.getcwd())
+  local dests = {
+    {
+      text = "Global session",
+      detail = paths.sessions_root(),
+      make = function()
+        return nil -- no explicit path: the default :Yap location
+      end,
+    },
+    {
+      text = "Project session",
+      detail = cwd .. "/.yap-sessions/",
+      make = function()
+        return paths.new_session_path(cwd .. "/.yap-sessions")
+      end,
+    },
+  }
+  -- "Next to current file" only makes sense when the buffer is a real file
+  -- that is not already this session's transcript.
+  local cur = vim.api.nvim_buf_get_name(0)
+  if cur ~= "" and not cur:match("^%a+://") then
+    local dir = vim.fn.fnamemodify(cur, ":h")
+    local stem = vim.fn.fnamemodify(cur, ":t:r")
+    if stem ~= "" then
+      local path = dir .. "/" .. stem .. ".md"
+      if path ~= cur then
+        dests[#dests + 1] = {
+          text = "Next to current file",
+          detail = path,
+          make = function()
+            return path
+          end,
+        }
+      end
+    end
+  end
+  dests[#dests + 1] = {
+    text = "Custom path…",
+    detail = "type a transcript path",
+    make = function()
+      local p = vim.fn.input("Yap transcript path: ", cwd .. "/", "file")
+      p = vim.trim(p)
+      if p == "" then
+        return false -- cancelled
+      end
+      if p:sub(1, 1) == "~" then
+        p = vim.env.HOME .. p:sub(2)
+      end
+      return p
+    end,
+  }
+  return dests
+end
+
+--- Open the new-session location chooser (<leader>y): global, project
+--- (`.yap-sessions/` under the cwd), next to the current file, or a custom
+--- path. Reuses the saved-session picker's presentation via vim.ui.select.
+function M.new_session()
+  vim.ui.select(session_destinations(), {
+    prompt = "New yap session",
+    format_item = function(d)
+      return d.text .. "  " .. d.detail
+    end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+    local path = choice.make()
+    if path == false then
+      return -- custom path cancelled
+    end
+    M.new({ path = path })
+  end)
+end
+
 -- Subagent spawning and child teardown live in harness.client.subagent.
 
 --- Open a saved session file as a yap buffer.

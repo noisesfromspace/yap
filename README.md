@@ -30,7 +30,7 @@ Inspired by pi and gptel.
   (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
-  trees through `vim.ui.select` (`<leader>y` for saved sessions).
+  trees through `vim.ui.select` (`<leader>y` for a new session, `+` for saved sessions).
 - A winbar with the session description, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
@@ -162,7 +162,8 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").live()`                              | `<leader>l` | open the live tool tail                          |
 | `require("harness").guard()`                             | `<leader>g` | open/close the guard board                       |
 | `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model                |
-| `require("harness").sessions(scope)`                     | `<leader>y` | resume a saved session (`cwd` \| `all`)          |
+| `require("harness").new_session()`                        | `<leader>y` | create a session: choose global, project, next-to-file, or custom |
+| `require("harness").sessions(scope)`                     | `+`         | resume a saved session (`cwd` \| `all`)          |
 | `require("harness").buffers()`                           |             | pick a listed buffer (MiniPick)                  |
 | `require("harness").instances()`                         |             | pick an open session from the session tree       |
 | `require("harness").insert(name)`                        | `<C-t>`     | insert a template (and send it) or merge a skill |

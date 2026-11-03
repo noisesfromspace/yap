@@ -314,7 +314,7 @@ for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>y and <leader>g, which are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except <leader>y, + and <leader>g, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
@@ -334,7 +334,9 @@ regardless of which one you open first.
                         In scratch, insert the raw file at the cursor instead.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
-  <leader>y             Pick a saved session to resume.
+  <leader>y             New session: choose a location (global, project,
+                        next to the current file, or a custom path).
+  +                     Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
   <Tab>                 Toggle the fold under the cursor.
@@ -500,7 +502,7 @@ it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
 session everywhere: it appears in the open-session picker
 (|harness.instances()|) and in other sessions' winbar rollup. It is not
-indexed by the saved-session picker (sessions(), <leader>y), which walks the
+indexed by the saved-session picker (sessions(), `+`), which walks the
 sessions root; reopen a portable transcript by opening its file.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
@@ -524,7 +526,7 @@ the filepath in the buffer picker. The open-session tree
                                                       *harness.instances()*
 require("harness").instances() retains the open-session tree, including open
 subagents. It has no default keymap; bind it in your own configuration. The
-saved-session tree (sessions(), <leader>y) is unchanged. Subagents (`b:yap_agent`) remain unlisted and excluded from the
+saved-session tree (sessions(), `+`) is unchanged. Subagents (`b:yap_agent`) remain unlisted and excluded from the
 winbar overview.
 
 File operations are the session operations:
