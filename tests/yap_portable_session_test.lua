@@ -98,6 +98,23 @@ local dirsess = vim.api.nvim_get_current_buf()
 assert(vim.b[dirsess].yap_path == project .. "/session.md", ":Yap <dir> did not create session.md inside it: " .. tostring(vim.b[dirsess].yap_path))
 assert(frontmatter.parse(vim.api.nvim_buf_get_lines(dirsess, 0, 30, false)).data_dir ~= nil, ":Yap <dir> session missing data_dir")
 
+-- 4c. `:Yap <path>` on an EXISTING transcript opens it (adoption), never
+-- replaces it with a fresh template: a moved session.md resumed via :Yap
+-- keeps its conversation and its data_dir tie.
+local existing = project .. "/cli-session.md"
+vim.cmd("Yap " .. vim.fn.fnameescape(existing))
+local reopened_cli = vim.api.nvim_get_current_buf()
+assert(vim.b[reopened_cli].yap == true, "existing transcript not adopted by :Yap")
+assert(vim.b[reopened_cli].yap_path == existing, ":Yap on existing file changed its path")
+local reopened_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(reopened_cli, 0, 30, false))
+assert(reopened_fm and reopened_fm.data_dir == cli_fm.data_dir,
+  ":Yap on existing file lost its data_dir tie")
+assert(reopened_fm and reopened_fm.created_at == cli_fm.created_at,
+  ":Yap on existing file created a NEW session (frontmatter replaced)")
+assert(not vim.api.nvim_buf_get_lines(reopened_cli, 0, 3, false)[1]:match("^# @system$"),
+  ":Yap on existing file replaced the transcript with a fresh template")
+vim.cmd("bwipeout " .. reopened_cli)
+
 -- 5. Portable sessions join the open-session overview and the winbar rollup
 -- like any other open session (both are keyed on the yap buffer flag, not on
 -- the path being under the sessions root).
@@ -149,6 +166,31 @@ assert(frontmatter.parse(vim.api.nvim_buf_get_lines(homebuf, 0, 30, false)).data
   "~ path session missing data_dir")
 
 vim.cmd("bwipeout!")
+-- 6. `:w <path>` moves the session: the buffer adopts the new transcript
+-- path (keeping its data_dir tie), and a later save in the moved buffer never
+-- recreates the deleted original.
+local moved = project .. "/w-moved.md"
+vim.cmd("Yap " .. vim.fn.fnameescape(project .. "/w-source.md"))
+local wbuf = vim.api.nvim_get_current_buf()
+local w_orig = vim.b[wbuf].yap_path
+local w_data = vim.b[wbuf].yap_data_dir
+vim.cmd("write " .. vim.fn.fnameescape(moved))
+assert(vim.b[wbuf].yap_path == moved, ":w <path> did not move the session")
+assert(vim.fn.filereadable(moved) == 1, ":w <path> did not write the new file")
+assert(vim.b[wbuf].yap_data_dir == w_data, ":w <path> must keep the data_dir tie")
+vim.fn.delete(w_orig)
+require("harness.session").save(wbuf)
+assert(vim.fn.filereadable(w_orig) == 0, "save recreated the deleted original")
+assert(vim.fn.filereadable(moved) == 1, "moved transcript missing after save")
+-- reopening the moved file keeps the tie
+vim.cmd("bwipeout! " .. wbuf)
+vim.cmd("edit " .. vim.fn.fnameescape(moved))
+local reopened_moved = vim.api.nvim_get_current_buf()
+assert(vim.b[reopened_moved].yap == true, "moved transcript not adopted")
+assert(vim.b[reopened_moved].yap_data_dir == w_data, "moved transcript lost its data_dir")
+vim.cmd("bwipeout! " .. reopened_moved)
+vim.fn.delete(moved)
+
 vim.cmd("cd " .. vim.fn.fnameescape(here))
 
 print("OK portable session")

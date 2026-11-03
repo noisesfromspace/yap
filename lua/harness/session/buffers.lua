@@ -41,9 +41,21 @@ local function setup_buffer(buf)
   vim.b[buf].yap = true
   state.sessions[buf] = true
   -- Native :write uses the session save path, including pending :file renames.
+  -- An explicit target (`:w /somewhere/else.md`) is the user moving the
+  -- transcript: the session adopts the new path (data_dir tie stays put),
+  -- rather than silently ignoring the command and writing to the old one.
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     buffer = buf,
-    callback = function()
+    callback = function(ev)
+      local target = ev.file
+      if target and target ~= "" and target ~= (vim.b[buf].yap_path or "") then
+        target = vim.fn.fnamemodify(target, ":p")
+        if target:match("%.md$") then
+          vim.b[buf].yap_path = target
+          pcall(vim.api.nvim_buf_set_name, buf, target)
+          require("harness.client.lsp").attach(buf)
+        end
+      end
       session.save(buf)
     end,
   })

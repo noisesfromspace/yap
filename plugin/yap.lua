@@ -7,7 +7,7 @@ vim.api.nvim_create_user_command("Yap", function(cmd)
   local opts = {}
   local arg = cmd.args and vim.trim(cmd.args) or ""
   if arg ~= "" then
-    -- A transcript anywhere: `:Yap path/to/file.md` creates the session at
+    -- A transcript anywhere: `:Yap path/to/file.md` opens the session at
     -- that file, `:Yap path/to/dir` drops `session.md` inside it. Everything
     -- resolves against the project cwd, so a bare filename lands beside the
     -- files being discussed, not in yap's data root.
@@ -19,6 +19,13 @@ vim.api.nvim_create_user_command("Yap", function(cmd)
       path = vim.fs.joinpath(path, "session.md")
     elseif not path:match("%.md$") then
       path = path .. ".md"
+    end
+    -- An existing transcript is opened, never replaced: a moved session.md
+    -- resumes its conversation (frontmatter data_dir still ties it to its
+    -- audit log and assets) instead of being clobbered by a fresh template.
+    if vim.fn.filereadable(path) == 1 then
+      require("harness").open(path)
+      return
     end
     opts.path = path
   end
