@@ -27,7 +27,7 @@ local frontmatter = require("harness.model.frontmatter")
 frontmatter.update(buf, { description = "Fix the picker" })
 require("harness.session").save(buf)
 assert(
-  vim.fn.bufname(scratch) == "Yap Notes - Fix the picker",
+  vim.fn.bufname(scratch) == "Fix the picker",
   "scratch label did not follow the summary: " .. vim.fn.bufname(scratch)
 )
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")

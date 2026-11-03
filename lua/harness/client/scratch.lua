@@ -80,13 +80,13 @@ function M.section_text(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
 end
 
---- The jotter's display name: "Yap Notes - <summary>" once the session has a
+--- The jotter's display name: "<summary>" once the session has a
 --- generated description, else "Yap Notes". The buffer is a nofile buffer, so
 --- the name is a label only — it never becomes a real file path.
 local function scratch_label(buf)
   local summary = require("harness.session").description(buf)
   if summary and summary ~= "" then
-    return "Yap Notes - " .. summary
+    return summary
   end
   return "Yap Notes"
 end
@@ -347,7 +347,7 @@ end
 
 --- Toggle the session's ephemeral scratch buffer (<leader>j): a fixed-height
 --- jotter opened below the session window. It is an in-memory nofile buffer
---- named after the session summary ("Yap Notes - <summary>"), never a real
+--- named after the session summary ("<summary>"), never a real
 --- file: an explicit `:write {path}` remains available to save a draft. It is
 --- a quick "queue" for agent tasks, never part of the conversation.
 local SCRATCH_HEIGHT = 12
