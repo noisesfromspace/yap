@@ -303,12 +303,10 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
   require("harness").buffers()              -- MiniPick buffers with Yap labels
   require("harness").instances()            -- open-session tree
-  require("harness").insert_file({ from_insert = true }) -- <C-f> insert an @path reference
 <
 `scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
 the current project. `insert(name, { at_cursor = true })` inserts the raw
-file at the cursor instead of appending/sending; insert_file() picks a file
-under |:pwd| and inserts an `@path` reference at the cursor. See |yap-keymaps|
+file at the cursor instead of appending/sending. See |yap-keymaps|
 for the default shortcuts that call these.
 
 ==============================================================================
@@ -332,8 +330,6 @@ regardless of which one you open first.
   <C-t> (n, i)          Pick a template or skill (see insert()). A template
                         is inserted and sent; a skill merges into `# @system`.
                         In scratch, insert the raw file at the cursor instead.
-  <C-f> (i)             Pick a file under the current |:pwd| and insert an
-                        `@path` reference at the cursor (resumes insert mode).
   +                     Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.

@@ -84,9 +84,6 @@ M.session_label = session.live_label
 function M.insert(name, opts)
   return template.insert(name, opts)
 end
-function M.insert_file(opts)
-  return template.insert_file(opts)
-end
 
 --- Evaluate a visual selection through the model (one-shot, no tools): the
 --- selected lines are replaced by the model's output. See |:YapEval|.

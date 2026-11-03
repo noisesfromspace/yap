@@ -75,7 +75,6 @@ M.defaults = {
     live = "<leader>l",
     scratch = "<leader>j",
     insert = "<C-t>",
-    insert_file = "<C-f>",
     sessions = "+",
     guard = "<leader>g",
     help = "g?",

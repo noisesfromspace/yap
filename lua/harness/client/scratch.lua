@@ -443,11 +443,6 @@ function M.scratch_toggle(buf)
         require("harness.ui.guard").toggle()
       end, { buffer = scratch, silent = true, desc = "yap: guard board" })
     end
-    if cfg.keymaps.insert_file ~= "" then
-      vim.keymap.set("i", cfg.keymaps.insert_file, function()
-        harness().insert_file({ from_insert = true })
-      end, { buffer = scratch, silent = true, desc = "yap: insert file reference" })
-    end
     if cfg.keymaps.insert ~= "" then
       local insert_template = function()
         require("harness.client.template").insert(nil, { at_cursor = true })

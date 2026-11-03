@@ -166,7 +166,6 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").buffers()`                           |             | pick a listed buffer (MiniPick)                  |
 | `require("harness").instances()`                         |             | pick an open session from the session tree       |
 | `require("harness").insert(name)`                        | `<C-t>`     | insert a template (and send it) or merge a skill |
-| `require("harness").insert_file({ from_insert = true })` | `<C-f>`     | pick a file and insert an `@path` reference      |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 In a session buffer `<C-t>` calls `insert()`: a template is appended as a
