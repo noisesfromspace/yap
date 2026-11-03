@@ -3,7 +3,6 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -56,8 +55,6 @@ func SlimArgs(name, argsJSON string) (args any, ok bool) {
 			Edits []struct {
 				OldText json.RawMessage `json:"oldText"`
 				NewText json.RawMessage `json:"newText"`
-				From    json.RawMessage `json:"from"`
-				To      json.RawMessage `json:"to"`
 			} `json:"edits"`
 		}
 		if err := json.Unmarshal([]byte(argsJSON), &a); err != nil || a.Edits == nil {
@@ -78,46 +75,8 @@ func SlimArgs(name, argsJSON string) (args any, ok bool) {
 			}
 			return s, nil
 		}
-		// Range edits (from/to) carry no oldText, so the deleted span size
-		// must be read from the file.
-		needFile := false
-		for _, e := range a.Edits {
-			if e.From != nil {
-				needFile = true
-				break
-			}
-		}
-		var orig string
-		if needFile {
-			data, err := os.ReadFile(ExpandHome(path))
-			if err != nil {
-				return nil, false
-			}
-			orig = string(data)
-		}
 		add, del := 0, 0
 		for _, e := range a.Edits {
-			if e.From != nil {
-				from, err := str(e.From)
-				if err != nil {
-					return nil, false
-				}
-				to, err := str(e.To)
-				if err != nil {
-					return nil, false
-				}
-				newText, err := str(e.NewText)
-				if err != nil {
-					return nil, false
-				}
-				start, end, err := ResolveSpan(orig, from, to)
-				if err != nil {
-					return nil, false
-				}
-				add += lineCount(newText)
-				del += lineCount(orig[start:end])
-				continue
-			}
 			if e.OldText == nil || e.NewText == nil {
 				return nil, false
 			}

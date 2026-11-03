@@ -10,43 +10,93 @@ import (
 	"boers.email/yap/agent/utils"
 )
 
-// pi's edit semantics (doc: R-tool-region result policy): every edit is
-// matched against the ORIGINAL content and edits must not overlap. The result
-// is a short confirmation; the unified diff is display-only via the ui
-// payload.
-//
-// Two forms per edit:
-//   - oldText/newText: exact substring replacement (oldText unique).
-//   - from/to/newText: replace, or delete (newText empty), the span from the
-//     line `from` (a complete line, indentation included, matched uniquely)
-//     through the line `to` (the first complete line equal to `to` at or
-//     after `from`; "" or "<eof>" means end of file). Matching `to` by its
-//     full line — indentation included — is what makes a closing brace
-//     unambiguous inside nested blocks.
+// Every edit matches the ORIGINAL content and edits must not overlap. A failed
+// batch writes nothing. The unified diff is display-only via the ui payload.
 
 type editArgs struct {
 	Path  string `json:"path" jsonschema:"description=path to the file (relative or absolute)"`
 	Edits []struct {
-		OldText string `json:"oldText,omitempty" jsonschema:"description=exact text to replace; must be unique in the file and not overlap other edits. Use with newText for a targeted replacement"`
-		NewText string `json:"newText,omitempty" jsonschema:"description=replacement text; omit to delete"`
-		From    string `json:"from,omitempty" jsonschema:"description=start of a span to replace or delete: a complete line (indentation included) that matches exactly once in the file. Mutually exclusive with oldText"`
-		To      string `json:"to,omitempty" jsonschema:"description=end of the span (inclusive): a complete line that is the first such line at or after from; omit or set to <eof> for end of file"`
-	} `json:"edits" jsonschema:"description=one or more targeted replacements"`
+		OldText string `json:"oldText" jsonschema:"description=exact nonempty text to replace; must occur exactly once in the file"`
+		NewText string `json:"newText" jsonschema:"description=replacement text; empty string deletes oldText"`
+	} `json:"edits" jsonschema:"description=one or more non-overlapping exact replacements matched against the original file"`
 }
 
 func init() {
 	Register("edit",
-		"Make precise file edits, including multiple disjoint edits in one call. Each edit is one of two forms: "+
-			"(1) oldText/newText — exact substring replacement; oldText must occur exactly once. "+
-			"(2) from/to/newText — replace or delete (newText empty) the span from a unique `from` line through a `to` line, or to end of file when `to` is omitted or `<eof>`. "+
-			"`from` and `to` match complete lines including indentation, so a closing brace is matched by its indentation and nested blocks are unambiguous. "+
-			"Editing a secret path (~/.ssh, ~/.aws, /run/agenix, ...) or outside the project pauses for user approval. To create files use write.",
+		"Replace exact text in an existing file. Each oldText must occur exactly once; include surrounding text if necessary. "+
+			"Use newText as the replacement (empty string deletes). Multiple edits must not overlap and all match the original file; "+
+			"if any edit fails, none are applied. Editing a secret path (~/.ssh, ~/.aws, /run/agenix, ...) "+
+			"or outside the project pauses for user approval. To create files use write.",
 		func(a *editArgs) (string, string, error) { return runEdit(a) })
 	// Secret paths are approvable, not silently edited: pause for Run/Deny.
 	// A target outside the writable allowlist (project + assets) also pauses.
 	Gate("edit", func(a *editArgs) string { return a.Path },
 		safety.SecretPathRule("edits a secret path"),
 		safety.OutsideWritableRule("edit target outside allowed write paths (pre-run)"))
+}
+
+// Diagnostics return line numbers, not nearby file contents.
+func matchLines(content, text string, limit, total int) string {
+	var lines []string
+	for start := 0; start < len(content); {
+		idx := strings.Index(content[start:], text)
+		if idx < 0 {
+			break
+		}
+		pos := start + idx
+		lines = append(lines, fmt.Sprint(strings.Count(content[:pos], "\n")+1))
+		if len(lines) == limit {
+			break
+		}
+		start = pos + len(text)
+	}
+	if total > len(lines) {
+		return strings.Join(lines, ", ") + ", ..."
+	}
+	return strings.Join(lines, ", ")
+}
+
+func spanLines(content string, start, end int) string {
+	first := strings.Count(content[:start], "\n") + 1
+	last := strings.Count(content[:end], "\n") + 1
+	if end > start && content[end-1] == '\n' {
+		last--
+	}
+	if first == last {
+		return fmt.Sprint(first)
+	}
+	return fmt.Sprintf("%d-%d", first, last)
+}
+
+func editNotFoundHint(content, old string) string {
+	if (strings.Contains(old, "\n") && strings.Contains(content, strings.ReplaceAll(old, "\n", "\r\n"))) ||
+		(strings.Contains(old, "\r\n") && strings.Contains(content, strings.ReplaceAll(old, "\r\n", "\n"))) {
+		return "; line endings differ (LF vs CRLF)"
+	}
+	first := strings.SplitN(old, "\n", 2)[0]
+	if strings.TrimSpace(first) == "" {
+		return ""
+	}
+	var candidates []string
+	whitespaceDiff := false
+	for i, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == strings.TrimSpace(first) {
+			whitespaceDiff = whitespaceDiff || line != first
+			candidates = append(candidates, fmt.Sprint(i+1))
+			if len(candidates) == 5 {
+				break
+			}
+		}
+	}
+	if len(candidates) > 0 {
+		if whitespaceDiff {
+			return "; first line matches with different surrounding whitespace at line(s) " + strings.Join(candidates, ", ")
+		}
+		if strings.Contains(old, "\n") {
+			return "; first line found at line(s) " + strings.Join(candidates, ", ") + " but full block differs"
+		}
+	}
+	return ""
 }
 
 func runEdit(a *editArgs) (string, string, error) {
@@ -70,38 +120,21 @@ func runEdit(a *editArgs) (string, string, error) {
 
 	spans := make([]span, 0, len(a.Edits))
 	for i, e := range a.Edits {
-		var s span
-		switch {
-		case e.OldText != "" && e.From != "":
-			return "", "", fmt.Errorf("edits[%d] sets both oldText and from; use one form", i)
-		case e.OldText != "":
-			n := strings.Count(orig, e.OldText)
-			if n == 0 {
-				return "", "", fmt.Errorf("edits[%d].oldText not found in %s", i, a.Path)
-			}
-			if n > 1 {
-				return "", "", fmt.Errorf("edits[%d].oldText matches %d times in %s; include more surrounding context", i, n, a.Path)
-			}
-			idx := strings.Index(orig, e.OldText)
-			s = span{idx, idx + len(e.OldText), e.NewText}
-		case e.From != "":
-			start, end, err := utils.ResolveSpan(orig, e.From, e.To)
-			if err != nil {
-				return "", "", fmt.Errorf("edits[%d]: %w", i, err)
-			}
-			// The span includes the to line's trailing newline, so a
-			// replacement should too — otherwise the next line glues on.
-			nt := e.NewText
-			if nt != "" && !strings.HasSuffix(nt, "\n") {
-				nt += "\n"
-			}
-			s = span{start, end, nt}
-		default:
-			return "", "", fmt.Errorf("edits[%d].oldText is empty (set oldText or from)", i)
+		if e.OldText == "" {
+			return "", "", fmt.Errorf("edits[%d].oldText is empty; no edits applied", i)
 		}
-		for _, prev := range spans {
+		n := strings.Count(orig, e.OldText)
+		if n == 0 {
+			return "", "", fmt.Errorf("edits[%d].oldText not found in %s%s; no edits applied", i, a.Path, editNotFoundHint(orig, e.OldText))
+		}
+		if n > 1 {
+			return "", "", fmt.Errorf("edits[%d].oldText matches %d times in %s at lines %s; include more surrounding context; no edits applied", i, n, a.Path, matchLines(orig, e.OldText, 5, n))
+		}
+		idx := strings.Index(orig, e.OldText)
+		s := span{idx, idx + len(e.OldText), e.NewText}
+		for j, prev := range spans {
 			if s.start < prev.end && s.end > prev.start {
-				return "", "", fmt.Errorf("edits[%d] overlaps another edit; merge them into one edit", i)
+				return "", "", fmt.Errorf("edits[%d] (lines %s) overlaps another edit (edits[%d], lines %s); merge them into one edit; no edits applied", i, spanLines(orig, s.start, s.end), j, spanLines(orig, prev.start, prev.end))
 			}
 		}
 		spans = append(spans, s)

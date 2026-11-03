@@ -2,8 +2,6 @@ package utils
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,20 +64,4 @@ func TestSlimArgs(t *testing.T) {
 		t.Fatal("edit without edits should not be slimmed")
 	}
 
-	// range edit (from/to): replacement newText is summarized and the deleted
-	// span size is read from the file, so the full replacement never leaks
-	// into the transcript header
-	f := filepath.Join(t.TempDir(), "z.go")
-	if err := os.WriteFile(f, []byte("a\nfunc old() {\n  x\n}\nb\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	rangeJSON := `{"path":"` + f + `","edits":[{"from":"func old() {","to":"}","newText":"func new() {\n  y\n}"}]}`
-	args, ok = SlimArgs("edit", rangeJSON)
-	if !ok {
-		t.Fatal("range edit not slimmed")
-	}
-	b, _ = json.Marshal(args)
-	if s := string(b); !strings.Contains(s, `"edits":"[1 edits, +3/-3 lines]"`) {
-		t.Fatalf("unexpected slimmed range edit args: %s", s)
-	}
 }

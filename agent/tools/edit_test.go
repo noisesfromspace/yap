@@ -72,98 +72,71 @@ func TestEditValidation(t *testing.T) {
 	}
 }
 
-// rangeEdit marshals a single from/to edit into tool JSON, avoiding the
-// backslash escaping that inline JSON would need for multi-line newText.
-func rangeEdit(t *testing.T, p string, edit map[string]string) string {
-	t.Helper()
-	b, err := json.Marshal(map[string]any{"path": p, "edits": []map[string]string{edit}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
-func TestEditRangeDelete(t *testing.T) {
+func TestEditDiagnosticsAndAtomicBatch(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
-	if err := os.WriteFile(p, []byte("a\nfunc old() {\n  x\n}\nb\n"), 0o644); err != nil {
+	original := "alpha\n  unique\nbeta\n  unique\n"
+	if err := os.WriteFile(p, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "func old() {", "to": "}"}))
-	if err != nil {
-		t.Fatalf("edit: %v", err)
+	cases := []struct{ name, old, want string }{
+		{"missing", "absent", "not found"},
+		{"drift", "beta\ngamma", "first line found at line(s) 3 but full block differs"},
+		{"whitespace", "unique \nbeta", "different surrounding whitespace at line(s) 2, 4"},
+		{"nonunique", "  unique", "at lines 2, 4"},
+		{"overlap", "alpha", "overlaps another edit (edits[0], lines 1-2)"},
 	}
-	if !strings.Contains(r, "Successfully replaced 1 edit(s)") {
-		t.Fatalf("result: %q", r)
-	}
-	data, _ := os.ReadFile(p)
-	if string(data) != "a\nb\n" {
-		t.Fatalf("content: %q", data)
-	}
-}
-
-func TestEditRangeReplace(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "f.txt")
-	if err := os.WriteFile(p, []byte("a\nfunc old() {\n  x\n}\nb\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "func old() {", "to": "}", "newText": "func new() {\n  y\n}"}))
-	if err != nil {
-		t.Fatalf("edit: %v", err)
-	}
-	data, _ := os.ReadFile(p)
-	if string(data) != "a\nfunc new() {\n  y\n}\nb\n" {
-		t.Fatalf("content: %q", data)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			first := "alpha\n  unique"
+			args, err := json.Marshal(map[string]any{"path": p, "edits": []map[string]string{
+				{"oldText": first, "newText": "changed"}, {"oldText": tc.old, "newText": "changed"},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = run(t, "edit", string(args))
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "no edits applied") {
+				t.Fatalf("wanted %q and atomicity in error, got %v", tc.want, err)
+			}
+			data, _ := os.ReadFile(p)
+			if string(data) != original {
+				t.Fatalf("failed batch modified file: %q", data)
+			}
+		})
 	}
 }
 
-func TestEditRangeToEOF(t *testing.T) {
+func TestEditCRLFHint(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
-	if err := os.WriteFile(p, []byte("a\nfunc old() {\n  x\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("one\r\ntwo\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "func old() {", "to": "<eof>"}))
-	if err != nil {
-		t.Fatalf("edit: %v", err)
-	}
-	data, _ := os.ReadFile(p)
-	if string(data) != "a\n" {
-		t.Fatalf("content: %q", data)
+	_, _, err := run(t, "edit", `{"path":"`+p+`","edits":[{"oldText":"one\ntwo","newText":"x"}]}`)
+	if err == nil || !strings.Contains(err.Error(), "line endings differ") {
+		t.Fatalf("CRLF hint: %v", err)
 	}
 }
 
-func TestEditRangeNestedBraces(t *testing.T) {
+func TestEditRequiresBothTextFields(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
-	if err := os.WriteFile(p, []byte("func outer() {\n  if x {\n    y\n  }\n  z\n}\nnext\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "func outer() {", "to": "}"}))
-	if err != nil {
-		t.Fatalf("edit: %v", err)
-	}
-	data, _ := os.ReadFile(p)
-	if string(data) != "next\n" {
-		t.Fatalf("content: %q", data)
+	for _, edit := range []string{`{"newText":"y"}`, `{"oldText":"x"}`} {
+		_, _, err := run(t, "edit", `{"path":"`+p+`","edits":[`+edit+`]}`)
+		if err == nil || !strings.Contains(err.Error(), "missing property") {
+			t.Fatalf("expected missing field: %v", err)
+		}
 	}
 }
 
-func TestEditRangeErrors(t *testing.T) {
+func TestEditRejectsRangeFields(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "f.txt")
-	// from not unique
-	if err := os.WriteFile(p, []byte("x\nx\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "x", "to": "<eof>"})); err == nil || !strings.Contains(err.Error(), "matches 2 lines") {
-		t.Fatalf("non-unique from: %v", err)
-	}
-	// to not found after from
-	if err := os.WriteFile(p, []byte("}\nfunc f() {\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := run(t, "edit", rangeEdit(t, p, map[string]string{"from": "func f() {", "to": "}"})); err == nil || !strings.Contains(err.Error(), "not found after from") {
-		t.Fatalf("to not found: %v", err)
-	}
-	// both forms
-	if _, _, err := run(t, "edit", `{"path":"`+p+`","edits":[{"oldText":"a","from":"b"}]}`); err == nil || !strings.Contains(err.Error(), "both oldText and from") {
-		t.Fatalf("both forms: %v", err)
+	_, _, err := run(t, "edit", `{"path":"`+p+`","edits":[{"from":"x","to":"<eof>","newText":"y"}]}`)
+	if err == nil || !strings.Contains(err.Error(), "additional properties") {
+		t.Fatalf("range fields should fail schema validation: %v", err)
 	}
 }
