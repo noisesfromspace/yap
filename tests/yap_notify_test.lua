@@ -219,7 +219,7 @@ assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(ite
 assert(items[2].path == vim.fs.normalize(vim.fn.getcwd()), "project cwd missing: " .. vim.inspect(items[2]))
 assert(items[2].text == require("harness.path").session_name(vim.b[buf].yap_path), "name fallback: " .. items[2].text)
 local rendered = fmt(items[2])
-assert(rendered:find(icons.waiting .. " ", 1, true), "state glyph not rendered: " .. rendered)
+assert(rendered:find("^" .. string.rep(" ", 8)) == 1, "waiting row should be badge-less: " .. rendered)
 assert(not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize(vim.fn.getcwd()), 1, true),
   "single-project open picker should show neither model nor cwd: " .. rendered)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)

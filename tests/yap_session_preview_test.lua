@@ -186,10 +186,10 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("^" .. yap.config.icons.idle .. "    ↳ scout · inspect this task") == 1
+  rendered_child:find("^" .. string.rep(" ", 10) .. "↳ scout · inspect this task") == 1
     and not rendered_child:find(vim.fn.getcwd(), 1, true)
     and not rendered_child:find("(m1)", 1, true),
-  "child title should be indented after aligned status icon, without cwd/model: " .. rendered_child
+  "child title should be indented after the aligned status column, without cwd/model: " .. rendered_child
 )
 local state = require("harness.state")
 state.running[child] = {}
@@ -212,8 +212,8 @@ assert(
   parent_position and child_position == parent_position + 1,
   "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
 )
-assert(captured.opts.format_item(captured.items[child_position]):find("^" .. yap.config.icons.running .. "    ↳") == 1,
-  "running child title should be indented after aligned icon")
+assert(vim.startswith(captured.opts.format_item(captured.items[child_position]), "[RUN]     ↳"),
+  "running child title should be indented after the aligned [RUN] tag: " .. vim.inspect(captured.opts.format_item(captured.items[child_position])))
 state.running[child] = nil
 
 -- A completed subagent is shown as "done" rather than "waiting": its
@@ -235,8 +235,8 @@ for _, item in ipairs(captured.items) do
   end
 end
 assert(done_child and done_child.state == "done", "completed subagent should be 'done': " .. vim.inspect(done_child))
-assert(captured.opts.format_item(done_child):find("^" .. yap.config.icons.done .. "    ↳") == 1,
-  "completed subagent should use the done icon: " .. captured.opts.format_item(done_child))
+assert(captured.opts.format_item(done_child):find("^" .. string.rep(" ", 10) .. "↳") == 1,
+  "completed subagent should be badge-less: " .. captured.opts.format_item(done_child))
 state.stopped[child] = true
 captured = nil
 vim.ui.select = function(items, opts)
@@ -250,9 +250,9 @@ for _, item in ipairs(captured.items) do
   if item.buf == child then stopped_child = item end
 end
 assert(stopped_parent and stopped_child, "stopped child should stay grouped with its parent: " .. vim.inspect(captured.items))
-assert(captured.opts.format_item(stopped_parent):find("^" .. yap.config.icons.waiting .. " ") == 1,
-  "waiting parent's icon should start the row")
-assert(captured.opts.format_item(stopped_child):find("^" .. yap.config.icons.stopped .. "    ↳") == 1,
+assert(vim.startswith(captured.opts.format_item(stopped_parent), string.rep(" ", 8) .. stopped_parent.text),
+  "waiting parent should be badge-less and keep its title aligned")
+assert(captured.opts.format_item(stopped_child):find("^" .. string.rep(" ", 10) .. "↳") == 1,
   "stopped child's title should be indented under its parent")
 state.stopped[child] = nil
 state.awaiting[buf], state.awaiting[child] = nil, nil
@@ -271,10 +271,10 @@ for _, item in ipairs(captured.items) do
   if item.buf == buf then root_row = captured.opts.format_item(item) end
   if item.buf == child then child_row = captured.opts.format_item(item) end
 end
-assert(root_row and root_row:find("^" .. yap.config.icons.idle .. " ") == 1
+assert(root_row and root_row:find("^" .. string.rep(" ", 8)) == 1
   and root_row:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
   and not root_row:find("(m1)", 1, true), "project path should replace model in parentheses: " .. tostring(root_row))
-assert(child_row and child_row:find("^" .. yap.config.icons.idle .. "    ↳") == 1
+assert(child_row and child_row:find("^" .. string.rep(" ", 10) .. "↳") == 1
   and not child_row:find(vim.fn.getcwd(), 1, true), "project path displaced child title: " .. tostring(child_row))
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 

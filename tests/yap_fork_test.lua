@@ -169,22 +169,19 @@ local function check_open_tree(pick, leaf_visible)
     "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
   )
   assert(
-    format(captured[positions[original_buf]]):find("^" .. yap.config.icons.waiting) == 1
-      or format(captured[positions[original_buf]]):find("^" .. yap.config.icons.idle) == 1,
-    "root icon should start the row"
+    format(captured[positions[original_buf]]):find("^" .. string.rep(" ", 8)) == 1,
+    "root should start with the blank status column"
   )
   assert(
-    format(captured[positions[fork_buf]]):find(
-      "^" .. (leaf_visible and yap.config.icons.idle or yap.config.icons.waiting) .. "    ↳"
-    ) == 1,
-    "fork status icon should align with root and indent its title"
+    format(captured[positions[fork_buf]]):find("^" .. string.rep(" ", 10) .. "↳") == 1,
+    "fork title should be indented under the root after the blank status column"
   )
   if leaf_visible then
     local leaf = captured[positions[nested_buf]]
     assert(leaf.text:find("↳ fork · ", 1, true) == 1, "nested open fork label wrong")
     assert(
-      leaf.depth == 2 and format(leaf):find("^" .. yap.config.icons.idle .. "      ↳") == 1,
-      "nested fork title should be indented twice after aligned status icon"
+      leaf.depth == 2 and format(leaf):find("^" .. string.rep(" ", 12) .. "↳") == 1,
+      "nested fork title should be indented twice after the blank status column"
     )
   end
 end

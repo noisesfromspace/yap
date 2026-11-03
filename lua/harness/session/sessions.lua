@@ -306,21 +306,21 @@ function M.instances()
     add(item, 0, {})
   end
   items = ordered
-  -- Keep icons in a fixed column; indent titles, not the status column.
-  -- Disambiguate roots by project only when this picker spans projects.
+  -- Tag only attention states in a fixed column; indent titles, not the
+  -- status column. Quiet rows (waiting, stopped, done, idle) reserve the same
+  -- column blank so titles align without an always-on icon. Disambiguate
+  -- roots by project only when this picker spans projects.
   local projects = {}
   for _, item in ipairs(items) do
     projects[vim.b[item.buf].yap_project_cwd or ""] = true
   end
   local multiple_projects = vim.tbl_count(projects) > 1
-  local glyph = picker.glyphs()
-  local icon_width = picker.icon_width(glyph)
   vim.ui.select(items, {
     prompt = "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
-      local icon = (item.approval and glyph.approval) or glyph[item.state]
-      return picker.prefix(icon, icon_width)
+      local status = item.approval and "approval" or item.state
+      return picker.status_prefix(status)
         .. string.rep("  ", item.depth)
         .. item.text
         .. suffix

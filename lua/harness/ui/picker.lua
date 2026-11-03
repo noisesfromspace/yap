@@ -87,6 +87,11 @@ for _, word in pairs(TAGS) do
   M.tag_width = math.max(M.tag_width, #word + 2)
 end
 
+--- The states the open-session picker tags with text. Waiting, stopped, done
+--- and idle are quiet: a long project list would drown in badges, so only
+--- rows that need a decision (`[RUN]`, `[ERR]`, `[APPR]`) get one.
+local ATTENTION = { running = true, error = true, approval = true }
+
 --- The buffer picker's status tag: `[RUN]`, `[WAIT]`, … plus the padding that
 --- puts every title in one column. The padding sits *after* the tag: a space
 --- inside the brackets would break a typed query ([RUN] would no longer match
@@ -115,6 +120,17 @@ function M.prefix(icon, width)
     return string.rep(" ", width + 2)
   end
   return icon .. string.rep(" ", width - vim.fn.strdisplaywidth(icon)) .. "  "
+end
+
+--- Fixed-column status prefix for the open-session picker: a text tag for
+--- attention states, blank padding for quiet states. Quiet rows reserve the
+--- same column so every title aligns without an always-on icon column.
+function M.status_prefix(status)
+  if not ATTENTION[status] then
+    return string.rep(" ", M.tag_width + 2)
+  end
+  local tag = "[" .. TAGS[status] .. "]"
+  return tag .. string.rep(" ", M.tag_width - #tag) .. "  "
 end
 
 return M

@@ -188,7 +188,9 @@ Subagent buffers stay unlisted and do not count in the winbar overview.
 
 `instances()` retains the open-session tree, including subagents; `sessions()`
 retains the saved-session tree. Neither `buffers()` nor `instances()` has a
-default shortcut; bind them in your own configuration.
+default shortcut; bind them in your own configuration. `instances()` tags only
+attention states — running `[RUN]`, error `[ERR]`, approval parked `[APPR]` —
+in a fixed column; waiting, stopped, done and idle rows are badge-less.
 
 ## Session jail
 

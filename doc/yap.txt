@@ -521,13 +521,19 @@ There is no default keymap for this function.
 require("harness.session.buffers").label(buf) returns a Yap session's state and
 description for UI consumers, or nil for ordinary buffers. It does not replace
 the filepath in the buffer picker. The open-session tree
-(|harness.instances()|) keeps its state icons.
+(|harness.instances()|) keeps its own state tags.
 
                                                       *harness.instances()*
 require("harness").instances() retains the open-session tree, including open
 subagents. It has no default keymap; bind it in your own configuration. The
 saved-session tree (sessions(), `+`) is unchanged. Subagents (`b:yap_agent`) remain unlisted and excluded from the
 winbar overview.
+
+Only attention states get a status tag, in a fixed column so every title
+aligns: running `[RUN]`, error `[ERR]`, approval parked `[APPR]`. Waiting,
+stopped/cancelled, done (finished subagent) and idle rows are badge-less, so a
+long project list stays quiet and only the rows that need a decision stand
+out.
 
 File operations are the session operations:
 
