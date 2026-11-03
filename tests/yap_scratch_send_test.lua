@@ -23,7 +23,6 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "# @queue",
   "stale disk task",
 })
-vim.cmd("write")
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "# @steer",
   "follow up after queue",
@@ -72,9 +71,7 @@ assert(
   "empty queue lost its heading:\n" .. text(scratch)
 )
 
-local saved = table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(scratch)), "\n")
-assert(not saved:match("task one") and not saved:match("task two") and not saved:match("follow up after queue"), "consumed scratch text reappeared in saved file")
-assert(saved:match("# @steer") and saved:match("# @queue"), "scratch section structure was not saved")
+assert(not text(scratch):match("task one") and not text(scratch):match("follow up after queue"), "consumed draft remained in scratch")
 
 -- A steer submitted during a final-answer stream has no further model
 -- boundary. It stays in scratch and does not start a surprise follow-up.
@@ -127,8 +124,8 @@ assert(table.concat(stop_notices, "\n"):find("steer was not delivered", 1, true)
 assert(text(stop_scratch):find("unfinished instruction", 1, true), "stop consumed pending steer")
 assert(not text(stopped):find("unfinished instruction", 1, true), "stop sent pending steer")
 
--- A failed backend spawn must not consume the queued message on disk or
--- in the live scratch buffer.
+-- A failed backend spawn must not consume the queued message in the live
+-- scratch buffer.
 yap.config.model_groups.flash = ""
 yap.config.bin = ROOT .. "/no-such-yap-binary"
 local failed = yap.new()
@@ -137,11 +134,9 @@ local failed_scratch = vim.api.nvim_get_current_buf()
 vim.api.nvim_buf_set_lines(failed_scratch, 0, -1, false, {
   "# @steer", "", "# @queue", "keep this task",
 })
-vim.cmd("write")
 vim.api.nvim_win_set_cursor(0, { 4, 0 })
 yap.scratch_send(failed_scratch)
 assert(text(failed_scratch):find("keep this task", 1, true), "failed send consumed live queue")
-assert(table.concat(vim.fn.readfile(vim.api.nvim_buf_get_name(failed_scratch)), "\n"):find("keep this task", 1, true), "failed send consumed saved queue")
 -- The message the failed send appended is rolled back, so a retry from the
 -- draft cannot end up in the transcript twice.
 assert(not text(failed):find("keep this task", 1, true), "failed send left the message in the transcript")

@@ -5,8 +5,6 @@
 local M = {}
 
 local state = require("harness.state")
-local paths = require("harness.path")
-local util = require("harness.util")
 local document = require("harness.model.document")
 local drawer = require("harness.ui.drawer")
 
@@ -80,22 +78,6 @@ end
 --- One scratch section's body as a single string.
 function M.section_text(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
-end
-
---- Write the live scratch buffer after a consumed item is removed.
-function M.save(scratch)
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    return
-  end
-  if vim.api.nvim_buf_get_name(scratch) == "" then
-    return
-  end
-  vim.api.nvim_buf_call(scratch, function()
-    vim.cmd("silent noautocmd keepjumps write!")
-  end)
-  -- Pending prompts/steers can hold secrets; keep the notes file 0600 like the
-  -- session markdown and audit log. :write preserves the mode on later saves.
-  vim.fn.setfperm(vim.api.nvim_buf_get_name(scratch), "rw-------")
 end
 
 local function cancel_steer(buf)
@@ -186,7 +168,6 @@ local function scratch_dispatch_queue(owner, section)
     return true
   end
   M.set_section(scratch, section, {})
-  M.save(scratch)
   return true
 end
 
@@ -331,11 +312,11 @@ function M.scratch_foldexpr(lnum)
   return "0"
 end
 
---- Toggle the session's scratch buffer (<leader>j): a fixed-height jotter
---- opened below the session window. It is a real, file-backed buffer — a
---- sibling `notes.md` file of the session — so `:write` saves it and an
---- unsaved notes file prompts on exit like any other modified buffer. It is a
---- quick "queue" for agent tasks, never part of the conversation.
+--- Toggle the session's ephemeral scratch buffer (<leader>j): a fixed-height
+--- jotter opened below the session window. It is an ordinary unnamed buffer:
+--- Yap never creates or reloads `notes.md`, while an explicit `:write {path}`
+--- remains available to save a draft. It is a quick "queue" for agent tasks,
+--- never part of the conversation.
 local SCRATCH_HEIGHT = 8
 
 function M.scratch_toggle(buf)
@@ -347,14 +328,7 @@ function M.scratch_toggle(buf)
 
   local scratch = vim.b[buf].yap_scratch
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    -- Reuse a leftover queue buffer from a wiped-and-reopened session,
-    -- otherwise create a file-backed buffer and load the saved queue.
-    local want = paths.notes_path(buf)
-    local created
-    scratch, created = util.find_or_create_buffer(want, false, false) -- unlisted, file-backed
-    if created and vim.fn.filereadable(want) == 1 then
-      vim.api.nvim_buf_set_lines(scratch, 0, -1, false, vim.fn.readfile(want))
-    end
+    scratch = vim.api.nvim_create_buf(false, false) -- unlisted, unnamed, in-memory
     local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
     local found = {}
     for _, line in ipairs(lines) do
@@ -402,12 +376,6 @@ function M.scratch_toggle(buf)
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
-    vim.api.nvim_create_autocmd("BufWriteCmd", {
-      buffer = scratch,
-      callback = function()
-        M.save(scratch)
-      end,
-    })
     if not vim.b[scratch].yap_steer_watch then
       vim.b[scratch].yap_steer_watch = true
       vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
@@ -470,7 +438,7 @@ function M.scratch_toggle(buf)
         M.scratch_send(scratch)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
     end
-    M.save(scratch)
+    -- Keep the jotter unnamed unless the user explicitly saves it.
   else
     vim.b[scratch].yap_owner = buf
   end

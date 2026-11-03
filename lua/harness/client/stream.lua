@@ -170,7 +170,6 @@ local function handle_event(buf, ev)
       local scratch = vim.b[buf].yap_scratch
       if scratch and vim.api.nvim_buf_is_valid(scratch) and scratchmod.section_text(scratch, "steer") == ev.text then
         scratchmod.set_section(scratch, "steer", {})
-        scratchmod.save(scratch)
       end
     end
     audit.append_event(buf, ev) -- audit trail: a steering message landed mid-turn
@@ -277,7 +276,6 @@ local function leave_undelivered_steer(buf)
   -- A late user instruction outranks an agent's close_session request.
   close_after_turn[buf] = nil
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    scratchmod.save(scratch)
     vim.notify("yap: steer was not delivered; draft remains in scratch (send again with <C-s>)", vim.log.levels.WARN)
   else
     document.append_message(buf, "user", vim.split(text, "\n", { plain = true }))

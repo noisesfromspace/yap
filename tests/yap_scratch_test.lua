@@ -16,15 +16,11 @@ assert(vim.bo[scratch].buflisted == false, "scratch buffer should be unlisted")
 assert(vim.bo[scratch].filetype == "markdown", "scratch should be markdown")
 assert(vim.wo.spell == true, "scratch should enable spell")
 assert(vim.fn.maparg("<C-t>", "n", false, true).buffer == 1, "scratch has no template picker")
-assert(vim.api.nvim_buf_get_name(scratch):match("/notes%.md$") ~= nil, "scratch buffer is not a notes.md file")
-local notes_file = vim.api.nvim_buf_get_name(scratch)
-assert(vim.fn.filereadable(notes_file) == 1, "new notes file was not saved automatically")
+assert(vim.api.nvim_buf_get_name(scratch) == "", "scratch buffer should be unnamed and ephemeral")
+local notes_file = require("harness.path").notes_path(buf)
+assert(vim.fn.filereadable(notes_file) == 0, "opening scratch created notes.md")
 local initial = { "# @steer", "", "# @queue" }
-assert(
-  table.concat(vim.fn.readfile(notes_file), "\n") == table.concat(initial, "\n"),
-  "new notes file has unexpected initial content"
-)
-assert(not vim.bo[scratch].modified, "automatically saved queue buffer is still modified")
+assert(vim.bo[scratch].modified, "new ephemeral queue should retain its in-memory template")
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
 assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
 assert(
@@ -56,13 +52,14 @@ vim.api.nvim_win_call(scratch_win, function()
   vim.cmd("normal! zo")
 end)
 
--- the scratch buffer is a real file: :write saves the live control buffer
+-- The unnamed jotter can still be explicitly saved wherever the user chooses.
 local saved = { "# @steer", "next task", "", "# @queue", "task one", "task two" }
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, saved)
-local ok = pcall(vim.cmd, "write")
-assert(ok, "scratch buffer rejected :write")
-assert(vim.fn.filereadable(notes_file) == 1, "notes file not written: " .. notes_file)
-assert(table.concat(vim.fn.readfile(notes_file), "\n") == table.concat(saved, "\n"), "notes file content mismatch")
+local saved_path = vim.fn.tempname()
+local ok = pcall(vim.cmd, "write " .. vim.fn.fnameescape(saved_path))
+assert(ok, "scratch buffer rejected explicit :write {path}")
+assert(table.concat(vim.fn.readfile(saved_path), "\n") == table.concat(saved, "\n"), "explicitly saved content mismatch")
+assert(vim.fn.filereadable(notes_file) == 0, "explicit save created notes.md")
 
 -- content survives the toggle
 vim.api.nvim_set_current_win(chat_win)
@@ -78,7 +75,7 @@ assert(vim.api.nvim_get_current_buf() == scratch, "scratch did not focus on reop
 assert(vim.api.nvim_buf_get_lines(scratch, 0, 1, false)[1] == "# @steer", "scratch content lost on reopen")
 assert(vim.fn.maparg("<leader>j", "n", false, true).buffer == 1, "scratch has no <leader>j map")
 
--- a recreated scratch buffer loads the persisted sections
+-- A recreated scratch starts fresh; there is no persisted notes sidecar.
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 vim.api.nvim_buf_delete(scratch, { force = true })
@@ -87,7 +84,8 @@ yap.scratch_toggle()
 local reloaded = vim.api.nvim_get_current_buf()
 assert(reloaded ~= scratch, "scratch did not recreate")
 local reloaded_text = table.concat(vim.api.nvim_buf_get_lines(reloaded, 0, -1, false), "\n")
-assert(reloaded_text == table.concat(saved, "\n"), "saved scratch sections not reloaded")
+assert(reloaded_text == table.concat(initial, "\n"), "recreated scratch was not fresh")
+assert(vim.fn.filereadable(notes_file) == 0, "recreating scratch created notes.md")
 
 -- A drawer is anchored below the chat's own window: when the chat is one
 -- pane of a vertical split the drawer stays in that column (not full-width),
