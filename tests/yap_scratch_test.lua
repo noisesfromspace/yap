@@ -132,4 +132,36 @@ vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false,
 local tail = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(tail):match("^Yap Log: "), "scratch <leader>l did not open the tail viewer")
 
+-- A session closed with :bd keeps its jotter. The jotter outlives the
+-- session (bufhidden = hide) with its draft, so reopening the session must
+-- re-attach that jotter instead of opening a second, empty one — which also
+-- collided on the shared display name and aborted the toggle.
+local session_path = vim.api.nvim_buf_get_name(buf)
+vim.api.nvim_buf_set_lines(reloaded, 0, -1, false, { "# @steer", "", "# @queue", "survives :bd" })
+vim.api.nvim_set_current_win(chat_win)
+yap.scratch_toggle() -- close the jotter window; the buffer and its draft survive
+assert(#vim.fn.win_findbuf(reloaded) == 0, "jotter did not close")
+vim.cmd("bdelete " .. buf)
+assert(not vim.api.nvim_buf_is_loaded(buf), ":bd did not unload the session")
+assert(
+  vim.api.nvim_buf_get_lines(reloaded, 3, 4, false)[1] == "survives :bd",
+  "closing the session lost the jotter draft"
+)
+vim.fn.bufload(buf)
+vim.api.nvim_win_set_buf(chat_win, buf)
+assert(vim.b[buf].yap_scratch == nil, ":bd should drop the buffer-local tie")
+yap.scratch_toggle(buf)
+assert(
+  vim.api.nvim_get_current_buf() == reloaded,
+  "reopening the session did not re-attach its jotter: " .. vim.api.nvim_get_current_buf()
+)
+local jotters = {}
+for _, b in ipairs(vim.api.nvim_list_bufs()) do
+  if vim.b[b].yap_scratch_notes and vim.b[b].yap_owner == buf then
+    jotters[#jotters + 1] = b
+  end
+end
+assert(#jotters == 1, "reopening the session created a second jotter: " .. vim.inspect(jotters))
+assert(session_path == vim.api.nvim_buf_get_name(buf), ":bd orphaned the transcript path")
+
 print("OK scratch")

@@ -80,6 +80,28 @@ function M.section_text(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
 end
 
+--- The session's jotter: the buffer-local tie, or any surviving scratch that
+--- still names `buf` as its owner. Closing a session with `:bd` unloads it and
+--- drops its buffer-local variables, but the jotter outlives that
+--- (bufhidden = hide) with its draft, so reopening the session must re-attach
+--- that jotter instead of opening a second, empty one.
+local function find_scratch(buf)
+  local scratch = vim.b[buf] and vim.b[buf].yap_scratch
+  if scratch and vim.api.nvim_buf_is_valid(scratch) and vim.api.nvim_buf_is_loaded(scratch) then
+    return scratch
+  end
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if
+      vim.api.nvim_buf_is_valid(b)
+      and vim.api.nvim_buf_is_loaded(b)
+      and vim.b[b].yap_scratch_notes
+      and vim.b[b].yap_owner == buf
+    then
+      return b
+    end
+  end
+end
+
 --- The jotter's display name: "<summary>" once the session has a
 --- generated description, else "Yap Notes". The buffer is a nofile buffer, so
 --- the name is a label only — it never becomes a real file path.
@@ -96,8 +118,8 @@ end
 --- Two untitled sessions would both read "Yap Notes"; the second (and any
 --- later collider) is suffixed with its buffer number, like the tail viewer.
 function M.rename(buf)
-  local scratch = vim.b[buf] and vim.b[buf].yap_scratch
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+  local scratch = find_scratch(buf)
+  if not scratch then
     return
   end
   local name = scratch_label(buf)
@@ -109,14 +131,16 @@ function M.rename(buf)
     end
   end
   if vim.fn.bufname(scratch) ~= name then
-    vim.api.nvim_buf_set_name(scratch, name)
+    -- The label is a buffer name, so another buffer (an orphaned jotter, a
+    -- real file) may already hold it. A clashing name is cosmetic: never let
+    -- E95 abort the caller (it would leave the jotter without keymaps).
+    pcall(vim.api.nvim_buf_set_name, scratch, name)
   end
 end
 
 local function cancel_steer(buf)
   steer[buf] = nil
-  local scratch = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap_scratch
-  M.refresh(scratch)
+  M.refresh(vim.api.nvim_buf_is_valid(buf) and find_scratch(buf) or nil)
   local proc = running[buf]
   if not proc then
     return
@@ -150,7 +174,7 @@ function M.steer(buf, text)
   end
   steer[buf] = text
   if vim.api.nvim_buf_is_valid(buf) then
-    M.refresh(vim.b[buf].yap_scratch)
+    M.refresh(find_scratch(buf))
   end
   return true
 end
@@ -166,14 +190,24 @@ local function sync_scratch_steer(owner, scratch)
   end
 end
 
-local function scratch_dispatch_queue(owner, section)
+local function scratch_dispatch_queue(owner, section, scratch)
   if not vim.api.nvim_buf_is_valid(owner) or state.is_running(owner) then
     return false
   end
-  local scratch = vim.b[owner].yap_scratch
+  scratch = scratch or find_scratch(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return false
   end
+  -- A session closed with `:bd` keeps its number and file but loses its
+  -- buffer-local state. Load it again before touching it, so the message
+  -- lands in the real transcript instead of a detached, empty buffer.
+  if not vim.api.nvim_buf_is_loaded(owner) and not pcall(vim.fn.bufload, owner) then
+    vim.notify("yap: session buffer is unloaded; reopen it before sending", vim.log.levels.WARN)
+    return false
+  end
+  -- `:bd` dropped the tie too: keep one jotter per session across a close.
+  vim.b[owner].yap_scratch = scratch
+  vim.b[scratch].yap_owner = owner
   local item = M.section_text(scratch, section)
   if item == "" then
     return false
@@ -210,7 +244,7 @@ function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
   if not (owner and vim.api.nvim_buf_is_valid(owner)) then
-    vim.notify("yap: scratch has no session buffer", vim.log.levels.WARN)
+    vim.notify("yap: the session for this scratch is gone; :write {path} keeps the draft", vim.log.levels.WARN)
     return
   end
 
@@ -239,7 +273,7 @@ function M.scratch_send(scratch)
       vim.b[scratch].yap_queue_armed = true
       M.refresh(scratch)
     else
-      scratch_dispatch_queue(owner, "queue")
+      scratch_dispatch_queue(owner, "queue", scratch)
     end
     return
   end
@@ -257,15 +291,17 @@ function M.scratch_send(scratch)
     return
   end
 
-  if not scratch_dispatch_queue(owner, "steer") then
+  if M.section_text(scratch, "steer") == "" then
     vim.notify("yap: # @steer is empty", vim.log.levels.WARN)
+  else
+    scratch_dispatch_queue(owner, "steer", scratch)
   end
 end
 
 --- A running queue sends once at successful completion, never on stop,
 --- error or session close. Reading the live body here keeps edits retractable.
 function M.finish_queue(owner, successful)
-  local scratch = vim.api.nvim_buf_is_valid(owner) and vim.b[owner].yap_scratch
+  local scratch = vim.api.nvim_buf_is_valid(owner) and find_scratch(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
     return
   end
@@ -286,10 +322,10 @@ function M.finish_queue(owner, successful)
         and not state.is_running(owner)
         and vim.api.nvim_buf_is_valid(scratch)
         and vim.b[scratch].yap_queue_dispatch
-        and vim.b[owner].yap_scratch == scratch
+        and find_scratch(owner) == scratch
       then
         vim.b[scratch].yap_queue_dispatch = false
-        scratch_dispatch_queue(owner, "queue")
+        scratch_dispatch_queue(owner, "queue", scratch)
       end
     end)
   end
@@ -359,8 +395,8 @@ function M.scratch_toggle(buf)
     return
   end
 
-  local scratch = vim.b[buf].yap_scratch
-  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+  local scratch = find_scratch(buf)
+  if not scratch then
     scratch = vim.api.nvim_create_buf(false, true) -- unlisted, nofile, in-memory
     local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
     local found = {}
@@ -468,7 +504,9 @@ function M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
     end
   else
+    -- Re-attached after the session was reloaded: refresh the label too.
     vim.b[scratch].yap_owner = buf
+    M.rename(buf)
   end
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens

@@ -169,6 +169,24 @@ assert(
   text(scratch):find("save for later", 1, true),
   "stop lost queue draft: " .. text(scratch) .. "\nowner: " .. text(owner)
 )
+-- A session closed with :bd keeps its jotter: the next <C-s> loads the
+-- session again and dispatches, instead of silently doing nothing.
+local scratch_win = vim.fn.win_findbuf(scratch)[1]
+if not scratch_win then
+  yap.scratch_toggle(owner)
+  scratch_win = vim.fn.win_findbuf(scratch)[1]
+end
+vim.api.nvim_set_current_win(scratch_win)
+vim.api.nvim_buf_set_lines(scratch, heading(scratch, "queue"), -1, false, { "draft survives the close" })
+cursor(heading(scratch, "queue") + 1)
+vim.cmd("bdelete! " .. owner)
+assert(not vim.api.nvim_buf_is_loaded(owner), "precondition: :bd unloads the session")
+assert(vim.b[owner].yap_scratch == nil, "precondition: :bd drops the buffer-local tie")
+yap.scratch_send(scratch)
+assert(vim.api.nvim_buf_is_loaded(owner), "send did not reload the closed session")
+wait_done(owner, "draft survives the close")
+assert(text(owner):find("draft survives the close", 1, true), "queued message lost after :bd")
+
 require("harness.state").steer[owner] = "pending"
 vim.api.nvim_buf_delete(owner, { force = true })
 assert(require("harness.state").steer[owner] == nil, "wipe leaked pending steer")
