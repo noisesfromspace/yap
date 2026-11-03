@@ -478,56 +478,115 @@ function M.label(path, description, project_cwd)
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
+--- Project roots for portable discovery: the cwd and, when it is inside a
+--- git checkout, the repository toplevel. Portable transcripts live under
+--- <root>/.yap-sessions/, so a session created from a subdirectory is still
+--- found from the project root.
+local function project_roots()
+  local roots, seen = {}, {}
+  local function add(p)
+    p = vim.fs.normalize(p)
+    if p ~= "" and not seen[p] then
+      seen[p] = true
+      roots[#roots + 1] = p
+    end
+  end
+  add(vim.fn.getcwd())
+  local top = vim.fn.system({ "git", "-C", vim.fn.getcwd(), "rev-parse", "--show-toplevel" })
+  if vim.v.shell_error == 0 then
+    add(vim.trim(top))
+  end
+  return roots
+end
+
+--- Currently-open portable transcripts: yap buffers whose transcript lives
+--- outside the sessions root. A session created next to a file (or at a
+--- custom path) has no fixed discoverable location, so the open buffer is the
+--- only thing that pins it — while it is open, the saved picker lists it.
+local function open_portable_transcripts()
+  local out = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[b].yap then
+      local path = vim.b[b].yap_path or vim.api.nvim_buf_get_name(b)
+      if path ~= "" and not paths.under_sessions_root(path) then
+        out[#out + 1] = path
+      end
+    end
+  end
+  return out
+end
+
 --- List saved sessions. scope = "cwd" (default) or "all"
 --- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
 --- recency; `model`/`models` and the turn and agent counts come from the
 --- session frontmatter.
 function M.list(scope)
-  local dirs
+  -- Candidate transcripts: { path, project }, where `project` prefixes the
+  -- label only in the "all" scope so sessions from different worktrees are
+  -- distinguishable.
+  local transcripts, seen = {}, {}
+  local function add(path, project)
+    path = vim.fs.normalize(path)
+    if path ~= "" and not seen[path] and vim.fn.filereadable(path) == 1 then
+      seen[path] = true
+      transcripts[#transcripts + 1] = { path = path, project = project }
+    end
+  end
+
   if scope == "all" then
-    dirs = {}
     for name, type in vim.fs.dir(paths.sessions_root()) do
       if type == "directory" then
-        dirs[#dirs + 1] = vim.fs.joinpath(paths.sessions_root(), name)
+        local dir = vim.fs.joinpath(paths.sessions_root(), name)
+        for _, sdir in ipairs(paths.session_dirs(dir)) do
+          add(paths.transcript_in(sdir), slug_cwd(dir))
+        end
       end
     end
   else
-    dirs = { paths.session_dir(vim.fn.getcwd()) }
+    for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
+      add(paths.transcript_in(sdir))
+    end
+    -- Portable transcripts: the project convention (<root>/.yap-sessions) at
+    -- the cwd and git root, plus any currently-open portable session.
+    for _, root in ipairs(project_roots()) do
+      for _, sdir in ipairs(paths.session_dirs(root .. "/.yap-sessions")) do
+        add(paths.transcript_in(sdir))
+      end
+    end
+    for _, path in ipairs(open_portable_transcripts()) do
+      add(path)
+    end
   end
 
   local items, children, owned_by = {}, {}, {}
-  for _, dir in ipairs(dirs) do
-    -- Sessions live one per directory: a session directory directly holds the
-    -- transcript (usually `session.md`, renamed to set the title). Walk the
-    -- tree so month-nested auto sessions and top-level named forks are both
-    -- found, while `assets/` working files are never read as sessions.
-    for _, sdir in ipairs(paths.session_dirs(dir)) do
-      local path = paths.transcript_in(sdir)
-      local lines = vim.fn.readfile(path, "", 200)
-      local fm = frontmatter.parse(lines)
-      -- A subagent session is internal to the conversation that spawned it:
-      -- while open it sits under its parent in the open-session and waiting
-      -- pickers, and it is never part of saved history.
-      if not picker.agent(fm) then
-        local description = fm and fm.description or ""
-        local item = {
-          path = path,
-          mtime = vim.fn.getftime(path),
-          text = M.label(path, description, scope == "all" and slug_cwd(dir) or nil, true),
-          model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
-          models = fm and #fm.models > 1 and fm.models or nil,
-          turns = fm and fm.turns,
-          agents = fm and #fm.subagents or 0,
-        }
-        if fm and fm.forked_from then
-          item.text = "↳ fork · " .. M.label(path, description, nil, true)
-          children[path] = item
-          local owner = vim.fs.normalize(fm.forked_from)
-          owned_by[owner] = owned_by[owner] or {}
-          table.insert(owned_by[owner], vim.fs.normalize(path))
-        elseif description ~= "" or M.file_title(path) ~= nil or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
-          items[#items + 1] = item
-        end
+  for _, entry in ipairs(transcripts) do
+    -- Each candidate is already a resolved transcript path; the frontmatter
+    -- supplies its description, model and fork/subagent links.
+    local path = entry.path
+    local lines = vim.fn.readfile(path, "", 200)
+    local fm = frontmatter.parse(lines)
+    -- A subagent session is internal to the conversation that spawned it:
+    -- while open it sits under its parent in the open-session and waiting
+    -- pickers, and it is never part of saved history.
+    if not picker.agent(fm) then
+      local description = fm and fm.description or ""
+      local item = {
+        path = path,
+        mtime = vim.fn.getftime(path),
+        text = M.label(path, description, entry.project),
+        model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
+        models = fm and #fm.models > 1 and fm.models or nil,
+        turns = fm and fm.turns,
+        agents = fm and #fm.subagents or 0,
+      }
+      if fm and fm.forked_from then
+        item.text = "↳ fork · " .. M.label(path, description, nil)
+        children[path] = item
+        local owner = vim.fs.normalize(fm.forked_from)
+        owned_by[owner] = owned_by[owner] or {}
+        table.insert(owned_by[owner], vim.fs.normalize(path))
+      elseif description ~= "" or M.file_title(path) ~= nil or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
+        items[#items + 1] = item
       end
     end
   end

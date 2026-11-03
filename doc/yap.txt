@@ -501,9 +501,11 @@ Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
 session everywhere: it appears in the open-session picker
-(|harness.instances()|) and in other sessions' winbar rollup. It is not
-indexed by the saved-session picker (sessions(), `+`), which walks the
-sessions root; reopen a portable transcript by opening its file.
+(|harness.instances()|) and in other sessions' winbar rollup. The saved-session
+picker (sessions(), `+`) lists project transcripts under `|:pwd|/.yap-sessions`
+(and the git root) plus any currently-open portable transcript. A
+next-to-file or custom-path transcript is only listed while it is open — its
+location is otherwise undiscoverable, so reopening it means opening the file.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title without losing normal file operations.
