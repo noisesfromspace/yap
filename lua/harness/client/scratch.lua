@@ -1,6 +1,6 @@
--- The scratch queue and mid-turn steering: a file-backed `notes.md` jotter
--- (<leader>j) with two explicit sections (# @steer / # @queue)
--- and the # @steer mechanism that redirects a running turn.
+-- The scratch queue and mid-turn steering: an in-memory jotter (<leader>j)
+-- with two explicit sections (# @steer / # @queue) and the # @steer
+-- mechanism that redirects a running turn.
 
 local M = {}
 
@@ -78,6 +78,39 @@ end
 --- One scratch section's body as a single string.
 function M.section_text(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
+end
+
+--- The jotter's display name: "Yap Notes - <summary>" once the session has a
+--- generated description, else "Yap Notes". The buffer is a nofile buffer, so
+--- the name is a label only — it never becomes a real file path.
+local function scratch_label(buf)
+  local summary = require("harness.session").description(buf)
+  if summary and summary ~= "" then
+    return "Yap Notes - " .. summary
+  end
+  return "Yap Notes"
+end
+
+--- Refresh the jotter's display name. Called when it is created and after
+--- the session is saved, so the name follows a newly generated description.
+--- Two untitled sessions would both read "Yap Notes"; the second (and any
+--- later collider) is suffixed with its buffer number, like the tail viewer.
+function M.rename(buf)
+  local scratch = vim.b[buf] and vim.b[buf].yap_scratch
+  if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
+    return
+  end
+  local name = scratch_label(buf)
+  for other in pairs(state.sessions) do
+    local other_scratch = other ~= buf and vim.api.nvim_buf_is_valid(other) and vim.b[other].yap_scratch
+    if other_scratch and vim.api.nvim_buf_is_valid(other_scratch) and vim.fn.bufname(other_scratch) == name then
+      name = name .. " [" .. buf .. "]"
+      break
+    end
+  end
+  if vim.fn.bufname(scratch) ~= name then
+    vim.api.nvim_buf_set_name(scratch, name)
+  end
 end
 
 local function cancel_steer(buf)
@@ -313,10 +346,10 @@ function M.scratch_foldexpr(lnum)
 end
 
 --- Toggle the session's ephemeral scratch buffer (<leader>j): a fixed-height
---- jotter opened below the session window. It is an ordinary unnamed buffer:
---- Yap never creates or reloads `notes.md`, while an explicit `:write {path}`
---- remains available to save a draft. It is a quick "queue" for agent tasks,
---- never part of the conversation.
+--- jotter opened below the session window. It is an in-memory nofile buffer
+--- named after the session summary ("Yap Notes - <summary>"), never a real
+--- file: an explicit `:write {path}` remains available to save a draft. It is
+--- a quick "queue" for agent tasks, never part of the conversation.
 local SCRATCH_HEIGHT = 8
 
 function M.scratch_toggle(buf)
@@ -328,7 +361,7 @@ function M.scratch_toggle(buf)
 
   local scratch = vim.b[buf].yap_scratch
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
-    scratch = vim.api.nvim_create_buf(false, false) -- unlisted, unnamed, in-memory
+    scratch = vim.api.nvim_create_buf(false, true) -- unlisted, nofile, in-memory
     local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
     local found = {}
     for _, line in ipairs(lines) do
@@ -376,6 +409,7 @@ function M.scratch_toggle(buf)
     vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
+    M.rename(buf) -- "Yap Notes - <summary>" instead of "[No Name]"
     if not vim.b[scratch].yap_steer_watch then
       vim.b[scratch].yap_steer_watch = true
       vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
@@ -438,7 +472,6 @@ function M.scratch_toggle(buf)
         M.scratch_send(scratch)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
     end
-    -- Keep the jotter unnamed unless the user explicitly saves it.
   else
     vim.b[scratch].yap_owner = buf
   end

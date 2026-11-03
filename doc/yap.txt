@@ -536,9 +536,11 @@ File operations are the session operations:
 
 SCRATCH BUFFER
 
-<leader>j toggles the scratch buffer — an unnamed, in-memory jotter
-with Markdown editing and spell checking in its window (Yap never writes a
-`notes.md` sidecar; |:write| {path} saves a draft wherever you choose). Its two
+<leader>j toggles the scratch buffer — an in-memory nofile jotter whose
+display name reads "Yap Notes - <summary>" (the session's generated
+description, or just "Yap Notes" before one exists). It has Markdown editing
+and spell checking in its window. Yap never writes a `notes.md` sidecar;
+|:write| {path} saves a draft wherever you choose. Its two
 sections fold independently and carry an inline, display-only state label
 preceded by a `·` so it reads as an annotation rather than buffer text — nothing
 you have to press. A section handed to a turn also shows its icon in the winbar:
@@ -985,9 +987,9 @@ replaces.
                       continues from it.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
-  scratch             The unnamed, in-memory control buffer holding
-                      `# @steer` / `# @queue`. (Not "jotter",
-                      "sidecar".)
+  scratch             The in-memory nofile control buffer holding
+                      `# @steer` / `# @queue` ("Yap Notes - <summary>").
+                      (Not "jotter", "sidecar".)
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.

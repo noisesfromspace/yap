@@ -53,7 +53,7 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "queue two",
 })
 require("harness.client.scratch").refresh(scratch)
-assert(vim.bo[scratch].modified, "draft should stay unsaved and prompt on exit")
+assert(vim.bo[scratch].buftype == "nofile", "jotter should stay in-memory, not file-backed")
 assert(not text(scratch):find("uncommitted", 1, true), "virtual state label leaked into file")
 assert(hint(scratch, 4) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 4))
 assert(vim.fn.foldlevel(6) == 1, "unknown heading incorrectly ended queue fold")

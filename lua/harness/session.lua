@@ -141,6 +141,7 @@ function M.save(buf, previous_path)
     vim.fn.winrestview(view)
   end
   require("harness.client.audit").rename(buf)
+  require("harness.client.scratch").rename(buf) -- follow a newly generated summary
 end
 
 --- Copy the current in-memory transcript to a new session file. Do not rename

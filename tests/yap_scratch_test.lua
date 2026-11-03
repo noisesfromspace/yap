@@ -11,16 +11,25 @@ local scratch_win = vim.api.nvim_get_current_win()
 assert(scratch_win ~= chat_win, "scratch did not open a new window")
 local scratch = vim.api.nvim_get_current_buf()
 assert(scratch ~= buf, "scratch is the session buffer")
-assert(vim.bo[scratch].buftype == "", "scratch buffer is not file-backed")
+assert(vim.bo[scratch].buftype == "nofile", "scratch buffer is not an in-memory nofile buffer")
 assert(vim.bo[scratch].buflisted == false, "scratch buffer should be unlisted")
 assert(vim.bo[scratch].filetype == "markdown", "scratch should be markdown")
 assert(vim.wo.spell == true, "scratch should enable spell")
 assert(vim.fn.maparg("<C-t>", "n", false, true).buffer == 1, "scratch has no template picker")
-assert(vim.api.nvim_buf_get_name(scratch) == "", "scratch buffer should be unnamed and ephemeral")
+assert(vim.fn.bufname(scratch) == "Yap Notes", "scratch jotter should carry its display label: " .. vim.fn.bufname(scratch))
 local notes_file = require("harness.path").notes_path(buf)
 assert(vim.fn.filereadable(notes_file) == 0, "opening scratch created notes.md")
 local initial = { "# @steer", "", "# @queue" }
-assert(vim.bo[scratch].modified, "new ephemeral queue should retain its in-memory template")
+assert(not vim.bo[scratch].modified, "ephemeral nofile jotter should not be marked modified")
+
+-- The jotter's label follows the session's generated summary.
+local frontmatter = require("harness.model.frontmatter")
+frontmatter.update(buf, { description = "Fix the picker" })
+require("harness.session").save(buf)
+assert(
+  vim.fn.bufname(scratch) == "Yap Notes - Fix the picker",
+  "scratch label did not follow the summary: " .. vim.fn.bufname(scratch)
+)
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
 assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
 assert(
@@ -52,7 +61,7 @@ vim.api.nvim_win_call(scratch_win, function()
   vim.cmd("normal! zo")
 end)
 
--- The unnamed jotter can still be explicitly saved wherever the user chooses.
+-- The in-memory jotter can still be explicitly saved wherever the user chooses.
 local saved = { "# @steer", "next task", "", "# @queue", "task one", "task two" }
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, saved)
 local saved_path = vim.fn.tempname()
