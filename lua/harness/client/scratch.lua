@@ -86,7 +86,7 @@ end
 local function scratch_label(buf)
   local summary = require("harness.session").description(buf)
   if summary and summary ~= "" then
-    return summary
+    return "Yap Notes - " .. summary
   end
   return "Yap Notes"
 end
@@ -347,10 +347,10 @@ end
 
 --- Toggle the session's ephemeral scratch buffer (<leader>j): a fixed-height
 --- jotter opened below the session window. It is an in-memory nofile buffer
---- named after the session summary ("<summary>"), never a real
+--- named after the session summary ("Yap Notes - <summary>"), never a real
 --- file: an explicit `:write {path}` remains available to save a draft. It is
 --- a quick "queue" for agent tasks, never part of the conversation.
-local SCRATCH_HEIGHT = 15
+local SCRATCH_HEIGHT = 12
 
 function M.scratch_toggle(buf)
   buf = buf or vim.api.nvim_get_current_buf()
