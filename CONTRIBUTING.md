@@ -537,11 +537,12 @@ source is the only step to surface it everywhere. Secret paths and
 secret-reveal commands share one location list in `agent/safety/secrets.go`;
 `scrub.go` redacts whatever still reaches a result as the final backstop.
 
-The guard board also reads each project's audit logs to show the settled
-decision history (granted/denied/timed-out approvals) beside parked
-approvals, so decisions persist across sessions. `c` clears that history by
-writing a project watermark (guard.json, a timestamp) and hiding rows at or
-before it; the audit log is left intact and parked approvals are untouched.
+The guard board is scoped to the session it is opened from: it shows that
+session's parked approvals beside its settled decision history
+(granted/denied/timed-out approvals read back from that session's audit log).
+`c` clears that history by writing a project watermark (guard.json, a
+timestamp) and hiding rows at or before it; the audit log is left intact and
+parked approvals are untouched.
 
 #### R-live-output-tail — Live tool output never enters the session buffer
 

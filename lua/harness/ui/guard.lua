@@ -1,11 +1,10 @@
--- The guard board (Yap Guard): one read-only, global projection of
--- everything that needs attention — parked approvals (live, answered in
--- place) and the project's settled decision history (granted/denied/
--- timed-out approvals read back from the audit logs so decisions persist
--- across sessions). `c` clears the settled history: it stores a project
--- watermark (guard.json) and hides rows at or before it. It opens as the
--- same bottom drawer as the live tool tail; actions are direct keys on the
--- cursor row.
+-- The guard board (Yap Guard): one read-only projection of the session it
+-- is opened from — that session's parked approvals (live, answered in place)
+-- and its settled decision history (granted/denied/timed-out approvals read
+-- back from its audit log). `c` clears the settled history: it stores a
+-- project watermark (guard.json) and hides rows at or before it. It opens
+-- as the same bottom drawer as the live tool tail; actions are direct keys
+-- on the cursor row.
 
 local M = {}
 
@@ -20,7 +19,7 @@ local function harness()
 end
 
 local BOARD_NAME = "Yap Guard"
-local MAX_HISTORY_ROWS = 30 -- cap the project's settled-history readback
+local MAX_HISTORY_ROWS = 30 -- cap the session's settled-history readback
 
 -- Audit logs are append-only. Reuse decoded entries while a log's size and
 -- mtime are unchanged; parked approvals and settled history share the same
@@ -243,41 +242,39 @@ local function is_cleared(ev, cleared)
   return t ~= nil and t <= cleared
 end
 
---- Scan the current project's audit logs for settled approvals (granted/
---- denied/timed-out), skipping rows at or before `cleared`. Returns a list of
---- resolved rows, newest first.
-local function scan_project(cleared)
+--- Scan one session's audit log for settled approvals (granted/denied/
+--- timed-out), skipping rows at or before `cleared`. Returns a list of
+--- resolved rows, newest first. `buf` is the session buffer the board is
+--- anchored to.
+local function scan_session(buf, cleared)
   local resolved = {}
-  local session_dir = paths.session_dir(vim.fn.getcwd())
-  for _, dir in ipairs(paths.session_dirs(session_dir)) do
-    local log = dir .. "/audit.jsonl"
-    if vim.fn.filereadable(log) == 1 then
-      local path = paths.transcript_in(dir)
-      local fm = vim.fn.filereadable(path) == 1 and require("harness.model.frontmatter").parse(vim.fn.readfile(path, "", 200)) or nil
-      local session_name = require("harness.session").label(path, fm and fm.description)
-      audit_entries(log) -- refresh the cache before inspecting its rows
-      local cached = audit_cache[log]
-      if not cached.rows then
-        local occurrences, requests, last_call = {}, {}, nil
-        cached.rows = {}
-        for _, ev in ipairs(audit_entries(log)) do
-          if ev.type == "tool_call" and ev.id then
-            occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-            last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-          elseif ev.type == "approval_request" and ev.id then
-            requests[ev.id] = { ev = ev, call = last_call }
-          elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
-            local req = requests[ev.id]
-            cached.rows[#cached.rows + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
-          end
-        end
-        cached.entries = nil -- keep decisions/call refs, not full decoded tool results
+  local log = paths.audit_path(buf)
+  if vim.fn.filereadable(log) ~= 1 then
+    return resolved
+  end
+  local path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf)
+  local session_name = harness().session_label(buf)
+  audit_entries(log) -- refresh the cache before inspecting its rows
+  local cached = audit_cache[log]
+  if not cached.rows then
+    local occurrences, requests, last_call = {}, {}, nil
+    cached.rows = {}
+    for _, ev in ipairs(audit_entries(log)) do
+      if ev.type == "tool_call" and ev.id then
+        occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
+        last_call = { id = ev.id, occurrence = occurrences[ev.id] }
+      elseif ev.type == "approval_request" and ev.id then
+        requests[ev.id] = { ev = ev, call = last_call }
+      elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
+        local req = requests[ev.id]
+        cached.rows[#cached.rows + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
       end
-      for _, row in ipairs(cached.rows) do
-        if not is_cleared(row, cleared) then
-          resolved[#resolved + 1] = row
-        end
-      end
+    end
+    cached.entries = nil -- keep decisions/call refs, not full decoded tool results
+  end
+  for _, row in ipairs(cached.rows) do
+    if not is_cleared(row, cleared) then
+      resolved[#resolved + 1] = row
     end
   end
   return resolved
@@ -299,20 +296,35 @@ local function cap(rows, n)
   return out
 end
 
---- Build the ordered row list: parked approvals (actionable, live), then the
---- project's settled decision history (persisted across sessions).
+--- The session buffer the board is anchored to (set on toggle), or nil when
+--- opened outside a session.
+local function board_owner()
+  if not board_buf or not vim.api.nvim_buf_is_valid(board_buf) then
+    return nil
+  end
+  local owner = vim.b[board_buf].yap_owner
+  if owner and vim.api.nvim_buf_is_valid(owner) then
+    return owner
+  end
+  return nil
+end
+
+--- Build the ordered row list: this session's parked approvals (actionable,
+--- live), then its settled decision history (granted/denied/timed-out).
 local function build_rows()
+  local owner = board_owner()
+
   local approvals = {}
-  for owner, ev in pairs(state.pending_approvals) do
-    if vim.api.nvim_buf_is_valid(owner) then
-      local row = approval_row(owner, ev)
-      row.call = approval_call(owner, ev)
+  for buf, ev in pairs(state.pending_approvals) do
+    if buf == owner and vim.api.nvim_buf_is_valid(buf) then
+      local row = approval_row(buf, ev)
+      row.call = approval_call(buf, ev)
       approvals[#approvals + 1] = row
     end
   end
   table.sort(approvals, newest_first)
 
-  local history = scan_project(read_cleared_time())
+  local history = owner and scan_session(owner, read_cleared_time()) or {}
   table.sort(history, newest_first)
   history = cap(history, MAX_HISTORY_ROWS)
 
@@ -622,9 +634,9 @@ function M.toggle()
   local cur = vim.api.nvim_get_current_buf()
 
   local owner = harness().session_of(cur)
+  vim.b[buf].yap_owner = owner
   local split, anchor
   if owner then
-    vim.b[buf].yap_owner = owner
     local tail = harness().tail_buffer(owner)
     local log_win = drawer.win_in_tab(tail, vim.api.nvim_get_current_tabpage())
     if log_win then

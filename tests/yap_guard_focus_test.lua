@@ -1,6 +1,7 @@
--- A parked approval is the board's focus: the cursor lands on the newest one,
--- it is unfolded, and every other entry (older approvals, settled history) is
--- folded. Answering it leaves the next approval (or history) to take over.
+-- A parked approval is the board's focus: the cursor lands on the newest one
+-- and it is unfolded, while the settled history stays folded. The board is
+-- scoped to the session it opens from, so a parked approval in another
+-- session never appears.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -11,18 +12,6 @@ local paths = require("harness.path")
 local guard = require("harness.ui.guard")
 
 local a = yap.new({ provider = "mock", model = "m1" })
-local b = yap.new({ provider = "mock", model = "m1" })
-
-local function park(buf, id, reason, secs)
-  state.running[buf] = {}
-  state.pending_approvals[buf] = {
-    id = id,
-    tool = "bash",
-    command = vim.json.encode({ command = "echo " .. id }),
-    reason = reason,
-    ts = os.date("%Y-%m-%dT%H:%M:%S", os.time() + secs),
-  }
-end
 
 -- One settled history row so the board has a non-approval entry to fold.
 local log = paths.audit_path(a)
@@ -40,10 +29,23 @@ vim.fn.writefile({
   vim.json.encode({ type = "approval_result", id = "h", approved = false, ts = os.date("%Y-%m-%dT%H:%M:%S", now + 100) }),
 }, log, "a")
 
--- Two parked approvals (one per session): the newer is the focus, the older
--- folds away with the history row.
-park(a, "older", "other-approval", 0)
-park(b, "newer", "focus-me", 1)
+local function park(buf, id, reason, secs)
+  state.running[buf] = {}
+  state.pending_approvals[buf] = {
+    id = id,
+    tool = "bash",
+    command = vim.json.encode({ command = "echo " .. id }),
+    reason = reason,
+    ts = os.date("%Y-%m-%dT%H:%M:%S", os.time() + secs),
+  }
+end
+
+-- This session's parked approval is the focus; a parked approval in another
+-- session stays off this board.
+local b = yap.new({ provider = "mock", model = "m1" })
+park(a, "me", "focus-me", 1)
+park(b, "other", "other-approval", 2)
+vim.api.nvim_set_current_buf(a)
 
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
@@ -59,17 +61,16 @@ local function line_of(reason)
 end
 
 local focus = line_of("focus-me")
-local other = line_of("other-approval")
 local hist = line_of("history-row")
-assert(focus and other and hist, "expected rows missing")
+assert(focus and hist, "expected rows missing")
+assert(line_of("other-approval") == nil, "other session's parked approval leaked onto the board")
 
 -- The cursor is on the newest parked approval.
 local cur = vim.api.nvim_win_get_cursor(0)[1]
 assert(cur == focus, ("cursor not on the parked approval: %d vs %d"):format(cur, focus))
 
--- That approval is unfolded; every other entry is folded.
+-- That approval is unfolded; the history row is folded.
 assert(vim.fn.foldclosed(focus) == -1, "focus approval should be unfolded")
-assert(vim.fn.foldclosed(other) ~= -1, "older approval should be folded")
 assert(vim.fn.foldclosed(hist) ~= -1, "history row should be folded")
 
 -- A refresh re-focuses the approval even if the cursor was moved away.

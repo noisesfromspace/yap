@@ -12,12 +12,10 @@ local guard = require("harness.ui.guard")
 
 local a = yap.new({ provider = "mock", model = "m1" })
 
--- 31 resolved approvals in one audit log.
-local sdir = paths.session_dir(vim.fn.getcwd())
-local sess = sdir .. "/capcheck"
-vim.fn.mkdir(sess, "p")
-vim.fn.writefile({}, sess .. "/session.md") -- a session dir must hold a transcript
-local f = io.open(sess .. "/audit.jsonl", "w")
+-- 31 resolved approvals in this session's audit log.
+local log = paths.audit_path(a)
+vim.fn.mkdir(vim.fn.fnamemodify(log, ":h"), "p")
+local f = io.open(log, "w")
 for i = 1, 31 do
   local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + i)
   f:write(
@@ -58,7 +56,7 @@ assert(n == 30, "expected 30 settled rows, got " .. n)
 
 -- Appending to the log invalidates the cached snapshot even when its mtime
 -- has the same second; a visible board must show the latest decision.
-local append = io.open(sess .. "/audit.jsonl", "a")
+local append = io.open(log, "a")
 local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + 40)
 append:write(
   vim.json.encode({

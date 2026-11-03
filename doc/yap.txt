@@ -603,7 +603,7 @@ The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-guard() lists the parked approvals and the project's settled decision
+guard() lists the current session's parked approvals and its settled decision
 history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.
 
@@ -862,10 +862,11 @@ config mounted (so nothing else of the home directory is reachable); see the
 "Session jail" section of the README. The two compose: the per-tool
 sandbox still applies inside the jail.
 
-Parked approvals are live state, answered via Run/Deny. Once answered, the
-outcome is written to the audit log and read back as settled history —
-granted/denied/timed-out — so decisions persist across sessions. `c` in the
-guard board clears that history view by writing a project watermark
+The guard board is scoped to the session it is opened from: it lists only that
+session's parked approvals and settled history. Parked approvals are live
+state, answered via Run/Deny. Once answered, the outcome is written to the
+audit log and read back as settled history — granted/denied/timed-out. `c` in
+the guard board clears that history view by writing a project watermark
 (guard.json, a timestamp) and hiding rows at or before it; the audit log is
 left intact. Parked approvals are not touched by `c`.
 
