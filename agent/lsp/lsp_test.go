@@ -514,6 +514,15 @@ func TestSessionTranscriptRecognition(t *testing.T) {
 	if s.isSession("file:///tmp/other/my-title.md") {
 		t.Fatal("markdown outside the session root was recognized")
 	}
+
+	// A client-marked transcript outside sessions_dir is a session: the yap
+	// client only attaches to session buffers, so the path cannot be the only
+	// signal once transcripts can live anywhere.
+	outside := "file:///tmp/other/portable-session.md"
+	s.docs[outside] = &docState{session: true}
+	if !s.isSession(outside) {
+		t.Fatal("client-marked transcript outside the root was not recognized")
+	}
 }
 
 func TestMessagesRequestServesGoConversion(t *testing.T) {

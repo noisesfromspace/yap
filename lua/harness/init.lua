@@ -418,6 +418,34 @@ function M.setup(opts)
       end
     end,
   })
+  -- A transcript opened from outside the sessions root is adopted when it is
+  -- recognisably yap-shaped: yap frontmatter (provider+model) or a `# @system`
+  -- heading. Ordinary markdown stays ordinary.
+  local function is_yap_shaped(buf)
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, 200, false)
+    if lines[1] and lines[1]:match("^%-%-%-%s*$") then
+      local has_provider, has_model = false, false
+      for i = 2, #lines do
+        if lines[i]:match("^%-%-%-%s*$") then
+          return has_provider and has_model
+        end
+        if lines[i]:match("^provider:%s*%S") then
+          has_provider = true
+        end
+        if lines[i]:match("^model:%s*%S") then
+          has_model = true
+        end
+      end
+      return false -- unterminated frontmatter within the first 200 lines
+    end
+    for _, l in ipairs(lines) do
+      if l:match("^# @system%s*$") then
+        return true
+      end
+    end
+    return false
+  end
+
   local function is_session_path(buf)
     local name = vim.api.nvim_buf_get_name(buf)
     local root = paths.sessions_root()
@@ -428,7 +456,13 @@ function M.setup(opts)
     -- transcript is any `.md` file except the notes.md sidecar: it is
     -- usually `session.md`, but is renamed to set the session title.
     local base = vim.fn.fnamemodify(name, ":t")
-    return name, name:sub(1, #root + 1) == root .. "/" and base:match("%.md$") ~= nil and base ~= "notes.md"
+    if base == "" or base == "notes.md" or not base:match("%.md$") then
+      return name, false
+    end
+    if name:sub(1, #root + 1) == root .. "/" then
+      return name, true
+    end
+    return name, is_yap_shaped(buf)
   end
   vim.api.nvim_create_autocmd("BufAdd", {
     group = adopt_group,

@@ -109,7 +109,12 @@ function M.save(buf, previous_path)
   previous_path = previous_path or vim.b[buf].yap_path
   path = M.reconcile_name(buf) or path
   stamp_updated_at(buf)
-  paths.ensure_session_dir(vim.fn.fnamemodify(path, ":h"))
+  local parent = vim.fn.fnamemodify(path, ":h")
+  if paths.under_sessions_root(path) then
+    paths.ensure_session_dir(parent)
+  else
+    vim.fn.mkdir(parent, "p") -- a project dir: create it, never chmod 0700
+  end
   -- Pre-create the file 0600: `:write!` would create it 0644 under the umask
   -- and only the chmod below would narrow it, leaving a fresh transcript
   -- briefly world-readable. An existing file keeps its own mode.
@@ -212,6 +217,10 @@ function M.fork(buf, name, running)
         forks = {},
       })
       fork_fm.subagent_parent = nil
+      -- A fork always lands under the sessions root, where sidecars live beside
+      -- the transcript. Do not inherit the source's central data_dir, or the
+      -- fork would append its audit events into the source's log.
+      fork_fm.data_dir = nil
       local block = frontmatter.render(fork_fm)
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block

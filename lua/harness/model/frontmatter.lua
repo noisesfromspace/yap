@@ -71,6 +71,8 @@ function M.parse(lines)
         fm.model = v
       elseif k == "created_cwd" then
         fm.created_cwd = v
+      elseif k == "data_dir" then
+        fm.data_dir = v
       elseif k == "created_at" then
         fm.created_at = v
       elseif k == "updated_at" then
@@ -125,6 +127,9 @@ function M.render(fm)
   end
   if fm.created_cwd and fm.created_cwd ~= "" then
     lines[#lines + 1] = "created_cwd: " .. fm.created_cwd
+  end
+  if fm.data_dir and fm.data_dir ~= "" then
+    lines[#lines + 1] = "data_dir: " .. fm.data_dir
   end
   if fm.agent then
     lines[#lines + 1] = "agent: " .. fm.agent
@@ -263,6 +268,7 @@ function M.sync(buf)
     agent = (fm and fm.agent) or vim.b[buf].yap_agent,
     tools = (fm and fm.tools) or vim.b[buf].yap_tools,
     created_cwd = created_cwd,
+    data_dir = (fm and fm.data_dir) or vim.b[buf].yap_data_dir,
     reasoning_level = reasoning_level,
   })
   if e then

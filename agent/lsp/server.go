@@ -116,6 +116,11 @@ type contextParams struct {
 	URI       string `json:"uri"`
 	Cwd       string `json:"cwd"`
 	Streaming bool   `json:"streaming"`
+	// IsSession marks the document as a yap session from the client. The
+	// client attaches the yap server only to session buffers, so a transcript
+	// outside sessions_dir is still recognised (the server cannot infer that
+	// from its path alone).
+	IsSession bool `json:"is_session"`
 }
 
 // InitOptions are the initializationOptions the frontend passes.
@@ -139,6 +144,7 @@ type docState struct {
 	version       int
 	streaming     bool
 	cwd           string
+	session       bool
 	timer         *time.Timer
 	parsed        *document.Document // cached parse of parsedVersion
 	parsedVersion int
@@ -377,14 +383,18 @@ func (s *Server) doc(uri string) *docState {
 	return nil
 }
 
-// isSession reports whether uri points at a session transcript beneath
-// sessions_dir: any markdown file except the scratch notes.md sidecar (the
-// transcript is renamed to set the session title).
+// isSession reports whether uri points at a session transcript: any markdown
+// file except the scratch notes.md sidecar (the transcript is renamed to set
+// the session title), that is either under sessions_dir or marked as a session
+// by the client via yap/context.
 func (s *Server) isSession(uri string) bool {
 	p := uriToPath(uri)
 	base := filepath.Base(p)
 	if p == "" || !strings.HasSuffix(base, ".md") || base == "notes.md" {
 		return false
+	}
+	if d := s.docs[uri]; d != nil && d.session {
+		return true
 	}
 	if s.opts.SessionsDir == "" {
 		return true // no sessions_dir configured: trust the client's attach scope
@@ -400,6 +410,7 @@ func (s *Server) didOpen(p didOpenParams) {
 	if c, ok := s.pending[p.TextDocument.URI]; ok {
 		d.cwd = c.Cwd
 		d.streaming = c.Streaming
+		d.session = c.IsSession
 		delete(s.pending, p.TextDocument.URI)
 	}
 	s.docs[p.TextDocument.URI] = d
@@ -447,6 +458,13 @@ func (s *Server) setContext(p contextParams) {
 	wasStreaming := d.streaming
 	d.cwd = p.Cwd
 	d.streaming = p.Streaming
+	d.session = p.IsSession
+	// The context notification can race didOpen, so a document marked as a
+	// session here may have missed didOpen's warm/diagnostics pass.
+	if d.session {
+		d.warm()
+		s.scheduleDiagnostics(p.URI, d)
+	}
 	// A stream that just finished leaves the final document to validate.
 	if wasStreaming && !p.Streaming {
 		s.scheduleDiagnostics(p.URI, d)

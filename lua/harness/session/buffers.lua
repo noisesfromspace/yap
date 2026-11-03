@@ -24,6 +24,15 @@ local function harness()
   return require("harness")
 end
 
+--- Expand a frontmatter-recorded directory: `~` against $HOME, else normalize.
+--- Tolerant of hand-edited relative values (normalize leaves them relative).
+local function expand_home(p)
+  if p:sub(1, 1) == "~" then
+    return vim.fs.normalize(vim.env.HOME .. p:sub(2))
+  end
+  return vim.fs.normalize(p)
+end
+
 local function setup_buffer(buf)
   -- Mark the buffer as a yap conversation BEFORE the filetype triggers the
   -- LSP's FileType autocommand, so the LspAttach guard in M.setup can see it.
@@ -155,6 +164,12 @@ function M.new(opts)
   if opts.path then
     vim.b[buf].yap_path = opts.path
     vim.api.nvim_buf_set_name(buf, opts.path)
+    -- A transcript outside yap's sessions root keeps its audit log and assets
+    -- in a central data directory (recorded in frontmatter); one inside it
+    -- keeps sidecars beside the transcript (unchanged legacy layout).
+    if not paths.under_sessions_root(opts.path) then
+      vim.b[buf].yap_data_dir = paths.new_data_dir(vim.fn.getcwd())
+    end
   end
   local provider, model = config.session_combo()
   vim.b[buf].yap_provider = opts.provider or provider
@@ -198,20 +213,28 @@ local function adopt(buf, path)
     return buf
   end
   vim.b[buf].yap_path = path
-  vim.b[buf].yap_project_cwd = paths.project_cwd(path)
-  -- Resume the recorded combo from frontmatter. Nothing is injected on
-  -- open — adopt only reads, so resuming never dirties the buffer.
+  -- Resume durable per-session state from frontmatter. The originating cwd
+  -- and (for transcripts outside the sessions root) the central data
+  -- directory are recorded there, so a transcript moved to any path keeps
+  -- its audit log and assets.
   local e = frontmatter.end_line(buf)
-  if e then
-    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
-    if fm and fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
+  local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
+  local created_cwd = fm and fm.created_cwd
+  vim.b[buf].yap_project_cwd =
+    (created_cwd and created_cwd ~= "" and expand_home(created_cwd))
+    or paths.project_cwd(path)
+  if fm and fm.data_dir and fm.data_dir ~= "" then
+    vim.b[buf].yap_data_dir = expand_home(fm.data_dir)
+  end
+  if fm then
+    if fm.provider and fm.provider ~= "" and fm.model and fm.model ~= "" then
       vim.b[buf].yap_provider = fm.provider
       vim.b[buf].yap_model = fm.model
     end
-    if fm and fm.tools then
+    if fm.tools then
       vim.b[buf].yap_tools = fm.tools
     end
-    if fm and fm.agent then
+    if fm.agent then
       vim.b[buf].yap_agent = fm.agent
     end
   end

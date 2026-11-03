@@ -89,6 +89,10 @@ function M.notify(buf, cwd, streaming)
     uri = vim.uri_from_bufnr(buf),
     cwd = cwd or "",
     streaming = streaming == true,
+    -- The yap client is only ever attached to session buffers, so this marks
+    -- the document as a session regardless of where its transcript lives
+    -- (the server cannot infer that from a path outside sessions_dir).
+    is_session = true,
   })
 end
 

@@ -128,6 +128,24 @@ function M.session_path(buf)
   return vim.b[buf].yap_path
 end
 
+--- A fresh auto-named session directory under `dir`, grouped by month:
+--- <dir>/<yy-mm>/<dd-hh.mm.ss>. A same-second collision would silently
+--- overwrite the first transcript, so only then is a `-2`, `-3`, ... suffix
+--- appended. Created 0700, ready for the first write.
+local function fresh_session_dir(dir)
+  local month_dir = dir .. "/" .. os.date("%y-%m")
+  M.ensure_session_dir(month_dir) -- 0700; holds this month's sessions
+  local stamp = os.date("%d-%H.%M.%S")
+  local sdir = month_dir .. "/" .. stamp
+  local n = 2
+  while vim.fn.isdirectory(sdir) == 1 do
+    sdir = month_dir .. "/" .. stamp .. "-" .. n
+    n = n + 1
+  end
+  M.ensure_session_dir(sdir)
+  return sdir
+end
+
 --- A fresh session path under `dir`: <dir>/<name>/session.md when `name` is
 --- given, else <dir>/<yy-mm>/<dd-hh.mm.ss>/session.md (auto sessions group by
 --- month). A same-second collision would silently overwrite the first
@@ -140,17 +158,23 @@ function M.new_session_path(dir, name)
     M.ensure_session_dir(sdir)
     return sdir .. "/session.md"
   end
-  local month_dir = dir .. "/" .. os.date("%y-%m")
-  M.ensure_session_dir(month_dir) -- 0700; holds this month's sessions
-  local stamp = os.date("%d-%H.%M.%S")
-  local sdir = month_dir .. "/" .. stamp
-  local n = 2
-  while vim.fn.isdirectory(sdir) == 1 do
-    sdir = month_dir .. "/" .. stamp .. "-" .. n
-    n = n + 1
-  end
-  M.ensure_session_dir(sdir)
-  return sdir .. "/session.md"
+  return fresh_session_dir(dir) .. "/session.md"
+end
+
+--- Whether a transcript lives under yap's sessions root. Transcripts inside
+--- the root keep their sidecars beside them (the legacy layout); transcripts
+--- elsewhere use a central data directory recorded in the frontmatter.
+function M.under_sessions_root(path)
+  local root = M.sessions_root()
+  return path:sub(1, #root + 1) == root .. "/"
+end
+
+--- A fresh central data directory for a transcript that lives outside the
+--- sessions root: sidecars (audit.jsonl, assets/) stay in yap's own tree
+--- under the same month/stamp scheme as auto sessions. Nothing else lives
+--- here, so it is never mistaken for a session directory.
+function M.new_data_dir(cwd)
+  return fresh_session_dir(M.session_dir(cwd))
 end
 
 --- The directory a subagent session belongs in: the parent's month folder
@@ -223,35 +247,44 @@ function M.tail_buf_name(buf, label)
   return "Yap Log: " .. (label or M.session_name(path))
 end
 
---- The session's JSON Lines audit log: <dir>/audit.jsonl, beside the session
---- markdown. It follows the session directory, not the current working
+--- The directory holding a session's sidecar data (audit log and assets).
+--- For a transcript under the sessions root this is the transcript's own
+--- directory (the legacy layout, so sidecars still move with a directory
+--- rename). For a transcript elsewhere it is the central directory the
+--- frontmatter records and the buffer keeps as `yap_data_dir`.
+function M.data_dir(buf)
+  if vim.b[buf].yap_data_dir and vim.b[buf].yap_data_dir ~= "" then
+    return vim.fs.normalize(vim.b[buf].yap_data_dir)
+  end
+  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
+  return vim.fn.fnamemodify(path, ":h")
+end
+
+--- The session's JSON Lines audit log: <data_dir>/audit.jsonl. It follows the
+--- session's data directory (see data_dir), not the current working
 --- directory, so a session opened from another project still writes to its
 --- own log.
 function M.audit_path(buf)
-  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":h") .. "/audit.jsonl"
+  return M.data_dir(buf) .. "/audit.jsonl"
 end
 
---- The session's scratch notes file: <dir>/notes.md, beside the session
---- markdown. The `.md` extension gives it markdown highlighting in editors
---- markdown. The scratch buffer sets that filetype explicitly when opened,
---- marking itself first so markdown LSP clients cannot attach.
+--- The session's scratch notes file: <data_dir>/notes.md. Kept for callers
+--- that inspect the legacy path; the scratch jotter itself is now an unnamed
+--- in-memory buffer (see client/scratch.lua), never this file.
 function M.notes_path(buf)
-  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":h") .. "/notes.md"
+  return M.data_dir(buf) .. "/notes.md"
 end
 
---- The session's assets folder: <dir>/assets, beside the session markdown.
---- It is the session's single working-files folder: dropped photos are copied
---- here (the `![FILE: …](file://…)` reference is the manifest), the backend
---- writes live-tail logs, inline scripts and header files here
---- instead of the system temp dir, and the agent writes its throwaway
---- scripts, fetched downloads and generated artifacts here too — so nothing
---- scatters into /tmp or the project, everything moves with the session, and
---- the agent can find files it saved earlier in the session.
+--- The session's assets folder: <data_dir>/assets. It is the session's single
+--- working-files folder: dropped photos are copied here (the `![FILE: …](file://…)`
+--- reference is the manifest), the backend writes live-tail logs, inline
+--- scripts and header files here instead of the system temp dir, and the agent
+--- writes its throwaway scripts, fetched downloads and generated artifacts here
+--- too — so nothing scatters into /tmp or the project, everything moves with
+--- the session's data directory, and the agent can find files it saved earlier
+--- in the session.
 function M.assets_dir(buf)
-  local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return vim.fn.fnamemodify(path, ":h") .. "/assets"
+  return M.data_dir(buf) .. "/assets"
 end
 
 return M
