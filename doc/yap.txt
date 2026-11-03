@@ -226,7 +226,8 @@ and each path is configurable via `setup()`):
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ insert() template files (|yap-templates|).
   ~/.config/yap/skills/    insert() skill files (|yap-templates|).
-  ~/.config/yap/sessions/  Autosaved sessions + scratch queues + audit logs.
+  ~/.config/yap/sessions/  Autosaved sessions, audit logs and session assets
+                          (the scratch jotter is in-memory, never a file).
   ~/.config/yap/agents/    Subagent definitions.
 
 ==============================================================================
@@ -465,17 +466,25 @@ write/edit return short confirmations and stay bare.
 ==============================================================================
 7. SESSIONS                                                  *yap-sessions*
 
-A session is the conversation markdown file plus a few sidecar files: an
-append-only audit log, an optional scratch notes file, and an `assets/`
-folder holding the photos the conversation references, the backend's
-transient tool files, and the agent's throwaway scripts, fetched downloads
-and generated artifacts. Each session lives in its own directory under
+A session is the conversation markdown file plus sidecar data: an
+append-only audit log and an `assets/` folder holding the photos the
+conversation references, the backend's transient tool files, and the agent's
+throwaway scripts, fetched downloads and generated artifacts. The scratch
+jotter is an unnamed in-memory buffer, not a file (see |yap-scratch|).
+
+`:Yap` sessions live in their own directory under
 ~/.config/yap/sessions/<cwd-slug>/: auto-named sessions and subagent children
 group by month (<yy-mm>/<dd-hh.mm.ss>/), and named forks live at
-<cwd-slug>/<name>/. Each
-contains session.md (the conversation), audit.jsonl (the audit log), notes.md
-(the scratch jotter), and assets/ (photos, fetched downloads, and working
-files).
+<cwd-slug>/<name>/. Each contains session.md (the conversation), audit.jsonl
+(the audit log) and assets/ (photos, fetched downloads, and working files).
+
+A transcript can also live anywhere else (a project folder, ~/.yap, /tmp).
+Such a session records a `data_dir` in its frontmatter pointing at a central
+directory under ~/.config/yap/sessions/ that holds its audit.jsonl and
+assets/; the transcript itself is the only file placed in the project. Yap
+recognises and adopts a yap-shaped markdown file (yap frontmatter or a
+`# @system` heading) anywhere it is opened, while ordinary markdown is left
+alone.
 Sessions are saved after every turn and when the buffer stops being displayed
 in any window; the file is created when the buffer opens. A native |:w| is
 routed to that same save path (BufWriteCmd), so 'modified', |:w| and the exit
@@ -483,7 +492,11 @@ prompt behave normally.
 
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
-as sessions() resume.
+as sessions() resume. A portable transcript counts as an ordinary open
+session everywhere: it appears in the open-session picker
+(|harness.instances()|) and in other sessions' winbar rollup. It is not
+indexed by the saved-session picker (sessions(), <leader>y), which walks the
+sessions root; reopen a portable transcript by opening its file.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title without losing normal file operations.
@@ -518,11 +531,12 @@ File operations are the session operations:
 
 SCRATCH BUFFER
 
-<leader>j toggles the scratch buffer — a file-backed sibling (`notes.md`)
-with Markdown editing and spell checking in its window. Its two sections
-fold independently and carry an inline, display-only state label preceded by
-a `·` so it reads as an annotation rather than buffer text — nothing you have
-to press. A section handed to a turn also shows its icon in the winbar:
+<leader>j toggles the scratch buffer — an unnamed, in-memory jotter
+with Markdown editing and spell checking in its window (Yap never writes a
+`notes.md` sidecar; |:write| {path} saves a draft wherever you choose). Its two
+sections fold independently and carry an inline, display-only state label
+preceded by a `·` so it reads as an annotation rather than buffer text — nothing
+you have to press. A section handed to a turn also shows its icon in the winbar:
 
   uncommitted   The body is typed but not handed to a turn yet.
   pending       (steer) Submitted to the running turn.
@@ -556,18 +570,20 @@ beneath its heading.
 idle it sends the section under the cursor. Outside a section it only displays
 a hint; move to steer or queue to send.
 There is no selection-specific send. <C-t> in normal or insert mode picks a
-template or skill and inserts it at the cursor without sending it. Drafts still
-need |:write| to persist, and unsaved changes prompt on exit. Sending/consuming
-a section saves the updated file as before.
+template or skill and inserts it at the cursor without sending it. The jotter
+is intentionally ephemeral: closing the session discards unsaved scratch
+text; |:write| {path} persists a draft explicitly.
 
 AUDIT LOG                                                        *yap-audit*
 
-audit.jsonl beside the session file is an append-only, JSON Lines record that
-survives restarts: every tool call (full arguments), full tool results, image
-attachments, approval requests and their Run/Deny answers, a retry line for each transient
-generation error, an `error` line for a failed send (classified code + message),
-and one `turn_end` line per send regardless of outcome — model, prompt,
-completion, cost, ms, and a `status` of `ok`, `error`, or `cancelled`.
+audit.jsonl in the session's data directory (beside the transcript for
+`:Yap` sessions, or the frontmatter `data_dir` for a transcript elsewhere) is
+an append-only, JSON Lines record that survives restarts: every tool call
+(full arguments), full tool results, image attachments, approval requests and
+their Run/Deny answers, a retry line for each transient generation error, an
+`error` line for a failed send (classified code + message), and one `turn_end`
+line per send regardless of outcome — model, prompt, completion, cost, ms, and
+a `status` of `ok`, `error`, or `cancelled`.
 
 The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
@@ -964,7 +980,7 @@ replaces.
                       continues from it.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
-  scratch             The file-backed `notes.md` control buffer holding
+  scratch             The unnamed, in-memory control buffer holding
                       `# @steer` / `# @queue`. (Not "jotter",
                       "sidecar".)
   audit log           The append-only `audit.jsonl` record of every tool
