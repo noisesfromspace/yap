@@ -1,7 +1,8 @@
 -- A parked approval is the board's focus: the cursor lands on the newest one
--- and it is unfolded, while the settled history stays folded. The board is
--- scoped to the session it opens from, so a parked approval in another
--- session never appears.
+-- and it is unfolded, while older approvals and the settled history stay
+-- folded. The board aggregates every open session, so a parked approval in
+-- another session appears too — the newest parked approval, whichever session
+-- it belongs to, takes the focus.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
@@ -40,11 +41,11 @@ local function park(buf, id, reason, secs)
   }
 end
 
--- This session's parked approval is the focus; a parked approval in another
--- session stays off this board.
+-- Two parked approvals across two open sessions: the newer is the focus, the
+-- older folds away with the history row.
 local b = yap.new({ provider = "mock", model = "m1" })
-park(a, "me", "focus-me", 1)
-park(b, "other", "other-approval", 2)
+park(a, "older", "approval-a", 1)
+park(b, "newer", "approval-b", 2)
 vim.api.nvim_set_current_buf(a)
 
 guard.toggle()
@@ -60,23 +61,24 @@ local function line_of(reason)
   return nil
 end
 
-local focus = line_of("focus-me")
+local focus = line_of("approval-a")
+local other = line_of("approval-b")
 local hist = line_of("history-row")
-assert(focus and hist, "expected rows missing")
-assert(line_of("other-approval") == nil, "other session's parked approval leaked onto the board")
+assert(focus and other and hist, "expected rows missing")
 
--- The cursor is on the newest parked approval.
+-- The cursor is on the newest parked approval, which lives in another session.
 local cur = vim.api.nvim_win_get_cursor(0)[1]
-assert(cur == focus, ("cursor not on the parked approval: %d vs %d"):format(cur, focus))
+assert(cur == other, ("cursor not on the newest parked approval: %d vs %d"):format(cur, other))
 
--- That approval is unfolded; the history row is folded.
-assert(vim.fn.foldclosed(focus) == -1, "focus approval should be unfolded")
+-- That approval is unfolded; the older approval and history row are folded.
+assert(vim.fn.foldclosed(other) == -1, "focus approval should be unfolded")
+assert(vim.fn.foldclosed(focus) ~= -1, "older approval should be folded")
 assert(vim.fn.foldclosed(hist) ~= -1, "history row should be folded")
 
 -- A refresh re-focuses the approval even if the cursor was moved away.
 vim.api.nvim_win_set_cursor(0, { hist, 0 })
 guard.touch()
-assert(vim.api.nvim_win_get_cursor(0)[1] == focus, "refresh did not re-focus the parked approval")
+assert(vim.api.nvim_win_get_cursor(0)[1] == other, "refresh did not re-focus the parked approval")
 
 guard.toggle() -- close
 state.pending_approvals[a] = nil

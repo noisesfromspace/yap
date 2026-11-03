@@ -1,8 +1,8 @@
--- The guard board (Yap Guard): one read-only projection of the session it
--- is opened from — that session's parked approvals (live, answered in place)
--- and its settled decision history (granted/denied/timed-out approvals read
--- back from its audit log). `c` clears the settled history: it stores a
--- project watermark (guard.json) and hides rows at or before it. It opens
+-- The guard board (Yap Guard): one read-only projection of every open
+-- session — their parked approvals (live, answered in place) and their
+-- settled decision history (granted/denied/timed-out approvals read back
+-- from each session's audit log). `c` clears the settled history: it stores
+-- a project watermark (guard.json) and hides rows at or before it. It opens
 -- as the same bottom drawer as the live tool tail; actions are direct keys
 -- on the cursor row.
 
@@ -19,7 +19,7 @@ local function harness()
 end
 
 local BOARD_NAME = "Yap Guard"
-local MAX_HISTORY_ROWS = 30 -- cap the session's settled-history readback
+local MAX_HISTORY_ROWS = 30 -- cap the settled-history readback
 
 -- Audit logs are append-only. Reuse decoded entries while a log's size and
 -- mtime are unchanged; parked approvals and settled history share the same
@@ -244,8 +244,7 @@ end
 
 --- Scan one session's audit log for settled approvals (granted/denied/
 --- timed-out), skipping rows at or before `cleared`. Returns a list of
---- resolved rows, newest first. `buf` is the session buffer the board is
---- anchored to.
+--- resolved rows, newest first.
 local function scan_session(buf, cleared)
   local resolved = {}
   local log = paths.audit_path(buf)
@@ -296,27 +295,27 @@ local function cap(rows, n)
   return out
 end
 
---- The session buffer the board is anchored to (set on toggle), or nil when
---- opened outside a session.
-local function board_owner()
-  if not board_buf or not vim.api.nvim_buf_is_valid(board_buf) then
-    return nil
+--- Every open yap session buffer. Parked approvals are live per-buffer state
+--- and settled history is read back from each open session's audit log, so
+--- the board aggregates the sessions that are actually open — not every
+--- session directory on disk.
+local function open_sessions()
+  local out = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.b[b].yap and vim.api.nvim_buf_is_valid(b) then
+      out[#out + 1] = b
+    end
   end
-  local owner = vim.b[board_buf].yap_owner
-  if owner and vim.api.nvim_buf_is_valid(owner) then
-    return owner
-  end
-  return nil
+  return out
 end
 
---- Build the ordered row list: this session's parked approvals (actionable,
---- live), then its settled decision history (granted/denied/timed-out).
+--- Build the ordered row list: every open session's parked approvals
+--- (actionable, live), then their settled decision history (granted/denied/
+--- timed-out).
 local function build_rows()
-  local owner = board_owner()
-
   local approvals = {}
   for buf, ev in pairs(state.pending_approvals) do
-    if buf == owner and vim.api.nvim_buf_is_valid(buf) then
+    if vim.api.nvim_buf_is_valid(buf) then
       local row = approval_row(buf, ev)
       row.call = approval_call(buf, ev)
       approvals[#approvals + 1] = row
@@ -324,7 +323,13 @@ local function build_rows()
   end
   table.sort(approvals, newest_first)
 
-  local history = owner and scan_session(owner, read_cleared_time()) or {}
+  local history = {}
+  local cleared = read_cleared_time()
+  for _, buf in ipairs(open_sessions()) do
+    for _, row in ipairs(scan_session(buf, cleared)) do
+      history[#history + 1] = row
+    end
+  end
   table.sort(history, newest_first)
   history = cap(history, MAX_HISTORY_ROWS)
 
