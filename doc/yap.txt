@@ -237,9 +237,14 @@ Commands act on the current buffer unless otherwise noted. They are quiet on
 success: visible edits, the winbar and pickers confirm ordinary actions.
 
 *:Yap*
-:Yap                  Open a new session buffer with a system message and an
+:Yap [path]           Open a new session buffer with a system message and an
                         empty `# @user` prompt. Nothing is sent until you type
                         there and send().
+                        With no argument the session lands under the sessions
+                        root as usual. With a file path (or a directory, which
+                        gets `session.md` inside it) the transcript is created
+                        there instead — a portable session whose audit log and
+                        assets live in a central `data_dir` (|yap-sessions|).
 *:YapClear*
 :YapClear [keep]      Replace the result bodies of all but the last [keep]
                         (default 2) yap:tool regions with a one-line

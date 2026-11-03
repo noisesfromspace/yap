@@ -66,6 +66,22 @@ local rooted_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(rooted, 0, 30, fa
 assert(rooted_fm.data_dir == nil, "rooted session should have no data_dir (sidecars beside it)")
 assert(paths.audit_path(rooted) == vim.fn.fnamemodify(vim.b[rooted].yap_path, ":h") .. "/audit.jsonl", "rooted session sidecar layout changed")
 
+-- 4b. `:Yap <path>` creates a portable session at an arbitrary path, and
+-- `:Yap <dir>` drops session.md inside that directory.
+vim.cmd("bwipeout!")
+vim.cmd("Yap " .. vim.fn.fnameescape(project .. "/cli-session.md"))
+local cli = vim.api.nvim_get_current_buf()
+assert(vim.b[cli].yap_path == project .. "/cli-session.md", "command did not create the transcript at the given path: " .. tostring(vim.b[cli].yap_path))
+local cli_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(cli, 0, 30, false))
+assert(cli_fm and cli_fm.data_dir, ":Yap <path> session missing data_dir")
+assert(paths.under_sessions_root(cli_fm.data_dir), ":Yap <path> data_dir not centralised")
+
+vim.cmd("bwipeout!")
+vim.cmd("Yap " .. vim.fn.fnameescape(project))
+local dirsess = vim.api.nvim_get_current_buf()
+assert(vim.b[dirsess].yap_path == project .. "/session.md", ":Yap <dir> did not create session.md inside it: " .. tostring(vim.b[dirsess].yap_path))
+assert(frontmatter.parse(vim.api.nvim_buf_get_lines(dirsess, 0, 30, false)).data_dir ~= nil, ":Yap <dir> session missing data_dir")
+
 -- 5. Portable sessions join the open-session overview and the winbar rollup
 -- like any other open session (both are keyed on the yap buffer flag, not on
 -- the path being under the sessions root).
@@ -76,19 +92,19 @@ vim.ui.select = function(items)
 end
 yap.instances()
 vim.ui.select = select
-local seen_portable, seen_rooted = false, false
+local seen_portable, seen_dir = false, false
 for _, item in ipairs(captured or {}) do
   if item.buf == reopened then
     seen_portable = true
-  elseif item.buf == rooted then
-    seen_rooted = true
+  elseif item.buf == dirsess then
+    seen_dir = true
   end
 end
 assert(seen_portable, "portable session missing from open-session overview")
-assert(seen_rooted, "rooted session missing from open-session overview")
+assert(seen_dir, ":Yap <dir> session missing from open-session overview")
 
--- The rooted session's rollup counts the portable session as one idle other.
-local bar = yap.winbar(rooted)
+-- The dirsess rollup counts the reopened portable session as one idle other.
+local bar = yap.winbar(dirsess)
 assert(bar:match(yap.config.icons.idle .. "1"), "rollup missing portable session: " .. bar)
 
 print("OK portable session")

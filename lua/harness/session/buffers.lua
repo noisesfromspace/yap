@@ -162,12 +162,16 @@ function M.new(opts)
     vim.b[buf].yap_tools = opts.tools
   end
   if opts.path then
-    vim.b[buf].yap_path = opts.path
-    vim.api.nvim_buf_set_name(buf, opts.path)
+    -- Normalize so a relative path or `~` resolves against the project, never
+    -- yap's data root; an already-absolute path passes through. The buffer is
+    -- then file-backed at a stable location before the first save.
+    local path = vim.fn.fnamemodify(opts.path, ":p")
+    vim.b[buf].yap_path = path
+    vim.api.nvim_buf_set_name(buf, path)
     -- A transcript outside yap's sessions root keeps its audit log and assets
     -- in a central data directory (recorded in frontmatter); one inside it
     -- keeps sidecars beside the transcript (unchanged legacy layout).
-    if not paths.under_sessions_root(opts.path) then
+    if not paths.under_sessions_root(path) then
       vim.b[buf].yap_data_dir = paths.new_data_dir(vim.fn.getcwd())
     end
   end

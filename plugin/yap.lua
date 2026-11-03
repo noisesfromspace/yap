@@ -3,9 +3,27 @@ if vim.g.loaded_yap then
 end
 vim.g.loaded_yap = true
 
-vim.api.nvim_create_user_command("Yap", function()
-  require("harness").new()
-end, { desc = "Open a new yap session buffer" })
+vim.api.nvim_create_user_command("Yap", function(cmd)
+  local opts = {}
+  local arg = cmd.args and vim.trim(cmd.args) or ""
+  if arg ~= "" then
+    -- A transcript anywhere: `:Yap path/to/file.md` creates the session at
+    -- that file, `:Yap path/to/dir` drops `session.md` inside it. Everything
+    -- resolves against the project cwd, so a bare filename lands beside the
+    -- files being discussed, not in yap's data root.
+    if arg:sub(1, 1) == "~" then
+      arg = vim.env.HOME .. arg:sub(2)
+    end
+    local path = vim.fn.fnamemodify(arg, ":p")
+    if vim.fn.isdirectory(path) == 1 then
+      path = vim.fs.joinpath(path, "session.md")
+    elseif not path:match("%.md$") then
+      path = path .. ".md"
+    end
+    opts.path = path
+  end
+  require("harness").new(opts)
+end, { nargs = "?", desc = "Open a new yap session buffer (optional transcript path)" })
 
 vim.api.nvim_create_user_command("YapClear", function(cmd)
   require("harness").clear(0, tonumber(cmd.args))
