@@ -22,6 +22,15 @@ func TestReadOffsetLimit(t *testing.T) {
 	if !strings.HasPrefix(r, "two\nthree") || !strings.Contains(r, "5 lines total") {
 		t.Fatalf("offset/limit: %q", r)
 	}
+
+	// a page that ends at EOF reports the final line number, not a truncation note
+	r, _, err = run(t, "read", `{"path":"`+p+`","offset":4,"limit":2}`)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.HasPrefix(r, "four\nfive") || !strings.Contains(r, "[lines 4-5 of 5]") {
+		t.Fatalf("eof page: %q", r)
+	}
 }
 
 func TestReadPastEnd(t *testing.T) {

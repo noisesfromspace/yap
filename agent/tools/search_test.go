@@ -57,6 +57,47 @@ func TestSearchAndGlob(t *testing.T) {
 	}
 }
 
+func TestSearchFlags(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not available")
+	}
+	dir := t.TempDir()
+	content := "Foo one\nbar two\nfoo three\nbaz four\nfoo five\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// case-insensitive matches all three "foo" lines
+	r, _, err := run(t, "search", `{"pattern":"foo","path":"`+dir+`","case_insensitive":true}`)
+	if err != nil || !strings.Contains(r, "Foo one") || !strings.Contains(r, "foo three") || !strings.Contains(r, "foo five") {
+		t.Fatalf("case_insensitive: %q %v", r, err)
+	}
+
+	// invert returns only the non-matching lines
+	r, _, err = run(t, "search", `{"pattern":"foo","path":"`+dir+`","invert":true}`)
+	if err != nil || !strings.Contains(r, "bar two") || !strings.Contains(r, "baz four") || strings.Contains(r, "three") || strings.Contains(r, "five") {
+		t.Fatalf("invert: %q %v", r, err)
+	}
+
+	// files_with_matches prints paths only
+	r, _, err = run(t, "search", `{"pattern":"foo","path":"`+dir+`","files_with_matches":true}`)
+	if err != nil || !strings.Contains(r, "a.txt") || strings.Contains(r, ":1:") {
+		t.Fatalf("files_with_matches: %q %v", r, err)
+	}
+
+	// context shows the surrounding lines
+	r, _, err = run(t, "search", `{"pattern":"bar two","path":"`+dir+`","context":1}`)
+	if err != nil || !strings.Contains(r, "Foo one") || !strings.Contains(r, "foo three") {
+		t.Fatalf("context: %q %v", r, err)
+	}
+
+	// count returns the per-file tally, not capped by max_count
+	r, _, err = run(t, "search", `{"pattern":"foo","path":"`+dir+`","count":true,"case_insensitive":true}`)
+	if err != nil || !strings.Contains(r, "a.txt:3") {
+		t.Fatalf("count: %q %v", r, err)
+	}
+}
+
 func TestSearchNoMatches(t *testing.T) {
 	if _, err := exec.LookPath("rg"); err != nil {
 		t.Skip("rg not available")

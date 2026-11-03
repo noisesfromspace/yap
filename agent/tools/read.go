@@ -23,7 +23,7 @@ type readArgs struct {
 
 func init() {
 	Register("read",
-		"Read a text file. Returns at most 2000 lines / 50KB; for large files use offset and limit.",
+		"Read a text file. Returns at most 2000 lines / 50KB; a truncated or paged result reports the file's total line count, so page large files with offset/limit instead of reading them whole.",
 		func(a *readArgs) (string, string, error) {
 			a.Path = utils.ExpandHome(a.Path)
 			data, err := os.ReadFile(a.Path)
@@ -56,6 +56,10 @@ func init() {
 			}
 			if truncated {
 				text += fmt.Sprintf("\n[truncated: use offset/limit; file has %d lines total]", total)
+			} else if a.Offset > 0 || a.Limit > 0 {
+				// A page that fit: report the window so the model knows where it
+				// is and whether it has reached the end without a truncation note.
+				text += fmt.Sprintf("\n[lines %d-%d of %d]", start+1, start+len(lines), total)
 			}
 			return text, "", nil
 		})

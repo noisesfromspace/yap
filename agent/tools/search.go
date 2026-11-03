@@ -23,15 +23,21 @@ const searchTimeout = 60 * time.Second
 const searchMaxCount = 200
 
 type searchArgs struct {
-	Pattern  string `json:"pattern" jsonschema:"description=regular expression to search for (ripgrep syntax)"`
-	Path     string `json:"path,omitempty" jsonschema:"description=file or directory to search (default: current working directory)"`
-	Glob     string `json:"glob,omitempty" jsonschema:"description=restrict to files matching this glob (e.g. *.go)"`
-	MaxCount int    `json:"max_count,omitempty" jsonschema:"description=maximum matches per file (default 200)"`
+	Pattern          string `json:"pattern" jsonschema:"description=regular expression to search for (ripgrep syntax)"`
+	Path             string `json:"path,omitempty" jsonschema:"description=file or directory to search (default: current working directory)"`
+	Glob             string `json:"glob,omitempty" jsonschema:"description=restrict to files matching this glob (e.g. *.go)"`
+	MaxCount         int    `json:"max_count,omitempty" jsonschema:"description=maximum matches per file (default 200)"`
+	CaseInsensitive  bool   `json:"case_insensitive,omitempty" jsonschema:"description=match case-insensitively (rg -i)"`
+	Invert           bool   `json:"invert,omitempty" jsonschema:"description=return only lines that do NOT match (rg -v)"`
+	FilesWithMatches bool   `json:"files_with_matches,omitempty" jsonschema:"description=print only the paths of files with a match (rg -l)"`
+	Context          int    `json:"context,omitempty" jsonschema:"description=lines of context before and after each match (rg -C)"`
+	Count            bool   `json:"count,omitempty" jsonschema:"description=print only the per-file match count (rg -c)"`
 }
 
 func init() {
 	Register("search",
-		"Search files with ripgrep. Returns matching lines as path:line:content, one per line. "+
+		"Search files with ripgrep. Returns matching lines as path:line:content, one per line "+
+			"(files_with_matches returns paths only; count returns per-file counts). "+
 			"Output is truncated to the first 2000 lines / 50KB.",
 		func(a *searchArgs) (string, string, error) { return runSearch(a) })
 	// `path` can point anywhere; a secret directory is approvable, not
@@ -44,11 +50,30 @@ func runSearch(a *searchArgs) (string, string, error) {
 		return "", "", fmt.Errorf("empty pattern")
 	}
 	a.Path = utils.ExpandHome(a.Path)
-	max := a.MaxCount
-	if max <= 0 {
-		max = searchMaxCount
+	args := []string{"--line-number", "--no-heading", "--color", "never"}
+	if a.CaseInsensitive {
+		args = append(args, "--ignore-case")
 	}
-	args := []string{"--line-number", "--no-heading", "--color", "never", "--max-count", fmt.Sprintf("%d", max)}
+	if a.Invert {
+		args = append(args, "--invert-match")
+	}
+	if a.FilesWithMatches {
+		args = append(args, "--files-with-matches")
+	}
+	if a.Context > 0 {
+		args = append(args, "--context", fmt.Sprintf("%d", a.Context))
+	}
+	if a.Count {
+		args = append(args, "--count")
+	} else {
+		// --max-count would cap --count's tally too, so it is only added when
+		// listing matches.
+		max := a.MaxCount
+		if max <= 0 {
+			max = searchMaxCount
+		}
+		args = append(args, "--max-count", fmt.Sprintf("%d", max))
+	}
 	if a.Glob != "" {
 		args = append(args, "--glob", a.Glob)
 	}
