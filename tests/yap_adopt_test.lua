@@ -14,8 +14,6 @@ for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
   end
 end
 assert(globals["yap: sessions"], "no global saved-session map")
-assert(not globals["yap: instances"], "open-session picker should have no default global map")
-assert(vim.fn.maparg("<leader>r", "n") == "", "Yap should leave <leader>r free by default")
 assert(not globals["yap: sessions needing attention"], "stale global <leader>w map")
 
 -- a saved session, reopened by plain :edit (the `nvim file.md` path), is

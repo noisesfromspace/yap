@@ -66,7 +66,7 @@ local empty_fork_path = assert(yap.fork("before-agents-fork"))
 local empty_fork = vim.api.nvim_get_current_buf()
 local new_agent, new_agent_path = agent(empty_fork, "Only on fork")
 local before = capture(function()
-  yap.instances()
+  yap.sessions("open")
 end)
 assert(below(before, "buf", new_agent, empty_fork), "fork-only agent missing")
 assert(not below(before, "buf", new_agent, empty_source), "agent appeared on pre-fork source")
@@ -151,7 +151,7 @@ local captured
 vim.ui.select = function(items, opts, callback)
   captured = { items = items, opts = opts, callback = callback }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 check(captured.items, "buf", "open")
 local first, second
@@ -175,7 +175,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 assert(captured and captured.items, "open picker missing")
 local waiting_early = 0
@@ -195,7 +195,7 @@ for _, row in ipairs(session.list("cwd")) do
   assert(row.path ~= early_path, "closed agent session in saved history")
 end
 local after_close = capture(function()
-  yap.instances()
+  yap.sessions("open")
 end)
 for _, row in ipairs(after_close) do
   assert(row.buf ~= early, "closed shared agent in open picker")

@@ -729,7 +729,8 @@ end
 
 --- Session label for the picker and notifications: the generated
 --- `description`, else the renamed filename, else the directory name. Subagents and forks are indented under their parent when
---- it is open. The project cwd is rendered separately by |harness.instances|.
+--- it is open. The project cwd is rendered separately by the
+--- sessions("open") picker.
 function M.live_label(buf, parent)
   local path = M.display_path(buf)
   local e = frontmatter.end_line(buf)

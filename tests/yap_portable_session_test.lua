@@ -126,7 +126,7 @@ local select = vim.ui.select
 vim.ui.select = function(items)
   captured = items
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 local seen_portable, seen_dir = false, false
 for _, item in ipairs(captured or {}) do

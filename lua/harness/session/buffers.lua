@@ -9,6 +9,7 @@ local state = require("harness.state")
 local config = require("harness.config")
 local frontmatter = require("harness.model.frontmatter")
 local audit = require("harness.client.audit")
+local describe = require("harness.client.describe")
 local winbar = require("harness.ui.winbar")
 local fold = require("harness.ui.fold")
 local textobj = require("harness.ui.textobj")
@@ -59,6 +60,7 @@ local function setup_buffer(buf)
       session.save(buf)
     end,
   })
+  describe.watch(buf)
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
   -- runs, so a markdown client may already be attached; detach it from this
   -- buffer (buffer-locally, so a shared server keeps serving other files).
@@ -356,29 +358,6 @@ function M.open(path)
   end
   edit_buf(path)
   return adopt(vim.api.nvim_get_current_buf(), path)
-end
-
---- MiniPick's ordinary buffer list: real paths, native icons, bufnr selection.
-function M.pick()
-  return require("mini.pick").builtin.buffers()
-end
-
---- Display only: a session's state and description for other UI consumers.
-function M.label(buf)
-  if not vim.api.nvim_buf_is_valid(buf) or not vim.b[buf].yap then
-    return nil
-  end
-  local title = session.live_label(buf)
-  local duplicate = false
-  for _, other in ipairs(vim.api.nvim_list_bufs()) do
-    if other ~= buf and vim.bo[other].buflisted and vim.b[other].yap and session.live_label(other) == title then
-      duplicate = true
-      break
-    end
-  end
-  return picker.tag(buf)
-    .. title
-    .. (duplicate and (" [" .. buf .. "]") or "")
 end
 
 -- Reachable from the facade/setup and from sessions.lua (focus_buf).

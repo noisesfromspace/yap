@@ -250,14 +250,10 @@ with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
 session status must not redirect focus. The transcript filename is the title;
 the generated description remains the primary label in session views.
 
-`buffers()` delegates to MiniPick's builtin buffer source. Every entry keeps
-its real filepath and filetype icon, and selection uses the buffer number.
-`require("harness.session.buffers").label(buf)` remains the state/description
-label API for Yap-specific UI; it does not replace buffer-picker paths.
-`instances()` retains the open-session tree and carries no default keymap;
-`sessions()` retains the saved-session tree. Sessions belong in ordinary
-buffer navigation without sacrificing real file paths or the separate session
-trees.
+`sessions(scope)` is the single session picker: `"cwd"`/`"all"` list saved
+sessions, `"open"` lists the open-session tree (including subagents and
+forks). Sessions belong in ordinary buffer navigation without sacrificing
+real file paths or the session trees.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -537,12 +533,11 @@ source is the only step to surface it everywhere. Secret paths and
 secret-reveal commands share one location list in `agent/safety/secrets.go`;
 `scrub.go` redacts whatever still reaches a result as the final backstop.
 
-The guard board is scoped to the session it is opened from: it shows that
-session's parked approvals beside its settled decision history
-(granted/denied/timed-out approvals read back from that session's audit log).
-`c` clears that history by writing a project watermark (guard.json, a
-timestamp) and hiding rows at or before it; the audit log is left intact and
-parked approvals are untouched.
+The guard board aggregates every open session: it shows each session's parked
+approvals beside its settled decision history (granted/denied/timed-out
+approvals read back from each session's audit log). `c` clears that history by
+writing a project watermark (guard.json, a timestamp) and hiding rows at or
+before it; the audit log is left intact and parked approvals are untouched.
 
 #### R-live-output-tail — Live tool output never enters the session buffer
 

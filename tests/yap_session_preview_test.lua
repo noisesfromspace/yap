@@ -84,7 +84,7 @@ local orig_select = vim.ui.select
 vim.ui.select = function(items, opts, on_choice)
   captured = { items = items, opts = opts, on_choice = on_choice }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local other_item, current_item
 for _, item in ipairs(captured and captured.items or {}) do
@@ -98,14 +98,14 @@ assert(
   captured and #captured.items == 2 and other_item and current_item,
   "open picker should include the current session: " .. vim.inspect(captured and captured.items)
 )
-assert(type(captured.opts.preview_item) == "function", "instances preview_item missing")
+assert(type(captured.opts.preview_item) == "function", "open-session preview_item missing")
 local live_preview = preview_text(captured.opts.preview_item(other_item))
 assert(
   live_preview[1] == "## First message" and live_preview[3] == "hello",
-  "instances preview wrong: " .. vim.inspect(live_preview)
+  "open-session preview wrong: " .. vim.inspect(live_preview)
 )
-assert(live_preview[#live_preview] == "bye", "instances last answer wrong: " .. vim.inspect(live_preview))
-assert(not table.concat(live_preview):find("secret reasoning", 1, true), "instances leaked thinking")
+assert(live_preview[#live_preview] == "bye", "open-session last answer wrong: " .. vim.inspect(live_preview))
+assert(not table.concat(live_preview):find("secret reasoning", 1, true), "open-session leaked thinking")
 
 -- Removed display blocks must not leave empty paragraphs in the answer.
 -- Keep blank lines that genuinely separate answer paragraphs.
@@ -127,7 +127,7 @@ local closed = yap.new()
 vim.ui.select = function(items, opts, on_choice)
   captured = { items = items, opts = opts, on_choice = on_choice }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local closed_item
 for _, item in ipairs(captured.items) do
@@ -152,7 +152,7 @@ vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
 vim.api.nvim_set_current_buf(buf)
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local parent_item, child_item
 for _, item in ipairs(captured.items) do
@@ -197,7 +197,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 parent_position, child_position = nil, nil
 for i, item in ipairs(captured.items) do
@@ -226,7 +226,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local done_child
 for _, item in ipairs(captured.items) do
@@ -242,7 +242,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local stopped_parent, stopped_child
 for _, item in ipairs(captured.items) do
@@ -264,7 +264,7 @@ captured = nil
 vim.ui.select = function(items, opts)
   captured = { items = items, opts = opts }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local root_row, child_row
 for _, item in ipairs(captured.items) do
@@ -393,7 +393,7 @@ local live_titled
 vim.ui.select = function(items, opts)
   live_titled = { items = items, format = opts.format_item }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 for _, item in ipairs(live_titled.items) do
   if item.buf == titled_child then

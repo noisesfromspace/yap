@@ -39,14 +39,13 @@ end
 for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
-for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "instances", "buffers" }) do
+for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions" }) do
   assert(type(yap[name]) == "function", name .. " Lua API missing")
 end
-assert(yap.config.keymaps.instances == nil, "instances should have no keymap option")
 assert(yap.config.keymaps.sessions ~= "", "saved sessions keymap disabled")
-assert(vim.fn.maparg("<leader>r", "n") == "", "default open-session map should be absent")
 
--- The tree picker is a plain function: callers bind it themselves.
-yap.setup({ keymaps = { instances = "<F8>" } })
+-- The open-session tree is reachable through sessions("open"); there is no
+-- dedicated keymap option for it.
+yap.setup({ keymaps = { buffers = "<F8>" } })
 assert(vim.fn.maparg("<F8>", "n") == "", "unknown keymap option installed a map")
 print("OK map")

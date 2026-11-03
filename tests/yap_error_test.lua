@@ -71,7 +71,7 @@ local orig_select = vim.ui.select
 vim.ui.select = function(items)
   pick_items = items
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 local found_error
 for _, item in ipairs(pick_items or {}) do

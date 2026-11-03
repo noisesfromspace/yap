@@ -162,9 +162,7 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").live()`                              | `<leader>l` | open the live tool tail                          |
 | `require("harness").guard()`                             | `<leader>g` | open/close the guard board                       |
 | `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model                |
-| `require("harness").sessions(scope)`                     | `+`         | resume a saved session (`cwd` \| `all`)          |
-| `require("harness").buffers()`                           |             | pick a listed buffer (MiniPick)                  |
-| `require("harness").instances()`                         |             | pick an open session from the session tree       |
+| `require("harness").sessions(scope)`                     | `+`         | resume a saved session (`cwd` \| `all`) or list open sessions (`open`) |
 | `require("harness").insert(name)`                        | `<C-t>`     | insert a template (and send it) or merge a skill |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
@@ -175,20 +173,15 @@ the cursor without sending it.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title; use your normal buffer navigation, file
-explorer, and Neovim deletion commands.
-`require("harness").buffers()` opens MiniPick's builtin buffer picker. Every
-entry keeps its real filepath and filetype icon, including renamed session
-transcripts, and selection uses the buffer number. Session descriptions and
-state labels remain in the separate Yap session pickers.
-`require("harness.session.buffers").label(buf)` returns a Yap session's state
-and description for UI consumers, or `nil` for ordinary buffers.
-Subagent buffers stay unlisted and do not count in the winbar overview.
+explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
+not count in the winbar overview.
 
-`instances()` retains the open-session tree, including subagents; `sessions()`
-retains the saved-session tree. Neither `buffers()` nor `instances()` has a
-default shortcut; bind them in your own configuration. `instances()` tags only
-attention states — running `[RUN]`, error `[ERR]`, approval parked `[APPR]` —
-in a fixed column; waiting, stopped, done and idle rows are badge-less.
+`sessions()` lists saved sessions; `sessions("open")` lists the open-session
+tree, including subagents and forks, sorted by state. The open-session picker
+tags only attention states — running `[RUN]`, error `[ERR]`, approval parked
+`[APPR]` — in a fixed column; waiting, stopped, done and idle rows are
+badge-less. Open saved sessions get a live status icon in the saved-session
+picker.
 
 ## Session jail
 

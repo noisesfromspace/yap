@@ -1,4 +1,4 @@
--- Session listing and navigation: the open-session pickers, the live tool
+-- Session listing and navigation: the session pickers, the live tool
 -- tail, guard-board call reveal, and "which session owns this buffer".
 
 local M = {}
@@ -160,8 +160,14 @@ local function saved_session_status(path)
   end
 end
 
---- Pick a saved session and open it. scope: "cwd" (default) or "all".
+--- Pick a session and open it. scope: "cwd" (default), "all", or "open"
+--- (the live open-session tree, including subagents and forks).
+local open_sessions
+
 function M.sessions(scope)
+  if scope == "open" then
+    return open_sessions()
+  end
   require("harness.session").pick({ scope = scope, status = saved_session_status }, function(path)
     buffers.open(path)
   end)
@@ -208,8 +214,8 @@ end
 
 --- Every open yap session buffer, annotated with its live state and sorted by
 --- state. Subagents and forks are indented under their parent. Tail viewers
---- are never here — use live() / <leader>l.
-function M.instances()
+--- are never here — use live() / <leader>l. Reachable as sessions("open").
+open_sessions = function()
   local items = {}
   local open_paths = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do

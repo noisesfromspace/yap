@@ -199,7 +199,7 @@ vim.notify = orig_notify
 vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
--- instances() lists every other open session with its status;
+-- sessions("open") lists every other open session with its status;
 -- waiting sessions sort last.
 vim.cmd("enew")
 local items, fmt
@@ -208,7 +208,7 @@ vim.ui.select = function(list, opts, on_choice)
   items = list
   fmt = opts and opts.format_item
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
 assert(items[1].buf == buf2, "idle session should sort before waiting sessions")
@@ -237,7 +237,7 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, first_lines)
 vim.ui.select = function(list, opts)
   items = list
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = orig_select
 assert(items and #items == 2, "expected two other sessions, got " .. vim.inspect(items))
 local labels = {}

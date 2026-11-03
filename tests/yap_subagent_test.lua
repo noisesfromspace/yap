@@ -21,14 +21,14 @@ local captured
 vim.ui.select = function(items)
   captured = items
 end
-yap.instances()
+yap.sessions("open")
 local open_agent = false
 for _, item in ipairs(captured or {}) do
   if item.buf == child then
     open_agent = true
   end
 end
-assert(open_agent, "open subagent missing from the instance picker")
+assert(open_agent, "open subagent missing from the open-session picker")
 yap.open(child_path)
 assert(vim.b[vim.api.nvim_get_current_buf()].yap, "child not reopenable")
 assert(vim.b[vim.api.nvim_get_current_buf()].yap_tools[1] == "read", "role permissions lost on reopen")

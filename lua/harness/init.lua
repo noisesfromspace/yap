@@ -65,8 +65,6 @@ M.adopt = buffers.adopt
 
 -- Session listing and navigation (sessions).
 M.sessions = sessions.sessions
-M.instances = sessions.instances
-M.buffers = buffers.pick
 M.live = sessions.live
 M.tail_buffer = sessions.tail_buffer
 M.session_of = sessions.session_of

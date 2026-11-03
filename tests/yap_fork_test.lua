@@ -84,7 +84,7 @@ vim.ui.select = function(items)
   captured = items
 end
 vim.api.nvim_set_current_buf(original_buf)
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 local live_source, live_fork
 for i, item in ipairs(captured) do
@@ -99,7 +99,7 @@ assert(captured[live_fork].text == "↳ fork · forked", "open fork label wrong"
 vim.ui.select = function(items, opts)
   captured = { items = items, format = opts.format_item }
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 for _, item in ipairs(captured.items) do
   if item.buf == fork_buf then
@@ -185,7 +185,7 @@ local function check_open_tree(pick, leaf_visible)
     )
   end
 end
-check_open_tree(yap.instances, true)
+check_open_tree(function() yap.sessions("open") end, true)
 local saved_capture
 vim.ui.select = function(items)
   saved_capture = items
@@ -295,14 +295,14 @@ local function check_orphan(pick, root_buf, child_buf, title)
     assert(captured[child_index].text:find("↳ fork · ", 1, true) == 1, "open child lost fork label")
   end
 end
-check_orphan(yap.instances, fork_buf, nested_buf, "fork · forked (parent not shown)")
+check_orphan(function() yap.sessions("open") end, fork_buf, nested_buf, "fork · forked (parent not shown)")
 vim.cmd("bdelete! " .. fork_buf)
 -- A lone current fork appears in the general picker.
 captured = nil
 vim.ui.select = function(items)
   captured = items
 end
-yap.instances()
+yap.sessions("open")
 vim.ui.select = select
 local found_current = false
 for _, item in ipairs(captured or {}) do
@@ -311,7 +311,7 @@ for _, item in ipairs(captured or {}) do
 end
 assert(found_current, "current orphan fork missing from open picker")
 vim.cmd("enew")
-check_orphan(yap.instances, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
+check_orphan(function() yap.sessions("open") end, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
 local after_close = require("harness.session").list("cwd")
 local positions = {}
 for i, item in ipairs(after_close) do

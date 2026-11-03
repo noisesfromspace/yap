@@ -300,12 +300,10 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").guard()                -- open/close the guard board
   require("harness").insert(name)           -- insert a template / merge a skill
   require("harness").change_model(combo)    -- set this session's provider/model
-  require("harness").sessions(scope)        -- resume a saved session ("cwd" | "all")
-  require("harness").buffers()              -- MiniPick buffers with Yap labels
-  require("harness").instances()            -- open-session tree
+  require("harness").sessions(scope)        -- saved sessions ("cwd" | "all") or open sessions ("open")
 <
-`scope` for sessions() is `"cwd"` (default) or `"all"`; omit it for
-the current project. `insert(name, { at_cursor = true })` inserts the raw
+`scope` for sessions() is `"cwd"` (default), `"all"`, or `"open"` (the
+live open-session tree); omit it for the current project. `insert(name, { at_cursor = true })` inserts the raw
 file at the cursor instead of appending/sending. See |yap-keymaps|
 for the default shortcuts that call these.
 
@@ -496,41 +494,29 @@ prompt behave normally.
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
-session everywhere: it appears in the open-session picker
-(|harness.instances()|) and in other sessions' winbar rollup. The saved-session
-picker (sessions(), `+`) lists any currently-open portable transcript. A
-next-to-file or custom-path transcript is only listed while it is open — its
-location is otherwise undiscoverable, so reopening it means opening the file.
+session everywhere: it appears in the open-session picker (sessions("open"))
+and in other sessions' winbar rollup. The saved-session picker (sessions(),
+`+`) lists any currently-open portable transcript. A next-to-file or
+custom-path transcript is only listed while it is open — its location is
+otherwise undiscoverable, so reopening it means opening the file.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title without losing normal file operations.
 Deleting a session buffer uses Neovim's ordinary replacement
 buffer behavior, without preferring waiting or running sessions.
 
-                                                        *harness.buffers()*
-require("harness").buffers() opens MiniPick's builtin buffer picker. Every
-entry keeps its real filepath and filetype icon, including renamed session
-transcripts, and selection uses the buffer number. Session descriptions and
-state labels remain in the Yap session pickers. MiniPick must be installed.
-There is no default keymap for this function.
+                                                    *harness.sessions()*
+require("harness").sessions(scope) is the single session picker. `"cwd"`
+(default) and `"all"` list saved sessions; `"open"` lists the open-session
+tree, including open subagents and forks, sorted by state. The saved-session
+scope annotates open sessions with a live status icon. Subagents
+(`b:yap_agent`) remain unlisted and excluded from the winbar overview.
 
-                                         *harness.session.buffers.label()*
-require("harness.session.buffers").label(buf) returns a Yap session's state and
-description for UI consumers, or nil for ordinary buffers. It does not replace
-the filepath in the buffer picker. The open-session tree
-(|harness.instances()|) keeps its own state tags.
-
-                                                      *harness.instances()*
-require("harness").instances() retains the open-session tree, including open
-subagents. It has no default keymap; bind it in your own configuration. The
-saved-session tree (sessions(), `+`) is unchanged. Subagents (`b:yap_agent`) remain unlisted and excluded from the
-winbar overview.
-
-Only attention states get a status tag, in a fixed column so every title
-aligns: running `[RUN]`, error `[ERR]`, approval parked `[APPR]`. Waiting,
-stopped/cancelled, done (finished subagent) and idle rows are badge-less, so a
-long project list stays quiet and only the rows that need a decision stand
-out.
+Only attention states get a status tag in the open-session scope, in a fixed
+column so every title aligns: running `[RUN]`, error `[ERR]`, approval parked
+`[APPR]`. Waiting, stopped/cancelled, done (finished subagent) and idle rows
+are badge-less, so a long project list stays quiet and only the rows that
+need a decision stand out.
 
 File operations are the session operations:
 
@@ -583,8 +569,10 @@ idle it sends the section under the cursor. Outside a section it only displays
 a hint; move to steer or queue to send.
 There is no selection-specific send. <C-t> in normal or insert mode picks a
 template or skill and inserts it at the cursor without sending it. The jotter
-is intentionally ephemeral: closing the session discards unsaved scratch
-text; |:write| {path} persists a draft explicitly.
+is intentionally ephemeral — no file backs it, and it is dropped when Neovim
+exits — but closing the session with |:bdelete| does not discard it: the
+draft survives, comes back with the session, and its |<C-s>| still dispatches
+to that session. |:write| {path} persists a draft explicitly.
 
 AUDIT LOG                                                        *yap-audit*
 
@@ -602,7 +590,7 @@ The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
 bytes. It is never rebuilt from the audit log; the full streamed output lives
 in the tool's temp log, and the audit log carries the tail-truncated result.
-guard() lists the current session's parked approvals and its settled decision
+guard() lists every open session's parked approvals and their settled decision
 history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.
 
@@ -861,13 +849,13 @@ config mounted (so nothing else of the home directory is reachable); see the
 "Session jail" section of the README. The two compose: the per-tool
 sandbox still applies inside the jail.
 
-The guard board is scoped to the session it is opened from: it lists only that
-session's parked approvals and settled history. Parked approvals are live
-state, answered via Run/Deny. Once answered, the outcome is written to the
-audit log and read back as settled history — granted/denied/timed-out. `c` in
-the guard board clears that history view by writing a project watermark
-(guard.json, a timestamp) and hiding rows at or before it; the audit log is
-left intact. Parked approvals are not touched by `c`.
+The guard board aggregates every open session: it lists their parked
+approvals and settled history. Parked approvals are live state, answered via
+Run/Deny. Once answered, the outcome is written to the audit log and read back
+as settled history — granted/denied/timed-out. `c` in the guard board clears
+that history view by writing a project watermark (guard.json, a timestamp) and
+hiding rows at or before it; the audit log is left intact. Parked approvals
+are not touched by `c`.
 
 ==============================================================================
 12. TOOLS                                                      *yap-tools*
@@ -896,9 +884,9 @@ A subagent is a separate session: it gets its own context, may run a different
 model, and returns only its answer to the parent. Definitions live in
 `agents_dir` (|yap-configuration|), one markdown file per agent. An agent
 session is internal to the conversation that spawned it: saved history never
-lists it, while the open-session picker (instances()) shows it under its parent
-while it is open. The tool result carries a link to the session file, so a
-finished agent stays reachable.
+lists it, while the open-session picker (sessions("open")) shows it under its
+parent while it is open. The tool result carries a link to the session file,
+so a finished agent stays reachable.
 
 ==============================================================================
 13. LANGUAGE SERVER                                            *yap-lsp*

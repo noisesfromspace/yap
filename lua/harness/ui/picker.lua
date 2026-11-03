@@ -1,10 +1,9 @@
 -- Shared session-picker presentation: buffer state classification, the
--- agent-role lookup, the state -> icon table, the typeable state tag, and the
--- fixed-column icon prefix. Both the open-session picker (harness.instances)
--- and the saved-session picker (harness.session .pick) render the icons, and
--- the winbar rollup classifies other sessions with the same precedence — so
--- the rule lives here once. The MiniPick buffer list uses tag() instead: there
--- the state is part of the item text, which is what a query filters on.
+-- agent-role lookup, the state -> icon table, and the fixed-column icon
+-- prefix. Both the open-session picker (harness.sessions("open")) and the
+-- saved-session picker (harness.session .pick) render the icons, and the
+-- winbar rollup classifies other sessions with the same precedence — so
+-- the rule lives here once.
 
 local M = {}
 
@@ -22,8 +21,8 @@ function M.agent(fm, buf)
   return (role ~= nil and role ~= "") and role or nil
 end
 
---- Plain state token for a buffer: the key instances() filters on, and the
---- word behind each picker status glyph.
+--- Plain state token for a buffer: the state behind each picker status glyph
+--- and the open-session picker's attention tag.
 function M.state(buf)
   if state.running[buf] then
     return "running"
@@ -91,17 +90,6 @@ end
 --- and idle are quiet: a long project list would drown in badges, so only
 --- rows that need a decision (`[RUN]`, `[ERR]`, `[APPR]`) get one.
 local ATTENTION = { running = true, error = true, approval = true }
-
---- The buffer picker's status tag: `[RUN]`, `[WAIT]`, … plus the padding that
---- puts every title in one column. The padding sits *after* the tag: a space
---- inside the brackets would break a typed query ([RUN] would no longer match
---- [RUN ]), while a contiguous tag matches. Returns the padded tag and the
---- tag's own width (for highlighting just the tag).
-function M.tag(buf)
-  local status = state.pending_approvals[buf] and "approval" or M.state(buf)
-  local tag = "[" .. TAGS[status] .. "]"
-  return tag .. string.rep(" ", M.tag_width - #tag + 1), #tag
-end
 
 --- Widest display width among a set of icon strings (a map or list).
 function M.icon_width(icons)
