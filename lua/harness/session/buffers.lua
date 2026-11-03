@@ -169,9 +169,12 @@ function M.new(opts)
     vim.b[buf].yap_path = path
     vim.api.nvim_buf_set_name(buf, path)
     -- A transcript outside yap's sessions root keeps its audit log and assets
-    -- in a central data directory (recorded in frontmatter); one inside it
-    -- keeps sidecars beside the transcript (unchanged legacy layout).
-    if not paths.under_sessions_root(path) then
+    -- in a central data directory; one inside it keeps them beside it.
+    -- Recorded in frontmatter so the .md can move anywhere and still find
+    -- its sidecars.
+    if paths.under_sessions_root(path) then
+      vim.b[buf].yap_data_dir = vim.fn.fnamemodify(path, ":h")
+    else
       vim.b[buf].yap_data_dir = paths.new_data_dir(vim.fn.getcwd())
     end
   end
@@ -189,7 +192,9 @@ function M.new(opts)
   -- the start: `:file` names the session immediately, before the first
   -- reply. The LSP guard in setup_buffer keeps markdown clients off it
   -- regardless of the .md extension.
-  session.save(buf)
+  session.save(buf) -- assigns yap_data_dir for the chosen location
+  frontmatter.sync(buf) -- record it (and the model state) in the transcript
+  session.save(buf) -- write again so the file carries the frontmatter from day one
   -- Create the session's live tool tail now (empty until a tool runs), before
   -- any :file rename or tool run.
   audit.ensure(buf)
@@ -218,8 +223,10 @@ local function adopt(buf, path)
   end
   vim.b[buf].yap_path = path
   -- Resume durable per-session state from frontmatter. The originating cwd
-  -- and (for transcripts outside the sessions root) the central data
-  -- directory are recorded there, so a transcript moved to any path keeps
+  -- and data directory are recorded there. Inside the sessions root the
+  -- sidecars sit beside the transcript, so the parent wins over the record —
+  -- a directory rename keeps working. Outside it the recorded data_dir is
+  -- the tie: the transcript may have been moved to any path and still finds
   -- its audit log and assets.
   local e = frontmatter.end_line(buf)
   local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
@@ -227,7 +234,9 @@ local function adopt(buf, path)
   vim.b[buf].yap_project_cwd =
     (created_cwd and created_cwd ~= "" and expand_home(created_cwd))
     or paths.project_cwd(path)
-  if fm and fm.data_dir and fm.data_dir ~= "" then
+  if paths.under_sessions_root(path) then
+    vim.b[buf].yap_data_dir = vim.fn.fnamemodify(path, ":h")
+  elseif fm and fm.data_dir and fm.data_dir ~= "" then
     vim.b[buf].yap_data_dir = expand_home(fm.data_dir)
   end
   if fm then

@@ -483,13 +483,15 @@ group by month (<yy-mm>/<dd-hh.mm.ss>/), and named forks live at
 <cwd-slug>/<name>/. Each contains session.md (the conversation), audit.jsonl
 (the audit log) and assets/ (photos, fetched downloads, and working files).
 
-A transcript can also live anywhere else (a project folder, ~/.yap, /tmp).
-Such a session records a `data_dir` in its frontmatter pointing at a central
-directory under ~/.config/yap/sessions/ that holds its audit.jsonl and
-assets/; the transcript itself is the only file placed in the project. Yap
-recognises and adopts a yap-shaped markdown file (yap frontmatter or a
-`# @system` heading) anywhere it is opened, while ordinary markdown is left
-alone.
+Every session records a `data_dir` in its frontmatter: the directory holding
+its audit.jsonl and assets/. For a transcript under the sessions root it is
+the transcript's own directory; for one anywhere else (a project folder,
+~/.yap, /tmp) it is a central directory under ~/.config/yap/sessions/, so the
+transcript itself is the only file placed in the project. Because the tie is
+recorded, a transcript can be moved out of its directory and still find its
+audit log and assets. Yap recognises and adopts a yap-shaped markdown file
+(yap frontmatter or a `# @system` heading) anywhere it is opened, while
+ordinary markdown is left alone.
 Sessions are saved after every turn and when the buffer stops being displayed
 in any window; the file is created when the buffer opens. A native |:w| is
 routed to that same save path (BufWriteCmd), so 'modified', |:w| and the exit
@@ -590,8 +592,9 @@ text; |:write| {path} persists a draft explicitly.
 
 AUDIT LOG                                                        *yap-audit*
 
-audit.jsonl in the session's data directory (beside the transcript for
-`:Yap` sessions, or the frontmatter `data_dir` for a transcript elsewhere) is
+audit.jsonl in the session's data directory (recorded as the frontmatter
+`data_dir`: the transcript's own directory for `:Yap` sessions, or the
+central directory for a transcript elsewhere) is
 an append-only, JSON Lines record that survives restarts: every tool call
 (full arguments), full tool results, image attachments, approval requests and
 their Run/Deny answers, a retry line for each transient generation error, an

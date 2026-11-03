@@ -108,6 +108,18 @@ function M.save(buf, previous_path)
   -- called directly afterwards. Reconcile it before choosing the write path.
   previous_path = previous_path or vim.b[buf].yap_path
   path = M.reconcile_name(buf) or path
+  -- Where this session's sidecars live (audit log, assets): inside the
+  -- sessions root it is the transcript's own parent. Recorded in frontmatter
+  -- at creation and on later rewrites, so the .md can be moved out and still
+  -- find them. Only the buffer var is touched here — save() never inserts
+  -- lines into the transcript (R-blank-lines: sends only append).
+  if not vim.b[buf].yap_data_dir or vim.b[buf].yap_data_dir == "" then
+    if paths.under_sessions_root(path) then
+      vim.b[buf].yap_data_dir = vim.fn.fnamemodify(path, ":h")
+    else
+      vim.b[buf].yap_data_dir = paths.new_data_dir(vim.fn.getcwd())
+    end
+  end
   stamp_updated_at(buf)
   local parent = vim.fn.fnamemodify(path, ":h")
   if paths.under_sessions_root(path) then
@@ -219,9 +231,10 @@ function M.fork(buf, name, running)
       })
       fork_fm.subagent_parent = nil
       -- A fork always lands under the sessions root, where sidecars live beside
-      -- the transcript. Do not inherit the source's central data_dir, or the
-      -- fork would append its audit events into the source's log.
-      fork_fm.data_dir = nil
+      -- the transcript. Record its own directory as data_dir — never inherit
+      -- the source's central one, or the fork's audit events would land in the
+      -- source's log.
+      fork_fm.data_dir = vim.fn.fnamemodify(path, ":h")
       local block = frontmatter.render(fork_fm)
       vim.list_extend(block, vim.list_slice(lines, ending + 1))
       lines = block

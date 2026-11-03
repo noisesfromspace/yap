@@ -49,7 +49,8 @@ local session = require("harness.session")
 local fork_path = session.fork(reopened, "portable-fork", false)
 assert(fork_path, "portable fork failed")
 local fork_fm = frontmatter.parse(vim.fn.readfile(fork_path, "", 30))
-assert(fork_fm.data_dir == nil, "fork inherited the source's central data_dir")
+assert(fork_fm.data_dir == vim.fn.fnamemodify(fork_path, ":h"),
+  "fork must record its own sidecar directory as data_dir, not the source's")
 
 -- 3. Ordinary markdown is left alone.
 vim.cmd("enew")
@@ -58,13 +59,28 @@ vim.cmd("edit " .. vim.fn.fnameescape(plain))
 local plainbuf = vim.api.nvim_get_current_buf()
 assert(vim.b[plainbuf].yap == nil, "ordinary markdown was adopted as a yap session")
 
--- 4. A bare `:Yap` still lands under the sessions root with no data_dir.
+-- 4. A bare `:Yap` lands under the sessions root, recording the sidecar
+-- directory beside it as data_dir, so the .md can be moved out and still
+-- find its audit log.
 vim.cmd("bwipeout!")
 local rooted = yap.new({ provider = "mock", model = "m1" })
 assert(paths.under_sessions_root(vim.b[rooted].yap_path), "bare :Yap left the sessions root")
 local rooted_fm = frontmatter.parse(vim.api.nvim_buf_get_lines(rooted, 0, 30, false))
-assert(rooted_fm.data_dir == nil, "rooted session should have no data_dir (sidecars beside it)")
+assert(rooted_fm.data_dir == vim.fn.fnamemodify(vim.b[rooted].yap_path, ":h"),
+  "rooted session must record its own directory as data_dir")
 assert(paths.audit_path(rooted) == vim.fn.fnamemodify(vim.b[rooted].yap_path, ":h") .. "/audit.jsonl", "rooted session sidecar layout changed")
+
+-- 4a. Move the transcript out of its directory: reopening it elsewhere must
+-- still find the audit log via the recorded data_dir.
+local moved = vim.fn.tempname() .. "-moved.md"
+vim.fn.rename(vim.b[rooted].yap_path, moved)
+vim.cmd("bwipeout!")
+vim.cmd("edit " .. vim.fn.fnameescape(moved))
+local movedbuf = vim.api.nvim_get_current_buf()
+assert(vim.b[movedbuf].yap == true, "moved transcript not adopted")
+assert(paths.audit_path(movedbuf) == rooted_fm.data_dir .. "/audit.jsonl",
+  "moved transcript lost its data_dir tie: " .. tostring(vim.b[movedbuf].yap_data_dir))
+vim.cmd("bwipeout!")
 
 -- 4b. `:Yap <path>` creates a portable session at an arbitrary path, and
 -- `:Yap <dir>` drops session.md inside that directory.
@@ -85,6 +101,9 @@ assert(frontmatter.parse(vim.api.nvim_buf_get_lines(dirsess, 0, 30, false)).data
 -- 5. Portable sessions join the open-session overview and the winbar rollup
 -- like any other open session (both are keyed on the yap buffer flag, not on
 -- the path being under the sessions root).
+vim.cmd("edit " .. vim.fn.fnameescape(portable))
+reopened = vim.api.nvim_get_current_buf()
+assert(vim.b[reopened].yap == true, "portable transcript not re-adopted")
 local captured
 local select = vim.ui.select
 vim.ui.select = function(items)
