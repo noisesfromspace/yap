@@ -107,4 +107,29 @@ assert(seen_dir, ":Yap <dir> session missing from open-session overview")
 local bar = yap.winbar(dirsess)
 assert(bar:match(yap.config.icons.idle .. "1"), "rollup missing portable session: " .. bar)
 
+-- 5b. `:Yap <bare filename>` resolves against the cwd and gains the `.md`
+-- suffix (spaces included); `:Yap ~<path>` expands against $HOME. Both stay
+-- portable: the transcript lands where named, its data_dir under the root.
+local here = vim.fn.getcwd()
+vim.cmd("cd " .. vim.fn.fnameescape(project))
+
+vim.cmd("bwipeout!")
+vim.cmd("Yap this is a filename")
+local bare = vim.api.nvim_get_current_buf()
+assert(vim.b[bare].yap_path == project .. "/this is a filename.md",
+  "bare filename did not resolve against cwd: " .. tostring(vim.b[bare].yap_path))
+assert(frontmatter.parse(vim.api.nvim_buf_get_lines(bare, 0, 30, false)).data_dir ~= nil,
+  "bare filename session missing data_dir")
+
+vim.cmd("bwipeout!")
+vim.cmd("Yap ~/from_home.md")
+local homebuf = vim.api.nvim_get_current_buf()
+assert(vim.b[homebuf].yap_path == vim.env.HOME .. "/from_home.md",
+  "~ path did not expand: " .. tostring(vim.b[homebuf].yap_path))
+assert(frontmatter.parse(vim.api.nvim_buf_get_lines(homebuf, 0, 30, false)).data_dir ~= nil,
+  "~ path session missing data_dir")
+
+vim.cmd("bwipeout!")
+vim.cmd("cd " .. vim.fn.fnameescape(here))
+
 print("OK portable session")

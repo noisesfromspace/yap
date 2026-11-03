@@ -478,27 +478,6 @@ function M.label(path, description, project_cwd)
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
---- Project roots for portable discovery: the cwd and, when it is inside a
---- git checkout, the repository toplevel. Portable transcripts live under
---- <root>/.yap-sessions/, so a session created from a subdirectory is still
---- found from the project root.
-local function project_roots()
-  local roots, seen = {}, {}
-  local function add(p)
-    p = vim.fs.normalize(p)
-    if p ~= "" and not seen[p] then
-      seen[p] = true
-      roots[#roots + 1] = p
-    end
-  end
-  add(vim.fn.getcwd())
-  local top = vim.fn.system({ "git", "-C", vim.fn.getcwd(), "rev-parse", "--show-toplevel" })
-  if vim.v.shell_error == 0 then
-    add(vim.trim(top))
-  end
-  return roots
-end
-
 --- Currently-open portable transcripts: yap buffers whose transcript lives
 --- outside the sessions root. A session created next to a file (or at a
 --- custom path) has no fixed discoverable location, so the open buffer is the
@@ -546,13 +525,8 @@ function M.list(scope)
     for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
       add(paths.transcript_in(sdir))
     end
-    -- Portable transcripts: the project convention (<root>/.yap-sessions) at
-    -- the cwd and git root, plus any currently-open portable session.
-    for _, root in ipairs(project_roots()) do
-      for _, sdir in ipairs(paths.session_dirs(root .. "/.yap-sessions")) do
-        add(paths.transcript_in(sdir))
-      end
-    end
+    -- Any currently-open portable transcript is listed while its buffer pins
+    -- it; a next-to-file or custom-path transcript is otherwise undiscoverable.
     for _, path in ipairs(open_portable_transcripts()) do
       add(path)
     end

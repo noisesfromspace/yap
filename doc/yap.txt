@@ -314,7 +314,7 @@ for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except <leader>y, + and <leader>g, which are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except + and <leader>g, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
@@ -334,8 +334,6 @@ regardless of which one you open first.
                         In scratch, insert the raw file at the cursor instead.
   <C-f> (i)             Pick a file under the current |:pwd| and insert an
                         `@path` reference at the cursor (resumes insert mode).
-  <leader>y             New session: choose a location (global, project,
-                        next to the current file, or a custom path).
   +                     Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
@@ -502,8 +500,7 @@ it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
 session everywhere: it appears in the open-session picker
 (|harness.instances()|) and in other sessions' winbar rollup. The saved-session
-picker (sessions(), `+`) lists project transcripts under `|:pwd|/.yap-sessions`
-(and the git root) plus any currently-open portable transcript. A
+picker (sessions(), `+`) lists any currently-open portable transcript. A
 next-to-file or custom-path transcript is only listed while it is open — its
 location is otherwise undiscoverable, so reopening it means opening the file.
 

@@ -30,7 +30,7 @@ Inspired by pi and gptel.
   (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
-  trees through `vim.ui.select` (`<leader>y` for a new session, `+` for saved sessions).
+  trees through `vim.ui.select` (`+` for saved sessions).
 - A winbar with the session description, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
@@ -162,7 +162,6 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").live()`                              | `<leader>l` | open the live tool tail                          |
 | `require("harness").guard()`                             | `<leader>g` | open/close the guard board                       |
 | `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model                |
-| `require("harness").new_session()`                        | `<leader>y` | create a session: choose global, project, next-to-file, or custom |
 | `require("harness").sessions(scope)`                     | `+`         | resume a saved session (`cwd` \| `all`)          |
 | `require("harness").buffers()`                           |             | pick a listed buffer (MiniPick)                  |
 | `require("harness").instances()`                         |             | pick an open session from the session tree       |
@@ -215,8 +214,9 @@ programs.yap = {
 ```
 
 `cd` into a case directory before starting the launcher. That directory becomes
-`:pwd`, and sessions land in `.yap-sessions` beside it. Add that to your
-gitignore.
+`:pwd`. Bare `:Yap` sessions live under the sessions root (mounted in the jail),
+and `:Yap <path>` puts a portable transcript wherever you name it — add any
+project-local transcripts to your gitignore.
 
 The module installs a `yap` backend launcher that sources `envFile` at runtime.
 Pass `${lib.getExe config.programs.yap.backendPackage}` as `bin` to

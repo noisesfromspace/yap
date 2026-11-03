@@ -77,7 +77,6 @@ M.defaults = {
     insert = "<C-t>",
     insert_file = "<C-f>",
     sessions = "+",
-    new_session = "<leader>y",
     guard = "<leader>g",
     help = "g?",
 
