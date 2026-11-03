@@ -882,6 +882,7 @@ approval rules that sit in front of them (|yap-guard-gate|).
   glob           List files by pattern through ripgrep.
   fetch          Fetch a URL and return the readable content as markdown.
   subagent       Run a saved agent definition in a child session.
+  sessions       List, search, and read other saved sessions (see |yap-sessions|).
   models         List provider/model combos and their prices.
   close_session  Close the session buffer once the turn has finished.
 

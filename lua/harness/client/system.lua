@@ -40,7 +40,7 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. harness
   end
   about = about .. "\n\n" .. [[## Parallel tool calls
 
-When you need several independent read-only results (read, search, glob, fetch, models, ls), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
+When you need several independent read-only results (read, search, glob, fetch, models, sessions), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 
 ## Subagents
 
@@ -48,6 +48,13 @@ Use `subagent` to delegate a self-contained subtask that is large or independent
   if agents then
     about = about .. "\n## Agents\n\nThe `agent` argument accepts one of:\n\n" .. table.concat(agents, "\n")
   end
+  -- Other saved sessions are reachable through the `sessions` tool; point the
+  -- model at it (and at the root) so it finds past conversations instead of
+  -- guessing their on-disk layout.
+  about = about
+    .. "\n\n## Sessions\n\nOther Yap conversations are plain Markdown transcripts under `"
+    .. paths.sessions_root()
+    .. "`. Use the `sessions` tool to reach them instead of guessing paths: `action=\"list\"` names saved sessions with their descriptions, cwd and model (most recent first); `action=\"search\"` greps every transcript; `action=\"read\"` prints one session's message outline plus its prose with tool and thinking regions stripped. Outline or search first, then page a large session with `start`/`count` or `read` a narrow line range — never load a whole huge session into context."
   -- The agent needs the session's scratch location to write throwaway
   -- scripts and generated artifacts into the session instead of /tmp or the
   -- project. This prefix is the only per-send, per-buffer message, so the

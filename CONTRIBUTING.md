@@ -439,6 +439,14 @@ MCP tools are not files in agent/tools/: they are discovered at runtime from
 configured servers (agent/mcp) and registered through tools.RegisterRaw, so
 the directory stays one file per callable tool.
 
+The `sessions` tool (agent/tools/sessions.go) reads OTHER saved sessions. It
+is scoped to the sessions root the frontend sends with each turn
+(`utils.SessionsRoot`, request field `sessions_dir`), so a session can list,
+grep, and pull prose from past conversations without knowing their layout. Its
+`read` action reuses `document.Parse` (R-single-reader) to strip marker
+regions — it never adds a second line scanner — and its output flows through
+the normal tool-result scrubbing like any read-only tool.
+
 bash runs inside a bubblewrap (bwrap) sandbox on Linux
 (agent/safety/sandbox.go): the filesystem is bind-mounted read-only, a small
 allowlist (the live :pwd, the session assets dir, plus `sandbox.allow_write`)

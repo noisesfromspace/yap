@@ -12,7 +12,7 @@ import (
 // never speculate about whether two shell commands or edits commute.
 var parallelTools = map[string]bool{
 	"read": true, "search": true, "glob": true,
-	"fetch": true, "models": true,
+	"fetch": true, "models": true, "sessions": true,
 }
 
 const maxConcurrentTasks = 4

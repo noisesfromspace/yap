@@ -743,6 +743,9 @@ function M.send(buf)
     -- The session's assets/ folder: transient tool files (live-tail logs,
     -- inline scripts, header files) land here instead of /tmp.
     assets_dir = paths.assets_dir(buf),
+    -- The sessions root: the `sessions` tool scopes its list/search/read to
+    -- this, so the model can reach other saved sessions.
+    sessions_dir = paths.sessions_root(),
   }) .. "\n"
   local ok, err = pcall(function()
     process:write(payload)

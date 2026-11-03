@@ -31,6 +31,8 @@ Inspired by pi and gptel.
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
   trees through `vim.ui.select` (`+` for saved sessions).
+- A `sessions` tool to list, search, and read other saved sessions, so a
+  conversation can pull context from past ones without loading them whole.
 - A winbar with the session description, model, token totals, cost and context use,
   plus a rollup of your other sessions.
 - Per-session model switching (`<leader>m`) and model groups, so a cheap model
@@ -51,7 +53,8 @@ Inspired by pi and gptel.
 The agent ships with a fixed set of built-in tools, plus any tools exposed by
 configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
 files, runs bash, searches the web, reads GitHub, drives a browser,
-and delegates to subagents in separate sessions. Independent
+delegates to subagents in separate sessions, and lists, searches, and reads
+other saved sessions. Independent
 read-only calls in one round run concurrently (up to four). See `:help yap-tools`.
 
 A turn is an agent loop: the model proposes the next action, the backend

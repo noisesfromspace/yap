@@ -96,6 +96,18 @@ func SetFrontendCwd(dir string) { frontendCwd = dir }
 // cwd (cmd.Dir unset), which is where they already are.
 func FrontendCwd() string { return frontendCwd }
 
+// sessionsRoot is the frontend's session-data root, recorded with this turn.
+// The `sessions` tool scopes its list/search/read to it, so a session can
+// reach other saved sessions without a hardcoded path.
+var sessionsRoot string
+
+// SetSessionsRoot records the sessions_dir the frontend sent with this turn.
+func SetSessionsRoot(dir string) { sessionsRoot = dir }
+
+// SessionsRoot returns the sessions_dir for the turn in progress, or "" when
+// the frontend sent none (a one-shot `yap send`).
+func SessionsRoot() string { return sessionsRoot }
+
 // assetsBase is the directory transient tool files are created in: the
 // frontend's per-session assets dir when it sent one, else the system temp dir.
 var assetsBase string

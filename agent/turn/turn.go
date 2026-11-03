@@ -60,6 +60,11 @@ type Request struct {
 	// those files live with the session instead of the system temp dir.
 	// Empty for a one-shot `yap send`.
 	AssetsDir string `json:"assets_dir,omitempty"`
+	// SessionsDir is the frontend's session-data root (its configured
+	// sessions_dir), for the `sessions` tool to list/search/read other saved
+	// sessions. Set by the frontend from the live config; empty for a
+	// one-shot `yap send`.
+	SessionsDir string `json:"sessions_dir,omitempty"`
 }
 
 // providerToolDefs converts compiled-in tools to adapter Tool definitions.
@@ -403,6 +408,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	}
 	utils.SetFrontendCwd(req.Cwd)
 	utils.SetAssetsBase(req.AssetsDir)
+	utils.SetSessionsRoot(req.SessionsDir)
 	syncMCPTools(ctx, cfg.MCP)
 	enabled := cfg.Sandbox.Enabled == nil || *cfg.Sandbox.Enabled
 	safety.SetSandboxConfig(safety.SandboxConfig{
