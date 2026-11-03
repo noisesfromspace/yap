@@ -280,7 +280,10 @@ lossy), `models` (the ordered history of combos used), `created_at`/
 on save for the picker), and `tools` (the per-session tool allowlist: absent
 means unrestricted — every tool including runtime-discovered MCP tools; list
 names to restrict the session to only those, while a subagent lists only its
-definition's tools).
+definition's tools). The frontmatter also holds `description` — the generated
+summary shown in session views — and `pinned_description`, set automatically
+when the user edits `description` by hand; while that flag is present yap
+stops regenerating the description.
 yap writes the model fields only on `:Yap` and
 change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and
@@ -568,8 +571,11 @@ subagents nest in the parent's `<yy-mm>/`; named forks live at
 `<cwd-slug>/<name>/`), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from event frames: full tool arguments,
 full results, `attachment` events for image imports (success metadata or the
-failure), approval decisions, and one journal line per turn (model,
-tokens, cost, ms). Streamed bash output is NOT duplicated here — it
+failure), approval decisions, one journal line per turn (model,
+tokens, cost, ms), and one `summary` line per generated session description
+(`kind` `user` or `answer` plus the `description`), so the history of
+auto-generated titles is durable even though the frontmatter keeps only the
+current label. Streamed bash output is NOT duplicated here — it
 lives in the tool's temp log and is followed live by the tool tail
 (R-live-output-tail). The per-session directory is kept mode 0700 and
 the session markdown, notes, and audit log files mode 0600 — transcripts and

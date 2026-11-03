@@ -2,6 +2,8 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 package.loaded.harness = nil -- start-packages may have loaded the installed copy before this test prepended the repo
 local yap = require("harness")
+local frontmatter = require("harness.model.frontmatter")
+local paths = require("harness.path")
 yap.setup({
   bin = ROOT .. "/yap",
   model_groups = { agent = "mock/m1", flash = "mock/m1" },
@@ -251,5 +253,50 @@ vim.notify = orig_notify
 assert(ok, "no notification for a failed title request")
 assert(notices[1].level == vim.log.levels.ERROR, "title failure notify level not ERROR")
 assert(notices[1].msg:match("insufficient_quota"), "unexpected title failure notify: " .. tostring(notices[1].msg))
+
+-- A hand-edited description is pinned: the titling model stops regenerating
+-- it, and each generated summary is recorded in the audit log.
+local pin_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(pin_buf, -1, -1, false, { "Pin trigger" })
+yap.send(pin_buf)
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
+end, 100)
+assert(ok, "pin-test first turn did not produce a description")
+
+frontmatter.update(pin_buf, { description = "Static pinned title" })
+vim.api.nvim_exec_autocmds("TextChanged", { buffer = pin_buf })
+vim.wait(100)
+assert(frontmatter.is_pinned(pin_buf), "hand-edited description was not pinned")
+
+-- A following turn must not overwrite the pinned description.
+vim.api.nvim_buf_set_lines(pin_buf, -1, -1, false, { "Another turn" })
+yap.send(pin_buf)
+ok = vim.wait(10000, function()
+  local text = table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, -1, false), "\n")
+  local assistants = 0
+  for _ in text:gmatch("# @assistant") do
+    assistants = assistants + 1
+  end
+  return assistants >= 2
+end, 100)
+assert(ok, "pin-test second turn did not complete")
+-- Give the (skipped) turn-end summary a chance to wrongly land before
+-- asserting the pinned description is untouched.
+vim.wait(300)
+local pin_fm = table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, 8, false), "\n")
+assert(pin_fm:match("description: Static pinned title"), "pinned description was overwritten: " .. pin_fm)
+assert(pin_fm:match("pinned_description: true"), "pinned flag lost: " .. pin_fm)
+
+-- The generated summary that produced the first label is durable in the audit
+-- log rather than only in the frontmatter it later overwrote.
+local pin_audit = vim.fn.readfile(paths.audit_path(pin_buf))
+local summary_lines = {}
+for _, line in ipairs(pin_audit) do
+  if line:find('"summary"', 1, true) then
+    summary_lines[#summary_lines + 1] = line
+  end
+end
+assert(#summary_lines > 0, "generated summary missing from audit log: " .. table.concat(pin_audit, "\n"))
 
 print("OK describe")

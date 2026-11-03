@@ -96,7 +96,9 @@ to `""` to drop it.
 short session titles (the initial label and updates after each turn). Set
 `flash = ""` to disable automatic titles and use `agent` for `:YapEval!`.
 Rename `session.md` to give the session a title; descriptions are generated
-automatically and take precedence in session views.
+automatically and take precedence in session views. Edit a generated
+description by hand to pin it — yap then stops regenerating it until you
+delete the `pinned_description` frontmatter line.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
 credentials. It does not change the configured default for new sessions.
@@ -389,12 +391,18 @@ as YAML frontmatter: >
   ---
 <
 
-`description` is the generated summary. The transcript filename is the
-session's title: rename `session.md` with |:file|, |:saveas| or your file
-explorer. Views prefer the description and use the filename only when no
-description exists. The rest of the frontmatter:
+`description` is the generated summary, refreshed after each turn. Edit it by
+hand and yap adds `pinned_description: true` and stops regenerating it — the
+hand-written description is then static until that flag is deleted. The
+transcript filename is the session's title: rename `session.md` with |:file|,
+|:saveas| or your file explorer. Views prefer the description and use the
+filename only when no description exists. The rest of the frontmatter:
 
   `provider`/`model`      The combo to resume with.
+  `pinned_description`   Set automatically when `description` is edited by
+                         hand. While present the titling model leaves the
+                         description alone; delete the line to resume
+                         automatic summaries.
   `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
                           `high`), seeded from the setup() defaults and read on
                           every send. Empty means the provider's default.
@@ -584,7 +592,10 @@ an append-only, JSON Lines record that survives restarts: every tool call
 their Run/Deny answers, a retry line for each transient generation error, an
 `error` line for a failed send (classified code + message), and one `turn_end`
 line per send regardless of outcome — model, prompt, completion, cost, ms, and
-a `status` of `ok`, `error`, or `cancelled`.
+a `status` of `ok`, `error`, or `cancelled`. Each generated session
+description is also recorded as a `summary` line (`kind` `user` or `answer`
+plus the `description`), so the history of auto-generated titles survives even
+though the frontmatter keeps only the current label.
 
 The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
