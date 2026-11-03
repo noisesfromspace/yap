@@ -54,7 +54,7 @@ Use `subagent` to delegate a self-contained subtask that is large or independent
   about = about
     .. "\n\n## Sessions\n\nOther Yap conversations are plain Markdown transcripts under `"
     .. paths.sessions_root()
-    .. "`. Use the `sessions` tool to reach them instead of guessing paths: `action=\"list\"` names saved sessions with their descriptions, cwd and model (most recent first); `action=\"search\"` greps every transcript; `action=\"read\"` prints one session's message outline plus its prose with tool and thinking regions stripped. Outline or search first, then page a large session with `start`/`count` or `read` a narrow line range — never load a whole huge session into context."
+    .. "`. Use the `sessions` tool to reach them instead of guessing paths: `action=\"list\"` names saved sessions with their descriptions, cwd and model (most recent first, capped — narrow with `filter`, `since`/`until`, or `path`); `action=\"search\"` greps every transcript; `action=\"read\"` prints one session's message outline plus its prose with tool and thinking regions stripped and its `# @system` message skipped unless `include_system` is set. Outline or search first, then page a large session with `start`/`count` or `read` a narrow line range — never load a whole huge session into context."
   -- The agent needs the session's scratch location to write throwaway
   -- scripts and generated artifacts into the session instead of /tmp or the
   -- project. This prefix is the only per-send, per-buffer message, so the

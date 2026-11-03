@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"boers.email/yap/agent/utils"
 )
@@ -52,6 +53,41 @@ func TestSessionsList(t *testing.T) {
 	if !strings.Contains(r, "Fix the winbar") || !strings.Contains(r, "Session picker labels") {
 		t.Fatalf("scoped list should still contain both sessions: %q", r)
 	}
+
+	// filter narrows by substring
+	r, _, err = run(t, "sessions", `{"action":"list","filter":"winbar"}`)
+	if err != nil {
+		t.Fatalf("filtered list: %v", err)
+	}
+	if !strings.Contains(r, "Fix the winbar") || strings.Contains(r, "Session picker labels") {
+		t.Fatalf("filter should keep only the match: %q", r)
+	}
+
+	// since/until filter by modification time
+	oldPath := filepath.Join(dir, "proj/26-10/02-12.00.00/session.md")
+	past := time.Now().Add(-72 * time.Hour)
+	if err := os.Chtimes(oldPath, past, past); err != nil {
+		t.Fatal(err)
+	}
+	since := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	r, _, err = run(t, "sessions", `{"action":"list","since":"`+since+`"}`)
+	if err != nil {
+		t.Fatalf("since list: %v", err)
+	}
+	if !strings.Contains(r, "Fix the winbar") || strings.Contains(r, "Session picker labels") {
+		t.Fatalf("since should drop the older session: %q", r)
+	}
+	r, _, err = run(t, "sessions", `{"action":"list","until":"`+since+`"}`)
+	if err != nil {
+		t.Fatalf("until list: %v", err)
+	}
+	if strings.Contains(r, "Fix the winbar") || !strings.Contains(r, "Session picker labels") {
+		t.Fatalf("until should drop the newer session: %q", r)
+	}
+
+	if _, _, err := run(t, "sessions", `{"action":"list","since":"not-a-date"}`); err == nil || !strings.Contains(err.Error(), "not a date") {
+		t.Fatalf("bad since: %v", err)
+	}
 }
 
 func TestSessionsSearch(t *testing.T) {
@@ -87,7 +123,7 @@ func TestSessionsRead(t *testing.T) {
 	defer utils.SetSessionsRoot("")
 
 	p := writeSession(t, dir, "proj/26-10/01-12.00.00",
-		"---\ndescription: Winbar fix\ncreated_cwd: /opt/code/yap\nturns: 1\n---\n\n# @user\nhello world\n# @assistant\n<!-- yap:thinking\nsecret thinking\n-->\n\nFixed it.\n<!-- yap:tool {\"id\":\"c1\",\"name\":\"edit\",\"arguments\":{}} -->\nok\n<!-- /yap:tool -->\n")
+		"---\ndescription: Winbar fix\ncreated_cwd: /opt/code/yap\nturns: 1\n---\n\n# @system\nrule one\nrule two\nrule three\n\n# @user\nhello world\n# @assistant\n<!-- yap:thinking\nsecret thinking\n-->\n\nFixed it.\n<!-- yap:tool {\"id\":\"c1\",\"name\":\"edit\",\"arguments\":{}} -->\nok\n<!-- /yap:tool -->\n")
 
 	r, _, err := run(t, "sessions", `{"action":"read","path":"`+p+`"}`)
 	if err != nil {
@@ -102,6 +138,27 @@ func TestSessionsRead(t *testing.T) {
 		t.Fatalf("thinking leaked into read: %q", r)
 	}
 
+	// the # @system message is skipped by default: its later lines do not
+	// appear, only the outline preview (first line) and a skip marker do.
+	if !strings.Contains(r, "[system message skipped") {
+		t.Fatalf("read should mark the system message skipped: %q", r)
+	}
+	if strings.Contains(r, "rule three") {
+		t.Fatalf("system body leaked into default read: %q", r)
+	}
+
+	// include_system restores the system prose.
+	r, _, err = run(t, "sessions", `{"action":"read","path":"`+p+`","include_system":true}`)
+	if err != nil {
+		t.Fatalf("read with system: %v", err)
+	}
+	if !strings.Contains(r, "rule three") {
+		t.Fatalf("include_system did not include system prose: %q", r)
+	}
+	if strings.Contains(r, "[system message skipped") {
+		t.Fatalf("include_system should not mark system skipped: %q", r)
+	}
+
 	// reading a directory resolves its transcript
 	r, _, err = run(t, "sessions", `{"action":"read","path":"`+filepath.Dir(p)+`"}`)
 	if err != nil || !strings.Contains(r, "hello world") {
@@ -113,10 +170,10 @@ func TestSessionsRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("paged read: %v", err)
 	}
-	if strings.Contains(r, "### [1] @user") {
-		t.Fatalf("paged read leaked message 1 prose: %q", r)
+	if strings.Contains(r, "### [3] @assistant") {
+		t.Fatalf("paged read leaked message 3 prose: %q", r)
 	}
-	if !strings.Contains(r, "### [2] @assistant") {
+	if !strings.Contains(r, "### [2] @user") {
 		t.Fatalf("paged read missing message 2 prose: %q", r)
 	}
 }

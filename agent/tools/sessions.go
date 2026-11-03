@@ -25,32 +25,36 @@ import (
 
 // listMax caps the number of sessions `list` returns, so a long-lived sessions
 // root does not flood the context; the most recently modified come first.
-const listMax = 200
+const listMax = 50
 
 type sessionsArgs struct {
-	Action  string `json:"action" jsonschema:"description=what to do: list saved sessions, search all session text, or read one session (list|search|read)"`
-	Pattern string `json:"pattern,omitempty" jsonschema:"description=ripgrep pattern for action=search"`
-	Path    string `json:"path,omitempty" jsonschema:"description=session transcript file or its directory for action=read; for action=list, scope to sessions under this directory"`
-	Start   int    `json:"start,omitempty" jsonschema:"description=1-based message index to begin the prose at for action=read (default 1)"`
-	Count   int    `json:"count,omitempty" jsonschema:"description=number of messages to include for action=read (default: all)"`
+	Action        string `json:"action" jsonschema:"description=what to do: list saved sessions, search all session text, or read one session (list|search|read)"`
+	Pattern       string `json:"pattern,omitempty" jsonschema:"description=ripgrep pattern for action=search"`
+	Path          string `json:"path,omitempty" jsonschema:"description=session transcript file or its directory for action=read; for action=list, scope to sessions under this directory"`
+	Filter        string `json:"filter,omitempty" jsonschema:"description=case-insensitive substring matched against description/path/cwd/model for action=list"`
+	Since         string `json:"since,omitempty" jsonschema:"description=only sessions modified on or after this date (YYYY-MM-DD or RFC3339) for action=list"`
+	Until         string `json:"until,omitempty" jsonschema:"description=only sessions modified on or before this date (YYYY-MM-DD or RFC3339) for action=list"`
+	Start         int    `json:"start,omitempty" jsonschema:"description=1-based message index to begin the prose at for action=read (default 1)"`
+	Count         int    `json:"count,omitempty" jsonschema:"description=number of messages to include for action=read (default: all)"`
+	IncludeSystem bool   `json:"include_system,omitempty" jsonschema:"description=include the # @system message prose for action=read (default false: it is skipped)"`
 }
 
 func init() {
 	Register("sessions",
 		"List, search, and read other saved Yap session transcripts under the sessions root. "+
 			"Use it to find and reference past conversations instead of guessing their paths. "+
-			"action=list names sessions with their descriptions, cwd, model and turn count (most recent first). "+
+			"action=list names sessions with their description, cwd, model and turn count (most recent first, capped at 50); narrow with filter (substring), since/until (dates), or path (a project scope). "+
 			"action=search greps every transcript's text (ripgrep, path:line:content) without loading them. "+
-			"action=read prints one session's message outline plus its prose with tool/thinking regions dropped; "+
+			"action=read prints one session's message outline plus its prose with tool/thinking regions dropped and its # @system message skipped unless include_system is set; "+
 			"page with start/count and follow up with the read tool for raw lines. Search or outline first — never load a whole large session.",
 		func(a *sessionsArgs) (string, string, error) {
 			switch a.Action {
 			case "list":
-				return listSessions(a.Path)
+				return listSessions(a)
 			case "search":
 				return searchSessions(a.Pattern)
 			case "read":
-				return readSession(a.Path, a.Start, a.Count)
+				return readSession(a)
 			case "":
 				return "", "", fmt.Errorf("sessions: action is required (list, search, read)")
 			default:
@@ -172,19 +176,56 @@ func readFrontmatter(path string) sessionMeta {
 	return parseMetaLines(lines)
 }
 
-func listSessions(scope string) (string, string, error) {
+// parseDate accepts YYYY-MM-DD or RFC3339. The second bool reports whether the
+// value was a bare date (no time part), so callers can widen it to a full day.
+func parseDate(s string) (time.Time, bool, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false, false
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t, true, true
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true, false
+	}
+	return time.Time{}, false, false
+}
+
+func listSessions(a *sessionsArgs) (string, string, error) {
 	root := utils.SessionsRoot()
 	if root == "" {
 		return "", "", fmt.Errorf("sessions root unavailable (sessions_dir was not sent with this turn)")
 	}
 	transcripts := sessionTranscripts(root)
-	if scope != "" {
-		scope = filepath.Clean(utils.ExpandHome(scope))
+	if a.Path != "" {
+		scope := filepath.Clean(utils.ExpandHome(a.Path))
 		if !filepath.IsAbs(scope) {
 			scope = filepath.Join(root, scope)
 		}
 		transcripts = scopeTranscripts(transcripts, scope)
 	}
+
+	var sinceT, untilT time.Time
+	if a.Since != "" {
+		t, ok, _ := parseDate(a.Since)
+		if !ok {
+			return "", "", fmt.Errorf("sessions: since %q is not a date (want YYYY-MM-DD or RFC3339)", a.Since)
+		}
+		sinceT = t
+	}
+	if a.Until != "" {
+		t, ok, dateOnly := parseDate(a.Until)
+		if !ok {
+			return "", "", fmt.Errorf("sessions: until %q is not a date (want YYYY-MM-DD or RFC3339)", a.Until)
+		}
+		if dateOnly {
+			t = t.Add(24*time.Hour - time.Nanosecond) // a bare date includes its whole day
+		}
+		untilT = t
+	}
+	filter := strings.ToLower(strings.TrimSpace(a.Filter))
+
 	if len(transcripts) == 0 {
 		return "(no sessions found)", "", nil
 	}
@@ -201,12 +242,27 @@ func listSessions(scope string) (string, string, error) {
 		if fi, err := os.Stat(p); err == nil {
 			mod = fi.ModTime()
 		}
+		if !sinceT.IsZero() && mod.Before(sinceT) {
+			continue
+		}
+		if !untilT.IsZero() && mod.After(untilT) {
+			continue
+		}
+		if filter != "" {
+			hay := strings.ToLower(m.description + "\n" + m.createdCwd + "\n" + m.model + "\n" + p)
+			if !strings.Contains(hay, filter) {
+				continue
+			}
+		}
 		items = append(items, item{path: p, desc: m.description, cwd: m.createdCwd, model: m.model, turns: m.turns, mod: mod})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.After(items[j].mod) })
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d session(s) under %s (most recent first)\n", len(items), root)
+	if len(items) == 0 {
+		return strings.TrimSpace(b.String()), "", nil
+	}
 	overflow := 0
 	if len(items) > listMax {
 		overflow = len(items) - listMax
@@ -234,7 +290,7 @@ func listSessions(scope string) (string, string, error) {
 		b.WriteString(line + "\n  " + it.path + "\n")
 	}
 	if overflow > 0 {
-		fmt.Fprintf(&b, "\n... %d more; pass path to scope to one project\n", overflow)
+		fmt.Fprintf(&b, "\n... %d more; narrow with filter, since/until, or path\n", overflow)
 	}
 	return strings.TrimSpace(b.String()), "", nil
 }
@@ -398,8 +454,17 @@ func preview(s string) string {
 	return s
 }
 
-func readSession(path string, start, count int) (string, string, error) {
-	path = strings.TrimSpace(path)
+// lineCount is the number of non-empty structural lines a message spans,
+// reported so a skipped system message is still accounted for.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+func readSession(a *sessionsArgs) (string, string, error) {
+	path := strings.TrimSpace(a.Path)
 	if path == "" {
 		return "", "", fmt.Errorf("sessions read needs a path: a session transcript file or its directory")
 	}
@@ -444,9 +509,11 @@ func readSession(path string, start, count int) (string, string, error) {
 	}
 	fmt.Fprintf(&b, "lines: %d  messages: %d\n\n", len(doc.Lines), len(msgs))
 
+	start := a.Start
 	if start < 1 {
 		start = 1
 	}
+	count := a.Count
 	if count <= 0 {
 		count = len(msgs)
 	}
@@ -469,6 +536,10 @@ func readSession(path string, start, count int) (string, string, error) {
 	b.WriteString("\n")
 	for i := start - 1; i < end; i++ {
 		m := msgs[i]
+		if m.role == "system" && !a.IncludeSystem {
+			b.WriteString(fmt.Sprintf("\n### [%d] @system (line %d)\n[system message skipped: %d lines; set include_system to read it]\n", i+1, m.line, lineCount(m.body)))
+			continue
+		}
 		b.WriteString(fmt.Sprintf("\n### [%d] @%s (line %d)\n%s\n", i+1, m.role, m.line, m.body))
 	}
 
