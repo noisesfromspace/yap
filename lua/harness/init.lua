@@ -32,6 +32,7 @@ local fold = require("harness.ui.fold")
 local audit = require("harness.client.audit")
 local session = require("harness.session")
 local lsp = require("harness.client.lsp")
+local util = require("harness.util")
 
 local stream = require("harness.client.stream")
 local buffers = require("harness.session.buffers")
@@ -505,7 +506,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("WinResized", {
     group = adopt_group,
     callback = function()
-      vim.cmd.redrawstatus()
+      util.redraw_status()
     end,
   })
   -- Adopt sessions that were loaded before setup (lazy plugin loading).

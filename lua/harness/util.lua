@@ -1,5 +1,6 @@
 -- Small cross-module helpers shared by the winbar and the send/backend
--- orchestration: human-readable token counts and buffer lookup.
+-- orchestration: human-readable token counts, buffer lookup, and the
+-- statusline redraw every animation/stream path needs.
 
 local M = {}
 
@@ -17,6 +18,19 @@ function M.fmt_tokens(n)
     return string.format("%d%s", value, suffix)
   end
   return string.format("%.1f%s", value, suffix)
+end
+
+--- Redraw the statusline/winbar, ignoring a CTRL-C that lands mid-command.
+--- Nvim turns an interrupt that arrives while a command runs into an error
+--- ("Keyboard interrupt") and clears got_int, so a cosmetic redraw fired from
+--- a timer or a scheduled callback would otherwise throw out of the event
+--- loop whenever the key arrives at the wrong microsecond. Anything else is a
+--- real error and still propagates.
+function M.redraw_status()
+  local ok, err = pcall(vim.cmd.redrawstatus)
+  if not ok and not tostring(err):find("Keyboard interrupt", 1, true) then
+    error(err)
+  end
 end
 
 --- Find a buffer by name, or create one (unlisted) with that name.

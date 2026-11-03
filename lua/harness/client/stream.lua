@@ -25,6 +25,7 @@ local session = require("harness.session")
 local system = require("harness.client.system")
 local maintain = require("harness.session.maintain")
 local lsp = require("harness.client.lsp")
+local util = require("harness.util")
 
 -- Per-buffer state aliases (kept in harness.state so winbar/picker/setup
 -- reach the same tables).
@@ -181,7 +182,7 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev) -- a turn failed: classified code + message
   elseif ev.type == "usage" then
     state.live_usage[buf] = ev
-    vim.cmd.redrawstatus()
+    util.redraw_status()
   elseif ev.type == "turn_end" then
     state.live_usage[buf] = nil
     last_turn[buf] = ev -- for the User YapTurnDone event on exit
@@ -574,7 +575,7 @@ function M.send(buf)
       -- setup() tears down this buffer's serve backend.
       close_if_requested(buf)
       scratchmod.finish_queue(buf, not errors[buf])
-      vim.cmd.redrawstatus()
+      util.redraw_status()
     end
     local function handle_frame(frame)
       if frame.type == "text" then

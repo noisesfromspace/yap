@@ -5,6 +5,7 @@
 local M = {}
 
 local state = require("harness.state")
+local util = require("harness.util")
 local running = state.running
 
 -- Local LCG so the face and plain-fallback picks never reseed the global
@@ -168,7 +169,7 @@ function M.start()
       local c = M.color()
       vim.api.nvim_set_hl(0, "YapBusySpin", { fg = c })
       vim.api.nvim_set_hl(0, "YapBusyText", { fg = c, italic = true })
-      vim.cmd.redrawstatus() -- re-evaluates the winbar expression
+      util.redraw_status() -- re-evaluates the winbar expression
       M.stop_if_idle()
     end)
   )
