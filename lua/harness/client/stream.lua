@@ -44,7 +44,7 @@ local stream_flush = state.stream_flush
 local follow_override = state.follow_override
 local stop_focus = {} -- buf -> window that pressed the stop key
 
-local function focus_stopped_prompt(buf)
+local function focus_stopped_prompt(buf, revise)
   local win = stop_focus[buf]
   stop_focus[buf] = nil
   if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win
@@ -52,14 +52,16 @@ local function focus_stopped_prompt(buf)
     return
   end
   local row = vim.api.nvim_buf_line_count(buf)
-  vim.api.nvim_win_set_cursor(win, { row, 0 })
+  local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
+  local col = revise and math.max(0, #line - 1) or 0
+  vim.api.nvim_win_set_cursor(win, { row, col })
   -- Cancellation completes asynchronously. Don't pull the user back if they
   -- navigated away before entering insert mode.
   vim.schedule(function()
     if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win
       and vim.api.nvim_win_get_buf(win) == buf and not running[buf]
-      and vim.api.nvim_win_get_cursor(win)[1] == row then
-      vim.cmd("startinsert")
+      and vim.deep_equal(vim.api.nvim_win_get_cursor(win), { row, col }) then
+      vim.cmd(revise and line ~= "" and "startinsert!" or "startinsert")
     end
   end)
 end
@@ -365,6 +367,8 @@ function M.send(buf)
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
   document.append_lines(buf, { "# @assistant", "" })
+  local assistant_heading = vim.api.nvim_buf_line_count(buf) - 1
+  local assistant_activity = false
   follow_tail()
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
@@ -459,6 +463,27 @@ function M.send(buf)
       spinner.stop_if_idle()
       repair_stream_tail(buf)
       if result.cancelled then
+        local revise = not assistant_activity
+        if revise then
+          for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, assistant_heading, -1, false)) do
+            if line:match("%S") then
+              revise = false
+              break
+            end
+          end
+        end
+        if revise then
+          -- No reply or tool call landed: the last user message is still
+          -- the draft. Remove only the empty assistant heading and separator.
+          local fold = require("harness.ui.fold")
+          fold.before_change(buf)
+          vim.api.nvim_buf_set_lines(buf, assistant_heading - 2, -1, false, {})
+          if document.trailing_role(buf) == "user"
+            and vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "# @user" then
+            vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "" })
+          end
+          fold.after_append(buf)
+        end
         -- A user-initiated stop: the turn was cancelled but the serve
         -- process stays alive (tool state survives).
         -- No error marker — the user asked for this. Clear any parked
@@ -466,10 +491,21 @@ function M.send(buf)
         pending_approvals[buf] = nil
         guard.touch()
         scratchmod.finish_queue(buf, false)
-        close_stream(buf)
-        follow_tail()
+        if revise then
+          awaiting[buf] = true
+          session.save(buf)
+          leave_undelivered_steer(buf)
+          if subagent_done[buf] then
+            local done = subagent_done[buf]
+            subagent_done[buf] = nil
+            done(false)
+          end
+        else
+          close_stream(buf)
+          follow_tail()
+        end
         close_if_requested(buf)
-        focus_stopped_prompt(buf)
+        focus_stopped_prompt(buf, revise)
         return
       end
       if not result.ok then
@@ -544,11 +580,18 @@ function M.send(buf)
     end
     local function handle_frame(frame)
       if frame.type == "text" then
+        if (frame.text or ""):match("%S") then
+          assistant_activity = true
+        end
         append(frame.text or "")
         return
       end
       sync_followers()
       if frame.type == "event" then
+        local kind = frame.event and frame.event.type
+        if kind == "tool_start" or kind == "tool_call" or kind == "tool_end" then
+          assistant_activity = true
+        end
         handle_event(buf, frame.event)
       elseif frame.type == "tool_output" then
         audit.tool_output(buf, frame.log, frame.delta)
@@ -560,8 +603,10 @@ function M.send(buf)
           l.ms, l.bytes, l.lines = frame.ms, frame.bytes, frame.lines
         end
       elseif frame.type == "approval_request" then
+        assistant_activity = true
         handle_approval_request(buf, frame)
       elseif frame.type == "subagent_request" then
+        assistant_activity = true
         subagent.start(buf, frame)
       elseif frame.type == "close_session" then
         -- Defer to turn completion so the reply streams out and the session
