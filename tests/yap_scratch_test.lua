@@ -31,7 +31,7 @@ assert(
   "scratch label did not follow the summary: " .. vim.fn.bufname(scratch)
 )
 assert(vim.wo.winfixheight == true, "scratch window is not fixed height")
-assert(vim.api.nvim_win_get_height(0) == 8, "scratch window height is not 8")
+assert(vim.api.nvim_win_get_height(0) == 12, "scratch window height is not 12")
 assert(
   vim.api.nvim_win_get_position(scratch_win)[1] > vim.api.nvim_win_get_position(chat_win)[1],
   "scratch window is not below the chat"
