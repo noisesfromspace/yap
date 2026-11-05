@@ -475,7 +475,7 @@ local function render()
     end
   end
   add("")
-  add("a auto-accept · r/x run·deny · i inspect · c clear history · za expand · q close", HL.hint)
+  add("a auto-accept · r/x run·deny · i inspect · Y copy bash command · c clear history · za expand · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -569,6 +569,14 @@ local function inspect_row(row)
   end
 end
 
+local function copy_bash_command(row)
+  if row.tool ~= "bash" or row.raw_command == "" then
+    return
+  end
+  vim.fn.setreg('"', row.raw_command)
+  vim.fn.setreg("+", row.raw_command)
+end
+
 -- ─── Board lifecycle ───────────────────────────────────────────────────────
 
 local function install_keymaps(buf)
@@ -621,6 +629,7 @@ local function install_keymaps(buf)
   vim.keymap.set("n", "r", act(approve_row), { buffer = buf, silent = true, desc = "yap: approve guard row" })
   vim.keymap.set("n", "x", act(deny_row), { buffer = buf, silent = true, desc = "yap: deny guard row" })
   vim.keymap.set("n", "i", act(inspect_row), { buffer = buf, silent = true, desc = "yap: inspect guard row" })
+  vim.keymap.set("n", "Y", act(copy_bash_command), { buffer = buf, silent = true, desc = "yap: copy bash command" })
   vim.keymap.set("n", "a", function()
     M.toggle_auto_accept()
   end, { buffer = buf, silent = true, desc = "yap: toggle auto-accept" })

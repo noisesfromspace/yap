@@ -868,7 +868,8 @@ Run/Deny. Once answered, the outcome is written to the audit log and read back
 as settled history — granted/denied/timed-out. `c` in the guard board clears
 that history view by writing a project watermark (guard.json, a timestamp) and
 hiding rows at or before it; the audit log is left intact. Parked approvals
-are not touched by `c`.
+are not touched by `c`. `Y` copies the bash command on the cursor row to the
+unnamed (`"`) and clipboard (`+`) registers, including when the row is folded.
 
 ==============================================================================
 12. TOOLS                                                      *yap-tools*

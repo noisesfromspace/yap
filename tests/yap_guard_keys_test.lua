@@ -37,10 +37,17 @@ guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 
-for _, key in ipairs({ "r", "x", "i", "c" }) do
+for _, key in ipairs({ "r", "x", "i", "Y", "c" }) do
   local m = vim.fn.maparg(key, "n", false, true)
   assert(m and m.buffer == 1, "guard board missing direct '" .. key .. "' keymap")
 end
+
+-- Y copies the full command from a folded bash approval to both registers.
+vim.fn.setreg('"', "old unnamed")
+vim.fn.setreg("+", "old clipboard")
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "rm -rf /", "Y did not copy the bash command to the unnamed register")
+assert(vim.fn.getreg("+") == "rm -rf /", "Y did not copy the bash command to the clipboard register")
 
 -- r on the cursor row (already the first approval row) approves directly.
 vim.api.nvim_feedkeys("r", "mtx", false)
@@ -55,10 +62,27 @@ vim.api.nvim_win_set_cursor(0, { line, 0 })
 vim.api.nvim_feedkeys("x", "mtx", false)
 assert(state.pending_approvals[a] == nil, "x did not deny the approval under the cursor")
 
+-- Non-bash rows and board chrome leave both registers untouched.
+park(a, "key-read", "read", "file.txt", "read-only")
+guard.touch()
+vim.fn.setreg('"', "keep unnamed")
+vim.fn.setreg("+", "keep clipboard")
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "keep unnamed" and vim.fn.getreg("+") == "keep clipboard", "Y copied a non-bash row")
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "keep unnamed" and vim.fn.getreg("+") == "keep clipboard", "Y copied board chrome")
+state.pending_approvals[a] = nil
+
 -- c writes the project watermark (guard.json) and leaves parked approvals
 -- alone: it clears the settled history view, not live approvals.
-park(a, "key-3", "bash", "echo a", "clear-a")
+park(a, "key-3", "bash", "printf 'first\\nsecond'\necho done", "clear-a")
 guard.touch()
+vim.fn.setreg('"', "old unnamed")
+vim.fn.setreg("+", "old clipboard")
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "printf 'first\\nsecond'\necho done", "Y lost the multiline command")
+assert(vim.fn.getreg("+") == vim.fn.getreg('"'), "Y lost the clipboard copy")
 vim.api.nvim_feedkeys("c", "mtx", false)
 assert(state.pending_approvals[a] ~= nil, "c cleared a parked approval")
 local paths = require("harness.path")
