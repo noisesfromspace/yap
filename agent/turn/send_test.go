@@ -18,6 +18,23 @@ import (
 	"boers.email/yap/agent/wire"
 )
 
+// TestKeylessProvider allows a local OpenAI-compatible endpoint without
+// inventing a dummy API key environment variable.
+func TestKeylessProvider(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testutil.SSE(w, `{"choices":[{"delta":{"content":"done"}}]}`)
+	}))
+	defer srv.Close()
+	testutil.WriteConfigJSON(t, fmt.Sprintf(`{"providers":{"local":{"base_url":%q}}}`, srv.URL+"/v1"))
+	var out bytes.Buffer
+	if err := Send("local", "llama3.2:3b", strings.NewReader(`{"messages":[{"role":"user","content":"hi"}]}`), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "done") {
+		t.Fatalf("missing reply: %s", out.String())
+	}
+}
+
 // TestStaticGateBlocksBeforeExecution checks the full dispatch path: a bash
 // command matching a static guard rule (sudo) pauses before the command runs.
 func TestStaticGateBlocksBeforeExecution(t *testing.T) {

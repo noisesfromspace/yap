@@ -316,7 +316,9 @@ Set only in yap buffers, except + and <leader>g, which are global. Every binding
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
-  <C-c>                 Cancel the in-flight request (see stop()).
+  <C-c>                 Cancel the in-flight request. While it unwinds, the
+                        winbar shows a stop icon beside the spinner; press
+                        again to kill its backend immediately.
   <leader>m             Change model (picker, see change_model()).
   <leader>g             Open/close the guard board (see guard()).
   <leader>l             Watch the live tool tail (see live()).

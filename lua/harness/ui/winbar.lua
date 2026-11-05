@@ -261,7 +261,17 @@ local function render_winbar(buf)
     -- visible at a glance from another window.
     local state_icons = {}
     local busy = running and running[buf]
-    if pending_approvals[buf] then
+    if busy and stopped[buf] then
+      -- The first stop is still unwinding. Keep the spinner visible, but
+      -- distinguish cancellation from ordinary generation (even if an
+      -- approval was parked when the user pressed stop).
+      if not inactive then
+        local glyph = require("harness").config.nerd_font and spinner.glyph(buf) or spinner.plain_glyph(buf)
+        state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
+      else
+        state_icons[#state_icons + 1] = seg(icons.stopped, "Needs")
+      end
+    elseif pending_approvals[buf] then
       -- A parked approval outranks the busy spinner: the session needs a
       -- decision, not a "streaming" signal, and must stay visible from an
       -- inactive window too.
@@ -332,10 +342,14 @@ local function render_winbar(buf)
     -- message or pending steer icon instead joins the leftmost state icon
     -- (see above).
     if not inactive and busy then
-      local l = live and live[buf]
-      if l and l.ms and l.ms >= 2000 then
-        local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
-        add_item({ seg(label, "BusyText") })
+      if stopped[buf] then
+        add_item({ seg(icons.stopped, "Needs") })
+      else
+        local l = live and live[buf]
+        if l and l.ms and l.ms >= 2000 then
+          local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
+          add_item({ seg(label, "BusyText") })
+        end
       end
     end
 

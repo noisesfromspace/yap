@@ -683,6 +683,7 @@ function M.send(buf)
         if running[buf] then
           complete({
             ok = false,
+            cancelled = stopped[buf] == true,
             error = table.concat(stderr_chunks, "\n"):gsub("%s+$", "") ~= "" and table.concat(stderr_chunks, "\n")
               or ("exit " .. result.code),
           })
@@ -770,6 +771,13 @@ function M.stop(buf, opts)
   scratchmod.finish_queue(buf, false) -- also retract a scheduled follow-up
   local proc = running[buf]
   if proc then
+    if stopped[buf] then
+      -- The first stop asked the backend to unwind. Do not wait for a stuck
+      -- tool or provider on the second press; the exit callback finishes the
+      -- cancelled turn and the next send starts a fresh serve process.
+      proc:kill(9)
+      return
+    end
     stopped[buf] = true
     -- Cancel just the in-flight turn, keeping the serve process alive so its
     -- tool state (MCP connections above all) survives for the next send.
