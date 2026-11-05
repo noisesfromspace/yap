@@ -1,41 +1,53 @@
--- A second Ctrl-C during cancellation kills the serve process instead of
--- waiting for a slow provider, and leaves the session ready for another send.
+-- The first stop lets a tool finish; the second kills the backend and its
+-- tool process group without waiting for the tool's sleep.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = vim.env.YAP_TEST_BIN or ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
-
-local buf = yap.new({ provider = "mock", model = "m1" })
-vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "Testing hard stop" })
-assert(yap.send(buf))
 local state = require("harness.state")
-local process = state.servers[buf]
-local stop_map
-for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
-  if map.desc == "yap: stop in-flight request" then stop_map = map.callback end
+
+local function start(prompt)
+  local buf = yap.new({ provider = "mock", model = "m1" })
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { prompt })
+  assert(yap.send(buf))
+  assert(vim.wait(5000, function() return state.live[buf] and state.live[buf].name == "bash" end, 10), "bash never started")
+  local stop_map
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+    if map.desc == "yap: stop in-flight request" then stop_map = map.callback end
+  end
+  assert(stop_map)
+  return buf, stop_map
 end
-assert(stop_map)
-vim.wait(300) -- backend has received the turn
-stop_map()
-assert(state.servers[buf] == process, "first stop should retain the backend")
-assert(state.stopped[buf] and yap.is_running(buf), "first stop did not enter stopping state")
-local stopping_bar = yap.winbar(buf)
+
+local buf, stop = start("graceful")
+local process = state.servers[buf]
+stop()
+assert(state.servers[buf] == process and yap.is_running(buf), "first stop killed the backend")
+local bar = yap.winbar(buf)
 local adjacent = "%#YapNeeds#" .. yap.config.icons.stopped .. "%*%#YapBusySpin#"
-assert(stopping_bar:find(adjacent, 1, true), "stop icon is not beside the spinner in the gutter")
--- Simulate a backend unable to finish its cancel; the second press must kill it.
-stop_map()
-assert(vim.wait(1000, function() return not yap.is_running(buf) end, 10), "hard stop waited for the provider")
-assert(not state.servers[buf], "hard stop retained the dead backend")
-assert(not state.errors[buf], "hard stop reported an unwanted error")
-local stopped_bar = yap.winbar(buf)
-assert(not stopped_bar:find("YapBusySpin", 1, true), "stopping spinner lingered")
-assert(stopped_bar:find(yap.config.icons.stopped, 1, true), "stopped icon missing")
-assert(require("harness.model.document").trailing_role(buf) == "user", "no writable prompt after hard stop")
-assert(vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "Testing hard stop", "draft was lost")
+assert(bar:find(adjacent, 1, true), "stop icon is not beside the spinner")
+vim.wait(200)
+assert(yap.is_running(buf), "first stop cancelled the running tool")
+assert(vim.wait(5000, function() return not yap.is_running(buf) end, 10), "tool did not finish")
+local transcript = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+assert(transcript:find("1\n2\n3\nfinished", 1, true), "first stop did not preserve the full counting tool result")
+assert(not transcript:find("unexpected next model step", 1, true), "continued to another model step")
+assert(state.servers[buf] == process and state.stopped[buf], "graceful stop lost backend or status")
 vim.cmd("stopinsert")
-vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "Try again" })
-assert(yap.send(buf), "could not restart backend after hard stop")
-assert(state.servers[buf] ~= process, "reused killed backend")
-stop_map()
-assert(vim.wait(10000, function() return not yap.is_running(buf) end, 20), "subsequent turn did not cancel")
-print("OK double Ctrl-C hard stop")
+
+local hard, hard_stop = start("hard")
+hard_stop()
+assert(yap.is_running(hard), "first press did not leave the tool running")
+hard_stop()
+assert(vim.wait(1500, function() return not yap.is_running(hard) end, 10), "second stop waited for bash")
+assert(not state.servers[hard] and not state.errors[hard], "hard stop left backend or error")
+local hard_transcript = table.concat(vim.api.nvim_buf_get_lines(hard, 0, -1, false), "\n")
+assert(not hard_transcript:find("\n10\ntoo-late", 1, true), "hard stop let the counting tool complete")
+assert(require("harness.model.document").trailing_role(hard) == "user", "no writable prompt")
+assert(not yap.winbar(hard):find("YapBusySpin", 1, true), "stopping spinner lingered")
+vim.cmd("stopinsert")
+vim.api.nvim_buf_set_lines(hard, -1, -1, false, { "restart" })
+assert(yap.send(hard), "could not restart backend")
+assert(vim.wait(5000, function() return not yap.is_running(hard) end, 10), "restart did not complete")
+assert(state.servers[hard] ~= process, "reused dead backend")
+print("OK graceful and hard Ctrl-C")

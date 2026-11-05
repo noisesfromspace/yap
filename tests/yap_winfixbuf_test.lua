@@ -28,4 +28,17 @@ local ok3, resumed = pcall(yap.open, saved_path)
 assert(ok3, "open under winfixbuf failed: " .. tostring(resumed))
 assert(vim.api.nvim_get_current_buf() == resumed, "open did not switch to the resumed session")
 assert(vim.wo[win].winfixbuf == true, "winfixbuf not restored after open")
+
+-- A hidden spawn must never touch the focused window, whatever it shows:
+-- the old `:enew` + restore round-trip is the fragile part and is gone.
+-- Guard the invariant with a scratch buffer in the window, not just a yap
+-- session (scratch buffers are the ones a session leaves behind in a split).
+vim.wo[win].winfixbuf = false
+local wipe = vim.api.nvim_create_buf(false, true)
+vim.bo[wipe].bufhidden = "wipe"
+vim.api.nvim_set_current_buf(wipe)
+local ok4, child4 = pcall(yap.new, { hidden = true, agent = "scout", system = "Scout", tools = { "read" } })
+assert(ok4, "hidden spawn over a scratch buffer failed: " .. tostring(child4))
+assert(vim.api.nvim_buf_is_valid(wipe), "hidden spawn wiped the focused scratch buffer")
+assert(vim.api.nvim_get_current_buf() == wipe, "hidden spawn stole the focused window")
 print("OK winfixbuf spawn")

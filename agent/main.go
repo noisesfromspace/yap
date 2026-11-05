@@ -243,12 +243,11 @@ func serve(in io.Reader, out io.Writer) error {
 	var updateMu sync.Mutex
 	var updateCh chan boundaryUpdate
 
-	// The currently-running turn's cancel func. The `cancel` notification on
-	// stdin calls it; the turn's context cancellation then unwinds the agent
-	// loop (LLM stream, in-flight tools, parked approvals/subagents) without
-	// killing the serve process, so tool state survives a stop().
-	var cancelMu sync.Mutex
-	var cancelFn context.CancelFunc
+	// A graceful stop leaves the current model step and its tool calls intact.
+	// Only the next model step is suppressed; the turn context is reserved for
+	// hard cancellation (e.g. backend shutdown).
+	var stopMu sync.Mutex
+	var stopRequested bool
 
 	// push delivers an update to the running turn, always keeping the latest
 	// one (an older pending steer/model is superseded, not queued).
@@ -315,12 +314,9 @@ func serve(in io.Reader, out io.Writer) error {
 					}
 					continue
 				case "cancel":
-					cancelMu.Lock()
-					fn := cancelFn
-					cancelMu.Unlock()
-					if fn != nil {
-						fn()
-					}
+					stopMu.Lock()
+					stopRequested = true
+					stopMu.Unlock()
 					continue
 				}
 			}
@@ -345,20 +341,20 @@ func serve(in io.Reader, out io.Writer) error {
 			ch := updateCh
 			updateMu.Unlock()
 			queue := boundaryQueue{updates: ch}
-			ctx, cancel := context.WithCancel(context.Background())
-			cancelMu.Lock()
-			cancelFn = cancel
-			cancelMu.Unlock()
-			err = turn.Run(ctx, req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll)
+			stopMu.Lock()
+			stopRequested = false
+			stopMu.Unlock()
+			shouldStop := func() bool {
+				stopMu.Lock()
+				defer stopMu.Unlock()
+				return stopRequested
+			}
+			err = turn.Run(context.Background(), req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll, shouldStop)
 			updateMu.Lock()
 			if updateCh == ch {
 				updateCh = nil
 			}
 			updateMu.Unlock()
-			cancelMu.Lock()
-			cancelFn = nil
-			cancelMu.Unlock()
-			cancel()
 		}
 		// The terminal frame: every text/event/tool_output frame above is
 		// already on the channel (one channel, total ordering).

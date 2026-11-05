@@ -234,14 +234,15 @@ The file is created at buffer creation so a fresh session is file-backed
 before the first reply. Saves follow every turn exit,
 including errors and a cancelled stop(), and go through `:write!` (not
 `writefile()`): the buffer owns the file, so mtime bookkeeping, `:w`, and E13
-all behave normally. The first stop requests cooperative cancellation and
-preserves the serve backend; a second stop while that turn is still running
-kills the backend immediately and finishes the turn as cancelled, starting a
-new backend on the next send. While cancellation is pending, the winbar keeps
-its spinner and shows the stopped icon immediately before it in the gutter,
-like the steer icon, instead of the running tool. Every turn exit, including
-backend errors and a
-cancelled stop(), repairs any dangling streamed marker, appends a fresh
+all behave normally. The first stop finishes the current model response and
+its tool calls without cancelling them, then stops before another model step;
+the serve backend survives. A second stop while that work is still running
+terminates the backend and its tracked tool processes, finishing the turn as
+cancelled and starting a new backend on the next send. While a stop is pending,
+the winbar keeps its spinner and shows the stopped icon immediately before it
+in the gutter, like the steer icon, instead of the running tool. Every turn
+exit, including backend errors and a cancelled stop(), repairs any dangling
+streamed marker, appends a fresh
 `# @user` message, and saves that final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log
 (R-audit-log), the scratch notes file, and the `assets/` folder of dropped
@@ -760,10 +761,9 @@ sequenceDiagram
   `{"type":"model","provider":...,"model":...}`,
   `{"type":"approval_result","id":...,"approved":bool}`,
   `{"type":"subagent_result","id":...,"result":...}`, and
-  `{"type":"cancel"}` — cancels the in-flight turn (aborts the LLM stream
-  and any running tool/approval/subagent through a context cancellation)
-  without killing the serve process, so tool state survives for the next
-  send.
+  `{"type":"cancel"}` — finish the current model response and any tool calls
+  without aborting them, then stop before the next model step. The serve
+  process and its tool state survive for the next send.
 - **argv** — `yap serve` (one persistent process per session buffer).
 - **stdout** — the single Go→Lua channel, JSON Lines, one record per line:
 

@@ -764,7 +764,6 @@ function M.stop(buf, opts)
     stop_focus[buf] = vim.api.nvim_get_current_win()
   end
   local child = subagent_children[buf]
-  subagent_children[buf] = nil
   if child then
     M.stop(child)
   end
@@ -775,14 +774,20 @@ function M.stop(buf, opts)
       -- The first stop asked the backend to unwind. Do not wait for a stuck
       -- tool or provider on the second press; the exit callback finishes the
       -- cancelled turn and the next send starts a fresh serve process.
-      proc:kill(9)
+      -- SIGTERM lets the backend kill tracked tool process groups before it
+      -- exits; SIGKILL here would orphan a running bash command.
+      proc:kill(15)
+      vim.defer_fn(function()
+        if servers[buf] == proc and running[buf] == proc then
+          proc:kill(9) -- teardown itself is stuck; do not hold the session hostage
+        end
+      end, 500)
       return
     end
     stopped[buf] = true
-    -- Cancel just the in-flight turn, keeping the serve process alive so its
-    -- tool state (MCP connections above all) survives for the next send.
-    -- The cancelled turn completes via the normal turn_complete frame, which
-    -- runs complete()'s cancelled path (no error marker).
+    -- Ask the backend to finish the current model step and its tool batch,
+    -- then stop before starting another step. The turn context remains live,
+    -- so an in-flight bash command can complete normally.
     local ok = pcall(function()
       proc:write(vim.json.encode({ type = "cancel" }) .. "\n")
     end)

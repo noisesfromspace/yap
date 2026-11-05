@@ -386,7 +386,7 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return fmt.Errorf("read request from stdin: %w", err)
 	}
-	return Run(context.Background(), providerName, model, req, outw, func() Boundary { return Boundary{} })
+	return Run(context.Background(), providerName, model, req, outw, func() Boundary { return Boundary{} }, nil)
 }
 
 // Run runs one agent loop. poll is consulted before each generation
@@ -396,8 +396,9 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 // history; a model switch rebuilds the provider/model and continues the
 // same turn. Both land at the next tool boundary, so native tool results
 // stay native — unlike a stop-and-resend, which flattens them to
-// transcript text.
-func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary) (retErr error) {
+// transcript text. shouldStop requests a graceful stop at the next model
+// boundary without cancelling the running response or tool calls.
+func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary, shouldStop func() bool) (retErr error) {
 	start := time.Now()
 	// Install the turn's context so foreground tools can abort on cancellation.
 	wire.SetTurnContext(ctx)
@@ -553,12 +554,16 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		wire.EmitEvent(m)
 	}()
 	for iter := 0; ; iter++ {
-		// A cancelled turn stops here, before the boundary: Ctrl-C means stop
-		// now, so a queued steer (or model switch) must not be consumed and
-		// injected into a turn the user just killed. The queue slot stays
-		// untouched and the frontend keeps its draft for an explicit send.
+		// Hard cancellation (backend shutdown) stops here before consuming
+		// queued steering or model changes. A soft stop is checked after the
+		// current model response and tool batch instead.
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		// A graceful stop is checked only between complete model steps, after
+		// any tool batch has finished and before queued steering is consumed.
+		if iter > 0 && shouldStop != nil && shouldStop() {
+			return context.Canceled
 		}
 		// Mid-turn injections land at the next model boundary — after the
 		// previous round's tool batch, before the next generation. Steering
@@ -685,6 +690,9 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 				pad()
 				fmt.Fprintf(out, "<!-- yap:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
 				turnError = fmt.Errorf("model returned an empty completion (finish_reason: %s)", reason)
+			}
+			if shouldStop != nil && shouldStop() {
+				return context.Canceled
 			}
 			break // final answer streamed; turn complete
 		}

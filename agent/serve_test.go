@@ -55,10 +55,9 @@ func TestServeMultipleTurnsAndFailure(t *testing.T) {
 	}
 }
 
-// TestServeCancelKeepsProcessAlive: a `cancel` notification aborts only the
-// in-flight turn (its bash tool's process group is killed and the loop
-// unwinds with context.Canceled), and the serve loop then accepts a second
-// turn — proving tool state survives a cancelled turn.
+// TestServeCancelKeepsProcessAlive: a `cancel` notification lets the current
+// bash tool finish and stops before the next model step. The persistent serve
+// process then accepts a second turn without losing its tool state.
 func TestServeCancelKeepsProcessAlive(t *testing.T) {
 	firstCall := make(chan struct{}, 1)
 	calls := 0
@@ -67,7 +66,7 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 		if calls == 1 {
 			firstCall <- struct{}{}
 			testutil.SSE(w,
-				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"sleep 30\"}"}}]}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"sleep 0.5; echo completed\"}"}}]}}]}`,
 				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 			)
 			return
@@ -107,6 +106,9 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 	if !strings.Contains(s, `"status":"cancelled"`) {
 		t.Fatalf("missing cancelled turn_end: %q", s)
 	}
+	if !strings.Contains(s, "completed") {
+		t.Fatalf("graceful stop discarded the tool result: %q", s)
+	}
 	if !strings.Contains(s, "second turn ok") {
 		t.Fatalf("serve did not survive the cancel: %q", s)
 	}
@@ -115,12 +117,9 @@ func TestServeCancelKeepsProcessAlive(t *testing.T) {
 	}
 }
 
-// TestServeCancelMidStream: a `cancel` notification that lands while the
-// model is still streaming prose (no tool in flight) must emit a
-// turn_complete with "cancelled":true — not a silent ok:true on a truncated
-// stream, and not an error frame. The SDK closes the response body on
-// cancellation, so the stream can end cleanly with only a prefix of the
-// answer; the turn must still be recognised as cancelled.
+// TestServeCancelMidStream: a `cancel` notification during a model stream
+// lets the response finish before reporting cancellation. No partial answer
+// or subsequent model step should be produced.
 func TestServeCancelMidStream(t *testing.T) {
 	started := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +162,9 @@ func TestServeCancelMidStream(t *testing.T) {
 	s := out.String()
 	if !strings.Contains(s, `"cancelled":true`) {
 		t.Fatalf("missing cancelled turn_complete: %q", s)
+	}
+	if !strings.Contains(s, `49`) {
+		t.Fatalf("graceful stop truncated the provider stream: %q", s)
 	}
 	if strings.Contains(s, `"ok":true`) {
 		t.Fatalf("cancelled turn reported ok: %q", s)

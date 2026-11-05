@@ -152,17 +152,26 @@ end
 --- Open a new yap session buffer.
 function M.new(opts)
   opts = opts or {}
-  local win = vim.api.nvim_get_current_win()
-  local previous = vim.api.nvim_win_get_buf(win)
-  -- `enew` (and the hidden case's closing nvim_win_set_buf) switches this
-  -- window's buffer, which E1513 forbids while 'winfixbuf' is set — a
-  -- mini.files explorer window pins its buffer. Clear it for the span of
-  -- this function and restore it so a pinned window stays pinned.
-  local fixed = vim.wo[win].winfixbuf
-  local cursorline = vim.wo[win].cursorline
-  vim.wo[win].winfixbuf = false
-  vim.cmd("enew")
-  local buf = vim.api.nvim_get_current_buf()
+  local win, fixed
+  local buf
+  if opts.hidden then
+    -- A delegated agent is never shown in a window: create an unlisted,
+    -- file-backed buffer directly and leave the focused window untouched.
+    -- The old `:enew` + restore round-trip hijacked the window (the child
+    -- flashed there) and could fail restoring the previous buffer once it
+    -- had been unloaded/wiped in between ("Invalid buffer id").
+    buf = vim.api.nvim_create_buf(false, false)
+  else
+    -- `enew` switches this window's buffer, which E1513 forbids while
+    -- 'winfixbuf' is set — a mini.files explorer window pins its buffer.
+    -- Clear it for the span of this function and restore it so a pinned
+    -- window stays pinned.
+    win = vim.api.nvim_get_current_win()
+    fixed = vim.wo[win].winfixbuf
+    vim.wo[win].winfixbuf = false
+    vim.cmd("enew")
+    buf = vim.api.nvim_get_current_buf()
+  end
   if opts.system then
     vim.b[buf].yap_system = opts.system
   end
@@ -209,14 +218,14 @@ function M.new(opts)
   -- Create the session's live tool tail now (empty until a tool runs), before
   -- any :file rename or tool run.
   audit.ensure(buf)
-  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+  if not opts.hidden then
+    vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
+  end
 
   setup_buffer(buf)
-  if opts.hidden then
-    vim.api.nvim_win_set_buf(win, previous)
-    vim.wo[win].cursorline = cursorline
+  if not opts.hidden then
+    vim.wo[win].winfixbuf = fixed
   end
-  vim.wo[win].winfixbuf = fixed
 
   return buf
 end

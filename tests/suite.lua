@@ -69,7 +69,7 @@ local CASES = {
   { name = "yap_steer_test", port = 18160, mock = "mock_steer.py" },
   { name = "yap_stop_focus_test", port = 18160, mock = "mock_steer.py" },
   { name = "yap_stop_draft_test", port = 18165, mock = "mock_stop_delay.py" },
-  { name = "yap_double_stop_test", port = 18165, mock = "mock_stop_delay.py" },
+  { name = "yap_double_stop_test", port = 18166, mock = "mock_double_stop.py" },
   { name = "yap_model_switch_test", port = 18170, mock = "mock_model_switch.py" },
   { name = "yap_cwd_test", port = 18132 },
   { name = "yap_git_test", port = 18132 },
