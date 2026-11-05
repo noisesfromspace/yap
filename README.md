@@ -16,9 +16,8 @@ Inspired by pi and gptel.
 - Text objects and motions: edit a message, a thinking block or a tool region
   as text (`dam`, `]m`, `]u`, `]t`).
 - Folding that collapses agent output or tool calls (`<leader>1/2/3`).
-- Streaming replies, stoppable mid-turn (`<C-c>`).
-- A live tool tail in its own buffer (`<leader>l`), so the conversation never
-  takes the stream.
+- Model replies stream into the session buffer and can be stopped mid-turn
+  (`<C-c>`). Running tool output streams to a separate live tail (`<leader>l`).
 - Approvals: destructive commands and secret paths pause for Run/Deny, and bash
   runs inside a bubblewrap sandbox on Linux.
 - Context control: `:YapClear` swaps old tool output for audit-log pointers and
@@ -33,20 +32,22 @@ Inspired by pi and gptel.
   trees through `vim.ui.select` (`+` for saved sessions).
 - A `sessions` tool to list, search, and read other saved sessions, so a
   conversation can pull context from past ones without loading them whole.
-- A winbar with the session description, model, token totals, cost and context use,
-  plus a rollup of your other sessions.
-- Per-session model switching (`<leader>m`) and model groups, so a cheap model
-  can title sessions and run `:YapEval!`.
+- A winbar with the session description, model, token totals, cost and context use.
+- Per-session model switching (`<leader>m`).
 - `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
   with the model's output in any buffer.
 - Providers: native OpenAI, Anthropic, Gemini and DeepSeek, any
   OpenAI-compatible endpoint, or a ChatGPT plan login.
-- An append-only audit log of every tool call, result and approval, per session.
 - A session-only language server (`yap lsp`) for document symbols, completion
   and structural diagnostics, scoped to managed sessions. nvim-cmp and
   blink.cmp can use it through their LSP source or an optional dedicated Yap
   source (see `:help yap-lsp`).
-- Images dropped into the buffer, sent to the model as image parts.
+- Fork a conversation into an independent session with `:YapFork`, then edit
+  the transcript to change direction.
+- A session jail runs Neovim inside bubblewrap, limiting the files and tools
+  available to the whole session.
+- Lazy MCP servers keep tool definitions out of context until the agent loads
+  that server.
 
 ## Tools
 
@@ -158,15 +159,15 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 ## Lua API
 
-| Function                                                 | Shortcut    | Purpose                                          |
-| -------------------------------------------------------- | ----------- | ------------------------------------------------ |
-| `require("harness").send()`                              | `<C-s>`     | send the transcript                              |
-| `require("harness").stop()`                              | `<C-c>`     | stop the in-flight request                       |
-| `require("harness").live()`                              | `<leader>l` | open the live tool tail                          |
-| `require("harness").guard()`                             | `<leader>g` | open/close the guard board                       |
-| `require("harness").change_model(combo)`                 | `<leader>m` | set this session's provider/model                |
-| `require("harness").sessions(scope)`                     | `+`         | resume a saved session (`cwd` \| `all`) or list open sessions (`open`) |
-| `require("harness").insert(name)`                        | `<C-t>`     | insert a template (and send it) or merge a skill |
+| Function                                 | Shortcut    | Purpose                                                                |
+| ---------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `require("harness").send()`              | `<C-s>`     | send the transcript                                                    |
+| `require("harness").stop()`              | `<C-c>`     | stop the in-flight request                                             |
+| `require("harness").live()`              | `<leader>l` | open the live tool tail                                                |
+| `require("harness").guard()`             | `<leader>g` | open/close the guard board                                             |
+| `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                                      |
+| `require("harness").sessions(scope)`     | `+`         | resume a saved session (`cwd` \| `all`) or list open sessions (`open`) |
+| `require("harness").insert(name)`        | `<C-t>`     | insert a template (and send it) or merge a skill                       |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 In a session buffer `<C-t>` calls `insert()`: a template is appended as a
@@ -186,61 +187,11 @@ tags only attention states — running `[RUN]`, error `[ERR]`, approval parked
 badge-less. Open saved sessions get a live status icon in the saved-session
 picker.
 
-## Session jail
-
-The bash sandbox confines one process. The editor, the backend and every other
-tool still run with your full rights. To contain a whole session, the flake's
-home-manager module starts Neovim inside bubblewrap, with only the launch
-directory, the nix toolchain and yap's config mounted. Other projects, notes
-and `~/.ssh` do not exist in there, so a prompt-injected model has nothing to
-read.
-
-```nix
-programs.yap = {
-  enable = true;
-  envFile = config.age.secrets.api-keys.path;
-  jail = {
-    enable = true;
-    name = "nvim-investigate";
-    preExec = [ "/run/wrappers/bin/tunnel" ]; # optional, runs outside bwrap
-    agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
-  };
-};
-```
-
-`cd` into a case directory before starting the launcher. That directory becomes
-`:pwd`. Bare `:Yap` sessions live under the sessions root (mounted in the jail),
-and `:Yap <path>` puts a portable transcript wherever you name it — add any
-project-local transcripts to your gitignore.
-
-The module installs a `yap` backend launcher that sources `envFile` at runtime.
-Pass `${lib.getExe config.programs.yap.backendPackage}` as `bin` to
-`require('harness').setup()` in your Neovim config. Set harness options such
-as `model_groups`, `agents_file`, `skills_dir`, and `sessions_dir` there, not
-in `programs.yap`. The jail sources the same file outside bubblewrap; set
-`jail.envFile` only if it needs a different one. The jail forwards credential
-variables named by providers and MCP servers (`env`/`headers` mappings).
-
-If `setup()` overrides the default `sessions_dir` or `agents_file`, set
-`jail.sessionsDir` or `jail.agentsTargetFile` to the matching path. Bind any
-non-default skills, agents and templates directories with
-`jail.extraReadOnlyPaths`.
-
-`preExec` wraps the jail from outside. bubblewrap sets `NoNewPrivs`, so a setuid
-network namespace wrapper such as a VPN has to run before it, never inside.
-Only the configured credential variables reach the jail.
-
-Linux only. The jail bounds the filesystem, not the network, because the host
-network namespace is shared. Pair it with `preExec` when traffic must leave
-from a VPN, or set `network = false` to drop egress and accept that model
-providers stop answering. `programs.yap.jail.*` documents the remaining
-options.
-
 ## Rendering
 
 yap writes plain markdown, so your renderer applies. Not all renderers are
 written to handle 50k-line buffers, so there might be performance issues. Same
-for other plugin that hook into Markdown files. 
+for other plugin that hook into Markdown files.
 
 [touchup](https://git.boers.email/martijn/touchup.nvim) understands yap's
 markers: it colors the `yap:thinking` / `tool` / `error` / `usage` labels and
@@ -268,10 +219,32 @@ The full vocabulary is in `:help yap-glossary`.
 
 ## Notes
 
-- yap uses a Nerd Font by default for winbar and picker glyphs. Set
-  `nerd_font = false` in setup for plain Unicode.
-- This is experimental. Editing inside a streaming reply can mix your text
-  with the model's output, and streaming edits can interfere with undo.
+- yap uses a Nerd Font by default for winbar and picker glyphs. Set `nerd_font
+= false` in setup for plain Unicode.
+
+## Session jail
+
+On Linux, `programs.yap.jail` runs Neovim under bubblewrap with only the launch
+ directory, Yap config and configured paths mounted. Unlike the per-command
+ bash sandbox, it contains the editor, backend and other tools too. It does not
+ restrict network access by default; set `network = false` to disable egress.
+
+```nix
+programs.yap = {
+  enable = true;
+  envFile = config.age.secrets.api-keys.path;
+  jail = {
+    enable = true;
+    name = "nvim-investigate";
+    preExec = [ "/run/wrappers/bin/tunnel" ]; # optional, runs outside bwrap
+    agentsFile = "${config.home.homeDirectory}/.yap/INVESTIGATE.md";
+  };
+};
+```
+
+Start the launcher from the case directory; it becomes `:pwd`. See the
+`programs.yap.jail.*` options for credential forwarding, extra paths, and
+session-directory configuration.
 
 ## Documentation
 
