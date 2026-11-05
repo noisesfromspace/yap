@@ -238,8 +238,9 @@ all behave normally. The first stop requests cooperative cancellation and
 preserves the serve backend; a second stop while that turn is still running
 kills the backend immediately and finishes the turn as cancelled, starting a
 new backend on the next send. While cancellation is pending, the winbar keeps
-its spinner and shows the stopped icon beside it instead of the running tool.
-Every turn exit, including backend errors and a
+its spinner and shows the stopped icon immediately before it in the gutter,
+like the steer icon, instead of the running tool. Every turn exit, including
+backend errors and a
 cancelled stop(), repairs any dangling streamed marker, appends a fresh
 `# @user` message, and saves that final writable state. The markdown file is the only serialization of the
 message history, but a session is a small set of sibling files: the audit log

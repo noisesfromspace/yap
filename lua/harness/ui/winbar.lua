@@ -266,6 +266,7 @@ local function render_winbar(buf)
       -- distinguish cancellation from ordinary generation (even if an
       -- approval was parked when the user pressed stop).
       if not inactive then
+        state_icons[#state_icons + 1] = seg(icons.stopped, "Needs")
         local glyph = require("harness").config.nerd_font and spinner.glyph(buf) or spinner.plain_glyph(buf)
         state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
       else
@@ -339,17 +340,13 @@ local function render_winbar(buf)
     end
 
     -- Tool text belongs to the text region, ahead of the rollup. A queued
-    -- message or pending steer icon instead joins the leftmost state icon
+    -- message, pending steer or stopping icon joins the leftmost state icon
     -- (see above).
-    if not inactive and busy then
-      if stopped[buf] then
-        add_item({ seg(icons.stopped, "Needs") })
-      else
-        local l = live and live[buf]
-        if l and l.ms and l.ms >= 2000 then
-          local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
-          add_item({ seg(label, "BusyText") })
-        end
+    if not inactive and busy and not stopped[buf] then
+      local l = live and live[buf]
+      if l and l.ms and l.ms >= 2000 then
+        local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
+        add_item({ seg(label, "BusyText") })
       end
     end
 

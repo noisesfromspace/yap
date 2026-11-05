@@ -20,8 +20,8 @@ stop_map()
 assert(state.servers[buf] == process, "first stop should retain the backend")
 assert(state.stopped[buf] and yap.is_running(buf), "first stop did not enter stopping state")
 local stopping_bar = yap.winbar(buf)
-assert(stopping_bar:find("YapNeeds#" .. yap.config.icons.stopped, 1, true), "winbar did not indicate cancellation")
-assert(stopping_bar:find("YapBusySpin", 1, true), "stopping lost its spinner")
+local adjacent = "%#YapNeeds#" .. yap.config.icons.stopped .. "%*%#YapBusySpin#"
+assert(stopping_bar:find(adjacent, 1, true), "stop icon is not beside the spinner in the gutter")
 -- Simulate a backend unable to finish its cancel; the second press must kill it.
 stop_map()
 assert(vim.wait(1000, function() return not yap.is_running(buf) end, 10), "hard stop waited for the provider")
