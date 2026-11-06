@@ -54,6 +54,18 @@ func TestSessionsList(t *testing.T) {
 		t.Fatalf("scoped list should still contain both sessions: %q", r)
 	}
 
+	// scoping by a project cwd resolves its slug subdirectory under the root
+	cwd := "/opt/code/yap"
+	writeSession(t, dir, "-opt-code-yap/26-10/03-12.00.00",
+		"---\ndescription: Cwd scoped session\ncreated_cwd: "+cwd+"\n---\n\n# @user\nx\n")
+	r, _, err = run(t, "sessions", `{"action":"list","path":"`+cwd+`"}`)
+	if err != nil {
+		t.Fatalf("cwd-scoped list: %v", err)
+	}
+	if !strings.Contains(r, "Cwd scoped session") || strings.Contains(r, "Fix the winbar") {
+		t.Fatalf("cwd-scoped list should keep only the slug project: %q", r)
+	}
+
 	// filter narrows by substring
 	r, _, err = run(t, "sessions", `{"action":"list","filter":"winbar"}`)
 	if err != nil {

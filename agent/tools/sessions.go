@@ -99,6 +99,41 @@ func sessionTranscripts(root string) []string {
 	return out
 }
 
+// sessionsScope resolves a `path` scope for list. A directory already under
+// the sessions root is used as-is; an absolute path elsewhere is a project
+// cwd, resolved to its slug subdirectory (mirrors lua/harness/path.lua: a
+// leading "/" becomes "-", so `/opt/code/yap` → `-opt-code-yap`); a relative
+// path is joined to the root.
+func sessionsScope(root, p string) string {
+	scope := filepath.Clean(utils.ExpandHome(p))
+	if scope == "." || scope == "" {
+		return root
+	}
+	if !filepath.IsAbs(scope) {
+		return filepath.Join(root, scope)
+	}
+	if scope == root || strings.HasPrefix(scope, root+string(filepath.Separator)) {
+		return scope
+	}
+	return filepath.Join(root, cwdSlug(scope))
+}
+
+// cwdSlug converts a project cwd to the slug directory name used under the
+// sessions root. Mirrors lua/harness/path.lua::cwd_slug: every character that
+// is not alphanumeric, `.`, `_`, or `-` becomes `-`.
+func cwdSlug(cwd string) string {
+	var b strings.Builder
+	for _, r := range filepath.Clean(cwd) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
 // scopeTranscripts keeps the transcripts under scope (a directory).
 func scopeTranscripts(transcripts []string, scope string) []string {
 	var out []string
@@ -199,11 +234,7 @@ func listSessions(a *sessionsArgs) (string, string, error) {
 	}
 	transcripts := sessionTranscripts(root)
 	if a.Path != "" {
-		scope := filepath.Clean(utils.ExpandHome(a.Path))
-		if !filepath.IsAbs(scope) {
-			scope = filepath.Join(root, scope)
-		}
-		transcripts = scopeTranscripts(transcripts, scope)
+		transcripts = scopeTranscripts(transcripts, sessionsScope(root, a.Path))
 	}
 
 	var sinceT, untilT time.Time
