@@ -101,6 +101,40 @@ local src = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(src)
 vim.bo[src].filetype = "go"
 vim.api.nvim_buf_set_lines(src, 0, -1, false, { "a", "x := `y`", "c" })
+vim.api.nvim_buf_set_name(src, vim.fn.tempname() .. ".go")
+local session = require("harness.session")
+local function is_listed(path)
+  for _, item in ipairs(session.list()) do
+    if item.path == path then
+      return true
+    end
+  end
+  return false
+end
+
+-- A file-only eval is just scaffolding, not a prompt. It stays hidden even
+-- while loaded; typing anything beyond the scaffold makes it discoverable
+-- without requiring a save, and clearing the text hides it again.
+local blank = yap.eval_session({ buf = src })
+local blank_path = vim.b[blank].yap_path
+assert(not is_listed(blank_path), "empty eval unexpectedly listed")
+local last = vim.api.nvim_buf_line_count(blank) - 1
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "What does this file do?" })
+assert(is_listed(blank_path), "typed eval prompt missing before save")
+session.save(blank)
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "" })
+session.save(blank)
+assert(not is_listed(blank_path), "cleared eval prompt still listed")
+-- Sending an eval is a completed conversation, even if it has no description.
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "What does this file do?" })
+yap.send(blank)
+assert(vim.wait(10000, function()
+  return not require("harness.state").running[blank]
+end, 50), "eval turn did not finish")
+assert(is_listed(blank_path), "completed eval session missing")
+vim.api.nvim_buf_delete(blank, { force = true })
+assert(is_listed(blank_path), "completed eval hidden after unloading")
+
 local wins_before = #vim.api.nvim_tabpage_list_wins(0)
 local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2 })
 assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "eval session did not open a split")
@@ -121,11 +155,7 @@ assert(not stext:find("# @assistant"), "eval session sent without an instruction
 assert(not stext:find("return ONLY the result", 1, true), "eval session kept the one-shot system prompt")
 local spath = vim.b[sbuf].yap_path
 assert(spath and vim.fn.filereadable(spath) == 1, "eval session not saved: " .. tostring(spath))
-local listed = false
-for _, item in ipairs(require("harness.session").list()) do
-  listed = listed or item.path == spath
-end
-assert(listed, "eval session missing from sessions()")
+assert(is_listed(spath), "eval session missing from sessions()")
 yap.config.model_groups.flash = ""
 assert(select(2, eval.combo()) == "m1", "empty flash should use agent")
 
@@ -134,12 +164,14 @@ local log = io.open("/tmp/yap-eval.log", "r")
 assert(log, "eval mock log missing")
 local text = log:read("*a")
 log:close()
+local one_shot = 0
 for line in text:gmatch("[^\n]+") do
   local okj, req = pcall(vim.json.decode, line)
-  if okj then
-    assert(req.model == "flash", "one-shot eval did not use flash: " .. line)
+  if okj and req.model == "flash" then
+    one_shot = one_shot + 1
     assert(not (req.tools and type(req.tools) == "table" and #req.tools > 0), "eval offered tools: " .. line)
   end
 end
+assert(one_shot >= 4, "one-shot eval requests missing")
 
 print("OK eval")

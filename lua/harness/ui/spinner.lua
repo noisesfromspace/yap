@@ -24,7 +24,6 @@ local function nf(cp)
 end
 local NF_SPINNER = {
   nf(0xF0765), -- circle
-  nf(0xF05E0), -- check-circle
   nf(0xF0159), -- close-circle
   nf(0xF0376), -- minus-circle
   nf(0xF0417), -- plus-circle

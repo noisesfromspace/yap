@@ -48,7 +48,6 @@ import (
 )
 
 func main() {
-	defer tools.CloseAll()
 	defer turn.CloseMCP()
 	// SIGTERM/SIGINT (e.g. the process being killed, or a buffer unload)
 	// terminate the persistent backend. Kill tracked local tool process
@@ -60,7 +59,6 @@ func main() {
 	go func() {
 		<-sig
 		wire.KillAll()
-		tools.CloseAll()
 		turn.CloseMCP()
 		fmt.Fprintln(os.Stderr, "interrupted")
 		os.Exit(1)
@@ -81,14 +79,12 @@ func main() {
 			os.Exit(2)
 		}
 		if err := turn.Send(*provider, *model, os.Stdin, os.Stdout); err != nil {
-			tools.CloseAll()
 			turn.CloseMCP()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}
 	case "serve":
 		if err := serve(os.Stdin, os.Stdout); err != nil {
-			tools.CloseAll()
 			turn.CloseMCP()
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)

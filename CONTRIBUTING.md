@@ -254,7 +254,8 @@ and keep their real markdown filenames, so native buffer navigation and file
 explorers work. Subagents (`b:yap_agent`) and live tail buffers remain unlisted;
 subagents remain excluded from the winbar overview. A session's tool tail opens
 with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
-session status must not redirect focus. The transcript filename is the only
+closing the sole remaining buffer swaps in an empty replacement first so the
+session still wipes. Session status must not redirect focus. The transcript filename is the only
 permanent title: a renamed transcript's filename outranks the generated
 description in every session view, and the description is regenerated after
 every turn.
@@ -262,7 +263,11 @@ every turn.
 `sessions(scope)` is the single session picker: `"cwd"`/`"all"` list saved
 sessions, `"open"` lists the open-session tree (including subagents and
 forks). Sessions belong in ordinary buffer navigation without sacrificing
-real file paths or the session trees.
+real file paths or the session trees. The saved picker lists an ordinary
+blank session while its buffer is loaded and hides it once unloaded unless it
+has a prompt, a completed turn, a description or a renamed transcript. A
+scaffold-only `:YapEval` (no selection, no instruction) stays hidden until a
+question is typed or a turn completes.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -430,11 +435,15 @@ with a backtick run one longer than any run inside the result, so an embedded
 fence line cannot close it early; the same fenced string is replayed to the
 model across turns.
 
-#### R-no-mcp — No MCP
+#### R-mcp — MCP tools are runtime-discovered, never files in agent/tools/
 
-The author's tools are thin HTTP wrappers that are less code as native Go
-functions than an MCP client; MCP also has no equivalent of pi's hook bus. If
-ever needed, add mark3labs/mcp-go additively.
+The compiled tools stay thin native Go functions, one file per tool. MCP is
+the escape hatch for tools that live behind an external server: configured
+servers are dialed with the official `modelcontextprotocol/go-sdk`, their
+tools registered through `tools.RegisterRaw` as `mcp_<server>_<tool>`, and a
+`lazy` server exposes a single loader tool until its definitions are needed.
+MCP calls are not guarded: their reach is whatever the server and its
+credentials permit.
 
 #### R-compiled-tools — Tools are compiled-in Go files, one per file in agent/tools/
 
@@ -575,9 +584,10 @@ Normal streaming is append-only; explicit document operations may rewrite
 existing content: `:YapClear` replaces old tool result bodies with a pointer
 to the audit log (path plus the exact line range holding that call's record),
 `:YapCompact` can delete superseded history after confirmation, frontmatter
-changes with the selected model, and the transient yap:usage marker is
-consumed into in-memory totals. Why: output exists in exactly one place at any
-moment, and the buffer format has no transient states to repair.
+changes with the selected model; usage arrives as a `usage` event frame and
+is folded into the winbar's in-memory totals, never a buffer marker. Why:
+output exists in exactly one place at any moment, and the buffer format has no
+transient states to repair.
 
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
@@ -793,7 +803,7 @@ sequenceDiagram
   - `progress` `{"type":"progress","log":...,"tool":...,"bytes":...,"lines":...,"ms":...}`
     — throttled throughput for the running streamed tool, emitted on a timer
     (not on output) so a quiet command still reports elapsed time; the winbar
-    renders it as `<tool> <Ns> · <bytes>` instead of inferring time from a
+    renders it as `<tool> <Ns>` instead of inferring time from a
     start timestamp. Not audited — transient UI state, like `usage`.
   - `approval_request` `{"type":"approval_request","id":...,"command":...,"tool":...,"reason":...}`
     — a guard rule matched, so the call parks until the Lua side replies

@@ -32,10 +32,10 @@ assert(path, "no yap_path set")
 assert(vim.fn.filereadable(path) == 1, "session file not written: " .. path)
 print("saved: " .. path)
 
--- 3. list hides unnamed sessions (no description, auto-generated filename);
--- descriptions are generated after turns, so a fresh session is not listed
+-- 3. A loaded blank session is discoverable even without a generated title
+-- or a pending prompt. The saved picker must not hide the round-circle row.
 local items = session.list("cwd")
-assert(#items == 0, "expected no listed sessions, got " .. #items)
+assert(#items == 1 and items[1].path == path, "loaded blank session missing: " .. vim.inspect(items))
 
 -- 3b. A renamed transcript names a session and keeps it visible before a
 -- description is generated; the directory name is not the display name.
@@ -52,7 +52,8 @@ print("listed: " .. items[1].text)
 
 -- 3c. a fresh session with an unsent # @user prompt is a "scheduled"
 -- prompt: it stays listed even before a description is generated, so it can
--- be resumed and sent later. Emptying the prompt hides it again.
+-- be resumed and sent later. Clearing it leaves the loaded buffer visible;
+-- unloading it hides it again until a real prompt is typed.
 local scheduled = yap.new()
 local scheduled_last = vim.api.nvim_buf_line_count(scheduled) - 1
 vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "scheduled prompt body" })
@@ -69,8 +70,21 @@ assert(scheduled_item, "scheduled prompt should be listed: " .. vim.inspect(item
 vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "" })
 session.save(scheduled)
 items = session.list("cwd")
+assert(
+  vim.tbl_contains(
+    vim.tbl_map(function(item)
+      return item.path
+    end, items),
+    scheduled_path
+  ),
+  "loaded empty session should remain listed"
+)
+vim.api.nvim_buf_call(scheduled, function()
+  vim.cmd("bunload!")
+end)
+items = session.list("cwd")
 for _, item in ipairs(items) do
-  assert(item.path ~= scheduled_path, "empty fresh session should stay hidden: " .. vim.inspect(items))
+  assert(item.path ~= scheduled_path, "unloaded empty session should be hidden: " .. vim.inspect(items))
 end
 
 -- 4. reopen and parse back

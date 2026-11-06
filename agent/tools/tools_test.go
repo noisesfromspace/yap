@@ -485,24 +485,6 @@ func TestToolSchemasHaveNoRefs(t *testing.T) {
 	}
 }
 
-func TestToolCleanup(t *testing.T) {
-	calls := 0
-	Register("test_cleanup", "test only", func(_ *struct{}) (string, string, error) {
-		return "", "", nil
-	}, func() { calls++ })
-	defer delete(registry, "test_cleanup")
-
-	CloseAll()
-	if calls != 1 {
-		t.Fatalf("registered cleanup called %d times, want 1", calls)
-	}
-	delete(registry, "test_cleanup")
-	CloseAll()
-	if calls != 1 {
-		t.Fatalf("removed tool cleanup called again: %d", calls)
-	}
-}
-
 // TestToolsOnlyToolFiles guards the package layout: every non-test .go file
 // except tools.go (the registry) must define exactly one tool and
 // self-register via Register. MCP tools are not files here (see the package

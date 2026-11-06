@@ -19,6 +19,12 @@ local lines = table.concat(vim.api.nvim_buf_get_lines(panel, 0, -1, false), "\n"
 assert(lines:match("Yap shortcuts %(current buffer%)"), "panel heading missing")
 assert(lines:match("send"), "buffer-local shortcuts missing")
 assert(lines:match("sessions"), "global shortcuts missing")
+assert(
+  lines:find("Next message", 1, true)
+    and lines:find("Fold all agent messages", 1, true)
+    and lines:find("Toggle fold", 1, true),
+  "fold/navigation shortcuts missing"
+)
 assert(lines:match("Search with /, n and N"), "native-search hint missing")
 vim.api.nvim_win_close(win, true)
 print("OK help panel")

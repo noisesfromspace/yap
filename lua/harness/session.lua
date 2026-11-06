@@ -6,9 +6,9 @@
 -- autosaved after every completed reply. The transcript filename is the
 -- session title: rename session.md with :file, :saveas or your file explorer.
 -- Views show the filename title when the transcript was renamed, else the
--- generated description; unnamed sessions (neither) are hidden unless they
--- hold an unsent `# @user` prompt (a scheduled prompt); open sessions stay
--- visible in the open-session picker via the filename fallback. Subagent
+-- generated description; an unnamed blank session appears while its buffer
+-- is loaded, and an unsent prompt keeps it discoverable after unloading.
+-- A scaffold-only interactive eval is hidden until edited or sent. Subagent
 -- sessions belong to the conversation that spawned them: saved history never
 -- lists them, while the open-session picker shows them under their parent.
 
@@ -328,19 +328,38 @@ local function last_message(lines, role)
   return structure.role_body(lines, role, true)
 end
 
---- True when the trailing `# @user` message holds an unsent prompt. `lines` is
---- the cheap 200-line slice list() reads for labels; a very long system
---- prompt can push the trailing prompt past that slice, so re-read the whole
---- file only in that truncated case. This is what makes a "scheduled" prompt
---- (typed, not yet sent) discoverable in the history picker.
-local function has_pending_user_text(path, lines)
-  if #last_message(lines, "user") > 0 then
-    return true
+--- The trailing `# @user` body, re-reading the whole file only when a cheap
+--- 200-line file slice was truncated and still showed no text. `full` marks
+--- `lines` as already complete (a loaded buffer), so no re-read happens.
+local function trailing_user(path, lines, full)
+  local body = last_message(lines, "user")
+  if not full and #lines == 200 and #body == 0 then
+    body = last_message(vim.fn.readfile(path), "user")
   end
-  if #lines == 200 then
-    return #last_message(vim.fn.readfile(path), "user") > 0
+  return body
+end
+
+--- True when the trailing `# @user` message holds an unsent prompt. This is
+--- what makes a "scheduled" prompt (typed, not yet sent) discoverable in the
+--- history picker.
+local function has_pending_user_text(path, lines, full)
+  return #trailing_user(path, lines, full) > 0
+end
+
+--- A scaffold-only interactive eval: `:YapEval` with no selection and no
+--- instruction seeds its `# @user` with just the auto-generated
+--- `File: <name>` header. That header is context, not a prompt, so it must
+--- not count as pending text or loaded visibility: the session stays hidden
+--- until a real question is typed or a turn completes (which sets a
+--- description). The header is the only way an empty eval differs from an
+--- ordinary blank `:Yap` session, so its shape is matched here rather than
+--- persisting a separate marker.
+local function empty_eval_scaffold(fm, description, path, lines, full)
+  if (fm and (fm.turns or 0) ~= 0) or description ~= "" then
+    return false
   end
-  return false
+  local body = trailing_user(path, lines, full)
+  return #body == 1 and body[1]:match("^File: ")
 end
 
 --- First task line for a subagent's stable picker identity.
@@ -487,21 +506,24 @@ function M.label(path, description, project_cwd)
   return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
---- Currently-open portable transcripts: yap buffers whose transcript lives
---- outside the sessions root. A session created next to a file (or at a
---- custom path) has no fixed discoverable location, so the open buffer is the
---- only thing that pins it — while it is open, the saved picker lists it.
-local function open_portable_transcripts()
-  local out = {}
+--- Currently-loaded session paths. Portable transcripts have no directory
+--- to discover, while a loaded blank session should be visible before its
+--- first prompt. Return portable candidates and the set of loaded paths.
+local function open_session_paths()
+  local portable, loaded = {}, {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap then
+    if vim.api.nvim_buf_is_loaded(b) and vim.b[b].yap then
       local path = vim.b[b].yap_path or vim.api.nvim_buf_get_name(b)
-      if path ~= "" and not paths.under_sessions_root(path) then
-        out[#out + 1] = path
+      if path ~= "" then
+        path = vim.fs.normalize(path)
+        loaded[path] = b
+        if not paths.under_sessions_root(path) then
+          portable[#portable + 1] = path
+        end
       end
     end
   end
-  return out
+  return portable, loaded
 end
 
 --- List saved sessions. scope = "cwd" (default) or "all"
@@ -513,6 +535,7 @@ function M.list(scope)
   -- label only in the "all" scope so sessions from different worktrees are
   -- distinguishable.
   local transcripts, seen = {}, {}
+  local portable, loaded = open_session_paths()
   local function add(path, project)
     path = vim.fs.normalize(path)
     if path ~= "" and not seen[path] and vim.fn.filereadable(path) == 1 then
@@ -536,7 +559,7 @@ function M.list(scope)
     end
     -- Any currently-open portable transcript is listed while its buffer pins
     -- it; a next-to-file or custom-path transcript is otherwise undiscoverable.
-    for _, path in ipairs(open_portable_transcripts()) do
+    for _, path in ipairs(portable) do
       add(path)
     end
   end
@@ -546,7 +569,15 @@ function M.list(scope)
     -- Each candidate is already a resolved transcript path; the frontmatter
     -- supplies its description, model and fork/subagent links.
     local path = entry.path
-    local lines = vim.fn.readfile(path, "", 200)
+    local loaded_buf = loaded[path]
+    local lines, full
+    if loaded_buf then
+      lines = vim.api.nvim_buf_get_lines(loaded_buf, 0, -1, false)
+      full = true
+    else
+      lines = vim.fn.readfile(path, "", 200)
+      full = false
+    end
     local fm = frontmatter.parse(lines)
     -- A subagent session is internal to the conversation that spawned it:
     -- while open it sits under its parent in the open-session and waiting
@@ -568,7 +599,16 @@ function M.list(scope)
         local owner = vim.fs.normalize(fm.forked_from)
         owned_by[owner] = owned_by[owner] or {}
         table.insert(owned_by[owner], vim.fs.normalize(path))
-      elseif description ~= "" or M.file_title(path) ~= nil or (fm and #fm.forks > 0) or has_pending_user_text(path, lines) then
+      elseif
+        not empty_eval_scaffold(fm, description, path, lines, full)
+        and (
+          description ~= ""
+          or M.file_title(path) ~= nil
+          or (fm and (#fm.forks > 0 or (fm.turns or 0) > 0))
+          or has_pending_user_text(path, lines, full)
+          or loaded[path]
+        )
+      then
         items[#items + 1] = item
       end
     end

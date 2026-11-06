@@ -79,6 +79,15 @@ local function close_if_requested(buf)
   if close_after_turn[buf] then
     close_after_turn[buf] = nil
     vim.api.nvim_buf_delete(buf, { force = true })
+    -- Neovim reports success but keeps the sole buffer alive. Give any
+    -- remaining windows an ordinary replacement, then wipe the session.
+    if vim.api.nvim_buf_is_valid(buf) then
+      for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+        vim.wo[win].winfixbuf = false
+        vim.api.nvim_win_set_buf(win, vim.api.nvim_create_buf(true, false))
+      end
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
   end
 end
 local function answer_approval(buf, approved)

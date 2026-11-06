@@ -727,7 +727,7 @@ function M.setup_buffer(buf, keys)
     if lhs == "" then
       return
     end
-    vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc })
+    vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = "yap: " .. desc })
   end
   -- Also as motions: visual (`v]t` selects to the next tool) and
   -- operator-pending (`d]c` deletes to the next thinking region).
@@ -735,7 +735,7 @@ function M.setup_buffer(buf, keys)
     if lhs == "" then
       return
     end
-    vim.keymap.set({ "x", "o" }, lhs, rhs, { buffer = buf, silent = true, desc = desc })
+    vim.keymap.set({ "x", "o" }, lhs, rhs, { buffer = buf, silent = true, desc = "yap: " .. desc })
   end
   map(keys.next_message, M.next_message, "Next message")
   map(keys.prev_message, M.prev_message, "Previous message")
@@ -794,7 +794,7 @@ function M.setup_buffer(buf, keys)
       -- no-op instead of an E5108 Lua stack trace.
       vim.cmd("silent! normal! " .. (vim.v.count > 0 and tostring(vim.v.count) or "") .. command)
       M.before_change(buf)
-    end, "Yap: " .. command)
+    end, "yap: " .. command)
   end
 end
 

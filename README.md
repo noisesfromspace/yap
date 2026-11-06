@@ -25,7 +25,7 @@ Inspired by pi and gptel.
 - Prompt-cache breakpoints on the stable history, so a caching provider does
   not re-bill the whole prefix every turn.
 - Templates and skills, injected into a conversation even while it runs.
-- A scratch buffer that queues one follow-up and steers the current turn
+- A file-backed jotter that queues one follow-up and steers the current turn
   (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
@@ -53,9 +53,9 @@ Inspired by pi and gptel.
 
 The agent ships with a fixed set of built-in tools, plus any tools exposed by
 configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
-files, runs bash, searches the web, reads GitHub, drives a browser,
-delegates to subagents in separate sessions, and lists, searches, and reads
-other saved sessions. Independent
+files, runs bash, fetches URLs, delegates to subagents in separate sessions,
+and lists, searches, and reads other saved sessions. Web search, GitHub access
+and browser control require separately configured MCP servers. Independent
 read-only calls in one round run concurrently (up to four). See `:help yap-tools`.
 
 A turn is an agent loop: the model proposes the next action, the backend
@@ -202,7 +202,7 @@ draws each tool region as one block.
 
 | Term             | Meaning                                                                      |
 | ---------------- | ---------------------------------------------------------------------------- |
-| session          | one conversation: Markdown file + audit log + scratch queue                  |
+| session          | one conversation: Markdown file + audit log + notes.md jotter                 |
 | session buffer   | the Neovim buffer editing a session                                          |
 | message          | a `# @role` heading plus its body                                            |
 | region           | a marker-delimited span: tool, thinking, error, or ui                        |

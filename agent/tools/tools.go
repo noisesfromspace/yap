@@ -41,7 +41,6 @@ type Tool struct {
 	Description string
 	Schema      json.RawMessage // generated from the tool's Args struct
 	run         func(args json.RawMessage) (result, ui string, err error)
-	close       func()
 }
 
 var registryMu sync.RWMutex
@@ -55,9 +54,8 @@ func (t *Tool) Run(args json.RawMessage) (result, ui string, err error) {
 
 // Register adds a tool; called from each tool file's init(). T is the
 // tool's argument struct: json tags name the parameters (omitempty =
-// optional), jsonschema tags carry descriptions. Stateful tools may pass a
-// cleanup function, which is called on backend shutdown.
-func Register[T any](name, description string, run func(args *T) (result, ui string, err error), cleanup ...func()) {
+// optional), jsonschema tags carry descriptions.
+func Register[T any](name, description string, run func(args *T) (result, ui string, err error)) {
 	// Inline every nested struct; do not emit $defs/$ref. Moonshot's
 	// schema validator rejects $ref to $defs as "infinite recursion
 	// without termination condition".
@@ -89,9 +87,6 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		Description: description,
 		Schema:      schemaJSON,
 		run:         validated,
-	}
-	if len(cleanup) > 0 {
-		registry[name].close = cleanup[0]
 	}
 }
 
@@ -128,7 +123,7 @@ func compileSchema(schemaJSON json.RawMessage) (func(json.RawMessage) error, err
 // reflected from a Go struct. The MCP integration uses it: schemas come from
 // external servers at runtime. It returns an error instead of panicking so a
 // malformed server schema cannot crash the backend.
-func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(json.RawMessage) (string, string, error), cleanup ...func()) error {
+func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(json.RawMessage) (string, string, error)) error {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	if _, exists := registry[name]; exists {
@@ -145,9 +140,6 @@ func RegisterRaw(name, description string, schemaJSON json.RawMessage, run func(
 		return run(raw)
 	}
 	t := &Tool{Name: name, Description: description, Schema: schemaJSON, run: validated}
-	if len(cleanup) > 0 {
-		t.close = cleanup[0]
-	}
 	registry[name] = t
 	return nil
 }
@@ -258,13 +250,4 @@ func All() []*Tool {
 		out = append(out, registry[n])
 	}
 	return out
-}
-
-// CloseAll releases resources held by registered tools before backend exit.
-func CloseAll() {
-	for _, t := range All() {
-		if t.close != nil {
-			t.close()
-		}
-	}
 }

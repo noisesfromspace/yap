@@ -262,7 +262,9 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         Open an interactive eval session in a split about
                         the selected lines (or about the current file with no
                         range). It is a regular session (default system
-                        prompt, tools, follow-ups), listed in sessions().
+                        prompt, tools, follow-ups). An eval without a selection
+                        or instruction stays out of saved history until you
+                        add a prompt or complete a turn.
                         The selection is quoted as context and the
                         source buffer is never changed. With an instruction
                         the first turn is sent at once; without one the
@@ -425,8 +427,6 @@ buffer but are never sent to the provider as buffer text:
   <!-- yap:thinking   Provider-exposed reasoning (or summaries), streamed in.
                         Folded away with the assistant message.
   <!-- yap:error      Backend error record, left after a failed send.
-  <!-- yap:usage      Token usage at end of stream; consumed into the winbar
-                        totals and removed.
 
 Tool regions                                                *yap-tool-region*
 
@@ -506,6 +506,11 @@ and in other sessions' winbar rollup. The saved-session picker (sessions(),
 `+`) lists any currently-open portable transcript. A next-to-file or
 custom-path transcript is only listed while it is open — its location is
 otherwise undiscoverable, so reopening it means opening the file.
+
+The saved-session picker includes an ordinary blank session while its buffer
+is loaded. Once unloaded, it is hidden unless it has a prompt, completed turn,
+description or renamed transcript. An empty `:YapEval` is hidden even while
+loaded; typing a question or completing a turn makes it visible.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
 Rename `session.md` to set a title without losing normal file operations.
@@ -888,7 +893,7 @@ approval rules that sit in front of them (|yap-guard-gate|).
   bash           Run a shell command. Sandboxed on Linux (|yap-sandbox|).
   read           Read a text file, 2000 lines / 50KB at a time.
   write          Write a whole file.
-  edit           Exact-text or anchor-to-boundary edits, several per call.
+  edit           Exact-text replacements, several per call.
   search         Ripgrep search; returns path:line:content.
   glob           List files by pattern through ripgrep.
   fetch          Fetch a URL and return the readable content as markdown.
@@ -915,7 +920,7 @@ so a finished agent stays reachable.
 13. LANGUAGE SERVER                                            *yap-lsp*
 
 A managed session buffer carries one language server, `yap lsp`, started and
-attached by the harness. It provides three language features over standard
+attached by the harness. It provides four language features over standard
 LSP, backed by the Go document parser (agent/document):
 
   Document symbols  An outline of the conversation: frontmatter, then one

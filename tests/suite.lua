@@ -36,6 +36,7 @@ local CASES = {
   { name = "yap_block_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_toolparse_test", port = 18132 },
   { name = "yap_close_session_test", port = 18142, mock = "mock_close.py" },
+  { name = "yap_close_sole_session_test", port = 18142, mock = "mock_close.py" },
   { name = "yap_close_session_picker_test", port = 18142, mock = "mock_close.py" },
   { name = "yap_e2e_livetool", port = 18141, mock = "mock_stream.py" },
   { name = "yap_e2e_streamfold", port = 18135, mock = "mock_write.py" },
