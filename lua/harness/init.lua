@@ -244,6 +244,17 @@ end
 
 function M.setup(opts)
   opts = opts or {}
+  -- Jail launchers (programs.yap.jail.modelGroups) forward an override as
+  -- JSON; merge it over the setup() arguments so a jailed editor can pin
+  -- different model groups (e.g. a public endpoint instead of a
+  -- tailscale-only local model) without a second editor config.
+  local env_groups = vim.env.YAP_MODEL_GROUPS
+  if env_groups and env_groups ~= "" then
+    local ok, decoded = pcall(vim.json.decode, env_groups)
+    if ok and type(decoded) == "table" then
+      opts.model_groups = vim.tbl_deep_extend("force", opts.model_groups or {}, decoded)
+    end
+  end
   if opts.nerd_font == false then
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
       since = "",

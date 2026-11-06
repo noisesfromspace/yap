@@ -334,6 +334,9 @@
                 RUNTIME_ARGS+=(--ro-bind ${escape jailCfg.agentsFile} ${escape jailAgentsPath})
               fi
             '')
+            ++ lib.optional (jailCfg.modelGroups != { }) (
+              set-env "YAP_MODEL_GROUPS" (builtins.toJSON jailCfg.modelGroups)
+            )
             ++ map (v: try-fwd-env v) jailEnvNames
           );
 
@@ -505,6 +508,21 @@
                   rules while a normal session keeps the shared ones. The
                   content is read by the harness at session creation; the
                   file is not merged with the normal harness rules.
+                '';
+              };
+
+              modelGroups = mkOption {
+                type = types.attrsOf types.str;
+                default = { };
+                example = { flash = "deepseek/deepseek-flash"; };
+                description = ''
+                  Model groups to override inside the jail, merged over the
+                  harness's configured `model_groups` (highest priority).
+                  Forwarded as `YAP_MODEL_GROUPS` (JSON), which the harness
+                  merges during setup(). Use this to pin the jail to
+                  providers reachable through its egress — for example a
+                  public deepseek endpoint instead of a tailscale-only local
+                  model.
                 '';
               };
 
