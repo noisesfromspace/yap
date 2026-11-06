@@ -92,6 +92,16 @@ function M.ensure(buf)
   return t
 end
 
+--- Drop a session's tail state and wipe its buffer (BufWipeout of the
+--- session): a tail must never outlive the session whose name it renders.
+function M.forget(buf)
+  local t = tails[buf]
+  tails[buf] = nil
+  if t and vim.api.nvim_buf_is_valid(t.bufnr) then
+    pcall(vim.api.nvim_buf_delete, t.bufnr, { force = true })
+  end
+end
+
 --- Append lines to the tail, trimming old ones to keep only the newest.
 --- Returns the 0-based row where `lines[1]` landed (after any trim), or nil
 --- when nothing was appended.

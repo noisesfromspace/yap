@@ -614,7 +614,8 @@ running tool's output — a `$ command` header per bash call plus its streamed
 bytes. `Y` copies the command associated with the cursor line (header or
 output) to the unnamed (`"`) and clipboard (`+`) registers. It is never
 rebuilt from the audit log; the full streamed output lives in the tool's temp
-log, and the audit log carries the tail-truncated result.
+log, and the audit log carries the tail-truncated result. A tail lives only
+as long as its session: wiping the session buffer wipes the tail with it.
 guard() lists every open session's parked approvals and their settled decision
 history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.

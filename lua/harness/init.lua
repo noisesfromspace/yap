@@ -385,6 +385,7 @@ function M.setup(opts)
       awaiting[args.buf] = nil
       stopped[args.buf] = nil
       describe.forget(args.buf)
+      audit.forget(args.buf)
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
     end,

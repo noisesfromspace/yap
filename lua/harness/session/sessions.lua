@@ -31,7 +31,7 @@ function M.session_of(buf)
     return buf
   end
   for owner, t in pairs(audit.views()) do
-    if t.bufnr == buf then
+    if t.bufnr == buf and vim.api.nvim_buf_is_valid(owner) and vim.b[owner].yap then
       return owner
     end
   end
