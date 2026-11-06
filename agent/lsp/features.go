@@ -259,6 +259,41 @@ func Completion(text string, line, char int, ctx CompletionCtx) []completionItem
 	return nil
 }
 
+// JotterCompletion offers file references and the jotter's two control
+// headings, without treating the jotter as a transcript.
+func JotterCompletion(text string, line, char int, cwd string) []completionItem {
+	lines := strings.Split(text, "\n")
+	if line < 0 || line >= len(lines) {
+		return nil
+	}
+	cur := lines[line]
+	if char < 0 {
+		char = 0
+	}
+	if char > len(cur) {
+		char = len(cur)
+	}
+	if strings.HasPrefix(cur, "# @") && char >= 3 && allLetters(cur[3:]) {
+		partial := cur[3:char]
+		r := rng{Start: position{Line: line, Character: 3}, End: position{Line: line, Character: len(cur)}}
+		var items []completionItem
+		for _, role := range []string{"steer", "queue"} {
+			if strings.HasPrefix(role, partial) {
+				items = append(items, completionItem{Label: role, Kind: complKeyword, TextEdit: &textEdit{Range: r, NewText: role}})
+			}
+		}
+		return items
+	}
+	wordStart := char
+	for wordStart > 0 && isWordChar(cur[wordStart-1]) {
+		wordStart--
+	}
+	if isFileRef(cur, wordStart) {
+		return fileCompletion(cwd, cur[wordStart:char], line, wordStart, char)
+	}
+	return nil
+}
+
 // ─── Frontmatter completion ────────────────────────────────────────────────
 
 type fieldDef struct {

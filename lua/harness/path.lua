@@ -268,9 +268,9 @@ function M.audit_path(buf)
   return M.data_dir(buf) .. "/audit.jsonl"
 end
 
---- The session's scratch notes file: <data_dir>/notes.md. Kept for callers
---- that inspect the legacy path; the scratch jotter itself is now an unnamed
---- in-memory buffer (see client/scratch.lua), never this file.
+--- The session's file-backed jotter: <data_dir>/notes.md. Its fixed name is
+--- excluded from transcript discovery; the session data directory follows the
+--- transcript (or its frontmatter data_dir for portable sessions).
 function M.notes_path(buf)
   return M.data_dir(buf) .. "/notes.md"
 end

@@ -57,6 +57,13 @@ at(1, 3, { "@fla" })
 assert(cmp_source.is_available() == true, "@file should offer completion")
 at(1, 6, { "see @flake.lock" })
 assert(cmp_source.is_available() == true, "mid-line @file should offer completion")
+vim.b[buf].yap = nil
+vim.b[buf].yap_scratch_notes = true
+assert(cmp_source.is_available() == true, "jotter @file should offer completion")
+at(1, 4, { "# @st" })
+assert(cmp_source.is_available() == true, "jotter section heading should offer completion")
+vim.b[buf].yap_scratch_notes = nil
+vim.b[buf].yap = true
 
 local other = vim.api.nvim_create_buf(false, false)
 vim.api.nvim_set_current_buf(other)

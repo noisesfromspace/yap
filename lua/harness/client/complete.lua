@@ -41,7 +41,7 @@ end
 --- popup in message prose, where the server answers with nothing; the items
 --- themselves are computed in Go.
 local function wants(buf)
-  if not (vim.api.nvim_buf_is_valid(buf) and vim.b[buf].yap) then
+  if not (vim.api.nvim_buf_is_valid(buf) and (vim.b[buf].yap or vim.b[buf].yap_scratch_notes)) then
     return false
   end
   local cursor = vim.api.nvim_win_get_cursor(0)

@@ -53,7 +53,7 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "queue two",
 })
 require("harness.client.scratch").refresh(scratch)
-assert(vim.bo[scratch].buftype == "nofile", "jotter should stay in-memory, not file-backed")
+assert(vim.bo[scratch].buftype == "", "jotter should be file-backed")
 assert(not text(scratch):find("uncommitted", 1, true), "virtual state label leaked into file")
 assert(hint(scratch, 4) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 4))
 assert(vim.fn.foldlevel(6) == 1, "unknown heading incorrectly ended queue fold")
@@ -63,6 +63,7 @@ yap.scratch_send(scratch)
 wait_done(owner, "next turn")
 assert(text(scratch):find("# @queue\nqueue one\n# @user\nqueue two", 1, true), "steer send ate queue")
 assert(not text(scratch):find("# @steer\nnext turn", 1, true), "steer was not consumed")
+assert(not table.concat(vim.fn.readfile(require("harness.path").notes_path(owner)), "\n"):find("next turn", 1, true), "consumed steer survived on disk")
 assert(text(scratch):find("# @steer\n# @queue", 1, true) == nil, "consuming steer welded headings")
 
 -- Queue text is not enough to trigger a send: it must be authorised by <C-s>.

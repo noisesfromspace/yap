@@ -153,7 +153,6 @@ function M.save(buf, previous_path)
     vim.fn.winrestview(view)
   end
   require("harness.client.audit").rename(buf)
-  require("harness.client.scratch").rename(buf) -- follow a newly generated summary
 end
 
 --- Copy the current in-memory transcript to a new session file. Do not rename
@@ -274,6 +273,7 @@ function M.fork(buf, name, running)
     vim.fn.delete(path)
     return nil, "cannot write fork: " .. write_err
   end
+  require("harness.client.scratch").ensure_file(vim.fn.fnamemodify(path, ":h"))
   -- A full transcript carries audit references and usage history. Copy the
   -- journal rather than moving it (as a buffer rename would): future turns
   -- in either session must never write into the other's audit log.

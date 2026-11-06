@@ -121,6 +121,7 @@ type contextParams struct {
 	// outside sessions_dir is still recognised (the server cannot infer that
 	// from its path alone).
 	IsSession bool `json:"is_session"`
+	IsJotter  bool `json:"is_jotter"`
 }
 
 // InitOptions are the initializationOptions the frontend passes.
@@ -145,6 +146,7 @@ type docState struct {
 	streaming     bool
 	cwd           string
 	session       bool
+	jotter        bool
 	timer         *time.Timer
 	parsed        *document.Document // cached parse of parsedVersion
 	parsedVersion int
@@ -411,6 +413,7 @@ func (s *Server) didOpen(p didOpenParams) {
 		d.cwd = c.Cwd
 		d.streaming = c.Streaming
 		d.session = c.IsSession
+		d.jotter = c.IsJotter
 		delete(s.pending, p.TextDocument.URI)
 	}
 	s.docs[p.TextDocument.URI] = d
@@ -459,6 +462,7 @@ func (s *Server) setContext(p contextParams) {
 	d.cwd = p.Cwd
 	d.streaming = p.Streaming
 	d.session = p.IsSession
+	d.jotter = p.IsJotter
 	// The context notification can race didOpen, so a document marked as a
 	// session here may have missed didOpen's warm/diagnostics pass.
 	if d.session {
@@ -546,18 +550,20 @@ func (s *Server) symbolsFor(uri string) any {
 }
 
 func (s *Server) completionFor(p completionParams) any {
-	if !s.isSession(p.TextDocument.URI) {
-		return map[string]any{"isIncomplete": false, "items": []any{}}
-	}
 	d := s.doc(p.TextDocument.URI)
-	if d == nil {
+	if d == nil || (!s.isSession(p.TextDocument.URI) && !d.jotter) {
 		return map[string]any{"isIncomplete": false, "items": []any{}}
 	}
-	items := Completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
-		Cwd:         d.cwd,
-		AgentsDir:   s.opts.AgentsDir,
-		ModelsCache: s.opts.ModelsCache,
-	})
+	var items []completionItem
+	if d.jotter {
+		items = JotterCompletion(d.text, p.Position.Line, p.Position.Character, d.cwd)
+	} else {
+		items = Completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
+			Cwd:         d.cwd,
+			AgentsDir:   s.opts.AgentsDir,
+			ModelsCache: s.opts.ModelsCache,
+		})
+	}
 	if items == nil {
 		// A nil slice marshals to `null`, which Neovim rejects for a
 		// CompletionList.items (expected a CompletionItem[]).

@@ -1,4 +1,4 @@
--- The scratch queue and mid-turn steering: an in-memory jotter (<leader>j)
+-- The file-backed jotter and mid-turn steering (<leader>j)
 -- with two explicit sections (# @steer / # @queue) and the # @steer
 -- mechanism that redirects a running turn.
 
@@ -7,6 +7,7 @@ local M = {}
 local state = require("harness.state")
 local document = require("harness.model.document")
 local drawer = require("harness.ui.drawer")
+local paths = require("harness.path")
 
 local function harness()
   return require("harness")
@@ -73,6 +74,14 @@ function M.set_section(scratch, name, body)
   end
   vim.api.nvim_buf_set_lines(scratch, heading, finish, false, #body > 0 and body or { "" })
   M.refresh(scratch)
+  -- A consumed draft must not reappear after a restart. Ordinary edits remain
+  -- under native :write control; only consumption commits immediately.
+  local ok, err = pcall(vim.api.nvim_buf_call, scratch, function()
+    vim.cmd("silent write")
+  end)
+  if not ok then
+    vim.notify("yap: could not save consumed jotter: " .. tostring(err), vim.log.levels.ERROR)
+  end
 end
 
 --- One scratch section's body as a single string.
@@ -100,42 +109,38 @@ local function find_scratch(buf)
       return b
     end
   end
-end
-
---- The jotter's display name: "<summary>" once the session has a
---- generated description, else "Yap Notes". The buffer is a nofile buffer, so
---- the name is a label only — it never becomes a real file path.
-local function scratch_label(buf)
-  local summary = require("harness.session").description(buf)
-  if summary and summary ~= "" then
-    return summary
-  end
-  return "Yap Notes"
-end
-
---- Refresh the jotter's display name. Called when it is created and after
---- the session is saved, so the name follows a newly generated description.
---- Two untitled sessions would both read "Yap Notes"; the second (and any
---- later collider) is suffixed with its buffer number, like the tail viewer.
-function M.rename(buf)
-  local scratch = find_scratch(buf)
-  if not scratch then
-    return
-  end
-  local name = scratch_label(buf)
-  for other in pairs(state.sessions) do
-    local other_scratch = other ~= buf and vim.api.nvim_buf_is_valid(other) and vim.b[other].yap_scratch
-    if other_scratch and vim.api.nvim_buf_is_valid(other_scratch) and vim.fn.bufname(other_scratch) == name then
-      name = name .. " [" .. buf .. "]"
-      break
+  local path = paths.notes_path(buf)
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if
+      vim.api.nvim_buf_is_valid(b)
+      and vim.api.nvim_buf_is_loaded(b)
+      and vim.api.nvim_buf_get_name(b) == path
+      and vim.b[b].yap_scratch_notes
+    then
+      return b
     end
   end
-  if vim.fn.bufname(scratch) ~= name then
-    -- The label is a buffer name, so another buffer (an orphaned jotter, a
-    -- real file) may already hold it. A clashing name is cosmetic: never let
-    -- E95 abort the caller (it would leave the jotter without keymaps).
-    pcall(vim.api.nvim_buf_set_name, scratch, name)
+end
+
+--- Create the private jotter sidecar when the session is created. Never
+--- overwrite an existing draft when adopting or reopening a session.
+function M.ensure_file(buf_or_dir)
+  local dir = type(buf_or_dir) == "string" and buf_or_dir or paths.data_dir(buf_or_dir)
+  local path = dir .. "/notes.md"
+  if vim.uv.fs_stat(path) then
+    return
   end
+  if paths.under_sessions_root(dir .. "/notes.md") then
+    paths.ensure_session_dir(dir)
+  else
+    vim.fn.mkdir(dir, "p")
+  end
+  local fd, err = vim.uv.fs_open(path, "wx", 384)
+  if not fd then
+    error("yap: could not create jotter: " .. tostring(err))
+  end
+  vim.uv.fs_write(fd, "# @steer\n\n# @queue\n", 0)
+  vim.uv.fs_close(fd)
 end
 
 local function cancel_steer(buf)
@@ -244,7 +249,7 @@ function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
   if not (owner and vim.api.nvim_buf_is_valid(owner)) then
-    vim.notify("yap: the session for this scratch is gone; :write {path} keeps the draft", vim.log.levels.WARN)
+    vim.notify("yap: the session for this jotter is gone; :write keeps the draft", vim.log.levels.WARN)
     return
   end
 
@@ -381,11 +386,9 @@ function M.scratch_foldexpr(lnum)
   return "0"
 end
 
---- Toggle the session's ephemeral scratch buffer (<leader>j): a fixed-height
---- jotter opened below the session window. It is an in-memory nofile buffer
---- named after the session summary ("<summary>"), never a real
---- file: an explicit `:write {path}` remains available to save a draft. It is
---- a quick "queue" for agent tasks, never part of the conversation.
+--- Toggle the session's file-backed jotter (<leader>j), opened below the
+--- session window. The sidecar is ordinary Markdown: :write saves drafts,
+--- while consumed sections are written immediately.
 local SCRATCH_HEIGHT = 12
 
 function M.scratch_toggle(buf)
@@ -397,7 +400,10 @@ function M.scratch_toggle(buf)
 
   local scratch = find_scratch(buf)
   if not scratch then
-    scratch = vim.api.nvim_create_buf(false, true) -- unlisted, nofile, in-memory
+    local path = paths.notes_path(buf)
+    M.ensure_file(buf)
+    scratch = vim.fn.bufadd(path)
+    vim.fn.bufload(scratch)
     local lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false)
     local found = {}
     for _, line in ipairs(lines) do
@@ -430,7 +436,9 @@ function M.scratch_toggle(buf)
     vim.b[scratch].yap_scratch_notes = true
     vim.bo[scratch].filetype = "markdown"
     for _, client in ipairs(vim.lsp.get_clients({ bufnr = scratch })) do
-      pcall(client.stop, client)
+      if not require("harness.client.lsp").is_yap_client(client.id) then
+        pcall(vim.lsp.buf_detach_client, scratch, client.id)
+      end
     end
     vim.bo[scratch].bufhidden = "hide"
     vim.api.nvim_create_autocmd("BufWinLeave", {
@@ -442,10 +450,9 @@ function M.scratch_toggle(buf)
         end
       end,
     })
-    vim.bo[scratch].buflisted = false
     vim.b[buf].yap_scratch = scratch
     vim.b[scratch].yap_owner = buf
-    M.rename(buf) -- "<summary>" instead of "[No Name]"
+    require("harness.client.lsp").attach(scratch)
     if not vim.b[scratch].yap_steer_watch then
       vim.b[scratch].yap_steer_watch = true
       vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
@@ -466,12 +473,12 @@ function M.scratch_toggle(buf)
     local cfg = harness().config
     if cfg.keymaps.scratch ~= "" then
       vim.keymap.set("n", cfg.keymaps.scratch, function()
-        M.scratch_toggle(buf)
+        M.scratch_toggle(vim.b[scratch].yap_owner)
       end, { buffer = scratch, silent = true, desc = "yap: toggle scratch" })
     end
     if cfg.keymaps.live ~= "" then
       vim.keymap.set("n", cfg.keymaps.live, function()
-        harness().live(buf)
+        harness().live(vim.b[scratch].yap_owner)
       end, { buffer = scratch, silent = true, desc = "yap: toggle live tool output" })
     end
     if cfg.keymaps.guard ~= "" then
@@ -504,9 +511,9 @@ function M.scratch_toggle(buf)
       end, { buffer = scratch, silent = true, desc = "yap: send scratch" })
     end
   else
-    -- Re-attached after the session was reloaded: refresh the label too.
+    -- Re-attached after the session was reloaded.
     vim.b[scratch].yap_owner = buf
-    M.rename(buf)
+    vim.b[buf].yap_scratch = scratch
   end
 
   -- Toggle: a visible queue closes back to the session; an invisible one opens

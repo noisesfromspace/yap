@@ -30,6 +30,12 @@ assert(fm.data_dir ~= project, "data_dir must not be the project directory")
 -- Sidecars resolve to the central directory, not beside the transcript.
 assert(paths.audit_path(buf) == fm.data_dir .. "/audit.jsonl", "audit log not centralised")
 assert(paths.assets_dir(buf) == fm.data_dir .. "/assets", "assets not centralised")
+assert(vim.fn.filereadable(paths.notes_path(buf)) == 1, "portable session did not create its jotter")
+yap.scratch_toggle(buf)
+local notes = vim.api.nvim_get_current_buf()
+assert(vim.api.nvim_buf_get_name(notes) == fm.data_dir .. "/notes.md", "portable jotter not centralised")
+assert(vim.b[notes].yap == nil, "portable jotter adopted as transcript")
+yap.scratch_toggle(buf)
 
 -- The project directory keeps its mode (never chmod 0700 like a session dir).
 assert(vim.fn.getfperm(project) ~= "rwx------", "project directory was chmod'd 0700")
@@ -42,12 +48,17 @@ reopened = vim.api.nvim_get_current_buf()
 assert(vim.b[reopened].yap == true, "portable transcript not adopted on reopen")
 assert(vim.b[reopened].yap_data_dir == fm.data_dir, "data_dir not restored from frontmatter")
 assert(paths.audit_path(reopened) == fm.data_dir .. "/audit.jsonl", "reopened audit log not centralised")
+yap.scratch_toggle(reopened)
+assert(vim.api.nvim_get_current_buf() == notes, "reopened portable session did not reuse its jotter")
+yap.scratch_toggle(reopened)
 
 -- A fork of a portable session is a rooted session: it must not inherit the
 -- source's central data_dir (else its audit events would land in the source).
 local session = require("harness.session")
 local fork_path = session.fork(reopened, "portable-fork", false)
 assert(fork_path, "portable fork failed")
+assert(vim.fn.filereadable(vim.fn.fnamemodify(fork_path, ":h") .. "/notes.md") == 1,
+  "fork did not create a jotter")
 local fork_fm = frontmatter.parse(vim.fn.readfile(fork_path, "", 30))
 assert(fork_fm.data_dir == vim.fn.fnamemodify(fork_path, ":h"),
   "fork must record its own sidecar directory as data_dir, not the source's")

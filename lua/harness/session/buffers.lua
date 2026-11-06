@@ -219,6 +219,7 @@ function M.new(opts)
   session.save(buf) -- assigns yap_data_dir for the chosen location
   frontmatter.sync(buf) -- record it (and the model state) in the transcript
   session.save(buf) -- write again so the file carries the frontmatter from day one
+  require("harness.client.scratch").ensure_file(buf)
   -- Create the session's live tool tail now (empty until a tool runs), before
   -- any :file rename or tool run.
   audit.ensure(buf)
@@ -279,6 +280,7 @@ local function adopt(buf, path)
   -- seed the overview hint so it counts before its first send here.
   winbar.seed_awaiting(buf)
   setup_buffer(buf)
+  require("harness.client.scratch").ensure_file(buf)
   audit.ensure(buf) -- the live tool tail (empty until a tool runs)
   audit.seed_session_usage(buf) -- durable all-time totals from the audit log
   return buf

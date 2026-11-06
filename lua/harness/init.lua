@@ -114,26 +114,6 @@ local close_after_turn = state.close_after_turn
 local stream_flush = state.stream_flush
 local follow_override = state.follow_override
 
--- Close the session's drawers. `scratch`/`tail_buf` are the drawer buffers
--- captured while `buf` was still loaded: :bd unloads the session before a
--- deferred callback runs, clearing vim.b[buf].yap_scratch, so the callback
--- must not re-read it from the buffer.
-local function close_session_drawers(buf, scratch, tail_buf)
-  if not scratch and vim.api.nvim_buf_is_valid(buf) then
-    scratch = vim.b[buf].yap_scratch
-  end
-  if scratch and vim.api.nvim_buf_is_valid(scratch) then
-    drawer.close(scratch, buf)
-  end
-  if not tail_buf then
-    local t = audit.view(buf)
-    tail_buf = t and t.bufnr
-  end
-  if tail_buf and vim.api.nvim_buf_is_valid(tail_buf) then
-    drawer.close(tail_buf, buf)
-  end
-end
-
 -- ─── User commands kept here (small, self-contained) ─────────────────────
 
 function M.show_keymaps(buf)
@@ -352,28 +332,6 @@ function M.setup(opts)
       describe.forget(args.buf)
       winbar.clear_desc(args.buf)
       fold.clear_text(args.buf)
-    end,
-  })
-  vim.api.nvim_create_autocmd("BufWinLeave", {
-    group = adopt_group,
-    callback = function(args)
-      local buf = args.buf
-      if not vim.b[buf].yap then
-        return
-      end
-      -- Capture the drawer buffers now: :bd unloads the session before the
-      -- deferred check below runs, clearing vim.b[buf].yap_scratch. The tail
-      -- viewer already survives via the module table, but capture it too.
-      local scratch = vim.b[buf].yap_scratch
-      local t = audit.view(buf)
-      local tail_buf = t and t.bufnr
-      -- Let window/buffer transitions settle; focusing a drawer alone must
-      -- not close it while the session remains displayed in another window.
-      vim.schedule(function()
-        if #vim.fn.win_findbuf(buf) == 0 then
-          close_session_drawers(buf, scratch, tail_buf)
-        end
-      end)
     end,
   })
   -- Persist a session as soon as it leaves every window, so the file on disk

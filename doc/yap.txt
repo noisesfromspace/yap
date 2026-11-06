@@ -228,8 +228,7 @@ and each path is configurable via `setup()`):
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ insert() template files (|yap-templates|).
   ~/.config/yap/skills/    insert() skill files (|yap-templates|).
-  ~/.config/yap/sessions/  Autosaved sessions, audit logs and session assets
-                          (the scratch jotter is in-memory, never a file).
+  ~/.config/yap/sessions/  Sessions, jotters, audit logs and assets.
   ~/.config/yap/agents/    Subagent definitions.
 
 ==============================================================================
@@ -472,21 +471,22 @@ write/edit return short confirmations and stay bare.
 ==============================================================================
 7. SESSIONS                                                  *yap-sessions*
 
-A session is the conversation markdown file plus sidecar data: an
-append-only audit log and an `assets/` folder holding the photos the
-conversation references, the backend's transient tool files, and the agent's
-throwaway scripts, fetched downloads and generated artifacts. The scratch
-jotter is an unnamed in-memory buffer, not a file (see |yap-scratch|).
+A session is the conversation markdown file plus sidecar data: a file-backed
+`notes.md` jotter, an append-only audit log and an `assets/` folder holding
+photos the conversation references, the backend's transient tool files, and
+the agent's throwaway scripts, fetched downloads and generated artifacts.
 
 `:Yap` sessions live in their own directory under
 ~/.config/yap/sessions/<cwd-slug>/: auto-named sessions and subagent children
 group by month (<yy-mm>/<dd-hh.mm.ss>/), and named forks live at
-<cwd-slug>/<name>/. Each contains session.md (the conversation), audit.jsonl
-(the audit log) and assets/ (photos, fetched downloads, and working files).
+<cwd-slug>/<name>/. Each has session.md (the conversation), notes.md (the
+jotter), audit.jsonl (the audit log) and assets/ (photos, fetched downloads
+and working files).
+Yap creates notes.md with the session, even if you never open the jotter.
 
 Every session records a `data_dir` in its frontmatter: the directory holding
-its audit.jsonl and assets/. For a transcript under the sessions root it is
-the transcript's own directory; for one anywhere else (a project folder,
+its audit.jsonl, notes.md and assets/. For a transcript under the sessions
+root it is the transcript's own directory; for one anywhere else (a project folder,
 ~/.yap, /tmp) it is a central directory under ~/.config/yap/sessions/, so the
 transcript itself is the only file placed in the project. Because the tie is
 recorded, a transcript can be moved out of its directory and still find its
@@ -534,14 +534,22 @@ File operations are the session operations:
 
 SCRATCH BUFFER
 
-<leader>j toggles the scratch buffer — an in-memory nofile jotter whose
-display name reads "<summary>" (the session's generated
-description, or just "Yap Notes" before one exists). It has Markdown editing
-and spell checking in its window. Yap never writes a `notes.md` sidecar; |:write| {path} saves a
-draft wherever you choose. Its two sections fold independently and carry an
-inline, display-only state label preceded by a `·` so it reads as an
-annotation rather than buffer text — nothing you have to press. A section
-handed to a turn also shows its icon in the winbar:
+<leader>j toggles the jotter, an ordinary file-backed Markdown buffer at
+`<data_dir>/notes.md`, with spell checking in its window. It starts unlisted;
+`:setlocal buflisted` in the jotter adds it to |:ls|, and
+`:setlocal nobuflisted` removes it. The choice persists while the buffer is
+loaded, including across jotter toggles. Leaving the session does not close
+the jotter, live tail or guard board. Close them with their toggles or ordinary
+Neovim window commands.
+Yap creates the file with the session and private permissions. Opening the
+jotter loads it. Native |:write| saves unsent drafts; Neovim's modified-buffer
+and exit behavior applies. Consuming a section writes the whole jotter
+immediately, so a restart cannot resend the draft. A reopened session loads
+its saved jotter; within an editor instance the live buffer (including unsaved
+edits) is reused. The jotter is not a transcript and is excluded from session
+discovery. Its two sections fold independently and carry an inline, display-only
+state label preceded by a `·` so it reads as an annotation rather than buffer
+text. A section handed to a turn also shows its icon in the winbar:
 
   uncommitted   The body is typed but not handed to a turn yet.
   pending       (steer) Submitted to the running turn.
@@ -922,9 +930,10 @@ LSP, backed by the Go document parser (agent/document):
   Code actions      Quick fixes for an unterminated frontmatter block or an
                     unclosed tool region with a complete header.
 
-The server is session-only: the client attaches to buffers that carry `b:yap`,
-never scratch notes or ordinary Markdown. Model completion reads the cached
-`yap models` list; it never hits the network, and opening a session never
+The server attaches to session buffers for symbols, diagnostics and
+completion. The jotter gets `@path` and `# @steer`/`# @queue` completion,
+without transcript diagnostics or symbols. Ordinary Markdown is left alone.
+Model completion reads the cached `yap models` list; it never hits the network, and opening a session never
 starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
 are suppressed while a reply is streaming.
 
@@ -997,9 +1006,8 @@ replaces.
                       continues from it.
   steer               Mid-turn injection of a `# @steer` body at the next
                       model boundary. Distinct from prefill.
-  scratch             The in-memory nofile control buffer holding
-                      `# @steer` / `# @queue` ("<summary>").
-                      (Not "jotter", "sidecar".)
+  scratch             The file-backed `notes.md` control buffer holding
+                      `# @steer` / `# @queue`.
   audit log           The append-only `audit.jsonl` record of every tool
                       call, result, and turn. The durable record the buffer
                       doesn't carry.

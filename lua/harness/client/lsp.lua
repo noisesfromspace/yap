@@ -11,7 +11,7 @@ local state = require("harness.state")
 
 -- The running client id, or nil. One client serves every session buffer in
 -- this Neovim instance; it is never auto-attached by root_dir/filetype, only
--- by M.attach on buffers that carry b:yap.
+-- by M.attach on managed session and jotter buffers.
 local client_id = nil
 
 local function cfg()
@@ -89,10 +89,9 @@ function M.notify(buf, cwd, streaming)
     uri = vim.uri_from_bufnr(buf),
     cwd = cwd or "",
     streaming = streaming == true,
-    -- The yap client is only ever attached to session buffers, so this marks
-    -- the document as a session regardless of where its transcript lives
-    -- (the server cannot infer that from a path outside sessions_dir).
-    is_session = true,
+    -- Notes are attached for @file completion, not transcript diagnostics.
+    is_session = vim.b[buf].yap == true,
+    is_jotter = vim.b[buf].yap_scratch_notes == true,
   })
 end
 
