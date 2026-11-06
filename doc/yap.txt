@@ -331,7 +331,7 @@ Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
   <leader>j             Toggle the scratch buffer (see |yap-sessions|).
-  <C-t> (n, i)          Pick a template or skill (see insert()). A template
+  <C-Enter> (n, i)      Pick a template or skill (see insert()). A template
                         is inserted and sent; a skill merges into `# @system`.
                         In scratch, insert the raw file at the cursor instead.
   +                     Pick a saved session to resume.
@@ -587,7 +587,7 @@ beneath its heading.
 <C-s> toggles a pending steer or scheduled queue while the turn runs; while
 idle it sends the section under the cursor. Outside a section it only displays
 a hint; move to steer or queue to send.
-There is no selection-specific send. <C-t> in normal or insert mode picks a
+There is no selection-specific send. <C-Enter> in normal or insert mode picks a
 template or skill and inserts it at the cursor without sending it. The jotter
 is intentionally ephemeral — no file backs it, and it is dropped when Neovim
 exits — but closing the session with |:bdelete| does not discard it: the
@@ -698,8 +698,8 @@ the name in the picker, the body is what gets inserted. They live in:
   ~/.config/yap/skills/        system-prompt material (insert())
 
 Both configurable via `templates_dir` / `skills_dir`. Create the directory,
-drop a file in, then `<C-t>` (or insert(name)) to insert it. In scratch,
-`<C-t>` inserts the raw file at the cursor instead of sending it.
+drop a file in, then `<C-Enter>` (or insert(name)) to insert it. In scratch,
+`<C-Enter>` inserts the raw file at the cursor instead of sending it.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
 

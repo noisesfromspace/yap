@@ -21,6 +21,6 @@ assert(get_lhs("n", "yap: stop in-flight request") == "<M-Esc>", "custom stop ke
 assert(get_lhs("n", "yap: send") == nil, "empty send keymap should disable the normal-mode binding")
 assert(get_lhs("i", "yap: send") == nil, "empty send keymap should disable the insert-mode binding")
 assert(get_lhs("n", "yap: change model") ~= nil, "unspecified keymap default was not kept")
-assert(get_lhs("n", "yap: insert template or skill") == "<C-T>", "insert keymap is not <C-t> in normal mode")
-assert(get_lhs("i", "yap: insert template or skill") == "<C-T>", "insert keymap is missing in insert mode")
+assert(get_lhs("n", "yap: insert template or skill") == "<C-CR>", "insert keymap is not <C-Enter> in normal mode")
+assert(get_lhs("i", "yap: insert template or skill") == "<C-CR>", "insert keymap is missing in insert mode")
 print("OK keymap")

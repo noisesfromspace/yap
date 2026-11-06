@@ -167,10 +167,10 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").guard()`             | `<leader>g` | open/close the guard board                                             |
 | `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                                      |
 | `require("harness").sessions(scope)`     | `+`         | resume a saved session (`cwd` \| `all`) or list open sessions (`open`) |
-| `require("harness").insert(name)`        | `<C-t>`     | insert a template (and send it) or merge a skill                       |
+| `require("harness").insert(name)`        | `<C-Enter>` | insert a template (and send it) or merge a skill                       |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
-In a session buffer `<C-t>` calls `insert()`: a template is appended as a
+In a session buffer `<C-Enter>` calls `insert()`: a template is appended as a
 message and sent, a skill merges into `# @system`. In the scratch buffer it
 calls `insert(nil, { at_cursor = true })` instead, which drops the raw file at
 the cursor without sending it.

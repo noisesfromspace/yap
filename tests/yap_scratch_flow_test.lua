@@ -41,7 +41,7 @@ yap.scratch_toggle(owner)
 local scratch = vim.api.nvim_get_current_buf()
 assert(vim.bo[scratch].filetype == "markdown", "notes should be markdown")
 assert(vim.wo.spell, "notes window needs spell checking")
-assert(vim.fn.maparg("<C-t>", "n", false, true).buffer == 1, "notes need template picker")
+assert(vim.fn.maparg("<C-CR>", "n", false, true).buffer == 1, "notes need template picker")
 assert(vim.fn.maparg("<C-s>", "x", false, true).buffer ~= 1, "visual mode should have no selection send")
 vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "# @steer",
