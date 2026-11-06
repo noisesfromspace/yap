@@ -143,8 +143,14 @@ local function setup_buffer(buf)
   require("harness.ui.textobj").setup_buffer(buf, keys)
 
   -- Self-evaluating winbar: a pure function of buffer state, refreshed
-  -- by Neovim on every redraw.
-  vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
+  -- by Neovim on every redraw. 'winbar' is window-local, so only set it when
+  -- the buffer is already in the current window; a hidden buffer (a subagent,
+  -- or :YapEval's session before its split opens) would otherwise stamp the
+  -- yap bar onto whichever window happens to be current. The caller that
+  -- shows the buffer sets it (see eval.lua and fork()).
+  if vim.api.nvim_get_current_buf() == buf then
+    vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
+  end
 end
 
 --- Open a new yap session buffer.

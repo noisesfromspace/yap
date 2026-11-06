@@ -171,6 +171,10 @@ function M.session(opts)
   require("harness.session").save(sbuf)
   vim.cmd("botright split")
   vim.api.nvim_win_set_buf(0, sbuf)
+  -- Switching the buffer into the split resets the window-local 'winbar' to
+  -- its global default, and the session was created hidden (so setup_buffer
+  -- never set it here). Set it on the now-visible session.
+  vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(sbuf), 0 })
   if instruction then
     yap.send(sbuf)

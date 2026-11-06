@@ -105,6 +105,10 @@ local wins_before = #vim.api.nvim_tabpage_list_wins(0)
 local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2 })
 assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "eval session did not open a split")
 assert(vim.api.nvim_get_current_buf() == sbuf, "focus did not move to the eval session")
+assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "eval split has no yap winbar")
+local src_win = vim.fn.win_findbuf(src)[1]
+assert(src_win, "source buffer not shown in any window")
+assert(vim.wo[src_win].winbar == "", "eval session leaked the yap winbar onto the source window")
 assert(vim.b[sbuf].yap_provider == "mock" and vim.b[sbuf].yap_model == "m1", "eval session did not use agent")
 assert(vim.b[sbuf].yap, "eval split is not a yap session")
 assert(
