@@ -95,10 +95,10 @@ to `""` to drop it.
 `:YapEval` sessions. `flash` handles one-shot, no-tools `:YapEval!` edits and
 short session titles (the initial label and updates after each turn). Set
 `flash = ""` to disable automatic titles and use `agent` for `:YapEval!`.
-Rename `session.md` to give the session a title; descriptions are generated
-automatically and take precedence in session views. Edit a generated
-description by hand to pin it — yap then stops regenerating it until you
-delete the `pinned_description` frontmatter line.
+Rename `session.md` to give the session a permanent title; descriptions are
+regenerated automatically after every turn and are only a label, never an
+title you can set by hand. A renamed transcript shows its filename in every
+session view.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
 credentials. It does not change the configured default for new sessions.
@@ -394,18 +394,14 @@ as YAML frontmatter: >
   ---
 <
 
-`description` is the generated summary, refreshed after each turn. Edit it by
-hand and yap adds `pinned_description: true` and stops regenerating it — the
-hand-written description is then static until that flag is deleted. The
-transcript filename is the session's title: rename `session.md` with |:file|,
-|:saveas| or your file explorer. Views prefer the description and use the
-filename only when no description exists. The rest of the frontmatter:
+`description` is the generated summary, refreshed after every turn; it is a
+label for the conversation, not a title — yap regenerates it, so a hand edit
+stays only until the next turn. The transcript filename is the session's
+permanent title: rename `session.md` with |:file|, |:saveas| or your file
+explorer, and views show that filename instead of the description. The rest
+of the frontmatter:
 
   `provider`/`model`      The combo to resume with.
-  `pinned_description`   Set automatically when `description` is edited by
-                         hand. While present the titling model leaves the
-                         description alone; delete the line to resume
-                         automatic summaries.
   `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
                           `high`), seeded from the setup() defaults and read on
                           every send. Empty means the provider's default.
@@ -656,7 +652,8 @@ tray icon and a steer icon immediately left of that beacon. A three-stop
 fold-view switch (`1  2  3`) highlights the selected preset; click a stop or
 use <leader>1..3. Then a rollup island totals ALL OTHER yap sessions by state
 (streaming, awaiting you, stopped, errored, idle). After the island: the
-session title (the generated description), truncated to 40 display columns. A provider/model island sits
+session title (a renamed transcript's filename, else the generated
+description), truncated to 40 display columns. A provider/model island sits
 centered in the bar. Right: two usage chips and a context-fill meter.
 
 Reading the numbers                                    *yap-winbar-numbers*

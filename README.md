@@ -32,7 +32,7 @@ Inspired by pi and gptel.
   trees through `vim.ui.select` (`+` for saved sessions).
 - A `sessions` tool to list, search, and read other saved sessions, so a
   conversation can pull context from past ones without loading them whole.
-- A winbar with the session description, model, token totals, cost and context use.
+- A winbar with the session title, model, token totals, cost and context use.
 - Per-session model switching (`<leader>m`).
 - `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
   with the model's output in any buffer.
@@ -176,8 +176,9 @@ calls `insert(nil, { at_cursor = true })` instead, which drops the raw file at
 the cursor without sending it.
 
 Ordinary sessions are listed buffers backed by writable markdown files.
-Rename `session.md` to set a title; use your normal buffer navigation, file
-explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
+Rename `session.md` to set a permanent title (views then show that filename
+instead of the auto-generated description); use your normal buffer navigation,
+file explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
 not count in the winbar overview.
 
 `sessions()` lists saved sessions; `sessions("open")` lists the open-session

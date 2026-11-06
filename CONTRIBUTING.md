@@ -254,8 +254,10 @@ and keep their real markdown filenames, so native buffer navigation and file
 explorers work. Subagents (`b:yap_agent`) and live tail buffers remain unlisted;
 subagents remain excluded from the winbar overview. A session's tool tail opens
 with live(). Deletion uses Neovim's ordinary replacement-buffer behavior;
-session status must not redirect focus. The transcript filename is the title;
-the generated description remains the primary label in session views.
+session status must not redirect focus. The transcript filename is the only
+permanent title: a renamed transcript's filename outranks the generated
+description in every session view, and the description is regenerated after
+every turn.
 
 `sessions(scope)` is the single session picker: `"cwd"`/`"all"` list saved
 sessions, `"open"` lists the open-session tree (including subagents and
@@ -288,9 +290,8 @@ on save for the picker), and `tools` (the per-session tool allowlist: absent
 means unrestricted — every tool including runtime-discovered MCP tools; list
 names to restrict the session to only those, while a subagent lists only its
 definition's tools). The frontmatter also holds `description` — the generated
-summary shown in session views — and `pinned_description`, set automatically
-when the user edits `description` by hand; while that flag is present yap
-stops regenerating the description.
+summary shown in session views, refreshed after every turn and never a
+title: renaming the transcript is the only permanent title.
 yap writes the model fields only on `:Yap` and
 change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and

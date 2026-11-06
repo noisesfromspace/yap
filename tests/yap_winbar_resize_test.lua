@@ -293,10 +293,11 @@ assert(
   "inactive session shows model instead of name: " .. inactive_center
 )
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
--- A renamed transcript wins over the generated description in the center.
+-- A renamed transcript is the session's permanent title, so its filename
+-- wins over the generated description in the center.
 vim.api.nvim_buf_set_name(target, vim.fn.fnamemodify(vim.b[target].yap_path, ":h") .. "/Inactive title.md")
 local titled_inactive_center = yap.winbar(target):match("%%=(.-)%%=")
-assert(not titled_inactive_center:find("Inactive title"), "inactive winbar should not use a filename title: " .. titled_inactive_center)
+assert(titled_inactive_center:find("Inactive title"), "inactive winbar should use the filename title: " .. titled_inactive_center)
 -- An inactive session keeps its leftmost state icon (idle/waiting/error/
 -- stopped) so attention states are visible from another window, but drops
 -- the busy beacon: a generating session needs no attention.
@@ -375,6 +376,9 @@ vim.api.nvim_win_close(picker_win, true)
 assert(yap.winbar(target):find("%#YapIslandCap#", 1, true), "active caps not restored after picker")
 vim.g.statusline_winid = nil
 vim.b[target].yap_path = nil
+-- The renamed transcript was a probe for the inactive center island; restore
+-- the default transcript name so the generated description is the title again.
+vim.api.nvim_buf_set_name(target, vim.fn.fnamemodify(vim.api.nvim_buf_get_name(target), ":h") .. "/session.md")
 vim.api.nvim_buf_set_lines(target, 0, -1, false, {
   "---",
   "provider: mock",

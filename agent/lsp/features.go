@@ -272,7 +272,6 @@ type fieldDef struct {
 // is the canonical set for language services.
 var fields = []fieldDef{
 	{"description", "text", "generated summary"},
-	{"pinned_description", "text", "pin the hand-written description"},
 	{"model", "model", "model id"},
 	{"provider", "provider", "provider name"},
 	{"reasoning_level", "enum", "low, medium or high"},

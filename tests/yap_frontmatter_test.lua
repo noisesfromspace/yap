@@ -235,36 +235,28 @@ local plain_fm = frontmatter.parse(frontmatter.render({
 }))
 assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
 
--- 8. the filename is the session title. Every view prefers the generated
--- description and falls back to a renamed filename only when it is absent.
+-- 8. a renamed transcript's filename is the session's permanent title. Every
+-- view shows it instead of the generated description, which only labels an
+-- unrenamed session.md.
 local renamed_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/my-title.md"
 local plain_path = vim.fn.expand("~") .. "/.config/yap/sessions/-opt-code-yap/fix-picker/session.md"
 assert(session.file_title(renamed_path) == "my-title", "filename title: " .. tostring(session.file_title(renamed_path)))
 assert(session.file_title(plain_path) == nil, "session.md carries no filename title")
 assert(
-  session.label(renamed_path, "Generated description") == "Generated description",
-  "description should win even when renamed: " .. session.label(renamed_path, "Generated description")
+  session.label(renamed_path, "Generated description") == "my-title",
+  "filename should win when renamed: " .. session.label(renamed_path, "Generated description")
 )
 assert(
   session.label(plain_path, "Generated description") == "Generated description",
-  "description should win live when not renamed: " .. session.label(plain_path, "Generated description")
+  "description should label an unrenamed transcript: " .. session.label(plain_path, "Generated description")
 )
 assert(
   session.label(plain_path, nil) == "fix-picker",
   "directory name should be the fallback: " .. session.label(plain_path, nil)
 )
 assert(
-  session.label(renamed_path, "Generated description", nil, true) == "Generated description",
-  "saved picker prefers the description: " .. session.label(renamed_path, "Generated description", nil, true)
-)
-assert(
-  session.label(renamed_path, nil, nil, true) == "my-title",
-  "saved picker falls back to the filename: " .. session.label(renamed_path, nil, nil, true)
-)
-assert(
-  session.label(renamed_path, "Generated description", "/srv/app") == "/srv/app  Generated description",
-  "description should keep the cwd prefix: "
-    .. session.label(renamed_path, "Generated description", "/srv/app")
+  session.label(renamed_path, "Generated description", "/srv/app") == "/srv/app  my-title",
+  "filename title should keep the cwd prefix: " .. session.label(renamed_path, "Generated description", "/srv/app")
 )
 
 -- 9. save stamps a turn count from the `# @user` headings

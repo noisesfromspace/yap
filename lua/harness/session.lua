@@ -5,12 +5,12 @@
 -- Sessions live under ~/.config/yap/sessions/<cwd-slug>/ and are
 -- autosaved after every completed reply. The transcript filename is the
 -- session title: rename session.md with :file, :saveas or your file explorer.
--- Views prefer the generated description and fall back to that filename;
--- unnamed sessions (neither) are hidden unless they hold an
--- unsent `# @user` prompt (a scheduled prompt); open sessions stay visible in
--- the open-session picker via the filename fallback. Subagent sessions belong
--- to the conversation that spawned them: saved history never lists them, while
--- the open-session picker shows them under their parent.
+-- Views show the filename title when the transcript was renamed, else the
+-- generated description; unnamed sessions (neither) are hidden unless they
+-- hold an unsent `# @user` prompt (a scheduled prompt); open sessions stay
+-- visible in the open-session picker via the filename fallback. Subagent
+-- sessions belong to the conversation that spawned them: saved history never
+-- lists them, while the open-session picker shows them under their parent.
 
 local view = require("harness.ui.view")
 
@@ -445,15 +445,11 @@ function M.file_title(path)
   return base:gsub("%.md$", "")
 end
 
---- The description shown in session views, or nil when there is none.
-function M.identity(_, description)
-  return description and description ~= "" and description or nil
-end
-
---- The saved-history identity: the description, falling back to a filename
---- title for a renamed session that has no description yet.
-function M.saved_identity(path, description)
-  return M.identity(path, description) or M.file_title(path)
+--- The session's permanent title: a renamed transcript's basename wins over
+--- the generated description, so renaming `session.md` is the only way to give
+--- a session a title that survives its next turn.
+function M.identity(path, description)
+  return M.file_title(path) or (description and description ~= "" and description) or nil
 end
 
 --- The live frontmatter description for a session buffer.
@@ -480,11 +476,11 @@ function M.agent_label(agent, title, description, task, fallback, fallback_label
   return agent .. " · " .. identity
 end
 
---- Shared picker identity: description, renamed filename, then directory.
+--- Shared picker identity: renamed filename, description, then directory.
 --- Project overviews prefix the cwd so sessions from different worktrees are
 --- obvious.
 function M.label(path, description, project_cwd)
-  local identity = M.saved_identity(path, description)
+  local identity = M.identity(path, description)
   if not identity then
     identity = (path and path ~= "" and paths.session_name(path)) or "session"
   end
@@ -727,10 +723,10 @@ function M.display_path(buf)
   return vim.b[buf].yap_path or name
 end
 
---- Session label for the picker and notifications: the generated
---- `description`, else the renamed filename, else the directory name. Subagents and forks are indented under their parent when
---- it is open. The project cwd is rendered separately by the
---- sessions("open") picker.
+--- Session label for the picker and notifications: the renamed filename,
+--- else the generated `description`, else the directory name. Subagents and
+--- forks are indented under their parent when it is open. The project cwd is
+--- rendered separately by the sessions("open") picker.
 function M.live_label(buf, parent)
   local path = M.display_path(buf)
   local e = frontmatter.end_line(buf)

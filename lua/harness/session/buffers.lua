@@ -9,7 +9,6 @@ local state = require("harness.state")
 local config = require("harness.config")
 local frontmatter = require("harness.model.frontmatter")
 local audit = require("harness.client.audit")
-local describe = require("harness.client.describe")
 local winbar = require("harness.ui.winbar")
 local fold = require("harness.ui.fold")
 local textobj = require("harness.ui.textobj")
@@ -60,7 +59,6 @@ local function setup_buffer(buf)
       session.save(buf)
     end,
   })
-  describe.watch(buf)
   -- Opening a saved session (:edit) sets the filetype before setup_buffer
   -- runs, so a markdown client may already be attached; detach it from this
   -- buffer (buffer-locally, so a shared server keeps serving other files).

@@ -1,8 +1,8 @@
 -- Winbar rendering — the self-evaluating `%!` statusline at the top of a
 -- yap session buffer: busy beacon (or the buffer's own state icon), global
--- rollup island, session description, provider/model island and usage/cost
--- chips. Usage/cost chips remain on the right. The spinner only redraws the
--- display while the turn is running; progress frames carry live tool output.
+-- rollup island, session title, provider/model island and usage/cost chips.
+-- Usage/cost chips remain on the right. The spinner only redraws the display
+-- while the turn is running; progress frames carry live tool output.
 
 local M = {}
 
@@ -131,12 +131,11 @@ function M.seed_awaiting(buf)
   end
 end
 
---- The un-truncated session title: the generated `description`. Cached per
---- changedtick; re-reading and re-parsing frontmatter on every redraw is
---- wasted work.
+--- The un-truncated generated `description`. Cached per changedtick;
+--- re-reading and re-parsing frontmatter on every redraw is wasted work.
 local title_cache = {} -- buf -> { tick, full }
 
-local function full_title(buf)
+local function full_description(buf)
   local tick = vim.api.nvim_buf_get_changedtick(buf)
   local c = title_cache[buf]
   if c and c.tick == tick then
@@ -146,18 +145,25 @@ local function full_title(buf)
   local e = frontmatter.end_line(buf)
   if e then
     local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false))
-    if fm then
-      full = session.identity(nil, fm.description)
+    if fm and fm.description ~= "" then
+      full = fm.description
     end
   end
   title_cache[buf] = { tick = tick, full = full }
   return full
 end
 
+--- The un-truncated session title: a renamed transcript's filename (the
+--- session's permanent title), else the generated description. The filename
+--- is read every call, so a `:file` rename shows up without a buffer change.
+local function full_title(buf)
+  return session.file_title(session.display_path(buf)) or full_description(buf)
+end
+
 --- The session title for the winbar, truncated to `max` display columns so
 --- a long phrase cannot crowd out the right-hand usage/state chips. The
---- full title is cached (see full_title); only the cheap width truncation
---- runs per call.
+--- description is cached (see full_description); only the cheap width
+--- truncation and filename lookup run per call.
 local function winbar_title(buf, max)
   local d = full_title(buf)
   return d and view.truncate_display(d, max or 40) or nil

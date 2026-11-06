@@ -254,49 +254,55 @@ assert(ok, "no notification for a failed title request")
 assert(notices[1].level == vim.log.levels.ERROR, "title failure notify level not ERROR")
 assert(notices[1].msg:match("insufficient_quota"), "unexpected title failure notify: " .. tostring(notices[1].msg))
 
--- A hand-edited description is pinned: the titling model stops regenerating
--- it, and each generated summary is recorded in the audit log.
-local pin_buf = yap.new({ provider = "mock", model = "m1" })
-vim.api.nvim_buf_set_lines(pin_buf, -1, -1, false, { "Pin trigger" })
-yap.send(pin_buf)
+-- A turn is over when its process is gone; the assistant heading itself
+-- appears while the reply is still streaming.
+local function idle(buf)
+  return require("harness.state").running[buf] == nil
+end
+
+local function assistant_count(buf)
+  return select(2, table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):gsub("# @assistant", ""))
+end
+
+-- Each generated summary is recorded in the audit log, so the history of
+-- auto-generated labels is durable even though the frontmatter keeps only the
+-- current one.
+local summary_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(summary_buf, -1, -1, false, { "Summary trigger" })
+yap.send(summary_buf)
 ok = vim.wait(10000, function()
-  return table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
+  return idle(summary_buf)
 end, 100)
-assert(ok, "pin-test first turn did not produce a description")
-
-frontmatter.update(pin_buf, { description = "Static pinned title" })
-vim.api.nvim_exec_autocmds("TextChanged", { buffer = pin_buf })
-vim.wait(100)
-assert(frontmatter.is_pinned(pin_buf), "hand-edited description was not pinned")
-
--- A following turn must not overwrite the pinned description.
-vim.api.nvim_buf_set_lines(pin_buf, -1, -1, false, { "Another turn" })
-yap.send(pin_buf)
+assert(ok, "summary-test turn did not complete")
 ok = vim.wait(10000, function()
-  local text = table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, -1, false), "\n")
-  local assistants = 0
-  for _ in text:gmatch("# @assistant") do
-    assistants = assistants + 1
-  end
-  return assistants >= 2
+  return table.concat(vim.api.nvim_buf_get_lines(summary_buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
 end, 100)
-assert(ok, "pin-test second turn did not complete")
--- Give the (skipped) turn-end summary a chance to wrongly land before
--- asserting the pinned description is untouched.
-vim.wait(300)
-local pin_fm = table.concat(vim.api.nvim_buf_get_lines(pin_buf, 0, 8, false), "\n")
-assert(pin_fm:match("description: Static pinned title"), "pinned description was overwritten: " .. pin_fm)
-assert(pin_fm:match("pinned_description: true"), "pinned flag lost: " .. pin_fm)
+assert(ok, "summary-test turn did not produce a description")
 
--- The generated summary that produced the first label is durable in the audit
--- log rather than only in the frontmatter it later overwrote.
-local pin_audit = vim.fn.readfile(paths.audit_path(pin_buf))
+local summary_audit = vim.fn.readfile(paths.audit_path(summary_buf))
 local summary_lines = {}
-for _, line in ipairs(pin_audit) do
+for _, line in ipairs(summary_audit) do
   if line:find('"summary"', 1, true) then
     summary_lines[#summary_lines + 1] = line
   end
 end
-assert(#summary_lines > 0, "generated summary missing from audit log: " .. table.concat(pin_audit, "\n"))
+assert(#summary_lines > 0, "generated summary missing from audit log: " .. table.concat(summary_audit, "\n"))
+
+-- A hand-edited description is not a title: the next turn's summary replaces
+-- it, and no pin flag is written. Renaming the transcript is the only
+-- permanent title (see the frontmatter test).
+frontmatter.update(summary_buf, { description = "Hand-written label" })
+vim.api.nvim_buf_set_lines(summary_buf, -1, -1, false, { "Another turn" })
+yap.send(summary_buf)
+ok = vim.wait(10000, function()
+  return idle(summary_buf) and assistant_count(summary_buf) >= 2
+end, 100)
+assert(ok, "summary-test second turn did not complete")
+ok = vim.wait(10000, function()
+  return table.concat(vim.api.nvim_buf_get_lines(summary_buf, 0, 8, false), "\n"):match("description: described%.") ~= nil
+end, 100)
+local summary_fm = table.concat(vim.api.nvim_buf_get_lines(summary_buf, 0, 8, false), "\n")
+assert(ok, "hand-edited description was not replaced by the next summary: " .. summary_fm)
+assert(not summary_fm:match("pinned_description"), "pinned_description still written: " .. summary_fm)
 
 print("OK describe")

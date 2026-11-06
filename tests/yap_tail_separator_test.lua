@@ -64,9 +64,9 @@ assert(
   "duplicate tail name was not disambiguated: " .. vim.fn.bufname(second_tail)
 )
 frontmatter.update(second, { description = "" })
-vim.api.nvim_buf_set_name(second, vim.fn.fnamemodify(vim.b[second].yap_path, ":h") .. "/Pinned title.md")
+vim.api.nvim_buf_set_name(second, vim.fn.fnamemodify(vim.b[second].yap_path, ":h") .. "/Named title.md")
 session.save(second)
-assert(vim.fn.bufname(second_tail) == "Yap Log: Pinned title", "filename title fallback wrong")
+assert(vim.fn.bufname(second_tail) == "Yap Log: Named title", "filename title fallback wrong")
 
 -- A rule drawn with no window uses the background fallback width; once a
 -- window shows the tail, refresh() re-renders it to that window's width.

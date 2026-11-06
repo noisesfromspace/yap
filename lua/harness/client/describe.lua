@@ -20,15 +20,6 @@ end
 local description_seq = {}
 local description_started = {}
 
--- The description text yap last saw per buffer, so a user edit to the
--- `description:` line is distinguishable from a generated one.
-local watched = {}
-
--- Set synchronously when a user edits the description, before the deferred
--- `pinned_description` write lands. Guards an in-flight summary from
--- clobbering the edit in that window.
-local manual_edit = {}
-
 -- Routine commit/close requests should not become the session's title when
 -- an earlier user request explains what the work was actually about. Tool
 -- calls and results are assistant transcript text, not user intent, so never
@@ -91,40 +82,6 @@ local function current_description(buf)
   return fm and fm.description or ""
 end
 
---- Watch a session buffer for a hand-edited description. A user edit to the
---- `description:` line pins it (`pinned_description: true`), after which the
---- titling model leaves it alone. yap's own writes go through
---- nvim_buf_set_lines, which does not fire TextChanged, so only genuine user
---- edits reach this callback.
-function M.watch(buf)
-  if watched[buf] or not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  watched[buf] = current_description(buf)
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-    buffer = buf,
-    callback = function()
-      local current = current_description(buf)
-      if current == watched[buf] then
-        return
-      end
-      watched[buf] = current
-      if current == "" then
-        manual_edit[buf] = nil
-        return
-      end
-      manual_edit[buf] = true
-      -- Defer the frontmatter rewrite so an in-progress insert-mode edit
-      -- is not disturbed by a line insertion underneath it.
-      vim.schedule(function()
-        if vim.api.nvim_buf_is_valid(buf) and current_description(buf) ~= "" then
-          frontmatter.update(buf, { pinned_description = true })
-        end
-      end)
-    end,
-  })
-end
-
 --- Generate or refresh the session description shown in the winbar and
 --- session picker. `kind` selects the model and what it summarizes:
 ---   "user"   — smallest model, only the first useful request (runs once)
@@ -133,7 +90,7 @@ end
 --- (document.messages); nil when no document server is attached, in which
 --- case there is nothing to title from.
 function M.refresh(buf, kind, messages)
-  if not vim.api.nvim_buf_is_valid(buf) or frontmatter.is_pinned(buf) then
+  if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
   local combo, system, content
@@ -243,11 +200,6 @@ Return only the title.]]
       if kind == "user" and current_description(buf) ~= "" then
         return
       end
-      -- A hand-edited description pinned while the request was in flight wins
-      -- over the generated one.
-      if manual_edit[buf] or frontmatter.is_pinned(buf) then
-        return
-      end
       -- The instant label runs only once, so a failed attempt must not wedge
       -- that gate: clear it so a later send retries. The whole-session
       -- summary already retries on its own (it re-runs after every turn).
@@ -289,7 +241,6 @@ Return only the title.]]
         retry_later()
         return
       end
-      watched[buf] = description
       audit.append_event(buf, {
         type = "summary",
         kind = kind,
@@ -305,8 +256,6 @@ end
 function M.forget(buf)
   description_seq[buf] = nil
   description_started[buf] = nil
-  watched[buf] = nil
-  manual_edit[buf] = nil
 end
 
 return M
