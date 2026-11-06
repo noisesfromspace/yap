@@ -34,7 +34,7 @@ view.link(HL_CMD, "Title")
 -- dropped from the top, so a runaway command cannot balloon the buffer.
 local MAX_TAIL_LINES = 5000
 
--- Per-session tail state: session buf -> { bufnr, rules }.
+-- Per-session tail state: session buf -> { bufnr, rules, commands }.
 local tails = {}
 local resize_autocmd = false
 local resync -- defined after the rule helpers; used by the resize autocmd
@@ -76,7 +76,7 @@ function M.ensure(buf)
   local tbuf = util.find_or_create_buffer(name, false, true) -- unlisted scratch: never in :ls
   vim.bo[tbuf].bufhidden = "hide"
   vim.bo[tbuf].modifiable = false
-  t = { bufnr = tbuf, rules = {}, follow = document.following_windows(tbuf), expected = {} }
+  t = { bufnr = tbuf, rules = {}, commands = {}, follow = document.following_windows(tbuf), expected = {} }
   tails[buf] = t
   M.rename(buf)
   if not resize_autocmd then
@@ -123,6 +123,14 @@ local function append_lines(t, lines)
       end
     end
     t.rules = shifted
+    local commands = {}
+    for i, entry in ipairs(t.commands) do
+      local next_start = t.commands[i + 1] and t.commands[i + 1].start
+      if not next_start or next_start > drop then
+        commands[#commands + 1] = { start = math.max(0, entry.start - drop), command = entry.command }
+      end
+    end
+    t.commands = commands
   end
   vim.bo[buf].modifiable = false
   document.follow_windows(buf, t.follow, t.expected)
@@ -165,6 +173,7 @@ function M.tool_start(buf, command)
   if has_prior then
     t.rules[start_row + 1] = true -- lines[2] is the rule separator
   end
+  t.commands[#t.commands + 1] = { start = start_row + (has_prior and 2 or 0), command = command }
   -- Highlight the trailing `$ command` header (possibly multi-line after
   -- shell-operator wrapping) so it stands apart from the output below.
   local head = vim.api.nvim_buf_line_count(t.bufnr) - #cmd
@@ -175,6 +184,27 @@ function M.tool_start(buf, command)
       end_col = #text,
       right_gravity = false,
     })
+  end
+end
+
+--- Copy the original bash command associated with the cursor line (header or
+--- output), not the shell-wrapped presentation in the tail buffer.
+function M.copy_command(buf, line)
+  local t = tails[buf]
+  if not t then
+    return
+  end
+  local row = line - 1
+  for i = #t.commands, 1, -1 do
+    local entry = t.commands[i]
+    if row >= entry.start then
+      local next_start = t.commands[i + 1] and t.commands[i + 1].start
+      if not next_start or row < next_start - 2 then
+        vim.fn.setreg('"', entry.command)
+        vim.fn.setreg("+", entry.command)
+      end
+      return
+    end
   end
 end
 

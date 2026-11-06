@@ -602,8 +602,10 @@ though the frontmatter keeps only the current label.
 
 The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
-bytes. It is never rebuilt from the audit log; the full streamed output lives
-in the tool's temp log, and the audit log carries the tail-truncated result.
+bytes. `Y` copies the command associated with the cursor line (header or
+output) to the unnamed (`"`) and clipboard (`+`) registers. It is never
+rebuilt from the audit log; the full streamed output lives in the tool's temp
+log, and the audit log carries the tail-truncated result.
 guard() lists every open session's parked approvals and their settled decision
 history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
 at the exact audit-log lines they replaced.

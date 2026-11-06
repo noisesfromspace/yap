@@ -76,4 +76,41 @@ audit.refresh(buf)
 local resized = vim.api.nvim_buf_get_lines(tail, 0, -1, false)
 assert(vim.fn.strchars(resized[4]) == 40, "rule did not resize to the window width: " .. vim.fn.strchars(resized[4]))
 
+-- Y in the live tail copies the original command from its header or output,
+-- not the wrapped lines shown on screen. Separator lines do nothing.
+local command = "printf 'first\\nsecond' && echo done"
+audit.tool_start(first, command)
+local first_view = audit.view(first)
+require("harness.state").live_logs[first] = { log1 = { log = "log1", pending = "" } }
+audit.tool_output(first, "log1", "result line\n")
+yap.live(first)
+local first_lines = vim.api.nvim_buf_get_lines(first_view.bufnr, 0, -1, false)
+local header, output
+for i, text in ipairs(first_lines) do
+  if text:sub(1, 2) == "$ " then header = i end
+  if text == "result line" then output = i end
+end
+assert(header and output, "missing command or output in tail")
+assert(vim.fn.maparg("Y", "n", false, true).buffer == 1, "tail missing Y map")
+vim.fn.setreg('"', "old")
+vim.fn.setreg("+", "old")
+vim.api.nvim_win_set_cursor(0, { output, 0 })
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == command and vim.fn.getreg("+") == command, "Y on output did not copy full command")
+vim.fn.setreg('"', "old")
+vim.api.nvim_win_set_cursor(0, { header, 0 })
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == command, "Y on header did not copy command")
+audit.tool_start(first, "echo next")
+local next_header = vim.api.nvim_buf_line_count(first_view.bufnr)
+vim.fn.setreg('"', "old")
+vim.fn.setreg("+", "old")
+vim.api.nvim_win_set_cursor(0, { next_header - 1, 0 }) -- rule separator
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "old" and vim.fn.getreg("+") == "old", "Y copied from separator")
+vim.api.nvim_win_set_cursor(0, { next_header, 0 })
+vim.api.nvim_feedkeys("Y", "mtx", false)
+assert(vim.fn.getreg('"') == "echo next" and vim.fn.getreg("+") == "echo next", "Y copied wrong command")
+yap.live(first) -- close
+
 print("OK tail separator")

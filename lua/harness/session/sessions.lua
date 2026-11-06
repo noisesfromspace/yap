@@ -86,6 +86,9 @@ function M.live(buf)
       guard.toggle()
     end, { buffer = t.bufnr, silent = true, desc = "yap: guard board" })
   end
+  vim.keymap.set("n", "Y", function()
+    audit.copy_command(owner, vim.api.nvim_win_get_cursor(0)[1])
+  end, { buffer = t.bufnr, silent = true, desc = "yap: copy bash command" })
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(t.bufnr), 0 })
 end
 
