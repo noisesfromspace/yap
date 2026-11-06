@@ -794,7 +794,7 @@ function M.setup_buffer(buf, keys)
       -- no-op instead of an E5108 Lua stack trace.
       vim.cmd("silent! normal! " .. (vim.v.count > 0 and tostring(vim.v.count) or "") .. command)
       M.before_change(buf)
-    end, "yap: " .. command)
+    end, command)
   end
 end
 

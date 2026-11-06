@@ -25,6 +25,9 @@ assert(
     and lines:find("Toggle fold", 1, true),
   "fold/navigation shortcuts missing"
 )
+assert(lines:find("[a / ]a", 1, true), "paired prev/next keys not combined")
+assert(lines:find("Previous / Next assistant message", 1, true), "paired description not combined")
+assert(not lines:find("yap: z", 1, true), "native fold passthroughs leaked into help")
 assert(lines:match("Search with /, n and N"), "native-search hint missing")
 vim.api.nvim_win_close(win, true)
 print("OK help panel")

@@ -118,19 +118,31 @@ local follow_override = state.follow_override
 
 function M.show_keymaps(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  local entries, seen = {}, {}
   local modes = { "n", "i", "x", "o" }
+  -- Group by lhs: one cheat-sheet row per key, not one per (key, mode).
+  local by_lhs, order = {}, {}
   local function collect(maps, mode)
     for _, map in ipairs(maps) do
       if map.desc and map.desc:match("^yap:") then
-        local key = mode .. "\0" .. map.lhs .. "\0" .. map.desc
-        if not seen[key] then
-          seen[key] = true
-          entries[#entries + 1] = {
-            lhs = map.lhs,
-            mode = mode,
-            desc = map.desc:sub(6),
-          }
+        local desc = map.desc:sub(6)
+        -- Native fold passthroughs (za, zc, zA, ...) describe nothing but
+        -- their own key; they're stock Vim folds, not worth a row here.
+        if desc ~= map.lhs then
+          local g = by_lhs[map.lhs]
+          if not g then
+            g = { modes = {}, desc = nil, seen = {} }
+            by_lhs[map.lhs] = g
+            order[#order + 1] = map.lhs
+          end
+          local key = mode .. "\0" .. desc
+          if not g.seen[key] then
+            g.seen[key] = true
+            g.modes[#g.modes + 1] = mode
+            -- Prefer the normal-mode description when one exists.
+            if mode == "n" or g.desc == nil then
+              g.desc = desc
+            end
+          end
         end
       end
     end
@@ -139,20 +151,63 @@ function M.show_keymaps(buf)
     collect(vim.api.nvim_buf_get_keymap(buf, mode), mode)
     collect(vim.api.nvim_get_keymap(mode), mode)
   end
-  table.sort(entries, function(a, b)
-    if a.lhs == b.lhs then
-      return a.mode < b.mode
+  table.sort(order)
+
+  local MODE_ORDER = { "n", "i", "x", "o" }
+  local function mode_string(a, b)
+    local set = {}
+    for _, m in ipairs(a) do
+      set[m] = true
     end
-    return a.lhs < b.lhs
-  end)
+    if b then
+      for _, m in ipairs(b) do
+        set[m] = true
+      end
+    end
+    local out = {}
+    for _, m in ipairs(MODE_ORDER) do
+      if set[m] then
+        out[#out + 1] = m
+      end
+    end
+    return table.concat(out, " ")
+  end
+
+  -- Collapse paired prev/next keys ([a / ]a) into a single row.
+  local rows, paired = {}, {}
+  for _, lhs in ipairs(order) do
+    if not paired[lhs] then
+      local g = by_lhs[lhs]
+      if lhs:sub(1, 1) == "[" then
+        local other_lhs = "]" .. lhs:sub(2)
+        local o = by_lhs[other_lhs]
+        if o and not paired[other_lhs] then
+          local a_suffix = g.desc:match("^Previous (.*)$")
+          local b_suffix = o.desc:match("^Next (.*)$")
+          local desc = a_suffix and b_suffix and a_suffix == b_suffix and ("Previous / Next " .. a_suffix)
+            or (g.desc .. " / " .. o.desc)
+          rows[#rows + 1] = {
+            lhs = lhs .. " / " .. other_lhs,
+            mode = mode_string(g.modes, o.modes),
+            desc = desc,
+          }
+          paired[lhs], paired[other_lhs] = true, true
+        else
+          rows[#rows + 1] = { lhs = lhs, mode = mode_string(g.modes), desc = g.desc }
+        end
+      else
+        rows[#rows + 1] = { lhs = lhs, mode = mode_string(g.modes), desc = g.desc }
+      end
+    end
+  end
 
   local lines = {
     "Yap shortcuts (current buffer)",
     "Search with /, n and N; close with q or <Esc>.",
     "",
   }
-  for _, entry in ipairs(entries) do
-    lines[#lines + 1] = string.format("%-18s %-2s %s", entry.lhs, entry.mode, entry.desc)
+  for _, row in ipairs(rows) do
+    lines[#lines + 1] = string.format("%-18s %-5s %s", row.lhs, row.mode, row.desc)
   end
 
   local panel = vim.api.nvim_create_buf(false, true)
