@@ -293,8 +293,10 @@ lossy), `models` (the ordered history of combos used), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped
 on save for the picker), and `tools` (the per-session tool allowlist: absent
 means unrestricted — every tool including runtime-discovered MCP tools; list
-names to restrict the session to only those, while a subagent lists only its
-definition's tools). The frontmatter also holds `description` — the generated
+names to restrict the session to only those). A child session gets the tool
+names selected on each `subagent` call by the calling model; agent definitions
+do not grant tools. The child still uses the normal approval guard and sandbox.
+The frontmatter also holds `description` — the generated
 summary shown in session views, refreshed after every turn and never a
 title: renaming the transcript is the only permanent title.
 yap writes the model fields only on `:Yap` and
@@ -809,7 +811,7 @@ sequenceDiagram
     — a guard rule matched, so the call parks until the Lua side replies
     `{"type":"approval_result","id","approved"}` on stdin (or auto-accepts, or
     the backend times out and emits `approval_timeout`).
-  - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...}`
+  - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...,"tools":[...]}`
     — the Lua side spawns/runs a child session and replies
     `{"type":"subagent_result","id","result"}`.
   - `close_session` `{"type":"close_session"}` — a frontend side effect: the

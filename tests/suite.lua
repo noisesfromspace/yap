@@ -32,6 +32,7 @@ local CASES = {
   { name = "yap_scratch_send_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_scratch_flow_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_scratch_template_test", port = 18132 },
+  { name = "yap_missing_bin_test", port = 18132 },
   { name = "yap_notify_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_block_test", port = 18132, mock = "mock_slow.py" },
   { name = "yap_toolparse_test", port = 18132 },
@@ -158,8 +159,7 @@ do
       local prev = by_port[case.port]
       if prev and prev ~= case.mock then
         error(
-          ("mock port %d is shared by %s and %s; give each mock its own port")
-            :format(case.port, prev, case.mock),
+          ("mock port %d is shared by %s and %s; give each mock its own port"):format(case.port, prev, case.mock),
           0
         )
       end

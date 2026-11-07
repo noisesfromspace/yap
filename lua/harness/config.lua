@@ -122,8 +122,16 @@ function M.refresh_models()
   if models_refreshing then
     return
   end
+  local bin = require("harness").config.bin
+  if not bin or bin == "" or vim.fn.executable(bin) ~= 1 then
+    for _, waiter in ipairs(models_waiters) do
+      waiter(models_cache, "binary is not executable: " .. tostring(bin))
+    end
+    models_waiters = {}
+    return
+  end
   models_refreshing = true
-  vim.system({ require("harness").config.bin, "models" }, { text = true }, function(res)
+  vim.system({ bin, "models" }, { text = true }, function(res)
     vim.schedule(function()
       models_refreshing = false
       local combos = {}

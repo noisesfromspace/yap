@@ -268,7 +268,7 @@ function M.audit_path(buf)
   return M.data_dir(buf) .. "/audit.jsonl"
 end
 
---- The session's file-backed jotter: <data_dir>/notes.md. Its fixed name is
+--- The session's file-backed scratch buffer: <data_dir>/notes.md. Its fixed name is
 --- excluded from transcript discovery; the session data directory follows the
 --- transcript (or its frontmatter data_dir for portable sessions).
 function M.notes_path(buf)

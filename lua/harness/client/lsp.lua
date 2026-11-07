@@ -11,27 +11,65 @@ local state = require("harness.state")
 
 -- The running client id, or nil. One client serves every session buffer in
 -- this Neovim instance; it is never auto-attached by root_dir/filetype, only
--- by M.attach on managed session and jotter buffers.
+-- by M.attach on managed session and scratch buffers.
 local client_id = nil
+
+-- Deduplicates the actionable missing-binary warning across sessions and
+-- turns. Reset to false whenever the binary is found executable, so a later
+-- disappearance (or a changed `bin` path) is reported again.
+local missing_bin_warned = false
 
 local function cfg()
   return require("harness").config
 end
 
+--- Whether the configured binary is executable right now. Re-checked on every
+--- call, so a binary installed (or a PATH/config fix applied) later is picked
+--- up without restarting Neovim. No warning here: setup()'s warm-up goes
+--- through ensure() and must stay silent at startup.
+function M.bin_available()
+  local bin = cfg().bin
+  if bin and bin ~= "" and vim.fn.executable(bin) == 1 then
+    missing_bin_warned = false
+    return true
+  end
+  return false
+end
+
+--- Surface one actionable warning when a managed session needs the binary and
+--- it is missing (LSP attach or a turn). Deduplicated until the binary is
+--- found again, so several sessions or turns do not each re-notify.
+function M.warn_missing_bin()
+  if M.bin_available() or missing_bin_warned then
+    return
+  end
+  missing_bin_warned = true
+  local bin = cfg().bin
+  local label = (bin and bin ~= "") and ("'" .. bin .. "'") or "(empty bin)"
+  vim.notify(
+    "yap: binary "
+      .. label
+      .. " is not executable — install yap or set bin in setup() "
+      .. "(LSP and turns stay off until it is available)",
+    vim.log.levels.WARN
+  )
+end
+
 --- Start the client once and return its id, or nil when the binary is
---- unavailable (a missing binary is not an error: the features simply stay off).
+--- unavailable. The check is silent here (setup() warms the client up without
+--- warning); callers that represent a managed session actually needing LSP
+--- (M.attach) warn through M.warn_missing_bin.
 function M.ensure()
   if client_id and vim.lsp.get_client_by_id(client_id) then
     return client_id
   end
-  local c = cfg()
-  local bin = c.bin
-  if not bin or bin == "" or vim.fn.executable(bin) ~= 1 then
+  if not M.bin_available() then
     return nil
   end
+  local c = cfg()
   client_id = vim.lsp.start({
     name = "yap",
-    cmd = { bin, "lsp" },
+    cmd = { c.bin, "lsp" },
     root_dir = c.sessions_dir or vim.fn.getcwd(),
     capabilities = vim.lsp.protocol.make_client_capabilities(),
     init_options = {
@@ -58,6 +96,7 @@ end
 function M.attach(buf)
   local id = M.ensure()
   if not id then
+    M.warn_missing_bin()
     return
   end
   if not vim.lsp.buf_is_attached(buf, id) then
@@ -91,7 +130,7 @@ function M.notify(buf, cwd, streaming)
     streaming = streaming == true,
     -- Notes are attached for @file completion, not transcript diagnostics.
     is_session = vim.b[buf].yap == true,
-    is_jotter = vim.b[buf].yap_scratch_notes == true,
+    is_scratch = vim.b[buf].yap_scratch_notes == true,
   })
 end
 

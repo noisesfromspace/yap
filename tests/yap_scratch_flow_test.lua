@@ -53,7 +53,7 @@ vim.api.nvim_buf_set_lines(scratch, 0, -1, false, {
   "queue two",
 })
 require("harness.client.scratch").refresh(scratch)
-assert(vim.bo[scratch].buftype == "", "jotter should be file-backed")
+assert(vim.bo[scratch].buftype == "", "scratch should be file-backed")
 assert(not text(scratch):find("uncommitted", 1, true), "virtual state label leaked into file")
 assert(hint(scratch, 4) == "  · uncommitted", "queue draft has no state label: " .. hint(scratch, 4))
 assert(vim.fn.foldlevel(6) == 1, "unknown heading incorrectly ended queue fold")
@@ -170,7 +170,7 @@ assert(
   text(scratch):find("save for later", 1, true),
   "stop lost queue draft: " .. text(scratch) .. "\nowner: " .. text(owner)
 )
--- A session closed with :bd keeps its jotter: the next <C-s> loads the
+-- A session closed with :bd keeps its scratch: the next <C-s> loads the
 -- session again and dispatches, instead of silently doing nothing.
 local scratch_win = vim.fn.win_findbuf(scratch)[1]
 if not scratch_win then

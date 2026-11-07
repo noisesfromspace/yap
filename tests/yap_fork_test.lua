@@ -1,7 +1,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ model_groups = { agent = "mock/m1", flash = "" }})
+yap.setup({ model_groups = { agent = "mock/m1", flash = "" } })
 vim.cmd("runtime plugin/yap.lua")
 local paths = require("harness.path")
 local frontmatter = require("harness.model.frontmatter")
@@ -169,23 +169,22 @@ local function check_open_tree(pick, leaf_visible)
     "open fork tree is broken from within its leaf: " .. vim.inspect(captured)
   )
   assert(
-    format(captured[positions[original_buf]]):find("^" .. string.rep(" ", 8)) == 1,
-    "root should start with the blank status column"
+    format(captured[positions[original_buf]]):find("^" .. vim.pesc(captured[positions[original_buf]].text)) == 1,
+    "root should start with its title"
   )
-  assert(
-    format(captured[positions[fork_buf]]):find("^" .. string.rep(" ", 10) .. "↳") == 1,
-    "fork title should be indented under the root after the blank status column"
-  )
+  assert(format(captured[positions[fork_buf]]):find("^  ↳") == 1, "fork title should be indented under the root")
   if leaf_visible then
     local leaf = captured[positions[nested_buf]]
     assert(leaf.text:find("↳ fork · ", 1, true) == 1, "nested open fork label wrong")
     assert(
-      leaf.depth == 2 and format(leaf):find("^" .. string.rep(" ", 12) .. "↳") == 1,
-      "nested fork title should be indented twice after the blank status column"
+      leaf.depth == 2 and format(leaf):find("^" .. string.rep(" ", 4) .. "↳") == 1,
+      "nested fork title should be indented twice"
     )
   end
 end
-check_open_tree(function() yap.sessions("open") end, true)
+check_open_tree(function()
+  yap.sessions("open")
+end, true)
 local saved_capture
 vim.ui.select = function(items)
   saved_capture = items
@@ -295,7 +294,9 @@ local function check_orphan(pick, root_buf, child_buf, title)
     assert(captured[child_index].text:find("↳ fork · ", 1, true) == 1, "open child lost fork label")
   end
 end
-check_orphan(function() yap.sessions("open") end, fork_buf, nested_buf, "fork · forked (parent not shown)")
+check_orphan(function()
+  yap.sessions("open")
+end, fork_buf, nested_buf, "fork · forked (parent not shown)")
 vim.cmd("bdelete! " .. fork_buf)
 -- A lone current fork appears in the general picker.
 captured = nil
@@ -311,7 +312,9 @@ for _, item in ipairs(captured or {}) do
 end
 assert(found_current, "current orphan fork missing from open picker")
 vim.cmd("enew")
-check_orphan(function() yap.sessions("open") end, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
+check_orphan(function()
+  yap.sessions("open")
+end, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
 local after_close = require("harness.session").list("cwd")
 local positions = {}
 for i, item in ipairs(after_close) do

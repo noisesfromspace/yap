@@ -6,12 +6,16 @@ vim.fn.writefile({ "alpha/old" }, path)
 
 local system = vim.system
 local callbacks = {}
-vim.system = function(_, _, cb)
-  table.insert(callbacks, cb)
+vim.system = function(cmd, opts, cb)
+  if cmd[2] == "models" then
+    table.insert(callbacks, cb)
+  else
+    return system(cmd, opts, cb)
+  end
 end
 
 local yap = require("harness")
-yap.setup({ bin = "test-yap" })
+yap.setup({ bin = ROOT .. "/yap" })
 assert(#callbacks == 1, "setup should refresh models in the background")
 local buf = yap.new({ provider = "alpha", model = "old" })
 local picked = {}
@@ -29,7 +33,7 @@ assert(#picked == 1, "refresh should not reopen the picker")
 yap.change_model()
 assert(vim.deep_equal(picked[2], { "alpha/new", "beta/new" }), "next picker should use refreshed list")
 
-yap.setup({ bin = "test-yap" })
+yap.setup({ bin = ROOT .. "/yap" })
 assert(#callbacks == 2, "setup should retry discovery")
 callbacks[2]({ code = 1, stdout = "", stderr = "offline" })
 assert(vim.wait(1000, function()

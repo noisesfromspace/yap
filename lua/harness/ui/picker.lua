@@ -8,7 +8,6 @@
 local M = {}
 
 local state = require("harness.state")
-local config = require("harness.config")
 
 --- The agent role of a session, or nil for an ordinary conversation. A saved
 --- session carries it in frontmatter; an open buffer also has the spawn-time
@@ -44,7 +43,7 @@ end
 --- The state -> icon table for the session pickers, mirroring the winbar
 --- state chips.
 function M.glyphs()
-  local ic = config.defaults.icons
+  local ic = require("harness").config.icons
   return {
     running = ic.running,
     stopped = ic.stopped,
@@ -67,30 +66,6 @@ function M.status(buf)
   return glyph[M.state(buf)]
 end
 
--- The state word behind each buffer-picker tag. A picker filters on the item
--- text, so an icon is untypeable: the state must be spelled out for a query
--- like `[WAIT]` to find the sessions that need a reply.
-local TAGS = {
-  running = "RUN",
-  stopped = "STOP",
-  error = "ERR",
-  waiting = "WAIT",
-  done = "DONE",
-  idle = "IDLE",
-  approval = "APPR",
-}
-
---- The widest tag, so every label's title starts at the same column.
-M.tag_width = 0
-for _, word in pairs(TAGS) do
-  M.tag_width = math.max(M.tag_width, #word + 2)
-end
-
---- The states the open-session picker tags with text. Waiting, stopped, done
---- and idle are quiet: a long project list would drown in badges, so only
---- rows that need a decision (`[RUN]`, `[ERR]`, `[APPR]`) get one.
-local ATTENTION = { running = true, error = true, approval = true }
-
 --- Widest display width among a set of icon strings (a map or list).
 function M.icon_width(icons)
   local w = 0
@@ -108,17 +83,6 @@ function M.prefix(icon, width)
     return string.rep(" ", width + 2)
   end
   return icon .. string.rep(" ", width - vim.fn.strdisplaywidth(icon)) .. "  "
-end
-
---- Fixed-column status prefix for the open-session picker: a text tag for
---- attention states, blank padding for quiet states. Quiet rows reserve the
---- same column so every title aligns without an always-on icon column.
-function M.status_prefix(status)
-  if not ATTENTION[status] then
-    return string.rep(" ", M.tag_width + 2)
-  end
-  local tag = "[" .. TAGS[status] .. "]"
-  return tag .. string.rep(" ", M.tag_width - #tag) .. "  "
 end
 
 return M

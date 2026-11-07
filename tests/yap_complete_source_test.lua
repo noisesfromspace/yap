@@ -59,9 +59,9 @@ at(1, 6, { "see @flake.lock" })
 assert(cmp_source.is_available() == true, "mid-line @file should offer completion")
 vim.b[buf].yap = nil
 vim.b[buf].yap_scratch_notes = true
-assert(cmp_source.is_available() == true, "jotter @file should offer completion")
+assert(cmp_source.is_available() == true, "scratch @file should offer completion")
 at(1, 4, { "# @st" })
-assert(cmp_source.is_available() == true, "jotter section heading should offer completion")
+assert(cmp_source.is_available() == true, "scratch section heading should offer completion")
 vim.b[buf].yap_scratch_notes = nil
 vim.b[buf].yap = true
 

@@ -6,13 +6,10 @@ vim.fn.mkdir(home .. "/.config/yap/agents", "p")
 vim.env.HOME = home
 assert(vim.fn.expand("~") == home, "test HOME not isolated")
 vim.fn.writefile(
-  { "---", "name: scout", "model: pi-only-model", "tools: read, grep", "---", "Scout agent" },
+  { "---", "name: scout", "model: pi-only-model", "---", "Scout agent" },
   home .. "/.config/yap/agents/scout.md"
 )
-vim.fn.writefile(
-  { "---", "name: browser", "tools: browser_launch", "---", "Browser agent" },
-  home .. "/.config/yap/agents/browser.md"
-)
+vim.fn.writefile({ "---", "name: browser", "---", "Browser agent" }, home .. "/.config/yap/agents/browser.md")
 local script = home .. "/backend"
 vim.fn.writefile(
   vim.split(
@@ -32,14 +29,23 @@ for line in sys.stdin:
     first = prompt.splitlines()[0]
     if first.startswith("delegate"):
         agent = "browser" if "unsupported" in first else "scout"
+        tools = ["read", "search"]
+        if "newtool" in first:
+            tools = ["read", "mcp_example_query"]
+        elif "unsupported" in first:
+            tools = ["subagent"]
+        elif "missingtools" in first:
+            tools = None
         model = ""
         if "override" in first:
             model = "other/model-b"
         elif "badmodel" in first:
             model = "nonsense"
-        print(json.dumps({"type":"subagent_request","id":"1","agent":agent,"model":model,"task":"fail" if "failure" in first else "succeed"}), flush=True)
+        print(json.dumps({"type":"subagent_request","id":"1","agent":agent,"model":model,"task":"fail" if "failure" in first else "markers" if "markers" in first else "succeed", "tools":tools}), flush=True)
         response = json.loads(sys.stdin.readline())
         print(json.dumps({"type":"text","text":"\n" + response['result'] + "\n"}), flush=True)
+    elif "markers" in first:
+        print(json.dumps({"type":"text","text":"\n<!-- yap:thinking\nsecret thought\n-->\n<!-- yap:tool {\\\"id\\\":\\\"t\\\",\\\"name\\\":\\\"read\\\"} -->\n```\n# @assistant\nquoted heading\n```\n<!-- /yap:tool -->\nchild visible answer\n"}), flush=True)
     elif "fail" in first:
         print(json.dumps({"type":"text","text":"\n<!-- yap:error\nchild model failed\n-->\n"}), flush=True)
     else:
@@ -79,8 +85,12 @@ local child_path = linked_path
 assert(vim.fn.filereadable(child_path) == 1, "child session missing")
 local fm = require("harness.model.frontmatter").parse(vim.fn.readfile(child_path))
 assert(fm.provider == "mock" and fm.model == "working", "bare Pi model did not inherit parent combo")
-assert(table.concat(fm.tools, ",") == "read,search", "agent aliases not normalized")
+assert(table.concat(fm.tools, ",") == "read,search", "caller-selected tools missing")
 assert(fm.subagent_parent == vim.b[parent].yap_path, "child parent path missing")
+local child_buf = vim.fn.bufnr(child_path)
+assert(child_buf > 0, "child buffer missing")
+require("harness.model.frontmatter").update(child_buf, { tools = {} })
+assert(yap.send(child_buf) == false, "a child with an empty tools list became unrestricted")
 local parent_fm = require("harness.model.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
 assert(
   parent_fm and parent_fm.subagents and #parent_fm.subagents == 1,
@@ -99,9 +109,25 @@ for path in overridden:gmatch("Session: %[.-%]%((.-)%)") do
 end
 assert(over_path and over_path ~= child_path, "override spawned no new child")
 local over_fm = require("harness.model.frontmatter").parse(vim.fn.readfile(over_path))
-assert(over_fm.provider == "other" and over_fm.model == "model-b", "per-call model ignored: " .. vim.inspect(over_fm.model))
+assert(
+  over_fm.provider == "other" and over_fm.model == "model-b",
+  "per-call model ignored: " .. vim.inspect(over_fm.model)
+)
 local bad_model = delegate("delegate badmodel")
 assert(bad_model:find("error: invalid subagent model", 1, true), bad_model)
 local unsupported = delegate("delegate unsupported")
-assert(unsupported:find("error: agent definition browser requires unsupported tool browser_launch", 1, true), unsupported)
+assert(unsupported:find("error: invalid subagent tool subagent", 1, true), unsupported)
+local missing = delegate("delegate missingtools")
+assert(missing:find("error: subagent requires a nonempty tools list", 1, true), missing)
+local marked = delegate("delegate markers")
+assert(marked:find("child visible answer", 1, true), marked)
+assert(not marked:find("quoted heading", 1, true) and not marked:find("secret thought", 1, true), marked)
+local dynamic = delegate("delegate newtool")
+local dynamic_path
+for path in dynamic:gmatch("Session: %[.-%]%((.-)%)") do
+  dynamic_path = path
+end
+assert(dynamic_path, "dynamic tools child missing")
+local dynamic_fm = require("harness.model.frontmatter").parse(vim.fn.readfile(dynamic_path))
+assert(table.concat(dynamic_fm.tools, ",") == "read,mcp_example_query", "dynamic tools not forwarded")
 print("OK subagent integration")

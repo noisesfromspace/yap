@@ -5,7 +5,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local session = require("harness.session")
-yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
 
 -- preview() returns a { buf = ... } table per the vim.ui.select() preview
 -- contract; the buffer is markdown so pickers syntax-highlight the excerpts.
@@ -57,12 +57,27 @@ assert(preview_text(session.preview({}))[1] == "(no messages yet)", "empty previ
 -- The preview is the user-facing outcome, not the tool transcript or an
 -- unfinished thinking-only reply. Literal markdown and ordinary comments stay.
 local rich = vim.list_extend(vim.deepcopy(convo), {
-  "", "<!-- yap:thinking", "unfinished reasoning", "-->",
-  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->",
-  "tool output", "# @user", "quoted inside tool", "<!-- /yap:tool -->",
-  "<!-- yap:model m1 -->", "<!-- ordinary comment -->",
-  "", "# @user", "", "new question", "", "# @assistant", "",
-  "<!-- yap:thinking", "still working", "-->",
+  "",
+  "<!-- yap:thinking",
+  "unfinished reasoning",
+  "-->",
+  '<!-- yap:tool {"id":"x","name":"bash"} -->',
+  "tool output",
+  "# @user",
+  "quoted inside tool",
+  "<!-- /yap:tool -->",
+  "<!-- yap:model m1 -->",
+  "<!-- ordinary comment -->",
+  "",
+  "# @user",
+  "",
+  "new question",
+  "",
+  "# @assistant",
+  "",
+  "<!-- yap:thinking",
+  "still working",
+  "-->",
 })
 local rich_preview = table.concat(preview_text(session.preview(rich)), "\n")
 assert(rich_preview:find("last answer line 2", 1, true), "lost last completed answer")
@@ -74,9 +89,19 @@ end
 -- The open-session picker previews another live buffer with the same excerpts.
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-  "# @user", "", "hello", "", "# @assistant", "",
-  "<!-- yap:thinking", "secret reasoning", "-->", "bye",
-  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->", "tool output", "<!-- /yap:tool -->",
+  "# @user",
+  "",
+  "hello",
+  "",
+  "# @assistant",
+  "",
+  "<!-- yap:thinking",
+  "secret reasoning",
+  "-->",
+  "bye",
+  '<!-- yap:tool {"id":"x","name":"bash"} -->',
+  "tool output",
+  "<!-- /yap:tool -->",
 })
 yap.new() -- current session is included in the general picker
 local captured
@@ -110,16 +135,47 @@ assert(not table.concat(live_preview):find("secret reasoning", 1, true), "open-s
 -- Removed display blocks must not leave empty paragraphs in the answer.
 -- Keep blank lines that genuinely separate answer paragraphs.
 local spaced = preview_text(session.preview({
-  "# @user", "", "question", "", "# @assistant", "",
-  "<!-- yap:thinking", "reasoning", "-->", "", "First paragraph", "",
-  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->", "result", "<!-- /yap:tool -->", "",
-  "<!-- yap:model m1 -->", "", "Second paragraph", "", "Third paragraph",
-  "", "<!-- yap:error failure -->", "", "Final line", "",
-  "<!-- yap:thinking", "trailing reasoning", "-->", "",
+  "# @user",
+  "",
+  "question",
+  "",
+  "# @assistant",
+  "",
+  "<!-- yap:thinking",
+  "reasoning",
+  "-->",
+  "",
+  "First paragraph",
+  "",
+  '<!-- yap:tool {"id":"x","name":"bash"} -->',
+  "result",
+  "<!-- /yap:tool -->",
+  "",
+  "<!-- yap:model m1 -->",
+  "",
+  "Second paragraph",
+  "",
+  "Third paragraph",
+  "",
+  "<!-- yap:error failure -->",
+  "",
+  "Final line",
+  "",
+  "<!-- yap:thinking",
+  "trailing reasoning",
+  "-->",
+  "",
 }))
-assert(vim.deep_equal(vim.list_slice(spaced, 9), {
-  "First paragraph", "Second paragraph", "", "Third paragraph", "Final line",
-}), "display blocks left blank lines: " .. vim.inspect(spaced))
+assert(
+  vim.deep_equal(vim.list_slice(spaced, 9), {
+    "First paragraph",
+    "Second paragraph",
+    "",
+    "Third paragraph",
+    "Final line",
+  }),
+  "display blocks left blank lines: " .. vim.inspect(spaced)
+)
 
 -- A session can be wiped after the picker opens but before a queued preview
 -- or choose callback runs (for example, after close_session completes).
@@ -186,10 +242,10 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("^" .. string.rep(" ", 10) .. "↳ scout · inspect this task") == 1
+  rendered_child:find("^  ↳ scout · inspect this task") == 1
     and not rendered_child:find(vim.fn.getcwd(), 1, true)
     and not rendered_child:find("(m1)", 1, true),
-  "child title should be indented after the aligned status column, without cwd/model: " .. rendered_child
+  "child title should be indented without cwd/model: " .. rendered_child
 )
 local state = require("harness.state")
 state.running[child] = {}
@@ -212,8 +268,11 @@ assert(
   parent_position and child_position == parent_position + 1,
   "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
 )
-assert(vim.startswith(captured.opts.format_item(captured.items[child_position]), "[RUN]     ↳"),
-  "running child title should be indented after the aligned [RUN] tag: " .. vim.inspect(captured.opts.format_item(captured.items[child_position])))
+assert(
+  vim.startswith(captured.opts.format_item(captured.items[child_position]), "  ↳"),
+  "running child title should have no status tag: "
+    .. vim.inspect(captured.opts.format_item(captured.items[child_position]))
+)
 state.running[child] = nil
 
 -- A completed subagent is shown as "done" rather than "waiting": its
@@ -235,8 +294,10 @@ for _, item in ipairs(captured.items) do
   end
 end
 assert(done_child and done_child.state == "done", "completed subagent should be 'done': " .. vim.inspect(done_child))
-assert(captured.opts.format_item(done_child):find("^" .. string.rep(" ", 10) .. "↳") == 1,
-  "completed subagent should be badge-less: " .. captured.opts.format_item(done_child))
+assert(
+  captured.opts.format_item(done_child):find("^  ↳") == 1,
+  "completed subagent should have no status tag: " .. captured.opts.format_item(done_child)
+)
 state.stopped[child] = true
 captured = nil
 vim.ui.select = function(items, opts)
@@ -246,14 +307,25 @@ yap.sessions("open")
 vim.ui.select = orig_select
 local stopped_parent, stopped_child
 for _, item in ipairs(captured.items) do
-  if item.buf == buf then stopped_parent = item end
-  if item.buf == child then stopped_child = item end
+  if item.buf == buf then
+    stopped_parent = item
+  end
+  if item.buf == child then
+    stopped_child = item
+  end
 end
-assert(stopped_parent and stopped_child, "stopped child should stay grouped with its parent: " .. vim.inspect(captured.items))
-assert(vim.startswith(captured.opts.format_item(stopped_parent), string.rep(" ", 8) .. stopped_parent.text),
-  "waiting parent should be badge-less and keep its title aligned")
-assert(captured.opts.format_item(stopped_child):find("^" .. string.rep(" ", 10) .. "↳") == 1,
-  "stopped child's title should be indented under its parent")
+assert(
+  stopped_parent and stopped_child,
+  "stopped child should stay grouped with its parent: " .. vim.inspect(captured.items)
+)
+assert(
+  vim.startswith(captured.opts.format_item(stopped_parent), stopped_parent.text),
+  "waiting parent should be badge-less and keep its title aligned"
+)
+assert(
+  captured.opts.format_item(stopped_child):find("^  ↳") == 1,
+  "stopped child's title should be indented under its parent"
+)
 state.stopped[child] = nil
 state.awaiting[buf], state.awaiting[child] = nil, nil
 
@@ -268,14 +340,24 @@ yap.sessions("open")
 vim.ui.select = orig_select
 local root_row, child_row
 for _, item in ipairs(captured.items) do
-  if item.buf == buf then root_row = captured.opts.format_item(item) end
-  if item.buf == child then child_row = captured.opts.format_item(item) end
+  if item.buf == buf then
+    root_row = captured.opts.format_item(item)
+  end
+  if item.buf == child then
+    child_row = captured.opts.format_item(item)
+  end
 end
-assert(root_row and root_row:find("^" .. string.rep(" ", 8)) == 1
-  and root_row:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
-  and not root_row:find("(m1)", 1, true), "project path should replace model in parentheses: " .. tostring(root_row))
-assert(child_row and child_row:find("^" .. string.rep(" ", 10) .. "↳") == 1
-  and not child_row:find(vim.fn.getcwd(), 1, true), "project path displaced child title: " .. tostring(child_row))
+assert(
+  root_row
+    and root_row:find("^" .. vim.pesc(stopped_parent.text)) == 1
+    and root_row:find(" (" .. vim.fn.getcwd() .. ")", 1, true)
+    and not root_row:find("(m1)", 1, true),
+  "project path should replace model in parentheses: " .. tostring(root_row)
+)
+assert(
+  child_row and child_row:find("^  ↳") == 1 and not child_row:find(vim.fn.getcwd(), 1, true),
+  "project path displaced child title: " .. tostring(child_row)
+)
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
 
 -- sessions() previews the saved file with the same excerpts.
@@ -297,7 +379,7 @@ vim.api.nvim_buf_set_lines(saved, 0, -1, false, {
   "saved reasoning",
   "-->",
   "history answer",
-  "<!-- yap:tool {\"id\":\"x\",\"name\":\"bash\"} -->",
+  '<!-- yap:tool {"id":"x","name":"bash"} -->',
   "saved tool result",
   "<!-- /yap:tool -->",
 })
@@ -367,7 +449,13 @@ local function type_title(buf, value)
   local d = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h")
   vim.api.nvim_buf_set_name(buf, d .. "/" .. value .. ".md")
 end
-vim.api.nvim_buf_set_lines(titled_child, -1, -1, false, { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" })
+vim.api.nvim_buf_set_lines(
+  titled_child,
+  -1,
+  -1,
+  false,
+  { "original task", "", "# @assistant", "", "done", "", "# @user", "", "follow-up task" }
+)
 type_title(titled_child, "Pinned child title")
 type_title(titled_parent, "Pinned parent title")
 local titled_child_path = vim.api.nvim_buf_get_name(titled_child)
@@ -386,8 +474,10 @@ assert(
   not titled_positions[titled_child_path],
   "agent session leaked into saved history: " .. vim.inspect(titled_items)
 )
-assert(titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
-  "filename fallback missing without a description: " .. vim.inspect(titled_items))
+assert(
+  titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
+  "filename fallback missing without a description: " .. vim.inspect(titled_items)
+)
 vim.api.nvim_set_current_buf(titled_parent)
 local live_titled
 vim.ui.select = function(items, opts)
@@ -439,10 +529,14 @@ yap.sessions()
 vim.ui.select = orig_select
 local idle_row
 for _, item in ipairs(captured.items) do
-  if item.path == path then idle_row = captured.opts.format_item(item) end
+  if item.path == path then
+    idle_row = captured.opts.format_item(item)
+  end
 end
-assert(idle_row and idle_row:find("^" .. icons.idle .. "  ") == 1,
-  "open idle saved session needs a live icon: " .. tostring(idle_row))
+assert(
+  idle_row and idle_row:find("^" .. icons.idle .. "  ") == 1,
+  "open idle saved session needs a live icon: " .. tostring(idle_row)
+)
 -- A closed session still reserves the status column; its title starts in
 -- the same place as an open session's title.
 vim.api.nvim_buf_delete(saved, { force = true })
@@ -493,14 +587,24 @@ vim.ui.select = orig_select
 local all_parent, all_child, other_row
 for _, item in ipairs(captured.items) do
   local row = captured.opts.format_item(item)
-  if item.path == path then all_parent = row end
-  if item.path == saved_child_path then all_child = row end
-  if item.path == other_dir .. "/other-project/session.md" then other_row = row end
+  if item.path == path then
+    all_parent = row
+  end
+  if item.path == saved_child_path then
+    all_child = row
+  end
+  if item.path == other_dir .. "/other-project/session.md" then
+    other_row = row
+  end
 end
-assert(all_parent and all_parent:find("^   Preview test") == 1
-  and all_parent:find(paths.project_cwd(path), 1, true), "sessions cwd should follow root title: " .. tostring(all_parent))
+assert(
+  all_parent and all_parent:find("^   Preview test") == 1 and all_parent:find(paths.project_cwd(path), 1, true),
+  "sessions cwd should follow root title: " .. tostring(all_parent)
+)
 assert(all_child == nil, "agent session leaked into the all-project picker: " .. tostring(all_child))
-assert(other_row and other_row:find("^   Preview test") == 1
-  and other_row:find("/tmp/yap/other/project", 1, true), "other project prefix missing: " .. tostring(other_row))
+assert(
+  other_row and other_row:find("^   Preview test") == 1 and other_row:find("/tmp/yap/other/project", 1, true),
+  "other project prefix missing: " .. tostring(other_row)
+)
 
 print("OK session_preview")

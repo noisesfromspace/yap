@@ -121,7 +121,7 @@ type contextParams struct {
 	// outside sessions_dir is still recognised (the server cannot infer that
 	// from its path alone).
 	IsSession bool `json:"is_session"`
-	IsJotter  bool `json:"is_jotter"`
+	IsScratch bool `json:"is_scratch"`
 }
 
 // InitOptions are the initializationOptions the frontend passes.
@@ -146,7 +146,7 @@ type docState struct {
 	streaming     bool
 	cwd           string
 	session       bool
-	jotter        bool
+	scratch       bool
 	timer         *time.Timer
 	parsed        *document.Document // cached parse of parsedVersion
 	parsedVersion int
@@ -413,7 +413,7 @@ func (s *Server) didOpen(p didOpenParams) {
 		d.cwd = c.Cwd
 		d.streaming = c.Streaming
 		d.session = c.IsSession
-		d.jotter = c.IsJotter
+		d.scratch = c.IsScratch
 		delete(s.pending, p.TextDocument.URI)
 	}
 	s.docs[p.TextDocument.URI] = d
@@ -462,7 +462,7 @@ func (s *Server) setContext(p contextParams) {
 	d.cwd = p.Cwd
 	d.streaming = p.Streaming
 	d.session = p.IsSession
-	d.jotter = p.IsJotter
+	d.scratch = p.IsScratch
 	// The context notification can race didOpen, so a document marked as a
 	// session here may have missed didOpen's warm/diagnostics pass.
 	if d.session {
@@ -551,12 +551,12 @@ func (s *Server) symbolsFor(uri string) any {
 
 func (s *Server) completionFor(p completionParams) any {
 	d := s.doc(p.TextDocument.URI)
-	if d == nil || (!s.isSession(p.TextDocument.URI) && !d.jotter) {
+	if d == nil || (!s.isSession(p.TextDocument.URI) && !d.scratch) {
 		return map[string]any{"isIncomplete": false, "items": []any{}}
 	}
 	var items []completionItem
-	if d.jotter {
-		items = JotterCompletion(d.text, p.Position.Line, p.Position.Character, d.cwd)
+	if d.scratch {
+		items = ScratchCompletion(d.text, p.Position.Line, p.Position.Character, d.cwd)
 	} else {
 		items = Completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
 			Cwd:         d.cwd,

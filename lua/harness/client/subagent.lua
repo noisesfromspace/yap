@@ -9,6 +9,7 @@ local frontmatter = require("harness.model.frontmatter")
 local config = require("harness.config")
 local paths = require("harness.path")
 local document = require("harness.model.document")
+local structure = require("harness.model.structure")
 
 local function harness()
   return require("harness")
@@ -20,58 +21,15 @@ local errors = state.errors
 local running = state.running
 local servers = state.servers
 
--- The tools a subagent may request; agent-definition files also use the aliases
--- below (grep/find/webfetch) which are mapped onto these canonical names.
-local ALLOWED_TOOLS = {
-  "read",
-  "search",
-  "glob",
-  "fetch",
-  "bash",
-  "write",
-  "edit",
-}
-
--- An agent definition with no `tools:` header gets this read-only set: a subagent is one
--- prompt-injection hop removed from the user's attention, so it must opt into
--- write/bash/fetch explicitly. Any agent definition may still request the full
--- set (minus recursive `subagent`) via its `tools:` header.
-local DEFAULT_SUBAGENT_TOOLS = { "read", "search", "glob", "fetch" }
-
 local function subagent_result(parent, child, child_path, reply)
   return function(success)
     subagent_children[parent] = nil
     local result = "error: " .. (errors[child] or "subagent stopped without a result")
     if success then
-      -- Only final prose, not the child's tool history, belongs in the parent.
-      local text, in_comment, in_ui = {}, false, false
-      for _, line in ipairs(vim.api.nvim_buf_get_lines(child, 0, -1, false)) do
-        if line == "# @assistant" then
-          text, in_comment, in_ui = {}, false, false
-        elseif line:match("^<!%-%- /yap:tool") then
-          text = {}
-          in_comment, in_ui = false, false
-        elseif in_ui then
-          -- Display-only diff between the paired yap:ui markers.
-          if line == "-->" or line:match("^<!%-%- /yap:ui") then
-            in_ui = false
-          end
-        elseif line:match("^<!%-%- yap:ui") then
-          in_ui = true
-          in_comment = not line:match("%-%->$")
-        elseif line:match("^<!%-%- yap:") then
-          in_comment = not line:match("%-%->$")
-        elseif in_comment then
-          if line == "-->" then
-            in_comment = false
-          end
-        elseif line:match("^<!%-%- /yap:") then
-          -- Orphan region closer: a marker line is never part of the answer.
-        elseif line ~= "# @user" then
-          text[#text + 1] = line
-        end
-      end
-      result = table.concat(text, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+      -- Reuse the transcript parser for headings and marker regions, including
+      -- fences in tool output. Only the last assistant message is returned.
+      local lines = vim.api.nvim_buf_get_lines(child, 0, -1, false)
+      result = table.concat(structure.last_answer(lines), "\n")
       if result == "" then
         result = "error: subagent returned no final answer"
       end
@@ -137,7 +95,7 @@ function M.start(parent, ev)
   -- Only a provider/model pair overrides the known-working parent combo, and an
   -- explicit per-call `model` overrides the definition.
   if header.model and header.model ~= "" then
-    local p, m = header.model:match("^([^/]+)/(.+)$")
+    local p, m = config.parse_combo(header.model)
     if p then
       provider, model = p, m
     end
@@ -145,25 +103,18 @@ function M.start(parent, ev)
   if override_provider then
     provider, model = override_provider, override_model
   end
-  local allowed = vim.deepcopy(DEFAULT_SUBAGENT_TOOLS)
-  if header.tools and header.tools ~= "" then
-    allowed = {}
-    local aliases = { grep = "search", find = "glob", webfetch = "fetch" }
-    local known = {}
-    for _, name in ipairs(ALLOWED_TOOLS) do
-      known[name] = true
+  local allowed = ev.tools
+  if type(allowed) ~= "table" or #allowed == 0 then
+    reply("error: subagent requires a nonempty tools list chosen by the caller")
+    return
+  end
+  local seen = {}
+  for _, name in ipairs(allowed) do
+    if type(name) ~= "string" or not name:match("^[%w_%-]+$") or name == "subagent" or seen[name] then
+      reply("error: invalid subagent tool " .. tostring(name))
+      return
     end
-    for name in header.tools:gmatch("[^,%s]+") do
-      name = aliases[name] or name
-      -- MCP tools are named mcp_<server>_<tool> and discovered at runtime,
-      -- so they cannot be validated against the compiled-in list; trust the
-      -- author of the agent definition to name a real one.
-      if not known[name] and not name:match("^mcp_") then
-        reply("error: agent definition " .. ev.agent .. " requires unsupported tool " .. name)
-        return
-      end
-      allowed[#allowed + 1] = name
-    end
+    seen[name] = true
   end
   local parent_path = vim.b[parent].yap_path
   local parent_name = paths.session_name(parent_path)

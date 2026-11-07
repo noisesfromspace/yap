@@ -111,7 +111,6 @@ local awaiting = state.awaiting
 local servers = state.servers
 local pending_approvals = state.pending_approvals
 local close_after_turn = state.close_after_turn
-local stream_flush = state.stream_flush
 local follow_override = state.follow_override
 
 -- ─── User commands kept here (small, self-contained) ─────────────────────
@@ -371,7 +370,6 @@ function M.setup(opts)
       state.steer[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
-      stream_flush[args.buf] = nil
       follow_override[args.buf] = nil
       close_after_turn[args.buf] = nil
       -- Release the per-buffer UI state so the winbar's rollup and cache
@@ -387,7 +385,6 @@ function M.setup(opts)
       describe.forget(args.buf)
       audit.forget(args.buf)
       winbar.clear_desc(args.buf)
-      fold.clear_text(args.buf)
     end,
   })
   -- Persist a session as soon as it leaves every window, so the file on disk
@@ -472,7 +469,7 @@ function M.setup(opts)
     local root = paths.sessions_root()
     -- Only the session transcript is a session: the sidecar files in the
     -- same directory (notes.md and audit.jsonl) must never be adopted, or
-    -- the scratch jotter becomes a session (its own winbar, its own <C-s>
+    -- the scratch buffer becomes a session (its own winbar, its own <C-s>
     -- send, a rollup entry) instead of dispatching to its owner. The
     -- transcript is any `.md` file except the notes.md sidecar: it is
     -- usually `session.md`, but is renamed to set the session title.
@@ -610,8 +607,11 @@ function M.setup(opts)
         return
       end
       vim.schedule(function()
-        if vim.api.nvim_get_current_buf() == args.buf and vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
-          and vim.api.nvim_win_get_cursor(0)[1] == row then
+        if
+          vim.api.nvim_get_current_buf() == args.buf
+          and vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+          and vim.api.nvim_win_get_cursor(0)[1] == row
+        then
           vim.lsp.completion.get({ client_id = client.id })
         end
       end)

@@ -18,7 +18,7 @@ func TestSubagentTimeout(t *testing.T) {
 	if !ok {
 		t.Fatal("subagent tool missing")
 	}
-	_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test"}`))
+	_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test","tools":["read"]}`))
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout, got %v", err)
 	}
@@ -35,9 +35,10 @@ func TestSubagentModelForwarded(t *testing.T) {
 		SubagentReplies, subagentWait = oldReplies, oldWait
 	}()
 	tool, _ := Get("subagent")
-	_, _, _ = tool.Run([]byte(`{"agent":"scout","model":"openai/gpt-5-mini","task":"t"}`))
+	_, _, _ = tool.Run([]byte(`{"agent":"scout","model":"openai/gpt-5-mini","task":"t","tools":["read","mcp_example_query"]}`))
 	if ev := buf.String(); !strings.Contains(ev, `"type":"subagent_request"`) ||
-		!strings.Contains(ev, `"model":"openai/gpt-5-mini"`) {
+		!strings.Contains(ev, `"model":"openai/gpt-5-mini"`) ||
+		!strings.Contains(ev, `"tools":["read","mcp_example_query"]`) {
 		t.Fatalf("per-call model not forwarded to the request event: %q", ev)
 	}
 }

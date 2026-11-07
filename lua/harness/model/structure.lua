@@ -575,7 +575,46 @@ function M.open_tail(buf)
   return {}
 end
 
+function M.last_answer(lines)
+  local scan = M.scan_lines(lines)
+  for h = #scan.headings, 1, -1 do
+    local heading = scan.headings[h]
+    if heading.role == "assistant" then
+      local stop = scan.headings[h + 1] and scan.headings[h + 1].line - 1 or #lines
+      local content = {}
+      local region = 1
+      local skipped_region = false
+      for i = heading.line + 1, stop do
+        while scan.regions[region] and (scan.regions[region].finish or #lines) < i do
+          region = region + 1
+        end
+        local r = scan.regions[region]
+        if (r and i >= r.start and i <= (r.finish or #lines)) or lines[i]:match(M.MARKER_LINE) then
+          while #content > 0 and content[#content]:match("^%s*$") do
+            table.remove(content)
+          end
+          skipped_region = true
+        elseif not (skipped_region and lines[i]:match("^%s*$")) then
+          content[#content + 1] = lines[i]
+          skipped_region = false
+        end
+      end
+      while #content > 0 and content[1]:match("^%s*$") do
+        table.remove(content, 1)
+      end
+      while #content > 0 and content[#content]:match("^%s*$") do
+        table.remove(content)
+      end
+      if #content > 0 then
+        return content
+      end
+    end
+  end
+  return {}
+end
+
 M.HEAD = HEAD
+M.MARKER_LINE = MARKER_LINE
 M.TOOL_OPEN = TOOL_OPEN
 M.TOOL_CLOSE = TOOL_CLOSE
 M.COMMENT_OPEN = COMMENT_OPEN

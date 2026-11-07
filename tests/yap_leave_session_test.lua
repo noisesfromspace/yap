@@ -18,7 +18,7 @@ yap.live(session)
 local tail = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(tail):match("^Yap Log: "), "live tail viewer did not open")
 
--- Replacing the session in its window does not close the jotter or tail.
+-- Replacing the session in its window does not close the scratch or tail.
 -- Listing the notes is a user choice and must survive a toggle/reopen.
 vim.bo[scratch].buflisted = true
 assert(vim.fn.buflisted(scratch) == 1, ":setlocal buflisted did not list notes")
@@ -40,7 +40,7 @@ vim.api.nvim_win_set_buf(session_win, session)
 vim.api.nvim_set_current_win(session_win)
 yap.scratch_toggle(session) -- explicit toggle closes the notes, not the tail
 assert(#vim.fn.win_findbuf(scratch) == 0 and #vim.fn.win_findbuf(tail) == 1,
-  "manual jotter toggle closed the wrong panel")
+  "manual scratch toggle closed the wrong panel")
 assert(vim.fn.buflisted(scratch) == 1, "toggle unlisted notes")
 yap.scratch_toggle(session)
 assert(vim.api.nvim_get_current_buf() == scratch, "toggle did not reopen notes")
@@ -55,9 +55,9 @@ vim.cmd("bwipeout! " .. session)
 vim.cmd("edit " .. vim.fn.fnameescape(session_path))
 local reopened = vim.api.nvim_get_current_buf()
 yap.scratch_toggle(reopened) -- closes the existing notes window
-assert(#vim.fn.win_findbuf(scratch) == 0, "reopened session did not find its existing jotter")
+assert(#vim.fn.win_findbuf(scratch) == 0, "reopened session did not find its existing scratch")
 yap.scratch_toggle(reopened)
-assert(vim.api.nvim_get_current_buf() == scratch, "reopened session created a second jotter")
-assert(vim.b[scratch].yap_owner == reopened, "jotter still belongs to the wiped session buffer")
+assert(vim.api.nvim_get_current_buf() == scratch, "reopened session created a second scratch")
+assert(vim.b[scratch].yap_owner == reopened, "scratch still belongs to the wiped session buffer")
 
 print("OK leave-session panels")

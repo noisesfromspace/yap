@@ -525,14 +525,14 @@ func TestSessionTranscriptRecognition(t *testing.T) {
 	}
 }
 
-func TestJotterCompletionOnlyFiles(t *testing.T) {
+func TestScratchCompletionOnlyFiles(t *testing.T) {
 	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "flake.nix"), []byte(""), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s := New(io.Discard, InitOptions{SessionsDir: "/tmp/sessions"})
 	uri := "file:///tmp/sessions/a/notes.md"
-	s.docs[uri] = &docState{text: "# @steer\nsee @fla", cwd: cwd, jotter: true}
+	s.docs[uri] = &docState{text: "# @steer\nsee @fla", cwd: cwd, scratch: true}
 	request := func(line, col int) []completionItem {
 		p := completionParams{Position: position{Line: line, Character: col}}
 		p.TextDocument.URI = uri
@@ -541,13 +541,13 @@ func TestJotterCompletionOnlyFiles(t *testing.T) {
 	}
 	items := request(1, 8)
 	if len(items) != 1 || items[0].Label != "flake.nix" {
-		t.Fatalf("jotter @file completion = %+v", items)
+		t.Fatalf("scratch @file completion = %+v", items)
 	}
 	if got := request(0, 5); len(got) != 1 || got[0].Label != "steer" {
-		t.Fatalf("jotter heading completion = %+v", got)
+		t.Fatalf("scratch heading completion = %+v", got)
 	}
 	if got := s.symbolsFor(uri).([]any); len(got) != 0 {
-		t.Fatalf("jotter received transcript symbols: %+v", got)
+		t.Fatalf("scratch received transcript symbols: %+v", got)
 	}
 }
 

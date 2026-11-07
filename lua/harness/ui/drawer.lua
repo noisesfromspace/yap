@@ -24,7 +24,7 @@ local function normal_windows(tab)
   return n
 end
 
---- The shared panel window options. `editable` marks the scratch jotter; the
+--- The shared panel window options. `editable` marks the scratch buffer; the
 --- read-only panels (tail, guard) additionally drop line numbers and the
 --- sign column so a streaming projection reads as a dashboard, not a buffer.
 function M.style(win, opts)

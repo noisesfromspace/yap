@@ -259,9 +259,9 @@ func Completion(text string, line, char int, ctx CompletionCtx) []completionItem
 	return nil
 }
 
-// JotterCompletion offers file references and the jotter's two control
-// headings, without treating the jotter as a transcript.
-func JotterCompletion(text string, line, char int, cwd string) []completionItem {
+// ScratchCompletion offers file references and the scratch's two control
+// headings, without treating the scratch as a transcript.
+func ScratchCompletion(text string, line, char int, cwd string) []completionItem {
 	lines := strings.Split(text, "\n")
 	if line < 0 || line >= len(lines) {
 		return nil

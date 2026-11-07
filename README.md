@@ -25,7 +25,7 @@ Inspired by pi and gptel.
 - Prompt-cache breakpoints on the stable history, so a caching provider does
   not re-bill the whole prefix every turn.
 - Templates and skills, injected into a conversation even while it runs.
-- A file-backed jotter that queues one follow-up and steers the current turn
+- A file-backed scratch buffer that queues one follow-up and steers the current turn
   (`<leader>j`).
 - Subagents, each a markdown file that behaves like any other session.
 - Listed session buffers for normal buffer navigation; open and saved session
@@ -182,11 +182,9 @@ file explorer, and Neovim deletion commands. Subagent buffers stay unlisted and 
 not count in the winbar overview.
 
 `sessions()` lists saved sessions; `sessions("open")` lists the open-session
-tree, including subagents and forks, sorted by state. The open-session picker
-tags only attention states — running `[RUN]`, error `[ERR]`, approval parked
-`[APPR]` — in a fixed column; waiting, stopped, done and idle rows are
-badge-less. Open saved sessions get a live status icon in the saved-session
-picker.
+tree, including subagents and forks, sorted by state. The open picker shows
+an indented tree without status tags; loaded sessions in the saved-session
+picker get live status icons.
 
 ## Rendering
 
@@ -202,7 +200,7 @@ draws each tool region as one block.
 
 | Term             | Meaning                                                                      |
 | ---------------- | ---------------------------------------------------------------------------- |
-| session          | one conversation: Markdown file + audit log + notes.md jotter                 |
+| session          | one conversation: Markdown file + audit log + notes.md scratch buffer                 |
 | session buffer   | the Neovim buffer editing a session                                          |
 | message          | a `# @role` heading plus its body                                            |
 | region           | a marker-delimited span: tool, thinking, error, or ui                        |

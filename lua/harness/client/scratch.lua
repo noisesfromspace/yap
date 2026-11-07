@@ -1,4 +1,4 @@
--- The file-backed jotter and mid-turn steering (<leader>j)
+-- The file-backed scratch buffer and mid-turn steering (<leader>j)
 -- with two explicit sections (# @steer / # @queue) and the # @steer
 -- mechanism that redirects a running turn.
 
@@ -80,7 +80,7 @@ function M.set_section(scratch, name, body)
     vim.cmd("silent write")
   end)
   if not ok then
-    vim.notify("yap: could not save consumed jotter: " .. tostring(err), vim.log.levels.ERROR)
+    vim.notify("yap: could not save consumed scratch: " .. tostring(err), vim.log.levels.ERROR)
   end
 end
 
@@ -89,11 +89,11 @@ function M.section_text(scratch, name)
   return table.concat(scratch_section_lines(scratch, name), "\n")
 end
 
---- The session's jotter: the buffer-local tie, or any surviving scratch that
---- still names `buf` as its owner. Closing a session with `:bd` unloads it and
---- drops its buffer-local variables, but the jotter outlives that
---- (bufhidden = hide) with its draft, so reopening the session must re-attach
---- that jotter instead of opening a second, empty one.
+--- The session's scratch buffer: the buffer-local tie, or any surviving
+--- scratch that still names `buf` as its owner. Closing a session with `:bd`
+--- unloads it and drops its buffer-local variables, but the scratch outlives
+--- that (bufhidden = hide) with its draft, so reopening the session must
+--- re-attach that scratch buffer instead of opening a second, empty one.
 local function find_scratch(buf)
   local scratch = vim.b[buf] and vim.b[buf].yap_scratch
   if scratch and vim.api.nvim_buf_is_valid(scratch) and vim.api.nvim_buf_is_loaded(scratch) then
@@ -122,7 +122,7 @@ local function find_scratch(buf)
   end
 end
 
---- Create the private jotter sidecar when the session is created. Never
+--- Create the private scratch sidecar when the session is created. Never
 --- overwrite an existing draft when adopting or reopening a session.
 function M.ensure_file(buf_or_dir)
   local dir = type(buf_or_dir) == "string" and buf_or_dir or paths.data_dir(buf_or_dir)
@@ -137,7 +137,7 @@ function M.ensure_file(buf_or_dir)
   end
   local fd, err = vim.uv.fs_open(path, "wx", 384)
   if not fd then
-    error("yap: could not create jotter: " .. tostring(err))
+    error("yap: could not create scratch: " .. tostring(err))
   end
   vim.uv.fs_write(fd, "# @steer\n\n# @queue\n", 0)
   vim.uv.fs_close(fd)
@@ -206,11 +206,14 @@ local function scratch_dispatch_queue(owner, section, scratch)
   -- A session closed with `:bd` keeps its number and file but loses its
   -- buffer-local state. Load it again before touching it, so the message
   -- lands in the real transcript instead of a detached, empty buffer.
-  if not vim.api.nvim_buf_is_loaded(owner) and not pcall(vim.fn.bufload, owner) then
-    vim.notify("yap: session buffer is unloaded; reopen it before sending", vim.log.levels.WARN)
-    return false
+  if not vim.api.nvim_buf_is_loaded(owner) then
+    local loaded, err = pcall(vim.fn.bufload, owner)
+    if not loaded or not vim.api.nvim_buf_is_loaded(owner) then
+      vim.notify("yap: session buffer is unloaded; reopen it before sending: " .. tostring(err), vim.log.levels.WARN)
+      return false
+    end
   end
-  -- `:bd` dropped the tie too: keep one jotter per session across a close.
+  -- `:bd` dropped the tie too: keep one scratch buffer per session across a close.
   vim.b[owner].yap_scratch = scratch
   vim.b[scratch].yap_owner = owner
   local item = M.section_text(scratch, section)
@@ -249,7 +252,7 @@ function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
   if not (owner and vim.api.nvim_buf_is_valid(owner)) then
-    vim.notify("yap: the session for this jotter is gone; :write keeps the draft", vim.log.levels.WARN)
+    vim.notify("yap: the session for this scratch is gone; :write keeps the draft", vim.log.levels.WARN)
     return
   end
 
@@ -386,7 +389,7 @@ function M.scratch_foldexpr(lnum)
   return "0"
 end
 
---- Toggle the session's file-backed jotter (<leader>j), opened below the
+--- Toggle the session's file-backed scratch buffer (<leader>j), opened below the
 --- session window. The sidecar is ordinary Markdown: :write saves drafts,
 --- while consumed sections are written immediately.
 local SCRATCH_HEIGHT = 12

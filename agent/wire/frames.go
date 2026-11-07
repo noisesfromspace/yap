@@ -111,10 +111,10 @@ func EmitApprovalRequest(id, command, tool, reason string) {
 
 // EmitSubagentRequest writes one `subagent_request` frame — a request the
 // frontend answers with a subagent_result.
-func EmitSubagentRequest(id, agent, model, task string) {
+func EmitSubagentRequest(id, agent, model, task string, tools []string) {
 	frameMu.Lock()
 	defer frameMu.Unlock()
-	writeFrameLocked(map[string]any{"type": "subagent_request", "id": id, "agent": agent, "model": model, "task": task})
+	writeFrameLocked(map[string]any{"type": "subagent_request", "id": id, "agent": agent, "model": model, "task": task, "tools": tools})
 }
 
 // ─── Protocol errors ─────────────────────────────────────────────────────

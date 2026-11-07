@@ -68,7 +68,14 @@ assert(
   not full:match("described%.") and not full:match("Implemented the picker label fix"),
   "assistant content leaked into title input: " .. full
 )
-assert(not full:match("Commit changes from this session"), "routine commit footer leaked into title input: " .. full)
+assert(
+  full:match("Commit changes from this session"),
+  "routine commit footer missing from title input (the model prompt, not a filter, classifies it): " .. full
+)
+assert(
+  full:match("housekeeping"),
+  "answer title prompt missing the housekeeping rule: " .. full
+)
 assert(
   full:match("first request anchors the session's main goal"),
   "overall title prompt does not anchor the first request: " .. full
@@ -304,5 +311,79 @@ end, 100)
 local summary_fm = table.concat(vim.api.nvim_buf_get_lines(summary_buf, 0, 8, false), "\n")
 assert(ok, "hand-edited description was not replaced by the next summary: " .. summary_fm)
 assert(not summary_fm:match("pinned_description"), "pinned_description still written: " .. summary_fm)
+
+-- A "commit and close" that is the ONLY prompt is still titled: the hard-coded
+-- filter (which suppressed the instant label for a sole housekeeping request)
+-- is gone, so the model decides. Both the instant and whole-session requests
+-- see the request, data-framed as before.
+local sole_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(sole_buf, -1, -1, false, { "commit and close" })
+yap.send(sole_buf)
+ok = vim.wait(10000, function()
+  return idle(sole_buf)
+end, 100)
+assert(ok, "sole commit/close turn did not complete")
+ok = vim.wait(10000, function()
+  local instant, whole = false, false
+  for line in read_log():gmatch("[^\n]+") do
+    local d_ok, decoded = pcall(vim.json.decode, line)
+    if d_ok and type(decoded) == "table" and type(decoded.messages) == "table" then
+      local sys = decoded.messages[1] and decoded.messages[1].content or ""
+      local req_ok, req = pcall(vim.json.decode, decoded.messages[2] and decoded.messages[2].content or "")
+      if req_ok and type(req) == "table" then
+        if sys:match("Write a short title for the user's request") and req.request == "commit and close" then
+          instant = true
+        end
+        if sys:match("centered on the overall work") and req.initial_request == "commit and close" then
+          whole = true
+        end
+      end
+    end
+  end
+  return instant and whole
+end, 100)
+assert(ok, "sole commit/close did not reach both title requests")
+
+-- As a late follow-up, "commit and close" stays in the whole-session input
+-- (the prompt classifies it as housekeeping); the instant label still titles
+-- only the first request.
+local late_buf = yap.new({ provider = "mock", model = "m1" })
+vim.api.nvim_buf_set_lines(late_buf, -1, -1, false, {
+  "Refactor the session parser",
+  "# @assistant",
+  "done",
+  "# @user",
+  "commit and close",
+})
+yap.send(late_buf)
+ok = vim.wait(10000, function()
+  return idle(late_buf)
+end, 100)
+assert(ok, "late commit/close turn did not complete")
+ok = vim.wait(10000, function()
+  local instant, whole = false, false
+  for line in read_log():gmatch("[^\n]+") do
+    local d_ok, decoded = pcall(vim.json.decode, line)
+    if d_ok and type(decoded) == "table" and type(decoded.messages) == "table" then
+      local sys = decoded.messages[1] and decoded.messages[1].content or ""
+      local req_ok, req = pcall(vim.json.decode, decoded.messages[2] and decoded.messages[2].content or "")
+      if req_ok and type(req) == "table" then
+        if sys:match("Write a short title for the user's request")
+          and req.request == "Refactor the session parser" then
+          instant = true
+        end
+        if sys:match("centered on the overall work")
+          and req.initial_request == "Refactor the session parser"
+          and type(req.follow_up_requests) == "table"
+          and #req.follow_up_requests == 1
+          and req.follow_up_requests[1] == "commit and close" then
+          whole = true
+        end
+      end
+    end
+  end
+  return instant and whole
+end, 100)
+assert(ok, "late commit/close title requests missing or mistitled")
 
 print("OK describe")

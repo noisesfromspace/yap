@@ -2,7 +2,7 @@
 
 local M = {}
 local document = require("harness.model.document")
-local HEAD = "^# @(%a+)%s*$"
+local HEAD = require("harness.model.structure").HEAD
 
 local function config()
   return require("harness").config
@@ -163,6 +163,7 @@ function M.insert_snippet_at_cursor(buf, body)
     vim.api.nvim_buf_set_lines(buf, row + 1, row + 1, false, { "" })
     vim.api.nvim_win_set_cursor(0, { row + 2, 0 })
   else
+    vim.api.nvim_buf_set_lines(buf, row, row, false, { "" })
     vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
   end
   vim.snippet.expand(body .. "\n")

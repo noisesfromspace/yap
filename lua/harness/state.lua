@@ -20,7 +20,6 @@ local M = {
   subagent_done = {}, -- child buf -> function(success) to report its result
   pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer
   close_after_turn = {}, -- session buf -> true (a close_session side effect, honored on turn completion)
-  stream_flush = {}, -- session buf -> flush() that coalesces streamed text into one buffer edit per tick
   follow_override = {}, -- session buf -> windows deliberately focused during a turn (paused tail-following)
   auto_accept = false, -- approve incoming approval requests (guard board toggle)
 }

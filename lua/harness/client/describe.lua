@@ -20,48 +20,19 @@ end
 local description_seq = {}
 local description_started = {}
 
--- Routine commit/close requests should not become the session's title when
--- an earlier user request explains what the work was actually about. Tool
--- calls and results are assistant transcript text, not user intent, so never
--- send them to the title model.
+-- The title model sees every user request, in order. Routine commit/close
+-- instructions are classified by the model prompt (the whole-session prompt
+-- says they are housekeeping), not by a hard-coded English phrasing filter
+-- that only recognized two spellings. Tool calls and results are assistant
+-- transcript text, not user intent, so never send them to the title model.
 local function title_messages(messages)
-  local user_indices = {}
-  for i, message in ipairs(messages) do
+  local user_messages = {}
+  for _, message in ipairs(messages) do
     if message.role == "user" then
-      user_indices[#user_indices + 1] = i
+      user_messages[#user_messages + 1] = message
     end
   end
-  if #user_indices == 0 then
-    return {}, false, false
-  end
-
-  local latest = user_indices[#user_indices]
-  local earlier_user = #user_indices > 1
-  local text = view.collapse(messages[latest].content)
-  local lower = text:lower()
-  local replacement
-  local housekeeping_only = false
-  if lower:match("^commit changes from this session") or lower:match("^commit( and close)?[.!]?$") then
-    replacement = nil
-    housekeeping_only = true
-  elseif earlier_user then
-    replacement = lower:match("^(.-)%s+commit and close[.!]?$")
-    if replacement then
-      replacement = replacement:gsub("%s+$", "")
-    end
-  end
-
-  local filtered = {}
-  for _, i in ipairs(user_indices) do
-    if i ~= latest then
-      filtered[#filtered + 1] = messages[i]
-    elseif replacement and replacement ~= "" then
-      filtered[#filtered + 1] = { role = "user", content = replacement }
-    elseif not housekeeping_only then
-      filtered[#filtered + 1] = messages[i]
-    end
-  end
-  return filtered, housekeeping_only or replacement ~= nil, housekeeping_only
+  return user_messages
 end
 
 -- A title is a flat phrase. Every way a model can answer the request instead
@@ -94,11 +65,11 @@ function M.refresh(buf, kind, messages)
     return
   end
   local combo, system, content
-  local title_input, housekeeping = title_messages(messages or document.messages(buf) or {})
+  local title_input = title_messages(messages or document.messages(buf) or {})
   if kind == "user" then
-    -- Generate an instant label only once, from the session's first useful
-    -- request. Later turns are summarized by the whole-session stage below.
-    if current_description(buf) ~= "" or description_started[buf] or (housekeeping and #title_input == 0) then
+    -- Generate an instant label only once, from the session's first request.
+    -- Later turns are summarized by the whole-session stage below.
+    if current_description(buf) ~= "" or description_started[buf] then
       return
     end
     combo = harness().config.model_groups.flash
@@ -106,6 +77,8 @@ function M.refresh(buf, kind, messages)
 
 Rules:
 - 2-5 words, a specific noun phrase, not a sentence
+- If the request only asks for housekeeping (commit, close or save the session), return no title
+- If the request includes a task and housekeeping, title the task, not the housekeeping
 - No leading "The user", no "how to", no trailing period
 - No colon in the title (it breaks the YAML frontmatter)
 - Example: "Add an MCP tool", "Fix fold lag on streaming"
@@ -140,7 +113,7 @@ Rules:
 - No "session", "conversation", "the user", "about"
 - Prefer "Subject – change" so titles stay distinct across sessions in the same project
 - No colon in the title — it breaks the YAML frontmatter
-- Routine commit/close instructions are housekeeping, not the session goal
+- Routine commit/close instructions are housekeeping, not the session goal; if every request is housekeeping, return no title
 - Never title from code, logs, or command output; do not use Markdown fences
 - No ** or ```, keep it flat text
 - Example: "Fold lag – cache per changedtick"

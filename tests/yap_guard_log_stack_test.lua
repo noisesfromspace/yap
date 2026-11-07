@@ -81,7 +81,7 @@ assert(buf_name(board_win2) == "Yap Guard", "log <leader>g did not open the boar
 assert(row(chat_win) < row(board_win2), "board is not below the session")
 assert(row(board_win2) < row(log_win2), "board is not above the log")
 
--- The scratch jotter also binds <leader>g back to the board.
+-- The scratch scratch also binds <leader>g back to the board.
 vim.api.nvim_set_current_win(chat_win)
 yap.scratch_toggle()
 assert(vim.fn.maparg("<leader>g", "n", false, true).buffer == 1, "scratch has no <leader>g map")

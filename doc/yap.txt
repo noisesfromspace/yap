@@ -228,7 +228,7 @@ and each path is configurable via `setup()`):
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ insert() template files (|yap-templates|).
   ~/.config/yap/skills/    insert() skill files (|yap-templates|).
-  ~/.config/yap/sessions/  Sessions, jotters, audit logs and assets.
+  ~/.config/yap/sessions/  Sessions, scratch buffers, audit logs and assets.
   ~/.config/yap/agents/    Subagent definitions.
 
 ==============================================================================
@@ -472,7 +472,7 @@ write/edit return short confirmations and stay bare.
 7. SESSIONS                                                  *yap-sessions*
 
 A session is the conversation markdown file plus sidecar data: a file-backed
-`notes.md` jotter, an append-only audit log and an `assets/` folder holding
+`notes.md` scratch buffer, an append-only audit log and an `assets/` folder holding
 photos the conversation references, the backend's transient tool files, and
 the agent's throwaway scripts, fetched downloads and generated artifacts.
 
@@ -480,9 +480,9 @@ the agent's throwaway scripts, fetched downloads and generated artifacts.
 ~/.config/yap/sessions/<cwd-slug>/: auto-named sessions and subagent children
 group by month (<yy-mm>/<dd-hh.mm.ss>/), and named forks live at
 <cwd-slug>/<name>/. Each has session.md (the conversation), notes.md (the
-jotter), audit.jsonl (the audit log) and assets/ (photos, fetched downloads
+scratch buffer), audit.jsonl (the audit log) and assets/ (photos, fetched downloads
 and working files).
-Yap creates notes.md with the session, even if you never open the jotter.
+Yap creates notes.md with the session, even if you never open the scratch buffer.
 
 Every session records a `data_dir` in its frontmatter: the directory holding
 its audit.jsonl, notes.md and assets/. For a transcript under the sessions
@@ -524,11 +524,9 @@ tree, including open subagents and forks, sorted by state. The saved-session
 scope annotates open sessions with a live status icon. Subagents
 (`b:yap_agent`) remain unlisted and excluded from the winbar overview.
 
-Only attention states get a status tag in the open-session scope, in a fixed
-column so every title aligns: running `[RUN]`, error `[ERR]`, approval parked
-`[APPR]`. Waiting, stopped/cancelled, done (finished subagent) and idle rows
-are badge-less, so a long project list stays quiet and only the rows that
-need a decision stand out.
+The open-session scope shows an indented tree with no text status tags or
+status column. The saved-session picker alone shows live status icons for
+loaded sessions.
 
 File operations are the session operations:
 
@@ -539,19 +537,19 @@ File operations are the session operations:
 
 SCRATCH BUFFER
 
-<leader>j toggles the jotter, an ordinary file-backed Markdown buffer at
+<leader>j toggles the scratch buffer, an ordinary file-backed Markdown buffer at
 `<data_dir>/notes.md`, with spell checking in its window. It starts unlisted;
-`:setlocal buflisted` in the jotter adds it to |:ls|, and
+`:setlocal buflisted` in the scratch buffer adds it to |:ls|, and
 `:setlocal nobuflisted` removes it. The choice persists while the buffer is
-loaded, including across jotter toggles. Leaving the session does not close
-the jotter, live tail or guard board. Close them with their toggles or ordinary
+loaded, including across scratch buffer toggles. Leaving the session does not close
+the scratch buffer, live tail or guard board. Close them with their toggles or ordinary
 Neovim window commands.
 Yap creates the file with the session and private permissions. Opening the
-jotter loads it. Native |:write| saves unsent drafts; Neovim's modified-buffer
-and exit behavior applies. Consuming a section writes the whole jotter
+scratch buffer loads it. Native |:write| saves unsent drafts; Neovim's modified-buffer
+and exit behavior applies. Consuming a section writes the whole scratch buffer
 immediately, so a restart cannot resend the draft. A reopened session loads
-its saved jotter; within an editor instance the live buffer (including unsaved
-edits) is reused. The jotter is not a transcript and is excluded from session
+its saved scratch buffer; within an editor instance the live buffer (including unsaved
+edits) is reused. The scratch buffer is not a transcript and is excluded from session
 discovery. Its two sections fold independently and carry an inline, display-only
 state label preceded by a `·` so it reads as an annotation rather than buffer
 text. A section handed to a turn also shows its icon in the winbar:
@@ -588,7 +586,7 @@ beneath its heading.
 idle it sends the section under the cursor. Outside a section it only displays
 a hint; move to steer or queue to send.
 There is no selection-specific send. <C-Enter> in normal or insert mode picks a
-template or skill and inserts it at the cursor without sending it. The jotter
+template or skill and inserts it at the cursor without sending it. The scratch buffer
 is intentionally ephemeral — no file backs it, and it is dropped when Neovim
 exits — but closing the session with |:bdelete| does not discard it: the
 draft survives, comes back with the session, and its |<C-s>| still dispatches
@@ -910,7 +908,10 @@ and are not part of this compiled-in list.
 Independent read-only calls in one round run concurrently, up to four.
 
 A subagent is a separate session: it gets its own context, may run a different
-model, and returns only its answer to the parent. Definitions live in
+model, and returns only its answer to the parent. The calling model chooses
+its permitted tool names per call, including runtime-discovered MCP tools;
+agent definitions provide the system prompt and optional model, not tool
+permissions. The normal approval guard and sandbox still apply. Definitions live in
 `agents_dir` (|yap-configuration|), one markdown file per agent. An agent
 session is internal to the conversation that spawned it: saved history never
 lists it, while the open-session picker (sessions("open")) shows it under its
@@ -937,7 +938,7 @@ LSP, backed by the Go document parser (agent/document):
                     unclosed tool region with a complete header.
 
 The server attaches to session buffers for symbols, diagnostics and
-completion. The jotter gets `@path` and `# @steer`/`# @queue` completion,
+completion. The scratch buffer gets `@path` and `# @steer`/`# @queue` completion,
 without transcript diagnostics or symbols. Ordinary Markdown is left alone.
 Model completion reads the cached `yap models` list; it never hits the network, and opening a session never
 starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
@@ -1027,7 +1028,7 @@ replaces.
                       source that pauses matching calls for approval (e.g.
                       bash's `sudo`). Listed in `yap guard`.
   agent definition    A `~/.config/yap/agents/<name>.md` file describing a subagent
-                      (name, model, tools, system prompt). (Not "role",
+                      (name, model, system prompt). (Not "role",
                       "subagent role".)
   subagent            A child session spawned by the `subagent` tool from an
                       agent definition.

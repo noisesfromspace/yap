@@ -34,4 +34,27 @@ assert(
   require("harness.client.scratch").section_text(next_scratch, "queue"):find("review code", 1, true),
   "snippet on final heading was not inserted in queue"
 )
+-- Away from a section heading, snippets and plain templates both insert above
+-- the cursor line rather than on opposite sides of it.
+local other = yap.new()
+yap.scratch_toggle(other)
+local notes = vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(notes, 3, 3, false, { "existing draft" })
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+require("harness.client.template").insert("check", { at_cursor = true })
+local lines = vim.api.nvim_buf_get_lines(notes, 0, -1, false)
+assert(lines[4] == "# @user" and lines[6] == "run the suite" and lines[7] == "existing draft", vim.inspect(lines))
+vim.api.nvim_win_set_cursor(0, { 7, 0 })
+require("harness.client.template").insert("snippet", { at_cursor = true })
+lines = vim.api.nvim_buf_get_lines(notes, 0, -1, false)
+local joined = table.concat(lines, "\n")
+local snippet_at, existing_at
+for i, line in ipairs(lines) do
+  if line == "review code" then
+    snippet_at = i
+  elseif line == "existing draft" then
+    existing_at = i
+  end
+end
+assert(snippet_at and existing_at and snippet_at < existing_at, "snippet did not insert above the cursor: " .. joined)
 print("OK scratch templates insert without sending")

@@ -41,15 +41,18 @@ local subagent_children = state.subagent_children
 local subagent_done = state.subagent_done
 local pending_approvals = state.pending_approvals
 local close_after_turn = state.close_after_turn
-local stream_flush = state.stream_flush
 local follow_override = state.follow_override
 local stop_focus = {} -- buf -> window that pressed the stop key
 
 local function focus_stopped_prompt(buf, revise)
   local win = stop_focus[buf]
   stop_focus[buf] = nil
-  if not win or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win
-    or vim.api.nvim_win_get_buf(win) ~= buf then
+  if
+    not win
+    or not vim.api.nvim_win_is_valid(win)
+    or vim.api.nvim_get_current_win() ~= win
+    or vim.api.nvim_win_get_buf(win) ~= buf
+  then
     return
   end
   local row = vim.api.nvim_buf_line_count(buf)
@@ -59,9 +62,13 @@ local function focus_stopped_prompt(buf, revise)
   -- Cancellation completes asynchronously. Don't pull the user back if they
   -- navigated away before entering insert mode.
   vim.schedule(function()
-    if vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win
-      and vim.api.nvim_win_get_buf(win) == buf and not running[buf]
-      and vim.deep_equal(vim.api.nvim_win_get_cursor(win), { row, col }) then
+    if
+      vim.api.nvim_win_is_valid(win)
+      and vim.api.nvim_get_current_win() == win
+      and vim.api.nvim_win_get_buf(win) == buf
+      and not running[buf]
+      and vim.deep_equal(vim.api.nvim_win_get_cursor(win), { row, col })
+    then
       vim.cmd(revise and line ~= "" and "startinsert!" or "startinsert")
     end
   end)
@@ -153,7 +160,8 @@ local function handle_event(buf, ev)
     audit.flush(buf, ev.log) -- emit any unterminated final line
     local logs = state.live_logs[buf] or {}
     logs[ev.log] = nil
-    live[buf] = next(logs) and select(2, next(logs)) or nil
+    local _, next_log = next(logs)
+    live[buf] = next_log
     -- The untruncated log is no longer needed once its bytes have streamed
     -- (a truncated log stays: its result references it).
     if ev.log and not ev.truncated then
@@ -273,9 +281,7 @@ local function repair_stream_tail(buf)
   end
 end
 
--- Session titling (description generation) lives in harness.client.describe.
---- remains in its file; template steering without a scratch gets copied to
---- the empty user prompt so it cannot silently disappear.
+-- An undelivered steer becomes a user draft so it cannot silently disappear.
 local function leave_undelivered_steer(buf)
   local text = steer[buf]
   steer[buf] = nil
@@ -315,6 +321,13 @@ function M.send(buf)
     vim.notify("yap: turn already running; press <C-c> (or call stop()) to interrupt it", vim.log.levels.WARN)
     return false
   end
+  -- A missing binary is not a startup error: surface it once, actionably,
+  -- the first time a managed session starts a turn (LSP attach warns too),
+  -- and re-check every send so a binary installed later is picked up.
+  if not lsp.bin_available() then
+    lsp.warn_missing_bin()
+    return false
+  end
   -- A close request is scoped to the turn that made it: a stale flag from
   -- a previous errored or stopped turn must not close a later turn.
   close_after_turn[buf] = nil
@@ -324,6 +337,14 @@ function M.send(buf)
   local imported, attach_err = require("harness.client.attachment").import_paths(buf)
   if not imported then
     vim.notify("yap: " .. attach_err, vim.log.levels.WARN)
+    return false
+  end
+  -- Child tool permissions are chosen by the caller. A hand-edited child
+  -- frontmatter with an empty/missing list must never become unrestricted.
+  local fm_end = frontmatter.end_line(buf)
+  local fm = fm_end and frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, fm_end, false))
+  if fm and fm.subagent_parent and (not fm.tools or #fm.tools == 0) then
+    vim.notify("yap: subagent has no permitted tools; set tools in frontmatter", vim.log.levels.WARN)
     return false
   end
   -- Ask the backend what this send would contain: the empty-send guard and
@@ -433,7 +454,6 @@ function M.send(buf)
       end
       flush_pending(true)
     end
-    stream_flush[buf] = finish_flush
     local function append(data)
       if data == "" then
         return
@@ -486,8 +506,10 @@ function M.send(buf)
           local fold = require("harness.ui.fold")
           fold.before_change(buf)
           vim.api.nvim_buf_set_lines(buf, assistant_heading - 2, -1, false, {})
-          if document.trailing_role(buf) == "user"
-            and vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "# @user" then
+          if
+            document.trailing_role(buf) == "user"
+            and vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "# @user"
+          then
             vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "" })
           end
           fold.after_append(buf)
@@ -690,18 +712,17 @@ function M.send(buf)
           table.insert(stderr_chunks, stderr_partial)
         end
         if running[buf] then
+          local stderr = table.concat(stderr_chunks, "\n")
           complete({
             ok = false,
             cancelled = stopped[buf] == true,
-            error = table.concat(stderr_chunks, "\n"):gsub("%s+$", "") ~= "" and table.concat(stderr_chunks, "\n")
-              or ("exit " .. result.code),
+            error = stderr:match("%S") and stderr or ("exit " .. result.code),
           })
         end
       end)
     )
     if not ok then
       spinner.stop_if_idle()
-      stream_flush[buf] = nil
       report_error(buf, tostring(started))
       close_stream(buf)
       return false
@@ -720,18 +741,8 @@ function M.send(buf)
   -- empty list means unrestricted (all tools). `reasoning_level` is the
   -- same live-editable shape: read on every send so a hand-edited value
   -- takes effect without a :Yap rewrite.
-  local tools = nil
-  local reasoning_level = nil
-  local fm_end = frontmatter.end_line(buf)
-  if fm_end then
-    local fm = frontmatter.parse(vim.api.nvim_buf_get_lines(buf, 0, fm_end, false))
-    if fm then
-      if fm.tools and #fm.tools > 0 then
-        tools = fm.tools
-      end
-      reasoning_level = fm.reasoning_level
-    end
-  end
+  local tools = fm and fm.tools and #fm.tools > 0 and fm.tools or nil
+  local reasoning_level = fm and fm.reasoning_level
   local payload = vim.json.encode({
     type = "turn",
     v = 1,

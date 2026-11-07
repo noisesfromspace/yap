@@ -1,9 +1,5 @@
--- Shared presentation primitives for Yap's read-only "board" buffers: the
--- guard board (Yap Guard), the live tool tail (Yap Log: <session>), and
--- any future projection. Both are rebuilt-from-events buffers opened as a
--- bottom drawer with a two-line header (title + counts), linked highlight
--- groups, and manual folds. New views reuse these so they look and behave
--- alike; view-specific highlight groups stay in the view's own module.
+-- Small presentation helpers shared by the session UI, guard board and live
+-- tail. The guard owns manual folds and a two-line header; the tail does not.
 
 local M = {}
 
@@ -58,7 +54,7 @@ function M.truncate_display(text, max)
   return truncated .. "…"
 end
 
---- The two header lines shared by every view: a title and a counts summary.
+--- Two header lines used by the guard board: a title and a counts summary.
 --- Highlight line 1 with M.hl.header and line 2 with M.hl.meta.
 function M.header_lines(title, counts)
   return { title, ("  " .. counts) }

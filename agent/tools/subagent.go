@@ -21,18 +21,19 @@ var subagentID atomic.Uint64
 var subagentWait = 10 * time.Minute
 
 type subagentArgs struct {
-	Agent string `json:"agent" jsonschema:"description=name of an agent definition from the ## Agents list in your system prompt (definition files in ~/.config/yap/agents/*.md)"`
-	Model string `json:"model,omitempty" jsonschema_description:"provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none"`
-	Task  string `json:"task" jsonschema:"description=task for the subagent"`
+	Agent string   `json:"agent" jsonschema:"description=name of an agent definition from the ## Agents list in your system prompt (definition files in ~/.config/yap/agents/*.md)"`
+	Model string   `json:"model,omitempty" jsonschema_description:"provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none"`
+	Task  string   `json:"task" jsonschema:"description=task for the subagent"`
+	Tools []string `json:"tools" jsonschema:"description=tools the child may use; choose for this task (e.g. read/search/glob for research; add bash/edit/write only when needed); cannot include subagent"`
 }
 
 func init() {
-	Register("subagent", "Delegate a self-contained subtask to a saved agent definition and wait for its answer. Use when a task is large or independent enough to benefit from its own context or a different (often cheaper) model; see the ## Agents list for the available agents and what each is for. Returns the child's answer and session path.", func(a *subagentArgs) (string, string, error) {
+	Register("subagent", "Delegate a task to a saved agent definition. The calling model must choose a nonempty tools list for this task; definitions cannot grant tools. Choose only names the child needs (read/search/glob for research; add bash/edit/write when needed). Delegation cannot grant the subagent tool. The child still uses normal approvals and sandboxing. Returns the child's answer and session path.", func(a *subagentArgs) (string, string, error) {
 		if SubagentReplies == nil {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
-		wire.EmitSubagentRequest(id, a.Agent, a.Model, a.Task)
+		wire.EmitSubagentRequest(id, a.Agent, a.Model, a.Task, a.Tools)
 		timer := time.NewTimer(subagentWait)
 		defer timer.Stop()
 		for {

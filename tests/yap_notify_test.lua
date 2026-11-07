@@ -24,7 +24,7 @@ vim.notify = function(msg, level, opts)
   notified[#notified + 1] = { msg = msg, level = level, opts = opts }
 end
 
-yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
 local icons = require("harness").config.icons
 assert(icons.waiting == "󰫁", "default waiting icon changed")
 
@@ -112,8 +112,10 @@ local rollup_bar = yap.winbar(buf2)
 local sep_at = rollup_bar:find("│", 1, true)
 local waiting_at = rollup_bar:find(icons.waiting .. "1", 1, true)
 local stopped_at = rollup_bar:find(icons.stopped .. "1", 1, true)
-assert(sep_at and waiting_at and stopped_at and waiting_at < sep_at and sep_at < stopped_at,
-  "rollup chips not separated by │: " .. rollup_bar)
+assert(
+  sep_at and waiting_at and stopped_at and waiting_at < sep_at and sep_at < stopped_at,
+  "rollup chips not separated by │: " .. rollup_bar
+)
 state.stopped[stopped] = nil
 state.errors[stopped] = "boom"
 assert(
@@ -219,11 +221,12 @@ assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(ite
 assert(items[2].path == vim.fs.normalize(vim.fn.getcwd()), "project cwd missing: " .. vim.inspect(items[2]))
 assert(items[2].text == require("harness.path").session_name(vim.b[buf].yap_path), "name fallback: " .. items[2].text)
 local rendered = fmt(items[2])
-assert(rendered:find("^" .. string.rep(" ", 8)) == 1, "waiting row should be badge-less: " .. rendered)
-assert(not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize(vim.fn.getcwd()), 1, true),
-  "single-project open picker should show neither model nor cwd: " .. rendered)
+assert(rendered:find("^" .. vim.pesc(items[2].text)) == 1, "waiting row should be badge-less: " .. rendered)
+assert(
+  not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize(vim.fn.getcwd()), 1, true),
+  "single-project open picker should show neither model nor cwd: " .. rendered
+)
 assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
-
 
 -- A description replaces the name fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

@@ -2,7 +2,7 @@
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
-yap.setup({ nerd_font = false, model_groups = { agent = "mock/m1", flash = "" }, icons = { steer = "→" }})
+yap.setup({ nerd_font = false, model_groups = { agent = "mock/m1", flash = "" }, icons = { steer = "→" } })
 local icons = yap.config.icons
 assert(icons.running == "▶" and icons.stopped == "⏹" and icons.error == "✗" and icons.waiting == "◉")
 assert(icons.idle == "○" and icons.done == "✓" and icons.approval == "⚠")
@@ -29,6 +29,13 @@ for _, frame in ipairs(plain_frames) do
 end
 assert(shown, "plain spinner missing: " .. bar)
 assert(not bar:find(vim.fn.nr2char(0xEE4B), 1, true), "Nerd Font spinner in plain mode: " .. bar)
+local glyphs = require("harness.ui.picker").glyphs()
+assert(
+  glyphs.steer == nil and glyphs.running == "▶",
+  "picker did not use configured plain icon: " .. vim.inspect(glyphs)
+)
+yap.config.icons.running = "CUSTOM"
+assert(require("harness.ui.picker").status(buf) == "CUSTOM", "saved picker ignored custom icon override")
 state.running[buf] = nil
 state.awaiting[other] = nil
 print("OK plain_icons")

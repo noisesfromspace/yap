@@ -19,7 +19,6 @@ local function harness()
   return require("harness")
 end
 
-
 --- The session buffer a yap panel belongs to: a session buffer itself, the
 --- live tail's owning session, or the scratch/guard board's recorded
 --- `yap_owner`. Returns nil for a buffer that is not part of any session.
@@ -315,10 +314,8 @@ open_sessions = function()
     add(item, 0, {})
   end
   items = ordered
-  -- Tag only attention states in a fixed column; indent titles, not the
-  -- status column. Quiet rows (waiting, stopped, done, idle) reserve the same
-  -- column blank so titles align without an always-on icon. Disambiguate
-  -- roots by project only when this picker spans projects.
+  -- The open tree conveys relationships through indentation, not status tags.
+  -- The saved-session picker alone renders status glyphs.
   local projects = {}
   for _, item in ipairs(items) do
     projects[vim.b[item.buf].yap_project_cwd or ""] = true
@@ -328,11 +325,7 @@ open_sessions = function()
     prompt = "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
-      local status = item.approval and "approval" or item.state
-      return picker.status_prefix(status)
-        .. string.rep("  ", item.depth)
-        .. item.text
-        .. suffix
+      return string.rep("  ", item.depth) .. item.text .. suffix
     end,
     preview_item = function(item)
       if not vim.api.nvim_buf_is_valid(item.buf) then

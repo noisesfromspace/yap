@@ -10,8 +10,6 @@ local structure = require("harness.model.structure")
 local view = require("harness.ui.view")
 local HEAD = structure.HEAD
 local TOOL_OPEN = structure.TOOL_OPEN
-local TOOL_CLOSE = structure.TOOL_CLOSE
-local COMMENT_OPEN = structure.COMMENT_OPEN
 local parse = structure.parse
 local extend = structure.extend
 local mark_changed = structure.mark_changed
@@ -27,16 +25,6 @@ M.views = {
   { key = "2", label = "tools & thinking folded" },
   { key = "3", label = "everything open" },
 }
-
--- One O(n) forward pass over the buffer produces the structural units the
--- three views fold. Fences and multi-line HTML comments are tracked so a
--- fake `# @user` inside a fenced tool result, or a `-->` inside a fence,
--- can't split the structure. This mirrors the old classify() state machine
--- but emits fold ranges instead of per-line level strings.
---
---   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
---   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
---              finish is nil while a region is still open (streaming).
 
 -- ─── identity, intent and projection ───────────────────────────────────────
 

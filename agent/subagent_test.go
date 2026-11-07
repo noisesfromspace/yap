@@ -19,7 +19,7 @@ func TestSubagentReplyWhileTurnRuns(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if calls == 1 {
-			testutil.SSE(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"subagent","arguments":"{\"agent\":\"scout\",\"task\":\"look\"}"}}]}}]}`)
+			testutil.SSE(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"subagent","arguments":"{\"agent\":\"scout\",\"task\":\"look\",\"tools\":[\"read\"]}"}}]}}]}`)
 			testutil.SSE(w, `{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`)
 		} else {
 			testutil.SSE(w, `{"choices":[{"delta":{"content":"done"}}]}`)
