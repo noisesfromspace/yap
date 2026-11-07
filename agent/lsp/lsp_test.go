@@ -40,7 +40,7 @@ func TestApplyChange(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
-	text := "---\ntitle: x\n---\n# @user\nInvestigate the parser\n# @assistant\n<!-- yap:tool {\"id\":\"t1\",\"name\":\"read\",\"arguments\":{}} -->\nresult\n<!-- /yap:tool -->\n"
+	text := "---\ntitle: x\n---\n# @user\nInvestigate the parser\n# @assistant\n<!-- yap:thinking\nsecret reasoning\n-->\n<!-- yap:tool {\"id\":\"t1\",\"name\":\"read\",\"arguments\":{}} -->\nresult\n<!-- /yap:tool -->\nvisible answer\n"
 	syms := Symbols(text)
 	if len(syms) != 3 { // frontmatter + user + assistant
 		t.Fatalf("got %d top-level symbols, want 3: %+v", len(syms), syms)
@@ -52,11 +52,11 @@ func TestSymbols(t *testing.T) {
 		t.Fatalf("symbol 1 = %q", syms[1].Name)
 	}
 	asst := syms[2]
-	if !strings.HasPrefix(asst.Name, "assistant:") {
-		t.Fatalf("symbol 2 = %q, want assistant preview", asst.Name)
+	if asst.Name != "assistant: visible answer" {
+		t.Fatalf("symbol 2 = %q, want the first visible prose, skipping thinking and tool bodies", asst.Name)
 	}
-	if len(asst.Children) != 1 || asst.Children[0].Name != "tool: read" || asst.Children[0].Range.Start.Line != 6 {
-		t.Fatalf("assistant children = %+v, want read tool at line 6", asst.Children)
+	if len(asst.Children) != 0 {
+		t.Fatalf("assistant children = %+v, want none (tool calls are not symbols)", asst.Children)
 	}
 }
 

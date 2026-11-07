@@ -926,8 +926,9 @@ attached by the harness. It provides four language features over standard
 LSP, backed by the Go document parser (agent/document):
 
   Document symbols  An outline of the conversation: frontmatter, then one
-                    symbol per message (role + a short body preview) with
-                    tool regions as children.
+                    symbol per message (role + a short visible prose preview).
+                    Tool calls, thinking and other machine regions are not
+                    symbols.
   Completion        Frontmatter keys and values (`provider`, `model`,
                     `reasoning_level`, `agent`, `tools`, ...), role headings,
                     and `@path` file references.

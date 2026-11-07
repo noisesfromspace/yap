@@ -50,7 +50,6 @@ const (
 	symStruct   = 23
 	symVariable = 13
 	symObject   = 19
-	symFunction = 12
 
 	complModule   = 9
 	complKeyword  = 14
@@ -124,7 +123,8 @@ func utf16ColToByte(s string, col int) int {
 // ─── Document symbols ──────────────────────────────────────────────────────
 
 // Symbols returns the document-symbol outline of a session transcript:
-// frontmatter, then one symbol per message with tool regions as children.
+// frontmatter, then one symbol per message. Tool calls, thinking and other
+// machine regions are display-only and never appear in the outline.
 func Symbols(text string) []symbol {
 	return symbolsFromDoc(document.Parse(text))
 }
@@ -139,7 +139,10 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
 	}
 
-	region := 0
+	// Machine regions (tool, thinking, error, …) never become symbols, and
+	// their body lines must not leak into a message's preview name.
+	hidden := machineLines(lines, doc.Regions)
+
 	for i, h := range doc.Headings {
 		next := len(lines) // exclusive 0-based end of this message
 		if i+1 < len(doc.Headings) {
@@ -148,39 +151,35 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 		if next < h.Line-1 {
 			next = h.Line - 1
 		}
-		s := symbol{
-			Name:           messageName(lines, h),
+		out = append(out, symbol{
+			Name:           messageName(lines, h, hidden, next),
 			Kind:           symObject,
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
-		}
-		for region < len(doc.Regions) && doc.Regions[region].Start <= h.Line {
-			region++
-		}
-		for region < len(doc.Regions) && doc.Regions[region].Start-1 < next {
-			r := doc.Regions[region]
-			region++
-			if r.Kind != "tool" || r.Start <= h.Line || r.Start-1 >= next {
-				continue
-			}
-			name := "tool"
-			if header := document.DecodeToolHeader(lines, r); header != nil && header.Name != "" {
-				name = "tool: " + header.Name
-			}
-			finish := r.Finish
-			if finish == 0 || finish > next {
-				finish = next
-			}
-			s.Children = append(s.Children, symbol{
-				Name:           name,
-				Kind:           symFunction,
-				Range:          rng{Start: position{Line: r.Start - 1}, End: position{Line: finish}},
-				SelectionRange: lineRange(lines, r.Start-1),
-			})
-		}
-		out = append(out, s)
+		})
 	}
 	return out
+}
+
+// machineLines marks every line inside a machine region (tool, thinking,
+// error, …). Those bodies are display-only: excluded from the symbol outline
+// and from the preview name a message symbol derives from its first visible
+// prose line.
+func machineLines(lines []string, regions []document.Region) []bool {
+	hidden := make([]bool, len(lines))
+	for _, r := range regions {
+		hi := r.Finish
+		if hi == 0 || hi > len(lines) {
+			hi = len(lines)
+		}
+		if hi < r.Start {
+			hi = r.Start
+		}
+		for ln := r.Start - 1; ln < hi && ln < len(lines); ln++ {
+			hidden[ln] = true
+		}
+	}
+	return hidden
 }
 
 func frontmatterSymbol(lines []string, close int) symbol {
@@ -203,16 +202,13 @@ func frontmatterSymbol(lines []string, close int) symbol {
 	return s
 }
 
-func messageName(lines []string, h document.Heading) string {
-	limit := h.Line + 5
-	if limit > len(lines) {
-		limit = len(lines)
-	}
-	for i := h.Line; i < limit; i++ {
+func messageName(lines []string, h document.Heading, hidden []bool, end int) string {
+	for i := h.Line; i < end; i++ {
 		t := strings.TrimSpace(lines[i])
-		if t != "" && !strings.HasPrefix(t, "<!-- yap:") {
-			return h.Role + ": " + truncate(t, 60)
+		if t == "" || strings.HasPrefix(t, "<!-- yap:") || hidden[i] {
+			continue
 		}
+		return h.Role + ": " + truncate(t, 60)
 	}
 	return h.Role
 }
