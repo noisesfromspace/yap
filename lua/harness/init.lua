@@ -589,16 +589,15 @@ function M.setup(opts)
       end
       local cursor = vim.api.nvim_win_get_cursor(0)
       local row, col = cursor[1], cursor[2]
-      if row < 2 or vim.api.nvim_buf_get_lines(args.buf, 0, 1, false)[1] ~= "---" then
+      -- A frontmatter key only: the cursor sits between the opening `---` and
+      -- the closing `---`. end_line() is a bounded 200-line read; the old
+      -- scan read line 2 through the cursor and searched for `---` on every
+      -- [a-z_] keystroke, so typing in a large transcript paid O(cursor depth).
+      local e = frontmatter.end_line(args.buf)
+      if not e or row < 2 or row >= e then
         return
       end
-      local lines = vim.api.nvim_buf_get_lines(args.buf, 1, row, false)
-      for i = 1, #lines - 1 do
-        if lines[i] == "---" then
-          return
-        end
-      end
-      local line = lines[#lines]
+      local line = vim.api.nvim_buf_get_lines(args.buf, row - 1, row, false)[1]
       if not line or not (line:sub(1, col) .. char):match("^[a-z_]+$") or line:find(":", 1, true) then
         return
       end
