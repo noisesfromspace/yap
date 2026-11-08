@@ -42,17 +42,24 @@ for line in sys.stdin:
         elif "badmodel" in first:
             model = "nonsense"
         print(json.dumps({"type":"subagent_request","id":"1","agent":agent,"model":model,"task":"fail" if "failure" in first else "markers" if "markers" in first else "succeed", "tools":tools}), flush=True)
-        # The harness first confirms the child path, then sends the result
-        # when the child finishes; wait for the result-bearing reply.
+        # The harness first confirms the child path, then relays progress
+        # signals as the child works, then sends the result when it finishes.
         response = {}
+        saw_progress = False
         while "result" not in response:
             response = json.loads(sys.stdin.readline())
-        print(json.dumps({"type":"text","text":"\n" + response['result'] + "\n"}), flush=True)
+            if response.get("type") == "subagent_progress":
+                saw_progress = True
+        print(json.dumps({"type":"text","text":"\n" + response['result'] + "\nPROGRESS=" + ("1" if saw_progress else "0") + "\n"}), flush=True)
     elif "markers" in first:
         print(json.dumps({"type":"text","text":"\n<!-- yap:thinking\nsecret thought\n-->\n<!-- yap:tool {\\\"id\\\":\\\"t\\\",\\\"name\\\":\\\"read\\\"} -->\n```\n# @assistant\nquoted heading\n```\n<!-- /yap:tool -->\nchild visible answer\n"}), flush=True)
     elif "fail" in first:
         print(json.dumps({"type":"text","text":"\n<!-- yap:error\nchild model failed\n-->\n"}), flush=True)
     else:
+        # A child that runs a tool: the harness relays its activity to the
+        # parent as a subagent_progress liveness signal.
+        print(json.dumps({"type":"event","event":{"type":"tool_start","name":"read","log":"/tmp/child.log","command":"read"}}), flush=True)
+        print(json.dumps({"type":"tool_output","log":"/tmp/child.log","delta":"line one\nline two\n"}), flush=True)
         print(json.dumps({"type":"text","text":"\nchild finished\n"}), flush=True)
     print(json.dumps({"type":"turn_complete","ok":True,"v":1}), flush=True)
 ]=],
@@ -83,6 +90,7 @@ local function delegate(task)
 end
 local success = delegate("delegate success")
 assert(success:find("child finished", 1, true), success)
+assert(success:find("PROGRESS=1", 1, true), "parent did not receive subagent progress: " .. success)
 local session_line, linked_path = success:match("Session: %[(.-)%]%((.-)%)")
 assert(session_line and linked_path == session_line, "child session link missing")
 local child_path = linked_path

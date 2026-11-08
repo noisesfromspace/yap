@@ -278,6 +278,34 @@ function M.flush(buf, log)
   end
 end
 
+--- Append mirrored subagent output to the parent's tail. Subagent output has
+--- no temp log of its own, so its partial-line buffer lives in
+--- state.subagent_pending[buf] rather than a live_logs entry; the line
+--- buffering is otherwise identical to tool_output.
+function M.append_tail(buf, delta)
+  local t = tails[buf]
+  if not t then
+    return
+  end
+  local pending = state.subagent_pending[buf] or ""
+  local text = pending .. delta
+  local lines = vim.split(text, "\n", { plain = true })
+  state.subagent_pending[buf] = table.remove(lines)
+  append_lines(t, lines)
+end
+
+--- Emit any unterminated mirrored tail line when a child finishes.
+function M.flush_tail(buf)
+  local pending = state.subagent_pending[buf]
+  if pending and pending ~= "" then
+    state.subagent_pending[buf] = ""
+    local t = tails[buf]
+    if t then
+      append_lines(t, { pending })
+    end
+  end
+end
+
 --- Append one event as a JSON object to the session's audit log. The log is
 --- the durable record; the tail view renders none of these events.
 function M.append_event(buf, ev)

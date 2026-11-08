@@ -9,11 +9,28 @@ import (
 	"boers.email/yap/agent/wire"
 )
 
-func TestSubagentTimeout(t *testing.T) {
-	oldReplies, oldWait := SubagentReplies, subagentWait
+// resetSubagentGlobals swaps the subagent package state for one test and
+// returns a restore function. Every test that runs the subagent tool must use
+// it: the tool registers into all four maps/channels and the counters.
+func resetSubagentGlobals() func() {
+	oldReplies, oldProgress := SubagentReplies, SubagentProgresses
+	oldWait, oldInactivity := subagentWait, subagentInactivityWait
+	oldID := subagentID.Load()
 	SubagentReplies = make(map[string]chan SubagentReply)
+	SubagentProgresses = make(map[string]chan SubagentProgress)
+	subagentID.Store(0)
+	return func() {
+		SubagentReplies, SubagentProgresses = oldReplies, oldProgress
+		subagentWait, subagentInactivityWait = oldWait, oldInactivity
+		subagentID.Store(oldID)
+	}
+}
+
+func TestSubagentTimeout(t *testing.T) {
+	restore := resetSubagentGlobals()
+	defer restore()
 	subagentWait = time.Millisecond
-	defer func() { SubagentReplies, subagentWait = oldReplies, oldWait }()
+	subagentInactivityWait = time.Second
 	tool, ok := Get("subagent")
 	if !ok {
 		t.Fatal("subagent tool missing")
@@ -25,15 +42,10 @@ func TestSubagentTimeout(t *testing.T) {
 }
 
 func TestSubagentTimeoutKeepsPath(t *testing.T) {
-	oldReplies, oldWait := SubagentReplies, subagentWait
-	oldID := subagentID.Load()
-	SubagentReplies = make(map[string]chan SubagentReply)
+	restore := resetSubagentGlobals()
+	defer restore()
 	subagentWait = 250 * time.Millisecond
-	subagentID.Store(0)
-	defer func() {
-		SubagentReplies, subagentWait = oldReplies, oldWait
-		subagentID.Store(oldID)
-	}()
+	subagentInactivityWait = time.Second
 	tool, _ := Get("subagent")
 	done := make(chan error, 1)
 	go func() {
@@ -53,51 +65,81 @@ func TestSubagentTimeoutKeepsPath(t *testing.T) {
 	}
 }
 
-func TestSubagentStopUnblocks(t *testing.T) {
-	oldReplies, oldStop, oldWait := SubagentReplies, SubagentStop, subagentWait
-	oldID := subagentID.Load()
-	SubagentReplies = make(map[string]chan SubagentReply)
-	SubagentStop = make(chan struct{}, 1)
-	subagentWait = time.Minute
-	subagentID.Store(0)
-	defer func() {
-		SubagentReplies, SubagentStop, subagentWait = oldReplies, oldStop, oldWait
-		subagentID.Store(oldID)
-	}()
+func TestSubagentInactivityTimeout(t *testing.T) {
+	restore := resetSubagentGlobals()
+	defer restore()
+	subagentWait = time.Second
+	subagentInactivityWait = 40 * time.Millisecond
+	tool, _ := Get("subagent")
+	_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test","tools":["read"]}`))
+	if err == nil || !strings.Contains(err.Error(), "without progress") {
+		t.Fatalf("expected inactivity timeout, got %v", err)
+	}
+}
+
+func TestSubagentProgressResetsDeadline(t *testing.T) {
+	restore := resetSubagentGlobals()
+	defer restore()
+	subagentWait = time.Second
+	subagentInactivityWait = 80 * time.Millisecond
 	tool, _ := Get("subagent")
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := tool.Run([]byte(`{"agent":"scout","task":"t","tools":["read"]}`))
+		_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test","tools":["read"]}`))
 		done <- err
 	}()
-	// Confirm the path before signalling stop (a few deliveries so one lands
-	// after the reply channel is registered), then stop and expect the wait to
-	// abort immediately with the session link preserved.
-	for i := 0; i < 20; i++ {
-		DeliverSubagentReply(SubagentReply{ID: "1", Path: "/tmp/child.md"})
+	// Keep the child "alive" well past the 80ms inactivity window; without the
+	// reset the inactivity clock would fire almost immediately.
+	start := time.Now()
+	for time.Since(start) < 300*time.Millisecond {
+		DeliverSubagentProgress(SubagentProgress{ID: "1", Status: "tool"})
+		time.Sleep(10 * time.Millisecond)
+	}
+	err := <-done
+	if time.Since(start) < 280*time.Millisecond {
+		t.Fatalf("inactivity fired too early (%v): progress did not reset the deadline", time.Since(start))
+	}
+	if err == nil || !strings.Contains(err.Error(), "without progress") {
+		t.Fatalf("expected inactivity timeout after progress stopped, got %v", err)
+	}
+}
+
+func TestSubagentApprovalSuspendsInactivity(t *testing.T) {
+	restore := resetSubagentGlobals()
+	defer restore()
+	subagentWait = 300 * time.Millisecond
+	subagentInactivityWait = 50 * time.Millisecond
+	tool, _ := Get("subagent")
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test","tools":["read"]}`))
+		done <- err
+	}()
+	// Deliver approval repeatedly so at least one lands after registration.
+	// With the clock suspended, only the hard cap can fire.
+	for i := 0; i < 8; i++ {
+		DeliverSubagentProgress(SubagentProgress{ID: "1", Status: "approval"})
 		time.Sleep(5 * time.Millisecond)
 	}
-	SubagentStop <- struct{}{}
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "subagent cancelled") || !strings.Contains(err.Error(), "/tmp/child.md") {
-			t.Fatalf("expected cancellation with path, got %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("subagent tool did not unblock on stop")
+	err := <-done
+	if err == nil || strings.Contains(err.Error(), "without progress") {
+		t.Fatalf("approval should suspend the inactivity clock, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "timed out after") {
+		t.Fatalf("expected the hard deadline, got %v", err)
 	}
 }
 
 func TestSubagentModelForwarded(t *testing.T) {
 	var buf bytes.Buffer
 	oldWriter := wire.SetFrameWriter(&buf)
-	oldReplies, oldWait := SubagentReplies, subagentWait
-	SubagentReplies = make(map[string]chan SubagentReply)
-	subagentWait = time.Millisecond
+	restore := resetSubagentGlobals()
 	defer func() {
 		wire.SetFrameWriter(oldWriter)
-		SubagentReplies, subagentWait = oldReplies, oldWait
+		restore()
 	}()
+	subagentWait = time.Millisecond
+	subagentInactivityWait = time.Second
 	tool, _ := Get("subagent")
 	_, _, _ = tool.Run([]byte(`{"agent":"scout","model":"openai/gpt-5-mini","task":"t","tools":["read","mcp_example_query"]}`))
 	if ev := buf.String(); !strings.Contains(ev, `"type":"subagent_request"`) ||

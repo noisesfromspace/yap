@@ -218,10 +218,12 @@ func emitTerminal(err error) {
 
 func serve(in io.Reader, out io.Writer) error {
 	tools.SubagentReplies = make(map[string]chan tools.SubagentReply)
+	tools.SubagentProgresses = make(map[string]chan tools.SubagentProgress)
 	tools.SubagentStop = make(chan struct{}, 1)
 	wire.ApprovalReplies = make(chan wire.ApprovalReply, 1)
 	defer func() {
 		tools.SubagentReplies = nil
+		tools.SubagentProgresses = nil
 		tools.SubagentStop = nil
 		wire.ApprovalReplies = nil
 	}()
@@ -281,6 +283,11 @@ func serve(in io.Reader, out io.Writer) error {
 					// future parallel child) land in their own channel or are
 					// dropped, without blocking the stdin reader.
 					tools.DeliverSubagentReply(reply.SubagentReply)
+					continue
+				case "subagent_progress":
+					var sp tools.SubagentProgress
+					_ = json.Unmarshal(line, &sp)
+					tools.DeliverSubagentProgress(sp)
 					continue
 				case "approval_result":
 					var ar struct {

@@ -10,6 +10,7 @@ local config = require("harness.config")
 local paths = require("harness.path")
 local document = require("harness.model.document")
 local structure = require("harness.model.structure")
+local audit = require("harness.client.audit")
 
 local function harness()
   return require("harness")
@@ -30,6 +31,13 @@ local function subagent_result(parent, id, child, child_path, reply)
         subagent_children[parent] = nil
       end
     end
+    -- The child is done: clear the parent's child-activity status and flush
+    -- any partial mirrored tail line.
+    state.live[parent] = nil
+    state.subagent_since[parent] = nil
+    state.subagent_phase[parent] = nil
+    state.subagent_last_signal[parent] = nil
+    audit.flush_tail(parent)
     local result = "error: " .. (errors[child] or "subagent stopped without a result")
     if success then
       -- Reuse the transcript parser for headings and marker regions, including
@@ -153,6 +161,7 @@ function M.start(parent, ev)
   end
   document.append_text(child, ev.task)
   vim.b[child].yap_subagent_parent = parent
+  vim.b[child].yap_subagent_id = ev.id
   vim.b[child].yap_subagent_task = ev.task
   frontmatter.update(child, { subagent_parent = parent_path })
   require("harness.session").save(child)
@@ -163,6 +172,10 @@ function M.start(parent, ev)
   local children = subagent_children[parent] or {}
   children[ev.id] = child
   subagent_children[parent] = children
+  state.subagent_since[parent] = vim.uv.now()
+  state.subagent_phase[parent] = nil
+  state.subagent_pending[parent] = ""
+  state.subagent_last_signal[parent] = 0
   frontmatter.record_subagent(parent, child_path)
   subagent_done[child] = subagent_result(parent, ev.id, child, child_path, reply)
   harness().send(child)

@@ -145,6 +145,57 @@ local function handle_approval_request(buf, ev)
   end
 end
 
+-- Forward condensed child activity to the parent. Three independent effects:
+-- the parent's live tail mirrors streamed child output, the parent winbar
+-- shows the child's current phase, and a throttled liveness signal to the
+-- parent's serve process keeps its subagent tool's inactivity deadline
+-- honest. The parent model's context is untouched: progress is UI and
+-- liveness only, never appended to the message history.
+local function relay_subagent(buf, status, detail, delta)
+  local parent = vim.b[buf] and vim.b[buf].yap_subagent_parent
+  local id = vim.b[buf] and vim.b[buf].yap_subagent_id
+  if not parent or not id or not vim.api.nvim_buf_is_valid(parent) then
+    return
+  end
+  -- 1. Tail mirror (unthrottled: every byte of child output).
+  if delta and delta ~= "" then
+    audit.append_tail(parent, delta)
+  end
+  local now = vim.uv.now()
+  -- 2. Winbar phase (throttled for per-token text; skipped for output bytes,
+  --    which carry no phase change).
+  if status ~= "output" and not (status == "text" and now - (state.subagent_last_signal[parent] or 0) < 1000) then
+    local key = status .. "|" .. (detail or "")
+    if state.subagent_phase[parent] ~= key then
+      state.subagent_phase[parent] = key
+      state.subagent_since[parent] = now
+    end
+    local since = state.subagent_since[parent] or now
+    local label
+    if status == "approval" then
+      label = "subagent · awaiting approval"
+    elseif status == "text" then
+      label = "subagent · answering"
+    elseif detail then
+      label = "subagent · " .. detail
+    else
+      label = "subagent · working"
+    end
+    live[parent] = { name = label, ms = now - since }
+    util.redraw_status()
+  end
+  -- 3. Liveness signal to the parent's serve process (throttled to 1s; an
+  --    approval wait is signalled immediately so the clock suspends).
+  if status ~= "approval" and now - (state.subagent_last_signal[parent] or 0) < 1000 then
+    return
+  end
+  state.subagent_last_signal[parent] = now
+  local process = servers[parent]
+  if process then
+    process:write(vim.json.encode({ type = "subagent_progress", id = id, status = status }) .. "\n")
+  end
+end
+
 local function handle_event(buf, ev)
   if type(ev) ~= "table" then
     return
@@ -156,6 +207,7 @@ local function handle_event(buf, ev)
     logs[ev.log] = { name = ev.name or "tool", log = ev.log, since = os.time(), pending = "" }
     live[buf] = logs[ev.log]
     audit.tool_start(buf, ev.command or ev.name or "tool")
+    relay_subagent(buf, "tool", ev.name or "tool")
   elseif ev.type == "tool_end" then
     audit.flush(buf, ev.log) -- emit any unterminated final line
     local logs = state.live_logs[buf] or {}
@@ -615,6 +667,7 @@ function M.send(buf)
           assistant_activity = true
         end
         append(frame.text or "")
+        relay_subagent(buf, "text")
         return
       end
       sync_followers()
@@ -626,6 +679,7 @@ function M.send(buf)
         handle_event(buf, frame.event)
       elseif frame.type == "tool_output" then
         audit.tool_output(buf, frame.log, frame.delta)
+        relay_subagent(buf, "output", nil, frame.delta)
       elseif frame.type == "progress" then
         -- Throughput for the running tool, shown by the winbar beacon.
         local logs = state.live_logs[buf]
@@ -636,6 +690,7 @@ function M.send(buf)
       elseif frame.type == "approval_request" then
         assistant_activity = true
         handle_approval_request(buf, frame)
+        relay_subagent(buf, "approval", frame.tool or "tool")
       elseif frame.type == "subagent_request" then
         assistant_activity = true
         subagent.start(buf, frame)

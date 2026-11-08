@@ -778,7 +778,11 @@ sequenceDiagram
   `{"type":"subagent_result","id":...,"path":...}` (child path
   confirmation, sent as soon as the child session is created) and
   `{"type":"subagent_result","id":...,"path":...,"result":...}` (final
-  answer), and
+  answer),
+  `{"type":"subagent_progress","id":...,"status":...}` (a liveness signal
+  the frontend relays as the child works: `tool`, `output`, `text` or
+  `approval`; it resets the child's inactivity deadline, or suspends it while
+  the child waits for a human approval), and
   `{"type":"cancel"}` — finish the current model response and any tool calls
   without aborting them, then stop before the next model step. The serve
   process and its tool state survive for the next send. Exception: a turn
@@ -799,7 +803,7 @@ sequenceDiagram
     the live tail follows it), `tool_end` `{type,name,log,truncated}`,
     `tool_call` `{type,name,args}` (full arguments before the tool runs),
     `tool_result` `{type,name,bytes,result}` (full result),
-    `approval_timeout` `{type,id}`, `subagent_timeout` `{type,id}`,
+    `approval_timeout` `{type,id}`, `subagent_timeout` `{type,id,reason?}`,
     `retry` `{type,attempt,delay_ms,error}`,
     `steer`, `model_change`, `tool_text_warning`, `usage`,
     `error` `{type,code,message}` (a failed turn), and
@@ -825,7 +829,11 @@ sequenceDiagram
     session is created, then with
     `{"type":"subagent_result","id","path","result"}` when it finishes. The
     `path` lets a timeout or cancellation still point at the recoverable child
-    session.
+    session. While the child runs, the frontend relays `subagent_progress`
+    liveness signals (tool start, streamed output, generated text, approval
+    wait) so the waiting tool resets its inactivity deadline; the child's
+    full output stays in its own session and only the final answer reaches
+    the parent model.
   - `close_session` `{"type":"close_session"}` — a frontend side effect: the
     Lua side closes the session buffer once the turn completes and the session
     file is saved.

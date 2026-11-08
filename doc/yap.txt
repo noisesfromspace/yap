@@ -925,6 +925,13 @@ so a finished agent stays reachable. The parent waits up to 30 minutes; if
 the child times out or is cancelled, the result still carries the child
 session path so its work stays recoverable.
 
+While a child runs, its activity is surfaced to the parent: the winbar shows
+the current phase (running a tool, answering, awaiting approval) and the
+parent's live tail mirrors the child's streamed output. The 30-minute wait
+stops early if the child makes no progress for 3 minutes; a child parked on a
+human approval does not count as idle. Only the final answer reaches the
+parent's context — progress is UI and liveness, never re-sent to the model.
+
 ==============================================================================
 13. LANGUAGE SERVER                                            *yap-lsp*
 
