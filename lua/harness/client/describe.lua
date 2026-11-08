@@ -162,7 +162,13 @@ Return only the title.]]
   })
   vim.system(
     { harness().config.bin, "send", "--provider", provider, "--model", model },
-    { stdin = payload, text = true, timeout = 30000 },
+    -- A slow local flash model (e.g. ollama) can legitimately take 10s+ and
+    -- longer still when several sessions/subagents queue title requests, so
+    -- the timeout must be generous. Killing a request mid-flight writes
+    -- "interrupted" to stderr (agent/main.go's signal handler) and surfaces
+    -- as a bogus ERROR toast; a title is also background work that retries on
+    -- the next turn, so waiting beats interrupting.
+    { stdin = payload, text = true, timeout = 120000 },
     vim.schedule_wrap(function(result)
       if not vim.api.nvim_buf_is_valid(buf) then
         return
@@ -183,11 +189,18 @@ Return only the title.]]
       end
       if result.code ~= 0 then
         retry_later()
-        -- A title/summary model failure (out of credits, bad provider, …)
-        -- must not fail silently: surface it like the eval and send paths do.
         local err = (result.stderr or ""):gsub("%s+$", "")
         if err == "" then
           err = "exit " .. tostring(result.code)
+        end
+        -- A title request that outlived its timeout is killed by vim.system;
+        -- the backend's signal handler reports that as exactly "interrupted".
+        -- That is a slow local flash model, not a title failure — the next
+        -- turn retries, so stay quiet instead of toasting noise on every
+        -- busy turn. Real failures (out of credits, bad provider, …) still
+        -- surface like the eval and send paths do.
+        if err == "interrupted" then
+          return
         end
         vim.notify(err, vim.log.levels.ERROR)
         return
