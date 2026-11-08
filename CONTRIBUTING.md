@@ -769,7 +769,10 @@ sequenceDiagram
   `{"type":"steer","text":...}` (empty text cancels a pending steer),
   `{"type":"model","provider":...,"model":...}`,
   `{"type":"approval_result","id":...,"approved":bool}`,
-  `{"type":"subagent_result","id":...,"result":...}`, and
+  `{"type":"subagent_result","id":...,"path":...}` (child path
+  confirmation, sent as soon as the child session is created) and
+  `{"type":"subagent_result","id":...,"path":...,"result":...}` (final
+  answer), and
   `{"type":"cancel"}` — finish the current model response and any tool calls
   without aborting them, then stop before the next model step. The serve
   process and its tool state survive for the next send.
@@ -808,8 +811,12 @@ sequenceDiagram
     `{"type":"approval_result","id","approved"}` on stdin (or auto-accepts, or
     the backend times out and emits `approval_timeout`).
   - `subagent_request` `{"type":"subagent_request","id":...,"agent":...,"model":...,"task":...,"tools":[...]}`
-    — the Lua side spawns/runs a child session and replies
-    `{"type":"subagent_result","id","result"}`.
+    — the Lua side spawns/runs a child session and replies first with a path
+    confirmation `{"type":"subagent_result","id","path"}` once the child
+    session is created, then with
+    `{"type":"subagent_result","id","path","result"}` when it finishes. The
+    `path` lets a timeout or cancellation still point at the recoverable child
+    session.
   - `close_session` `{"type":"close_session"}` — a frontend side effect: the
     Lua side closes the session buffer once the turn completes and the session
     file is saved.

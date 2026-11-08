@@ -42,7 +42,11 @@ for line in sys.stdin:
         elif "badmodel" in first:
             model = "nonsense"
         print(json.dumps({"type":"subagent_request","id":"1","agent":agent,"model":model,"task":"fail" if "failure" in first else "markers" if "markers" in first else "succeed", "tools":tools}), flush=True)
-        response = json.loads(sys.stdin.readline())
+        # The harness first confirms the child path, then sends the result
+        # when the child finishes; wait for the result-bearing reply.
+        response = {}
+        while "result" not in response:
+            response = json.loads(sys.stdin.readline())
         print(json.dumps({"type":"text","text":"\n" + response['result'] + "\n"}), flush=True)
     elif "markers" in first:
         print(json.dumps({"type":"text","text":"\n<!-- yap:thinking\nsecret thought\n-->\n<!-- yap:tool {\\\"id\\\":\\\"t\\\",\\\"name\\\":\\\"read\\\"} -->\n```\n# @assistant\nquoted heading\n```\n<!-- /yap:tool -->\nchild visible answer\n"}), flush=True)

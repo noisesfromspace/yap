@@ -2,23 +2,38 @@ package tools
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"boers.email/yap/agent/wire"
 )
 
-// SubagentReplies is installed by serve. Each serve process handles one turn
-// at a time; stdin is still read while a subagent tool is waiting.
-var SubagentReplies chan SubagentReply
+// Each outstanding delegation owns its reply channel. The serve stdin reader
+// dispatches by ID, so late and out-of-order replies cannot reach another call.
+var SubagentReplies = make(map[string]chan SubagentReply)
+var subagentMu sync.Mutex
+
+func DeliverSubagentReply(reply SubagentReply) {
+	subagentMu.Lock()
+	ch := SubagentReplies[reply.ID]
+	subagentMu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- reply:
+		default:
+		}
+	}
+}
 
 type SubagentReply struct {
 	ID     string `json:"id"`
-	Result string `json:"result"`
+	Path   string `json:"path,omitempty"`
+	Result string `json:"result,omitempty"`
 }
 
 var subagentID atomic.Uint64
-var subagentWait = 10 * time.Minute
+var subagentWait = 30 * time.Minute
 
 type subagentArgs struct {
 	Agent string   `json:"agent" jsonschema:"description=name of an agent definition from the ## Agents list in your system prompt (definition files in ~/.config/yap/agents/*.md)"`
@@ -28,25 +43,44 @@ type subagentArgs struct {
 }
 
 func init() {
-	Register("subagent", "Delegate a task to a saved agent definition. The calling model must choose a nonempty tools list for this task; definitions cannot grant tools. Choose only names the child needs (read/search/glob for research; add bash/edit/write when needed). Delegation cannot grant the subagent tool. The child still uses normal approvals and sandboxing. Returns the child's answer and session path.", func(a *subagentArgs) (string, string, error) {
+	Register("subagent", "Delegate a task to a saved agent definition. The calling model must choose a nonempty tools list for this task; definitions cannot grant tools. Choose only names the child needs (read/search/glob for research; add bash/edit/write when needed). Delegation cannot grant the subagent tool. The child still uses normal approvals and sandboxing. Returns the child's answer and session path; waits up to 30 minutes and, on timeout or cancellation, still reports the child session path so its work stays recoverable.", func(a *subagentArgs) (string, string, error) {
 		if SubagentReplies == nil {
 			return "", "", fmt.Errorf("subagent requires yap serve")
 		}
 		id := fmt.Sprintf("%d", subagentID.Add(1))
+		ch := make(chan SubagentReply, 2)
+		subagentMu.Lock()
+		SubagentReplies[id] = ch
+		subagentMu.Unlock()
+		defer func() {
+			subagentMu.Lock()
+			delete(SubagentReplies, id)
+			subagentMu.Unlock()
+		}()
 		wire.EmitSubagentRequest(id, a.Agent, a.Model, a.Task, a.Tools)
 		timer := time.NewTimer(subagentWait)
 		defer timer.Stop()
+		path := ""
+		link := func() string {
+			if path == "" {
+				return " (child session was not confirmed)"
+			}
+			return " Session: [" + path + "](" + path + ")"
+		}
 		for {
 			select {
-			case reply := <-SubagentReplies:
-				if reply.ID == id {
+			case reply := <-ch:
+				if reply.Path != "" {
+					path = reply.Path
+				}
+				if reply.Result != "" {
 					return reply.Result, "", nil
 				}
 			case <-wire.TurnContext().Done():
-				return "", "", fmt.Errorf("subagent cancelled")
+				return "", "", fmt.Errorf("subagent cancelled;%s", link())
 			case <-timer.C:
 				wire.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})
-				return "", "", fmt.Errorf("subagent timed out after %s", subagentWait)
+				return "", "", fmt.Errorf("subagent timed out after %s;%s", subagentWait, link())
 			}
 		}
 	})

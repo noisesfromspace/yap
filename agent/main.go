@@ -217,7 +217,7 @@ func emitTerminal(err error) {
 }
 
 func serve(in io.Reader, out io.Writer) error {
-	tools.SubagentReplies = make(chan tools.SubagentReply, 1)
+	tools.SubagentReplies = make(map[string]chan tools.SubagentReply)
 	wire.ApprovalReplies = make(chan wire.ApprovalReply, 1)
 	defer func() {
 		tools.SubagentReplies = nil
@@ -274,13 +274,11 @@ func serve(in io.Reader, out io.Writer) error {
 			if json.Unmarshal(line, &reply) == nil {
 				switch reply.Type {
 				case "subagent_result":
-					// Never block the stdin reader: this channel also carries
-					// approvals and steering, and a reply can arrive for a call
-					// that already timed out with nobody waiting.
-					select {
-					case tools.SubagentReplies <- reply.SubagentReply:
-					default:
-					}
+					// Dispatch by request ID. Late and out-of-order replies (a
+					// child that finished after its parent timed out, or a
+					// future parallel child) land in their own channel or are
+					// dropped, without blocking the stdin reader.
+					tools.DeliverSubagentReply(reply.SubagentReply)
 					continue
 				case "approval_result":
 					var ar struct {

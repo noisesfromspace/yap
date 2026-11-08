@@ -11,7 +11,7 @@ import (
 
 func TestSubagentTimeout(t *testing.T) {
 	oldReplies, oldWait := SubagentReplies, subagentWait
-	SubagentReplies = make(chan SubagentReply, 1)
+	SubagentReplies = make(map[string]chan SubagentReply)
 	subagentWait = time.Millisecond
 	defer func() { SubagentReplies, subagentWait = oldReplies, oldWait }()
 	tool, ok := Get("subagent")
@@ -24,11 +24,40 @@ func TestSubagentTimeout(t *testing.T) {
 	}
 }
 
+func TestSubagentTimeoutKeepsPath(t *testing.T) {
+	oldReplies, oldWait := SubagentReplies, subagentWait
+	oldID := subagentID.Load()
+	SubagentReplies = make(map[string]chan SubagentReply)
+	subagentWait = 250 * time.Millisecond
+	subagentID.Store(0)
+	defer func() {
+		SubagentReplies, subagentWait = oldReplies, oldWait
+		subagentID.Store(oldID)
+	}()
+	tool, _ := Get("subagent")
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := tool.Run([]byte(`{"agent":"scout","task":"test","tools":["read"]}`))
+		done <- err
+	}()
+	// id 1 is the first request after the reset. Deliver the path a few times
+	// so the delivery after the reply channel is registered is kept; duplicate
+	// path-only frames are harmless (the waiter ignores empty results).
+	for i := 0; i < 20; i++ {
+		DeliverSubagentReply(SubagentReply{ID: "1", Path: "/tmp/child.md"})
+		time.Sleep(5 * time.Millisecond)
+	}
+	err := <-done
+	if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "/tmp/child.md") {
+		t.Fatalf("timeout should keep the child path, got %v", err)
+	}
+}
+
 func TestSubagentModelForwarded(t *testing.T) {
 	var buf bytes.Buffer
 	oldWriter := wire.SetFrameWriter(&buf)
 	oldReplies, oldWait := SubagentReplies, subagentWait
-	SubagentReplies = make(chan SubagentReply, 1)
+	SubagentReplies = make(map[string]chan SubagentReply)
 	subagentWait = time.Millisecond
 	defer func() {
 		wire.SetFrameWriter(oldWriter)

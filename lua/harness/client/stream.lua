@@ -168,7 +168,8 @@ local function handle_event(buf, ev)
       pcall(os.remove, ev.log)
     end
   elseif ev.type == "subagent_timeout" then
-    local child = subagent_children[buf]
+    local children = subagent_children[buf]
+    local child = children and children[ev.id]
     if child then
       M.stop(child)
     end
@@ -783,9 +784,11 @@ function M.stop(buf, opts)
   if opts and opts.focus and running[buf] then
     stop_focus[buf] = vim.api.nvim_get_current_win()
   end
-  local child = subagent_children[buf]
-  if child then
-    M.stop(child)
+  local children = subagent_children[buf]
+  if children then
+    for _, child in pairs(children) do
+      M.stop(child)
+    end
   end
   scratchmod.finish_queue(buf, false) -- also retract a scheduled follow-up
   local proc = running[buf]

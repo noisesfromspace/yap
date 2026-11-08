@@ -21,9 +21,15 @@ local errors = state.errors
 local running = state.running
 local servers = state.servers
 
-local function subagent_result(parent, child, child_path, reply)
+local function subagent_result(parent, id, child, child_path, reply)
   return function(success)
-    subagent_children[parent] = nil
+    local children = subagent_children[parent]
+    if children then
+      children[id] = nil
+      if next(children) == nil then
+        subagent_children[parent] = nil
+      end
+    end
     local result = "error: " .. (errors[child] or "subagent stopped without a result")
     if success then
       -- Reuse the transcript parser for headings and marker regions, including
@@ -41,11 +47,19 @@ end
 --- Handle a `subagent_request` event: create a child session from an
 --- agent-definition file.
 function M.start(parent, ev)
-  local function reply(text)
+  local child_path
+  local function write(payload)
     local process = servers[parent]
     if process then
-      process:write(vim.json.encode({ type = "subagent_result", id = ev.id, result = text }) .. "\n")
+      process:write(vim.json.encode(payload) .. "\n")
     end
+  end
+  local function reply(text)
+    local payload = { type = "subagent_result", id = ev.id, result = text }
+    if child_path then
+      payload.path = child_path
+    end
+    write(payload)
   end
   if type(ev.task) ~= "string" or ev.task:match("^%s*$") then
     reply("error: invalid subagent request")
@@ -119,7 +133,6 @@ function M.start(parent, ev)
   local parent_path = vim.b[parent].yap_path
   local parent_name = paths.session_name(parent_path)
   local dir = paths.session_dir(vim.b[parent].yap_project_cwd or vim.fn.getcwd())
-  local child_path
   repeat
     local random = vim.uv.random(3)
     local hex = string.format("%02x%02x%02x", random:byte(1, 3))
@@ -143,9 +156,15 @@ function M.start(parent, ev)
   vim.b[child].yap_subagent_task = ev.task
   frontmatter.update(child, { subagent_parent = parent_path })
   require("harness.session").save(child)
-  subagent_children[parent] = child
+  -- Confirm the child path immediately: the parent's serve process records it
+  -- so a later timeout or cancellation can still point at the recoverable
+  -- session. A result-only reply follows when the child finishes.
+  write({ type = "subagent_result", id = ev.id, path = child_path })
+  local children = subagent_children[parent] or {}
+  children[ev.id] = child
+  subagent_children[parent] = children
   frontmatter.record_subagent(parent, child_path)
-  subagent_done[child] = subagent_result(parent, child, child_path, reply)
+  subagent_done[child] = subagent_result(parent, ev.id, child, child_path, reply)
   harness().send(child)
 end
 

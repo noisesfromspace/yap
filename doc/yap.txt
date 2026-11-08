@@ -916,7 +916,9 @@ permissions. The normal approval guard and sandbox still apply. Definitions live
 session is internal to the conversation that spawned it: saved history never
 lists it, while the open-session picker (sessions("open")) shows it under its
 parent while it is open. The tool result carries a link to the session file,
-so a finished agent stays reachable.
+so a finished agent stays reachable. The parent waits up to 30 minutes; if
+the child times out or is cancelled, the result still carries the child
+session path so its work stays recoverable.
 
 ==============================================================================
 13. LANGUAGE SERVER                                            *yap-lsp*
