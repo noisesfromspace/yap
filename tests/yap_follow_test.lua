@@ -63,7 +63,7 @@ do
     local cur = vim.api.nvim_win_get_cursor(0)
     local last = last_line(buf)
     assert(
-      cur[1] == count and cur[2] == 0,
+      cur[1] == count and cur[2] == math.max(0, #last - 1),
       ("sample %d: cursor=%d,%d but stream end is %d:%q"):format(i, cur[1], cur[2], count, last)
     )
   end)
@@ -172,8 +172,9 @@ do
   local n = watch(buf, function(i)
     local count = vim.api.nvim_buf_line_count(buf)
     local cur = vim.api.nvim_win_get_cursor(0)
+    local tail = last_line(buf)
     assert(
-      cur[1] == count and cur[2] == 0,
+      cur[1] == count and cur[2] == math.max(0, #tail - 1),
       ("sample %d: cursor=%d,%d but stream end is %d"):format(i, cur[1], cur[2], count)
     )
   end)

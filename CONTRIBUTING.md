@@ -691,10 +691,11 @@ stream. Accepted trade-off; the fix (extmark insertion point) is documented as
 future work, not done.
 
 A window whose cursor sits on the last line FOLLOWS the stream (the Lua side
-re-pins the cursor to the end after every append; Neovim never scrolls a window
-for an API edit, so without that the view only tracked the end while a chunk
-happened to land exactly on the cursor, i.e. while the last line was empty, and
-then stranded it mid-reply). A window scrolled away is NEVER dragged during
+re-pins the cursor to the last character after every append, including when
+one long line wraps across screen rows; it records Neovim's actual clamped
+cursor position so the next chunk does not mistake the clamp for user movement.
+Neovim never scrolls a window for an API edit, so without that the view can
+stay stranded mid-reply). A window scrolled away is NEVER dragged during
 the stream, and nothing moves from a non-normal mode. (The one deliberate
 exception, unchanged: a completed turn puts the cursor on the new `# @user`
 heading, so the next prompt is ready to type.)

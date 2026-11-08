@@ -38,12 +38,15 @@ local group = vim.api.nvim_create_augroup("YapFolds", { clear = true })
 -- synchronously via after_append before yielding).
 local IDLE_RECONCILE_MS = 150
 
-local function position(buf, id)
-  local mark = vim.api.nvim_buf_get_extmark_by_id(buf, anchors, id, { details = true })
-  if #mark == 0 or mark[3].invalid then
-    return nil
+-- All live fold anchors in one batch: id -> 1-based row. Replacing a
+-- per-fold get_extmark_by_id walk with a single get_extmarks call keeps
+-- capture() and apply()'s drift check off the O(folds) C round-trip path.
+local function extmark_rows(buf)
+  local rows = {}
+  for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, anchors, 0, -1, {})) do
+    rows[mark[1]] = mark[2] + 1
   end
-  return mark[1] + 1
+  return rows
 end
 
 -- The installed fold containing the last line: the one with the greatest
@@ -85,12 +88,13 @@ local function capture(buf, win, w)
   if not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= buf then
     return
   end
+  local rows = extmark_rows(buf)
   vim.api.nvim_win_call(win, function()
     if not vim.wo.foldenable then
       return
     end
     for id in pairs(w.installed) do
-      local row = position(buf, id)
+      local row = rows[id]
       if row and vim.fn.foldlevel(row) > 0 then
         local closed = vim.fn.foldclosed(row)
         if closed == -1 or closed == row then
@@ -121,15 +125,11 @@ local function state(buf)
         firstline = select(3, ...)
       end
       mark_changed(buf, firstline)
-      -- Stream appends capture the tail fold in before_change and reconcile
-      -- synchronously; this capture observes native folds from user edits.
-      -- Skipping it during a stream append avoids an O(folds) walk per
-      -- flushed chunk.
-      if not s.streaming then
-        for win, w in pairs(s.windows) do
-          capture(buf, win, w)
-        end
-      end
+      -- Native fold intents are observed by capture() right before a rebuild
+      -- in apply(), so walking every installed fold on every keystroke here
+      -- is pure O(folds) overhead — the dominant typing cost on long
+      -- sessions. Document mutations still capture ahead of their edit in
+      -- before_change, where a split one-line fold can still be observed.
       -- Arbitrary user edits/undo need reconciliation as well as streaming.
       -- Stream writes call after_append synchronously, before yielding;
       -- this debounced callback is the fallback for other buffer mutations.
@@ -276,10 +276,11 @@ local function apply(buf, win, w, list)
     -- appends move the cursor, so this rebuild stays cursor-free.
     local rebuild = w.rebuild or w.reset or w.restore
     if not rebuild then
+      local rows = extmark_rows(buf)
       for id, old in pairs(w.installed) do
         local b = wanted[id]
         if
-          position(buf, id) ~= old.start
+          rows[id] ~= old.start
           or vim.fn.foldlevel(old.start) ~= 1
           or not b
           or b.start ~= old.start
@@ -306,7 +307,12 @@ local function apply(buf, win, w, list)
       w.installed = {}
       for _, b in ipairs(list) do
         vim.cmd(("%d,%dfold"):format(b.start, b.finish))
-        vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+        -- :fold creates a closed fold, so only explicitly opened folds need
+        -- an extra command; the old :foldclose for every other fold was a
+        -- no-op C round-trip per fold on every rebuild.
+        if w.intent[b.id] == true then
+          vim.cmd(("%dfoldopen"):format(b.start))
+        end
         w.installed[b.id] = { start = b.start, finish = b.finish }
       end
     else
@@ -314,7 +320,9 @@ local function apply(buf, win, w, list)
       for _, b in ipairs(list) do
         if not w.installed[b.id] then
           vim.cmd(("%d,%dfold"):format(b.start, b.finish))
-          vim.cmd(("%dfold%s"):format(b.start, w.intent[b.id] == true and "open" or "close"))
+          if w.intent[b.id] == true then
+            vim.cmd(("%dfoldopen"):format(b.start))
+          end
           w.installed[b.id] = { start = b.start, finish = b.finish }
         end
       end

@@ -88,25 +88,28 @@ function M.sync_followers(buf, wins, expected, excluded)
   end
 end
 
---- Keep follower windows on the real stream end at column zero. Windows that
---- did not start at the tail, or were removed by sync_followers, are never
---- moved.
+--- Keep follower windows on the real stream end, including the end of a
+--- wrapped line. Neovim clamps a requested column at #line to its last
+--- character; record the actual cursor position so the next flush does not
+--- mistake that clamp for user movement.
 function M.follow_windows(buf, wins, expected)
   if #wins == 0 or vim.api.nvim_get_mode().mode ~= "n" then
     return
   end
   local count = vim.api.nvim_buf_line_count(buf)
+  local tail = vim.api.nvim_buf_get_lines(buf, count - 1, count, false)[1] or ""
   for i = #wins, 1, -1 do
     local w = wins[i]
     if not vim.api.nvim_win_is_valid(w) or vim.api.nvim_win_get_buf(w) ~= buf then
       expected[w] = nil
       table.remove(wins, i)
     else
-      expected[w] = { count, 0 }
-      local ok = pcall(vim.api.nvim_win_set_cursor, w, expected[w])
+      local ok = pcall(vim.api.nvim_win_set_cursor, w, { count, #tail })
       if not ok then
         expected[w] = nil
         table.remove(wins, i)
+      else
+        expected[w] = vim.api.nvim_win_get_cursor(w)
       end
     end
   end
