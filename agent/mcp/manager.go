@@ -71,7 +71,7 @@ type toolInfo struct {
 // NewManager returns a Manager using dial to connect to servers.
 func NewManager(dial Dial) *Manager {
 	if dial == nil {
-		dial = func(context.Context, ServerConfig) (Client, error) {
+		dial = func(context.Context, string, ServerConfig) (Client, error) {
 			return nil, fmt.Errorf("no MCP dial configured")
 		}
 	}
@@ -174,7 +174,7 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 	}
 	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
 	defer cancel()
-	cl, err := m.dial(ctx, cfg)
+	cl, err := m.dial(ctx, name, cfg)
 	if err != nil {
 		return nil, err
 	}

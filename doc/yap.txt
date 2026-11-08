@@ -210,8 +210,13 @@ and each path is configurable via `setup()`):
     }
 <
   MCP servers stay connected for the backend's lifetime; a stop() cancels the
-  in-flight call without closing them. MCP calls are not guarded: their reach
-  is whatever the server and its credentials permit.
+  in-flight call without closing them. MCP calls are not guarded by the
+  static gate: their reach is whatever the server and its credentials
+  permit. A server can still gate its own side effects by asking for
+  approval — its MCP elicitation request is routed through the same
+  Run/Deny the guard gate uses (accept = approve, decline = deny), so a
+  server that prompts (ssh-mcp's destructive and privileged commands) parks
+  the turn for the human rather than running.
 
   The `sandbox` block configures the bash tool's bubblewrap sandbox (Linux
   only; see |yap-sandbox|). `enabled` defaults to true — the sandbox is on

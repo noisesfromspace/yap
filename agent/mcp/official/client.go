@@ -15,6 +15,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"boers.email/yap/agent/mcp"
+	"boers.email/yap/agent/wire"
 )
 
 // protocolVersion pins negotiation to a revision every tools-only server
@@ -24,8 +25,8 @@ import (
 // revisions, so pinning to 2025-11-25 skips the probe entirely.
 const protocolVersion = "2025-11-25"
 
-// Dial connects to one MCP server using the official Go SDK.
-func Dial(ctx context.Context, cfg mcp.ServerConfig) (mcp.Client, error) {
+// Dial connects to one MCP server by name using the official Go SDK.
+func Dial(ctx context.Context, name string, cfg mcp.ServerConfig) (mcp.Client, error) {
 	transport, err := selectTransport(cfg)
 	if err != nil {
 		return nil, err
@@ -59,7 +60,14 @@ func Dial(ctx context.Context, cfg mcp.ServerConfig) (mcp.Client, error) {
 		}
 	}
 
-	cl := sdk.NewClient(&sdk.Implementation{Name: "yap", Version: "1"}, nil)
+	cl := sdk.NewClient(&sdk.Implementation{Name: "yap", Version: "1"}, &sdk.ClientOptions{
+		// A server's elicitation request (ssh-mcp's Run/Deny for a destructive
+		// or privileged command, for example) is routed through the same human
+		// approval the guard gate uses, so the model can never auto-answer it.
+		ElicitationHandler: func(ctx context.Context, req *sdk.ElicitRequest) (*sdk.ElicitResult, error) {
+			return elicitApproval(name, req)
+		},
+	})
 	sess, err := cl.Connect(ctx, t, &sdk.ClientSessionOptions{ProtocolVersion: protocolVersion})
 	if err != nil {
 		return nil, err
@@ -70,6 +78,31 @@ func Dial(ctx context.Context, cfg mcp.ServerConfig) (mcp.Client, error) {
 		c.cmd = cmd
 	}
 	return c, nil
+}
+
+// elicitApproval answers an MCP server's elicitation request by routing it
+// through the same human Run/Deny approval the guard gate uses. The server's
+// message (ssh-mcp's gated command plus its host and command class) is what
+// the human reads; approve maps to the protocol's "accept", deny to
+// "decline", and any failure to ask (no serve process, timeout, turn
+// cancelled) is returned as an error so the server refuses the command — the
+// gate fails closed.
+func elicitApproval(name string, req *sdk.ElicitRequest) (*sdk.ElicitResult, error) {
+	msg := req.Params.Message
+	if msg == "" {
+		// URL-mode elicitation (a nonce link to open) carries no message, and
+		// there is no form to render. Never prompt on blank text: report it as
+		// unanswerable so the server fails closed.
+		return nil, fmt.Errorf("elicitation has no message")
+	}
+	approved, err := wire.RequestApproval(msg, "mcp:"+name, "MCP elicitation")
+	if err != nil {
+		return nil, err
+	}
+	if approved {
+		return &sdk.ElicitResult{Action: "accept"}, nil
+	}
+	return &sdk.ElicitResult{Action: "decline"}, nil
 }
 
 // selectTransport resolves the transport name, inferring it when empty.

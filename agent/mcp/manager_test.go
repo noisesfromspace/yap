@@ -31,7 +31,7 @@ func (f *fakeClient) Close() error { f.closed = true; return nil }
 
 // fakeDial builds a fakeClient per server, keyed by cfg.Command or cfg.URL.
 func fakeDial(clients map[string]*fakeClient) Dial {
-	return func(_ context.Context, cfg ServerConfig) (Client, error) {
+	return func(_ context.Context, _ string, cfg ServerConfig) (Client, error) {
 		key := cfg.Command
 		if key == "" {
 			key = cfg.URL
@@ -444,7 +444,7 @@ func TestManagerSyncTimesOutHungServer(t *testing.T) {
 	defer func(d time.Duration) { syncTimeout = d }(syncTimeout)
 	syncTimeout = 20 * time.Millisecond
 
-	m := NewManager(func(ctx context.Context, cfg ServerConfig) (Client, error) {
+	m := NewManager(func(ctx context.Context, _ string, cfg ServerConfig) (Client, error) {
 		if cfg.URL == "hang" {
 			return hanging(ctx, cfg)
 		}

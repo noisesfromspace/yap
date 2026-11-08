@@ -440,8 +440,14 @@ the escape hatch for tools that live behind an external server: configured
 servers are dialed with the official `modelcontextprotocol/go-sdk`, their
 tools registered through `tools.RegisterRaw` as `mcp_<server>_<tool>`, and a
 `lazy` server exposes a single loader tool until its definitions are needed.
-MCP calls are not guarded: their reach is whatever the server and its
-credentials permit.
+MCP calls are not guarded by the static gate: their reach is whatever the
+server and its credentials permit. A server may still gate its own side
+effects by asking for approval, though — its MCP elicitation request is
+routed through the same human Run/Deny the guard gate uses
+(`agent/mcp/official` installs an `ElicitationHandler` that calls
+`wire.RequestApproval`), so a server that prompts (ssh-mcp's destructive and
+privileged commands) still parks the turn for the human, and the model can
+never answer for it.
 
 #### R-compiled-tools — Tools are compiled-in Go files, one per file in agent/tools/
 

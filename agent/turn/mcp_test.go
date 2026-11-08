@@ -46,7 +46,7 @@ func useLazyServer(t *testing.T, extra ...mcp.Tool) *stubMCPClient {
 	t.Helper()
 	old := mcpMgr
 	client := &stubMCPClient{tools: append([]mcp.Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`)}}, extra...)}
-	mcpMgr = mcp.NewManager(func(context.Context, mcp.ServerConfig) (mcp.Client, error) { return client, nil })
+	mcpMgr = mcp.NewManager(func(context.Context, string, mcp.ServerConfig) (mcp.Client, error) { return client, nil })
 	t.Cleanup(func() {
 		CloseMCP()
 		mcpMgr = old

@@ -76,6 +76,7 @@ type Client interface {
 	Close() error
 }
 
-// Dial connects to one server. Adapters implement it; the default is the
-// official Go SDK adapter in agent/mcp/official.
-type Dial func(context.Context, ServerConfig) (Client, error)
+// Dial connects to one server by name (the settings.json key). Adapters
+// implement it; the default is the official Go SDK adapter in
+// agent/mcp/official.
+type Dial func(context.Context, string, ServerConfig) (Client, error)
