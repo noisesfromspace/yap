@@ -370,6 +370,8 @@ function M.setup(opts)
       state.steer[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
+      state.last_tool_call[args.buf] = nil
+      state.tool_call_counts[args.buf] = nil
       follow_override[args.buf] = nil
       close_after_turn[args.buf] = nil
       -- Release the per-buffer UI state so the winbar's rollup and cache

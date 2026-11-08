@@ -17,7 +17,7 @@ local function board_text()
 end
 
 -- Park an approval with no backend so the `a` sweep clears it without
--- appending a settled row to the audit log (which would pollute the later
+-- recording a settled row in the board history (which would pollute the later
 -- real-turn assertions).
 state.pending_approvals[chat] = {
   id = "sweep-me",

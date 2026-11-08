@@ -1,10 +1,10 @@
--- The guard board (Yap Guard): one read-only projection of every open
--- session — their parked approvals (live, answered in place) and their
--- settled decision history (granted/denied/timed-out approvals read back
--- from each session's audit log). `c` clears the settled history: it stores
--- a project watermark (guard.json) and hides rows at or before it. It opens
--- as the same bottom drawer as the live tool tail; actions are direct keys
--- on the cursor row.
+-- The guard board (Yap Guard): one read-only projection of this Neovim
+-- process's guard activity. It lists parked approvals (live, answered in
+-- place) and the settled decision history (granted/denied/timed-out) recorded
+-- since Neovim started — the board is empty on startup and never reads the
+-- audit log back, so it only ever shows what happened while this Neovim was
+-- open. `c` clears the in-memory history. It opens as the same bottom drawer
+-- as the live tool tail; actions are direct keys on the cursor row.
 
 local M = {}
 
@@ -19,44 +19,7 @@ local function harness()
 end
 
 local BOARD_NAME = "Yap Guard"
-local MAX_HISTORY_ROWS = 30 -- cap the settled-history readback
-
--- Audit logs are append-only. Reuse decoded entries while a log's size and
--- mtime are unchanged; parked approvals and settled history share the same
--- snapshot so a board refresh does not re-decode every past turn twice.
-local audit_cache = {}
-local function audit_entries(path)
-  local stat = vim.uv.fs_stat(path)
-  if not stat then
-    audit_cache[path] = nil
-    return {}
-  end
-  local cached = audit_cache[path]
-  if cached and cached.size == stat.size and cached.sec == stat.mtime.sec and cached.nsec == stat.mtime.nsec then
-    return cached.entries
-  end
-  local entries, calls, occurrences, last_call = {}, {}, {}, nil
-  for _, line in ipairs(vim.fn.readfile(path)) do
-    if line ~= "" then
-      local ok, ev = pcall(vim.json.decode, line)
-      if ok and type(ev) == "table" then
-        entries[#entries + 1] = ev
-        if ev.type == "tool_call" and ev.id then
-          occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-          last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-        elseif ev.type == "approval_request" and ev.id then
-          local key = ev.id .. ":" .. (ev.ts or "")
-          if calls[key] == nil then
-            calls[key] = last_call or false
-          end
-        end
-      end
-    end
-  end
-  audit_cache[path] =
-    { size = stat.size, sec = stat.mtime.sec, nsec = stat.mtime.nsec, entries = entries, calls = calls }
-  return entries
-end
+local MAX_HISTORY_ROWS = 30 -- cap the settled-history list
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -161,7 +124,7 @@ local function approval_row(buf, ev)
     path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf),
     session = harness().session_label(buf),
     ev = ev,
-    call = nil, -- filled below: the { id, occurrence } to focus
+    call = state.last_tool_call[buf], -- the gated tool call, for Inspect
     tool = ev.tool or "tool",
     raw_command = decode_raw(ev.command),
     reason = ev.reason or "",
@@ -169,114 +132,28 @@ local function approval_row(buf, ev)
   }
 end
 
---- The tool call that triggered a live parked approval — { id, occurrence } —
---- so Inspect can focus the session's matching tool region.
-local function approval_call(buf, ev)
-  local path = paths.audit_path(buf)
-  if vim.fn.filereadable(path) ~= 1 then
-    return nil
-  end
-  audit_entries(path)
-  local call = audit_cache[path] and audit_cache[path].calls[(ev.id or "") .. ":" .. (ev.ts or "")]
-  return call or nil
-end
-
---- A settled approval read back from an audit log: granted/denied from an
---- approval_result, timeout from an approval_timeout. `req` is the matching
---- approval_request (its tool/command/reason explain what was gated); it may
---- be nil for a log that no longer has the request, so tool/command fall back.
-local function resolved_row(ev, req, session_name, path, call_ref)
-  local kind
-  if ev.type == "approval_result" then
-    kind = ev.approved and "granted" or "denied"
-  else
-    kind = "timeout"
-  end
+--- Record a resolved approval in this Neovim process's board history. The
+--- board never reads the audit log back: it accumulates granted/denied/
+--- timed-out decisions from the moment Neovim starts, so it is empty on
+--- startup and reflects only what happened while this Neovim was open. `req`
+--- is the matching approval_request (its tool/command/reason explain what was
+--- gated); it may be nil for a timeout with no parked request, so fields fall
+--- back. `approved` is true/false, or nil for a timeout.
+function M.record_result(buf, req, approved)
   req = req or {}
-  return {
+  local kind = approved == nil and "timeout" or (approved and "granted" or "denied")
+  local ts = os.date("%Y-%m-%dT%H:%M:%S")
+  table.insert(state.settled_approvals, {
     kind = kind,
-    key = "resolved:" .. (ev.id or "") .. ":" .. (ev.ts or ""),
-    buf = nil,
-    path = path,
-    call = call_ref, -- { id, occurrence } of the gated tool call (or nil)
-    session = session_name,
+    key = "resolved:" .. (req.id or "") .. ":" .. ts,
+    path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf),
+    call = state.last_tool_call[buf], -- { id, occurrence } of the gated tool call (or nil)
+    session = harness().session_label(buf),
     tool = req.tool or "tool",
     raw_command = decode_raw(req.command),
     reason = req.reason or "",
-    ts = ev.ts or "",
-  }
-end
-
--- The clear watermark lives in guard.json beside the project's session
--- directories. It is project-scoped: settled rows at or before it are hidden
--- from the board but stay in the append-only audit log. Only clear() writes
--- it; the board reads it every render so a clear persists across reopens.
-local function guard_file()
-  return paths.session_dir(vim.fn.getcwd()) .. "/guard.json"
-end
-
-local function read_cleared_time()
-  local p = guard_file()
-  if vim.fn.filereadable(p) ~= 1 then
-    return nil
-  end
-  local ok, data = pcall(vim.json.decode, vim.fn.readfile(p)[1] or "")
-  if ok and type(data) == "table" then
-    return ts_time(data.cleared_ts or "")
-  end
-  return nil
-end
-
-local function write_cleared_time(ts)
-  local p = guard_file()
-  paths.ensure_session_dir(vim.fn.fnamemodify(p, ":h"))
-  vim.fn.writefile({ vim.json.encode({ cleared_ts = ts }) }, p)
-  vim.fn.setfperm(p, "rw-------")
-end
-
-local function is_cleared(ev, cleared)
-  if not cleared then
-    return false
-  end
-  local t = ts_time(ev.ts)
-  return t ~= nil and t <= cleared
-end
-
---- Scan one session's audit log for settled approvals (granted/denied/
---- timed-out), skipping rows at or before `cleared`. Returns a list of
---- resolved rows, newest first.
-local function scan_session(buf, cleared)
-  local resolved = {}
-  local log = paths.audit_path(buf)
-  if vim.fn.filereadable(log) ~= 1 then
-    return resolved
-  end
-  local path = paths.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  local session_name = harness().session_label(buf)
-  audit_entries(log) -- refresh the cache before inspecting its rows
-  local cached = audit_cache[log]
-  if not cached.rows then
-    local occurrences, requests, last_call = {}, {}, nil
-    cached.rows = {}
-    for _, ev in ipairs(audit_entries(log)) do
-      if ev.type == "tool_call" and ev.id then
-        occurrences[ev.id] = (occurrences[ev.id] or 0) + 1
-        last_call = { id = ev.id, occurrence = occurrences[ev.id] }
-      elseif ev.type == "approval_request" and ev.id then
-        requests[ev.id] = { ev = ev, call = last_call }
-      elseif ev.type == "approval_result" or ev.type == "approval_timeout" then
-        local req = requests[ev.id]
-        cached.rows[#cached.rows + 1] = resolved_row(ev, req and req.ev, session_name, path, req and req.call)
-      end
-    end
-    cached.entries = nil -- keep decisions/call refs, not full decoded tool results
-  end
-  for _, row in ipairs(cached.rows) do
-    if not is_cleared(row, cleared) then
-      resolved[#resolved + 1] = row
-    end
-  end
-  return resolved
+    ts = ts,
+  })
 end
 
 local function newest_first(a, b)
@@ -295,42 +172,22 @@ local function cap(rows, n)
   return out
 end
 
---- Every open yap session buffer. Parked approvals are live per-buffer state
---- and settled history is read back from each open session's audit log, so
---- the board aggregates the sessions that are actually open — not every
---- session directory on disk.
-local function open_sessions()
-  local out = {}
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[b].yap and vim.api.nvim_buf_is_valid(b) then
-      out[#out + 1] = b
-    end
-  end
-  return out
-end
-
---- Build the ordered row list: every open session's parked approvals
---- (actionable, live), then their settled decision history (granted/denied/
---- timed-out).
+--- Build the ordered row list: parked approvals (actionable, live) first,
+--- then the settled decision history (granted/denied/timed-out) recorded this
+--- Neovim process.
 local function build_rows()
   local approvals = {}
   for buf, ev in pairs(state.pending_approvals) do
     if vim.api.nvim_buf_is_valid(buf) then
-      local row = approval_row(buf, ev)
-      row.call = approval_call(buf, ev)
-      approvals[#approvals + 1] = row
+      approvals[#approvals + 1] = approval_row(buf, ev)
     end
   end
   table.sort(approvals, newest_first)
 
   local history = {}
-  local cleared = read_cleared_time()
-  for _, buf in ipairs(open_sessions()) do
-    for _, row in ipairs(scan_session(buf, cleared)) do
-      history[#history + 1] = row
-    end
+  for i = #state.settled_approvals, 1, -1 do
+    history[#history + 1] = state.settled_approvals[i]
   end
-  table.sort(history, newest_first)
   history = cap(history, MAX_HISTORY_ROWS)
 
   local rows = approvals
@@ -671,12 +528,11 @@ function M.toggle()
   vim.api.nvim_win_set_cursor(0, { result.focus_line or result.first_row_line or 1, 0 })
 end
 
---- Clear the settled decision history: write the project watermark to now so
---- rows at or before it are hidden from the board. The audit log is left
---- intact (history persists; the watermark only hides it). Parked approvals
---- are live state answered via r/x — `c` does not touch them.
+--- Clear the settled decision history recorded this Neovim process. The
+--- audit log is left intact; parked approvals are live state answered via
+--- r/x — `c` does not touch them.
 function M.clear()
-  write_cleared_time(os.date("%Y-%m-%dT%H:%M:%S"))
+  state.settled_approvals = {}
   M.touch()
 end
 

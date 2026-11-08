@@ -1,36 +1,26 @@
--- The guard board caps its settled-history readback (30 rows), but a parked
+-- The guard board caps its settled-history list (30 rows), but a parked
 -- approval is live state and always shown first: a backlog of settled rows
--- must never hide a parked approval.
+-- must never hide a parked approval. History is recorded in memory for this
+-- Neovim process, so the cap applies to rows accumulated since startup.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 local state = require("harness.state")
-local paths = require("harness.path")
 local guard = require("harness.ui.guard")
 
 local a = yap.new({ provider = "mock", model = "m1" })
 
--- 31 resolved approvals in this session's audit log.
-local log = paths.audit_path(a)
-vim.fn.mkdir(vim.fn.fnamemodify(log, ":h"), "p")
-local f = io.open(log, "w")
+-- 31 settled approvals recorded this Neovim process.
 for i = 1, 31 do
-  local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + i)
-  f:write(
-    vim.json.encode({
-      type = "approval_request",
-      id = "r" .. i,
-      tool = "bash",
-      command = '{"command":"echo"}',
-      reason = "resolved-" .. i,
-      ts = t,
-    }) .. "\n"
-  )
-  f:write(vim.json.encode({ type = "approval_result", id = "r" .. i, approved = true, ts = t }) .. "\n")
+  guard.record_result(a, {
+    id = "r" .. i,
+    tool = "bash",
+    command = '{"command":"echo"}',
+    reason = "resolved-" .. i,
+  }, true)
 end
-f:close()
 
 -- Park one approval.
 state.running[a] = {}
@@ -47,32 +37,23 @@ local board = vim.api.nvim_get_current_buf()
 local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
 assert(text:find("parked-but-visible", 1, true), "parked approval dropped by cap: " .. text)
 
--- Only the newest 30 settled rows are read back (the oldest is capped away).
+-- Only the newest 30 settled rows are listed (the oldest is capped away).
 local n = 0
 for _ in text:gmatch("resolved%-%d+") do
   n = n + 1
 end
 assert(n == 30, "expected 30 settled rows, got " .. n)
 
--- Appending to the log invalidates the cached snapshot even when its mtime
--- has the same second; a visible board must show the latest decision.
-local append = io.open(log, "a")
-local t = os.date("%Y-%m-%dT%H:%M:%S", os.time() + 40)
-append:write(
-  vim.json.encode({
-    type = "approval_request",
-    id = "r32",
-    tool = "bash",
-    command = "{}",
-    reason = "new-decision",
-    ts = t,
-  }) .. "\n"
-)
-append:write(vim.json.encode({ type = "approval_result", id = "r32", approved = false, ts = t }) .. "\n")
-append:close()
+-- A settled row recorded after the board is open shows on the next touch.
+guard.record_result(a, {
+  id = "r32",
+  tool = "bash",
+  command = "{}",
+  reason = "new-decision",
+}, false)
 guard.touch()
 text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
-assert(text:find("new-decision", 1, true), "append not reflected in cached board: " .. text)
+assert(text:find("new-decision", 1, true), "new decision not reflected in board: " .. text)
 
 guard.toggle() -- close
 state.pending_approvals[a] = nil

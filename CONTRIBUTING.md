@@ -565,11 +565,12 @@ source is the only step to surface it everywhere. Secret paths and
 secret-reveal commands share one location list in `agent/safety/secrets.go`;
 `scrub.go` redacts whatever still reaches a result as the final backstop.
 
-The guard board aggregates every open session: it shows each session's parked
-approvals beside its settled decision history (granted/denied/timed-out
-approvals read back from each session's audit log). `c` clears that history by
-writing a project watermark (guard.json, a timestamp) and hiding rows at or
-before it; the audit log is left intact and parked approvals are untouched.
+The guard board is bound to this Neovim process: it lists every open
+session's parked approvals beside the settled decision history (granted/
+denied/timed-out) recorded since Neovim started. The board never reads the
+audit log back, so it is empty on startup and only shows what happened while
+this Neovim was open. `c` clears that in-memory history; the audit log is left
+intact and parked approvals are untouched.
 
 #### R-live-output-tail — Live tool output never enters the session buffer
 

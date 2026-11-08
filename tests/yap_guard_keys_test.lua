@@ -74,9 +74,16 @@ vim.api.nvim_feedkeys("Y", "mtx", false)
 assert(vim.fn.getreg('"') == "keep unnamed" and vim.fn.getreg("+") == "keep clipboard", "Y copied board chrome")
 state.pending_approvals[a] = nil
 
--- c writes the project watermark (guard.json) and leaves parked approvals
--- alone: it clears the settled history view, not live approvals.
+-- c clears the settled history recorded this Neovim process and leaves
+-- parked approvals alone: it clears the settled history view, not live
+-- approvals, and no longer writes a guard.json watermark.
 park(a, "key-3", "bash", "printf 'first\\nsecond'\necho done", "clear-a")
+guard.record_result(a, {
+  id = "settled",
+  tool = "bash",
+  command = "{}",
+  reason = "clear-me",
+}, true)
 guard.touch()
 vim.fn.setreg('"', "old unnamed")
 vim.fn.setreg("+", "old clipboard")
@@ -85,9 +92,11 @@ assert(vim.fn.getreg('"') == "printf 'first\\nsecond'\necho done", "Y lost the m
 assert(vim.fn.getreg("+") == vim.fn.getreg('"'), "Y lost the clipboard copy")
 vim.api.nvim_feedkeys("c", "mtx", false)
 assert(state.pending_approvals[a] ~= nil, "c cleared a parked approval")
+local text = table.concat(vim.api.nvim_buf_get_lines(board, 0, -1, false), "\n")
+assert(text:find("clear-me", 1, true) == nil, "c did not clear the settled history")
 local paths = require("harness.path")
 local gf = paths.session_dir(vim.fn.getcwd()) .. "/guard.json"
-assert(vim.fn.filereadable(gf) == 1, "c did not write the guard.json watermark")
+assert(vim.fn.filereadable(gf) == 0, "c still writes a guard.json watermark")
 
 guard.toggle() -- close
 state.running[a] = nil

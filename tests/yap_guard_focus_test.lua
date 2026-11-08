@@ -9,26 +9,17 @@ vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 local state = require("harness.state")
-local paths = require("harness.path")
 local guard = require("harness.ui.guard")
 
 local a = yap.new({ provider = "mock", model = "m1" })
 
 -- One settled history row so the board has a non-approval entry to fold.
-local log = paths.audit_path(a)
-vim.fn.mkdir(vim.fn.fnamemodify(log, ":h"), "p")
-local now = os.time()
-vim.fn.writefile({
-  vim.json.encode({
-    type = "approval_request",
-    id = "h",
-    tool = "bash",
-    command = '{"command":"echo h"}',
-    reason = "history-row",
-    ts = os.date("%Y-%m-%dT%H:%M:%S", now + 100),
-  }),
-  vim.json.encode({ type = "approval_result", id = "h", approved = false, ts = os.date("%Y-%m-%dT%H:%M:%S", now + 100) }),
-}, log, "a")
+guard.record_result(a, {
+  id = "h",
+  tool = "bash",
+  command = '{"command":"echo h"}',
+  reason = "history-row",
+}, false)
 
 local function park(buf, id, reason, secs)
   state.running[buf] = {}

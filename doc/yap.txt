@@ -619,9 +619,10 @@ output) to the unnamed (`"`) and clipboard (`+`) registers. It is never
 rebuilt from the audit log; the full streamed output lives in the tool's temp
 log, and the audit log carries the tail-truncated result. A tail lives only
 as long as its session: wiping the session buffer wipes the tail with it.
-guard() lists every open session's parked approvals and their settled decision
-history, and jumps to the matching tool region in the session. |:YapClear| placeholders point back
-at the exact audit-log lines they replaced.
+guard() lists every open session's parked approvals and the settled decision
+history recorded since this Neovim started, and jumps to the matching tool
+region in the session. |:YapClear| placeholders point back at the exact
+audit-log lines they replaced.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
 and tool output routinely contain secrets.
@@ -879,14 +880,16 @@ config mounted (so nothing else of the home directory is reachable); see the
 "Session jail" section of the README. The two compose: the per-tool
 sandbox still applies inside the jail.
 
-The guard board aggregates every open session: it lists their parked
-approvals and settled history. Parked approvals are live state, answered via
-Run/Deny. Once answered, the outcome is written to the audit log and read back
-as settled history — granted/denied/timed-out. `c` in the guard board clears
-that history view by writing a project watermark (guard.json, a timestamp) and
-hiding rows at or before it; the audit log is left intact. Parked approvals
-are not touched by `c`. `Y` copies the bash command on the cursor row to the
-unnamed (`"`) and clipboard (`+`) registers, including when the row is folded.
+The guard board is bound to this Neovim process: it lists every open
+session's parked approvals and the settled decision history (granted/denied/
+timed-out) recorded since Neovim started. Parked approvals are live state,
+answered via Run/Deny. Once answered, the outcome is recorded in memory as
+settled history — the board never reads the audit log back, so it is empty on
+startup and only shows what happened while this Neovim was open. `c` in the
+guard board clears that in-memory history; the audit log is left intact.
+Parked approvals are not touched by `c`. `Y` copies the bash command on the
+cursor row to the unnamed (`"`) and clipboard (`+`) registers, including when
+the row is folded.
 
 ==============================================================================
 12. TOOLS                                                      *yap-tools*

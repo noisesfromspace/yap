@@ -23,6 +23,9 @@ local M = {
   subagent_pending = {}, -- parent buf -> partial mirrored tail line from a child
   subagent_last_signal = {}, -- parent buf -> uv.now() ms (throttle the progress signal)
   pending_approvals = {}, -- session buf -> approval_request awaiting an explicit answer
+  last_tool_call = {}, -- session buf -> { id, occurrence } of the most recent tool call
+  tool_call_counts = {}, -- session buf -> { [tool call id] = occurrences }
+  settled_approvals = {}, -- resolved guard rows (granted/denied/timeout) recorded this Neovim process
   close_after_turn = {}, -- session buf -> true (a close_session side effect, honored on turn completion)
   follow_override = {}, -- session buf -> windows deliberately focused during a turn (paused tail-following)
   auto_accept = false, -- approve incoming approval requests (guard board toggle)

@@ -111,6 +111,7 @@ local function answer_approval(buf, approved)
       buf,
       { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
     )
+    guard.record_result(buf, ev, approved)
   end
   -- Re-render after the result is written (and pending cleared) so an
   -- answered approval leaves the board instead of staying parked.
@@ -226,10 +227,18 @@ local function handle_event(buf, ev)
       M.stop(child)
     end
   elseif ev.type == "approval_timeout" then
+    local req = pending_approvals[buf]
     pending_approvals[buf] = nil
     audit.append_event(buf, ev)
+    guard.record_result(buf, req, nil)
     guard.touch()
   elseif ev.type == "tool_call" then
+    if ev.id then
+      local counts = state.tool_call_counts[buf] or {}
+      counts[ev.id] = (counts[ev.id] or 0) + 1
+      state.tool_call_counts[buf] = counts
+      state.last_tool_call[buf] = { id = ev.id, occurrence = counts[ev.id] }
+    end
     audit.append_event(buf, ev) -- full arguments for every tool (bash renders via tool_start)
   elseif ev.type == "tool_result" then
     audit.append_event(buf, ev) -- full result; bash output already streamed above
