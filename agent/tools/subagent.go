@@ -14,6 +14,13 @@ import (
 var SubagentReplies = make(map[string]chan SubagentReply)
 var subagentMu sync.Mutex
 
+// SubagentStop is installed by serve as a buffered token channel. A graceful
+// turn cancel sends one token here, so a delegation waiting on a child aborts
+// its wait immediately instead of blocking until the child's result frame
+// arrives. Reading a nil channel blocks forever, which is correct when no
+// serve process is installed (yap send, unit tests).
+var SubagentStop chan struct{}
+
 func DeliverSubagentReply(reply SubagentReply) {
 	subagentMu.Lock()
 	ch := SubagentReplies[reply.ID]
@@ -77,6 +84,11 @@ func init() {
 					return reply.Result, "", nil
 				}
 			case <-wire.TurnContext().Done():
+				// Hard cancellation (backend shutdown).
+				return "", "", fmt.Errorf("subagent cancelled;%s", link())
+			case <-SubagentStop:
+				// Graceful stop: the frontend is stopping the child, so stop
+				// waiting and let the turn end as cancelled.
 				return "", "", fmt.Errorf("subagent cancelled;%s", link())
 			case <-timer.C:
 				wire.EmitEvent(map[string]any{"type": "subagent_timeout", "id": id})

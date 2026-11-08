@@ -775,7 +775,10 @@ sequenceDiagram
   answer), and
   `{"type":"cancel"}` — finish the current model response and any tool calls
   without aborting them, then stop before the next model step. The serve
-  process and its tool state survive for the next send.
+  process and its tool state survive for the next send. Exception: a turn
+  blocked waiting on a `subagent` child aborts that wait immediately (the
+  frontend stops the child separately), so a stop never hangs on the child's
+  result frame.
 - **argv** — `yap serve` (one persistent process per session buffer).
 - **stdout** — the single Go→Lua channel, JSON Lines, one record per line:
 

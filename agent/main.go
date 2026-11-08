@@ -218,9 +218,11 @@ func emitTerminal(err error) {
 
 func serve(in io.Reader, out io.Writer) error {
 	tools.SubagentReplies = make(map[string]chan tools.SubagentReply)
+	tools.SubagentStop = make(chan struct{}, 1)
 	wire.ApprovalReplies = make(chan wire.ApprovalReply, 1)
 	defer func() {
 		tools.SubagentReplies = nil
+		tools.SubagentStop = nil
 		wire.ApprovalReplies = nil
 	}()
 	// All Go→Lua traffic is framed JSON on stdout: text frames (buffer
@@ -311,6 +313,13 @@ func serve(in io.Reader, out io.Writer) error {
 					stopMu.Lock()
 					stopRequested = true
 					stopMu.Unlock()
+					// Unblock a waiting delegation: the frontend stops the child
+					// on cancel, so the parent need not wait for the child's
+					// result frame to end its turn.
+					select {
+					case tools.SubagentStop <- struct{}{}:
+					default:
+					}
 					continue
 				}
 			}
@@ -342,6 +351,13 @@ func serve(in io.Reader, out io.Writer) error {
 				stopMu.Lock()
 				defer stopMu.Unlock()
 				return stopRequested
+			}
+			// Discard a stop token left by a cancel that arrived while no
+			// delegation was waiting (e.g. between turns), so it cannot abort
+			// the first delegation of the next turn.
+			select {
+			case <-tools.SubagentStop:
+			default:
 			}
 			err = turn.Run(context.Background(), req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll, shouldStop)
 			updateMu.Lock()

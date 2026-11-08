@@ -53,6 +53,41 @@ func TestSubagentTimeoutKeepsPath(t *testing.T) {
 	}
 }
 
+func TestSubagentStopUnblocks(t *testing.T) {
+	oldReplies, oldStop, oldWait := SubagentReplies, SubagentStop, subagentWait
+	oldID := subagentID.Load()
+	SubagentReplies = make(map[string]chan SubagentReply)
+	SubagentStop = make(chan struct{}, 1)
+	subagentWait = time.Minute
+	subagentID.Store(0)
+	defer func() {
+		SubagentReplies, SubagentStop, subagentWait = oldReplies, oldStop, oldWait
+		subagentID.Store(oldID)
+	}()
+	tool, _ := Get("subagent")
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := tool.Run([]byte(`{"agent":"scout","task":"t","tools":["read"]}`))
+		done <- err
+	}()
+	// Confirm the path before signalling stop (a few deliveries so one lands
+	// after the reply channel is registered), then stop and expect the wait to
+	// abort immediately with the session link preserved.
+	for i := 0; i < 20; i++ {
+		DeliverSubagentReply(SubagentReply{ID: "1", Path: "/tmp/child.md"})
+		time.Sleep(5 * time.Millisecond)
+	}
+	SubagentStop <- struct{}{}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "subagent cancelled") || !strings.Contains(err.Error(), "/tmp/child.md") {
+			t.Fatalf("expected cancellation with path, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("subagent tool did not unblock on stop")
+	}
+}
+
 func TestSubagentModelForwarded(t *testing.T) {
 	var buf bytes.Buffer
 	oldWriter := wire.SetFrameWriter(&buf)
