@@ -332,7 +332,7 @@ local function render()
     end
   end
   add("")
-  add("a auto-accept · r/x run·deny · i inspect · Y copy bash command · c clear history · za expand · q close", HL.hint)
+  add("a auto-accept · r/x run·deny · i inspect · Y copy bash command · c clear history · q close", HL.hint)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

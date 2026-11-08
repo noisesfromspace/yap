@@ -195,7 +195,7 @@ func readFrontmatter(path string) sessionMeta {
 	if err != nil {
 		return sessionMeta{}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 4096), 1<<20)
 	var lines []string
@@ -555,7 +555,7 @@ func readSession(a *sessionsArgs) (string, string, error) {
 
 	b.WriteString("## outline\n")
 	for i, m := range msgs {
-		b.WriteString(fmt.Sprintf("%d. @%s (line %d) %s\n", i+1, m.role, m.line, preview(m.body)))
+		fmt.Fprintf(&b, "%d. @%s (line %d) %s\n", i+1, m.role, m.line, preview(m.body))
 	}
 	if start > len(msgs) {
 		return strings.TrimSpace(b.String()), "", nil
@@ -568,10 +568,10 @@ func readSession(a *sessionsArgs) (string, string, error) {
 	for i := start - 1; i < end; i++ {
 		m := msgs[i]
 		if m.role == "system" && !a.IncludeSystem {
-			b.WriteString(fmt.Sprintf("\n### [%d] @system (line %d)\n[system message skipped: %d lines; set include_system to read it]\n", i+1, m.line, lineCount(m.body)))
+			fmt.Fprintf(&b, "\n### [%d] @system (line %d)\n[system message skipped: %d lines; set include_system to read it]\n", i+1, m.line, lineCount(m.body))
 			continue
 		}
-		b.WriteString(fmt.Sprintf("\n### [%d] @%s (line %d)\n%s\n", i+1, m.role, m.line, m.body))
+		fmt.Fprintf(&b, "\n### [%d] @%s (line %d)\n%s\n", i+1, m.role, m.line, m.body)
 	}
 
 	text := strings.TrimSpace(b.String())
