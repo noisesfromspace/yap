@@ -446,7 +446,7 @@ MCP calls are not guarded by the static gate: their reach is whatever the
 server and its credentials permit. A server may still gate its own side
 effects by asking for approval, though — its MCP elicitation request is
 routed through the same human Run/Deny the guard gate uses
-(`agent/mcp/official` installs an `ElicitationHandler` that calls
+(`agent/mcp` installs an `ElicitationHandler` that calls
 `wire.RequestApproval`), so a server that prompts (ssh-mcp's destructive and
 privileged commands) still parks the turn for the human, and the model can
 never answer for it.

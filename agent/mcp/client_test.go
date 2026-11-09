@@ -1,4 +1,4 @@
-package official
+package mcp
 
 import "testing"
 

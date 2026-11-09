@@ -1,11 +1,6 @@
-// Package mcp defines Yap's MCP client boundary. Only adapters import an SDK;
-// the agent loop and tool registry see only these types.
 package mcp
 
-import (
-	"context"
-	"encoding/json"
-)
+import "encoding/json"
 
 // ServerConfig is one MCP server from user-controlled settings.json. Env and
 // Headers map destination names to environment-variable names, never
@@ -68,15 +63,3 @@ type Result struct {
 	StructuredContent json.RawMessage
 	IsError           bool
 }
-
-// Client is one connected MCP server.
-type Client interface {
-	ListTools(context.Context) ([]Tool, error)
-	CallTool(context.Context, string, json.RawMessage) (Result, error)
-	Close() error
-}
-
-// Dial connects to one server by name (the settings.json key). Adapters
-// implement it; the default is the official Go SDK adapter in
-// agent/mcp/official.
-type Dial func(context.Context, string, ServerConfig) (Client, error)

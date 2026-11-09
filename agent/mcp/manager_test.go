@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-// fakeClient is an in-memory Client for Manager tests.
+// fakeClient is an in-memory serverClient for Manager tests.
 type fakeClient struct {
 	tools     []Tool
 	results   map[string]Result
@@ -18,20 +18,20 @@ type fakeClient struct {
 	listCalls int
 }
 
-func (f *fakeClient) ListTools(context.Context) ([]Tool, error) {
+func (f *fakeClient) listTools(context.Context) ([]Tool, error) {
 	f.listCalls++
 	return f.tools, nil
 }
 
-func (f *fakeClient) CallTool(_ context.Context, name string, _ json.RawMessage) (Result, error) {
+func (f *fakeClient) callTool(_ context.Context, name string, _ json.RawMessage) (Result, error) {
 	return f.results[name], nil
 }
 
-func (f *fakeClient) Close() error { f.closed = true; return nil }
+func (f *fakeClient) close() error { f.closed = true; return nil }
 
 // fakeDial builds a fakeClient per server, keyed by cfg.Command or cfg.URL.
-func fakeDial(clients map[string]*fakeClient) Dial {
-	return func(_ context.Context, _ string, cfg ServerConfig) (Client, error) {
+func fakeDial(clients map[string]*fakeClient) func(context.Context, string, ServerConfig) (serverClient, error) {
+	return func(_ context.Context, _ string, cfg ServerConfig) (serverClient, error) {
 		key := cfg.Command
 		if key == "" {
 			key = cfg.URL
@@ -44,6 +44,13 @@ func fakeDial(clients map[string]*fakeClient) Dial {
 	}
 }
 
+// newTestManager builds a Manager whose dial is overridden for tests.
+func newTestManager(dial func(context.Context, string, ServerConfig) (serverClient, error)) *Manager {
+	m := NewManager()
+	m.dial = dial
+	return m
+}
+
 func textResult(s string) Result {
 	b, _ := json.Marshal(map[string]string{"type": "text", "text": s})
 	return Result{Content: []json.RawMessage{b}}
@@ -54,7 +61,7 @@ func TestManagerSyncNamespacesAndDiscovers(t *testing.T) {
 		{Name: "search", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Name: "do thing!", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 
 	tools, errs := m.Sync(context.Background(), map[string]ServerConfig{
 		"a": {Command: "a"},
@@ -78,7 +85,7 @@ func TestManagerSyncFiltersAllowlist(t *testing.T) {
 		{Name: "one", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Name: "two", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 
 	tools, errs := m.Sync(context.Background(), map[string]ServerConfig{
 		"a": {Command: "a", Tools: []string{"one"}},
@@ -93,7 +100,7 @@ func TestManagerSyncFiltersAllowlist(t *testing.T) {
 
 func TestManagerSyncUnavailableServerIsNonFatal(t *testing.T) {
 	a := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 
 	tools, errs := m.Sync(context.Background(), map[string]ServerConfig{
 		"a": {Command: "a"},
@@ -114,7 +121,7 @@ func TestManagerCallRoutesAndNormalizes(t *testing.T) {
 			"search": textResult("hello"),
 		},
 	}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 	if _, errs := m.Sync(context.Background(), map[string]ServerConfig{"a": {Command: "a"}}); len(errs) != 0 {
 		t.Fatalf("sync: %v", errs)
 	}
@@ -175,7 +182,7 @@ func TestResultTextPreferences(t *testing.T) {
 
 func TestManagerSyncCachesToolList(t *testing.T) {
 	a := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 	cfg := map[string]ServerConfig{"s": {Command: "a"}}
 
 	// Two Syncs with unchanged config list tools once.
@@ -201,7 +208,7 @@ func TestManagerSyncCachesToolList(t *testing.T) {
 func TestManagerSyncReconnectsOnConfigChange(t *testing.T) {
 	a := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
 	b := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"x": a, "y": b}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"x": a, "y": b}))
 
 	if _, errs := m.Sync(context.Background(), map[string]ServerConfig{"s": {Command: "x"}}); len(errs) != 0 {
 		t.Fatalf("sync1: %v", errs)
@@ -230,7 +237,7 @@ func TestManagerLazyServer(t *testing.T) {
 		{Name: "search", Description: "find things across the index", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Name: "get", Description: "get one record", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 
 	// A lazy server exposes exactly one loader tool, not its real tools.
 	got, errs := m.Sync(context.Background(), map[string]ServerConfig{
@@ -274,7 +281,7 @@ func TestManagerLazyServer(t *testing.T) {
 
 	// Activating a non-lazy server is an error.
 	b := &fakeClient{tools: []Tool{{Name: "t", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
-	m2 := NewManager(fakeDial(map[string]*fakeClient{"b": b}))
+	m2 := newTestManager(fakeDial(map[string]*fakeClient{"b": b}))
 	if _, errs := m2.Sync(context.Background(), map[string]ServerConfig{"b": {Command: "b"}}); len(errs) != 0 {
 		t.Fatalf("sync b: %v", errs)
 	}
@@ -364,7 +371,7 @@ func TestManagerSyncKeepsServerWhenToolNamesCollide(t *testing.T) {
 		{Name: "get_host", InputSchema: json.RawMessage(`{"type":"object"}`)},
 		{Name: "other", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 	cfg := map[string]ServerConfig{"a": {Command: "a"}}
 
 	// A collision costs one tool and a warning, never the server: it once
@@ -387,7 +394,7 @@ func TestManagerSyncKeepsServerWhenToolNamesCollide(t *testing.T) {
 func TestManagerLazyServerFor(t *testing.T) {
 	a := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
 	b := &fakeClient{tools: []Tool{{Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)}}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a, "b": b}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a, "b": b}))
 	if _, errs := m.Sync(context.Background(), map[string]ServerConfig{
 		"a": {Command: "a", Lazy: true},
 		"b": {Command: "b"},
@@ -414,7 +421,7 @@ func TestLoaderDescriptionListsCallableNames(t *testing.T) {
 		Description: "decompile the function at an address",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 	}}}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": a}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": a}))
 	got, errs := m.Sync(context.Background(), map[string]ServerConfig{"a": {Command: "a", Lazy: true}})
 	if len(errs) != 0 {
 		t.Fatalf("sync: %v", errs)
@@ -435,7 +442,7 @@ func TestLoaderDescriptionIsCapped(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object"}`),
 		})
 	}
-	m := NewManager(fakeDial(map[string]*fakeClient{"a": {tools: many}}))
+	m := newTestManager(fakeDial(map[string]*fakeClient{"a": {tools: many}}))
 	got, errs := m.Sync(context.Background(), map[string]ServerConfig{"a": {Command: "a", Lazy: true}})
 	if len(errs) != 0 {
 		t.Fatalf("sync: %v", errs)
@@ -451,7 +458,7 @@ func TestLoaderDescriptionIsCapped(t *testing.T) {
 }
 
 func TestManagerSyncTimesOutHungServer(t *testing.T) {
-	hanging := func(ctx context.Context, _ ServerConfig) (Client, error) {
+	hanging := func(ctx context.Context, _ ServerConfig) (serverClient, error) {
 		<-ctx.Done() // never answers initialize
 		return nil, ctx.Err()
 	}
@@ -460,7 +467,7 @@ func TestManagerSyncTimesOutHungServer(t *testing.T) {
 	defer func(d time.Duration) { syncTimeout = d }(syncTimeout)
 	syncTimeout = 20 * time.Millisecond
 
-	m := NewManager(func(ctx context.Context, _ string, cfg ServerConfig) (Client, error) {
+	m := newTestManager(func(ctx context.Context, _ string, cfg ServerConfig) (serverClient, error) {
 		if cfg.URL == "hang" {
 			return hanging(ctx, cfg)
 		}
@@ -501,7 +508,7 @@ func TestManagerCrossServerOwnership(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := &fakeClient{tools: []Tool{{Name: tc.firstTool, InputSchema: json.RawMessage(`{"type":"object"}`)}}, results: map[string]Result{tc.firstTool: textResult("first")}}
 			b := &fakeClient{tools: []Tool{{Name: tc.secondTool, InputSchema: json.RawMessage(`{"type":"object"}`)}}, results: map[string]Result{tc.secondTool: textResult("second")}}
-			m := NewManager(fakeDial(map[string]*fakeClient{"first": a, "second": b}))
+			m := newTestManager(fakeDial(map[string]*fakeClient{"first": a, "second": b}))
 			cfg := map[string]ServerConfig{tc.first: {Command: "first", Lazy: tc.firstLazy}, tc.second: {Command: "second", Lazy: tc.secondLazy}}
 			for i := 0; i < 10; i++ {
 				_, errs := m.Sync(context.Background(), cfg)

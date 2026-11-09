@@ -1,6 +1,4 @@
-// Package official adapts the Model Context Protocol Go SDK to Yap's MCP
-// boundary. It is the only package that imports the SDK's mcp package.
-package official
+package mcp
 
 import (
 	"context"
@@ -14,7 +12,6 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"boers.email/yap/agent/mcp"
 	"boers.email/yap/agent/wire"
 )
 
@@ -25,8 +22,17 @@ import (
 // revisions, so pinning to 2025-11-25 skips the probe entirely.
 const protocolVersion = "2025-11-25"
 
-// Dial connects to one MCP server by name using the official Go SDK.
-func Dial(ctx context.Context, name string, cfg mcp.ServerConfig) (mcp.Client, error) {
+// serverClient is what the Manager needs from one connected server. The SDK
+// client below is the only production implementation; tests substitute a fake
+// through Manager.dial.
+type serverClient interface {
+	listTools(context.Context) ([]Tool, error)
+	callTool(context.Context, string, json.RawMessage) (Result, error)
+	close() error
+}
+
+// dialServer connects to one MCP server by name using the official Go SDK.
+func dialServer(ctx context.Context, name string, cfg ServerConfig) (serverClient, error) {
 	transport, err := selectTransport(cfg)
 	if err != nil {
 		return nil, err
@@ -74,7 +80,7 @@ func Dial(ctx context.Context, name string, cfg mcp.ServerConfig) (mcp.Client, e
 	}
 	c := &client{session: sess}
 	if transport == "stdio" {
-		// Track the subprocess so Close can sweep any remaining group.
+		// Track the subprocess so close can sweep any remaining group.
 		c.cmd = cmd
 	}
 	return c, nil
@@ -106,7 +112,7 @@ func elicitApproval(name string, req *sdk.ElicitRequest) (*sdk.ElicitResult, err
 }
 
 // selectTransport resolves the transport name, inferring it when empty.
-func selectTransport(cfg mcp.ServerConfig) (string, error) {
+func selectTransport(cfg ServerConfig) (string, error) {
 	t := strings.ToLower(strings.TrimSpace(cfg.Transport))
 	if t == "" {
 		switch {
@@ -193,37 +199,37 @@ type client struct {
 	cmd     *exec.Cmd // stdio subprocess; nil for http
 }
 
-func (c *client) ListTools(ctx context.Context) ([]mcp.Tool, error) {
+func (c *client) listTools(ctx context.Context) ([]Tool, error) {
 	res, err := c.session.ListTools(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]mcp.Tool, 0, len(res.Tools))
+	out := make([]Tool, 0, len(res.Tools))
 	for _, t := range res.Tools {
 		schema, err := json.Marshal(t.InputSchema)
 		if err != nil {
 			schema = nil
 		}
-		out = append(out, mcp.Tool{Name: t.Name, Description: t.Description, InputSchema: schema})
+		out = append(out, Tool{Name: t.Name, Description: t.Description, InputSchema: schema})
 	}
 	return out, nil
 }
 
-func (c *client) CallTool(ctx context.Context, name string, args json.RawMessage) (mcp.Result, error) {
+func (c *client) callTool(ctx context.Context, name string, args json.RawMessage) (Result, error) {
 	var a map[string]any
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return mcp.Result{}, fmt.Errorf("mcp %s: invalid arguments: %w", name, err)
+			return Result{}, fmt.Errorf("mcp %s: invalid arguments: %w", name, err)
 		}
 	}
 	res, err := c.session.CallTool(ctx, &sdk.CallToolParams{Name: name, Arguments: a})
 	if err != nil {
-		return mcp.Result{}, err
+		return Result{}, err
 	}
 	return toResult(res), nil
 }
 
-func (c *client) Close() error {
+func (c *client) close() error {
 	err := c.session.Close()
 	// The stdio transport closes stdin and kills the direct child, but not
 	// its process group; sweep any stragglers it left behind.
@@ -233,8 +239,8 @@ func (c *client) Close() error {
 	return err
 }
 
-func toResult(res *sdk.CallToolResult) mcp.Result {
-	r := mcp.Result{IsError: res.IsError}
+func toResult(res *sdk.CallToolResult) Result {
+	r := Result{IsError: res.IsError}
 	for _, c := range res.Content {
 		if b, err := json.Marshal(c); err == nil {
 			r.Content = append(r.Content, b)

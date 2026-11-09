@@ -39,7 +39,7 @@ var syncTimeout = 60 * time.Second
 // reconnect (config change) re-lists them. The call path releases the lock
 // before talking to a server, so a slow tool never blocks Sync.
 type Manager struct {
-	dial    Dial
+	dial    func(context.Context, string, ServerConfig) (serverClient, error)
 	mu      sync.Mutex
 	servers map[string]*server
 	owners  map[string]owner
@@ -54,7 +54,7 @@ type server struct {
 	active bool
 	name   string
 	cfg    ServerConfig
-	client Client
+	client serverClient
 	pub    map[string]toolInfo // public name -> discovered tool
 	order  []string            // sorted public names
 	// warnings holds load-time problems (a dropped tool, ...) for the next
@@ -68,14 +68,10 @@ type toolInfo struct {
 	schema   json.RawMessage
 }
 
-// NewManager returns a Manager using dial to connect to servers.
-func NewManager(dial Dial) *Manager {
-	if dial == nil {
-		dial = func(context.Context, string, ServerConfig) (Client, error) {
-			return nil, fmt.Errorf("no MCP dial configured")
-		}
-	}
-	return &Manager{dial: dial, servers: map[string]*server{}}
+// NewManager returns a Manager that connects to servers through the official
+// Go SDK.
+func NewManager() *Manager {
+	return &Manager{dial: dialServer, servers: map[string]*server{}}
 }
 
 // Sync reconciles the manager with cfg and returns the currently available
@@ -91,7 +87,7 @@ func (m *Manager) Sync(ctx context.Context, cfg map[string]ServerConfig) ([]Tool
 	// Close servers no longer configured.
 	for name, s := range m.servers {
 		if _, ok := cfg[name]; !ok {
-			_ = s.client.Close()
+			_ = s.client.close()
 			delete(m.servers, name)
 		}
 	}
@@ -169,7 +165,7 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 		return s, nil
 	}
 	if s, ok := m.servers[name]; ok {
-		_ = s.client.Close()
+		_ = s.client.close()
 		delete(m.servers, name)
 	}
 	ctx, cancel := context.WithTimeout(ctx, syncTimeout)
@@ -180,7 +176,7 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 	}
 	s := &server{name: name, cfg: cfg, client: cl, pub: map[string]toolInfo{}}
 	if err := s.load(ctx); err != nil {
-		_ = cl.Close()
+		_ = cl.close()
 		return nil, err
 	}
 	m.servers[name] = s
@@ -194,7 +190,7 @@ func (m *Manager) ensureLocked(ctx context.Context, name string, cfg ServerConfi
 // at protocol 2026-07-28+ (which Yap pins away from to skip the SDK's
 // server/discover probe), so a server's tools are re-read on reconnect only.
 func (s *server) load(ctx context.Context) error {
-	list, err := s.client.ListTools(ctx)
+	list, err := s.client.listTools(ctx)
 	if err != nil {
 		return err
 	}
@@ -278,7 +274,7 @@ func (m *Manager) LazyServerFor(publicName string) (string, bool) {
 // result text.
 func (m *Manager) Call(ctx context.Context, publicName string, args json.RawMessage) (string, error) {
 	m.mu.Lock()
-	var cl Client
+	var cl serverClient
 	var original string
 	if o, ok := m.owners[publicName]; ok && !o.loader {
 		if s := m.servers[o.server]; s != nil {
@@ -289,7 +285,7 @@ func (m *Manager) Call(ctx context.Context, publicName string, args json.RawMess
 	if cl == nil {
 		return "", fmt.Errorf("unknown MCP tool %q", publicName)
 	}
-	res, err := cl.CallTool(ctx, original, args)
+	res, err := cl.callTool(ctx, original, args)
 	if err != nil {
 		return "", err
 	}
@@ -302,7 +298,7 @@ func (m *Manager) Close() {
 	defer m.mu.Unlock()
 	m.owners = nil
 	for name, s := range m.servers {
-		_ = s.client.Close()
+		_ = s.client.close()
 		delete(m.servers, name)
 	}
 }

@@ -9,15 +9,24 @@ import (
 	"sync"
 
 	"boers.email/yap/agent/mcp"
-	"boers.email/yap/agent/mcp/official"
 	"boers.email/yap/agent/tools"
 )
 
 var mcpRegistrationMu sync.Mutex
 
+// mcpBackend is the subset of *mcp.Manager the turn loop needs. It is a
+// seam so tests can substitute a fake manager instead of a real MCP server.
+type mcpBackend interface {
+	Sync(context.Context, map[string]mcp.ServerConfig) ([]mcp.Tool, []error)
+	Call(context.Context, string, json.RawMessage) (string, error)
+	Activate(string) ([]mcp.Tool, error)
+	LazyServerFor(string) (string, bool)
+	Close()
+}
+
 // mcpMgr lives for the backend's lifetime: servers stay connected across
 // turns, and a stop() only cancels the in-flight call.
-var mcpMgr = mcp.NewManager(mcp.Dial(official.Dial))
+var mcpMgr mcpBackend = mcp.NewManager()
 
 // CloseMCP disconnects every MCP server; called on backend shutdown.
 func CloseMCP() {
