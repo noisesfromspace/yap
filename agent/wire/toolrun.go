@@ -59,14 +59,41 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (te
 	// The merged output is normalized before writing to the temp log and
 	// framing for the live tail.
 	writer := &plainOutputWriter{out: out, log: outPath, tracker: &tracker}
-	cmd.Stdout = writer
-	cmd.Stderr = cmd.Stdout
-
-	if err := cmd.Start(); err != nil {
+	// Route the child's stdout/stderr through an explicit pipe into writer,
+	// rather than assigning writer directly. exec.Cmd spawns a copying
+	// goroutine (which Wait blocks on until EOF) only when the writer is not
+	// an *os.File; a background daemon that inherits stdout (wl-copy, `… &`,
+	// nohup) keeps that pipe open and would make Wait sit until the timeout.
+	// With an *os.File on the child side, Wait returns as soon as the direct
+	// child exits, and we drain the pipe ourselves without waiting for a
+	// grandchild to close its copy.
+	pr, pw, err := os.Pipe()
+	if err != nil {
 		_ = out.Close()
 		_ = os.Remove(outPath)
 		return "", -1, err
 	}
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+
+	if err := cmd.Start(); err != nil {
+		_ = pr.Close()
+		_ = pw.Close() // no-op if Start already closed the child copy
+		_ = out.Close()
+		_ = os.Remove(outPath)
+		return "", -1, err
+	}
+	// Start closes the parent's copy of pw; only the child and its
+	// descendants hold it now.
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		// The error is an artificial read deadline or a closed pipe — either
+		// way it means "stop reading", and the bytes already drained stay in
+		// the temp log.
+		_, _ = io.Copy(writer, pr)
+		_ = pr.Close()
+	}()
 	// Emit a throttled progress frame while the tool runs, so the winbar shows
 	// real output throughput instead of only wall-clock time. A timer drives it
 	// (not the output) so a quiet command still reports elapsed time.
@@ -85,8 +112,8 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (te
 			}
 		}
 	}()
-	// The copy goroutine writes to the output writer until the child exits,
-	// must stay open until Wait drains the pipe.
+	// out must stay open until the reader goroutine above has finished writing
+	// to it through writer.
 	defer func() { _ = out.Close() }()
 	pgid := cmd.Process.Pid // Setpgid: child is the group leader
 	Track(pgid)
@@ -108,6 +135,13 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (te
 		_ = syscall.Kill(-pgid, syscall.SIGKILL) // the whole tree
 		err = <-done
 	}
+	// Stop the reader now that the direct child is gone, without waiting for
+	// a background grandchild to close its inherited stdout. A deadline in the
+	// past returns the already-buffered bytes and then a timeout, so the
+	// goroutine drains the child's real output and exits (EOF already did this
+	// on the common path where no daemon holds the pipe).
+	_ = pr.SetReadDeadline(time.Now())
+	<-readDone
 	writer.flush()
 	close(stop) // no progress frames after tool_end
 	// Let the Lua side drain the final bytes before an untruncated log is

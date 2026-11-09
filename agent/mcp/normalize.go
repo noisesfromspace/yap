@@ -32,7 +32,21 @@ func (r Result) Text() string {
 			if json.Unmarshal(raw, &t) == nil && t.Text != "" {
 				texts = append(texts, t.Text)
 			}
-		case "image", "audio", "resource", "resource_link":
+		case "resource":
+			// Embedded resources carry the payload nested under "resource";
+			// text resources are exactly a file's contents and must reach the
+			// model, not be dropped like a blob.
+			var r struct {
+				Resource struct {
+					Text string `json:"text"`
+				} `json:"resource"`
+			}
+			if json.Unmarshal(raw, &r) == nil && r.Resource.Text != "" {
+				texts = append(texts, r.Resource.Text)
+			} else {
+				unsupported = append(unsupported, kind.Type)
+			}
+		case "image", "audio", "resource_link":
 			unsupported = append(unsupported, kind.Type)
 		}
 	}

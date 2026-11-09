@@ -155,6 +155,22 @@ func TestResultTextPreferences(t *testing.T) {
 	if got := r.Text(); !strings.Contains(got, "unsupported content: image") {
 		t.Fatalf("got %q, want unsupported summary", got)
 	}
+
+	// Text resources (embedded file contents) are surfaced, not dropped.
+	r = Result{Content: []json.RawMessage{
+		json.RawMessage(`{"type":"resource","resource":{"uri":"file:///a.lua","text":"return 1"}}`),
+	}}
+	if got := r.Text(); got != "return 1" {
+		t.Fatalf("got %q, want resource text", got)
+	}
+
+	// Blob-only resources are still summarized.
+	r = Result{Content: []json.RawMessage{
+		json.RawMessage(`{"type":"resource","resource":{"uri":"file:///a.png","blob":"aGVsbG8="}}`),
+	}}
+	if got := r.Text(); !strings.Contains(got, "unsupported content: resource") {
+		t.Fatalf("got %q, want unsupported summary", got)
+	}
 }
 
 func TestManagerSyncCachesToolList(t *testing.T) {

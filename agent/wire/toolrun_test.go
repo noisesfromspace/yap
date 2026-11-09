@@ -68,6 +68,25 @@ func TestReadToolTail(t *testing.T) {
 	}
 }
 
+// TestRunStreamedDoesNotWaitForBackgroundChildren: a background child that
+// inherits stdout (wl-copy's clipboard daemon, `… &`, nohup) must not hold the
+// tool open. Wait returns when the direct child exits, and its output is still
+// captured — a regression blocks until the timeout and reports "timed out".
+func TestRunStreamedDoesNotWaitForBackgroundChildren(t *testing.T) {
+	cmd := exec.Command("bash", "-c", "printf 'out\\n'; (sleep 5) & exit 0")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	text, _, err := RunStreamed("bash", "printf 'out\\n'; (sleep 5) & exit 0", cmd, 2*time.Second)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(text, "timed out") {
+		t.Fatalf("blocked on a background child holding stdout:\n%s", text)
+	}
+	if !strings.Contains(text, "out") {
+		t.Fatalf("output not captured: %q", text)
+	}
+}
+
 func TestRunStreamedUsesAssetsBase(t *testing.T) {
 	// When the frontend supplies a per-session assets dir, the live-tail log
 	// lands there instead of the system temp dir.
