@@ -232,9 +232,12 @@ open_sessions = function()
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
     local parent = owners[b]
     if vim.b[b].yap then
+      local is_fork = fm and fm.forked_from
+      local is_agent = picker.agent(fm, b) ~= nil
       items[#items + 1] = {
         buf = b,
         text = session.live_label(b, parent ~= nil),
+        icon = is_fork and harness().config.icons.fork or (is_agent and harness().config.icons.agent) or nil,
         path = parent and "" or vim.b[b].yap_project_cwd,
         state = picker.state(b),
         approval = pending_approvals[b] ~= nil,
@@ -280,24 +283,29 @@ open_sessions = function()
     return a.text < b.text
   end)
   local ordered = {}
-  local function add(item, depth, ancestors)
+  local function add(item, depth, ancestors, rails, is_last)
     if ancestors[item.buf] then
       return
     end
     item.depth = depth
+    item.rail = depth > 0 and session.rail_prefix(rails, is_last) or ""
     ordered[#ordered + 1] = item
     local siblings = children[item.buf] or {}
     table.sort(siblings, function(a, b)
       return a.text < b.text
     end)
     ancestors[item.buf] = true
-    for _, child in ipairs(siblings) do
-      add(child, depth + 1, ancestors)
+    for i, child in ipairs(siblings) do
+      local child_rails = vim.list_extend({}, rails)
+      if depth > 0 then
+        child_rails[#child_rails + 1] = is_last
+      end
+      add(child, depth + 1, ancestors, child_rails, i == #siblings)
     end
     ancestors[item.buf] = nil
   end
   for _, item in ipairs(roots) do
-    add(item, 0, {})
+    add(item, 0, {}, {}, nil)
   end
   items = ordered
   -- The open tree conveys relationships through indentation, not status tags.
@@ -311,7 +319,7 @@ open_sessions = function()
     prompt = "yap sessions",
     format_item = function(item)
       local suffix = multiple_projects and item.path and item.path ~= "" and (" (" .. item.path .. ")") or ""
-      return string.rep("  ", item.depth) .. item.text .. suffix
+      return (item.rail or "") .. (item.icon and item.icon .. " " or "") .. item.text .. suffix
     end,
     preview_item = function(item)
       if not vim.api.nvim_buf_is_valid(item.buf) then

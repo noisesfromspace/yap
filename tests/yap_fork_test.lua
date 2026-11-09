@@ -79,7 +79,9 @@ for i, item in ipairs(saved_items) do
   end
 end
 assert(source_index and fork_index == source_index + 1, "saved fork not beneath source: " .. vim.inspect(saved_items))
-assert(saved_items[fork_index].text == "  ↳ fork · forked", "saved fork label wrong")
+assert(saved_items[fork_index].text == "forked", "saved fork label wrong")
+assert(saved_items[fork_index].rail == "└─ ", "saved fork rail wrong: " .. vim.inspect(saved_items[fork_index]))
+assert(saved_items[fork_index].icon == yap.config.icons.fork, "saved fork icon wrong")
 local captured
 local select = vim.ui.select
 vim.ui.select = function(items)
@@ -97,7 +99,9 @@ for i, item in ipairs(captured) do
   end
 end
 assert(live_source and live_fork == live_source + 1, "open fork not beneath source: " .. vim.inspect(captured))
-assert(captured[live_fork].text == "↳ fork · forked", "open fork label wrong")
+assert(captured[live_fork].text == "forked", "open fork label wrong")
+assert(captured[live_fork].rail == "└─ ", "open fork rail wrong: " .. vim.inspect(captured[live_fork]))
+assert(captured[live_fork].icon == yap.config.icons.fork, "open fork icon wrong")
 vim.ui.select = function(items, opts)
   captured = { items = items, format = opts.format_item }
 end
@@ -145,7 +149,8 @@ for i, item in ipairs(nested_items) do
   end
 end
 assert(nested_parent and nested_child == nested_parent + 1, "nested saved fork not beneath parent")
-assert(nested_items[nested_child].text:find("    ↳ fork · ", 1, true) == 1, "nested fork indentation wrong")
+assert(nested_items[nested_child].rail == "   └─ ", "nested fork indentation wrong: " .. vim.inspect(nested_items[nested_child]))
+assert(nested_items[nested_child].icon == yap.config.icons.fork, "nested fork icon wrong")
 assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "nested fork window has no yap winbar")
 local nested_buf = vim.api.nvim_get_current_buf()
 local function check_open_tree(pick, leaf_visible)
@@ -174,13 +179,13 @@ local function check_open_tree(pick, leaf_visible)
     format(captured[positions[original_buf]]):find("^" .. vim.pesc(captured[positions[original_buf]].text)) == 1,
     "root should start with its title"
   )
-  assert(format(captured[positions[fork_buf]]):find("^  ↳") == 1, "fork title should be indented under the root")
+  assert(vim.startswith(format(captured[positions[fork_buf]]), "└─ " .. yap.config.icons.fork), "fork title should be indented under the root: " .. format(captured[positions[fork_buf]]))
   if leaf_visible then
     local leaf = captured[positions[nested_buf]]
-    assert(leaf.text:find("↳ fork · ", 1, true) == 1, "nested open fork label wrong")
+    assert(leaf.icon == yap.config.icons.fork, "nested open fork label wrong: " .. vim.inspect(leaf))
     assert(
-      leaf.depth == 2 and format(leaf):find("^" .. string.rep(" ", 4) .. "↳") == 1,
-      "nested fork title should be indented twice"
+      leaf.depth == 2 and vim.startswith(format(leaf), "   └─ "),
+      "nested fork title should be indented twice: " .. format(leaf)
     )
   end
 end
@@ -294,14 +299,16 @@ local function check_orphan(pick, root_buf, child_buf, title)
   end
   assert(root_index, "orphan fork missing: " .. vim.inspect(captured))
   assert(captured[root_index].text == title, "orphan fork lost its origin: " .. captured[root_index].text)
+  assert(captured[root_index].icon == yap.config.icons.fork, "orphan fork lost its icon: " .. vim.inspect(captured[root_index]))
   if child_buf then
     assert(child_index == root_index + 1, "open descendant not nested under orphan fork")
-    assert(captured[child_index].text:find("↳ fork · ", 1, true) == 1, "open child lost fork label")
+    assert(captured[child_index].rail == "└─ ", "open child lost fork rail: " .. vim.inspect(captured[child_index]))
+    assert(captured[child_index].icon == yap.config.icons.fork, "open child lost fork icon")
   end
 end
 check_orphan(function()
   yap.sessions("open")
-end, fork_buf, nested_buf, "fork · forked (parent not shown)")
+end, fork_buf, nested_buf, "forked (parent not shown)")
 vim.cmd("bdelete! " .. fork_buf)
 -- A lone current fork appears in the general picker.
 captured = nil
@@ -313,13 +320,13 @@ vim.ui.select = select
 local found_current = false
 for _, item in ipairs(captured or {}) do
   found_current = found_current
-    or (item.buf == nested_buf and item.text == "fork · " .. paths.session_name(generated) .. " (parent not shown)")
+    or (item.buf == nested_buf and item.text == paths.session_name(generated) .. " (parent not shown)")
 end
 assert(found_current, "current orphan fork missing from open picker")
 vim.cmd("enew")
 check_orphan(function()
   yap.sessions("open")
-end, nested_buf, nil, "fork · " .. paths.session_name(generated) .. " (parent not shown)")
+end, nested_buf, nil, paths.session_name(generated) .. " (parent not shown)")
 local after_close = require("harness.session").list("cwd")
 local positions = {}
 for i, item in ipairs(after_close) do

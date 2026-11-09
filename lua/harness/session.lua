@@ -21,6 +21,26 @@ local structure = require("harness.model.structure")
 local paths = require("harness.path")
 local picker = require("harness.ui.picker")
 
+--- The live icon table (nerd font glyphs, or the plain-Unicode fallback set by
+--- setup()). Read through require("harness") at call time so a later setup()
+--- override is visible; session.lua cannot require harness at load (circular).
+local function icons()
+  return require("harness").config.icons
+end
+
+--- Box-drawing tree prefix for a nested picker row. `rails[i]` is true when the
+--- ancestor at depth i is the last of its siblings, so its vertical rail stops
+--- there; `is_last` picks the corner (`└─`) vs tee (`├─`). Every glyph is
+--- single-width (3 columns per level), so popular pickers keep columns aligned.
+function M.rail_prefix(rails, is_last)
+  local parts = {}
+  for i = 1, #rails do
+    parts[#parts + 1] = rails[i] and "   " or "│  "
+  end
+  parts[#parts + 1] = is_last and "└─ " or "├─ "
+  return table.concat(parts)
+end
+
 --- Stamp `updated_at` and `turns` in the frontmatter immediately before the
 --- buffer is written: the one place `updated_at` is set, so the field means
 --- "last write". `turns` (completed `# @assistant` replies) is the picker's
@@ -552,8 +572,11 @@ function M.list(scope)
       turns = fm and fm.turns,
     }
     if fm and fm.forked_from then
-      -- A fork always nests: it is part of the conversation's lineage.
-      item.text = "↳ fork · " .. M.label(path, description, nil)
+      -- A fork always nests: it is part of the conversation's lineage. The
+      -- type glyph (fork icon) replaces the old "↳ fork · " wording.
+      item.text = M.label(path, description, nil)
+      item.icon = icons().fork
+      item.child_kind = "fork"
       children[path] = item
       local owner = by_dir[vim.fs.normalize(fm.forked_from)]
       if owner then
@@ -568,6 +591,8 @@ function M.list(scope)
         agents[owner] = (agents[owner] or 0) + 1
         if loaded[owner] then
           item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description, nil))
+          item.icon = icons().agent
+          item.child_kind = "agent"
           children[path] = item
           owned_by[owner] = owned_by[owner] or {}
           table.insert(owned_by[owner], path)
@@ -591,7 +616,7 @@ function M.list(scope)
     return a.mtime > b.mtime
   end)
   local result, shown = {}, {}
-  local function add(item, depth, ancestors)
+  local function add(item, depth, ancestors, rails, is_last)
     if ancestors[item.path] then
       return -- malformed cycle in hand-edited frontmatter
     end
@@ -599,9 +624,7 @@ function M.list(scope)
     local row = vim.deepcopy(item)
     row.depth = depth
     row.agents = agents[item.path] or 0
-    if depth > 0 then
-      row.text = string.rep("  ", depth) .. row.text
-    end
+    row.rail = depth > 0 and M.rail_prefix(rails, is_last) or ""
     result[#result + 1] = row
     local owned = {}
     local visited = {}
@@ -616,20 +639,24 @@ function M.list(scope)
       return a.mtime > b.mtime
     end)
     ancestors[item.path] = true
-    for _, child in ipairs(owned) do
-      add(child, depth + 1, ancestors)
+    for i, child in ipairs(owned) do
+      local child_rails = vim.list_extend({}, rails)
+      if depth > 0 then
+        child_rails[#child_rails + 1] = is_last
+      end
+      add(child, depth + 1, ancestors, child_rails, i == #owned)
     end
     ancestors[item.path] = nil
   end
   for _, item in ipairs(items) do
-    add(item, 0, {})
+    add(item, 0, {}, {}, nil)
   end
   -- Preserve discoverability when a fork's parent is missing or excluded by
   -- scope. A subagent whose parent is not open is simply omitted (not
   -- orphaned), so an inactive conversation stays lean.
   local orphans = {}
   for _, child in pairs(children) do
-    if not shown[child.path] then
+    if not shown[child.path] and child.child_kind == "fork" then
       orphans[#orphans + 1] = child
     end
   end
@@ -639,11 +666,11 @@ function M.list(scope)
   for _, child in ipairs(orphans) do
     if not shown[child.path] then
       local orphan = vim.deepcopy(child)
-      orphan.text = orphan.text:sub(#"↳ " + 1) .. " (parent not shown)"
+      orphan.text = orphan.text .. " (parent not shown)"
       if scope == "all" then
         orphan.text = paths.project_cwd(orphan.path) .. "  " .. orphan.text
       end
-      add(orphan, 0, {})
+      add(orphan, 0, {}, {}, nil)
     end
   end
   return result
@@ -697,6 +724,7 @@ function M.pick(opts, on_choice)
       if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
         label = label:sub(#project + 3)
       end
+      label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. label
       label = picker.prefix(icon, icon_width) .. label
       local counts = counts_label(item.turns, item.agents)
       if counts then
@@ -741,13 +769,11 @@ function M.live_label(buf, parent)
     local fallback = view.collapse(vim.b[buf].yap_subagent_task or "")
     label = M.agent_label(role, M.file_title(path), fm and fm.description, task, fallback, label)
   end
-  if role and parent then
-    return label
-  end
-  if fm and fm.forked_from then
-    return parent and "↳ fork · " .. label or "fork · " .. label .. " (parent not shown)"
-  end
-  if role and (fm and fm.subagent_parent or vim.b[buf].yap_subagent_parent) then
+  -- The type glyph (fork/agent icon) is added by the pickers; here the label
+  -- carries only the orphan hint when the parent is not open.
+  local is_child = (fm and fm.forked_from ~= nil)
+    or (role ~= nil and ((fm and fm.subagent_parent) or vim.b[buf].yap_subagent_parent) ~= nil)
+  if is_child and not parent then
     return label .. " (parent not shown)"
   end
   return label

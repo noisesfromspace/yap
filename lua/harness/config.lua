@@ -54,6 +54,8 @@ M.defaults = {
     steer = "󰇐", -- nf-md-directions (winbar steer state)
     queue = "󱊖", -- nf-md-tray_full (winbar queued-message state)
     approval = "󰻌", -- nf-md-shield_alert (winbar gutter + rollup, notification, audit)
+    fork = "󰓁", -- nf-md-source_fork (picker: a fork in the session tree)
+    agent = "󰚩", -- nf-md-robot (picker: a subagent in the session tree)
     cap_l = "", -- nf-ple-lower_right_triangle (island left cap)
     cap_r = "", -- nf-ple-lower_left_triangle  (island right cap)
   },

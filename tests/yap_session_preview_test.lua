@@ -242,7 +242,7 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("^  scout · inspect this task") == 1
+  vim.startswith(rendered_child, "└─ " .. yap.config.icons.agent .. " scout · inspect this task")
     and not rendered_child:find(vim.fn.getcwd(), 1, true)
     and not rendered_child:find("(m1)", 1, true),
   "child title should be indented without cwd/model: " .. rendered_child
@@ -269,7 +269,7 @@ assert(
   "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
 )
 assert(
-  vim.startswith(captured.opts.format_item(captured.items[child_position]), "  scout"),
+  vim.startswith(captured.opts.format_item(captured.items[child_position]), "└─ " .. yap.config.icons.agent),
   "running child title should have no status tag: "
     .. vim.inspect(captured.opts.format_item(captured.items[child_position]))
 )
@@ -295,7 +295,7 @@ for _, item in ipairs(captured.items) do
 end
 assert(done_child and done_child.state == "done", "completed subagent should be 'done': " .. vim.inspect(done_child))
 assert(
-  captured.opts.format_item(done_child):find("^  scout") == 1,
+  vim.startswith(captured.opts.format_item(done_child), "└─ " .. yap.config.icons.agent),
   "completed subagent should have no status tag: " .. captured.opts.format_item(done_child)
 )
 state.stopped[child] = true
@@ -323,7 +323,7 @@ assert(
   "waiting parent should be badge-less and keep its title aligned"
 )
 assert(
-  captured.opts.format_item(stopped_child):find("^  scout") == 1,
+  vim.startswith(captured.opts.format_item(stopped_child), "└─ " .. yap.config.icons.agent),
   "stopped child's title should be indented under its parent"
 )
 state.stopped[child] = nil
@@ -355,7 +355,7 @@ assert(
   "project path should replace model in parentheses: " .. tostring(root_row)
 )
 assert(
-  child_row and child_row:find("^  scout") == 1 and not child_row:find(vim.fn.getcwd(), 1, true),
+  child_row and vim.startswith(child_row, "└─ " .. yap.config.icons.agent) and not child_row:find(vim.fn.getcwd(), 1, true),
   "project path displaced child title: " .. tostring(child_row)
 )
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
