@@ -45,7 +45,7 @@ assert(vim.fn.filereadable(old_dir .. "/audit.jsonl") == 0, "old audit log left 
 
 -- History shows the session under its filename title, not the directory name.
 local found
-for _, item in ipairs(require("harness.session").list("cwd")) do
+for _, item in ipairs(require("harness.session").list()) do
   if item.path == new then
     found = item
   end

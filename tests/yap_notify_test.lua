@@ -201,8 +201,8 @@ vim.notify = orig_notify
 vim.api.nvim_win_close(vim.fn.win_findbuf(buf)[1], true)
 vim.api.nvim_buf_delete(child_for_notice, { force = true })
 
--- sessions("open") lists every other open session with its status;
--- waiting sessions sort last.
+-- sessions() marks open rows with a live status glyph; waiting and idle
+-- states both render a fixed-column icon.
 vim.cmd("enew")
 local items, fmt
 local orig_select = vim.ui.select
@@ -210,23 +210,18 @@ vim.ui.select = function(list, opts, on_choice)
   items = list
   fmt = opts and opts.format_item
 end
-yap.sessions("open")
+yap.sessions()
 vim.ui.select = orig_select
-assert(items and #items == 2, "expected both other sessions, got " .. vim.inspect(items))
-assert(items[1].buf == buf2, "idle session should sort before waiting sessions")
-assert(items[1].state == "idle", "idle state missing: " .. vim.inspect(items[1]))
-assert(items[1].model == "m1", "idle model missing: " .. vim.inspect(items[1]))
-assert(items[2].buf == buf, "waiting session should sort last")
-assert(items[2].state == "waiting", "waiting state missing: " .. vim.inspect(items[2]))
-assert(items[2].path == vim.fs.normalize(vim.fn.getcwd()), "project cwd missing: " .. vim.inspect(items[2]))
-assert(items[2].text == require("harness.path").session_name(vim.b[buf].yap_path), "name fallback: " .. items[2].text)
-local rendered = fmt(items[2])
-assert(rendered:find("^" .. vim.pesc(items[2].text)) == 1, "waiting row should be badge-less: " .. rendered)
-assert(
-  not rendered:find("(m1)", 1, true) and not rendered:find(vim.fs.normalize(vim.fn.getcwd()), 1, true),
-  "single-project open picker should show neither model nor cwd: " .. rendered
-)
-assert(rendered:find(items[2].text, 1, true), "label not rendered: " .. rendered)
+assert(items and #items == 2, "expected both saved sessions, got " .. vim.inspect(items))
+local by_path = {}
+for _, it in ipairs(items) do
+  by_path[vim.fs.normalize(it.path)] = it
+end
+local buf_item = by_path[vim.fs.normalize(vim.b[buf].yap_path)]
+local buf2_item = by_path[vim.fs.normalize(vim.b[buf2].yap_path)]
+assert(buf_item and buf2_item, "saved sessions missing from picker: " .. vim.inspect(items))
+assert(vim.startswith(fmt(buf_item), icons.waiting), "waiting row missing status glyph: " .. fmt(buf_item))
+assert(vim.startswith(fmt(buf2_item), icons.idle), "idle row missing status glyph: " .. fmt(buf2_item))
 
 -- A description replaces the name fallback in the picker label.
 local first_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -240,9 +235,9 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, first_lines)
 vim.ui.select = function(list, opts)
   items = list
 end
-yap.sessions("open")
+yap.sessions()
 vim.ui.select = orig_select
-assert(items and #items == 2, "expected two other sessions, got " .. vim.inspect(items))
+assert(items and #items == 2, "expected two saved sessions, got " .. vim.inspect(items))
 local labels = {}
 for _, it in ipairs(items) do
   labels[it.text] = true

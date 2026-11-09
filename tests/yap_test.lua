@@ -34,7 +34,7 @@ print("saved: " .. path)
 
 -- 3. A loaded blank session is discoverable even without a generated title
 -- or a pending prompt. The saved picker must not hide the round-circle row.
-local items = session.list("cwd")
+local items = session.list()
 assert(#items == 1 and items[1].path == path, "loaded blank session missing: " .. vim.inspect(items))
 
 -- 3b. A renamed transcript names a session and keeps it visible before a
@@ -45,7 +45,7 @@ frontmatter.sync(buf) -- the fake conversation above replaced the frontmatter
 vim.cmd("file named-session.md")
 session.save(buf)
 path = vim.b[buf].yap_path -- the renamed transcript
-items = session.list("cwd")
+items = session.list()
 assert(#items == 1, "expected titled session, got " .. #items)
 assert(items[1].text == "named-session", "titled session should show its title: " .. items[1].text)
 print("listed: " .. items[1].text)
@@ -59,7 +59,7 @@ local scheduled_last = vim.api.nvim_buf_line_count(scheduled) - 1
 vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "scheduled prompt body" })
 session.save(scheduled)
 local scheduled_path = vim.b[scheduled].yap_path
-items = session.list("cwd")
+items = session.list()
 local scheduled_item
 for _, item in ipairs(items) do
   if item.path == scheduled_path then
@@ -69,7 +69,7 @@ end
 assert(scheduled_item, "scheduled prompt should be listed: " .. vim.inspect(items))
 vim.api.nvim_buf_set_lines(scheduled, scheduled_last, scheduled_last + 1, false, { "" })
 session.save(scheduled)
-items = session.list("cwd")
+items = session.list()
 assert(
   vim.tbl_contains(
     vim.tbl_map(function(item)
@@ -82,7 +82,7 @@ assert(
 vim.api.nvim_buf_call(scheduled, function()
   vim.cmd("bunload!")
 end)
-items = session.list("cwd")
+items = session.list()
 for _, item in ipairs(items) do
   assert(item.path ~= scheduled_path, "unloaded empty session should be hidden: " .. vim.inspect(items))
 end

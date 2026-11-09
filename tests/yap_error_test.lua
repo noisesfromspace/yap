@@ -63,25 +63,27 @@ assert(
   err_lines[#err_lines - 1] == "# @user" and err_lines[#err_lines] == "",
   "failed stream did not end in a closed user block"
 )
--- Errors surface in the unified session picker with an error status.
+-- Errors surface in the unified session picker with an error status icon.
 -- The active session is intentionally omitted, so inspect from another buffer.
 vim.cmd("enew")
 local pick_items
 local orig_select = vim.ui.select
-vim.ui.select = function(items)
-  pick_items = items
+vim.ui.select = function(items, opts)
+  pick_items = { items = items, format = opts.format_item }
 end
-yap.sessions("open")
+yap.sessions()
 vim.ui.select = orig_select
 local found_error
-for _, item in ipairs(pick_items or {}) do
-  if item.buf == buf2 then
+for _, item in ipairs(pick_items.items or {}) do
+  if vim.fs.normalize(item.path) == vim.fs.normalize(vim.b[buf2].yap_path) then
     found_error = item
   end
 end
 assert(found_error, "error session missing from session picker")
-assert(found_error.state == "error", "error state missing: " .. vim.inspect(found_error))
-assert(found_error.model == "m", "error model missing: " .. vim.inspect(found_error))
+assert(
+  vim.startswith(pick_items.format(found_error), icons.error),
+  "error status icon missing: " .. pick_items.format(found_error)
+)
 -- next parse excludes the error
 local msgs2 = document.messages(buf2)
 for _, m in ipairs(msgs2) do

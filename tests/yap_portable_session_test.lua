@@ -126,9 +126,9 @@ assert(not vim.api.nvim_buf_get_lines(reopened_cli, 0, 3, false)[1]:match("^# @s
   ":Yap on existing file replaced the transcript with a fresh template")
 vim.cmd("bwipeout " .. reopened_cli)
 
--- 5. Portable sessions join the open-session overview and the winbar rollup
--- like any other open session (both are keyed on the yap buffer flag, not on
--- the path being under the sessions root).
+-- 5. Portable sessions join the session picker and the winbar rollup like
+-- any other open session (both are keyed on the yap buffer flag, not on the
+-- path being under the sessions root).
 vim.cmd("edit " .. vim.fn.fnameescape(portable))
 reopened = vim.api.nvim_get_current_buf()
 assert(vim.b[reopened].yap == true, "portable transcript not re-adopted")
@@ -137,18 +137,19 @@ local select = vim.ui.select
 vim.ui.select = function(items)
   captured = items
 end
-yap.sessions("open")
+yap.sessions()
 vim.ui.select = select
 local seen_portable, seen_dir = false, false
 for _, item in ipairs(captured or {}) do
-  if item.buf == reopened then
+  local p = vim.fs.normalize(item.path)
+  if p == vim.fs.normalize(vim.b[reopened].yap_path) then
     seen_portable = true
-  elseif item.buf == dirsess then
+  elseif p == vim.fs.normalize(vim.b[dirsess].yap_path) then
     seen_dir = true
   end
 end
-assert(seen_portable, "portable session missing from open-session overview")
-assert(seen_dir, ":Yap <dir> session missing from open-session overview")
+assert(seen_portable, "portable session missing from the session picker")
+assert(seen_dir, ":Yap <dir> session missing from the session picker")
 
 -- The dirsess rollup counts the reopened portable session as one idle other.
 local bar = yap.winbar(dirsess)

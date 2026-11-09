@@ -44,8 +44,8 @@ for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model
 end
 assert(yap.config.keymaps.sessions ~= "", "saved sessions keymap disabled")
 
--- The open-session tree is reachable through sessions("open"); there is no
--- dedicated keymap option for it.
+-- sessions() is the single picker; there is no dedicated keymap option for
+-- a separate open-session tree.
 yap.setup({ keymaps = { buffers = "<F8>" } })
 assert(vim.fn.maparg("<F8>", "n") == "", "unknown keymap option installed a map")
 print("OK map")

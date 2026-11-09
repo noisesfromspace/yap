@@ -116,16 +116,11 @@ assert(
 )
 
 -- 6. the picker shows only the description; model history remains metadata
-local items = session.list("cwd")
+local items = session.list()
 assert(#items == 1, "expected 1 session, got " .. #items)
 assert(
   items[1].text == "Implement session descriptions",
-  "description should be the whole cwd label: " .. items[1].text
-)
-local all_items = session.list("all")
-assert(
-  all_items[1].text == paths.project_cwd(path) .. "  Implement session descriptions",
-  "all-project label should show decoded cwd: " .. all_items[1].text
+  "description should be the whole label: " .. items[1].text
 )
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
@@ -133,7 +128,7 @@ assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vi
 -- not grow when a stray markdown lands inside a session's assets folder.
 vim.fn.mkdir(paths.assets_dir(buf2), "p")
 vim.fn.writefile({ "# not a transcript" }, paths.assets_dir(buf2) .. "/stray.md")
-assert(#session.list("cwd") == 1, "assets markdown leaked into the session list")
+assert(#session.list() == 1, "assets markdown leaked into the session list")
 
 -- 7. updated_at + turns render and parse back
 local updated_block = frontmatter.render({
@@ -240,10 +235,6 @@ assert(
 assert(
   session.label(plain_path, nil) == "fix-picker",
   "directory name should be the fallback: " .. session.label(plain_path, nil)
-)
-assert(
-  session.label(renamed_path, "Generated description", "/srv/app") == "/srv/app  my-title",
-  "filename title should keep the cwd prefix: " .. session.label(renamed_path, "Generated description", "/srv/app")
 )
 
 -- 9. save stamps a turn count from the `# @user` headings

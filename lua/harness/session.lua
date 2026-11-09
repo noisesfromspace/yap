@@ -9,8 +9,8 @@
 -- generated description; an unnamed blank session appears while its buffer
 -- is loaded, and an unsent prompt keeps it discoverable after unloading.
 -- A scaffold-only interactive eval is hidden until edited or sent. Subagent
--- sessions belong to the conversation that spawned them: saved history never
--- lists them, while the open-session picker shows them under their parent.
+-- sessions belong to the conversation that spawned them: the single sessions()
+-- picker nests them under their parent only while the parent is open.
 
 local view = require("harness.ui.view")
 
@@ -389,9 +389,8 @@ end
 --- Markdown preview of a session: the initial `# @user` message followed by
 --- the last `# @assistant` answer, rendered in a scratch buffer with the
 --- `markdown` filetype so pickers show it with normal syntax highlighting
---- instead of flat text. Shared by the open-session and saved-session pickers so both
---- pickers preview the same two excerpts. Returns the |vim.ui.select()|
---- preview table `{ buf = ... }`.
+--- instead of flat text. Returns the |vim.ui.select()| preview table
+--- `{ buf = ... }`.
 function M.preview(lines)
   local content = {}
   local user = first_message(lines, "user")
@@ -419,12 +418,6 @@ function M.preview(lines)
   vim.bo[buf].bufhidden = "wipe"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
   return { buf = buf, pos = { 1, 0 } }
-end
-
---- The persisted directory name is a lossy cwd slug; this is deliberately a
---- best-effort display conversion for saved cross-project sessions.
-local function slug_cwd(dir)
-  return paths.slug_cwd(dir)
 end
 
 --- The title a session's filename carries: the basename without `.md` when
@@ -456,7 +449,7 @@ end
 
 --- "agent · <identity>" for a subagent row. The identity is the first
 --- non-empty of the filename title, description, task, fallback and
---- fallback_label, so the open picker and the saved history list build the
+--- fallback_label, so the live label and the saved history list build the
 --- same chain.
 function M.agent_label(agent, title, description, task, fallback, fallback_label)
   local identity = (title and title ~= "" and title)
@@ -469,73 +462,54 @@ function M.agent_label(agent, title, description, task, fallback, fallback_label
 end
 
 --- Shared picker identity: renamed filename, description, then directory.
---- Project overviews prefix the cwd so sessions from different worktrees are
---- obvious.
-function M.label(path, description, project_cwd)
+function M.label(path, description)
   local identity = M.identity(path, description)
   if not identity then
     identity = (path and path ~= "" and paths.session_name(path)) or "session"
   end
-  return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
+  return identity
 end
 
---- Currently-loaded session paths. Portable transcripts have no directory
---- to discover, while a loaded blank session should be visible before its
---- first prompt. Return portable candidates and the set of loaded paths.
+--- Currently-loaded session paths. A loaded blank session should be visible
+--- before its first prompt, and any loaded session is listed while its buffer
+--- pins it — including one opened directly from another project's folder.
 local function open_session_paths()
-  local portable, loaded = {}, {}
+  local loaded = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(b) and vim.b[b].yap then
       local path = vim.b[b].yap_path or vim.api.nvim_buf_get_name(b)
       if path ~= "" then
-        path = vim.fs.normalize(path)
-        loaded[path] = b
-        if not paths.under_sessions_root(path) then
-          portable[#portable + 1] = path
-        end
+        loaded[vim.fs.normalize(path)] = b
       end
     end
   end
-  return portable, loaded
+  return loaded
 end
 
---- List saved sessions. scope = "cwd" (default) or "all"
+--- List saved sessions for the current project.
 --- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
 --- recency; `model`/`models` and the turn and agent counts come from the
 --- session frontmatter. Forks always nest under their parent; subagents nest
 --- only while their parent is open.
-function M.list(scope)
-  -- Candidate transcripts: { path, project }, where `project` prefixes the
-  -- label only in the "all" scope so sessions from different worktrees are
-  -- distinguishable.
+function M.list()
   local transcripts, seen = {}, {}
-  local portable, loaded = open_session_paths()
-  local function add(path, project)
+  local loaded = open_session_paths()
+  local function add(path)
     path = vim.fs.normalize(path)
     if path ~= "" and not seen[path] and vim.fn.filereadable(path) == 1 then
       seen[path] = true
-      transcripts[#transcripts + 1] = { path = path, project = project }
+      transcripts[#transcripts + 1] = { path = path }
     end
   end
 
-  if scope == "all" then
-    for name, type in vim.fs.dir(paths.sessions_root()) do
-      if type == "directory" then
-        local dir = vim.fs.joinpath(paths.sessions_root(), name)
-        for _, sdir in ipairs(paths.session_dirs(dir)) do
-          add(paths.transcript_in(sdir), slug_cwd(dir))
-        end
-      end
-    end
-  else
-    for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
-      add(paths.transcript_in(sdir))
-    end
-    -- Any currently-open portable transcript is listed while its buffer pins
-    -- it; a next-to-file or custom-path transcript is otherwise undiscoverable.
-    for _, path in ipairs(portable) do
-      add(path)
-    end
+  for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
+    add(paths.transcript_in(sdir))
+  end
+  -- Any currently-loaded session is listed while its buffer pins it: a
+  -- portable transcript, or a session opened directly from another project's
+  -- folder, has no discoverable location in this project otherwise.
+  for path in pairs(loaded) do
+    add(path)
   end
 
   -- Directory -> transcript path: a parent/child link is recorded as a
@@ -566,7 +540,7 @@ function M.list(scope)
     local item = {
       path = path,
       mtime = vim.fn.getftime(path),
-      text = M.label(path, description, entry.project),
+      text = M.label(path, description),
       model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
       models = fm and #fm.models > 1 and fm.models or nil,
       turns = fm and fm.turns,
@@ -574,7 +548,7 @@ function M.list(scope)
     if fm and fm.forked_from then
       -- A fork always nests: it is part of the conversation's lineage. The
       -- type glyph (fork icon) replaces the old "↳ fork · " wording.
-      item.text = M.label(path, description, nil)
+      item.text = M.label(path, description)
       item.icon = icons().fork
       item.child_kind = "fork"
       children[path] = item
@@ -590,7 +564,7 @@ function M.list(scope)
       if owner then
         agents[owner] = (agents[owner] or 0) + 1
         if loaded[owner] then
-          item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description, nil))
+          item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description))
           item.icon = icons().agent
           item.child_kind = "agent"
           children[path] = item
@@ -651,9 +625,9 @@ function M.list(scope)
   for _, item in ipairs(items) do
     add(item, 0, {}, {}, nil)
   end
-  -- Preserve discoverability when a fork's parent is missing or excluded by
-  -- scope. A subagent whose parent is not open is simply omitted (not
-  -- orphaned), so an inactive conversation stays lean.
+  -- Preserve discoverability when a fork's parent is missing. A subagent
+  -- whose parent is not open is simply omitted (not orphaned), so an inactive
+  -- conversation stays lean.
   local orphans = {}
   for _, child in pairs(children) do
     if not shown[child.path] and child.child_kind == "fork" then
@@ -667,9 +641,6 @@ function M.list(scope)
     if not shown[child.path] then
       local orphan = vim.deepcopy(child)
       orphan.text = orphan.text .. " (parent not shown)"
-      if scope == "all" then
-        orphan.text = paths.project_cwd(orphan.path) .. "  " .. orphan.text
-      end
       add(orphan, 0, {}, {}, nil)
     end
   end
@@ -697,41 +668,24 @@ end
 --- Pick a session; on_choice(path) is called with the selected file.
 function M.pick(opts, on_choice)
   opts = opts or {}
-  local scope = opts.scope or "cwd"
-  local items = M.list(scope)
+  local items = M.list()
   if #items == 0 then
-    vim.notify("yap: no saved conversations in this scope", vim.log.levels.INFO)
+    vim.notify("yap: no saved conversations", vim.log.levels.INFO)
     return
-  end
-  local scope_label = scope == "all" and "all projects" or "cwd project"
-  local projects = {}
-  for _, item in ipairs(items) do
-    projects[paths.project_cwd(item.path)] = true
   end
   -- Reserve the status column even for closed rows (and when every row is
   -- closed), so descendants never shift as sessions open and close.
   local icon_width = picker.icon_width(picker.glyphs())
-  local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
-    prompt = "Pick yap session (" .. scope_label .. ")",
+    prompt = "Pick yap session",
     kind = "yap_session",
     format_item = function(item)
       local icon = opts.status and opts.status(item.path)
-      local project = paths.project_cwd(item.path)
-      local label = item.text
-      -- list("all") prefixes roots for callers; move that identity to a
-      -- suffix in the picker so titles remain aligned across projects.
-      if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
-        label = label:sub(#project + 3)
-      end
-      label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. label
+      local label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. item.text
       label = picker.prefix(icon, icon_width) .. label
       local counts = counts_label(item.turns, item.agents)
       if counts then
         label = label .. "  (" .. counts .. ")"
-      end
-      if multiple_projects and item.depth == 0 then
-        label = label .. "  " .. project
       end
       return label
     end,
@@ -756,8 +710,7 @@ end
 
 --- Session label for the picker and notifications: the renamed filename,
 --- else the generated `description`, else the directory name. Subagents and
---- forks are indented under their parent when it is open. The project cwd is
---- rendered separately by the sessions("open") picker.
+--- forks are nested under their parent when it is open.
 function M.live_label(buf, parent)
   local path = M.display_path(buf)
   local e = frontmatter.end_line(buf)

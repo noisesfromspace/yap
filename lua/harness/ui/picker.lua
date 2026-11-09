@@ -1,8 +1,7 @@
 -- Shared session-picker presentation: buffer state classification, the
 -- agent-role lookup, the state -> icon table, and the fixed-column icon
--- prefix. Both the open-session picker (harness.sessions("open")) and the
--- saved-session picker (harness.session .pick) render the icons, and the
--- winbar rollup classifies other sessions with the same precedence — so
+-- prefix. The saved-session picker (harness.sessions) renders the icons, and
+-- the winbar rollup classifies other sessions with the same precedence — so
 -- the rule lives here once.
 
 local M = {}
@@ -20,8 +19,7 @@ function M.agent(fm, buf)
   return (role ~= nil and role ~= "") and role or nil
 end
 
---- Plain state token for a buffer: the state behind each picker status glyph
---- and the open-session picker's attention tag.
+--- Plain state token for a buffer: the state behind each picker status glyph.
 function M.state(buf)
   if state.running[buf] then
     return "running"

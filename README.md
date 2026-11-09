@@ -166,7 +166,7 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 | `require("harness").live()`              | `<leader>l` | open the live tool tail                                                |
 | `require("harness").guard()`             | `<leader>g` | open/close the guard board                                             |
 | `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                                      |
-| `require("harness").sessions(scope)`     | `+`         | resume a saved session (`cwd` \| `all`) or list open sessions (`open`) |
+| `require("harness").sessions()`          | `+`         | pick a saved session (single session picker)                        |
 | `require("harness").insert(name)`        | `<C-Enter>` | insert a template (and send it) or merge a skill                       |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
@@ -181,10 +181,9 @@ instead of the auto-generated description); use your normal buffer navigation,
 file explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
 not count in the winbar overview.
 
-`sessions()` lists saved sessions; `sessions("open")` lists the open-session
-tree, including subagents and forks, sorted by state. The open picker shows
-an indented tree without status tags; loaded sessions in the saved-session
-picker get live status icons.
+`sessions()` is the single session picker: it lists saved sessions for the
+current project, marks open rows with a live status icon, and nests forks and
+subagents under their parent in a box-drawing tree.
 
 ## Rendering
 

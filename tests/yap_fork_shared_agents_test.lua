@@ -101,21 +101,21 @@ local function check(rows, key, label)
 end
 
 check(capture(function()
-  yap.sessions("open")
-end), "buf", "open")
+  yap.sessions()
+end), "path", "picker")
 
-check(session.list("cwd"), "path", "saved")
+check(session.list(), "path", "saved")
 
 -- Selecting a subagent row opens its session.
 local captured
 vim.ui.select = function(items, opts, callback)
   captured = { items = items, opts = opts, callback = callback }
 end
-yap.sessions("open")
+yap.sessions()
 vim.ui.select = select
 local early_row
 for _, row in ipairs(captured.items) do
-  if row.buf == early then
+  if vim.fs.normalize(row.path) == vim.fs.normalize(early_path) then
     early_row = row
   end
 end
@@ -123,20 +123,15 @@ assert(early_row, "early agent row missing")
 captured.callback(early_row)
 assert(vim.api.nvim_get_current_buf() == early, "selecting an agent row must open its session")
 
--- Closing an agent's buffer removes it from the open picker; its saved file
--- remains discoverable under its still-open parent in saved history.
+-- Closing an agent's buffer does not remove it from the picker: its saved
+-- file stays nested under its still-open parent.
 vim.api.nvim_buf_delete(early, { force = true })
-for _, row in ipairs(capture(function()
-  yap.sessions("open")
-end)) do
-  assert(row.buf ~= early, "closed agent in open picker")
-end
-check(session.list("cwd"), "path", "saved-after-agent-close")
+check(session.list(), "path", "saved-after-agent-close")
 
 -- Closing the parent hides its subagents from saved history, so an inactive
 -- conversation's row stays lean.
 vim.api.nvim_buf_delete(root, { force = true })
-for _, row in ipairs(session.list("cwd")) do
+for _, row in ipairs(session.list()) do
   assert(row.path ~= early_path and row.path ~= root_only_path, "subagent shown under a closed parent: " .. row.path)
 end
 print("OK fork_shared_agents")

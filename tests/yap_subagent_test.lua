@@ -12,23 +12,22 @@ assert(vim.fn.filereadable(child_path) == 1, "child not saved as markdown")
 assert(vim.b[child].yap_tools[1] == "read", "role tool allowlist missing")
 local lines = vim.fn.readfile(child_path)
 assert(table.concat(lines, "\n"):find("Scout agent", 1, true), "role prompt not saved")
--- An agent session is internal to the conversation that spawned it: saved
--- history never lists it, while the open-session picker still does.
-for _, item in ipairs(require("harness.session").list("cwd")) do
-  assert(item.path ~= child_path, "subagent session leaked into saved history")
-end
+-- A subagent records its parent as a directory link; the single session
+-- picker nests it under that parent (never as a top-level row).
+require("harness.model.frontmatter").update(child, { subagent_parent = vim.fn.fnamemodify(parent_path, ":h") })
+require("harness.session").save(child)
 local captured
 vim.ui.select = function(items)
   captured = items
 end
-yap.sessions("open")
+yap.sessions()
 local open_agent = false
 for _, item in ipairs(captured or {}) do
-  if item.buf == child then
-    open_agent = true
+  if item.path == child_path then
+    open_agent = item.depth > 0
   end
 end
-assert(open_agent, "open subagent missing from the open-session picker")
+assert(open_agent, "subagent missing from the session picker under its parent")
 yap.open(child_path)
 assert(vim.b[vim.api.nvim_get_current_buf()].yap, "child not reopenable")
 assert(vim.b[vim.api.nvim_get_current_buf()].yap_tools[1] == "read", "role permissions lost on reopen")

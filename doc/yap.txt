@@ -308,10 +308,10 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").guard()                -- open/close the guard board
   require("harness").insert(name)           -- insert a template / merge a skill
   require("harness").change_model(combo)    -- set this session's provider/model
-  require("harness").sessions(scope)        -- saved sessions ("cwd" | "all") or open sessions ("open")
+  require("harness").sessions()            -- pick a saved session (single picker)
 <
-`scope` for sessions() is `"cwd"` (default), `"all"`, or `"open"` (the
-live open-session tree); omit it for the current project. `insert(name, { at_cursor = true })` inserts the raw
+`sessions()` takes no arguments and lists saved sessions for the current
+project. `insert(name, { at_cursor = true })` inserts the raw
 file at the cursor instead of appending/sending. See |yap-keymaps|
 for the default shortcuts that call these.
 
@@ -509,11 +509,13 @@ prompt behave normally.
 Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
-session everywhere: it appears in the open-session picker (sessions("open"))
-and in other sessions' winbar rollup. The saved-session picker (sessions(),
-`+`) lists any currently-open portable transcript. A next-to-file or
-custom-path transcript is only listed while it is open — its location is
-otherwise undiscoverable, so reopening it means opening the file.
+session everywhere: it appears in the sessions() picker and in other
+sessions' winbar rollup. The picker also lists any session whose buffer is
+open, including one opened directly from another project's folder — so
+browsing ~/.config/yap/sessions/ and opening a transcript makes it show up in
+sessions() for as long as it stays open. A next-to-file or custom-path
+transcript is only listed while it is open — its location is otherwise
+undiscoverable, so reopening it means opening the file.
 
 The saved-session picker includes an ordinary blank session while its buffer
 is loaded. Once unloaded, it is hidden unless it has a prompt, completed turn,
@@ -526,16 +528,12 @@ Deleting a session buffer uses Neovim's ordinary replacement
 buffer behavior, without preferring waiting or running sessions.
 
                                                     *harness.sessions()*
-require("harness").sessions(scope) is the single session picker. `"cwd"`
-(default) and `"all"` list saved sessions; `"open"` lists the open-session
-tree, including open subagents and forks, sorted by state. The saved-session
-scope annotates open sessions with a live status icon and nests forks (always)
-and subagents (only while their parent is open) under their parent. Subagents
-(`b:yap_agent`) remain unlisted and excluded from the winbar overview.
-
-The open-session scope shows an indented tree with no text status tags or
-status column. The saved-session picker alone shows live status icons for
-loaded sessions.
+require("harness").sessions() is the single session picker. It lists saved
+sessions for the current project, annotates open rows with a live status icon,
+and nests forks (always) and subagents (only while their parent is open) under
+their parent, drawn as a box-drawing tree with a fork/agent glyph per row.
+Subagents (`b:yap_agent`) remain unlisted and excluded from the winbar
+overview.
 
 File operations are the session operations:
 
@@ -925,10 +923,9 @@ its permitted tool names per call, including runtime-discovered MCP tools;
 agent definitions provide the system prompt and optional model, not tool
 permissions. The normal approval guard and sandbox still apply. Definitions live in
 `agents_dir` (|yap-configuration|), one markdown file per agent. An agent
-session is internal to the conversation that spawned it: saved history never
-lists it, while the open-session picker (sessions("open")) shows it under its
-parent while it is open. The tool result carries a link to the session file,
-so a finished agent stays reachable. The parent waits up to 30 minutes; if
+session is internal to the conversation that spawned it: the single sessions()
+picker nests it under its parent while the parent is open, and the tool result
+carries a link to the session file, so a finished agent stays reachable. The parent waits up to 30 minutes; if
 the child times out or is cancelled, the result still carries the child
 session path so its work stays recoverable.
 
