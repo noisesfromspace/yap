@@ -12,6 +12,7 @@ yap.setup({
 local eval = require("harness.client.eval")
 assert(select(2, eval.combo()) == "flash", "one-shot eval should use flash")
 local structure = require("harness.model.structure")
+local fold = require("harness.ui.fold")
 
 -- strip_markers removes the binary's thinking/model/error blocks but keeps
 -- ordinary HTML comments untouched.
@@ -145,6 +146,19 @@ assert(src_win, "source buffer not shown in any window")
 assert(vim.wo[src_win].winbar == "", "eval session leaked the yap winbar onto the source window")
 assert(vim.b[sbuf].yap_provider == "mock" and vim.b[sbuf].yap_model == "m1", "eval session did not use agent")
 assert(vim.b[sbuf].yap, "eval split is not a yap session")
+-- The eval session is created hidden (no window for fold.setup_buffer to
+-- project), then shown in the split: its default view 2 must still fold the
+-- system prompt.
+local sys_line = nil
+for i, l in ipairs(vim.api.nvim_buf_get_lines(sbuf, 0, -1, false)) do
+  if l:match("^# @system%s*$") then
+    sys_line = i
+    break
+  end
+end
+assert(sys_line, "eval session has no # @system heading")
+assert(fold.level() == 2, "eval session default view is not 2")
+assert(vim.fn.foldclosed(sys_line) == sys_line, "eval session system prompt is not folded at view 2")
 assert(
   vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }),
   "eval session changed the source buffer"

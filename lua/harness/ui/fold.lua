@@ -716,8 +716,16 @@ end
 
 function M.setup_buffer(buf, keys)
   keys = keys or require("harness").config.keymaps
-  options()
-  M.set_view_level(2) -- default: conversation open, tools & thinking folded
+  -- Fold state must exist before the buffer is shown: a hidden session
+  -- (:YapEval, a subagent) is created while another buffer is current, so
+  -- set_view_level's current-window path cannot install its folds. Initializing
+  -- the state here lets the BufWinEnter handler project the default view the
+  -- first time the buffer appears in a window.
+  local s = state(buf)
+  s.default_view = 2 -- default: conversation open, tools & thinking folded
+  if vim.api.nvim_get_current_buf() == buf then
+    M.set_view_level(2)
+  end
 
   local map = function(lhs, rhs, desc)
     if lhs == "" then
