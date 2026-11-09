@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -137,12 +138,18 @@ func SandboxWrap(command, projectDir string) *exec.Cmd {
 	return cmd
 }
 
-// SandboxViolated reports whether a sandboxed run's merged output shows the
-// write barrier blocking the command (EROFS). It is the one signal the bash
-// tool uses to offer the human an unsandboxed re-run; a deny-read shadow is
-// silent by design and does not escalate.
-func SandboxViolated(text string) bool {
-	return strings.Contains(text, "Read-only file system")
+// readOnlyFSRe matches the kernel's EROFS strerror at the end of an error
+// line (`touch: cannot touch 'x': Read-only file system`), so a command that
+// merely prints the phrase (cat'ing a document about it) does not trip the
+// escalation.
+var readOnlyFSRe = regexp.MustCompile(`(?m):\s*Read-only file system\s*$`)
+
+// SandboxViolated reports whether a sandboxed run hit the read-only write
+// barrier: the command exited non-zero AND its output carries the EROFS
+// signal. A non-zero exit alone is common (a failing test); the phrase alone
+// can be legitimate content. Together they mean a write was blocked.
+func SandboxViolated(text string, exitCode int) bool {
+	return exitCode != 0 && readOnlyFSRe.MatchString(text)
 }
 
 // WritableDirs returns the directories re-mounted writable inside the

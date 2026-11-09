@@ -15,9 +15,9 @@ import (
 )
 
 type bashArgs struct {
-	Command    string `json:"command" jsonschema:"description=bash command to execute"`
-	Timeout    int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
-	Cwd        string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
+	Command string `json:"command" jsonschema:"description=bash command to execute"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"description=timeout in seconds (default 120)"`
+	Cwd     string `json:"cwd,omitempty" jsonschema:"description=working directory (default: the Neovim cwd)"`
 }
 
 func init() {
@@ -400,7 +400,7 @@ func runBash(a *bashArgs) (string, string, error) {
 		return text, "", err
 	}
 
-	text, err := wire.RunStreamed("bash", a.Command, buildCmd(), timeout)
+	text, _, err := wire.RunStreamed("bash", a.Command, buildCmd(), timeout)
 	if err != nil {
 		return "", "", err
 	}
@@ -413,11 +413,11 @@ func runBash(a *bashArgs) (string, string, error) {
 // unsandboxed; approval re-runs it, denial returns the sandboxed failure. A
 // deny-read shadow is silent by design and never escalates.
 func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout time.Duration) (string, error) {
-	text, err := wire.RunStreamed("bash", command, safety.SandboxWrap(command, projectDir), timeout)
+	text, exit, err := wire.RunStreamed("bash", command, safety.SandboxWrap(command, projectDir), timeout)
 	if err != nil {
 		return text, err // bwrap start failure (should not happen: Active() probed it)
 	}
-	if !safety.SandboxViolated(text) {
+	if !safety.SandboxViolated(text, exit) {
 		return text, nil
 	}
 	approved, aerr := wire.RequestApproval(command, "bash", "bash hit read-only filesystem; rerun unsandboxed")
@@ -427,5 +427,6 @@ func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout
 	if !approved {
 		return text + "\n[sandbox: write blocked by read-only filesystem; approval denied]", nil
 	}
-	return wire.RunStreamed("bash", command, buildCmd(), timeout)
+	text, _, err = wire.RunStreamed("bash", command, buildCmd(), timeout)
+	return text, err
 }

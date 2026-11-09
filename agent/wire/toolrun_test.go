@@ -77,7 +77,7 @@ func TestRunStreamedUsesAssetsBase(t *testing.T) {
 
 	cmd := exec.Command("echo", "hi")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	text, err := RunStreamed("bash", "echo hi", cmd, ToolDefaultTimeout)
+	text, _, err := RunStreamed("bash", "echo hi", cmd, ToolDefaultTimeout)
 	if err != nil || !strings.Contains(text, "hi") {
 		t.Fatalf("run: %q %v", text, err)
 	}
@@ -102,7 +102,7 @@ func TestRunStreamedEmitsProgress(t *testing.T) {
 
 	cmd := exec.Command("bash", "-c", "echo one; echo two; sleep 0.05")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	text, err := RunStreamed("bash", "echo one; echo two; sleep 0.05", cmd, ToolDefaultTimeout)
+	text, _, err := RunStreamed("bash", "echo one; echo two; sleep 0.05", cmd, ToolDefaultTimeout)
 	if err != nil || !strings.Contains(text, "two") {
 		t.Fatalf("run: %q %v", text, err)
 	}

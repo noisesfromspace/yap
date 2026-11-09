@@ -47,10 +47,10 @@ func (p *progressTracker) snapshot() (int64, int64) {
 // log that the Lua side follows live (tool_start/tool_end announce the log path).
 // stdin is /dev/null. On timeout the whole process group is SIGKILLed. cmd
 // must already have SysProcAttr.Setpgid set and its Dir validated.
-func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (string, error) {
+func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (text string, exitCode int, err error) {
 	out, err := os.CreateTemp(utils.AssetsBase(), "yap-"+name+"-*.log")
 	if err != nil {
-		return "", err
+		return "", -1, err
 	}
 	outPath := out.Name()
 	EmitEvent(map[string]string{"type": "tool_start", "name": name, "log": outPath, "command": safety.Scrub(command)})
@@ -65,7 +65,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	if err := cmd.Start(); err != nil {
 		_ = out.Close()
 		_ = os.Remove(outPath)
-		return "", err
+		return "", -1, err
 	}
 	// Emit a throttled progress frame while the tool runs, so the winbar shows
 	// real output throughput instead of only wall-clock time. A timer drives it
@@ -122,7 +122,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	if cancelled {
 		// The turn was cancelled: the tail gets its final bytes and the log
 		// is cleaned up, but the result is moot (the model will not see it).
-		return "", context.Canceled
+		return "", -1, context.Canceled
 	}
 
 	exit := 0
@@ -130,7 +130,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 		exit = ee.ExitCode() // -1 when killed by signal
 	} else if err != nil {
 		_ = os.Remove(outPath)
-		return "", fmt.Errorf("run: %w", err)
+		return "", -1, fmt.Errorf("run: %w", err)
 	}
 
 	if truncated {
@@ -147,7 +147,7 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (st
 	if exit != 0 {
 		text += fmt.Sprintf("\n[exit code %d]", exit)
 	}
-	return text, nil
+	return text, exit, nil
 }
 
 // plainOutputWriter removes terminal styling and keeps only the final version

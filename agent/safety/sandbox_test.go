@@ -28,11 +28,17 @@ func requireBwrap(t *testing.T) {
 }
 
 func TestSandboxViolated(t *testing.T) {
-	if !SandboxViolated("sh: line 1: /etc/x: Read-only file system\n[exit code 1]") {
+	if !SandboxViolated("sh: line 1: /etc/x: Read-only file system", 1) {
 		t.Fatal("expected a write-barrier violation")
 	}
-	if SandboxViolated("hello world") {
+	if SandboxViolated("hello world", 1) {
 		t.Fatal("false positive on ordinary output")
+	}
+	if SandboxViolated("cat: Read-only file system", 0) {
+		t.Fatal("zero exit must not escalate, even with the phrase present")
+	}
+	if SandboxViolated("command failed: Read-only file system for /etc/x", 1) {
+		t.Fatal("the phrase must be the trailing strerror to trip")
 	}
 }
 
