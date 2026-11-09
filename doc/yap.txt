@@ -44,7 +44,6 @@ Lua setup (example; substitute your own model groups): >lua
 
   require("harness").setup({
     bin = "yap",                  -- path to the Go binary
-    reasoning_level = "medium",  -- low | medium | high
     system = "You are a helpful coding assistant. Answer concisely.",
     agents_file = vim.fn.expand("~/.config/yap/AGENTS.md"),
     agents_dir = "~/.config/yap/agents",       -- subagent definitions
@@ -102,14 +101,6 @@ session view.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
 credentials. It does not change the configured default for new sessions.
-
-`reasoning_level` (`low`/`medium`/`high`) is the default active level, seeded
-into every new session's frontmatter as `reasoning_level` so it is visible and
-hand-editable from the first line. Delete `reasoning_level` in a session to
-fall back to the provider's own default. `reasoning_level` is a cross-provider
-effort knob: it maps to OpenAI's `reasoning.effort`, Anthropic's
-`effort`/thinking budget, Gemini's `thinkingLevel`, and DeepSeek has no
-equivalent (ignored).
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
 disable it. `templates_dir`/`skills_dir` configure
@@ -336,8 +327,8 @@ Both bindings are present in every yap panel (session, guard, live tail and
 scratch), so the two stay stacked in the fixed session → guard → log order
 regardless of which one you open first.
   <leader>j             Toggle the scratch buffer (see |yap-sessions|).
-  <C-Enter> (n, i)      Pick a template or skill (see insert()). A template
-                        is inserted and sent; a skill merges into `# @system`.
+  <C-Enter> (n, i)      Pick a template (see insert()). A template is inserted
+                        and sent; to merge a skill, call insert(name) instead.
                         In scratch, insert the raw file at the cursor instead.
   +                     Pick a saved session to resume.
   g?                    Show the current Yap shortcuts in a searchable
@@ -383,7 +374,6 @@ as YAML frontmatter: >
   description: Fix session picker labels and summaries
   model: kimi-k3
   provider: moonshot
-  reasoning_level: high
   created_cwd: ~/code/project
   turns: 14
   created_at: 2025-09-29T19:22:33Z
@@ -406,9 +396,6 @@ explorer, and views show that filename instead of the description. The rest
 of the frontmatter:
 
   `provider`/`model`      The combo to resume with.
-  `reasoning_level`       The live, hand-editable choice (`low`/`medium`/
-                          `high`), seeded from the setup() defaults and read on
-                          every send. Empty means the provider's default.
   `created_cwd`           The exact directory the session was created in.
   `models`                The combos used, most recent last.
   `tools`                 The per-session tool allowlist. Remove a line to
@@ -593,7 +580,7 @@ beneath its heading.
 idle it sends the section under the cursor. Outside a section it only displays
 a hint; move to steer or queue to send.
 There is no selection-specific send. <C-Enter> in normal or insert mode picks a
-template or skill and inserts it at the cursor without sending it. The scratch buffer
+template and inserts it at the cursor without sending it. The scratch buffer
 is intentionally ephemeral — no file backs it, and it is dropped when Neovim
 exits — but closing the session with |:bdelete| does not discard it: the
 draft survives, comes back with the session, and its |<C-s>| still dispatches
@@ -699,14 +686,15 @@ For a global segment independent of yap buffers, use
 10. TEMPLATES & SKILLS                                      *yap-templates*
 
 A template or skill is just a markdown file — the filename (minus `.md`) is
-the name in the picker, the body is what gets inserted. They live in:
+the name, the body is what gets inserted. They live in:
 
   ~/.config/yap/templates/     generic text (insert())
   ~/.config/yap/skills/        system-prompt material (insert())
 
 Both configurable via `templates_dir` / `skills_dir`. Create the directory,
-drop a file in, then `<C-Enter>` (or insert(name)) to insert it. In scratch,
-`<C-Enter>` inserts the raw file at the cursor instead of sending it.
+drop a file in, then insert(name) to insert it. `<C-Enter>` opens the picker,
+which lists templates only; merge a skill with insert(name). In scratch,
+`<C-Enter>` inserts a template's raw file at the cursor instead of sending it.
 
 HOW TO WRITE A TEMPLATE                                      *yap-template*
 
@@ -948,11 +936,11 @@ LSP, backed by the Go document parser (agent/document):
                     Tool calls, thinking and other machine regions are not
                     symbols.
   Completion        Frontmatter keys and values (`provider`, `model`,
-                    `reasoning_level`, `agent`, `tools`, ...), role headings,
-                    and `@path` file references.
+                    `agent`, `tools`, ...), role headings, and `@path` file
+                    references.
   Diagnostics       Structural warnings: unterminated or duplicate frontmatter,
-                    invalid `reasoning_level`/`turns`, unknown message roles,
-                    malformed tool headers, and unclosed regions.
+                    invalid `turns`, unknown message roles, malformed tool
+                    headers, and unclosed regions.
   Code actions      Quick fixes for an unterminated frontmatter block or an
                     unclosed tool region with a complete header.
 

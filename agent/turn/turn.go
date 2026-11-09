@@ -45,8 +45,6 @@ type Request struct {
 	System     string    `json:"system,omitempty"`
 	Context    string    `json:"context,omitempty"`
 	Tools      *[]string `json:"tools,omitempty"` // nil: all tools; child agent: allowlist
-	// ReasoningLevel is the cross-provider reasoning-effort knob (low|medium|high).
-	ReasoningLevel string `json:"reasoning_level,omitempty"`
 	// Cwd is the frontend's working directory at send time. Request-only,
 	// like the context tail: the serve process's own cwd is fixed when the
 	// buffer spawns it, so without this a `:cd` in Neovim would leave the
@@ -171,8 +169,8 @@ type Boundary struct {
 // markers and streams assistant prose live. Prose from a tool-bearing round
 // stays where it streamed (before the tool regions), matching the model's
 // part order: preamble text precedes the calls it introduces.
-func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string, reasoningLevel string) (*step, error) {
-	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed), ReasoningLevel: reasoningLevel})
+func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Message, out *bufio.Writer, wrote bool, allowed *[]string) (*step, error) {
+	stream, err := model.DoStream(ctx, llm.Params{Messages: messages, Tools: providerToolDefs(allowed)})
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +629,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 				}
 			}
 		}
-		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools, req.ReasoningLevel)
+		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 		if err != nil {
 			// Retry transient errors (429/5xx, network) only while the failed
 			// step emitted nothing to the buffer: a mid-stream failure after
@@ -651,7 +649,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 					return ctx.Err()
 				case <-time.After(delay):
 				}
-				t, err = streamStep(ctx, modelImpl, messages, out, wrote, req.Tools, req.ReasoningLevel)
+				t, err = streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 			}
 			if err != nil {
 				return err

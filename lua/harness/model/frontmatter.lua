@@ -6,7 +6,6 @@
 --   description: Fix session picker labels and summaries
 --   model: kimi-k3
 --   provider: moonshot
---   reasoning_level: high
 --   created_cwd: ~/code/project
 --   agent: reviewer
 --   tools:
@@ -82,8 +81,6 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
-      elseif k == "reasoning_level" then
-        fm.reasoning_level = v
       elseif k == "tools" then
         list_key = "tools"
       elseif is_list_key(k) then
@@ -113,9 +110,6 @@ function M.render(fm)
   end
   lines[#lines + 1] = "model: " .. fm.model
   lines[#lines + 1] = "provider: " .. fm.provider
-  if fm.reasoning_level and fm.reasoning_level ~= "" then
-    lines[#lines + 1] = "reasoning_level: " .. fm.reasoning_level
-  end
   if fm.created_cwd and fm.created_cwd ~= "" then
     lines[#lines + 1] = "created_cwd: " .. fm.created_cwd
   end
@@ -233,12 +227,6 @@ function M.sync(buf)
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local created_cwd = (fm and fm.created_cwd) or vim.b[buf].yap_project_cwd
-  -- Seed the sampling knob from config defaults only when creating a
-  -- session (no frontmatter yet); an existing session keeps whatever the
-  -- user left in the buffer — deleting the line restores the provider
-  -- default.
-  local defaults = require("harness").config
-  local reasoning_level = (not fm and defaults.reasoning_level) or (fm and fm.reasoning_level)
   local merged = vim.tbl_extend("force", fm or {}, {
     provider = provider,
     model = model,
@@ -248,7 +236,6 @@ function M.sync(buf)
     tools = (fm and fm.tools) or vim.b[buf].yap_tools,
     created_cwd = created_cwd,
     data_dir = (fm and fm.data_dir) or vim.b[buf].yap_data_dir,
-    reasoning_level = reasoning_level,
   })
   if e then
     M.write(buf, e, merged)

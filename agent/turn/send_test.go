@@ -169,7 +169,7 @@ func TestSendToolLoop(t *testing.T) {
 	}
 }
 
-func TestDeepSeekReasoningIsEnabledAndReplayed(t *testing.T) {
+func TestDeepSeekReasoningContentReplayed(t *testing.T) {
 	var requests []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -197,12 +197,6 @@ func TestDeepSeekReasoningIsEnabledAndReplayed(t *testing.T) {
 	}
 	if len(requests) != 2 {
 		t.Fatalf("requests: %d", len(requests))
-	}
-	for i, req := range requests {
-		thinking, _ := req["thinking"].(map[string]any)
-		if thinking["type"] != "enabled" {
-			t.Fatalf("request %d did not enable thinking: %#v", i+1, req["thinking"])
-		}
 	}
 	messages := requests[1]["messages"].([]any)
 	var assistant map[string]any

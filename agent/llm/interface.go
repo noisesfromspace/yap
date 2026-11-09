@@ -105,9 +105,6 @@ type Result struct {
 type Params struct {
 	Messages []Message
 	Tools    []Tool
-	// ReasoningLevel is the cross-provider reasoning-effort knob
-	// (low|medium|high), mapped to each provider's native option.
-	ReasoningLevel string
 }
 
 // Stream yields display events then, once drained, the final Result.

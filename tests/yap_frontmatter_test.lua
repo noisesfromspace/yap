@@ -15,10 +15,6 @@ assert(lines[1] == "---", "new buffer must start with frontmatter: " .. tostring
 local fm = frontmatter.parse(lines)
 assert(fm and fm.description == nil, "fresh session should have no description: " .. vim.inspect(fm and fm.description))
 assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspect(fm))
-assert(
-  fm.reasoning_level == "medium",
-  "new session should seed default reasoning_level: " .. vim.inspect(fm.reasoning_level)
-)
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.created_cwd))
@@ -185,38 +181,6 @@ assert(
   vim.deep_equal(tools_fm.tools, { "read", "search", "glob" }),
   "tools list not roundtripped: " .. vim.inspect(tools_fm.tools)
 )
--- reasoning_level is the live, hand-editable choice.
-local knobs_block = frontmatter.render({
-  provider = "zeta",
-  model = "m1",
-  models = {},
-  created_at = created,
-  turns = 0,
-  created_cwd = "/tmp/project",
-  reasoning_level = "high",
-})
-local knobs_fm = frontmatter.parse(knobs_block)
-assert(
-  knobs_fm.reasoning_level == "high",
-  "reasoning_level not roundtripped: " .. vim.inspect(knobs_fm.reasoning_level)
-)
-local saw_level = false
-for _, l in ipairs(knobs_block) do
-  if l == "reasoning_level: high" then
-    saw_level = true
-  end
-end
-assert(saw_level, "reasoning_level line missing: " .. vim.inspect(knobs_block))
-local plain_fm = frontmatter.parse(frontmatter.render({
-  provider = "zeta",
-  model = "m1",
-  models = {},
-  created_at = created,
-  turns = 0,
-  created_cwd = "/tmp/project",
-}))
-assert(plain_fm.reasoning_level == nil, "absent knob should parse as nil: " .. vim.inspect(plain_fm))
-
 -- 8. a renamed transcript's filename is the session's permanent title. Every
 -- view shows it instead of the generated description, which only labels an
 -- unrenamed session.md.

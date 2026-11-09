@@ -803,11 +803,8 @@ function M.send(buf)
   scratchmod.refresh(vim.b[buf].yap_scratch)
   -- The frontmatter `tools` list is the per-session allowlist: hand-edit it
   -- (remove lines) to retract tools, effective on this send. A missing or
-  -- empty list means unrestricted (all tools). `reasoning_level` is the
-  -- same live-editable shape: read on every send so a hand-edited value
-  -- takes effect without a :Yap rewrite.
+  -- empty list means unrestricted (all tools).
   local tools = fm and fm.tools and #fm.tools > 0 and fm.tools or nil
-  local reasoning_level = fm and fm.reasoning_level
   local payload = vim.json.encode({
     type = "turn",
     v = 1,
@@ -821,7 +818,6 @@ function M.send(buf)
     system = system_prompt,
     context = extra,
     tools = tools,
-    reasoning_level = reasoning_level,
     -- Request-only (like the context tail): the backend's own cwd is fixed
     -- when the buffer spawns it, so the live cwd is what keeps the tools'
     -- "default: the Neovim cwd" true after a :cd.

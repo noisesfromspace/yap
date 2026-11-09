@@ -199,101 +199,6 @@ type modelImpl struct {
 	authOptions map[string]any
 }
 
-// providerOptions returns the per-provider request options that make visible
-// reasoning work, plus the user's reasoning_level mapped to each provider's
-// native knob. They are confined to this adapter; the agent never sees them.
-// Google already defaults includeThoughts=true for thinking-capable models and
-// DeepSeek streams reasoning_content natively (its provider is built with
-// IncludeReasoningContent), so those need no request option unless a level is
-// requested. An empty level means "provider default".
-func (m *modelImpl) providerOptions(level string) map[string]any {
-	id := strings.ToLower(m.model.ModelID())
-	switch m.name {
-	case "openai":
-		// Responses API (default): stream a visible reasoning summary and
-		// preserve encrypted reasoning items for tool continuation. Do not
-		// send reasoning options to non-reasoning models: they reject them.
-		if isOpenAIReasoningModel(id) {
-			opts := map[string]any{"reasoning_summary": "auto"}
-			if level != "" {
-				opts["reasoning_effort"] = level
-			}
-			return opts
-		}
-	case "anthropic":
-		// Current adaptive-thinking models can return a visible summary.
-		if supportsAnthropicAdaptiveThinking(id) {
-			opts := map[string]any{"thinking": map[string]any{"type": "adaptive", "display": "summarized"}}
-			if level != "" {
-				opts["effort"] = level
-			}
-			return opts
-		}
-		// Older thinking-capable Claude models require a token budget rather
-		// than adaptive mode; a higher level buys a bigger budget. Leave still
-		// older models untouched.
-		if supportsAnthropicExtendedThinking(id) {
-			budget := 4096
-			switch level {
-			case "low":
-				budget = 1024
-			case "high":
-				budget = 16384
-			}
-			return map[string]any{"thinking": map[string]any{"type": "enabled", "budgetTokens": budget}}
-		}
-	case "google", "gemini":
-		// Thinking is on by default for thinking models; the only user-facing
-		// level is thinkingLevel (low|high), so medium/max collapse to high.
-		if level != "" {
-			gl := level
-			if gl == "medium" || gl == "max" {
-				gl = "high"
-			}
-			return map[string]any{"thinkingConfig": map[string]any{"includeThoughts": true, "thinkingLevel": gl}}
-		}
-	case "deepseek":
-		// DeepSeek V4 and reasoning models require thinking to be enabled;
-		// the native adapter also replays their reasoning_content unchanged.
-		if strings.Contains(id, "v4") || strings.Contains(id, "reasoner") || strings.Contains(id, "r1") {
-			return map[string]any{"thinking": map[string]any{"type": "enabled"}}
-		}
-	default:
-		// OpenAI-compatible endpoints (compat): forward the effort verbatim;
-		// most reasoning endpoints accept a top-level reasoning_effort.
-		if level != "" {
-			return map[string]any{"reasoning_effort": level}
-		}
-	}
-	return nil
-}
-
-func isOpenAIReasoningModel(id string) bool {
-	if (strings.HasPrefix(id, "gpt-5") || strings.HasPrefix(id, "gpt-6")) && !strings.Contains(id, "-chat") {
-		return true
-	}
-	if strings.HasPrefix(id, "codex-") {
-		return true
-	}
-	return len(id) >= 2 && id[0] == 'o' && id[1] >= '0' && id[1] <= '9'
-}
-
-func supportsAnthropicAdaptiveThinking(id string) bool {
-	return strings.Contains(id, "claude-opus-5") ||
-		strings.Contains(id, "claude-sonnet-5") ||
-		strings.Contains(id, "claude-fable-5") ||
-		strings.Contains(id, "claude-mythos-5") ||
-		strings.Contains(id, "claude-opus-4-7") ||
-		strings.Contains(id, "claude-opus-4-8")
-}
-
-func supportsAnthropicExtendedThinking(id string) bool {
-	return strings.Contains(id, "claude-3-7") ||
-		strings.Contains(id, "claude-sonnet-4") ||
-		strings.Contains(id, "claude-opus-4") ||
-		strings.Contains(id, "claude-haiku-4")
-}
-
 // DoStream runs ONE generation step (no auto tool loop): the agent executes
 // tools and calls DoStream again, so the exact ordered assistant parts and
 // provider metadata in Result.ResponseMessages survive into the next request.
@@ -332,17 +237,8 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 	if m.name == "anthropic" {
 		opts = append(opts, sdk.WithPromptCaching(true), sdk.WithCacheTTL("1h"))
 	}
-	po := m.providerOptions(params.ReasoningLevel)
 	if len(m.authOptions) > 0 {
-		if po == nil {
-			po = map[string]any{}
-		}
-		for k, v := range m.authOptions {
-			po[k] = v
-		}
-	}
-	if po != nil {
-		opts = append(opts, sdk.WithProviderOptions(po))
+		opts = append(opts, sdk.WithProviderOptions(m.authOptions))
 	}
 
 	ts, err := sdk.StreamText(ctx, m.model, opts...)

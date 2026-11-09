@@ -305,7 +305,6 @@ var fields = []fieldDef{
 	{"description", "text", "generated summary"},
 	{"model", "model", "model id"},
 	{"provider", "provider", "provider name"},
-	{"reasoning_level", "enum", "low, medium or high"},
 	{"created_cwd", "text", "creation working directory"},
 	{"agent", "agent", "subagent definition"},
 	{"turns", "int", "completed replies"},
@@ -317,7 +316,6 @@ var fields = []fieldDef{
 	{"tools", "tools", "tool allowlist"},
 }
 
-var reasoningLevels = []string{"low", "medium", "high"}
 var roles = []string{"user", "assistant", "system"}
 
 func frontmatterCompletion(lines []string, line int, prefix string, wordStart, char int, ctx CompletionCtx) []completionItem {
@@ -414,8 +412,6 @@ func fieldKeyCompletion(lines []string, line, wordStart, char int, partial strin
 func fieldValueCompletion(f fieldDef, startCol, char, line int, provider string, ctx CompletionCtx) []completionItem {
 	r := rng{Start: position{Line: line, Character: startCol}, End: position{Line: line, Character: char}}
 	switch f.kind {
-	case "enum":
-		return fixedCompletions(reasoningLevels, complValue, r)
 	case "provider":
 		return providerCompletion(r)
 	case "agent":
@@ -634,15 +630,6 @@ func frontmatterDiagnostics(doc *document.Document) []diagnostic {
 			seen[key] = i
 		}
 		switch key {
-		case "reasoning_level":
-			if val != "" && !containsString(reasoningLevels, val) {
-				out = append(out, diagnostic{
-					Range:    lineRange(lines, i),
-					Severity: sevWarning,
-					Source:   "yap",
-					Message:  "reasoning_level must be low, medium or high",
-				})
-			}
 		case "turns":
 			if val != "" && !allDigits(val) {
 				out = append(out, diagnostic{

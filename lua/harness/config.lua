@@ -9,11 +9,6 @@ local paths = require("harness.path")
 
 M.defaults = {
   bin = "yap", -- path to the yap binary
-  -- Default active reasoning level, seeded into a new session's frontmatter
-  -- as `reasoning_level` so it is visible and hand-editable from the first
-  -- line. Delete the line in a session (or set the default to nil) to fall
-  -- back to the provider's own default.
-  reasoning_level = "medium",
   -- System prompt for new buffers: read from agents_file if it exists
   -- (pi-style ~/.config/yap/AGENTS.md), otherwise this fallback.
   system = "You are a helpful coding assistant. Answer concisely.",

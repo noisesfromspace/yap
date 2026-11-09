@@ -117,7 +117,6 @@ local CASES = {
   { name = "yap_frontmatter_test", port = 18132 },
   { name = "yap_portable_session_test", port = 18132 },
   { name = "yap_portable_discovery_test", port = 18132 },
-  { name = "yap_knobs_test", port = 18132 },
   { name = "yap_tools_test", port = 18132 },
   { name = "yap_adopt_test", port = 18132 },
   { name = "yap_textobj_test", port = 18132 },
