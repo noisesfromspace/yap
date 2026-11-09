@@ -80,7 +80,7 @@ var subagentInactivityWait = 3 * time.Minute
 
 type subagentArgs struct {
 	Agent string   `json:"agent" jsonschema:"description=name of an agent definition from the ## Agents list in your system prompt (definition files in ~/.config/yap/agents/*.md)"`
-	Model string   `json:"model,omitempty" jsonschema_description:"provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none"`
+	Model string   `json:"model,omitempty" jsonschema:"description=provider/model combo the child runs on, overriding the agent definition's model (use the models tool to list combos); omitted for the definition's model, or the parent's combo when it names none"`
 	Task  string   `json:"task" jsonschema:"description=task for the subagent"`
 	Tools []string `json:"tools" jsonschema:"description=tools the child may use; choose for this task (e.g. read/search/glob for research; add bash/edit/write only when needed); cannot include subagent"`
 }
