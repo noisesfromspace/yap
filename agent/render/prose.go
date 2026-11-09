@@ -46,7 +46,7 @@ func escapeProseLine(line string) string {
 	if _, ok := RoleHeading(line); ok {
 		return "\\" + line
 	}
-	return rawTextTagRe.ReplaceAllString(line, "\\<$1$2")
+	return escapeRawTextTag(line, "\\<")
 }
 
 // EscapeProseText neutralizes structural tokens in a block of plain text

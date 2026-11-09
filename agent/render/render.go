@@ -34,7 +34,7 @@ const toolHeaderMaxSingle = 120
 // unclosed comment at the next heading, so a heading the model merely quoted
 // inside its thinking must not read as a real message boundary.
 func escapeComment(s string) string {
-	s = strings.ReplaceAll(s, "-->", "-- >")
+	s = escapeCommentCloser(s, "-- >")
 	if _, ok := RoleHeading(s); ok {
 		return "\\" + s
 	}
@@ -113,14 +113,31 @@ func MarshalCommentJSON(v any, indent string) []byte {
 	enc.SetIndent("", indent)
 	_ = enc.Encode(v) // payloads here are built by yap and cannot fail
 	b := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
-	b = bytes.ReplaceAll(b, []byte("-->"), []byte(`--\u003e`))
-	b = rawTextTagRe.ReplaceAll(b, []byte(`\u003c$1$2`))
-	return b
+	s := escapeCommentCloser(string(b), `--\u003e`)
+	s = escapeRawTextTag(s, `\u003c`)
+	return []byte(s)
 }
 
 // rawTextTagRe matches `<style`/`<script` open tags (see
 // escapeMarkerPrefixes).
 var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
+
+// escapeCommentCloser neutralizes every `-->` in s, replacing it with repl.
+// HTML comments are not line-based, so an inline `-->` closes the comment
+// early for markdown renderers. The two callers use different replacements:
+// thinking text keeps a readable `-- >`, while comment-embedded JSON keeps a
+// decodeable `--\u003e`.
+func escapeCommentCloser(s, repl string) string {
+	return strings.ReplaceAll(s, "-->", repl)
+}
+
+// escapeRawTextTag neutralizes `<style`/`<script` open tags in s (which poison
+// treesitter's combined html/css/js injections). repl is the escaped form of
+// the leading `<`: a visible backslash escape ("\\<") for text, or a
+// JSON-safe escape (`\u003c`) for comment-embedded JSON.
+func escapeRawTextTag(s, repl string) string {
+	return rawTextTagRe.ReplaceAllString(s, repl+"$1$2")
+}
 
 // escapeMarkerPrefixes neutralizes dangerous constructs in tool results
 // (raw markdown in the buffer) with a VISIBLE backslash-escape, valid
@@ -140,7 +157,7 @@ var rawTextTagRe = regexp.MustCompile(`(?i)<(style|script)([\s>/])`)
 //     content to the css/javascript parsers, whose raw-text injection
 //     ranges then bleed to the end of the buffer.
 func escapeMarkerPrefixes(s string) string {
-	s = rawTextTagRe.ReplaceAllString(s, "\\<$1$2")
+	s = escapeRawTextTag(s, "\\<")
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		if IsMarkerLine(l) {
