@@ -19,12 +19,8 @@
 --   models:
 --     - moonshot/kimi-k3
 --     - deepseek/deepseek-v4-pro
---   forked_from: ~/.config/yap/sessions/.../source.md
---   subagent_parent: ~/.config/yap/sessions/.../parent.md
---   subagents:
---     - ~/.config/yap/sessions/.../session-a1b2c3.md
---   forks:
---     - ~/.config/yap/sessions/.../branch.md
+--   forked_from: ~/.config/yap/sessions/.../source/
+--   subagent_parent: ~/.config/yap/sessions/.../parent/
 --   ---
 --
 -- Field semantics and the write rules: R-frontmatter (CONTRIBUTING.md) and
@@ -41,13 +37,12 @@ local M = {}
 local config = require("harness.config")
 
 local function is_list_key(k)
-  return k == "models" or k == "subagents" or k == "forks"
+  return k == "models"
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
 --- { provider, model, created_cwd, created_at, updated_at, turns, description, agent,
----   tools = {name,...}, models = {combo,...}, subagents = {path,...},
----   forks = {path,...}, forked_from = path?, subagent_parent = path? }
+---   tools = {name,...}, models = {combo,...}, forked_from = dir?, subagent_parent = dir? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited frontmatter does not
 --- break resuming.
@@ -55,7 +50,7 @@ function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {}, subagents = {}, forks = {} }
+  local fm = { models = {} }
   local list_key = nil
   for i = 2, #lines do
     local line = lines[i]
@@ -99,10 +94,6 @@ function M.parse(lines)
       if item and item ~= "" then
         if list_key == "models" then
           fm.models[#fm.models + 1] = item
-        elseif list_key == "subagents" then
-          fm.subagents[#fm.subagents + 1] = item
-        elseif list_key == "forks" then
-          fm.forks[#fm.forks + 1] = item
         elseif list_key == "tools" then
           fm.tools = fm.tools or {}
           fm.tools[#fm.tools + 1] = item
@@ -154,18 +145,6 @@ function M.render(fm)
   end
   if fm.subagent_parent then
     lines[#lines + 1] = "subagent_parent: " .. fm.subagent_parent
-  end
-  if fm.subagents and #fm.subagents > 0 then
-    lines[#lines + 1] = "subagents:"
-    for _, p in ipairs(fm.subagents) do
-      lines[#lines + 1] = "  - " .. p
-    end
-  end
-  if fm.forks and #fm.forks > 0 then
-    lines[#lines + 1] = "forks:"
-    for _, p in ipairs(fm.forks) do
-      lines[#lines + 1] = "  - " .. p
-    end
   end
   if fm.tools and #fm.tools > 0 then
     lines[#lines + 1] = "tools:"
@@ -278,28 +257,6 @@ function M.sync(buf)
     table.insert(block, "")
     vim.api.nvim_buf_set_lines(buf, 0, 0, false, block)
   end
-end
-
---- Append a subagent session path to the parent's frontmatter `subagents`
---- list. Saved children appear in the session picker under their parent.
-function M.record_subagent(parent, child_path)
-  local e = M.end_line(parent)
-  if not e then
-    return
-  end
-  local fm = M.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false))
-  if not fm then
-    return
-  end
-  local subagents = fm.subagents or {}
-  for _, p in ipairs(subagents) do
-    if p == child_path then
-      return
-    end
-  end
-  subagents[#subagents + 1] = child_path
-  fm.subagents = subagents
-  M.write(parent, e, fm)
 end
 
 return M

@@ -163,7 +163,7 @@ function M.start(parent, ev)
   vim.b[child].yap_subagent_parent = parent
   vim.b[child].yap_subagent_id = ev.id
   vim.b[child].yap_subagent_task = ev.task
-  frontmatter.update(child, { subagent_parent = parent_path })
+  frontmatter.update(child, { subagent_parent = vim.fn.fnamemodify(parent_path, ":h") })
   require("harness.session").save(child)
   -- Confirm the child path immediately: the parent's serve process records it
   -- so a later timeout or cancellation can still point at the recoverable
@@ -176,7 +176,6 @@ function M.start(parent, ev)
   state.subagent_phase[parent] = nil
   state.subagent_pending[parent] = ""
   state.subagent_last_signal[parent] = 0
-  frontmatter.record_subagent(parent, child_path)
   subagent_done[child] = subagent_result(parent, ev.id, child, child_path, reply)
   harness().send(child)
 end

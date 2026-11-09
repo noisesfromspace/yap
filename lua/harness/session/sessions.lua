@@ -190,26 +190,24 @@ local function session_rank(buf)
   return 4 -- idle and done
 end
 
--- Forks copy agent references, so an open agent can have several parents.
-local function open_owners(open_paths)
+-- Each open session has at most one parent: a fork points at `forked_from`,
+-- a subagent at `subagent_parent` (both recorded as directories). The
+-- buffer-var fallback covers a still-running child whose on-disk link has not
+-- been read back yet.
+local function open_owners(open_dirs)
   local owners = {}
-  local function link(child, parent)
-    if child and parent and child ~= parent then
-      owners[child] = owners[child] or {}
-      owners[child][parent] = true
-    end
-  end
-  for _, parent in pairs(open_paths) do
-    local e = frontmatter.end_line(parent)
-    local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(parent, 0, e, false)) or nil
-    for _, child_path in ipairs(fm and fm.subagents or {}) do
-      link(open_paths[vim.fs.normalize(child_path)], parent)
-    end
+  for _, b in pairs(open_dirs) do
+    local e = frontmatter.end_line(b)
+    local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
+    local parent
     if fm then
-      link(parent, fm.forked_from and open_paths[vim.fs.normalize(fm.forked_from)])
-      link(parent, fm.subagent_parent and open_paths[vim.fs.normalize(fm.subagent_parent)])
+      parent = (fm.forked_from and open_dirs[vim.fs.normalize(fm.forked_from)])
+        or (fm.subagent_parent and open_dirs[vim.fs.normalize(fm.subagent_parent)])
     end
-    link(parent, vim.b[parent].yap_subagent_parent)
+    parent = parent or vim.b[b].yap_subagent_parent
+    if parent and parent ~= b then
+      owners[b] = parent
+    end
   end
   return owners
 end
@@ -219,18 +217,20 @@ end
 --- are never here — use live() / <leader>l. Reachable as sessions("open").
 open_sessions = function()
   local items = {}
-  local open_paths = {}
+  local open_dirs = {}
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     if vim.b[b].yap then
-      open_paths[vim.fs.normalize(vim.b[b].yap_path or vim.api.nvim_buf_get_name(b))] = b
+      local path = vim.b[b].yap_path or vim.api.nvim_buf_get_name(b)
+      if path ~= "" then
+        open_dirs[vim.fs.normalize(vim.fn.fnamemodify(path, ":h"))] = b
+      end
     end
   end
-  local owners = open_owners(open_paths)
+  local owners = open_owners(open_dirs)
   for _, b in ipairs(vim.api.nvim_list_bufs()) do
     local e = vim.b[b].yap and frontmatter.end_line(b)
     local fm = e and frontmatter.parse(vim.api.nvim_buf_get_lines(b, 0, e, false)) or nil
-    local parent = owners[b] and next(owners[b])
-    local is_subagent = picker.agent(fm, b) ~= nil
+    local parent = owners[b]
     if vim.b[b].yap then
       items[#items + 1] = {
         buf = b,
@@ -239,10 +239,8 @@ open_sessions = function()
         state = picker.state(b),
         approval = pending_approvals[b] ~= nil,
         model = vim.b[b].yap_model,
-        child = is_subagent or (fm and fm.forked_from),
         group_parent = (parent and vim.api.nvim_buf_is_valid(parent)) and parent or b,
         parent = parent,
-        forked_from = fm and fm.forked_from,
       }
     end
   end
@@ -257,27 +255,15 @@ open_sessions = function()
   end
   local roots = {}
   for _, item in ipairs(items) do
-    local visible_parents = {}
-    for parent in pairs(owners[item.buf] or {}) do
-      if by_buf[parent] then
-        visible_parents[#visible_parents + 1] = parent
-      end
-    end
-    table.sort(visible_parents)
-    if #visible_parents > 0 then
-      for _, parent in ipairs(visible_parents) do
-        local row = vim.deepcopy(item)
-        row.parent = parent
-        row.path = ""
-        row.group_parent = parent
-        row.text = session.live_label(item.buf, true)
-        if item.child and vim.tbl_count(owners[item.buf] or {}) > 1 and not item.forked_from then
-          row.text = row.text .. " [shared: " .. vim.tbl_count(owners[item.buf]) .. " branches]"
-        end
-        local siblings = children[parent] or {}
-        siblings[#siblings + 1] = row
-        children[parent] = siblings
-      end
+    local parent = item.parent
+    if parent and by_buf[parent] then
+      local row = vim.deepcopy(item)
+      row.path = ""
+      row.group_parent = parent
+      row.text = session.live_label(item.buf, true)
+      local siblings = children[parent] or {}
+      siblings[#siblings + 1] = row
+      children[parent] = siblings
     else
       if item.parent then
         item.path = vim.b[item.buf].yap_project_cwd

@@ -258,7 +258,9 @@ every turn.
 
 `sessions(scope)` is the single session picker: `"cwd"`/`"all"` list saved
 sessions, `"open"` lists the open-session tree (including subagents and
-forks). Sessions belong in ordinary buffer navigation without sacrificing
+forks). A fork nests under its parent in the saved picker; a subagent nests
+only while its parent is open, keeping an inactive conversation's row lean.
+Sessions belong in ordinary buffer navigation without sacrificing
 real file paths or the session trees. The saved picker lists an ordinary
 blank session while its buffer is loaded and hides it once unloaded unless it
 has a prompt, a completed turn, a description or a renamed transcript. A

@@ -391,8 +391,6 @@ as YAML frontmatter: >
   models:
     - moonshot/kimi-k3
     - deepseek/deepseek-v4-pro
-  subagents:
-    - ~/.config/yap/sessions/.../session-a1b2c3.md
   tools:
     - read
     - search
@@ -413,11 +411,16 @@ of the frontmatter:
                           every send. Empty means the provider's default.
   `created_cwd`           The exact directory the session was created in.
   `models`                The combos used, most recent last.
-  `subagents`             The subagent session paths.
   `tools`                 The per-session tool allowlist. Remove a line to
                           retract that tool on the next send.
   `turns`                 Completed `# @assistant` replies, so the picker can
                           show depth without opening the file.
+
+`forked_from` and `subagent_parent` record the session's single parent as its
+directory (not its transcript filename), so a |:file| rename never breaks the
+link. A fork always nests under its parent in the saved picker; a subagent
+nests only while its parent is open, keeping an inactive conversation's row
+lean.
 
 The active combo is the buffer's own: read from the frontmatter when the
 session is opened, set by change_model(), else `model_groups.agent` for a new
@@ -526,7 +529,8 @@ buffer behavior, without preferring waiting or running sessions.
 require("harness").sessions(scope) is the single session picker. `"cwd"`
 (default) and `"all"` list saved sessions; `"open"` lists the open-session
 tree, including open subagents and forks, sorted by state. The saved-session
-scope annotates open sessions with a live status icon. Subagents
+scope annotates open sessions with a live status icon and nests forks (always)
+and subagents (only while their parent is open) under their parent. Subagents
 (`b:yap_agent`) remain unlisted and excluded from the winbar overview.
 
 The open-session scope shows an indented tree with no text status tags or

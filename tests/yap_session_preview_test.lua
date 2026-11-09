@@ -224,7 +224,7 @@ assert(
   "current parent with an open subagent should have its own picker row: " .. vim.inspect(parent_item)
 )
 assert(
-  child_item and child_item.text == "↳ scout · inspect this task",
+  child_item and child_item.text == "scout · inspect this task",
   "subagent should have a compact label: " .. vim.inspect(child_item)
 )
 local parent_position, child_position
@@ -242,7 +242,7 @@ assert(
 )
 local rendered_child = captured.opts.format_item(child_item)
 assert(
-  rendered_child:find("^  ↳ scout · inspect this task") == 1
+  rendered_child:find("^  scout · inspect this task") == 1
     and not rendered_child:find(vim.fn.getcwd(), 1, true)
     and not rendered_child:find("(m1)", 1, true),
   "child title should be indented without cwd/model: " .. rendered_child
@@ -269,7 +269,7 @@ assert(
   "running child should remain grouped with waiting parent: " .. vim.inspect(captured.items)
 )
 assert(
-  vim.startswith(captured.opts.format_item(captured.items[child_position]), "  ↳"),
+  vim.startswith(captured.opts.format_item(captured.items[child_position]), "  scout"),
   "running child title should have no status tag: "
     .. vim.inspect(captured.opts.format_item(captured.items[child_position]))
 )
@@ -295,7 +295,7 @@ for _, item in ipairs(captured.items) do
 end
 assert(done_child and done_child.state == "done", "completed subagent should be 'done': " .. vim.inspect(done_child))
 assert(
-  captured.opts.format_item(done_child):find("^  ↳") == 1,
+  captured.opts.format_item(done_child):find("^  scout") == 1,
   "completed subagent should have no status tag: " .. captured.opts.format_item(done_child)
 )
 state.stopped[child] = true
@@ -323,7 +323,7 @@ assert(
   "waiting parent should be badge-less and keep its title aligned"
 )
 assert(
-  captured.opts.format_item(stopped_child):find("^  ↳") == 1,
+  captured.opts.format_item(stopped_child):find("^  scout") == 1,
   "stopped child's title should be indented under its parent"
 )
 state.stopped[child] = nil
@@ -355,7 +355,7 @@ assert(
   "project path should replace model in parentheses: " .. tostring(root_row)
 )
 assert(
-  child_row and child_row:find("^  ↳") == 1 and not child_row:find(vim.fn.getcwd(), 1, true),
+  child_row and child_row:find("^  scout") == 1 and not child_row:find(vim.fn.getcwd(), 1, true),
   "project path displaced child title: " .. tostring(child_row)
 )
 vim.b[picker].yap_project_cwd = vim.fn.getcwd()
@@ -393,8 +393,8 @@ child_lines[#child_lines + 1] =
   "Investigate a very long title that must stay searchable and never be artificially truncated"
 vim.api.nvim_buf_set_lines(saved_child, 0, -1, false, child_lines)
 session.save(saved_child)
-vim.api.nvim_buf_set_lines(saved, 4, 4, false, { "subagents:", "  - " .. saved_child_path })
-session.save(saved)
+require("harness.model.frontmatter").update(saved_child, { subagent_parent = vim.fn.fnamemodify(path, ":h") })
+session.save(saved_child)
 
 captured = nil
 vim.ui.select = function(items, opts, on_choice)
@@ -405,15 +405,19 @@ session.pick({ scope = "cwd" }, function(selected)
 end)
 vim.ui.select = orig_select
 assert(captured, "expected saved sessions")
-local saved_index
+local saved_index, saved_child_index
 for i, item in ipairs(captured.items) do
   if item.path == path then
     saved_index = i
   elseif item.path == saved_child_path then
-    error("agent session leaked into saved history: " .. item.path)
+    saved_child_index = i
   end
 end
 assert(saved_index, "saved parent missing: " .. vim.inspect(captured.items))
+assert(
+  saved_child_index == saved_index + 1,
+  "saved subagent not nested beneath its open parent: " .. vim.inspect(captured.items)
+)
 -- The row counts completed replies and the agent sessions the conversation
 -- spawned, each with its own unit.
 local saved_row = captured.opts.format_item(captured.items[saved_index])
@@ -424,7 +428,7 @@ captured.on_choice(captured.items[saved_index])
 local child_label = session.live_label(saved_child, true)
 assert(
   child_label:find(
-    "↳ scout · Investigate a very long title that must stay searchable and never be artificially truncated",
+    "scout · Investigate a very long title that must stay searchable and never be artificially truncated",
     1,
     true
   ),
@@ -460,8 +464,7 @@ type_title(titled_child, "Pinned child title")
 type_title(titled_parent, "Pinned parent title")
 local titled_child_path = vim.api.nvim_buf_get_name(titled_child)
 local titled_parent_path = vim.api.nvim_buf_get_name(titled_parent)
-vim.api.nvim_buf_set_lines(titled_child, 3, 3, false, { "subagent_parent: " .. titled_parent_path })
-vim.api.nvim_buf_set_lines(titled_parent, 3, 3, false, { "subagents:", "  - " .. titled_child_path })
+vim.api.nvim_buf_set_lines(titled_child, 3, 3, false, { "subagent_parent: " .. vim.fn.fnamemodify(titled_parent_path, ":h") })
 session.save(titled_child)
 session.save(titled_parent)
 local titled_items = session.list("cwd")
@@ -471,8 +474,8 @@ for i, item in ipairs(titled_items) do
 end
 assert(titled_positions[titled_parent_path], "titled parent missing: " .. vim.inspect(titled_items))
 assert(
-  not titled_positions[titled_child_path],
-  "agent session leaked into saved history: " .. vim.inspect(titled_items)
+  titled_positions[titled_child_path] == titled_positions[titled_parent_path] + 1,
+  "titled subagent not nested beneath its open parent: " .. vim.inspect(titled_items)
 )
 assert(
   titled_items[titled_positions[titled_parent_path]].text == "Pinned parent title",
@@ -487,7 +490,7 @@ yap.sessions("open")
 vim.ui.select = orig_select
 for _, item in ipairs(live_titled.items) do
   if item.buf == titled_child then
-    assert(item.text == "↳ scout · Pinned child title", "open child should prefer its title: " .. item.text)
+    assert(item.text == "scout · Pinned child title", "open child should prefer its title: " .. item.text)
     assert(not live_titled.format(item):find("(m1)", 1, true), "open subagent row repeats its model")
   end
 end
@@ -550,12 +553,13 @@ for _, item in ipairs(captured.items) do
   local row = captured.opts.format_item(item)
   if item.path == path then
     assert(row:find("^   Preview test") == 1, "closed session title shifted: " .. row)
-  elseif item.path == saved_child_path then
-    error("agent session leaked into saved history: " .. row)
   end
 end
--- Closing the child changes nothing in history: an agent session was never
--- a row there.
+-- A closed parent hides its subagents, so the child is no longer a row.
+for _, item in ipairs(captured.items) do
+  assert(item.path ~= saved_child_path, "subagent shown under a closed parent: " .. item.path)
+end
+-- Closing the child leaves the closed parent's history unchanged.
 vim.api.nvim_buf_delete(saved_child, { force = true })
 captured = nil
 vim.ui.select = function(items, opts)

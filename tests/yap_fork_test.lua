@@ -54,8 +54,10 @@ assert(
   table.concat(vim.fn.readfile(original), "\n"):match("fork%-only unsaved change"),
   "source was not saved with fork links"
 )
-assert(vim.deep_equal(frontmatter.parse(vim.fn.readfile(original)).forks, { fork }), "source fork link missing")
-assert(frontmatter.parse(vim.fn.readfile(fork)).forked_from == original, "fork parent link missing")
+assert(
+  frontmatter.parse(vim.fn.readfile(fork)).forked_from == vim.fn.fnamemodify(original, ":h"),
+  "fork parent link missing"
+)
 local fork_image = paths.assets_dir(fork_buf) .. "/photo.png"
 assert(vim.fn.filereadable(fork_image) == 1, "fork did not copy the session assets")
 assert(
@@ -132,7 +134,7 @@ assert(
   generated:match("^" .. vim.pesc(expected_dir) .. "/%d%d%-%d%d/%d%d%-%d%d%.%d%d%.%d%d%-?%d*/session%.md$"),
   "unexpected generated fork name: " .. generated
 )
-assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == fork, "nested fork parent missing")
+assert(frontmatter.parse(vim.fn.readfile(generated)).forked_from == vim.fn.fnamemodify(fork, ":h"), "nested fork parent missing")
 local nested_items = require("harness.session").list("cwd")
 local nested_parent, nested_child
 for i, item in ipairs(nested_items) do
@@ -214,7 +216,10 @@ assert(vim.api.nvim_get_current_buf() ~= fork_buf, "generated fork reused the so
 -- than confusing it with the fork.
 yap.open(original)
 assert(vim.api.nvim_get_current_buf() == original_buf, "source cannot be resumed")
-assert(frontmatter.parse(vim.fn.readfile(original)).forks[1] == fork, "fork reference lost after reopen")
+assert(
+  frontmatter.parse(vim.fn.readfile(fork)).forked_from == vim.fn.fnamemodify(original, ":h"),
+  "fork parent link lost after reopen"
+)
 assert(not text(original_buf):match("fork's next prompt"), "source displays fork state")
 -- A running fork excludes the user request being answered and the partial
 -- assistant response, retaining only the last completed turn and its audit.
@@ -262,8 +267,8 @@ assert(
   "original did not finish"
 )
 assert(
-  frontmatter.parse(vim.fn.readfile(active_path)).forks[1] == running_fork,
-  "running source fork link not persisted"
+  frontmatter.parse(vim.fn.readfile(running_fork)).forked_from == vim.fn.fnamemodify(active_path, ":h"),
+  "running fork parent link missing"
 )
 assert(text(active):find("active question", 1, true), "running source was altered")
 

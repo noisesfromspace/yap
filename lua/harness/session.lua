@@ -225,8 +225,7 @@ function M.fork(buf, name, running)
         created_at = created,
         updated_at = created,
         turns = turns,
-        forked_from = vim.b[buf].yap_path,
-        forks = {},
+        forked_from = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h"),
       })
       fork_fm.subagent_parent = nil
       -- A fork always lands under the sessions root, where sidecars live beside
@@ -306,14 +305,6 @@ function M.fork(buf, name, running)
       return nil, "cannot copy fork audit: " .. tostring(copy_err)
     end
     vim.fn.setfperm(dest, "rw-------") -- the copied journal holds the same secrets
-  end
-  -- A running source persists this link on its normal turn-end save.
-  if fm then
-    local source_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local source_fm = frontmatter.parse(source_lines)
-    local forks = source_fm.forks or {}
-    forks[#forks + 1] = path
-    frontmatter.update(buf, { forks = forks })
   end
   return path
 end
@@ -491,7 +482,8 @@ end
 --- List saved sessions. scope = "cwd" (default) or "all"
 --- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
 --- recency; `model`/`models` and the turn and agent counts come from the
---- session frontmatter.
+--- session frontmatter. Forks always nest under their parent; subagents nest
+--- only while their parent is open.
 function M.list(scope)
   -- Candidate transcripts: { path, project }, where `project` prefixes the
   -- label only in the "all" scope so sessions from different worktrees are
@@ -526,10 +518,18 @@ function M.list(scope)
     end
   end
 
-  local items, children, owned_by = {}, {}, {}
+  -- Directory -> transcript path: a parent/child link is recorded as a
+  -- directory, so it survives a `:file` rename (the filename changes, the
+  -- directory does not).
+  local by_dir = {}
+  for _, entry in ipairs(transcripts) do
+    by_dir[vim.fs.normalize(vim.fn.fnamemodify(entry.path, ":h"))] = entry.path
+  end
+
+  local items, children, owned_by, agents = {}, {}, {}, {}
   for _, entry in ipairs(transcripts) do
     -- Each candidate is already a resolved transcript path; the frontmatter
-    -- supplies its description, model and fork/subagent links.
+    -- supplies its description, model and fork/subagent link.
     local path = entry.path
     local loaded_buf = loaded[path]
     local lines, full
@@ -541,38 +541,49 @@ function M.list(scope)
       full = false
     end
     local fm = frontmatter.parse(lines)
-    -- A subagent session is internal to the conversation that spawned it:
-    -- while open it sits under its parent in the open-session and waiting
-    -- pickers, and it is never part of saved history.
-    if not picker.agent(fm) then
-      local description = fm and fm.description or ""
-      local item = {
-        path = path,
-        mtime = vim.fn.getftime(path),
-        text = M.label(path, description, entry.project),
-        model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
-        models = fm and #fm.models > 1 and fm.models or nil,
-        turns = fm and fm.turns,
-        agents = fm and #fm.subagents or 0,
-      }
-      if fm and fm.forked_from then
-        item.text = "↳ fork · " .. M.label(path, description, nil)
-        children[path] = item
-        local owner = vim.fs.normalize(fm.forked_from)
+    local description = fm and fm.description or ""
+    local role = picker.agent(fm)
+    local item = {
+      path = path,
+      mtime = vim.fn.getftime(path),
+      text = M.label(path, description, entry.project),
+      model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
+      models = fm and #fm.models > 1 and fm.models or nil,
+      turns = fm and fm.turns,
+    }
+    if fm and fm.forked_from then
+      -- A fork always nests: it is part of the conversation's lineage.
+      item.text = "↳ fork · " .. M.label(path, description, nil)
+      children[path] = item
+      local owner = by_dir[vim.fs.normalize(fm.forked_from)]
+      if owner then
         owned_by[owner] = owned_by[owner] or {}
-        table.insert(owned_by[owner], vim.fs.normalize(path))
-      elseif
-        not empty_eval_scaffold(fm, description, path, lines, full)
-        and (
-          description ~= ""
-          or M.file_title(path) ~= nil
-          or (fm and (#fm.forks > 0 or (fm.turns or 0) > 0))
-          or has_pending_user_text(path, lines, full)
-          or loaded[path]
-        )
-      then
-        items[#items + 1] = item
+        table.insert(owned_by[owner], path)
       end
+    elseif role and fm.subagent_parent then
+      -- A subagent nests only while its parent is open, so an inactive
+      -- conversation's row stays lean. Its count is still reported below.
+      local owner = by_dir[vim.fs.normalize(fm.subagent_parent)]
+      if owner then
+        agents[owner] = (agents[owner] or 0) + 1
+        if loaded[owner] then
+          item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description, nil))
+          children[path] = item
+          owned_by[owner] = owned_by[owner] or {}
+          table.insert(owned_by[owner], path)
+        end
+      end
+    elseif
+      not empty_eval_scaffold(fm, description, path, lines, full)
+      and (
+        description ~= ""
+        or M.file_title(path) ~= nil
+        or (fm and (fm.turns or 0) > 0)
+        or has_pending_user_text(path, lines, full)
+        or loaded[path]
+      )
+    then
+      items[#items + 1] = item
     end
   end
 
@@ -580,16 +591,6 @@ function M.list(scope)
     return a.mtime > b.mtime
   end)
   local result, shown = {}, {}
-  local owners = {}
-  for _, paths_for_owner in pairs(owned_by) do
-    local unique = {}
-    for _, path in ipairs(paths_for_owner) do
-      if not unique[path] then
-        owners[path] = (owners[path] or 0) + 1
-        unique[path] = true
-      end
-    end
-  end
   local function add(item, depth, ancestors)
     if ancestors[item.path] then
       return -- malformed cycle in hand-edited frontmatter
@@ -597,11 +598,9 @@ function M.list(scope)
     shown[item.path] = true
     local row = vim.deepcopy(item)
     row.depth = depth
+    row.agents = agents[item.path] or 0
     if depth > 0 then
       row.text = string.rep("  ", depth) .. row.text
-      if owners[vim.fs.normalize(item.path)] and owners[vim.fs.normalize(item.path)] > 1 and children[item.path] then
-        row.text = row.text .. " [shared: " .. owners[vim.fs.normalize(item.path)] .. " branches]"
-      end
     end
     result[#result + 1] = row
     local owned = {}
@@ -625,7 +624,9 @@ function M.list(scope)
   for _, item in ipairs(items) do
     add(item, 0, {})
   end
-  -- Preserve discoverability when a parent is missing or excluded by scope.
+  -- Preserve discoverability when a fork's parent is missing or excluded by
+  -- scope. A subagent whose parent is not open is simply omitted (not
+  -- orphaned), so an inactive conversation stays lean.
   local orphans = {}
   for _, child in pairs(children) do
     if not shown[child.path] then
@@ -741,7 +742,7 @@ function M.live_label(buf, parent)
     label = M.agent_label(role, M.file_title(path), fm and fm.description, task, fallback, label)
   end
   if role and parent then
-    return "↳ " .. label
+    return label
   end
   if fm and fm.forked_from then
     return parent and "↳ fork · " .. label or "fork · " .. label .. " (parent not shown)"

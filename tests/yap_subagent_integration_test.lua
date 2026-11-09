@@ -98,17 +98,15 @@ assert(vim.fn.filereadable(child_path) == 1, "child session missing")
 local fm = require("harness.model.frontmatter").parse(vim.fn.readfile(child_path))
 assert(fm.provider == "mock" and fm.model == "working", "bare Pi model did not inherit parent combo")
 assert(table.concat(fm.tools, ",") == "read,search", "caller-selected tools missing")
-assert(fm.subagent_parent == vim.b[parent].yap_path, "child parent path missing")
+assert(fm.subagent_parent == vim.fn.fnamemodify(vim.b[parent].yap_path, ":h"), "child parent directory missing")
 local child_buf = vim.fn.bufnr(child_path)
 assert(child_buf > 0, "child buffer missing")
 require("harness.model.frontmatter").update(child_buf, { tools = {} })
 assert(yap.send(child_buf) == false, "a child with an empty tools list became unrestricted")
+-- The link is the child's own `subagent_parent` (a directory), not a list on
+-- the parent, so a `:file` rename of either transcript never breaks it.
 local parent_fm = require("harness.model.frontmatter").parse(vim.api.nvim_buf_get_lines(parent, 0, -1, false))
-assert(
-  parent_fm and parent_fm.subagents and #parent_fm.subagents == 1,
-  "parent frontmatter did not record the subagent"
-)
-assert(parent_fm.subagents[1] == child_path, "parent frontmatter subagent path mismatch")
+assert(not parent_fm.subagents, "parent frontmatter should not list subagents")
 local failure = delegate("delegate failure")
 assert(failure:find("error: child model failed", 1, true), failure)
 -- A per-call model wins over the agent definition's `model` header; a

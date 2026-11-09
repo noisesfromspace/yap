@@ -22,12 +22,10 @@ vim.api.nvim_buf_set_lines(
     description = fm.description,
     agent = fm.agent,
     tools = fm.tools,
-    subagents = fm.subagents,
     updated_at = fm.updated_at,
     turns = fm.turns,
     created_cwd = fm.created_cwd,
     forked_from = fm.forked_from,
-    forks = fm.forks,
     subagent_parent = fm.subagent_parent,
     reasoning_level = "high",
   })

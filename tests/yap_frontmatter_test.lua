@@ -135,44 +135,35 @@ vim.fn.mkdir(paths.assets_dir(buf2), "p")
 vim.fn.writefile({ "# not a transcript" }, paths.assets_dir(buf2) .. "/stray.md")
 assert(#session.list("cwd") == 1, "assets markdown leaked into the session list")
 
--- 7. subagents + updated_at + turns render and parse back
-local subagents_block = frontmatter.render({
+-- 7. updated_at + turns render and parse back
+local updated_block = frontmatter.render({
   provider = "zeta",
   model = "m1",
   models = { "zeta/m1" },
   created_at = created,
-  subagents = { "/tmp/a.md", "/tmp/b.md" },
   updated_at = "2025-09-29T19:24:01Z",
   turns = 14,
   created_cwd = "/tmp/project",
 })
-local subagents_fm = frontmatter.parse(subagents_block)
-assert(subagents_fm.created_cwd == "/tmp/project", "cwd not roundtripped: " .. vim.inspect(subagents_fm.created_cwd))
+local updated_fm = frontmatter.parse(updated_block)
+assert(updated_fm.created_cwd == "/tmp/project", "cwd not roundtripped: " .. vim.inspect(updated_fm.created_cwd))
 assert(
-  vim.deep_equal(subagents_fm.subagents, { "/tmp/a.md", "/tmp/b.md" }),
-  "subagents not roundtripped: " .. vim.inspect(subagents_fm.subagents)
+  updated_fm.updated_at == "2025-09-29T19:24:01Z",
+  "updated_at not roundtripped: " .. vim.inspect(updated_fm.updated_at)
 )
-assert(
-  subagents_fm.updated_at == "2025-09-29T19:24:01Z",
-  "updated_at not roundtripped: " .. vim.inspect(subagents_fm.updated_at)
-)
-assert(subagents_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(subagents_fm.turns))
+assert(updated_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(updated_fm.turns))
 local links = frontmatter.parse(frontmatter.render({
   provider = "zeta",
   model = "m1",
   models = {},
   created_at = created,
-  subagents = {},
   turns = 0,
   created_cwd = "/tmp/project",
-  forked_from = "/tmp/source.md",
-  forks = { "/tmp/fork.md" },
-  subagent_parent = "/tmp/parent.md",
+  forked_from = "/tmp/source",
+  subagent_parent = "/tmp/parent",
 }))
 assert(
-  links.forked_from == "/tmp/source.md"
-    and links.subagent_parent == "/tmp/parent.md"
-    and links.forks[1] == "/tmp/fork.md",
+  links.forked_from == "/tmp/source" and links.subagent_parent == "/tmp/parent",
   "links not roundtripped"
 )
 local tools_block = frontmatter.render({
@@ -181,7 +172,6 @@ local tools_block = frontmatter.render({
   models = {},
   created_at = created,
   tools = { "read", "search", "glob" },
-  subagents = {},
   turns = 0,
   created_cwd = "/tmp/project",
 })
@@ -206,10 +196,8 @@ local knobs_block = frontmatter.render({
   model = "m1",
   models = {},
   created_at = created,
-  subagents = {},
   turns = 0,
   created_cwd = "/tmp/project",
-  forks = {},
   reasoning_level = "high",
 })
 local knobs_fm = frontmatter.parse(knobs_block)
@@ -229,7 +217,6 @@ local plain_fm = frontmatter.parse(frontmatter.render({
   model = "m1",
   models = {},
   created_at = created,
-  subagents = {},
   turns = 0,
   created_cwd = "/tmp/project",
 }))

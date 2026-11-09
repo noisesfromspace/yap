@@ -312,10 +312,8 @@ var fields = []fieldDef{
 	{"created_at", "text", "creation timestamp"},
 	{"updated_at", "text", "last write timestamp"},
 	{"models", "combos", "combo history"},
-	{"forked_from", "text", "fork source"},
-	{"subagent_parent", "text", "owner session"},
-	{"subagents", "list", "subagent session paths"},
-	{"forks", "list", "forked session paths"},
+	{"forked_from", "text", "fork source directory"},
+	{"subagent_parent", "text", "owner session directory"},
 	{"tools", "tools", "tool allowlist"},
 }
 
