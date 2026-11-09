@@ -100,15 +100,15 @@ local function trim_blank(lines)
   return lines
 end
 
---- All insertable entries: templates first, then skills (picker label
---- prefixed `skill: ` so the two kinds stay distinguishable).
+--- All insertable entries: templates first, then skills (both resolvable by
+--- `insert(name)`; the picker shows templates only).
 local function template_entries()
   local entries = {}
   for _, t in ipairs(list_md(config().templates_dir)) do
     entries[#entries + 1] = { label = t.name, name = t.name, path = t.path, kind = "template" }
   end
   for _, s in ipairs(list_md(config().skills_dir)) do
-    entries[#entries + 1] = { label = "skill: " .. s.name, name = s.name, path = s.path, kind = "skill" }
+    entries[#entries + 1] = { label = s.name, name = s.name, path = s.path, kind = "skill" }
   end
   return entries
 end
@@ -261,7 +261,7 @@ end
 --- inserts remain editable. While the agent is mid-turn a template or skill
 --- steers the running turn (injected at the next tool boundary) instead of
 --- inserting; at-cursor inserts still refuse. With no name, pick from the
---- combined list.
+--- templates (skills stay reachable by name).
 function M.insert(name, opts)
   opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
@@ -344,22 +344,25 @@ function M.insert(name, opts)
     vim.notify("yap: no template/skill named: " .. name, vim.log.levels.WARN)
     return
   end
-  if #entries == 0 then
-    vim.notify(
-      "yap: no templates or skills in " .. config().templates_dir .. " or " .. config().skills_dir,
-      vim.log.levels.INFO
-    )
+  local picker = {}
+  for _, e in ipairs(entries) do
+    if e.kind == "template" then
+      picker[#picker + 1] = e
+    end
+  end
+  if #picker == 0 then
+    vim.notify("yap: no templates in " .. config().templates_dir, vim.log.levels.INFO)
     return
   end
   local items = {}
-  for _, e in ipairs(entries) do
+  for _, e in ipairs(picker) do
     items[#items + 1] = e.label
   end
   vim.ui.select(items, { prompt = "yap insert" }, function(choice)
     if not choice then
       return
     end
-    for _, e in ipairs(entries) do
+    for _, e in ipairs(picker) do
       if e.label == choice then
         apply(e)
         return

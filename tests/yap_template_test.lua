@@ -112,4 +112,17 @@ yap.insert("empty")
 assert(#sent == 1, "non-prompt insertion sent unexpectedly")
 yap.send = original_send
 
+-- The interactive picker lists templates only; skills stay reachable by name.
+local orig_select = vim.ui.select
+local picked
+vim.ui.select = function(items)
+  picked = items
+end
+yap.insert()
+vim.ui.select = orig_select
+assert(
+  vim.deep_equal(picked, { "compact", "empty", "snip" }),
+  "picker should list templates only: " .. vim.inspect(picked)
+)
+
 print("OK template")

@@ -318,9 +318,10 @@ no `# @user`/`# @assistant` headings of their own (except an agent skill that
 quotes the message format). A skill's optional frontmatter may carry
 `description:` for the skills intro (skills_intro) and is stripped on insert.
 Nothing is auto-loaded and nothing is hidden: the inserted text is visible,
-editable buffer content like any other. In scratch, `<C-Enter>` inserts either
-a template or a skill at the cursor as a draft, without sending it or
-merging it into the session's system message; skill frontmatter is stripped.
+editable buffer content like any other. In scratch, `<C-Enter>` inserts a
+template at the cursor as a draft, without sending it or merging it into the
+session's system message; a skill is still reachable as `insert(name)` and
+its frontmatter is stripped.
 The intro is a short visible list,
 never injected bodies. Why: the buffer stays the only state (R-buffer-only-state), and
 templates/skills are just text, so one insert command covers compaction,
