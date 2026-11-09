@@ -1,0 +1,15 @@
+[
+  "agent",
+  "created_at",
+  "created_cwd",
+  "data_dir",
+  "description",
+  "forked_from",
+  "model",
+  "models",
+  "provider",
+  "subagent_parent",
+  "tools",
+  "turns",
+  "updated_at"
+]

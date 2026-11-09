@@ -306,6 +306,7 @@ var fields = []fieldDef{
 	{"model", "model", "model id"},
 	{"provider", "provider", "provider name"},
 	{"created_cwd", "text", "creation working directory"},
+	{"data_dir", "text", "session data directory"},
 	{"agent", "agent", "subagent definition"},
 	{"turns", "int", "completed replies"},
 	{"created_at", "text", "creation timestamp"},
