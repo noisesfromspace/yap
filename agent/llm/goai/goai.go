@@ -70,16 +70,10 @@ func IsRetryable(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return false
 	}
+	// A network-level error (timeout, reset, refused, DNS) is the retryable
+	// remainder; anything else is not worth a second guess by message text.
 	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "connection reset by peer") ||
-		strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "TLS handshake timeout") ||
-		strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "i/o timeout")
+	return errors.As(err, &netErr)
 }
 
 // Classify maps a provider error onto Yap's wire error codes (utils.Code*)
@@ -103,6 +97,11 @@ func Classify(err error) (int, map[string]any) {
 		case http.StatusTooManyRequests:
 			return wire.CodeRateLimited, data
 		default:
+			// A retryable server-side failure (5xx) is a provider error, not
+			// an internal bug; keep it distinct from transport (CodeNetwork).
+			if apiErr.IsRetryable {
+				return wire.CodeProviderServer, data
+			}
 			return wire.CodeInternal, data
 		}
 	}

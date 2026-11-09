@@ -135,6 +135,10 @@ const (
 	CodeRateLimited     = -32002 // 429: too many requests
 	CodeNetwork         = -32003 // transport: timeout, DNS, refused, reset
 	CodeContextOverflow = -32004 // prompt exceeds the model's context window
+	// CodeProviderServer is a transient provider-side failure (5xx, or a
+	// retryable 404): retryable, but distinct from a transport error so the
+	// frontend can name it "provider error".
+	CodeProviderServer = -32005
 )
 
 // CodedError carries an error code for a request/params problem, so the

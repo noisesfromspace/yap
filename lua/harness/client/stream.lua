@@ -288,6 +288,8 @@ local function error_category(code)
     return "network error"
   elseif code == -32004 then
     return "context window exceeded"
+  elseif code == -32005 then
+    return "provider error"
   elseif code == -32602 then
     return "invalid request"
   elseif code == -32700 then
