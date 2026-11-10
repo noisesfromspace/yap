@@ -160,11 +160,12 @@ local function saved_session_status(path)
   end
 end
 
---- Pick a session and open it: the single session picker. Lists saved
---- sessions for the current project, annotates open rows with a live status
---- icon, and nests forks (always) and subagents (while their parent is open).
-function M.sessions()
-  session.pick({ status = saved_session_status }, function(path)
+--- Pick a session and open it. scope: "cwd" (default) or "all" (every
+--- project under the sessions root). Lists saved sessions, annotates open
+--- rows with a live status icon, and nests forks (always) and subagents
+--- (while their parent is open).
+function M.sessions(scope)
+  session.pick({ scope = scope, status = saved_session_status }, function(path)
     buffers.open(path)
   end)
 end

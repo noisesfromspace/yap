@@ -159,15 +159,16 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
 
 ## Lua API
 
-| Function                                 | Shortcut    | Purpose                                                                |
-| ---------------------------------------- | ----------- | ---------------------------------------------------------------------- |
-| `require("harness").send()`              | `<C-s>`     | send the transcript                                                    |
-| `require("harness").stop()`              | `<C-c>`     | stop the in-flight request                                             |
-| `require("harness").live()`              | `<leader>l` | open the live tool tail                                                |
-| `require("harness").guard()`             | `<leader>g` | open/close the guard board                                             |
-| `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                                      |
-| `require("harness").sessions()`          | `+`         | pick a saved session (single session picker)                        |
-| `require("harness").insert(name)`        | `<C-Enter>` | insert a template (and send it); merge a skill via insert(name)          |
+| Function                                 | Shortcut    | Purpose                                                         |
+| ---------------------------------------- | ----------- | --------------------------------------------------------------- |
+| `require("harness").send()`              | `<C-s>`     | send the transcript                                             |
+| `require("harness").stop()`              | `<C-c>`     | stop the in-flight request                                      |
+| `require("harness").live()`              | `<leader>l` | open the live tool tail                                         |
+| `require("harness").guard()`             | `<leader>g` | open/close the guard board                                      |
+| `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                               |
+| `require("harness").sessions()`          | `+`         | pick a saved session (current project)                            |
+| `require("harness").sessions("all")`     | `g+`        | pick a saved session from any project (all projects)              |
+| `require("harness").insert(name)`        | `<C-Enter>` | insert a template (and send it); merge a skill via insert(name) |
 
 All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
 In a session buffer `<C-Enter>` calls `insert()`: it picks from the templates
@@ -182,9 +183,11 @@ instead of the auto-generated description); use your normal buffer navigation,
 file explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
 not count in the winbar overview.
 
-`sessions()` is the single session picker: it lists saved sessions for the
-current project, marks open rows with a live status icon, and nests forks and
-subagents under their parent in a box-drawing tree.
+`sessions()` is the session picker for the current project; `sessions("all")`
+lists every saved session across all projects under the sessions root. Both
+mark open rows with a live status icon and nest forks and subagents under
+their parent in a box-drawing tree; the all-project picker suffixes each root
+with its project so sessions from different worktrees are distinguishable.
 
 ## Rendering
 
@@ -200,7 +203,7 @@ draws each tool region as one block.
 
 | Term             | Meaning                                                                      |
 | ---------------- | ---------------------------------------------------------------------------- |
-| session          | one conversation: Markdown file + audit log + notes.md scratch buffer                 |
+| session          | one conversation: Markdown file + audit log + notes.md scratch buffer        |
 | session buffer   | the Neovim buffer editing a session                                          |
 | message          | a `# @role` heading plus its body                                            |
 | region           | a marker-delimited span: tool, thinking, error, or ui                        |
@@ -218,15 +221,14 @@ The full vocabulary is in `:help yap-glossary`.
 
 ## Notes
 
-- yap uses a Nerd Font by default for winbar and picker glyphs. Set `nerd_font
-= false` in setup for plain Unicode.
+- yap uses a Nerd Font by default for winbar and picker glyphs. Set `nerd_font = false` in setup for plain Unicode.
 
 ## Session jail
 
 On Linux, `programs.yap.jail` runs Neovim under bubblewrap with only the launch
- directory, Yap config and configured paths mounted. Unlike the per-command
- bash sandbox, it contains the editor, backend and other tools too. It does not
- restrict network access by default; set `network = false` to disable egress.
+directory, Yap config and configured paths mounted. Unlike the per-command
+bash sandbox, it contains the editor, backend and other tools too. It does not
+restrict network access by default; set `network = false` to disable egress.
 
 ```nix
 programs.yap = {

@@ -349,6 +349,11 @@ function M.setup(opts)
       M.sessions()
     end, { silent = true, desc = "yap: sessions" })
   end
+  if M.config.keymaps.sessions_all ~= "" then
+    vim.keymap.set("n", M.config.keymaps.sessions_all, function()
+      M.sessions("all")
+    end, { silent = true, desc = "yap: sessions (all projects)" })
+  end
   if M.config.keymaps.guard ~= "" then
     vim.keymap.set("n", M.config.keymaps.guard, function()
       guard.toggle()

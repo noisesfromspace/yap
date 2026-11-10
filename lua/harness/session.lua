@@ -462,12 +462,14 @@ function M.agent_label(agent, title, description, task, fallback, fallback_label
 end
 
 --- Shared picker identity: renamed filename, description, then directory.
-function M.label(path, description)
+--- Project overviews prefix the cwd so sessions from different worktrees are
+--- obvious.
+function M.label(path, description, project_cwd)
   local identity = M.identity(path, description)
   if not identity then
     identity = (path and path ~= "" and paths.session_name(path)) or "session"
   end
-  return identity
+  return project_cwd and project_cwd ~= "" and (project_cwd .. "  " .. identity) or identity
 end
 
 --- Currently-loaded session paths. A loaded blank session should be visible
@@ -486,28 +488,43 @@ local function open_session_paths()
   return loaded
 end
 
---- List saved sessions for the current project.
+--- List saved sessions. scope = "cwd" (default) or "all" (every project
+--- under the sessions root).
 --- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
 --- recency; `model`/`models` and the turn and agent counts come from the
 --- session frontmatter. Forks always nest under their parent; subagents nest
 --- only while their parent is open.
-function M.list()
+function M.list(scope)
+  -- Candidate transcripts: { path, project }, where `project` prefixes the
+  -- label only in the "all" scope so sessions from different worktrees are
+  -- distinguishable.
   local transcripts, seen = {}, {}
   local loaded = open_session_paths()
-  local function add(path)
+  local function add(path, project)
     path = vim.fs.normalize(path)
     if path ~= "" and not seen[path] and vim.fn.filereadable(path) == 1 then
       seen[path] = true
-      transcripts[#transcripts + 1] = { path = path }
+      transcripts[#transcripts + 1] = { path = path, project = project }
     end
   end
 
-  for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
-    add(paths.transcript_in(sdir))
+  if scope == "all" then
+    for name, type in vim.fs.dir(paths.sessions_root()) do
+      if type == "directory" then
+        local dir = vim.fs.joinpath(paths.sessions_root(), name)
+        for _, sdir in ipairs(paths.session_dirs(dir)) do
+          add(paths.transcript_in(sdir), paths.slug_cwd(dir))
+        end
+      end
+    end
+  else
+    for _, sdir in ipairs(paths.session_dirs(paths.session_dir(vim.fn.getcwd()))) do
+      add(paths.transcript_in(sdir))
+    end
   end
   -- Any currently-loaded session is listed while its buffer pins it: a
   -- portable transcript, or a session opened directly from another project's
-  -- folder, has no discoverable location in this project otherwise.
+  -- folder, has no discoverable location otherwise.
   for path in pairs(loaded) do
     add(path)
   end
@@ -540,7 +557,7 @@ function M.list()
     local item = {
       path = path,
       mtime = vim.fn.getftime(path),
-      text = M.label(path, description),
+      text = M.label(path, description, entry.project),
       model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
       models = fm and #fm.models > 1 and fm.models or nil,
       turns = fm and fm.turns,
@@ -548,7 +565,7 @@ function M.list()
     if fm and fm.forked_from then
       -- A fork always nests: it is part of the conversation's lineage. The
       -- type glyph (fork icon) replaces the old "↳ fork · " wording.
-      item.text = M.label(path, description)
+      item.text = M.label(path, description, nil)
       item.icon = icons().fork
       item.child_kind = "fork"
       children[path] = item
@@ -564,7 +581,7 @@ function M.list()
       if owner then
         agents[owner] = (agents[owner] or 0) + 1
         if loaded[owner] then
-          item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description))
+          item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description, nil))
           item.icon = icons().agent
           item.child_kind = "agent"
           children[path] = item
@@ -641,6 +658,9 @@ function M.list()
     if not shown[child.path] then
       local orphan = vim.deepcopy(child)
       orphan.text = orphan.text .. " (parent not shown)"
+      if scope == "all" then
+        orphan.text = paths.project_cwd(orphan.path) .. "  " .. orphan.text
+      end
       add(orphan, 0, {}, {}, nil)
     end
   end
@@ -668,24 +688,41 @@ end
 --- Pick a session; on_choice(path) is called with the selected file.
 function M.pick(opts, on_choice)
   opts = opts or {}
-  local items = M.list()
+  local scope = opts.scope or "cwd"
+  local items = M.list(scope)
   if #items == 0 then
-    vim.notify("yap: no saved conversations", vim.log.levels.INFO)
+    vim.notify("yap: no saved conversations in this scope", vim.log.levels.INFO)
     return
+  end
+  local scope_label = scope == "all" and "all projects" or "cwd project"
+  local projects = {}
+  for _, item in ipairs(items) do
+    projects[paths.project_cwd(item.path)] = true
   end
   -- Reserve the status column even for closed rows (and when every row is
   -- closed), so descendants never shift as sessions open and close.
   local icon_width = picker.icon_width(picker.glyphs())
+  local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
-    prompt = "Pick yap session",
+    prompt = "Pick yap session (" .. scope_label .. ")",
     kind = "yap_session",
     format_item = function(item)
       local icon = opts.status and opts.status(item.path)
-      local label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. item.text
+      local project = paths.project_cwd(item.path)
+      local label = item.text
+      -- list("all") prefixes roots for callers; move that identity to a
+      -- suffix in the picker so titles remain aligned across projects.
+      if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
+        label = label:sub(#project + 3)
+      end
+      label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. label
       label = picker.prefix(icon, icon_width) .. label
       local counts = counts_label(item.turns, item.agents)
       if counts then
         label = label .. "  (" .. counts .. ")"
+      end
+      if multiple_projects and item.depth == 0 then
+        label = label .. "  " .. project
       end
       return label
     end,

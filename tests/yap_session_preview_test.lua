@@ -344,4 +344,40 @@ for _, item in ipairs(captured.items) do
   end
 end
 
+-- The all-project picker lists every project under the sessions root and
+-- places the project after each root title (not before the status column);
+-- children keep their indented titles without repeating it.
+local paths = require("harness.path")
+local other_dir = paths.session_dir("/tmp/yap-other-project")
+vim.fn.mkdir(other_dir .. "/other-project", "p")
+vim.fn.writefile(vim.fn.readfile(path), other_dir .. "/other-project/session.md")
+captured = nil
+vim.ui.select = function(items, opts)
+  captured = { items = items, opts = opts }
+end
+yap.sessions("all")
+vim.ui.select = orig_select
+local all_parent, all_child, other_row
+for _, item in ipairs(captured.items) do
+  local row = captured.opts.format_item(item)
+  if item.path == path then
+    all_parent = row
+  end
+  if item.path == saved_child_path then
+    all_child = row
+  end
+  if item.path == other_dir .. "/other-project/session.md" then
+    other_row = row
+  end
+end
+assert(
+  all_parent and all_parent:find("^   Preview test") == 1 and all_parent:find(paths.project_cwd(path), 1, true),
+  "sessions cwd should follow root title: " .. tostring(all_parent)
+)
+assert(all_child == nil, "agent session leaked into the all-project picker: " .. tostring(all_child))
+assert(
+  other_row and other_row:find("^   Preview test") == 1 and other_row:find("/tmp/yap/other/project", 1, true),
+  "other project prefix missing: " .. tostring(other_row)
+)
+
 print("OK session_preview")

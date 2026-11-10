@@ -72,6 +72,7 @@ M.defaults = {
     scratch = "<leader>j",
     insert = "<C-CR>",
     sessions = "+",
+    sessions_all = "g+",
     guard = "<leader>g",
     help = "g?",
 

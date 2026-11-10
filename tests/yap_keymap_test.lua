@@ -23,4 +23,14 @@ assert(get_lhs("i", "yap: send") == nil, "empty send keymap should disable the i
 assert(get_lhs("n", "yap: change model") ~= nil, "unspecified keymap default was not kept")
 assert(get_lhs("n", "yap: insert template") == "<C-CR>", "insert keymap is not <C-Enter> in normal mode")
 assert(get_lhs("i", "yap: insert template") == "<C-CR>", "insert keymap is missing in insert mode")
+local function get_global_lhs(desc)
+  for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
+    if m.desc == desc then
+      return m.lhs
+    end
+  end
+  return nil
+end
+assert(get_global_lhs("yap: sessions") == "+", "sessions keymap not installed globally")
+assert(get_global_lhs("yap: sessions (all projects)") == "g+", "sessions_all keymap not installed globally")
 print("OK keymap")

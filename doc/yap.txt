@@ -299,17 +299,18 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").guard()                -- open/close the guard board
   require("harness").insert(name)           -- insert a template / merge a skill
   require("harness").change_model(combo)    -- set this session's provider/model
-  require("harness").sessions()            -- pick a saved session (single picker)
+  require("harness").sessions()            -- pick a saved session (current project)
+  require("harness").sessions("all")       -- pick a saved session from any project
 <
-`sessions()` takes no arguments and lists saved sessions for the current
-project. `insert(name, { at_cursor = true })` inserts the raw
-file at the cursor instead of appending/sending. See |yap-keymaps|
-for the default shortcuts that call these.
+`sessions(scope)` lists saved sessions: `"cwd"` (the default, current
+project) or `"all"` (every project under the sessions root). `insert(name,
+{ at_cursor = true })` inserts the raw file at the cursor instead of
+appending/sending. See |yap-keymaps| for the default shortcuts that call these.
 
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except + and <leader>g, which are global. Every binding is a `keymaps` config key
+Set only in yap buffers, except +, g+ and <leader>g, which are global. Every binding is a `keymaps` config key
 (see |yap-configuration|); the defaults are shown below.
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
@@ -330,7 +331,8 @@ regardless of which one you open first.
   <C-Enter> (n, i)      Pick a template (see insert()). A template is inserted
                         and sent; to merge a skill, call insert(name) instead.
                         In scratch, insert the raw file at the cursor instead.
-  +                     Pick a saved session to resume.
+  +                     Pick a saved session to resume (current project).
+  g+                    Pick a saved session from any project.
   g?                    Show the current Yap shortcuts in a searchable
                         floating window; use `/`, `n` and `N`.
   <Tab>                 Toggle the fold under the cursor.
@@ -497,12 +499,13 @@ Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
 it as a managed session (listed, keymapped, live tool tail attached), the same
 as sessions() resume. A portable transcript counts as an ordinary open
 session everywhere: it appears in the sessions() picker and in other
-sessions' winbar rollup. The picker also lists any session whose buffer is
+sessions' winbar rollup. The cwd picker also lists any session whose buffer is
 open, including one opened directly from another project's folder — so
 browsing ~/.config/yap/sessions/ and opening a transcript makes it show up in
-sessions() for as long as it stays open. A next-to-file or custom-path
-transcript is only listed while it is open — its location is otherwise
-undiscoverable, so reopening it means opening the file.
+sessions() for as long as it stays open. To browse every saved session across
+all projects without opening files, use sessions("all") (`g+`). A next-to-file
+or custom-path transcript is only listed while it is open — its location is
+otherwise undiscoverable, so reopening it means opening the file.
 
 The saved-session picker includes an ordinary blank session while its buffer
 is loaded. Once unloaded, it is hidden unless it has a prompt, completed turn,
@@ -515,12 +518,14 @@ Deleting a session buffer uses Neovim's ordinary replacement
 buffer behavior, without preferring waiting or running sessions.
 
                                                     *harness.sessions()*
-require("harness").sessions() is the single session picker. It lists saved
-sessions for the current project, annotates open rows with a live status icon,
-and nests forks (always) and subagents (only while their parent is open) under
-their parent, drawn as a box-drawing tree with a fork/agent glyph per row.
-Subagents (`b:yap_agent`) remain unlisted and excluded from the winbar
-overview.
+require("harness").sessions(scope) is the session picker. `"cwd"` (the
+default) lists saved sessions for the current project; `"all"` lists every
+saved session across all projects under the sessions root, suffixing each root
+row with its project so sessions from different worktrees are distinguishable.
+Both scopes annotate open rows with a live status icon and nest forks (always)
+and subagents (only while their parent is open) under their parent, drawn as a
+box-drawing tree with a fork/agent glyph per row. Subagents (`b:yap_agent`)
+remain unlisted and excluded from the winbar overview.
 
 File operations are the session operations:
 

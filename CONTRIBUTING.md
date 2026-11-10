@@ -256,11 +256,13 @@ permanent title: a renamed transcript's filename outranks the generated
 description in every session view, and the description is regenerated after
 every turn.
 
-`sessions()` is the single session picker: it lists saved sessions for the
-current project, marks open rows with a live status icon, and nests forks and
-subagents under their parent. A fork nests under its parent in the picker; a
-subagent nests only while its parent is open, keeping an inactive
-conversation's row lean.
+`sessions(scope)` is the session picker: `"cwd"` (the default) lists saved
+sessions for the current project, and `"all"` lists every saved session across
+all projects under the sessions root, suffixing each root row with its project
+so sessions from different worktrees are distinguishable. Both scopes mark
+open rows with a live status icon and nest forks and subagents under their
+parent. A fork nests under its parent in the picker; a subagent nests only
+while its parent is open, keeping an inactive conversation's row lean.
 Sessions belong in ordinary buffer navigation without sacrificing
 real file paths or the session trees. The saved picker lists an ordinary
 blank session while its buffer is loaded and hides it once unloaded unless it
