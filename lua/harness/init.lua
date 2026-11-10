@@ -100,6 +100,30 @@ function M.is_running(buf)
   return state.is_running(buf)
 end
 
+--- Document-symbol picker: one symbol per message (newest first), then the
+--- frontmatter block last, in the server's order. Generic document_symbol
+--- pickers (e.g. mini.extra) re-sort by line number, which would put the
+--- frontmatter back on top, so yap presents the outline itself through
+--- |vim.ui.select|.
+function M.symbols(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local syms = lsp.symbols(buf)
+  if not syms or #syms == 0 then
+    vim.notify("yap: no symbols in this buffer", vim.log.levels.WARN, { title = "yap" })
+    return
+  end
+  vim.ui.select(syms, {
+    prompt = "yap symbols",
+    format_item = function(item)
+      return item.name
+    end,
+  }, function(choice)
+    if choice then
+      vim.api.nvim_win_set_cursor(0, { choice.line, 0 })
+    end
+  end)
+end
+
 -- ─── Shared per-buffer state aliases (for the autocmds below) ─────────────
 
 local running = state.running

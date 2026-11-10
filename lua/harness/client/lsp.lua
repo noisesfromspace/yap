@@ -134,14 +134,15 @@ function M.notify(buf, cwd, streaming)
   })
 end
 
---- Ask the backend what this buffer would send. The transcript → request
---- conversion is Go-owned (R-single-reader), so the harness queries the
---- document server instead of re-deriving the flatten/merge/marker rules in
---- Lua. Returns nil when no client is attached, in which case the backend
---- validates the request itself on the next send.
----@param buf integer
----@return {role:string, content:string}[]|nil
-function M.messages(buf)
+-- The yap client, waited until the initialize handshake completes and it is
+-- attached to buf, or nil when unavailable. The client starts eagerly at
+-- setup(), so a session opened immediately afterwards can reach here before
+-- initialize completes — and the didOpen for its buffer is only queued until
+-- then. Wait for the handshake so the server answers about a document it
+-- actually has, but bail out as soon as the client stops: when `bin` is not a
+-- language server at all (test doubles, a build predating `yap lsp`) there is
+-- nothing to wait for.
+local function attached_client(buf)
   local id = client_id
   if not id or not vim.api.nvim_buf_is_valid(buf) then
     return nil
@@ -150,12 +151,6 @@ function M.messages(buf)
   if not client then
     return nil
   end
-  -- The client starts eagerly at setup(), so a session opened immediately
-  -- afterwards can reach here before initialize completes — and the didOpen
-  -- for its buffer is only queued until then. Wait for the handshake so the
-  -- server answers about a document it actually has, but bail out as soon as
-  -- the client stops: when `bin` is not a language server at all (test
-  -- doubles, a build predating `yap lsp`) there is nothing to wait for.
   if not (client.initialized and vim.lsp.buf_is_attached(buf, id)) then
     vim.wait(500, function()
       return client.initialized or client:is_stopped()
@@ -163,6 +158,48 @@ function M.messages(buf)
     if not client.initialized or client:is_stopped() or not vim.lsp.buf_is_attached(buf, id) then
       return nil
     end
+  end
+  return client
+end
+
+--- Ask the backend for the document-symbol outline in server order (newest
+--- message first, frontmatter block last). Returns a flat list of
+--- { name = string, line = number } (line is 1-based) or nil when no client
+--- is attached.
+---@param buf integer
+---@return {name:string, line:integer}[]|nil
+function M.symbols(buf)
+  local client = attached_client(buf)
+  if not client then
+    return nil
+  end
+  local res = client:request_sync("textDocument/documentSymbol", {
+    textDocument = { uri = vim.uri_from_bufnr(buf) },
+  }, 5000, buf)
+  if type(res) ~= "table" or res.err or type(res.result) ~= "table" then
+    return nil
+  end
+  local out = {}
+  for _, s in ipairs(res.result) do
+    local start = s.range and s.range.start
+    if start and type(start.line) == "number" then
+      out[#out + 1] = { name = s.name, line = start.line + 1 }
+    end
+  end
+  return out
+end
+
+--- Ask the backend what this buffer would send. The transcript → request
+--- conversion is Go-owned (R-single-reader), so the harness queries the
+--- document server instead of re-deriving the flatten/merge/marker rules in
+--- Lua. Returns nil when no client is attached, in which case the backend
+--- validates the request itself on the next send.
+---@param buf integer
+---@return {role:string, content:string}[]|nil
+function M.messages(buf)
+  local client = attached_client(buf)
+  if not client then
+    return nil
   end
   -- Include the current snapshot: buffer adoption/rename can race core's
   -- didOpen/didChange tracking, but send conversion must always see the text

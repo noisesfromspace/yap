@@ -39,7 +39,7 @@ end
 for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
-for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions" }) do
+for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "symbols" }) do
   assert(type(yap[name]) == "function", name .. " Lua API missing")
 end
 assert(yap.config.keymaps.sessions ~= "", "saved sessions keymap disabled")

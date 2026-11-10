@@ -301,6 +301,7 @@ are no `:Yap...` commands for them. Bind them to keys or call them directly:
   require("harness").change_model(combo)    -- set this session's provider/model
   require("harness").sessions()            -- pick a saved session (current project)
   require("harness").sessions("all")       -- pick a saved session from any project
+  require("harness").symbols()             -- pick a document symbol (newest first)
 <
 `sessions(scope)` lists saved sessions: `"cwd"` (the default, current
 project) or `"all"` (every project under the sessions root). `insert(name,
@@ -321,6 +322,8 @@ Set only in yap buffers, except +, g+ and <leader>g, which are global. Every bin
   <leader>m             Change model (picker, see change_model()).
   <leader>g             Open/close the guard board (see guard()).
   <leader>l             Watch the live tool tail (see live()).
+  <leader>s             Pick a document symbol: messages newest-first, then the
+                        frontmatter block at the bottom (see symbols()).
 
 Inside the guard board, <leader>l opens the live tail directly below it;
 inside the live tail, <leader>g opens the guard board directly above it.
@@ -952,6 +955,9 @@ LSP, backed by the Go document parser (agent/document):
 The server attaches to session buffers for symbols, diagnostics and
 completion. The scratch buffer gets `@path` and `# @steer`/`# @queue` completion,
 without transcript diagnostics or symbols. Ordinary Markdown is left alone.
+The `symbols()` picker (and its `<leader>s` keymap) presents the outline in the
+server's order. Generic `document_symbol` pickers (e.g. mini.extra) re-sort by
+line number and would put the frontmatter back on top, so yap ships its own.
 Model completion reads the cached `yap models` list; it never hits the network, and opening a session never
 starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
 are suppressed while a reply is streaming.

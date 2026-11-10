@@ -73,6 +73,7 @@ M.defaults = {
     insert = "<C-CR>",
     sessions = "+",
     sessions_all = "g+",
+    symbols = "<leader>s",
     guard = "<leader>g",
     help = "g?",
 
