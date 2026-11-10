@@ -936,8 +936,8 @@ A managed session buffer carries one language server, `yap lsp`, started and
 attached by the harness. It provides four language features over standard
 LSP, backed by the Go document parser (agent/document):
 
-  Document symbols  An outline of the conversation: frontmatter, then one
-                    symbol per message (role + a short visible prose preview).
+  Document symbols  An outline of the conversation: one symbol per message
+                    (newest first), then the frontmatter block at the bottom.
                     Tool calls, thinking and other machine regions are not
                     symbols.
   Completion        Frontmatter keys and values (`provider`, `model`,

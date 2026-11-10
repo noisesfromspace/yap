@@ -45,18 +45,19 @@ func TestSymbols(t *testing.T) {
 	if len(syms) != 3 { // frontmatter + user + assistant
 		t.Fatalf("got %d top-level symbols, want 3: %+v", len(syms), syms)
 	}
-	if syms[0].Name != "frontmatter" {
-		t.Fatalf("symbol 0 = %q, want frontmatter", syms[0].Name)
+	// Newest first, frontmatter last.
+	asst := syms[0]
+	if asst.Name != "assistant: visible answer" {
+		t.Fatalf("symbol 0 = %q, want the first visible prose, skipping thinking and tool bodies", asst.Name)
+	}
+	if len(asst.Children) != 0 {
+		t.Fatalf("assistant children = %+v, want none (tool calls are not symbols)", asst.Children)
 	}
 	if syms[1].Name != "user: Investigate the parser" {
 		t.Fatalf("symbol 1 = %q", syms[1].Name)
 	}
-	asst := syms[2]
-	if asst.Name != "assistant: visible answer" {
-		t.Fatalf("symbol 2 = %q, want the first visible prose, skipping thinking and tool bodies", asst.Name)
-	}
-	if len(asst.Children) != 0 {
-		t.Fatalf("assistant children = %+v, want none (tool calls are not symbols)", asst.Children)
+	if syms[2].Name != "frontmatter" {
+		t.Fatalf("symbol 2 = %q, want frontmatter", syms[2].Name)
 	}
 }
 

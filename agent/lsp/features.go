@@ -123,8 +123,9 @@ func utf16ColToByte(s string, col int) int {
 // ─── Document symbols ──────────────────────────────────────────────────────
 
 // Symbols returns the document-symbol outline of a session transcript:
-// frontmatter, then one symbol per message. Tool calls, thinking and other
-// machine regions are display-only and never appear in the outline.
+// one symbol per message, newest first, then the frontmatter block at the
+// bottom. Tool calls, thinking and other machine regions are display-only
+// and never appear in the outline.
 func Symbols(text string) []symbol {
 	return symbolsFromDoc(document.Parse(text))
 }
@@ -134,16 +135,15 @@ func Symbols(text string) []symbol {
 func symbolsFromDoc(doc *document.Document) []symbol {
 	lines := doc.Lines
 
-	var out []symbol
-	if doc.Frontmatter > 0 {
-		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
-	}
-
 	// Machine regions (tool, thinking, error, …) never become symbols, and
 	// their body lines must not leak into a message's preview name.
 	hidden := machineLines(lines, doc.Regions)
 
-	for i, h := range doc.Headings {
+	var out []symbol
+	// Messages newest first: the most recent conversation sits at the top of
+	// the outline, matching how a live transcript reads bottom-up.
+	for i := len(doc.Headings) - 1; i >= 0; i-- {
+		h := doc.Headings[i]
 		next := len(lines) // exclusive 0-based end of this message
 		if i+1 < len(doc.Headings) {
 			next = doc.Headings[i+1].Line - 1
@@ -157,6 +157,9 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
 		})
+	}
+	if doc.Frontmatter > 0 {
+		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
 	}
 	return out
 }
