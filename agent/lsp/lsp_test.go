@@ -61,6 +61,21 @@ func TestSymbols(t *testing.T) {
 	}
 }
 
+func TestSymbolsEmptyAndError(t *testing.T) {
+	text := "# @user\nask\n# @assistant\n<!-- yap:thinking\nsecret\n-->\n<!-- yap:error\nfailed on purpose\n-->\n# @user\n"
+	syms := Symbols(text)
+	if len(syms) != 2 { // errored assistant + user; empty trailing user dropped
+		t.Fatalf("got %d symbols, want 2: %+v", len(syms), syms)
+	}
+	// Newest first: the errored assistant, then the user that preceded it.
+	if syms[0].Name != "assistant: failed on purpose" {
+		t.Fatalf("symbol 0 = %q, want the error naming a no-visible-prose turn", syms[0].Name)
+	}
+	if syms[1].Name != "user: ask" {
+		t.Fatalf("symbol 1 = %q", syms[1].Name)
+	}
+}
+
 func TestCompletionFrontmatter(t *testing.T) {
 	text := "---\nprov\n---\n# @user\nhi\n"
 	items := Completion(text, 1, 4, CompletionCtx{})

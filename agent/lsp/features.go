@@ -125,7 +125,8 @@ func utf16ColToByte(s string, col int) int {
 // Symbols returns the document-symbol outline of a session transcript:
 // one symbol per message, newest first, then the frontmatter block at the
 // bottom. Tool calls, thinking and other machine regions are display-only
-// and never appear in the outline.
+// and never appear in the outline; empty messages are dropped, and a turn
+// that only ran tools and then failed names itself by its error.
 func Symbols(text string) []symbol {
 	return symbolsFromDoc(document.Parse(text))
 }
@@ -138,6 +139,7 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 	// Machine regions (tool, thinking, error, …) never become symbols, and
 	// their body lines must not leak into a message's preview name.
 	hidden := machineLines(lines, doc.Regions)
+	errored := errorLines(lines, doc.Regions)
 
 	var out []symbol
 	// Messages newest first: the most recent conversation sits at the top of
@@ -151,8 +153,12 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 		if next < h.Line-1 {
 			next = h.Line - 1
 		}
+		name := messageName(lines, h, hidden, errored, next)
+		if name == "" {
+			continue // empty message: nothing to navigate to
+		}
 		out = append(out, symbol{
-			Name:           messageName(lines, h, hidden, next),
+			Name:           name,
 			Kind:           symObject,
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
@@ -185,6 +191,32 @@ func machineLines(lines []string, regions []document.Region) []bool {
 	return hidden
 }
 
+// errorLines marks the body lines of error regions (between the `<!--
+// yap:error` opener and its `-->` closer). A message with no visible prose
+// names itself by the first of these, so a failed turn is still reachable.
+func errorLines(lines []string, regions []document.Region) []bool {
+	errored := make([]bool, len(lines))
+	for _, r := range regions {
+		if r.Kind != "error" {
+			continue
+		}
+		finish := r.Finish
+		if finish == 0 || finish > len(lines) {
+			finish = len(lines)
+		}
+		if finish < r.Start {
+			finish = r.Start
+		}
+		// Body only: r.Start is the 1-based opener, r.Finish the 1-based
+		// closer; the body sits strictly between them (0-based [r.Start,
+		// r.Finish-1)).
+		for ln := r.Start; ln < finish-1 && ln < len(lines); ln++ {
+			errored[ln] = true
+		}
+	}
+	return errored
+}
+
 func frontmatterSymbol(lines []string, close int) symbol {
 	s := symbol{
 		Name:           "frontmatter",
@@ -205,7 +237,11 @@ func frontmatterSymbol(lines []string, close int) symbol {
 	return s
 }
 
-func messageName(lines []string, h document.Heading, hidden []bool, end int) string {
+// messageName derives a message symbol's display name from its first visible
+// prose line. A message whose body is only machine regions (a turn that ran
+// tools and then failed) falls back to the first error line; a message with no
+// content at all returns "", which the caller drops from the outline.
+func messageName(lines []string, h document.Heading, hidden, errored []bool, end int) string {
 	for i := h.Line; i < end; i++ {
 		t := strings.TrimSpace(lines[i])
 		if t == "" || strings.HasPrefix(t, "<!-- yap:") || hidden[i] {
@@ -213,7 +249,14 @@ func messageName(lines []string, h document.Heading, hidden []bool, end int) str
 		}
 		return h.Role + ": " + truncate(t, 60)
 	}
-	return h.Role
+	for i := h.Line; i < end; i++ {
+		if errored[i] {
+			if t := strings.TrimSpace(lines[i]); t != "" {
+				return h.Role + ": " + truncate(t, 60)
+			}
+		}
+	}
+	return ""
 }
 
 // ─── Completion ─────────────────────────────────────────────────────────────
