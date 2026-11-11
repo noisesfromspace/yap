@@ -289,13 +289,30 @@
                 done
               '')
               (fwd-env "PATH")
-              # Yap's config directory read-write: the ChatGPT subscription
-              # login keeps a rotating refresh token there and rewrites it on
-              # refresh. settings.json stays a symlink into the read-only
-              # store. Everything else yap reads is bound read-only below.
+              # Yap's config directory stays read-write: the ChatGPT login
+              # rewrites its credential via a same-directory rename
+              # (chatgpt.json.tmp -> chatgpt.json) and takes a lock file
+              # beside it, both of which need the directory itself writable.
+              # The rules and provider config are then re-mounted read-only
+              # over it, so the only writable leftovers are the session tree
+              # and the auth state (chatgpt.json/.lock). The instruction dirs
+              # are pre-created on the host so their read-only bind always
+              # covers the name — an absent dir must not become writable
+              # because the model created it.
               (add-runtime ''
-                mkdir -p ${escape "${jailConfigHome}/yap"}
+                mkdir -p \
+                  ${escape "${jailConfigHome}/yap"} \
+                  ${escape "${jailConfigHome}/yap/skills"} \
+                  ${escape "${jailConfigHome}/yap/templates"} \
+                  ${escape "${jailConfigHome}/yap/agents"}
                 RUNTIME_ARGS+=(--bind ${escape "${jailConfigHome}/yap"} ${escape "${jailConfigHome}/yap"})
+                # Read-only on top of the writable bind above; they must come
+                # after it to win.
+                RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/skills"} ${escape "${jailConfigHome}/yap/skills"})
+                RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/templates"} ${escape "${jailConfigHome}/yap/templates"})
+                RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/agents"} ${escape "${jailConfigHome}/yap/agents"})
+                RUNTIME_ARGS+=(--ro-bind-try ${escape "${jailConfigHome}/yap/settings.json"} ${escape "${jailConfigHome}/yap/settings.json"})
+                RUNTIME_ARGS+=(--ro-bind-try ${escape jailAgentsPath} ${escape jailAgentsPath})
               '')
               # The editor's own config (keymaps, theme, plugins). With
               # wrapRc = false this is a directory in the config home; bind it
