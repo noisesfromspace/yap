@@ -25,7 +25,9 @@ func init() {
 		"Execute a bash command. Runs inside a bubblewrap sandbox (read-only filesystem; the project directory and session assets are writable); a command that tries to write elsewhere is paused for approval. High-risk commands require user confirmation. Returns combined stdout/stderr and the exit code "+
 			"(a non-zero exit is reported, not an error). Output is truncated to the LAST "+
 			"2000 lines / 50KB; when truncated, the full output is saved to a temp file. "+
-			"Non-interactive: stdin is /dev/null. Default timeout 120s.",
+			"Non-interactive: stdin is /dev/null. Default timeout 120s. "+
+			"Runs in the Neovim working directory already — change it with `cwd`, never prefix `cd`. "+
+			"To read files or list the project, prefer the `read`, `search`, or `glob` tools over `cat`/`ls`/`find`.",
 		func(a *bashArgs) (string, string, error) { return runBash(a) })
 	Gate("bash", func(a *bashArgs) string { return a.Command }, bashRules...)
 }
