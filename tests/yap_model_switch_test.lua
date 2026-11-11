@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
+local icons = require("harness").config.icons
 
 local buf = yap.new()
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "do some work" })
@@ -12,9 +13,14 @@ assert(vim.wait(10000, function() return yap.is_running(buf) end, 50), "turn did
 vim.wait(400)
 
 yap.change_model("mock/m2")
+-- The switch is queued for the next model boundary: the winbar advertises it
+-- with the pending-switch icon while the turn keeps running.
+assert(yap.winbar(buf):find(icons.model_switch, 1, true), "pending model switch icon missing: " .. yap.winbar(buf))
 
 assert(vim.wait(15000, function() return not yap.is_running(buf) end, 100), "turn did not complete")
 vim.wait(200)
+
+assert(not yap.winbar(buf):find(icons.model_switch, 1, true), "pending model switch icon lingered after delivery: " .. yap.winbar(buf))
 
 local t = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(t:find('<!-- yap:model {"from":"mock/m1","to":"mock/m2"} -->', 1, true), "model marker missing:\n" .. t)

@@ -48,6 +48,7 @@ M.defaults = {
     done = "󰄬", -- nf-md-check (picker: finished subagent)
     steer = "󰇐", -- nf-md-directions (winbar steer state)
     queue = "󱊖", -- nf-md-tray_full (winbar queued-message state)
+    model_switch = "󰿡", -- nf-md-swap_horizontal_circle (winbar pending model switch)
     approval = "󰻌", -- nf-md-shield_alert (winbar gutter + rollup, notification, audit)
     fork = "󰓁", -- nf-md-source_fork (picker: a fork in the session tree)
     agent = "󰚩", -- nf-md-robot (picker: a subagent in the session tree)

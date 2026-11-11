@@ -16,6 +16,7 @@ local M = {
   last_turn = {}, -- buf -> turn_end event (User YapTurnDone data)
   awaiting = {}, -- buf -> true (turn complete, awaiting user reply)
   steer = {}, -- buf -> pending steering text (sent mid-turn, not yet delivered)
+  model_switch = {}, -- buf -> true (a mid-turn model switch is pending delivery)
   subagent_children = {}, -- parent buf -> { request id -> child buf } (running subagents)
   subagent_done = {}, -- child buf -> function(success) to report its result
   subagent_since = {}, -- parent buf -> uv.now() ms (start of the current child phase)

@@ -294,6 +294,8 @@ function M.change_model(combo)
     end)
     if not ok then
       vim.notify("yap: could not switch model mid-turn (backend gone)", vim.log.levels.WARN)
+    else
+      state.model_switch[buf] = true
     end
   end
 end
@@ -325,6 +327,7 @@ function M.setup(opts)
       done = "✓",
       steer = "⌁",
       queue = "↧",
+      model_switch = "⇄",
       approval = "⚠", -- plain-Unicode backup for the shield_alert glyph
       fork = "⑂", -- plain-Unicode fork marker (OCR fork)
       agent = "◆", -- plain-Unicode subagent marker
@@ -399,6 +402,7 @@ function M.setup(opts)
         vim.b[vim.b[args.buf].yap_scratch].yap_queue_dispatch = false
       end
       state.steer[args.buf] = nil
+      state.model_switch[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
       state.last_tool_call[args.buf] = nil

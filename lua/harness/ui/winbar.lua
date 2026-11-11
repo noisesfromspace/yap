@@ -21,6 +21,7 @@ local errors = state.errors
 local stopped = state.stopped
 local awaiting = state.awaiting
 local steer = state.steer
+local model_switch = state.model_switch
 local sessions = state.sessions
 local pending_approvals = state.pending_approvals
 
@@ -284,26 +285,33 @@ local function render_winbar(buf)
       -- inactive window too.
       state_icons[#state_icons + 1] = seg(icons.approval, "Approval")
     elseif not inactive and busy then
-      -- A queued message and a pending steer advertise themselves immediately
-      -- left of the running beacon, so all stay visible in the gutter while
-      -- streaming (the queue sends first, then the steer is injected).
+      -- A queued message, a pending steer and a pending model switch
+      -- advertise themselves immediately left of the running beacon, so all
+      -- stay visible in the gutter while streaming (the queue sends first,
+      -- then the model switch and steer are applied at the next boundary).
       if queued(buf) then
         state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
       end
       if steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
+      end
+      if model_switch[buf] then
+        state_icons[#state_icons + 1] = seg(icons.model_switch, "Needs")
       end
       local glyph = require("harness").config.nerd_font and spinner.glyph(buf) or spinner.plain_glyph(buf)
       state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
-    elseif inactive and busy and (queued(buf) or steer[buf]) then
+    elseif inactive and busy and (queued(buf) or steer[buf] or model_switch[buf]) then
       -- A generating session drops its spinner when inactive, but a queued
-      -- message or a pending steer still advertises itself through the
-      -- leftmost state icon.
+      -- message, a pending steer or a pending model switch still advertises
+      -- itself through the leftmost state icon.
       if queued(buf) then
         state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
       end
       if steer[buf] then
         state_icons[#state_icons + 1] = seg(icons.steer, "Needs")
+      end
+      if model_switch[buf] then
+        state_icons[#state_icons + 1] = seg(icons.model_switch, "Needs")
       end
     elseif not busy then
       if errors[buf] then

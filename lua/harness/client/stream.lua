@@ -36,6 +36,7 @@ local errors = state.errors
 local last_turn = state.last_turn
 local awaiting = state.awaiting
 local steer = state.steer
+local model_switch = state.model_switch
 local servers = state.servers
 local subagent_children = state.subagent_children
 local subagent_done = state.subagent_done
@@ -254,6 +255,7 @@ local function handle_event(buf, ev)
     end
     audit.append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "model_change" then
+    model_switch[buf] = nil -- delivered (or failed): the pending-switch icon clears
     audit.append_event(buf, ev) -- audit trail: a model switch landed mid-turn
   elseif ev.type == "tool_text_warning" then
     audit.append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
@@ -370,6 +372,7 @@ local function close_stream(buf)
   repair_stream_tail(buf)
   document.append_lines(buf, { "# @user", "" })
   awaiting[buf] = true
+  model_switch[buf] = nil
   session.save(buf)
   leave_undelivered_steer(buf)
   if subagent_done[buf] then
@@ -437,6 +440,7 @@ function M.send(buf)
   state.error_code[buf] = nil
   stopped[buf] = nil
   awaiting[buf] = nil
+  model_switch[buf] = nil
   -- provider/model come from the buffer vars (set by new() /
   -- change_model()), falling back to config; sync them so the winbar
   -- and this send agree.
@@ -587,6 +591,7 @@ function M.send(buf)
         scratchmod.finish_queue(buf, false)
         if revise then
           awaiting[buf] = true
+          model_switch[buf] = nil
           session.save(buf)
           leave_undelivered_steer(buf)
           if subagent_done[buf] then
@@ -646,6 +651,7 @@ function M.send(buf)
       leave_undelivered_steer(buf)
       follow_tail()
       awaiting[buf] = true
+      model_switch[buf] = nil
       session.save(buf)
       if subagent_done[buf] then
         local done = subagent_done[buf]
