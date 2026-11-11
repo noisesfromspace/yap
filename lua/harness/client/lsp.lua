@@ -180,11 +180,19 @@ function M.symbols(buf)
     return nil
   end
   local out = {}
-  for _, s in ipairs(res.result) do
-    local start = s.range and s.range.start
+  -- The frontmatter symbol carries each key as a child; flatten children so
+  -- the picker lists the individual frontmatter items, not one bare block.
+  local function add(sym)
+    local start = sym.range and sym.range.start
     if start and type(start.line) == "number" then
-      out[#out + 1] = { name = s.name, line = start.line + 1 }
+      out[#out + 1] = { name = sym.name, line = start.line + 1 }
     end
+    for _, child in ipairs(sym.children or {}) do
+      add(child)
+    end
+  end
+  for _, s in ipairs(res.result) do
+    add(s)
   end
   return out
 end

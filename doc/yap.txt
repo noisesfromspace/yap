@@ -940,7 +940,8 @@ attached by the harness. It provides four language features over standard
 LSP, backed by the Go document parser (agent/document):
 
   Document symbols  An outline of the conversation: one symbol per message
-                    (newest first), then the frontmatter block at the bottom.
+                    (newest first), then the frontmatter block at the bottom
+                    with each key as its own entry.
                     Tool calls, thinking and other machine regions are not
                     symbols; empty messages are dropped, and a turn that only
                     ran tools and then failed names itself by its error.
