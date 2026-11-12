@@ -271,8 +271,8 @@ func streamStep(ctx context.Context, model llm.LanguageModel, messages []llm.Mes
 
 // A model occasionally writes a tool call as ordinary prose instead of a
 // native tool call. Two shapes are common: the flattened transcript form
-// (`Tool call: <name>` / `Arguments: …`, which document.lua synthesizes for
-// history) and the Anthropic-style `<invoke>`/`<parameter>` XML convention.
+// (`Tool call: <name>` / `Arguments: …`) and the Anthropic-style
+// `<invoke>`/`<parameter>` XML convention.
 // Nothing in the harness emits either as live output, so a match means an
 // intended call never ran. Detection is advisory: a false positive only
 // surfaces a warning — it never blocks or rewrites the answer.
