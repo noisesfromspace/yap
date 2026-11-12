@@ -53,27 +53,27 @@ type tokenSource func(ctx context.Context) (string, error)
 
 func (f tokenSource) Token(ctx context.Context) (string, error) { return f(ctx) }
 
-// IsRetryable reports whether err is a transient error worth retrying: a
-// provider API error flagged retryable (429, 5xx, OpenAI 404), or a
-// network-level error (timeout, connection reset/refused, DNS). Context
-// cancellation/deadline is deliberately not retryable. It mirrors the SDK's
-// own classifier so the agent can decide whether a mid-stream failure is safe
-// to retry; the SDK already retries pre-stream failures (MaxRetries).
+// isNetworkError reports transport/connectivity failures (timeout, reset,
+// refused, DNS), which are surfaced as network errors to the UI.
+func isNetworkError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
+// IsRetryable reports whether the turn loop should retry a transient server
+// failure. Quota/rate-limit 429s and offline/network outages fail fast.
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr *sdk.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.IsRetryable
-	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return false
 	}
-	// A network-level error (timeout, reset, refused, DNS) is the retryable
-	// remainder; anything else is not worth a second guess by message text.
-	var netErr net.Error
-	return errors.As(err, &netErr)
+	var apiErr *sdk.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode >= http.StatusInternalServerError && apiErr.StatusCode != http.StatusNotImplemented && apiErr.IsRetryable
+	}
+	return false
 }
 
 // Classify maps a provider error onto Yap's wire error codes (utils.Code*)
@@ -88,7 +88,7 @@ func Classify(err error) (int, map[string]any) {
 	var apiErr *sdk.APIError
 	if errors.As(err, &apiErr) {
 		data := map[string]any{"status": apiErr.StatusCode}
-		if apiErr.IsRetryable {
+		if IsRetryable(err) {
 			data["retryable"] = true
 		}
 		switch apiErr.StatusCode {
@@ -109,8 +109,8 @@ func Classify(err error) (int, map[string]any) {
 	if errors.As(err, &overflow) {
 		return wire.CodeContextOverflow, nil
 	}
-	if IsRetryable(err) {
-		return wire.CodeNetwork, map[string]any{"retryable": true}
+	if isNetworkError(err) {
+		return wire.CodeNetwork, nil
 	}
 	return wire.CodeInternal, nil
 }
@@ -223,6 +223,9 @@ func (m *modelImpl) DoStream(ctx context.Context, params llm.Params) (*llm.Strea
 		sdk.WithMessages(rest...),
 		sdk.WithTools(toSDKTools(params.Tools)...),
 		sdk.WithMaxSteps(1),
+		// Keep retries in one place (the turn loop) so request counts and
+		// backoff stay predictable.
+		sdk.WithMaxRetries(0),
 	}
 	if len(system) > 0 {
 		opts = append(opts, sdk.WithSystem(strings.Join(system, "\n\n")))

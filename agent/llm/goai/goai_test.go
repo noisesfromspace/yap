@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"testing"
+	"time"
 
 	sdk "github.com/zendev-sh/goai"
 	"github.com/zendev-sh/goai/provider"
@@ -202,5 +204,54 @@ func TestClassify(t *testing.T) {
 	code, data := Classify(&sdk.APIError{StatusCode: 401, Message: "unauthorized"})
 	if code != wire.CodeAuth || data["status"] != 401 {
 		t.Fatalf("auth data wrong: code=%d data=%v", code, data)
+	}
+}
+
+func TestIsRetryable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"retryable 503", &sdk.APIError{StatusCode: http.StatusServiceUnavailable, IsRetryable: true}, true},
+		{"retryable 502", &sdk.APIError{StatusCode: http.StatusBadGateway, IsRetryable: true}, true},
+		{"retryable 500", &sdk.APIError{StatusCode: http.StatusInternalServerError, IsRetryable: true}, true},
+		{"non-retryable 501", &sdk.APIError{StatusCode: http.StatusNotImplemented, IsRetryable: true}, false},
+		{"non-retryable 503", &sdk.APIError{StatusCode: http.StatusServiceUnavailable, IsRetryable: false}, false},
+		{"retryable 429", &sdk.APIError{StatusCode: http.StatusTooManyRequests, IsRetryable: true}, false},
+		{"network timeout", &net.DNSError{IsTimeout: true}, false},
+		{"context canceled", context.Canceled, false},
+		{"context deadline", context.DeadlineExceeded, false},
+	}
+	for _, c := range cases {
+		if got := IsRetryable(c.err); got != c.want {
+			t.Errorf("%s: IsRetryable()=%v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+type alwaysRetryableErrorModel struct{ calls int }
+
+func (m *alwaysRetryableErrorModel) ModelID() string { return "fake" }
+func (m *alwaysRetryableErrorModel) DoGenerate(context.Context, provider.GenerateParams) (*provider.GenerateResult, error) {
+	return nil, fmt.Errorf("not used")
+}
+func (m *alwaysRetryableErrorModel) DoStream(context.Context, provider.GenerateParams) (*provider.StreamResult, error) {
+	m.calls++
+	return nil, &sdk.APIError{StatusCode: http.StatusServiceUnavailable, IsRetryable: true, Message: "upstream unavailable"}
+}
+
+func TestDoStreamDisablesSDKRetries(t *testing.T) {
+	fake := &alwaysRetryableErrorModel{}
+	m := &modelImpl{model: fake, name: "compat"}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := m.DoStream(ctx, llm.Params{Messages: []llm.Message{{Role: llm.RoleUser, Content: []llm.Part{{Type: llm.PartText, Text: "go"}}}}})
+	if err == nil {
+		t.Fatal("DoStream returned nil error")
+	}
+	if fake.calls != 1 {
+		t.Fatalf("upstream calls=%d, want 1 (sdk retries disabled)", fake.calls)
 	}
 }

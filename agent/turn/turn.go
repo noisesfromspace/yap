@@ -339,16 +339,16 @@ func detectTextToolCall(text string) (string, bool) {
 // forever.
 const maxToolIterations = 300
 
-// retryMaxAttempts bounds how many times a transient generation error is
-// retried (on top of the initial call) when the failed step emitted nothing.
-const retryMaxAttempts = 3
+// retryMaxAttempts bounds transient server-error retries (on top of the
+// initial request) when the failed step emitted nothing.
+const retryMaxAttempts = 2
 
 // retryBaseDelay is the backoff before the first retry; each attempt doubles
 // it. A var so tests can shorten it.
 var retryBaseDelay = 2 * time.Second
 
 // retryDelay returns the sleep before retry attempt n (0-indexed): 2s, 4s,
-// 8s, capped at 30s.
+// capped at 30s.
 func retryDelay(attempt int) time.Duration {
 	d := retryBaseDelay << attempt
 	if d > 30*time.Second {
@@ -637,11 +637,9 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 		t, err := streamStep(ctx, modelImpl, messages, out, wrote, req.Tools)
 		if err != nil {
-			// Retry transient errors (429/5xx, network) only while the failed
-			// step emitted nothing to the buffer: a mid-stream failure after
-			// text has already streamed cannot be retried without corrupting
-			// the document. Pre-stream failures are already retried by the
-			// SDK, so this is a safety net for the remainder.
+			// Retry bounded transient server failures only while the failed
+			// step emitted nothing: a mid-stream failure after text has
+			// streamed cannot be retried without corrupting the document.
 			for attempt := 0; err != nil && goai.IsRetryable(err) && (t == nil || !t.outWrote) && attempt < retryMaxAttempts; attempt++ {
 				delay := retryDelay(attempt)
 				wire.EmitEvent(map[string]any{

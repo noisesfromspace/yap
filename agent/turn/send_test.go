@@ -16,6 +16,7 @@ import (
 	"boers.email/yap/agent/internal/testutil"
 	"boers.email/yap/agent/llm"
 	"boers.email/yap/agent/wire"
+	sdk "github.com/zendev-sh/goai"
 )
 
 // TestKeylessProvider allows a local OpenAI-compatible endpoint without
@@ -529,23 +530,24 @@ func TestModelsToolInServe(t *testing.T) {
 	}
 }
 
-type retryableNetErr struct{}
-
-func (retryableNetErr) Error() string   { return "i/o timeout" }
-func (retryableNetErr) Timeout() bool   { return true }
-func (retryableNetErr) Temporary() bool { return true }
-
-// retryFakeModel fails its first DoStream with a transient mid-stream error
-// (no events, retryable Result.Err) and succeeds on the second call.
-type retryFakeModel struct{ calls int }
+// retryFakeModel fails with scripted step errors (no streamed output) before
+// eventually succeeding with "done".
+type retryFakeModel struct {
+	calls  int
+	errs   []error
+	onCall func(int)
+}
 
 func (m *retryFakeModel) DoStream(_ context.Context, _ llm.Params) (*llm.Stream, error) {
 	m.calls++
+	if m.onCall != nil {
+		m.onCall(m.calls)
+	}
 	events := make(chan llm.Event, 1)
 	stream := llm.NewStream(events)
-	if m.calls == 1 {
+	if m.calls <= len(m.errs) {
 		close(events)
-		stream.SetResult(llm.Result{Err: retryableNetErr{}})
+		stream.SetResult(llm.Result{Err: m.errs[m.calls-1]})
 		return stream, nil
 	}
 	events <- llm.Event{Type: llm.EventText, Text: "done"}
@@ -558,13 +560,13 @@ type retryFakeProvider struct{ model *retryFakeModel }
 
 func (p retryFakeProvider) Model(string) llm.LanguageModel { return p.model }
 
-// TestRetryTransientStepError: a transient generation error before any output
-// is emitted is retried (with a `retry` audit event), and the turn succeeds.
-func TestRetryTransientStepError(t *testing.T) {
+// TestRetryTransient503StepError: a transient 503 before any output is emitted
+// is retried (with a `retry` event), and the turn succeeds.
+func TestRetryTransient503StepError(t *testing.T) {
 	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
 	t.Setenv("YAP_TEST_KEY", "k")
 
-	model := &retryFakeModel{}
+	model := &retryFakeModel{errs: []error{&sdk.APIError{StatusCode: 503, IsRetryable: true, Message: "upstream unavailable"}}}
 	oldFactory := providerFactory
 	providerFactory = func(string, config.Provider) (llm.Provider, error) { return retryFakeProvider{model}, nil }
 	defer func() { providerFactory = oldFactory }()
@@ -592,6 +594,121 @@ func TestRetryTransientStepError(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "done") {
 		t.Fatalf("missing answer: %s", out.String())
+	}
+}
+
+// TestRetry429FailsFast: subscription/quota/rate-limit 429s are surfaced
+// immediately (no retries, no retry events).
+func TestRetry429FailsFast(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	model := &retryFakeModel{errs: []error{&sdk.APIError{StatusCode: 429, IsRetryable: true, Message: "insufficient_quota"}}}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return retryFakeProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	oldDelay := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = oldDelay }()
+
+	var journal strings.Builder
+	oldEventOut := wire.SetFrameWriter(writerFunc(func(p []byte) (int, error) {
+		journal.Write(p)
+		return len(p), nil
+	}))
+	defer wire.SetFrameWriter(oldEventOut)
+
+	var out bytes.Buffer
+	err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out)
+	if err == nil {
+		t.Fatal("Send returned nil error for 429")
+	}
+	if model.calls != 1 {
+		t.Fatalf("model called %d times, want 1 (no retry)", model.calls)
+	}
+	if strings.Contains(journal.String(), `"type":"retry"`) {
+		t.Fatalf("unexpected retry event: %s", journal.String())
+	}
+}
+
+// TestRetry503Bounded: transient 503 retry budget is bounded.
+func TestRetry503Bounded(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	errs := make([]error, retryMaxAttempts+1)
+	for i := range errs {
+		errs[i] = &sdk.APIError{StatusCode: 503, IsRetryable: true, Message: "unavailable"}
+	}
+	model := &retryFakeModel{errs: errs}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return retryFakeProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	oldDelay := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = oldDelay }()
+
+	var journal strings.Builder
+	oldEventOut := wire.SetFrameWriter(writerFunc(func(p []byte) (int, error) {
+		journal.Write(p)
+		return len(p), nil
+	}))
+	defer wire.SetFrameWriter(oldEventOut)
+
+	var out bytes.Buffer
+	err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out)
+	if err == nil {
+		t.Fatal("Send returned nil error for repeated 503")
+	}
+	if want := 1 + retryMaxAttempts; model.calls != want {
+		t.Fatalf("model called %d times, want %d (initial + bounded retries)", model.calls, want)
+	}
+	if got := strings.Count(journal.String(), `"type":"retry"`); got != retryMaxAttempts {
+		t.Fatalf("retry events = %d, want %d: %s", got, retryMaxAttempts, journal.String())
+	}
+}
+
+// TestRetryCancellationDuringBackoff: cancellation while waiting for a retry
+// aborts promptly and does not issue another upstream call.
+func TestRetryCancellationDuringBackoff(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	firstCall := make(chan struct{}, 1)
+	model := &retryFakeModel{
+		errs: []error{&sdk.APIError{StatusCode: 503, IsRetryable: true, Message: "unavailable"}},
+		onCall: func(call int) {
+			if call == 1 {
+				firstCall <- struct{}{}
+			}
+		},
+	}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return retryFakeProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	oldDelay := retryBaseDelay
+	retryBaseDelay = 500 * time.Millisecond
+	defer func() { retryBaseDelay = oldDelay }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := Request{Messages: []Message{{Role: "user", Content: "go"}}}
+	var out bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, "mock", "m1", req, &out, func() Boundary { return Boundary{} }, nil)
+	}()
+	<-firstCall
+	cancel()
+	err := <-errCh
+	if err != context.Canceled {
+		t.Fatalf("Run error = %v, want context canceled", err)
+	}
+	if model.calls != 1 {
+		t.Fatalf("model called %d times, want 1 after cancellation", model.calls)
 	}
 }
 
