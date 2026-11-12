@@ -147,13 +147,13 @@ assert(not left:find(combo, 1, true) and not right:find(combo, 1, true), "model 
 local rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
 assert(rendered_center:find(" " .. combo .. " ", 1, true), "model island missing in center: " .. rendered_center)
 assert(not rendered_center:find("󰘖", 1, true), "fold island should be gone: " .. rendered_center)
-assert(right:find("50%%", 1, true), "winbar missing gauge: " .. right)
+assert(right:find("Context", 1, true), "winbar missing gauge: " .. right)
 -- With usage present in a narrow window, the center yields to the right.
 vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
 bar = yap.winbar(buf)
 assert(not bar:find("mock/m1", 1, true), "center should yield to usage: " .. bar)
 right = assert(bar:match("%%=(.*)$"))
-assert(right:find("1.3k", 1, true) and right:find("50%%", 1, true), "right cluster lost metrics: " .. right)
+assert(right:find("1.3k", 1, true) and right:find("Context", 1, true), "right cluster lost metrics: " .. right)
 vim.b[buf].yap_usage = nil
 state.running[buf], state.live[buf] = nil, nil
 fold.set_view_level(3)

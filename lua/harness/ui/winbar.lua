@@ -427,9 +427,23 @@ local function render_winbar(buf)
     return math.min(cache_read / total_input * 100, 100)
   end
 
-  -- Fixed-width context meter: percentage plus an eight-cell bar. In the
-  -- narrowest layout, the percentage is dropped but the complete bar stays.
-  local function context_segment(show_percent)
+  -- Cache chip: the cached glyph plus the turn-wide read-hit rate. A high
+  -- rate is good, so the color is inverted from the context gauge: green at
+  -- >=70%, amber at 40-70%, red below.
+  local function cache_parts()
+    local pct = cache_percent(state.live_usage[buf] or state.last_turn[buf])
+    if not pct then
+      return nil
+    end
+    local num = pct < 1 and string.format("%.1f%%", pct) or string.format("%.0f%%", pct)
+    local color = pct >= 70 and "GaugeLow" or (pct >= 40 and "GaugeMid" or "GaugeHigh")
+    return { { icons.cache .. " ", "Count" }, { num, color } }
+  end
+
+  -- Fixed-width context meter: an occupancy bar. The exact percentage lives
+  -- in usage details, not beside the bar, so the bar never shares a surface
+  -- with the unrelated cache percentage.
+  local function context_segment(show_label)
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
     local prompt = t and tonumber(t.context_prompt or t.prompt) or nil
@@ -465,18 +479,9 @@ local function render_winbar(buf)
       track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
     end
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
-    local parts = {}
-    if show_percent then
-      local text = pct < 1 and string.format("%.1f%% ", pct) or string.format("%.0f%% ", pct)
-      parts[#parts + 1] = { " ", "GaugeEmpty", true }
-      parts[#parts + 1] = { text, "GaugeLabel", true }
-      local cache_pct = cache_percent(t)
-      if cache_pct then
-        local cache = cache_pct < 1 and string.format("C%.1f%% ", cache_pct) or string.format("C%.0f%% ", cache_pct)
-        parts[#parts + 1] = { cache, "GaugeLabel", true }
-      end
-    else
-      parts[#parts + 1] = { " ", "GaugeEmpty", true }
+    local parts = { { " ", "GaugeEmpty", true } }
+    if show_label then
+      parts[#parts + 1] = { "Context ", "GaugeLabel", true }
     end
     if fill ~= "" then
       parts[#parts + 1] = { fill, color, true }
@@ -538,7 +543,8 @@ local function render_winbar(buf)
     end
 
     local context = context_segment(mode ~= "gauge")
-    if #chips == 0 and not context then
+    local cache = mode ~= "gauge" and cache_parts() or nil
+    if #chips == 0 and not context and not cache then
       return nil
     end
     local segs = {}
@@ -562,6 +568,9 @@ local function render_winbar(buf)
       end
       counters[#counters + 1] = { " ", "Count" }
       pill(counters)
+    end
+    if cache then
+      pill(cache)
     end
     if context then
       pill(context)

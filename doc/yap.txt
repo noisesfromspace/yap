@@ -84,8 +84,8 @@ language server still serves their completion requests, symbols and
 diagnostics. See |yap-lsp| for the optional completion source.
 
 `nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
-Icon keys include `since`, `total`, `running`, `waiting`, `stopped`, `error`,
-`idle`, `done`, `steer`, `queue`, `approval`, `cap_l`, `cap_r`. Defaults are
+Icon keys include `since`, `total`, `cache`, `running`, `waiting`, `stopped`,
+`error`, `idle`, `done`, `steer`, `queue`, `approval`, `cap_l`, `cap_r`. Defaults are
 Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the
 typographic spinner and the block gauge. Explicit `icons` entries win; set one
 to `""` to drop it.
@@ -683,14 +683,13 @@ Reading the numbers                                    *yap-winbar-numbers*
   󰆼 N        All-time: total tokens and cost for the whole session file,
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
-  P% █▍░░░░  Context fill: the last turn's full prompt as a percentage of the
-             model's context window. Green below 70%, amber 70–90%, red 90%+.
-             When cache usage is reported, a `C…%` label appears next to it:
-             turn-wide cache-read hit rate =
-             cache_read / (prompt + cache_read + cache_write).
-             Cache writes count as input, not hits. Without nonzero cache
-             usage (or with zero total input), the label is hidden; this does
-             not prove a 0% hit rate because some providers omit cache data.
+  Context █▍░░░  Context fill: the last turn's full prompt as a bar of the
+             model's context window (no percentage; the exact size belongs
+             in usage details). Green below 70%, amber 70–90%, red 90%+.
+  󰃨 82%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
+             turn-wide. Green at >=70%, amber 40–70%, red below. Cache writes
+             count as input, not hits. Shown only when cache usage is reported;
+             a hidden chip does not prove 0% because some providers omit cache data.
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`). On a freshly opened session

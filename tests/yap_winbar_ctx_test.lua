@@ -25,8 +25,8 @@ state.live_usage[buf] = {
 }
 local live_bar = winbar_at(80)
 assert(live_bar:match("1.5k") and live_bar:match("%$0.00342"), "live usage missing from winbar: " .. live_bar)
-assert(live_bar:match("0.6%%"), "live context gauge did not update: " .. live_bar)
-assert(not live_bar:match("C%d"), "cache label should hide when cache fields are absent: " .. live_bar)
+assert(live_bar:match("Context"), "context gauge missing label: " .. live_bar)
+assert(not live_bar:find("󰃨", 1, true), "cache chip should hide when cache fields are absent: " .. live_bar)
 state.live_usage[buf] = {
   prompt = 1200,
   completion = 42,
@@ -37,7 +37,7 @@ state.live_usage[buf] = {
   cost = 0.00342,
 }
 live_bar = winbar_at(80)
-assert(live_bar:match("C20%%"), "turn cache-read percentage missing: " .. live_bar)
+assert(live_bar:find("󰃨", 1, true) and live_bar:match("20%%"), "turn cache-read percentage missing: " .. live_bar)
 
 -- Cache label uses cumulative turn totals, not the latest step context.
 state.live_usage[buf] = {
@@ -51,7 +51,7 @@ state.live_usage[buf] = {
 }
 live_bar = winbar_at(80)
 assert(
-  live_bar:match("C20%%"),
+  live_bar:find("󰃨", 1, true) and live_bar:match("20%%"),
   "cache percentage should use turn totals even when cumulative input exceeds last-step context: " .. live_bar
 )
 
@@ -66,7 +66,7 @@ state.live_usage[buf] = {
   cost = 0.00342,
 }
 live_bar = winbar_at(80)
-assert(live_bar:match("C10%%"), "cache writes should reduce read-hit percentage: " .. live_bar)
+assert(live_bar:find("󰃨", 1, true) and live_bar:match("10%%"), "cache writes should reduce read-hit percentage: " .. live_bar)
 state.live_usage[buf] = nil
 
 local function graph_width(bar)
@@ -96,14 +96,10 @@ for _, case in ipairs({
       "rounded meter ends missing: " .. wb
     )
     assert(wb:match(case.hl), "wrong context graph band at " .. case.pct .. ": " .. wb)
-    assert(
-      wb:find("%#YapIslandUprightGaugeLabel#", 1, true) or not wb:match("%d+%%"),
-      "context percentage should use the gauge surface: " .. wb
-    )
     if width > 12 then
-      assert(wb:match(case.pct), "context percentage missing: " .. wb)
+      assert(wb:match("Context"), "context label missing: " .. wb)
     else
-      assert(not wb:match("%d+%%"), "narrow layout should drop the percentage: " .. wb)
+      assert(not wb:match("Context"), "narrow layout should drop the context label: " .. wb)
     end
   end
 end
@@ -137,7 +133,7 @@ assert(bar:find("%#YapIslandUprightGaugeLabel#", 1, true), "gauge label missing 
 local right = assert(bar:match("%%=(.*)$"))
 local displayed = vim.api.nvim_eval_statusline(right, { winid = 0, use_winbar = true, maxwidth = 200 }).str
 assert(
-  displayed:find(" 󰅐 1.3k · $0.002   ", 1, true),
+  displayed:find("1.3k", 1, true) and displayed:find("Context", 1, true),
   "counters and gauge should be adjacent islands: " .. displayed
 )
 assert(
