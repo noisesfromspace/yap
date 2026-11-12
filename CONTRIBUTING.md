@@ -91,7 +91,7 @@ reply — is one flow through six rules:
 flowchart TD
     A["Session buffer — only source of truth"] --> B["Parser skips or flattens yap:* marker regions; ignores pre-heading lines"]
     B --> C["Merge adjacent same-role messages; drop empty ones"]
-    C --> D["Append transient context tail (cwd + git snapshot) to trailing user msg"]
+    C --> D["Append transient context tail (from registered providers) to trailing user msg"]
     D --> E["Send one JSON Lines record per turn (full messages array) on stdin"]
     E --> F["Stream reply in — append-only, existing lines never rewritten"]
     F --> G["On exit: repair dangling markers, append # @user heading, save via write!"]
@@ -191,16 +191,13 @@ Why: providers require role alternation.
 
 #### R-request-context-tail — Transient per-send context is appended to the trailing user message
 
-The cwd and git snapshot (and any plugin-registered provider, see
-`harness.model.context`) are request-only: evaluated at send time and never stored in
-the buffer. They are appended to the most recent user message — normally the
-trailing prompt, but a hand-written `# @assistant` prefill stays last so its
-prefill semantics survive — never the system prefix. Why: a changing git
-status in the system prefix would invalidate the provider's prompt cache for
-the entire stable history and system prompt. The `# About Yap` boilerplate is
-prepended as the first system message of every turn — independent of
-`agents_file` and never written into the session file, so the `# @system`
-message stays clean.
+No built-in context providers run on send. Plugins may register a request-only
+provider through `harness.model.context`; its output is evaluated at send time
+and appended to the most recent user message, never stored in the buffer.
+A changing tail can break cross-turn prefix reuse because it is absent from the
+stored transcript. The `# About Yap` boilerplate is prepended as the first
+system message of every turn, independent of `agents_file` and never written
+into the session file, so the `# @system` message stays clean.
 
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
@@ -764,7 +761,8 @@ sequenceDiagram
   object carrying the full `messages` array, not one message):
   `{"type":"turn","v":1,"provider":"...","model":"...","messages":[...],"cwd":"...","assets_dir":"..."}`
   (roles `system`/`user`/`assistant`; persisted tool regions arrive flattened
-  as assistant transcript text). `cwd` is request-only, like the context tail:
+  as assistant transcript text). `cwd` is request-only (independent from the
+  context tail):
   the serve process's own working directory is fixed when the buffer spawns it,
   so this is what keeps bash's documented "default: the Neovim cwd" true
   after a `:cd`; absent for a one-shot `yap send`, whose tools then use the

@@ -125,9 +125,9 @@ func buildLLMMessages(msgs []document.Message) ([]llm.Message, error) {
 	return out, nil
 }
 
-// appendContextTail appends the transient per-send context (cwd, git) to the
+// appendContextTail appends an optional plugin-provided per-send context to the
 // trailing user message, or adds a trailing user message when there is none
-// (R-request-context-tail). Mirrors the Lua send path's context-tail append.
+// (R-request-context-tail).
 func appendContextTail(msgs []document.Message, tail string) []document.Message {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == "user" {

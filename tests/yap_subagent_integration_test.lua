@@ -22,7 +22,7 @@ for line in sys.stdin:
     prompt = req.get("transcript") or ""
     # The harness ships the raw transcript; the backend owns flattening it.
     # The task is the body of the last `# @user` block, and request-only
-    # context (cwd, git) is appended to it there, so match the task line only.
+    # transient context is appended there, so match the task line only.
     body = prompt.rsplit("\n# @user\n", 1)[-1]
     lines = [l for l in body.splitlines() if l.strip()]
     prompt = lines[0] if lines else ""

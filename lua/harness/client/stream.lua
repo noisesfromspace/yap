@@ -426,11 +426,11 @@ function M.send(buf)
   end
 
   -- Label the session from the latest user message before transient context
-  -- is appended, so the title model never sees cwd/git.
+  -- is appended, so the title model never sees a context tail.
   describe.refresh(buf, "user", messages)
 
-  -- Transient environment context (cwd, git status) is appended to the
-  -- trailing user message by the backend (R-request-context-tail), not here.
+  -- Transient context is appended to the trailing user message by the
+  -- backend (R-request-context-tail), not here.
   local extra = context.snapshot()
   -- The harness's own boilerplate is a stable system prefix, kept first so
   -- it never perturbs the prompt cache.
@@ -820,14 +820,14 @@ function M.send(buf)
     model = model,
     -- The raw transcript, not flattened messages: the backend owns the
     -- send conversion (R-single-reader). System is the About Yap prefix;
-    -- context is the transient cwd/git tail appended to the trailing user
+    -- context is the transient tail appended to the trailing user
     -- message by the backend (R-request-context-tail).
     transcript = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"),
     system = system_prompt,
     context = extra,
     tools = tools,
     -- Request-only (like the context tail): the backend's own cwd is fixed
-    -- when the buffer spawns it, so the live cwd is what keeps the tools'
+    -- when the buffer spawns it, so the live cwd keeps the tools' documented
     -- "default: the Neovim cwd" true after a :cd.
     cwd = vim.fn.getcwd(),
     -- The session's assets/ folder: transient tool files (live-tail logs,
