@@ -22,6 +22,7 @@ assert(u and u.prompt > 0, "no buffer usage: " .. vim.inspect(u))
 local su = vim.b[buf].yap_session_usage
 assert(su and su.cost and su.cost > 0, "no session usage: " .. vim.inspect(su))
 assert(math.abs(su.cost - u.cost) < 1e-9, "session cost != buffer cost: " .. vim.inspect(su))
+assert((u.cache_read or 0) == 0 and (u.cache_write or 0) == 0, "mock cache should stay absent/zero: " .. vim.inspect(u))
 assert(yap.winbar(buf):match("󰆼"), "winbar missing session cost: " .. yap.winbar(buf))
 
 -- Reopen the session (simulating a restart): the totals are seeded from the
@@ -34,5 +35,14 @@ assert(
   su2 and su2.cost and math.abs(su2.cost - u.cost) < 1e-9,
   "reopen did not seed session usage: " .. vim.inspect(su2)
 )
+assert((su2.cache_read or 0) == (su.cache_read or 0), "reopen cache_read drift: " .. vim.inspect(su2))
+assert((su2.cache_write or 0) == (su.cache_write or 0), "reopen cache_write drift: " .. vim.inspect(su2))
 assert(yap.winbar(reopened):match("󰆼"), "reopened winbar missing session cost: " .. yap.winbar(reopened))
+
+-- turn_end cache fields are folded into durable totals and survive reseed.
+local audit_path = require("harness.path").audit_path(reopened)
+vim.fn.writefile({ '{"type":"turn_end","prompt":1,"completion":1,"cache_read":3,"cache_write":2}' }, audit_path, "a")
+require("harness.client.audit").seed_session_usage(reopened)
+local su3 = vim.b[reopened].yap_session_usage
+assert(su3.cache_read == 3 and su3.cache_write == 2, "cache totals were not folded from audit: " .. vim.inspect(su3))
 print("OK session_usage")

@@ -356,6 +356,75 @@ func TestContextPromptIncludesCachedTokens(t *testing.T) {
 	}
 }
 
+// cacheOnlyUsageModel reports usage exclusively via cache counters.
+type cacheOnlyUsageModel struct{}
+
+func (cacheOnlyUsageModel) DoStream(_ context.Context, _ llm.Params) (*llm.Stream, error) {
+	events := make(chan llm.Event, 1)
+	events <- llm.Event{Type: llm.EventText, Text: "done"}
+	close(events)
+	stream := llm.NewStream(events)
+	stream.SetResult(llm.Result{Text: "done", Usage: llm.Usage{CacheReadTokens: 3, CacheWriteTokens: 7}})
+	return stream, nil
+}
+
+type cacheOnlyUsageProvider struct{}
+
+func (cacheOnlyUsageProvider) Model(string) llm.LanguageModel { return cacheOnlyUsageModel{} }
+
+// TestUsageEmitsForCacheOnlyUsage: cache-only usage must still emit a usage
+// event, and cache counters must be carried cumulatively into turn_end.
+func TestUsageEmitsForCacheOnlyUsage(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return cacheOnlyUsageProvider{}, nil }
+	defer func() { providerFactory = oldFactory }()
+
+	var out bytes.Buffer
+	old := wire.SetFrameWriter(&out)
+	defer wire.SetFrameWriter(old)
+	if err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, `"cache_read":3`) || !strings.Contains(s, `"cache_write":7`) {
+		t.Fatalf("cache counters missing:\n%s", s)
+	}
+	if !strings.Contains(s, `"completion":0,"context_prompt":10,"prompt":0,"type":"usage"`) {
+		t.Fatalf("cache-only step should still emit usage event:\n%s", s)
+	}
+	if !strings.Contains(s, `"cache_read":3,"cache_write":7,"completion":0,"context_prompt":10,"model":"m1"`) {
+		t.Fatalf("turn_end should include cumulative cache usage:\n%s", s)
+	}
+}
+
+// TestUsageOmitsCacheWhenProviderReportsNone: when usage has no cache status,
+// do not synthesize zero cache counters.
+func TestUsageOmitsCacheWhenProviderReportsNone(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testutil.SSE(w,
+			`{"choices":[{"delta":{"content":"ok"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2}}`,
+		)
+	}))
+	defer srv.Close()
+	testutil.WriteConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	old := wire.SetFrameWriter(&out)
+	defer wire.SetFrameWriter(old)
+	if err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	if strings.Contains(s, `"cache_read":0`) || strings.Contains(s, `"cache_write":0`) || strings.Contains(s, `"cache_read"`) || strings.Contains(s, `"cache_write"`) {
+		t.Fatalf("cache fields should be absent when provider reports no cache status:\n%s", s)
+	}
+}
+
 func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -26,6 +26,47 @@ state.live_usage[buf] = {
 local live_bar = winbar_at(80)
 assert(live_bar:match("1.5k") and live_bar:match("%$0.00342"), "live usage missing from winbar: " .. live_bar)
 assert(live_bar:match("0.6%%"), "live context gauge did not update: " .. live_bar)
+assert(not live_bar:match("C%d"), "cache label should hide when cache fields are absent: " .. live_bar)
+state.live_usage[buf] = {
+  prompt = 1200,
+  completion = 42,
+  context_prompt = 1500,
+  cache_read = 300,
+  cache_write = 0,
+  context_window = 250000,
+  cost = 0.00342,
+}
+live_bar = winbar_at(80)
+assert(live_bar:match("C20%%"), "turn cache-read percentage missing: " .. live_bar)
+
+-- Cache label uses cumulative turn totals, not the latest step context.
+state.live_usage[buf] = {
+  prompt = 2400,
+  completion = 42,
+  context_prompt = 1500,
+  cache_read = 600,
+  cache_write = 0,
+  context_window = 250000,
+  cost = 0.00342,
+}
+live_bar = winbar_at(80)
+assert(
+  live_bar:match("C20%%"),
+  "cache percentage should use turn totals even when cumulative input exceeds last-step context: " .. live_bar
+)
+
+-- Cache writes count toward input denominator, but are not cache hits.
+state.live_usage[buf] = {
+  prompt = 1000,
+  completion = 42,
+  context_prompt = 900,
+  cache_read = 200,
+  cache_write = 800,
+  context_window = 250000,
+  cost = 0.00342,
+}
+live_bar = winbar_at(80)
+assert(live_bar:match("C10%%"), "cache writes should reduce read-hit percentage: " .. live_bar)
 state.live_usage[buf] = nil
 
 local function graph_width(bar)

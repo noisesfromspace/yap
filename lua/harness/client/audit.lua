@@ -322,12 +322,20 @@ function M.append_event(buf, ev)
   vim.fn.writefile({ vim.json.encode(ev) }, path, "a")
 end
 
---- Fold one turn_end event's usage into a {prompt, completion, cost} table.
+--- Fold one turn_end event's usage into a {prompt, completion, cost,
+--- cache_read, cache_write} table. prompt remains uncached input;
+--- completion remains output. Cache counters accumulate when present.
 local function fold_usage(t, ev)
   t.prompt = (t.prompt or 0) + (ev.prompt or 0)
   t.completion = (t.completion or 0) + (ev.completion or 0)
   if ev.cost then
     t.cost = (t.cost or 0) + ev.cost
+  end
+  if ev.cache_read ~= nil then
+    t.cache_read = (t.cache_read or 0) + (tonumber(ev.cache_read) or 0)
+  end
+  if ev.cache_write ~= nil then
+    t.cache_write = (t.cache_write or 0) + (tonumber(ev.cache_write) or 0)
   end
   return t
 end

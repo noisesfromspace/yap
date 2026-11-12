@@ -407,6 +407,26 @@ local function render_winbar(buf)
     return left
   end
 
+  -- Turn-wide cache read-hit rate from cumulative usage: cache_read divided by
+  -- total turn input (prompt + cache_read + cache_write). Writes are not hits.
+  -- Hide only when cache fields are absent or total input is zero.
+  local function cache_percent(t)
+    if not t then
+      return nil
+    end
+    if t.cache_read == nil and t.cache_write == nil then
+      return nil -- provider reported no cache status: hide (never fake 0%)
+    end
+    local prompt = tonumber(t.prompt) or 0
+    local cache_read = tonumber(t.cache_read) or 0
+    local cache_write = tonumber(t.cache_write) or 0
+    local total_input = prompt + cache_read + cache_write
+    if total_input <= 0 then
+      return nil
+    end
+    return math.min(cache_read / total_input * 100, 100)
+  end
+
   -- Fixed-width context meter: percentage plus an eight-cell bar. In the
   -- narrowest layout, the percentage is dropped but the complete bar stays.
   local function context_segment(show_percent)
@@ -450,6 +470,11 @@ local function render_winbar(buf)
       local text = pct < 1 and string.format("%.1f%% ", pct) or string.format("%.0f%% ", pct)
       parts[#parts + 1] = { " ", "GaugeEmpty", true }
       parts[#parts + 1] = { text, "GaugeLabel", true }
+      local cache_pct = cache_percent(t)
+      if cache_pct then
+        local cache = cache_pct < 1 and string.format("C%.1f%% ", cache_pct) or string.format("C%.0f%% ", cache_pct)
+        parts[#parts + 1] = { cache, "GaugeLabel", true }
+      end
     else
       parts[#parts + 1] = { " ", "GaugeEmpty", true }
     end

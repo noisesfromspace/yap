@@ -603,8 +603,11 @@ an append-only, JSON Lines record that survives restarts: every tool call
 (full arguments), full tool results, image attachments, approval requests and
 their Run/Deny answers, a retry line for each transient generation error, an
 `error` line for a failed send (classified code + message), and one `turn_end`
-line per send regardless of outcome — model, prompt, completion, cost, ms, and
-a `status` of `ok`, `error`, or `cancelled`. Each generated session
+line per send regardless of outcome — model, prompt, completion,
+`context_prompt` (the full last-step prompt size, including cached input),
+optional cumulative `cache_read`/`cache_write` (present after nonzero cache
+usage), cost, ms, and a `status` of `ok`, `error`, or
+`cancelled`. Each generated session
 description is also recorded as a `summary` line (`kind` `user` or `answer`
 plus the `description`), so the history of auto-generated titles survives even
 though the frontmatter keeps only the current label.
@@ -681,6 +684,12 @@ Reading the numbers                                    *yap-winbar-numbers*
              Survives restarts; answers "what has this session cost".
   P% █▍░░░░  Context fill: the last turn's full prompt as a percentage of the
              model's context window. Green below 70%, amber 70–90%, red 90%+.
+             When cache usage is reported, a `C…%` label appears next to it:
+             turn-wide cache-read hit rate =
+             cache_read / (prompt + cache_read + cache_write).
+             Cache writes count as input, not hits. Without nonzero cache
+             usage (or with zero total input), the label is hidden; this does
+             not prove a 0% hit rate because some providers omit cache data.
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`). On a freshly opened session

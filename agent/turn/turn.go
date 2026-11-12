@@ -479,7 +479,9 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		return err
 	}
 	var totPrompt, totCompletion int
+	var totCacheRead, totCacheWrite int
 	lastPrompt := 0
+	cacheObserved := false
 	// contextPromptTokens is the full size of the prompt the model saw on a
 	// step, including cached input. The SDK reports uncached input in
 	// PromptTokens and the cached portions separately, so the full window
@@ -497,8 +499,12 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 		return price.Cost(info, t.prompt, t.cacheRead, t.cacheWrite, t.completion)
 	}
-	usagePayload := func(prompt, completion, contextPrompt int) map[string]any {
+	usagePayload := func(prompt, completion, contextPrompt, cacheRead, cacheWrite int, includeCache bool) map[string]any {
 		m := map[string]any{"prompt": prompt, "completion": completion, "context_prompt": contextPrompt}
+		if includeCache {
+			m["cache_read"] = cacheRead
+			m["cache_write"] = cacheWrite
+		}
 		if info, ok := price.Lookup(providerName, model); ok && info.ContextWindow > 0 {
 			m["context_window"] = info.ContextWindow
 		}
@@ -541,7 +547,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		case turnError != nil:
 			status, msg = "error", turnError.Error()
 		}
-		m := usagePayload(totPrompt, totCompletion, lastPrompt)
+		m := usagePayload(totPrompt, totCompletion, lastPrompt, totCacheRead, totCacheWrite, cacheObserved)
 		m["type"] = "turn_end"
 		m["status"] = status
 		m["model"] = model
@@ -657,10 +663,15 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		}
 		totPrompt += t.prompt
 		totCompletion += t.completion
+		totCacheRead += t.cacheRead
+		totCacheWrite += t.cacheWrite
+		if t.cacheRead > 0 || t.cacheWrite > 0 {
+			cacheObserved = true
+		}
 		totCost += stepCost(t)
 		lastPrompt = contextPromptTokens(t)
-		if t.prompt+t.completion > 0 {
-			m := usagePayload(totPrompt, totCompletion, lastPrompt)
+		if t.prompt+t.completion+t.cacheRead+t.cacheWrite > 0 {
+			m := usagePayload(totPrompt, totCompletion, lastPrompt, totCacheRead, totCacheWrite, cacheObserved)
 			m["type"] = "usage"
 			wire.EmitEvent(m)
 		}

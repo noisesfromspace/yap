@@ -51,6 +51,8 @@ assert(
   turn and turn.model == "gpt-4o" and turn.prompt > 0 and turn.completion > 0 and turn.cost,
   "no turn journal: " .. vim.inspect(turn)
 )
+assert(turn.context_prompt and turn.context_prompt > 0, "turn_end missing full prompt size: " .. vim.inspect(turn))
+assert(turn.cache_read == nil and turn.cache_write == nil, "provider without cache info should omit cache fields")
 
 -- :YapClear points each placeholder at the exact JSONL lines it replaced
 -- (tool_call → tool_result for the write call: lines 1-2)
