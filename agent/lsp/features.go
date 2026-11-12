@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -125,8 +126,9 @@ func utf16ColToByte(s string, col int) int {
 // Symbols returns the document-symbol outline of a session transcript:
 // one symbol per message, newest first, then the frontmatter block at the
 // bottom. Tool calls, thinking and other machine regions are display-only
-// and never appear in the outline; empty messages are dropped, and a turn
-// that only ran tools and then failed names itself by its error.
+// and never appear in the outline, except subagent tool calls, which nest
+// under their enclosing message as children; empty messages are dropped, and
+// a turn that only ran tools and then failed names itself by its error.
 func Symbols(text string) []symbol {
 	return symbolsFromDoc(document.Parse(text))
 }
@@ -137,9 +139,12 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 	lines := doc.Lines
 
 	// Machine regions (tool, thinking, error, …) never become symbols, and
-	// their body lines must not leak into a message's preview name.
+	// their body lines must not leak into a message's preview name. The one
+	// exception is a subagent tool call, which becomes a child of the message
+	// that invoked it.
 	hidden := machineLines(lines, doc.Regions)
 	errored := errorLines(lines, doc.Regions)
+	subagents := subagentCalls(doc)
 
 	var out []symbol
 	// Messages newest first: the most recent conversation sits at the top of
@@ -154,20 +159,87 @@ func symbolsFromDoc(doc *document.Document) []symbol {
 			next = h.Line - 1
 		}
 		name := messageName(lines, h, hidden, errored, next)
-		if name == "" {
+		children := subagents[i]
+		if name == "" && len(children) == 0 {
 			continue // empty message: nothing to navigate to
+		}
+		if name == "" {
+			name = h.Role + ": subagent"
 		}
 		out = append(out, symbol{
 			Name:           name,
 			Kind:           symObject,
 			Range:          rng{Start: position{Line: h.Line - 1}, End: position{Line: next}},
 			SelectionRange: rng{Start: position{Line: h.Line - 1}, End: position{Line: h.Line}},
+			Children:       children,
 		})
 	}
 	if doc.Frontmatter > 0 {
 		out = append(out, frontmatterSymbol(lines, doc.Frontmatter))
 	}
 	return out
+}
+
+// subagentCalls returns one child symbol per subagent tool call, grouped by
+// the index of the heading whose message contains the call. Other tool calls
+// stay display-only and are omitted.
+func subagentCalls(doc *document.Document) [][]symbol {
+	out := make([][]symbol, len(doc.Headings))
+	hi := 0
+	for _, r := range doc.Regions {
+		if r.Kind != "tool" {
+			continue
+		}
+		h := document.DecodeToolHeader(doc.Lines, r)
+		if h == nil || h.Name != "subagent" {
+			continue
+		}
+		for hi < len(doc.Headings) && doc.Headings[hi].Line <= r.Start {
+			hi++
+		}
+		idx := hi - 1
+		if idx < 0 {
+			continue // subagent before the first heading: not part of a message
+		}
+		out[idx] = append(out[idx], subagentSymbol(r, h))
+	}
+	return out
+}
+
+func subagentSymbol(r document.Region, h *document.ToolHeader) symbol {
+	start := r.Start
+	end := r.Finish
+	if end < start {
+		end = start
+	}
+	return symbol{
+		Name:           subagentName(h),
+		Kind:           symObject,
+		Range:          rng{Start: position{Line: start - 1}, End: position{Line: end}},
+		SelectionRange: rng{Start: position{Line: start - 1}, End: position{Line: start}},
+	}
+}
+
+// subagentName derives a subagent symbol's display name from its arguments,
+// mirroring the session picker's "agent · task" subagent label.
+func subagentName(h *document.ToolHeader) string {
+	var args struct {
+		Agent string `json:"agent"`
+		Task  string `json:"task"`
+	}
+	if h.Arguments != nil {
+		_ = json.Unmarshal(h.Arguments, &args)
+	}
+	switch {
+	case args.Agent == "" && args.Task == "":
+		return "subagent"
+	case args.Agent == "":
+		return "subagent: " + truncate(args.Task, 60)
+	case args.Task == "":
+		return args.Agent
+	default:
+		return args.Agent + " · " + truncate(args.Task, 60)
+	}
 }
 
 // machineLines marks every line inside a machine region (tool, thinking,

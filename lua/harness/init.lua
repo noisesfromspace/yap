@@ -101,10 +101,11 @@ function M.is_running(buf)
 end
 
 --- Document-symbol picker: one symbol per message (newest first), then the
---- frontmatter block last, in the server's order. Generic document_symbol
---- pickers (e.g. mini.extra) re-sort by line number, which would put the
---- frontmatter back on top, so yap presents the outline itself through
---- |vim.ui.select|.
+--- frontmatter block last, in the server's order. Subagent tool calls are
+--- children of their message and are flattened into the list. Generic
+--- document_symbol pickers (e.g. mini.extra) re-sort by line number, which
+--- would put the frontmatter back on top, so yap presents the outline itself
+--- through |vim.ui.select|.
 function M.symbols(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   local syms = lsp.symbols(buf)

@@ -950,10 +950,12 @@ LSP, backed by the Go document parser (agent/document):
 
   Document symbols  An outline of the conversation: one symbol per message
                     (newest first), then the frontmatter block at the bottom
-                    with each key as its own entry.
-                    Tool calls, thinking and other machine regions are not
-                    symbols; empty messages are dropped, and a turn that only
-                    ran tools and then failed names itself by its error.
+                    with each key as its own entry. Subagent tool calls nest
+                    under the message that invoked them as children named
+                    "agent · task". Other tool calls, thinking and machine
+                    regions are not symbols; empty messages are dropped, and a
+                    turn that only ran tools and then failed names itself by
+                    its error.
   Completion        Frontmatter keys and values (`provider`, `model`,
                     `agent`, `tools`, ...), role headings, and `@path` file
                     references.

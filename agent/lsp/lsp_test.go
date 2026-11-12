@@ -76,6 +76,67 @@ func TestSymbolsEmptyAndError(t *testing.T) {
 	}
 }
 
+func TestSymbolsSubagents(t *testing.T) {
+	text := "---\ntitle: x\n---\n# @user\nlook into it\n# @assistant\n<!-- yap:tool {\"id\":\"s1\",\"name\":\"subagent\",\"arguments\":{\"agent\":\"scout\",\"task\":\"survey the code\",\"tools\":[\"read\"]}} -->\nchild answer\n<!-- /yap:tool -->\nsummary\n"
+	syms := Symbols(text)
+	if len(syms) != 3 { // frontmatter + user + assistant
+		t.Fatalf("got %d top-level symbols, want 3: %+v", len(syms), syms)
+	}
+	asst := syms[0]
+	if asst.Name != "assistant: summary" {
+		t.Fatalf("assistant = %q, want its first visible prose, skipping the subagent body", asst.Name)
+	}
+	if len(asst.Children) != 1 {
+		t.Fatalf("assistant children = %+v, want one subagent", asst.Children)
+	}
+	sub := asst.Children[0]
+	if sub.Name != "scout · survey the code" {
+		t.Fatalf("subagent name = %q", sub.Name)
+	}
+	// The subagent header sits on 0-based line 6 (1-based line 7).
+	if sub.Range.Start.Line != 6 || sub.SelectionRange.Start.Line != 6 {
+		t.Fatalf("subagent range = %+v", sub)
+	}
+	if sub.Range.End.Line != 9 { // exclusive end: the closer is 0-based line 8
+		t.Fatalf("subagent end = %d, want 9", sub.Range.End.Line)
+	}
+	if syms[1].Name != "user: look into it" {
+		t.Fatalf("user = %q", syms[1].Name)
+	}
+}
+
+func TestSymbolsSubagentOnlyMessage(t *testing.T) {
+	// A turn that only invokes a subagent has no visible prose, so it would
+	// otherwise drop; its subagent child keeps it reachable.
+	text := "# @assistant\n<!-- yap:tool {\"id\":\"s1\",\"name\":\"subagent\",\"arguments\":{\"agent\":\"audit\"}} -->\npartial\n"
+	syms := Symbols(text)
+	if len(syms) != 1 {
+		t.Fatalf("got %d symbols, want 1: %+v", len(syms), syms)
+	}
+	asst := syms[0]
+	if asst.Name != "assistant: subagent" {
+		t.Fatalf("assistant = %q, want a subagent fallback name", asst.Name)
+	}
+	if len(asst.Children) != 1 || asst.Children[0].Name != "audit" {
+		t.Fatalf("assistant children = %+v, want the audit subagent", asst.Children)
+	}
+}
+
+func TestSymbolsSubagentMultipleAndRead(t *testing.T) {
+	text := "# @assistant\n<!-- yap:tool {\"id\":\"r1\",\"name\":\"read\",\"arguments\":{}} -->\nfile\n<!-- /yap:tool -->\n<!-- yap:tool {\"id\":\"s1\",\"name\":\"subagent\",\"arguments\":{\"agent\":\"scout\",\"task\":\"a\"}} -->\n\n<!-- /yap:tool -->\n<!-- yap:tool {\"id\":\"s2\",\"name\":\"subagent\",\"arguments\":{\"agent\":\"audit\",\"task\":\"b\"}} -->\n\n<!-- /yap:tool -->\ndone\n"
+	syms := Symbols(text)
+	if len(syms) != 1 {
+		t.Fatalf("got %d top-level symbols, want 1: %+v", len(syms), syms)
+	}
+	children := syms[0].Children
+	if len(children) != 2 {
+		t.Fatalf("children = %+v, want only the two subagents (read is not a symbol)", children)
+	}
+	if children[0].Name != "scout · a" || children[1].Name != "audit · b" {
+		t.Fatalf("subagent names = %q, %q", children[0].Name, children[1].Name)
+	}
+}
+
 func TestCompletionFrontmatter(t *testing.T) {
 	text := "---\nprov\n---\n# @user\nhi\n"
 	items := Completion(text, 1, 4, CompletionCtx{})
