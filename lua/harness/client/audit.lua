@@ -112,16 +112,19 @@ local function append_lines(t, lines)
   local buf = t.bufnr
   document.sync_followers(buf, t.follow, t.expected)
   vim.bo[buf].modifiable = true
-  local cur = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  -- A line count plus a single-line read does the fresh-empty-line check in
+  -- O(1); reading the whole buffer here was O(lines) per append, which made
+  -- a high-output tool's live tail quadratic and let redraw fall behind.
+  local count = vim.api.nvim_buf_line_count(buf)
   local start_row
-  if #cur == 1 and cur[1] == "" then
+  if count == 1 and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == "" then
     vim.api.nvim_buf_set_lines(buf, 0, 1, false, lines) -- replace the fresh empty line
     start_row = 0
   else
-    start_row = #cur
+    start_row = count
     vim.api.nvim_buf_set_lines(buf, -1, -1, false, lines)
   end
-  local count = vim.api.nvim_buf_line_count(buf)
+  count = vim.api.nvim_buf_line_count(buf)
   if count > MAX_TAIL_LINES then
     local drop = count - MAX_TAIL_LINES
     vim.api.nvim_buf_set_lines(buf, 0, drop, false, {})
