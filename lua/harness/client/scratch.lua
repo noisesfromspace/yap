@@ -247,7 +247,8 @@ local function scratch_dispatch_queue(owner, section, scratch)
 end
 
 --- Dispatch the section under the cursor. A queued send while running is
---- authorised now, but its live contents are read only when the turn ends.
+--- authorised now for the body it shows; an edit cancels that authorization,
+--- otherwise <C-s> dispatches immediately.
 function M.scratch_send(scratch)
   scratch = scratch or vim.api.nvim_get_current_buf()
   local owner = vim.b[scratch].yap_owner
@@ -279,6 +280,9 @@ function M.scratch_send(scratch)
       vim.notify("yap: # @queue is empty", vim.log.levels.WARN)
     elseif state.is_running(owner) then
       vim.b[scratch].yap_queue_armed = true
+      -- The authorization covers the body as it stands now; touching the
+      -- queue afterwards retracts it (see the scratch watch below).
+      vim.b[scratch].yap_queue_armed_text = M.section_text(scratch, "queue")
       M.refresh(scratch)
     else
       scratch_dispatch_queue(owner, "queue", scratch)
@@ -307,7 +311,8 @@ function M.scratch_send(scratch)
 end
 
 --- A running queue sends once at successful completion, never on stop,
---- error or session close. Reading the live body here keeps edits retractable.
+--- error or session close. An edited body is no longer armed by the time the
+--- turn ends, so this only ever sends the text <C-s> authorized.
 function M.finish_queue(owner, successful)
   local scratch = vim.api.nvim_buf_is_valid(owner) and find_scratch(owner)
   if not (scratch and vim.api.nvim_buf_is_valid(scratch)) then
@@ -465,7 +470,13 @@ function M.scratch_toggle(buf)
           if owner and vim.api.nvim_buf_is_valid(owner) then
             sync_scratch_steer(owner, scratch)
           end
-          if M.section_text(scratch, "queue") == "" then
+          -- Any edit of the queue body cancels the scheduled follow-up:
+          -- <C-s> authorizes the text it saw, so a changed body must be
+          -- re-confirmed instead of being sent unattended.
+          if
+            vim.b[scratch].yap_queue_armed
+            and M.section_text(scratch, "queue") ~= vim.b[scratch].yap_queue_armed_text
+          then
             vim.b[scratch].yap_queue_armed = false
             vim.b[scratch].yap_queue_dispatch = false
           end

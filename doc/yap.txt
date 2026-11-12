@@ -578,10 +578,11 @@ beneath its heading.
               pending steer revises or cancels it while the turn runs.
   # @queue    While idle, <C-s> sends the whole body as one message. While
               running, <C-s> schedules one follow-up; press it again to
-              unschedule without deleting the draft. The live contents
-              are sent when that turn ends successfully. Edits before then
-              are included; clearing the queue cancels the follow-up. It
-              never auto-sends merely because text was typed, or after a
+              unschedule without deleting the draft. The body is sent when
+              that turn ends successfully. Editing the queue after
+              scheduling cancels the follow-up, so the sent text is always
+              the text <C-s> saw: press <C-s> again to schedule the revision.
+              It never auto-sends merely because text was typed, or after a
               stop, failure, or session close.
 
 <C-s> toggles a pending steer or scheduled queue while the turn runs; while

@@ -87,7 +87,8 @@ assert(
   hint(scratch, heading(scratch, "queue")) == "  · scheduled",
   "armed queue has no state label: " .. hint(scratch, heading(scratch, "queue"))
 )
--- Changes after the keypress are included, from the live buffer, not the file.
+-- Editing the queue after the keypress retracts the authorization, so the
+-- sent text is only ever the text <C-s> saw.
 vim.api.nvim_buf_set_lines(
   scratch,
   heading(scratch, "queue"),
@@ -95,6 +96,13 @@ vim.api.nvim_buf_set_lines(
   false,
   { "edited queue", "# @user", "kept as content", "<!-- yap:tool -->" }
 )
+vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch })
+assert(not vim.b[scratch].yap_queue_armed, "editing queue did not disarm")
+assert(hint(scratch, heading(scratch, "queue")) == "  · uncommitted", "edited queue lost draft label")
+-- Re-arming accepts the revision, which comes from the live buffer, not the file.
+cursor(heading(scratch, "queue") + 1)
+yap.scratch_send(scratch)
+assert(vim.b[scratch].yap_queue_armed, "revised queue was not re-armed")
 assert(
   vim.wait(16000, function()
     local t = text(owner)
@@ -103,6 +111,7 @@ assert(
   "armed queue did not send: " .. text(owner)
 )
 assert(not text(owner):find("queue one", 1, true), "armed queue sent stale text")
+assert(text(owner):find("edited queue", 1, true), "edited queue was not sent")
 assert(text(owner):find("\\# @user\nkept as content", 1, true), "pasted role heading split the queued message")
 assert(text(owner):find("\\<!-- yap:tool -->", 1, true), "pasted marker became a tool region")
 assert(text(scratch):find("# @queue\n?$"), "queue was not cleared")
