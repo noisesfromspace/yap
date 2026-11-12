@@ -171,8 +171,10 @@ end
 function M.tool_start(buf, command)
   local t = M.ensure(buf)
   local cmd = view.shell_lines(command or "", "  ")
+  -- Freshness is decided by line count plus the first line only; a
+  -- single-line read keeps the check O(1) regardless of tail size.
   local has_prior = vim.api.nvim_buf_line_count(t.bufnr) > 1
-    or vim.api.nvim_buf_get_lines(t.bufnr, 0, -1, false)[1] ~= ""
+    or vim.api.nvim_buf_get_lines(t.bufnr, 0, 1, false)[1] ~= ""
   local lines = {}
   if has_prior then
     lines[#lines + 1] = ""
