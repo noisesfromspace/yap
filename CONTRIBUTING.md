@@ -199,6 +199,19 @@ stored transcript. The `# About Yap` boilerplate is prepended as the first
 system message of every turn, independent of `agents_file` and never written
 into the session file, so the `# @system` message stays clean.
 
+#### R-prompt-cache — Request construction must account for cross-turn cache reuse
+
+Every choice that shapes the request bytes — message flattening, marker
+stripping, the system prefix, the tools array, the trailing context — also
+determines which prefix the provider can reuse from an earlier turn. A change
+that is cheap to write can silently re-bill the whole history: re-flattening
+tool regions as text, dropping thinking regions, or appending a changing tail
+all move the divergence point to the previous assistant message. Before
+changing request construction, name the effect on prefix stability, and verify
+it against the cache metrics (`cache_read`/`cache_write` in the audit log and
+winbar) rather than assuming. Why: caching is the dominant input-cost lever,
+and a regression here shows up only as higher spend, not as a test failure.
+
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
 Structural appends (headings, error markers) go through `append_lines()`,
