@@ -574,8 +574,9 @@ beneath its heading.
               without deleting the draft. Once delivered, it is cleared.
               If the turn ends first (a <C-c> stop included) it stays as a
               draft; pressing <C-s> here while idle sends it as the next
-              message, even when queue has text. Editing or deleting a
-              pending steer revises or cancels it while the turn runs.
+              message, even when queue has text. Editing the steer after
+              submitting cancels it, so the sent text is always the text
+              <C-s> saw: press <C-s> again to submit the revision.
   # @queue    While idle, <C-s> sends the whole body as one message. While
               running, <C-s> schedules one follow-up; press it again to
               unschedule without deleting the draft. The body is sent when

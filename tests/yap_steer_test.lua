@@ -165,8 +165,9 @@ assert(
   "retracted steer draft was lost"
 )
 
--- Editing a submitted steer while a tool runs replaces the pending wire
--- message; only the new draft is injected at the next model boundary.
+-- Editing a submitted steer while a tool runs retracts it, like an edited
+-- queue: the pending message is cancelled rather than silently revised, so
+-- only the text a fresh <C-s> authorizes is injected.
 local buf4 = yap.new()
 vim.api.nvim_buf_set_lines(buf4, -1, -1, false, { "do some work" })
 yap.send(buf4)
@@ -174,7 +175,7 @@ assert(
   vim.wait(10000, function()
     return yap.is_running(buf4)
   end, 50),
-  "edit-steer turn did not start"
+  "retract-steer turn did not start"
 )
 vim.wait(400)
 yap.scratch_toggle(buf4)
@@ -187,20 +188,27 @@ vim.api.nvim_buf_set_lines(scratch4, 0, -1, false, {
 })
 vim.api.nvim_win_set_cursor(0, { 2, 0 })
 yap.scratch_send(scratch4)
+assert(require("harness.state").steer[buf4] == "also check the tests", "steer was not submitted")
 vim.api.nvim_buf_set_lines(scratch4, 1, 2, false, { "edited instruction" })
 vim.api.nvim_exec_autocmds("TextChanged", { buffer = scratch4 })
+assert(require("harness.state").steer[buf4] == nil, "editing did not retract the steer")
+assert(label(scratch4, 1) == "  · uncommitted", "edited steer lost the pending label: " .. label(scratch4, 1))
+-- Re-submitting accepts the revision, which is what the model then sees.
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+yap.scratch_send(scratch4)
+assert(require("harness.state").steer[buf4] == "edited instruction", "revision was not re-submitted")
 assert(
   vim.wait(15000, function()
     return not yap.is_running(buf4)
   end, 100),
-  "edited steer did not finish"
+  "retracted steer did not finish"
 )
-assert(chat_text(buf4):find("# @user\nedited instruction", 1, true), "edited steer was not injected")
-assert(not chat_text(buf4):find("# @user\nalso check the tests", 1, true), "old steer was injected")
-assert(chat_text(buf4):find("edited answer", 1, true), "model did not receive edited steer")
+assert(chat_text(buf4):find("# @user\nedited instruction", 1, true), "revision was not injected")
+assert(not chat_text(buf4):find("# @user\nalso check the tests", 1, true), "stale steer was injected")
+assert(chat_text(buf4):find("edited answer", 1, true), "model did not receive the revision")
 assert(
   not table.concat(vim.api.nvim_buf_get_lines(scratch4, 0, -1, false), "\n"):find("edited instruction", 1, true),
-  "delivered draft was not consumed"
+  "delivered revision was not consumed"
 )
 
 -- A skill injected mid-turn also steers instead of being refused: its

@@ -159,8 +159,8 @@ local function cancel_steer(buf)
 end
 
 --- Steer the running turn using the current # @steer body. The text stays in
---- the live buffer until the backend confirms delivery, so it can be edited
---- or removed while waiting for the next model boundary.
+--- the live buffer until the backend confirms delivery; editing the body
+--- retracts the pending steer, so a revision must be re-submitted with <C-s>.
 function M.steer(buf, text)
   if text == "" then
     cancel_steer(buf)
@@ -182,17 +182,6 @@ function M.steer(buf, text)
     M.refresh(find_scratch(buf))
   end
   return true
-end
-
-local function sync_scratch_steer(owner, scratch)
-  local pending = steer[owner]
-  if not pending or not state.is_running(owner) then
-    return
-  end
-  local current = M.section_text(scratch, "steer")
-  if current ~= pending then
-    M.steer(owner, current)
-  end
 end
 
 local function scratch_dispatch_queue(owner, section, scratch)
@@ -467,12 +456,17 @@ function M.scratch_toggle(buf)
         buffer = scratch,
         callback = function()
           local owner = vim.b[scratch].yap_owner
-          if owner and vim.api.nvim_buf_is_valid(owner) then
-            sync_scratch_steer(owner, scratch)
+          -- <C-s> authorizes the text it saw, so any edit of a section body
+          -- retracts that authorization: a pending steer is cancelled and a
+          -- scheduled queue is disarmed; the revision must be re-confirmed.
+          if
+            owner
+            and vim.api.nvim_buf_is_valid(owner)
+            and steer[owner]
+            and M.section_text(scratch, "steer") ~= steer[owner]
+          then
+            cancel_steer(owner)
           end
-          -- Any edit of the queue body cancels the scheduled follow-up:
-          -- <C-s> authorizes the text it saw, so a changed body must be
-          -- re-confirmed instead of being sent unattended.
           if
             vim.b[scratch].yap_queue_armed
             and M.section_text(scratch, "queue") ~= vim.b[scratch].yap_queue_armed_text
