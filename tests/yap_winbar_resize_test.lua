@@ -22,13 +22,13 @@ local function winbar_at(cols)
   return wb
 end
 
--- Wide enough for both usage chips; the center island drops if it would
--- collide with the right-hand metrics.
+-- Wide enough for both usage chips and the center island. The model name is
+-- the session's identity, so the cost detail yields before it does.
 local wb = winbar_at(80)
-assert(not wb:match("mock/m1"), "model should yield to wide usage cluster: " .. wb)
+assert(wb:match("mock/m1"), "80-col winbar dropped the model island: " .. wb)
 assert(wb:find("%#YapIslandUprightCount#", 1, true), "right usage is not upright in its island: " .. wb)
 assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
-assert(wb:match("%$0.00342") and wb:match("%$0.51"), "wide winbar missing costs: " .. wb)
+assert(not wb:match("%$"), "costs should yield before the model name: " .. wb)
 assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
 assert(wb:find(icons.idle, 1, true) and not wb:find(icons.waiting, 1, true), "wide winbar state icon wrong: " .. wb)
 
@@ -86,19 +86,15 @@ assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. to
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Narrower: the fold switch yields first, then the model island; chips keep
--- tokens + cost.
+-- Narrower: the fold switch goes, then tokens become prices, and only then
+-- does the center island yield. With the model island gone the prices have
+-- the right cluster to themselves.
 wb = winbar_at(42)
 assert(not wb:match("mock/m1"), "42-col winbar kept the model: " .. wb)
-assert(wb:match("1.5k") and wb:match("1.1k"), "42-col winbar missing tokens: " .. wb)
-assert(wb:match("%$0.00342") and wb:match("%$0.51"), "42-col winbar missing costs: " .. wb)
+assert(not wb:match("1.5k") and not wb:match("1.1k"), "42-col winbar kept token counts: " .. wb)
+assert(wb:match("%$0.00342") and wb:match("%$0.51"), "42-col winbar missing prices: " .. wb)
 
--- Narrow: costs drop, tokens survive.
-wb = winbar_at(25)
-assert(wb:match("1.5k") and wb:match("1.1k"), "narrow winbar missing tokens: " .. wb)
-assert(not wb:match("%$"), "narrow winbar kept costs: " .. wb)
-
--- Very narrow: only the two prices remain.
+-- Very narrow: the prices stay; only the title gives way now.
 wb = winbar_at(12)
 assert(not wb:match("1.5k") and not wb:match("1.1k"), "tiny winbar kept tokens: " .. wb)
 assert(wb:match("%$0.00342") and wb:match("%$0.51"), "tiny winbar missing prices: " .. wb)
@@ -225,7 +221,6 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
     "YapIslandCursiveModel",
     "YapIslandUprightCount",
     "YapIslandUprightGaugeEmpty",
-    "YapIslandUprightGaugeLabel",
     "YapIslandUprightGaugeLow",
   }) do
     assert(
@@ -462,12 +457,10 @@ for _, group in ipairs({
   "YapUprightError",
   "YapUprightNeeds",
   "YapUprightGaugeEmpty",
-  "YapUprightGaugeLabel",
   "YapUprightGaugeLow",
   "YapUprightGaugeMid",
   "YapUprightGaugeHigh",
   "YapIslandUprightGaugeEmpty",
-  "YapIslandUprightGaugeLabel",
   "YapIslandUprightGaugeLow",
   "YapIslandUprightGaugeMid",
   "YapIslandUprightGaugeHigh",

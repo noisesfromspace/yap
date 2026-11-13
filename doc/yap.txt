@@ -716,9 +716,10 @@ Reading the numbers                                    *yap-winbar-numbers*
   󰆼 N        All-time: total tokens and cost for the whole session file,
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
-  Context █▍░░░  Context fill: the last turn's full prompt as a bar of the
-             model's context window (no percentage; the exact size belongs
-             in usage details). Green below 70%, amber 70–90%, red 90%+.
+  █▍░░░      Context fill: the last turn's full prompt as a bar of the
+             model's context window. No label and no percentage sit beside
+             it; the exact size belongs in usage details. Green below 70%,
+             amber 70–90%, red 90%+.
   󰃨 82%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
              turn-wide. Green at >=70%, amber 40–70%, red below. Cache writes
              count as input, not hits. Shown only when cache usage is reported;
@@ -726,8 +727,12 @@ Reading the numbers                                    *yap-winbar-numbers*
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`). On a freshly opened session
-the two chips are equal; after a reopen they diverge. The bar is width-aware
-and drops parts as the window shrinks.
+the two chips are equal; after a reopen they diverge.
+
+The bar is width-aware and gives parts up in this order: the fold-view
+switch, the costs, the token counts (prices stay), the context meter, then
+the centered model island. The model name is the session's identity, so it
+outlives every number on the right; only a very narrow bar drops it.
 
 For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.

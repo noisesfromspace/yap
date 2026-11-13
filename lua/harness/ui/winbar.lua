@@ -440,10 +440,10 @@ local function render_winbar(buf)
     return { { icons.cache .. " ", "Count" }, { num, color } }
   end
 
-  -- Fixed-width context meter: an occupancy bar. The exact percentage lives
-  -- in usage details, not beside the bar, so the bar never shares a surface
-  -- with the unrelated cache percentage.
-  local function context_segment(show_label)
+  -- Fixed-width context meter: an occupancy bar in its own pill. Neither a
+  -- label nor a percentage sits beside it: the exact figure lives in usage
+  -- details, and the bar never shares a surface with the cache percentage.
+  local function context_segment()
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
     local prompt = t and tonumber(t.context_prompt or t.prompt) or nil
@@ -480,9 +480,6 @@ local function render_winbar(buf)
     end
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
     local parts = { { " ", "GaugeEmpty", true } }
-    if show_label then
-      parts[#parts + 1] = { "Context ", "GaugeLabel", true }
-    end
     if fill ~= "" then
       parts[#parts + 1] = { fill, color, true }
     end
@@ -494,8 +491,9 @@ local function render_winbar(buf)
   end
 
   -- Usage counters and context meter stay right-aligned.
-  -- As the bar narrows, costs and tokens drop before the context meter.
-  local function usage_segment(mode)
+  -- As the bar narrows, costs, tokens and then the meter itself drop; the
+  -- model name in the center outlives all three.
+  local function usage_segment(mode, show_context)
     local chips = {} -- each chip: { { text, group }, ... }
     local live = state.live_usage[buf]
     local function include_live(base)
@@ -542,8 +540,8 @@ local function render_winbar(buf)
       end
     end
 
-    local context = context_segment(mode ~= "gauge")
-    local cache = mode ~= "gauge" and cache_parts() or nil
+    local context = show_context and context_segment() or nil
+    local cache = cache_parts()
     if #chips == 0 and not context and not cache then
       return nil
     end
@@ -656,7 +654,7 @@ local function render_winbar(buf)
   end
 
   -- Preserve real centering: drop the middle when either edge cluster
-  -- would collide with it, then degrade the right side as before.
+  -- would collide with it, then degrade the right side.
   -- Layout negotiation tries several widths synchronously. Only the title
   -- limit, switch/model visibility and usage mode change between attempts;
   -- reuse completed segments instead of re-counting sessions and usage for
@@ -668,29 +666,7 @@ local function render_winbar(buf)
     end
     return cache[key] or nil
   end
-  local desc_max, mode, show_model, show_switch = 40, "full", true, true
-  -- Shared tail of the drop order: once both the model/label and the fold
-  -- switch are gone, degrade the right cluster and finally the description.
-  local function degrade()
-    if mode == "full" then
-      mode = "compact"
-      return true
-    elseif mode == "compact" then
-      mode = "prices"
-      return true
-    elseif
-      mode == "prices" and cached(usage_cache, "gauge", function()
-        return usage_segment("gauge")
-      end)
-    then
-      mode = "gauge"
-      return true
-    elseif desc_max > 15 then
-      desc_max = desc_max - 5
-      return true
-    end
-    return false
-  end
+  local desc_max, mode, show_model, show_switch, show_context = 40, "full", true, true, true
   while true do
     local show_left_switch = inactive and show_switch
     local left = cached(left_cache, desc_max .. ":" .. tostring(show_left_switch), function()
@@ -702,8 +678,8 @@ local function render_winbar(buf)
           return center_segments(show_model, switch_in_center)
         end)
       or nil
-    local usage = not inactive and cached(usage_cache, mode, function()
-      return usage_segment(mode)
+    local usage = not inactive and cached(usage_cache, mode .. ":" .. tostring(show_context), function()
+      return usage_segment(mode, show_context)
     end) or nil
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
@@ -721,25 +697,27 @@ local function render_winbar(buf)
     if fits then
       return render(left, center, usage, left_width, right_width, show_model)
     end
-    -- The model name is this session's identity, so the active bar drops the
-    -- fold switch first; an inactive bar has no model to show (only its
-    -- label) and keeps the switch, dropping the label first instead.
-    if inactive then
-      if show_model then
-        show_model = false
-      elseif show_switch then
-        show_switch = false
-      elseif not degrade() then
-        return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
-      end
+    -- The drop order, one rung per attempt. The model name is this session's
+    -- identity, so the right-side metrics give way before it does: costs,
+    -- then token counts, then the context meter. An active bar also gives up
+    -- its fold switch early; an inactive bar has no model, only a session
+    -- label, so it keeps the switch and drops the label instead.
+    if show_switch and not inactive then
+      show_switch = false
+    elseif mode == "full" then
+      mode = "compact"
+    elseif mode == "compact" then
+      mode = "prices"
+    elseif show_context then
+      show_context = false
+    elseif show_model then
+      show_model = false
+    elseif show_switch then
+      show_switch = false
+    elseif desc_max > 15 then
+      desc_max = desc_max - 5
     else
-      if show_switch then
-        show_switch = false
-      elseif show_model then
-        show_model = false
-      elseif not degrade() then
-        return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
-      end
+      return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
     end
   end
 end
@@ -807,7 +785,6 @@ local function define_winbar_hl()
     Approval = "DiagnosticError",
     Needs = "DiagnosticWarn",
     GaugeEmpty = "NonText",
-    GaugeLabel = "Keyword",
     GaugeLow = "DiagnosticOk",
     GaugeMid = "DiagnosticWarn",
     GaugeHigh = "DiagnosticError",
@@ -838,13 +815,12 @@ local function define_winbar_hl()
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({
     { "GaugeEmpty", "NonText" },
-    { "GaugeLabel", "Keyword" },
     { "GaugeLow", "DiagnosticOk" },
     { "GaugeMid", "DiagnosticWarn" },
     { "GaugeHigh", "DiagnosticError" },
   }) do
     vim.api.nvim_set_hl(0, "Yap" .. gauge[1], {
-      fg = gauge[1] == "GaugeLabel" and attr("YapModel", "fg") or attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
+      fg = attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
       bg = bg,
     })
   end
@@ -878,10 +854,10 @@ local function define_winbar_hl()
   model_attrs.bg = bg
   vim.api.nvim_set_hl(0, "YapIslandCursiveModel", model_attrs)
   styled_hl("YapUprightIdle", "YapModel", false)
-  for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+  for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
     styled_hl("YapUpright" .. group, "Yap" .. group, false)
   end
-  for _, group in ipairs({ "GaugeEmpty", "GaugeLabel", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+  for _, group in ipairs({ "GaugeEmpty", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
     styled_hl("YapIslandUpright" .. group, "Yap" .. group, false)
   end
 end
