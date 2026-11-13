@@ -212,6 +212,29 @@ it against the cache metrics (`cache_read`/`cache_write` in the audit log and
 winbar) rather than assuming. Why: caching is the dominant input-cost lever,
 and a regression here shows up only as higher spend, not as a test failure.
 
+Measure with `usage` lines, not `turn_end`. Each `usage` line carries the
+per-step `step_cache_read` beside the cumulative totals, so a turn's flattening
+cost is the gap between step 1 and the rest rather than an average that hides
+it.
+
+Two shapes are deliberately not built, and both are legitimate landing spots if
+native replay (see below) turns out to be unmaintainable:
+
+- **Canonical text-only wire.** Flatten tool regions as text within a turn too,
+  never sending native `function_call`/`function_call_output` items. Prefix
+  stability then holds by construction with zero extra state, at the cost of the
+  reasoning replay providers ask for and of degrading tool continuation to text.
+  Keep it as the honest zero-state baseline to measure against.
+- **Server-side continuation.** `store: true` plus `previous_response_id`,
+  which the pinned SDK supports through provider options. It cannot be used on
+  the ChatGPT subscription route, which requires `store: false`, so it is at
+  best an optional fast path for API-key providers.
+
+The gap both are measured against: inside a turn the agent loop already sends
+the exact native items (`Result.ResponseMessages`), and only the *cross-turn*
+replay loses them. Fixing that is what makes step 1 of a turn reuse the previous
+turn's output instead of re-billing it.
+
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
 Structural appends (headings, error markers) go through `append_lines()`,
