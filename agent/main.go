@@ -336,6 +336,13 @@ func serve(in io.Reader, out io.Writer) error {
 		close(requests)
 	}()
 
+	// Native history for this session's buffer: one serve process serves every
+	// turn, so replaying the provider's own items (reasoning, tool calls,
+	// tool results) across turns costs nothing and dies with the process — a
+	// restart is a cold cache, which is the behaviour without one
+	// (R-prompt-cache).
+	var native turn.NativeHistory
+
 	for line := range requests {
 		var req serveRequest
 		err := json.Unmarshal(line, &req)
@@ -366,7 +373,7 @@ func serve(in io.Reader, out io.Writer) error {
 			case <-tools.SubagentStop:
 			default:
 			}
-			err = turn.Run(context.Background(), req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll, shouldStop)
+			err = turn.RunCached(context.Background(), req.Provider, req.Model, req.Request, wire.TextWriter(), queue.poll, shouldStop, &native)
 			updateMu.Lock()
 			if updateCh == ch {
 				updateCh = nil

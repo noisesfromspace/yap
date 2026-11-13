@@ -387,7 +387,13 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 	return Run(context.Background(), providerName, model, req, outw, func() Boundary { return Boundary{} }, nil)
 }
 
-// Run runs one agent loop. poll is consulted before each generation
+// Run runs one agent loop with no cross-turn native history: every turn is
+// built from the flattened transcript alone.
+func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary, shouldStop func() bool) error {
+	return RunCached(ctx, providerName, model, req, outw, poll, shouldStop, nil)
+}
+
+// RunCached runs one agent loop. poll is consulted before each generation
 // step after the first: it returns a pending steering message and/or a
 // provider/model switch (zero values when none). A steer is written into
 // the buffer as a `# @user` block and appended to the native message
@@ -396,7 +402,12 @@ func Send(providerName, model string, in io.Reader, outw io.Writer) error {
 // stay native — unlike a stop-and-resend, which flattens them to
 // transcript text. shouldStop requests a graceful stop at the next model
 // boundary without cancelling the running response or tool calls.
-func Run(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary, shouldStop func() bool) (retErr error) {
+//
+// hist, when set, is the session's native history: a turn proven to continue
+// the previous one replays its native items (R-prompt-cache) instead of
+// re-flattening them, and every completed turn stores its own array for the
+// next.
+func RunCached(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary, shouldStop func() bool, hist *NativeHistory) (retErr error) {
 	start := time.Now()
 	// Install the turn's context so foreground tools can abort on cancellation.
 	wire.SetTurnContext(ctx)
@@ -451,32 +462,54 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	// transcript and the backend flattens it (R-single-reader: Go owns the
 	// send conversion); the one-shot `yap send` path carries already-flattened
 	// messages.
-	var src []document.Message
+	// base is the flattened input before the request-only tail: that is what
+	// the native-history cache compares, because the tail is transient and by
+	// construction absent from the next request (R-request-context-tail).
+	var base []document.Message
 	if req.Transcript != "" {
-		src = document.Messages(req.Transcript)
+		base = document.Messages(req.Transcript)
 		if req.System != "" {
-			src = append([]document.Message{{Role: "system", Content: req.System}}, src...)
-		}
-		if req.Context != "" {
-			src = appendContextTail(src, req.Context)
+			base = append([]document.Message{{Role: "system", Content: req.System}}, base...)
 		}
 	} else {
-		src = make([]document.Message, 0, len(req.Messages))
+		base = make([]document.Message, 0, len(req.Messages))
 		for _, m := range req.Messages {
 			if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
 				return wire.CodedError{Code: wire.CodeInvalidParam, Err: errors.New("persisted native tool messages are unsupported; flatten tool history into transcript text")}
 			}
-			src = append(src, document.Message{Role: m.Role, Content: m.Content})
+			base = append(base, document.Message{Role: m.Role, Content: m.Content})
 		}
 	}
-	if len(src) == 0 {
+	if len(base) == 0 {
 		return wire.CodedError{Code: wire.CodeInvalidParam, Err: errors.New("request contains no messages")}
 	}
+	src := append([]document.Message(nil), base...)
+	if req.Context != "" {
+		src = appendContextTail(src, req.Context)
+	}
 
-	out := bufio.NewWriter(outw)
+	// Tee the turn's own output: the cache uses it next time to prove the
+	// transcript still shows exactly what this turn wrote.
+	var written strings.Builder
+	out := bufio.NewWriter(io.MultiWriter(outw, &written))
+	key := cacheKey(providerName, model)
 	messages, err := buildLLMMessages(src)
 	if err != nil {
 		return err
+	}
+	if native, covered := hist.replay(key, base); native != nil {
+		// Replay the items the provider already saw and convert only the new
+		// tail. That keeps the request a byte-prefix extension of the last one,
+		// which is the only thing prompt caching matches on.
+		tail := append([]document.Message(nil), base[covered:]...)
+		if req.Context != "" {
+			tail = appendContextTail(tail, req.Context)
+		}
+		tailMsgs, tailErr := buildLLMMessages(tail)
+		if tailErr != nil {
+			return tailErr
+		}
+		messages = append(append(make([]llm.Message, 0, len(native)+len(tailMsgs)), native...), tailMsgs...)
 	}
 	var totPrompt, totCompletion int
 	var totCacheRead, totCacheWrite int
@@ -535,6 +568,9 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 	// turn (the model is shown the error marker), but the audit log must not
 	// call a no-answer turn a success.
 	var turnError error
+	// A mid-turn model switch leaves the array straddling two models, so such a
+	// turn stores nothing for the next one.
+	switched := false
 	// A terminal audit record is written for every turn.
 	defer func() {
 		status := "ok"
@@ -594,6 +630,7 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 					from := providerName + "/" + model
 					providerName, model = b.Provider, b.Model
 					modelImpl = newImpl
+					switched = true
 					payload := render.MarshalCommentJSON(map[string]any{
 						"from": from,
 						"to":   providerName + "/" + model,
@@ -797,5 +834,11 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		pad()
 	}
 	out.Flush()
+	if hist != nil && !switched && turnError == nil {
+		// The transcript gained exactly this turn's assistant block; the parser
+		// turns it back into messages, so an edit anywhere in it makes the next
+		// replay fail its check rather than send history the user no longer sees.
+		hist.store(key, base, document.Messages("# @assistant\n"+written.String()), messages)
+	}
 	return nil
 }
