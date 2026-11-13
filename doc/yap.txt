@@ -639,6 +639,27 @@ audit-log lines they replaced.
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
 and tool output routinely contain secrets.
 
+PROMPT CACHE                                            *yap-prompt-cache*
+
+Providers reuse a request only where it matches an earlier one from the first
+token, so anything that reshapes already-sent history re-bills it. Inside a
+turn the agent loop sends native items (tool calls, tool results, reasoning)
+and extends them per step, which caches well. Across turns the markdown used to
+be re-flattened into assistant text — the previous turn's tool round and
+reasoning re-sent as new input.
+
+The serve process now keeps that native array in memory and extends it, because
+one `yap serve` process serves every turn of a buffer. Two exact checks gate a
+replay: the flattened input must still start with what the previous turn sent,
+and the transcript must still show exactly the bytes that turn wrote. Anything
+else — an edit anywhere in the history, |:YapClear|, |:YapCompact|, a fork, a
+model switch, or a restart — falls back to flattening the markdown, which is
+exactly the behaviour without the cache. A restart therefore costs one cold
+turn, not correctness.
+
+To see it working, read the per-step `usage` lines: `step_cache_read` low on
+step 1 and high on later steps is the signature described above.
+
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
 

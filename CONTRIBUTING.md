@@ -231,9 +231,23 @@ native replay (see below) turns out to be unmaintainable:
   best an optional fast path for API-key providers.
 
 The gap both are measured against: inside a turn the agent loop already sends
-the exact native items (`Result.ResponseMessages`), and only the *cross-turn*
-replay loses them. Fixing that is what makes step 1 of a turn reuse the previous
-turn's output instead of re-billing it.
+the exact native items (`Result.ResponseMessages`); only the *cross-turn* replay
+used to lose them, re-flattening the previous turn's tool round into assistant
+text and dropping its reasoning items.
+
+That replay is now built, in memory, in the serve process (`agent/turn`
+`NativeHistory`, `RunCached`): one process serves every turn of a buffer, so the
+array it already built is kept and extended. It is a cache with two exact
+checks — the flattened input must still start with what the last turn sent, and
+the transcript must still show exactly the bytes that turn wrote (captured by
+teeing the turn's own output and re-parsing it). A hit replays the native array
+and converts only the new tail; any miss — an edit, `:YapClear`,
+`:YapCompact`, a fork, a model switch, a mid-turn switch, a restart — falls back
+to the flattening path above, which is also what `Run` without a history does.
+Why in memory: the only thing the markdown cannot reconstruct is reasoning
+ciphertext, and losing it on restart costs one cold turn rather than a second
+history on disk (R-buffer-only-state). `agent/turn/prefix_replay_test.go` pins
+all four cases; it is the guardrail that fails if history is re-rendered again.
 
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
