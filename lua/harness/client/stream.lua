@@ -262,7 +262,12 @@ local function handle_event(buf, ev)
   elseif ev.type == "error" then
     audit.append_event(buf, ev) -- a turn failed: classified code + message
   elseif ev.type == "usage" then
+    -- One line per model step: the durable per-step prompt/cache split, so a
+    -- tool-heavy turn's reuse can be attributed step by step instead of only
+    -- as a turn average. Cumulative totals still come from turn_end
+    -- (fold_usage counts turn_end alone), so this never double-counts.
     state.live_usage[buf] = ev
+    audit.append_event(buf, ev)
     util.redraw_status()
   elseif ev.type == "turn_end" then
     state.live_usage[buf] = nil

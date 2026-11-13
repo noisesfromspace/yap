@@ -671,6 +671,16 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 		if t.prompt+t.completion+t.cacheRead+t.cacheWrite > 0 {
 			m := usagePayload(totPrompt, totCompletion, lastPrompt, totCacheRead, totCacheWrite, cacheObserved)
 			m["type"] = "usage"
+			// Cumulative fields above drive the winbar totals; the step_*
+			// fields are this step alone, which is what tells reuse apart
+			// from re-billing. The first step of a turn can only reuse the
+			// previous turn's history; later steps of the same turn reuse
+			// everything the turn already sent.
+			m["step"] = iter + 1
+			m["step_prompt"] = t.prompt
+			m["step_completion"] = t.completion
+			m["step_cache_read"] = t.cacheRead
+			m["step_cache_write"] = t.cacheWrite
 			wire.EmitEvent(m)
 		}
 		if t.outWrote {

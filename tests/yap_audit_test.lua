@@ -54,12 +54,28 @@ assert(
 assert(turn.context_prompt and turn.context_prompt > 0, "turn_end missing full prompt size: " .. vim.inspect(turn))
 assert(turn.cache_read == nil and turn.cache_write == nil, "provider without cache info should omit cache fields")
 
+-- Per-step usage is durable: one line per model step, carrying its own split
+-- beside the cumulative totals the winbar chips read.
+local steps = {}
+for _, e in ipairs(events) do
+  if e.type == "usage" then
+    steps[#steps + 1] = e
+  end
+end
+assert(#steps > 0, "no per-step usage lines in the audit log")
+assert(steps[1].step == 1, "first usage line should be step 1: " .. vim.inspect(steps[1]))
+assert(
+  steps[1].step_prompt ~= nil and steps[1].step_cache_read ~= nil and steps[1].step_completion ~= nil,
+  "usage line missing its per-step split: " .. vim.inspect(steps[1])
+)
+
 -- :YapClear points each placeholder at the exact JSONL lines it replaced
--- (tool_call → tool_result for the write call: lines 1-2)
+-- (tool_call → tool_result for the write call; that step's usage line comes
+-- first, so the two records are lines 2-3)
 yap.clear(buf, 0)
 local cleared = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(
-  cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:1%-2%]"),
+  cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:2%-3%]"),
   "placeholder missing exact line ref: " .. cleared
 )
 print("OK audit")

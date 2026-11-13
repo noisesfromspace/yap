@@ -373,6 +373,54 @@ type cacheOnlyUsageProvider struct{}
 
 func (cacheOnlyUsageProvider) Model(string) llm.LanguageModel { return cacheOnlyUsageModel{} }
 
+// TestUsageEventsCarryPerStepSplit: a multi-step turn emits one usage event
+// per model step, each with its own step_cache_read. That is what separates
+// "this step reused the previous turn's history" from "this step reused what
+// the turn already sent", instead of hiding both behind a turn average.
+func TestUsageEventsCarryPerStepSplit(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			testutil.SSE(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"missing_test_tool","arguments":"{}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+				`{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`,
+			)
+			return
+		}
+		testutil.SSE(w,
+			`{"choices":[{"delta":{"content":"done"}}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":180}}}`,
+		)
+	}))
+	defer srv.Close()
+	testutil.WriteConfig(t, `"mock": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	var out bytes.Buffer
+	old := wire.SetFrameWriter(&out)
+	defer wire.SetFrameWriter(old)
+	if err := Send("mock", "m1", strings.NewReader(`{"messages":[{"role":"user","content":"go"}]}`), &out); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	s := out.String()
+	if got := strings.Count(s, `"type":"usage"`); got != 2 {
+		t.Fatalf("usage events = %d, want one per step (2):\n%s", got, s)
+	}
+	// Step 1 had nothing to reuse; step 2 read the turn's own prefix.
+	if !strings.Contains(s, `"step":1,"step_cache_read":0,"step_cache_write":0`) {
+		t.Fatalf("step 1 should report no cache read:\n%s", s)
+	}
+	if !strings.Contains(s, `"step":2,"step_cache_read":180`) {
+		t.Fatalf("step 2 should report its own cache read (180):\n%s", s)
+	}
+	// Cumulative fields stay turn-wide for the winbar chips.
+	if !strings.Contains(s, `"cache_read":180`) {
+		t.Fatalf("cumulative cache_read missing:\n%s", s)
+	}
+}
+
 // TestUsageEmitsForCacheOnlyUsage: cache-only usage must still emit a usage
 // event, and cache counters must be carried cumulatively into turn_end.
 func TestUsageEmitsForCacheOnlyUsage(t *testing.T) {
@@ -393,7 +441,7 @@ func TestUsageEmitsForCacheOnlyUsage(t *testing.T) {
 	if !strings.Contains(s, `"cache_read":3`) || !strings.Contains(s, `"cache_write":7`) {
 		t.Fatalf("cache counters missing:\n%s", s)
 	}
-	if !strings.Contains(s, `"completion":0,"context_prompt":10,"prompt":0,"type":"usage"`) {
+	if !strings.Contains(s, `"completion":0,"context_prompt":10,"prompt":0,"step":1,"step_cache_read":3,"step_cache_write":7,"step_completion":0,"step_prompt":0,"type":"usage"`) {
 		t.Fatalf("cache-only step should still emit usage event:\n%s", s)
 	}
 	if !strings.Contains(s, `"cache_read":3,"cache_write":7,"completion":0,"context_prompt":10,"model":"m1"`) {
@@ -464,7 +512,7 @@ func TestToolCallEventFollowsVisibleHeader(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	s := journal.String()
-	usage := strings.Index(s, `{"event":{"completion":10,"context_prompt":100,"prompt":100,"type":"usage"},"type":"event"}`)
+	usage := strings.Index(s, `{"event":{"completion":10,"context_prompt":100,"prompt":100,"step":1,"step_cache_read":0,"step_cache_write":0,"step_completion":10,"step_prompt":100,"type":"usage"},"type":"event"}`)
 	header := strings.Index(s, `<!-- yap:tool {"id":"c1"`)
 	event := strings.Index(s, `{"event":{"args":"{}","id":"c1","name":"missing_test_tool","type":"tool_call"},"type":"event"}`)
 	result := strings.Index(s, "error: unknown tool missing_test_tool")
