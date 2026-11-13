@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -169,4 +171,118 @@ func TestServeCancelMidStream(t *testing.T) {
 	if strings.Contains(s, `"ok":true`) {
 		t.Fatalf("cancelled turn reported ok: %q", s)
 	}
+}
+
+// lockedBuffer collects serve's frames while the test reads them.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// turnText joins the text frames a turn emitted, which is exactly the markdown
+// the frontend appends to the session buffer.
+func turnText(frames string) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(frames, "\n") {
+		var f struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal([]byte(line), &f) == nil && f.Type == "text" {
+			sb.WriteString(f.Text)
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// TestServeReplaysNativeHistoryAcrossTurns: the second turn reuses the native
+// tool round the first turn already sent (R-prompt-cache) instead of re-sending
+// it as flattened assistant text.
+func TestServeReplaysNativeHistoryAcrossTurns(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		calls++
+		n := calls
+		bodies = append(bodies, string(raw))
+		mu.Unlock()
+		switch n {
+		case 1:
+			testutil.SSE(w,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"echo tool-output\"}"}}]}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			)
+		case 2:
+			testutil.SSE(w, `{"choices":[{"delta":{"content":"first turn done"}}]}`)
+		default:
+			testutil.SSE(w, `{"choices":[{"delta":{"content":"second turn ok"}}]}`)
+		}
+	}))
+	defer srv.Close()
+	testutil.WriteConfig(t, `"mock":{"base_url":"`+srv.URL+`/v1","api_key_env":"YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	r, w := io.Pipe()
+	defer r.Close()
+	out := &lockedBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- serve(r, out) }()
+
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(out.String(), `"turn_complete"`) {
+		if time.Now().After(deadline) {
+			t.Fatalf("first turn never completed: %q", out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The buffer as the frontend would leave it, then the next prompt.
+	block := turnText(out.String())
+	transcript := `{"type":"turn","v":1,"provider":"mock","model":"m1","transcript":` + quoteJSON("# @user\ngo\n\n# @assistant\n"+block+"\n\n# @user\nnext\n") + "}\n"
+	_, _ = io.WriteString(w, transcript)
+	_ = w.Close()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("second turn blocked serve")
+	}
+	if !strings.Contains(out.String(), "second turn ok") {
+		t.Fatalf("second turn did not run: %q", out.String())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 3 {
+		t.Fatalf("upstream calls = %d, want 3", len(bodies))
+	}
+	if !strings.Contains(bodies[2], `"role":"tool"`) {
+		t.Fatalf("follow-up lost the native tool result:\n%s", bodies[2])
+	}
+	if strings.Contains(bodies[2], "Tool call: bash") {
+		t.Fatalf("follow-up re-flattened tool history:\n%s", bodies[2])
+	}
+}
+
+// quoteJSON encodes s as a JSON string literal.
+func quoteJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
