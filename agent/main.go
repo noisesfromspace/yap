@@ -114,7 +114,14 @@ func main() {
 			os.Exit(1)
 		}
 	case "models":
-		if err := config.List(); err != nil {
+		// `yap models --json` carries each combo's price and context window
+		// for the frontend's picker and its cost guard; the plain list stays
+		// the steady interface for the LSP and shell users.
+		list := config.List
+		if len(os.Args) > 2 && os.Args[2] == "--json" {
+			list = config.ListJSON
+		}
+		if err := list(); err != nil {
 			fmt.Fprintln(os.Stderr, "yap:", err)
 			os.Exit(1)
 		}

@@ -8,11 +8,18 @@ import (
 
 // ModelCombo is one discoverable provider/model pair, carrying its price when
 // known (USD per 1M tokens, 0 when unknown). The `models` tool uses it to let
-// a session weigh options without a separate pricing lookup.
+// a session weigh options without a separate pricing lookup, and the
+// frontend's model picker reads it from `yap models --json` to show the rate
+// before a turn is sent.
 type ModelCombo struct {
 	Name   string
 	Input  float64
 	Output float64
+	// CacheRead and ContextWindow mirror the catalog entry. They are display
+	// data: the frontend shows the cache rate beside the input rate and the
+	// context window as the model's ceiling. 0 means the catalog has no entry.
+	CacheRead     float64
+	ContextWindow int
 }
 
 // modelLister is main's discovery client (the `yap models` command), which

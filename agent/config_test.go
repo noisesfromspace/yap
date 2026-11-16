@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -99,5 +100,46 @@ func TestModels(t *testing.T) {
 	}
 	if got := strings.Fields(buf.String()); len(got) != 2 || got[0] != "alpha/m1" || got[1] != "alpha/m2" {
 		t.Fatalf("output: %v", got)
+	}
+}
+
+// TestModelsJSON: the --json form carries each combo's catalog rate and context
+// window, which the frontend's picker preview and cost guard decode. The plain
+// list stays byte-identical to TestModels' expectation.
+func TestModelsJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// gpt-6-astra is in the committed catalog; "not-in-catalog" is not.
+		fmt.Fprint(w, `{"data":[{"id":"gpt-6-astra"},{"id":"not-in-catalog"}]}`)
+	}))
+	defer srv.Close()
+	testutil.WriteConfig(t, `"openai": {"base_url": "`+srv.URL+`/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := config.ListJSON()
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	if err != nil {
+		t.Fatalf("models --json: %v", err)
+	}
+	var got []config.ComboJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (output %q)", err, buf.String())
+	}
+	if len(got) != 2 {
+		t.Fatalf("combos: %+v", got)
+	}
+	if got[0].Name != "openai/gpt-6-astra" || got[0].Input != 10 || got[0].Output != 50 || got[0].ContextWindow == 0 {
+		t.Fatalf("astra entry: %+v", got[0])
+	}
+	// An unpriced combo reports zeros, never a guess: the frontend hides the
+	// rate and the guard stands down.
+	if got[1].Name != "openai/not-in-catalog" || got[1].Input != 0 || got[1].ContextWindow != 0 {
+		t.Fatalf("unpriced entry: %+v", got[1])
 	}
 }

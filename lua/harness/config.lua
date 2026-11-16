@@ -107,6 +107,11 @@ M.defaults = {
 -- Keep the last successful discovery on disk. A refresh starts in the
 -- background during setup; the picker uses the cached list immediately.
 local models_cache = nil
+-- combo name -> catalog entry (`input`, `output`, `cache_read`, `context`),
+-- from the same discovery call. Empty when the cache predates `yap models
+-- --json`, in which case the picker shows names only and the cost guard stands
+-- down: an unknown price must never be guessed at.
+local models_prices = nil
 local models_waiters = {}
 local models_refreshing = false
 
@@ -115,6 +120,38 @@ local models_refreshing = false
 --- (the Go side cannot derive Neovim's cache directory).
 function M.models_cache_path()
   return vim.fn.stdpath("cache") .. "/yap/models"
+end
+
+--- Path of the sibling price cache, the same discovery call in JSON form. Kept
+--- separate so the plain list stays the LSP's stable input.
+function M.models_price_path()
+  return vim.fn.stdpath("cache") .. "/yap/models.json"
+end
+
+--- The catalog entry for a `provider/model` combo, or nil when unknown.
+--- Never invents a price: a missing entry means the picker omits the rate and
+--- the cost guard does not fire.
+function M.model_price(combo)
+  if not models_prices then
+    M.load_models_cache()
+  end
+  return models_prices and models_prices[combo] or nil
+end
+
+--- Parse one `yap models --json` payload into a name list and a price map.
+local function parse_models_json(payload)
+  local ok, decoded = pcall(vim.json.decode, payload)
+  if not ok or type(decoded) ~= "table" then
+    return nil, nil
+  end
+  local names, prices = {}, {}
+  for _, entry in ipairs(decoded) do
+    if type(entry) == "table" and type(entry.name) == "string" and entry.name ~= "" then
+      names[#names + 1] = entry.name
+      prices[entry.name] = entry
+    end
+  end
+  return names, prices
 end
 
 --- Refresh the cached provider/model list from `yap models`, then release
@@ -132,20 +169,20 @@ function M.refresh_models()
     return
   end
   models_refreshing = true
-  vim.system({ bin, "models" }, { text = true }, function(res)
+  vim.system({ bin, "models", "--json" }, { text = true }, function(res)
     vim.schedule(function()
       models_refreshing = false
-      local combos = {}
+      local combos, prices
       if res.code == 0 then
-        for line in (res.stdout or ""):gmatch("[^\n]+") do
-          table.insert(combos, line)
-        end
+        combos, prices = parse_models_json(res.stdout or "")
       end
-      if #combos > 0 then
+      if combos and #combos > 0 then
         models_cache = combos
-        local path = M.models_cache_path()
-        vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-        vim.fn.writefile(combos, path)
+        models_prices = prices
+        local dir = vim.fn.fnamemodify(M.models_cache_path(), ":h")
+        vim.fn.mkdir(dir, "p")
+        vim.fn.writefile(combos, M.models_cache_path())
+        vim.fn.writefile(vim.split((res.stdout or ""):gsub("%s+$", ""), "\n"), M.models_price_path())
       end
       for _, waiter in ipairs(models_waiters) do
         waiter(models_cache, res.stderr)
@@ -165,15 +202,74 @@ function M.load_models_cache()
       models_cache = cached
     end
   end
+  -- Prices come from the sibling JSON cache, so a picker opened before the
+  -- async refresh finishes still shows rates.
+  if not models_prices then
+    local jpath = M.models_price_path()
+    if vim.fn.filereadable(jpath) == 1 then
+      local names, prices = parse_models_json(table.concat(vim.fn.readfile(jpath), "\n"))
+      if names and #names > 0 then
+        models_prices = prices
+        models_cache = models_cache or names
+      end
+    end
+  end
   return models_cache
+end
+
+--- Format a rate for display: `$10`, `$0.28`, `$2.50`. Trailing zeros stay
+--- off so picker rows stay narrow.
+local function money(v)
+  if not v or v <= 0 then
+    return nil
+  end
+  return "$" .. (string.format("%g", v))
+end
+
+--- Preview lines for one combo: the rate that makes an accidental switch to a
+--- top-tier model visible before it costs anything. Empty when the catalog has
+--- no entry, so the picker shows its default preview instead of inventing a
+--- price.
+function M.model_preview(combo)
+  local info = M.model_price(combo)
+  if not info then
+    return nil
+  end
+  local input, output = money(info.input), money(info.output)
+  local lines = { combo, "" }
+  if input and output then
+    lines[#lines + 1] = string.format("  %s in · %s out  per 1M tokens", input, output)
+  else
+    lines[#lines + 1] = "  rate unknown to the catalog"
+  end
+  local cached = money(info.cache_read)
+  if cached then
+    lines[#lines + 1] = string.format("  %s per 1M cached input", cached)
+  end
+  if info.context and info.context > 0 then
+    lines[#lines + 1] = string.format("  %s context window", require("harness.util").fmt_tokens(info.context))
+  end
+  return lines
 end
 
 --- Open the provider/model picker and call `cb` with the chosen
 --- "provider/model" combo (nothing on dismiss). Uses the backend's cached
 --- discovery list, refreshed asynchronously during setup.
+---
+--- The row stays just the combo name; the rate and context window live in the
+--- preview (`preview_item`, a mini.pick extension to `vim.ui.select`). A
+--- plain `vim.ui.select` ignores the preview and the picker still works.
 function M.pick(cb)
   local function pick(items)
-    vim.ui.select(items, { prompt = "yap model" }, function(choice)
+    vim.ui.select(items, {
+      prompt = "yap model",
+      format_item = function(item)
+        return item
+      end,
+      preview_item = function(item)
+        return M.model_preview(item) or { item }
+      end,
+    }, function(choice)
       if choice then
         cb(choice)
       end

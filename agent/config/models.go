@@ -96,8 +96,47 @@ func ComboPrice(provider, model string) tools.ModelCombo {
 	c := tools.ModelCombo{Name: provider + "/" + model}
 	if info, ok := price.Lookup(provider, model); ok {
 		c.Input, c.Output = info.Input, info.Output
+		c.CacheRead, c.ContextWindow = info.CacheRead, info.ContextWindow
 	}
 	return c
+}
+
+// ListJSON prints the same combos as List, as one JSON array carrying each
+// combo's price and context window. The frontend asks for it once and keeps it
+// beside the plain list cache, so showing a rate costs no extra provider round
+// trip. The field names are the frontend's decoding surface: keep them stable.
+func ListJSON() error {
+	combos, warnings, err := ListCombos()
+	if err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "yap: "+w)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(combosJSON(combos))
+}
+
+// ComboJSON is the wire shape of one entry in `yap models --json`: the combo's
+// name, its catalog price, and its context window. A zero rate or window means
+// the catalog has no entry, so the frontend shows "unknown" instead of a fake
+// price. These field names are the frontend's decoding surface: keep them
+// stable.
+type ComboJSON struct {
+	Name          string  `json:"name"`
+	Input         float64 `json:"input"`
+	Output        float64 `json:"output"`
+	CacheRead     float64 `json:"cache_read"`
+	ContextWindow int     `json:"context"`
+}
+
+func combosJSON(combos []tools.ModelCombo) []ComboJSON {
+	out := make([]ComboJSON, 0, len(combos))
+	for _, c := range combos {
+		out = append(out, ComboJSON{c.Name, c.Input, c.Output, c.CacheRead, c.ContextWindow})
+	}
+	return out
 }
 
 // listModels queries the provider's native model endpoint. Unknown providers
