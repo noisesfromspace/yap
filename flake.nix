@@ -311,8 +311,17 @@
                 RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/skills"} ${escape "${jailConfigHome}/yap/skills"})
                 RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/templates"} ${escape "${jailConfigHome}/yap/templates"})
                 RUNTIME_ARGS+=(--ro-bind ${escape "${jailConfigHome}/yap/agents"} ${escape "${jailConfigHome}/yap/agents"})
-                RUNTIME_ARGS+=(--ro-bind-try ${escape "${jailConfigHome}/yap/settings.json"} ${escape "${jailConfigHome}/yap/settings.json"})
-                RUNTIME_ARGS+=(--ro-bind-try ${escape jailAgentsPath} ${escape jailAgentsPath})
+                # Home Manager config files are symlinks into /nix/store,
+                # which is already bound read-only. bwrap cannot mount over
+                # a symlink destination; keep the bind for ordinary files.
+                for p in ${escape "${jailConfigHome}/yap/settings.json"} ${escape jailAgentsPath}; do
+                  if [ -L "$p" ]; then
+                    case "$(readlink -f "$p")" in
+                      /nix/store/*) continue ;;
+                    esac
+                  fi
+                  RUNTIME_ARGS+=(--ro-bind-try "$p" "$p")
+                done
               '')
               # The editor's own config (keymaps, theme, plugins). With
               # wrapRc = false this is a directory in the config home; bind it
