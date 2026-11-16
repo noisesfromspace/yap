@@ -999,12 +999,3 @@ func allDigits(s string) bool {
 	}
 	return true
 }
-
-func containsString(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
