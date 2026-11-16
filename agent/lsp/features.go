@@ -234,11 +234,11 @@ func subagentName(h *document.ToolHeader) string {
 	case args.Agent == "" && args.Task == "":
 		return "subagent"
 	case args.Agent == "":
-		return "subagent: " + truncate(args.Task, 60)
+		return "subagent: " + truncate(args.Task, 160)
 	case args.Task == "":
 		return args.Agent
 	default:
-		return args.Agent + " · " + truncate(args.Task, 60)
+		return args.Agent + " · " + truncate(args.Task, 160)
 	}
 }
 
@@ -319,12 +319,12 @@ func messageName(lines []string, h document.Heading, hidden, errored []bool, end
 		if t == "" || strings.HasPrefix(t, "<!-- yap:") || hidden[i] {
 			continue
 		}
-		return h.Role + ": " + truncate(t, 60)
+		return h.Role + ": " + truncate(t, 160)
 	}
 	for i := h.Line; i < end; i++ {
 		if errored[i] {
 			if t := strings.TrimSpace(lines[i]); t != "" {
-				return h.Role + ": " + truncate(t, 60)
+				return h.Role + ": " + truncate(t, 160)
 			}
 		}
 	}
