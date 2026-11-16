@@ -129,27 +129,37 @@ function M.session_path(buf)
 end
 
 --- A fresh auto-named session directory under `dir`, grouped by month:
---- <dir>/<yy-mm>/<dd-hh.mm.ss>. A same-second collision would silently
---- overwrite the first transcript, so only then is a `-2`, `-3`, ... suffix
---- appended. Created 0700, ready for the first write.
+--- <dir>/<yy-mm>/<dd>-<sequence>. Existing timestamp-named directories stay
+--- untouched; only names matching today's sequence participate in numbering.
 local function fresh_session_dir(dir)
   local month_dir = dir .. "/" .. os.date("%y-%m")
   M.ensure_session_dir(month_dir) -- 0700; holds this month's sessions
-  local stamp = os.date("%d-%H.%M.%S")
-  local sdir = month_dir .. "/" .. stamp
-  local n = 2
-  while vim.fn.isdirectory(sdir) == 1 do
-    sdir = month_dir .. "/" .. stamp .. "-" .. n
-    n = n + 1
+  local day = os.date("%d")
+  local prefix = day .. "-"
+  local next_seq = 1
+  for name, type in vim.fs.dir(month_dir) do
+    if type == "directory" then
+      local seq = name:sub(1, #prefix) == prefix and name:sub(#prefix + 1):match("^%d+$")
+      if seq then
+        next_seq = math.max(next_seq, tonumber(seq) + 1)
+      end
+    end
   end
-  M.ensure_session_dir(sdir)
-  return sdir
+  while true do
+    local sdir = string.format("%s/%s%03d", month_dir, prefix, next_seq)
+    local ok, err = vim.uv.fs_mkdir(sdir, 448) -- atomic 0700; no concurrent creator can claim the same number
+    if ok then
+      return sdir
+    end
+    if not err or not err:match("^EEXIST") then
+      error("yap: cannot create session directory " .. sdir .. ": " .. tostring(err))
+    end
+    next_seq = next_seq + 1
+  end
 end
 
 --- A fresh session path under `dir`: <dir>/<name>/session.md when `name` is
---- given, else <dir>/<yy-mm>/<dd-hh.mm.ss>/session.md (auto sessions group by
---- month). A same-second collision would silently overwrite the first
---- transcript, so only then is a `-2`, `-3`, ... suffix appended. The session
+--- given, else <dir>/<yy-mm>/<dd>-<sequence>/session.md. The session
 --- directory is created here (0700), ready for the first write.
 function M.new_session_path(dir, name)
   if name then

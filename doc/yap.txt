@@ -496,8 +496,9 @@ the agent's throwaway scripts, fetched downloads and generated artifacts.
 
 `:Yap` sessions live in their own directory under
 ~/.config/yap/sessions/<cwd-slug>/: auto-named sessions and subagent children
-group by month (<yy-mm>/<dd-hh.mm.ss>/), and named forks live at
-<cwd-slug>/<name>/. Each has session.md (the conversation), notes.md (the
+group by month (<yy-mm>/<dd>-<sequence>/), and named forks live at
+<cwd-slug>/<name>/. Older timestamp-named sessions (<yy-mm>/<dd-hh.mm.ss>/)
+remain in place and open normally. Each has session.md (the conversation), notes.md (the
 scratch buffer), audit.jsonl (the audit log) and assets/ (photos, fetched downloads
 and working files).
 Yap creates notes.md with the session, even if you never open the scratch buffer.

@@ -679,7 +679,8 @@ transient states to repair.
 #### R-audit-log — The audit log is the durable record of everything the context doesn't carry
 
 `audit.jsonl` beside the session markdown (in its own
-`<cwd-slug>/<yy-mm>/<dd-hh.mm.ss>/` directory, `<dd-hh.mm.ss>/session.md`;
+`<cwd-slug>/<yy-mm>/<dd>-<sequence>/` directory, with `session.md` inside;
+older `<dd-hh.mm.ss>/` directories remain readable and are not renamed;
 subagents nest in the parent's `<yy-mm>/`; named forks live at
 `<cwd-slug>/<name>/`), JSON Lines (one timestamped JSON object per line),
 append-only, written by the Lua side from event frames: full tool arguments,
