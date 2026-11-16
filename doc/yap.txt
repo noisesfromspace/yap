@@ -100,7 +100,25 @@ title you can set by hand. A renamed transcript shows its filename in every
 session view.
 The per-session |change_model()| picker discovers available models through
 `yap models`, which queries configured backend providers with their current
-credentials. It does not change the configured default for new sessions.
+credentials. It does not change the configured default for new sessions. The
+row is just the combo name; the preview shows that model's rate per 1M tokens
+(input, output, cached input) and its context window, so an accidental switch
+to a top-tier model is visible before it costs anything.
+
+`price_guard` is the same information as a speed bump. Before a turn is sent,
+`stream.send()` prices it as `context x 2 steps x the model's uncached input
+rate` and, when that exceeds `max_usd`, asks once:
+
+```lua
+price_guard = { enabled = true, max_usd = 2.0 },  -- default
+```
+
+"Send anyway" approves that model for the rest of the session, so a repeated
+expensive turn does not ask again; switching model re-arms it, because the
+approval is keyed by combo. A subagent is never blocked (nobody could answer),
+and a model missing from the price catalog is never guessed at. The estimate
+errs high on purpose — caching only makes the real bill smaller — and the audit
+log, not this number, is the accounting record.
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
 disable it. `templates_dir`/`skills_dir` configure

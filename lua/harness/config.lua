@@ -33,6 +33,16 @@ M.defaults = {
   -- Terminal glyph availability cannot be detected reliably; set false to use
   -- plain Unicode status glyphs, the original spinner and block gauge.
   nerd_font = true,
+  -- Pre-send cost guard: ask before a turn that would cost more than this, on
+  -- a worst-case estimate of context x two model steps x the model's uncached
+  -- input rate (caching only ever makes it cheaper). The picker shows the same
+  -- rate per 1M tokens, so an accidental switch to a top-tier model is visible
+  -- before it costs anything. `enabled = false` turns the guard off; a single
+  -- "send anyway" covers the rest of the session for that model.
+  price_guard = {
+    enabled = true,
+    max_usd = 2.0,
+  },
   -- UI glyphs for the winbar and session picker (see doc/yap.txt
   -- |yap-winbar|). Defaults are Nerd Font v3 glyphs; the plain-unicode
   -- fallback preset for unpatched fonts is under |yap-configuration|.

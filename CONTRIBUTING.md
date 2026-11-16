@@ -249,6 +249,37 @@ ciphertext, and losing it on restart costs one cold turn rather than a second
 history on disk (R-buffer-only-state). `agent/turn/prefix_replay_test.go` pins
 all four cases; it is the guardrail that fails if history is re-rendered again.
 
+#### R-cost-guard — Every send path goes through the pre-send cost guard, and a subagent is never blocked
+
+`stream.send()` is the single funnel for a turn: the send key, a queued
+`# @queue`, a `# @steer`, and a subagent's first turn all reach it. The cost
+guard (`lua/harness/client/costguard.lua`) is called from there before anything
+is written to the buffer or spawned, so a turn that would cost more than
+`config.price_guard.max_usd` spends nothing until a human agrees. Anything that
+adds a fifth route to a model request must call the guard too, or that route
+becomes the one that silently spends.
+
+Two consequences that are easy to break by accident:
+
+- **Never block a subagent.** A child has nobody to answer the confirmation, so
+  it inherits the parent's decision and proceeds when there is none. A hung
+  child is worse than an unguarded one. `check(..., unattended)` takes the flag;
+  keep it true for `fm.subagent_parent`.
+- **Never nag twice.** "Send anyway" approves that model for the rest of the
+  session (`costguard.approved[buf]`), so a repeated expensive turn does not ask
+  again. The approval is keyed by combo, so switching model re-arms the guard —
+  which is the whole point: the accident being guarded against is a switch.
+
+The estimate assumes every step re-sends the whole context at the uncached
+input rate (context × 2 steps × `input`). It errs high, because caching only
+makes the real bill smaller; it must never be turned into an accounting figure.
+The audit's `usage` lines are the accounting figure. A model with no catalog
+entry is never guessed at: no price means no guard.
+
+Why: the failure mode is a top-tier model reached by one keystroke at a
+240k-token context, which spends a subscription window in two turns. The rate is
+shown in the model picker's preview for the same reason.
+
 #### R-blank-lines — Exactly one blank line between messages, enforced locally at every write
 
 Structural appends (headings, error markers) go through `append_lines()`,

@@ -126,6 +126,7 @@ local CASES = {
   { name = "yap_winbar_resize_test", port = 18132 },
   { name = "yap_winbar_fold_view_test", port = 18132 },
   { name = "yap_winbar_ctx_test", port = 18132 },
+  { name = "yap_costguard_test", port = 18132 },
   { name = "yap_winbar_steer_test", port = 18132 },
   { name = "yap_redraw_test", port = 18132 },
   { name = "yap_bd_test", port = 18132 },

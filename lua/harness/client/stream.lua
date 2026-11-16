@@ -12,6 +12,7 @@ local M = {}
 local state = require("harness.state")
 local document = require("harness.model.document")
 local audit = require("harness.client.audit")
+local costguard = require("harness.client.costguard")
 local guard = require("harness.ui.guard")
 local scratchmod = require("harness.client.scratch")
 local subagent = require("harness.client.subagent")
@@ -453,6 +454,14 @@ function M.send(buf)
   vim.b[buf].yap_provider = provider
   vim.b[buf].yap_model = model
   state.live_usage[buf] = nil
+
+  -- The cost guard runs before anything is written or spawned, so a turn that
+  -- would cost more than the configured threshold asks first and spends
+  -- nothing when the answer is no. Every send route funnels through here; a
+  -- subagent is never blocked because it has nobody to answer (R-cost-guard).
+  if not costguard.check(buf, provider .. "/" .. model, messages, fm ~= nil and fm.subagent_parent ~= nil) then
+    return false
+  end
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
