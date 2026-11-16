@@ -73,6 +73,22 @@ live_bar = winbar_at(80)
 assert(live_bar:find("󰃨", 1, true) and live_bar:match("10%%"), "cache writes should reduce read-hit percentage: " .. live_bar)
 state.live_usage[buf] = nil
 
+-- When they compete for space, the cache chip goes before the context meter.
+state.live_usage[buf] = {
+  prompt = 1200, completion = 42, context_prompt = 1500,
+  cache_read = 300, cache_write = 0, context_window = 250000,
+}
+local saw_cache_yield = false
+for cols = 80, 20, -1 do
+  local narrow = winbar_at(cols)
+  if not narrow:find("󰃨", 1, true) and narrow:find("GaugeEmpty", 1, true) then
+    saw_cache_yield = true
+    break
+  end
+end
+assert(saw_cache_yield, "cache never yielded while context meter remained")
+state.live_usage[buf] = nil
+
 local function graph_width(bar)
   local width = 0
   for _, glyph in ipairs({ "", "", "", "", "", "" }) do

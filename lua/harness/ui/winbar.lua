@@ -1,8 +1,4 @@
--- Winbar rendering — the self-evaluating `%!` statusline at the top of a
--- yap session buffer: busy beacon (or the buffer's own state icon), global
--- rollup island, session title, provider/model island and usage/cost chips.
--- Usage/cost chips remain on the right. The spinner only redraws the display
--- while the turn is running; progress frames carry live tool output.
+-- Winbar rendering: state, other sessions, title, centered identity and usage.
 
 local M = {}
 
@@ -170,16 +166,9 @@ local function winbar_title(buf, max)
   return d and view.truncate_display(d, max or 40) or nil
 end
 
--- Layout: a spinner beacon on the left (this buffer streaming, plus the
--- running tool's name once it has run 2s) or this buffer's state icon
--- (stopped/error/waiting/idle), then the global-session rollup island and
--- the description on the left; a centered provider/model island with the
--- three-stop fold view switch to its right (in the active bar only — an
--- inactive bar keeps the switch on the left); usage counters and context
--- meter on the right. As the window narrows the active bar drops the fold
--- switch before the model island; an inactive bar keeps the switch and drops
--- its session label instead. Usage counters and context meter retain their
--- existing width priorities.
+-- Layout: state, other-session rollup and title on the left; a centered
+-- model island (session label when inactive); usage, cache and context on
+-- the right. When narrow, cache yields before context.
 local function render_winbar(buf)
   local provider, model = config.current_combo(buf)
   local icons = require("harness").config.icons
@@ -198,8 +187,8 @@ local function render_winbar(buf)
     gutter = wins[1].textoff or 0
   end
 
-  local function seg(text, group, island, cursive, click)
-    return { text = text, group = group, island = island, cursive = cursive, click = click }
+  local function seg(text, group, island, cursive)
+    return { text = text, group = group, island = island, cursive = cursive }
   end
   local function render_seg(s, upright)
     upright = upright and s.upright ~= false
@@ -214,7 +203,7 @@ local function render_winbar(buf)
         text = winbar_hl(s.text, (style or "") .. (s.group or "Idle"))
       end
     end
-    return s.click and ("%" .. s.click .. "@v:lua.YapFoldViewClick@" .. text .. "%T") or text
+    return text
   end
   local function width_of(segs)
     local n = 0
@@ -224,27 +213,12 @@ local function render_winbar(buf)
     return n
   end
 
-  -- The three-stop fold view switch. Rendered with its own groups (not the
-  -- upright style the center section applies), so it looks identical whether
-  -- it sits in the left cluster (inactive bar) or beside the model island
-  -- (active bar).
-  local function fold_switch_segs()
-    local selected = require("harness.ui.fold").level(win)
-    local stops = {}
-    for level = 1, 3 do
-      local s = seg(" " .. level .. " ", level == selected and "ViewActive" or "ViewInactive", false, false, level)
-      s.upright = false
-      stops[#stops + 1] = s
-    end
-    return stops
-  end
-
   local rollup_counts = not inactive and other_session_counts(buf) or nil
 
   -- Mandatory left cluster (never dropped; the description shrinks). Build
   -- logical items first, with breathing room between sections rather than
   -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
-  local function left_segments(desc_max, show_switch)
+  local function left_segments(desc_max)
     local left = {}
     local has_item = false
     local function add_item(item)
@@ -345,12 +319,6 @@ local function render_winbar(buf)
     elseif icon_width > 0 then
       -- No gutter (e.g. line numbers off): the icon is the leftmost item.
       add_item(state_icons)
-    end
-
-    -- The fold-view switch lives in the left cluster only for an inactive
-    -- bar; the active bar parks it to the right of the centered model island.
-    if show_switch then
-      add_item(fold_switch_segs())
     end
 
     -- Tool text belongs to the text region, ahead of the rollup. A queued
@@ -491,9 +459,9 @@ local function render_winbar(buf)
   end
 
   -- Usage counters and context meter stay right-aligned.
-  -- As the bar narrows, costs, tokens and then the meter itself drop; the
-  -- model name in the center outlives all three.
-  local function usage_segment(mode, show_context)
+  -- As the bar narrows, costs, tokens, cache and then the meter drop; the
+  -- model name in the center outlives the right-side metrics.
+  local function usage_segment(mode, show_context, show_cache)
     local chips = {} -- each chip: { { text, group }, ... }
     local live = state.live_usage[buf]
     local function include_live(base)
@@ -541,7 +509,7 @@ local function render_winbar(buf)
     end
 
     local context = show_context and context_segment() or nil
-    local cache = cache_parts()
+    local cache = show_cache and cache_parts() or nil
     if #chips == 0 and not context and not cache then
       return nil
     end
@@ -577,44 +545,21 @@ local function render_winbar(buf)
     return segs
   end
 
-  -- The center section holds the model island and, in the active bar, the
-  -- fold-view switch to its right. Inactive sessions show their session
-  -- identity instead of a model that is only useful while that session is
-  -- selected. The switch is added with a matching blank on the left so the
-  -- model name stays centered even though the whole section grows. When the
-  -- window is too narrow, the active bar drops the switch and keeps the island;
-  -- an inactive bar drops its label and keeps the switch (see render_winbar).
-  local function center_segments(show_model, switch_in_center)
-    local switch_segs = switch_in_center and fold_switch_segs() or nil
-    if not show_model and not switch_segs then
-      return nil
+  -- Active windows center the model; inactive windows center the session label.
+  local function center_segments()
+    local text = provider .. "/" .. model
+    if inactive then
+      local label = session.label(vim.b[buf].yap_path, full_title(buf))
+      text = view.truncate_display(label, 40)
     end
-    local center = {}
-    if show_model then
-      local text = provider .. "/" .. model
-      if inactive then
-        local label = session.label(vim.b[buf].yap_path, full_title(buf))
-        text = view.truncate_display(label, 40)
-      end
-      if switch_segs then
-        -- Blank left of the island: the switch width plus its two-column gap.
-        center[#center + 1] = seg(string.rep(" ", width_of(switch_segs) + 2), "Idle")
-      end
-      center[#center + 1] = seg(" ", "Idle")
-      center[#center + 1] = seg("", "IslandCap")
-      center[#center + 1] = seg(" ", "Count", true)
-      center[#center + 1] = seg(text, "Model", true, true)
-      center[#center + 1] = seg(" ", "Count", true)
-      center[#center + 1] = seg("", "IslandCap")
-    end
-    if switch_segs then
-      center[#center + 1] = seg(show_model and "  " or " ", "Idle")
-      for _, s in ipairs(switch_segs) do
-        center[#center + 1] = s
-      end
-      center[#center + 1] = seg(" ", "Idle")
-    end
-    return center
+    return {
+      seg(" ", "Idle"),
+      seg("", "IslandCap"),
+      seg(" ", "Count", true),
+      seg(text, "Model", true, true),
+      seg(" ", "Count", true),
+      seg("", "IslandCap"),
+    }
   end
 
   -- The state icon now lives on the left (see left_segments); the right
@@ -625,13 +570,7 @@ local function render_winbar(buf)
     for _, s in ipairs(left) do
       parts[#parts + 1] = render_seg(s)
     end
-    -- `%=` centers the island between the two side clusters, not at the
-    -- window's midpoint, so an asymmetric pair (a fresh session has no
-    -- gauge yet) drifts off center. Pad the narrower side so both are
-    -- equal width and the island lands on the true midpoint. Only the model
-    -- island (or an inactive session's label) needs that true centering: a
-    -- lone fold-view switch floats in whatever gap remains, so padding a
-    -- side for it wastes width and clips the title on a narrow bar.
+    -- Balance the side clusters so the island lands at the true midpoint.
     if centered and left_width < right_width then
       parts[#parts + 1] = string.rep(" ", right_width - left_width)
     end
@@ -655,10 +594,8 @@ local function render_winbar(buf)
 
   -- Preserve real centering: drop the middle when either edge cluster
   -- would collide with it, then degrade the right side.
-  -- Layout negotiation tries several widths synchronously. Only the title
-  -- limit, switch/model visibility and usage mode change between attempts;
-  -- reuse completed segments instead of re-counting sessions and usage for
-  -- each rejected layout.
+  -- Layout negotiation tries several widths synchronously. Only title limit,
+  -- model visibility and usage mode change between attempts; reuse segments.
   local left_cache, center_cache, usage_cache = {}, {}, {}
   local function cached(cache, key, build)
     if cache[key] == nil then
@@ -666,28 +603,20 @@ local function render_winbar(buf)
     end
     return cache[key] or nil
   end
-  local desc_max, mode, show_model, show_switch, show_context = 40, "full", true, true, true
+  local desc_max, mode, show_model, show_cache, show_context = 40, "full", true, true, true
   while true do
-    local show_left_switch = inactive and show_switch
-    local left = cached(left_cache, desc_max .. ":" .. tostring(show_left_switch), function()
-      return left_segments(desc_max, show_left_switch)
+    local left = cached(left_cache, desc_max, function()
+      return left_segments(desc_max)
     end)
-    local switch_in_center = not inactive and show_switch
-    local center = (show_model or switch_in_center)
-        and cached(center_cache, tostring(show_model) .. ":" .. tostring(switch_in_center), function()
-          return center_segments(show_model, switch_in_center)
-        end)
-      or nil
-    local usage = not inactive and cached(usage_cache, mode .. ":" .. tostring(show_context), function()
-      return usage_segment(mode, show_context)
+    local center = show_model and cached(center_cache, true, center_segments) or nil
+    local usage = not inactive and cached(usage_cache, mode .. ":" .. tostring(show_cache) .. ":" .. tostring(show_context), function()
+      return usage_segment(mode, show_context, show_cache)
     end) or nil
     local left_width = width_of(left)
     local right_width = usage and width_of(usage) or 0
     local center_width = center and width_of(center) or 0
     local total = left_width + center_width + right_width
-    -- Only the model island (or an inactive session's label) needs true
-    -- centering; a switch alone can sit anywhere it fits. So the centering
-    -- constraint applies only while the model is still shown.
+    -- Centering applies only while the model or inactive label is shown.
     local fits = total <= width
     if center and show_model then
       fits = fits
@@ -697,44 +626,23 @@ local function render_winbar(buf)
     if fits then
       return render(left, center, usage, left_width, right_width, show_model)
     end
-    -- The drop order, one rung per attempt. The model name is this session's
-    -- identity, so the right-side metrics give way before it does: costs,
-    -- then token counts, then the context meter. An active bar also gives up
-    -- its fold switch early; an inactive bar has no model, only a session
-    -- label, so it keeps the switch and drops the label instead.
-    if show_switch and not inactive then
-      show_switch = false
-    elseif mode == "full" then
+    -- Costs, token counts, cache, then context yield before the identity.
+    if mode == "full" then
       mode = "compact"
     elseif mode == "compact" then
       mode = "prices"
+    elseif show_cache then
+      show_cache = false
     elseif show_context then
       show_context = false
     elseif show_model then
       show_model = false
-    elseif show_switch then
-      show_switch = false
     elseif desc_max > 15 then
       desc_max = desc_max - 5
     else
       return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
     end
   end
-end
-
---- Select a fold view from the winbar. The click belongs to the window under
---- the mouse, which can differ from the current window in a split.
-_G.YapFoldViewClick = function(level, _, button)
-  if button ~= "l" or level < 1 or level > 3 then
-    return
-  end
-  local win = vim.fn.getmousepos().winid
-  if win == 0 or not vim.api.nvim_win_is_valid(win) then
-    return
-  end
-  vim.api.nvim_win_call(win, function()
-    require("harness.ui.fold").set_view_level(level)
-  end)
 end
 
 --- Winbar expression: the winbar is set to a self-evaluating `%!` call of
@@ -776,8 +684,6 @@ local function define_winbar_hl()
   local links = {
     Model = "Keyword",
     Description = "Title",
-    ViewActive = "Keyword",
-    ViewInactive = "Comment",
     Busy = "DiagnosticOk",
     Done = "DiagnosticOk",
     Idle = "Comment",
@@ -810,7 +716,6 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  vim.api.nvim_set_hl(0, "YapViewActive", { fg = attr("YapModel", "fg") or fg, bg = bg, bold = true })
   -- The context meter is a raised pill, distinct from the surrounding bar.
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({

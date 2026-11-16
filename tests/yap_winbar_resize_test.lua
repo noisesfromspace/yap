@@ -86,9 +86,7 @@ assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. to
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Narrower: the fold switch goes, then tokens become prices, and only then
--- does the center island yield. With the model island gone the prices have
--- the right cluster to themselves.
+-- Narrower: tokens become prices, and only then does the center yield.
 wb = winbar_at(42)
 assert(not wb:match("mock/m1"), "42-col winbar kept the model: " .. wb)
 assert(not wb:match("1.5k") and not wb:match("1.1k"), "42-col winbar kept token counts: " .. wb)
@@ -183,23 +181,9 @@ for mask = 0, 15 do
   local center = bar:match("%%=(.-)%%=")
   if center then
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    if centered_text:find(" 1  2  3 ", 1, true) then
-      -- The switch rides beside the model island and the island surface
-      -- carries the model plus its padding.
-      assert(not centered_text:find("󰘖", 1, true), "fold island leaked into center: " .. centered_text)
-      assert(centered_text:find(" mock/m1 ", 1, true), "switch present without the model island: " .. centered_text)
-      assert(
-        center:find("%#YapIslandCursiveModel#", 1, true) and select(2, center:gsub("%%#YapIslandUprightCount#", "")) == 2,
-        "model and padding must use the island surface: " .. center
-      )
-    else
-      -- The fold switch yields first; the model island survives on its own.
-      assert(centered_text:find(" mock/m1 ", 1, true), "model island missing after the switch dropped: " .. centered_text)
-      assert(
-        center:find("%#YapIslandCursiveModel#", 1, true),
-        "model should keep its island surface after the switch drops: " .. center
-      )
-    end
+    assert(centered_text:find(" mock/m1 ", 1, true), "model island missing: " .. centered_text)
+    assert(not centered_text:find(" 1  2  3 ", 1, true), "fold level leaked into winbar: " .. centered_text)
+    assert(center:find("%#YapIslandCursiveModel#", 1, true), "model missing island surface: " .. center)
   else
     assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)
   end
@@ -237,13 +221,8 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
   local bar = yap.winbar(target)
   local center = bar:match("%%=(.-)%%=")
   if center then
-    -- The model island, when present, uses active caps; a switch-only
-    -- center (model dropped) has no island surface at all.
-    if center:find("%#YapIslandCursiveModel#", 1, true) then
-      assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 2, "center island needs active caps: " .. center)
-    else
-      assert(not center:find("%#YapIslandCap#", 1, true), "switch-only center should have no island caps: " .. center)
-    end
+    assert(center:find("%#YapIslandCursiveModel#", 1, true), "model missing from center: " .. center)
+    assert(select(2, center:gsub("%%#YapIslandCap#", "")) == 2, "center island needs active caps: " .. center)
   end
   local right = assert(bar:match("%%=(.*)$"))
   assert(select(2, right:gsub("%%#YapIslandCap#", "")) >= 4, "visible right islands need active caps: " .. right)
@@ -478,8 +457,7 @@ assert(
   "model text should remain italic inside its island"
 )
 -- Gutter alignment: the state icon (including the running animation) stays
--- centered in the gutter while the rollup island starts at the text edge
--- (the fold-view switch now sits beside the centered model island).
+-- centered in the gutter while the rollup island starts at the text edge.
 do
   local g_target = vim.api.nvim_create_buf(false, true)
   local g_other = vim.api.nvim_create_buf(false, true)

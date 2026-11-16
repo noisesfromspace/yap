@@ -15,53 +15,29 @@ local function bar(win)
   return result
 end
 
-local function stops(win, selected)
+local function no_switch(win)
   local wb = bar(win)
-  for level = 1, 3 do
-    local group = level == selected and "ViewActive" or "ViewInactive"
-    assert(wb:find("%" .. level .. "@v:lua.YapFoldViewClick@%#Yap" .. group .. "# " .. level .. " %*%T", 1, true), wb)
-  end
-  local left = wb:match("^(.-)%%=") or ""
-  local center = wb:match("^.-%%=(.-)%%=")
-  local function has_switch(section)
-    if not section or section == "" then
-      return false
-    end
-    local rendered = vim.api.nvim_eval_statusline(section, { winid = win, use_winbar = true, maxwidth = 120 }).str
-    return rendered:find(" 1  2  3 ", 1, true) ~= nil
-  end
-  -- Active: beside the centered model island. Inactive: stays on the left.
-  local in_center = win == vim.api.nvim_get_current_win()
-  assert(has_switch(left) == (not in_center), "fold switch on the wrong side of the model: " .. wb)
-  if in_center then
-    assert(has_switch(center), "fold switch missing from the centered section: " .. wb)
-  else
-    assert(not has_switch(center), "fold switch leaked into the centered section: " .. wb)
-  end
+  assert(not wb:find("YapFoldViewClick", 1, true), "winbar still offers fold controls: " .. wb)
+  assert(not wb:find("YapViewActive", 1, true), "winbar still shows fold level: " .. wb)
 end
 
-stops(left_win, 2)
+no_switch(left_win)
 vim.cmd("vsplit")
 local right_win = vim.api.nvim_get_current_win()
 fold.set_view_level(3)
-stops(right_win, 3)
-stops(left_win, 2) -- an inactive split keeps its own view
+no_switch(right_win)
+no_switch(left_win)
 assert(fold.level(left_win) == 2 and fold.level(right_win) == 3)
 
-local getmousepos = vim.fn.getmousepos
-vim.fn.getmousepos = function()
-  return { winid = left_win }
-end
-_G.YapFoldViewClick(1, 1, "l", "    ")
-assert(fold.level(left_win) == 1 and fold.level(right_win) == 3, "click changed the wrong window")
-stops(left_win, 1)
-_G.YapFoldViewClick(2, 1, "r", "    ")
-assert(fold.level(left_win) == 1, "right click changed view")
-vim.fn.getmousepos = getmousepos
+vim.api.nvim_set_current_win(left_win)
+fold.set_view_level(1)
+assert(fold.level(left_win) == 1 and fold.level(right_win) == 3, "view change affected another window")
+no_switch(left_win)
+vim.api.nvim_set_current_win(right_win)
 
 vim.wo[right_win].number = false
 vim.wo[right_win].signcolumn = "no"
-stops(right_win, 3) -- indicator survives without a gutter
+no_switch(right_win) -- no gutter required
 
 -- Give the right edge priority when space is scarce.
 vim.api.nvim_set_current_win(right_win)
@@ -69,14 +45,11 @@ vim.b[buf].yap_usage = { prompt = 1000, completion = 100, cost = 0.02 }
 vim.b[buf].yap_session_usage = { prompt = 2500, completion = 100, cost = 0.04 }
 vim.api.nvim_win_set_width(right_win, 25)
 local narrow = bar(right_win)
-assert(narrow:find("1.1k", 1, true) and narrow:find("2.6k", 1, true), narrow)
-assert(not narrow:find("YapViewActive", 1, true), "switch crowded out usage: " .. narrow)
+assert(narrow:find("$0.02", 1, true) and narrow:find("$0.04", 1, true), narrow)
+assert(not narrow:find("YapViewActive", 1, true), "fold level appeared in a narrow bar: " .. narrow)
 
--- The model island outranks the fold switch in the active bar: when the two
--- cannot both fit, the switch drops first and the model name (and the full
--- title) survive. A lone switch must never float in the center without the
--- model. (The bar only reaches these widths after `columns` is raised and
--- applied by returning to a single window.)
+-- The model island keeps the center as the bar narrows. Fold levels never
+-- appear in the bar, but remain available through the view keymaps.
 do
   local icons = yap.config.icons
   vim.o.columns = 200
@@ -102,7 +75,7 @@ do
     if rendered:find("mock/m1", 1, true) then
       assert(
         not rendered:find(" 1  2  3 ", 1, true),
-        "switch should drop before the model island at " .. cols .. " cols: " .. rendered
+        "fold levels appeared at " .. cols .. " cols: " .. rendered
       )
       assert(
         rendered:find(icons.idle, 1, true) and rendered:find("A session title", 1, true),
