@@ -147,10 +147,9 @@ end
 --- Find an open buffer for a saved session and return its live picker status.
 local function saved_session_status(path)
   local normalized = vim.fs.normalize(path)
-  -- An open history row has a state icon, even when idle; closed rows have
-  -- no status column, so they sit flush against the picker's left edge.
+  -- Closed rows have no live status, even if their buffer still exists.
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.b[buf].yap then
+    if vim.api.nvim_buf_is_loaded(buf) and vim.b[buf].yap then
       local name = vim.b[buf].yap_path or vim.api.nvim_buf_get_name(buf)
       if name ~= "" and vim.fs.normalize(name) == normalized then
         return picker.status(buf)

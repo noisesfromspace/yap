@@ -24,14 +24,7 @@ local function rows()
   vim.ui.select = function(items, opts)
     captured = { items = items, format = opts.format_item }
   end
-  session.pick({
-    status = function(path)
-      local buf = vim.fn.bufnr(path)
-      if buf ~= -1 and vim.b[buf].yap then
-        return picker.status(buf)
-      end
-    end,
-  })
+  yap.sessions()
   local out = {}
   for _, item in ipairs(captured.items) do
     out[item.child_kind or "root"] = captured.format(item)
@@ -51,4 +44,13 @@ assert(
   "running subagent row lacks the running glyph: " .. running_row
 )
 state.running[child] = nil
+vim.api.nvim_buf_delete(child, { unload = true })
+local closed_row = assert(rows().agent, "closed subagent missing from the picker")
+local closed_item = vim.iter(session.list()):find(function(item)
+  return item.child_kind == "agent"
+end)
+assert(
+  closed_row == picker.prefix(nil, picker.icon_width(glyphs)) .. closed_item.rail .. closed_item.text,
+  "closed subagent should show no status glyph: " .. closed_row
+)
 print("OK picker tree")

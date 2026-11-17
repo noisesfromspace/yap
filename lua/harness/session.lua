@@ -703,8 +703,7 @@ function M.pick(opts, on_choice)
   end
   -- Reserve the status column even for closed rows (and when every row is
   -- closed), so descendants never shift as sessions open and close.
-  local glyphs = picker.glyphs()
-  local icon_width = picker.icon_width(glyphs)
+  local icon_width = picker.icon_width(picker.glyphs())
   local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
@@ -718,12 +717,10 @@ function M.pick(opts, on_choice)
       if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
         label = label:sub(#project + 3)
       end
-      -- A subagent row carries its state glyph at the type-glyph position,
-      -- not in the left status column: the state (running, done, idle) is
-      -- what tells it apart from a fork.
+      -- Show a subagent's live status after the rail, if it has one.
       local inline = item.icon
       if item.child_kind == "agent" then
-        inline = icon or glyphs.idle
+        inline = icon
         icon = nil
       end
       label = (item.rail or "") .. (inline and inline .. " " or "") .. label

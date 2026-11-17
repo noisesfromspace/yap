@@ -553,12 +553,12 @@ require("harness").sessions(scope) is the session picker. `"cwd"` (the
 default) lists saved sessions for the current project; `"all"` lists every
 saved session across all projects under the sessions root, suffixing each root
 row with its project so sessions from different worktrees are distinguishable.
-Both scopes annotate open rows with a live status icon and nest forks (always)
-and subagents (only while their parent is open) under their parent, drawn as a
-box-drawing tree with a fork glyph per row. A subagent row carries its own
-state glyph where a fork shows its fork glyph, so the tree reads as a state
-per row rather than a type per row. Subagents (`b:yap_agent`)
-remain unlisted and excluded from the winbar overview.
+Both scopes nest forks (always) and subagents (only while their parent is
+open) under their parent. Forks have a fork glyph after the tree branch.
+Open rows show a live status icon, in the left column for ordinary sessions
+and forks, and after the tree branch for subagents. Closed subagents show no
+status icon. Subagents (`b:yap_agent`) remain unlisted and excluded from the
+winbar overview.
 
 File operations are the session operations:
 
