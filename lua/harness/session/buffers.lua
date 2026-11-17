@@ -282,6 +282,7 @@ local function adopt(buf, path)
   -- A reopened session that ended on `# @user` awaits the next reply;
   -- seed the overview hint so it counts before its first send here.
   winbar.seed_awaiting(buf)
+  winbar.seed_error(buf)
   setup_buffer(buf)
   require("harness.client.scratch").ensure_file(buf)
   audit.ensure(buf) -- the live tool tail (empty until a tool runs)

@@ -175,21 +175,12 @@ assert(
   vim.api.nvim_win_get_cursor(0)[1] == stop_row,
   "stop moved the cursor away from where it was parked"
 )
--- M.stop() closes the stream immediately; the process exit callback may lag behind.
-local repaired = vim.wait(5000, function()
-  return table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n"):match("<!%-%- /yap:tool %-%-%>") ~= nil
-end, 20)
-assert(repaired, "tool region not closed after stop")
-
+assert(vim.wait(5000, function() return not yap.is_running(buf2) end, 20), "stop did not settle")
 local stopped_lines = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
-assert(
-  stopped_lines[#stopped_lines - 1] == "# @user" and stopped_lines[#stopped_lines] == "",
-  "stopped stream did not end in a closed user block"
-)
 local t2 = table.concat(stopped_lines, "\n")
+assert(not t2:find("<!-- yap:tool", 1, true), "incomplete tool turn entered history")
+assert(t2:match("# @user\n%s*run again; I will stop you$"), "stopped prompt not restored: " .. t2)
 local ok, msgs2 = pcall(document.messages, buf2)
 assert(ok, "buffer unparseable after stop")
--- the tool-bearing assistant message still has its (empty) result flattened
-local last = msgs2[#msgs2]
-assert(last.role == "assistant", "dangling tool state after stop: " .. vim.inspect(last.role))
+assert(msgs2[#msgs2].role == "user" and msgs2[#msgs2].content == "run again; I will stop you", "wrong retry prompt")
 print("OK livetool")

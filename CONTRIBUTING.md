@@ -94,7 +94,7 @@ flowchart TD
     C --> D["Append transient context tail (from registered providers) to trailing user msg"]
     D --> E["Send one JSON Lines record per turn (full messages array) on stdin"]
     E --> F["Stream reply in — append-only, existing lines never rewritten"]
-    F --> G["On exit: repair dangling markers, append # @user heading, save via write!"]
+    F --> G["Success: append # @user; error/stop: restore sent prompt, exclude partial reply"]
     G --> A
 ```
 
@@ -212,6 +212,11 @@ it against the cache metrics (`cache_read`/`cache_write` in the audit log and
 winbar) rather than assuming. Why: caching is the dominant input-cost lever,
 and a regression here shows up only as higher spend, not as a test failure.
 
+Transient generation errors are retried only before the provider has emitted
+output. A failed or cancelled turn clears native history before the next send;
+its incomplete assistant output is removed from the transcript. The next turn
+starts cold rather than replaying a prefix across a failed attempt.
+
 Measure with `usage` lines, not `turn_end`. Each `usage` line carries the
 per-step `step_cache_read` beside the cumulative totals, so a turn's flattening
 cost is the gap between step 1 and the rest rather than an average that hides
@@ -296,6 +301,15 @@ message, streamed text → first tool header).
 
 (Bug of record: regions prepended `\n\n` while regions also ended in `\n`,
 giving two blank lines between tool calls.)
+
+A successful turn appends an empty `# @user` after its assistant reply. A
+cancelled or failed turn instead removes that turn's incomplete assistant
+reply and restores the sent user prompt for revision or retry. Failures leave
+a parse-excluded error marker immediately above the restored prompt; reopening
+the session restores its error indicator. The audit log keeps the turn's
+terminal status and tool events. No failed assistant fragment is sent as a
+completed answer on the next turn. A rejected pre-flight send changes neither
+the transcript nor the status; no turn started.
 
 Why: readable diffs, stable folds, gptel-like staticness. (Bug of record:
 hand-rolled `"\n"` prefixes broke separation when trailing-blank trimming was
@@ -703,9 +717,12 @@ makes slimmed headers (R-tool-region) and `:YapClear` lossless.
 
 #### R-error-surface — Errors surface three ways
 
-`vim.notify` (transient), winbar error state (persistent until next send), and
-a parse-excluded buffer marker (record). Spawn failures of the binary are
-caught and reported the same way.
+`vim.notify` (transient), winbar error state (persistent until the next
+accepted send, restored when reopening a session), and a parse-excluded buffer
+marker before the original user prompt (record). Spawn failures of the binary
+are caught and reported the same way. Stopping shows an unwinding icon only
+while the backend finishes the current step; a stopped turn returns to an
+editable draft without a lingering stop icon.
 
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 

@@ -409,6 +409,11 @@ func Run(ctx context.Context, providerName, model string, req Request, outw io.W
 // next.
 func RunCached(ctx context.Context, providerName, model string, req Request, outw io.Writer, poll func() Boundary, shouldStop func() bool, hist *NativeHistory) (retErr error) {
 	start := time.Now()
+	defer func() {
+		if hist != nil && retErr != nil {
+			*hist = NativeHistory{} // failed sends cannot extend the last good native prefix
+		}
+	}()
 	// Install the turn's context so foreground tools can abort on cancellation.
 	wire.SetTurnContext(ctx)
 	defer wire.SetTurnContext(context.Background())
@@ -573,6 +578,9 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 	switched := false
 	// A terminal audit record is written for every turn.
 	defer func() {
+		if hist != nil && turnError != nil {
+			*hist = NativeHistory{}
+		}
 		status := "ok"
 		var msg string
 		switch {
@@ -733,6 +741,7 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 				pad()
 				fmt.Fprintf(out, "<!-- yap:error\nmodel emitted a %s as plain text; the tool was not executed\n-->\n\n", label)
 				wire.EmitEvent(map[string]any{"type": "tool_text_warning", "detail": label})
+				turnError = fmt.Errorf("model emitted a %s as plain text", label)
 			} else if strings.TrimSpace(t.text) == "" {
 				// An empty completion is always an anomaly (provider hiccup,
 				// token budget eaten by reasoning, model expected tools that

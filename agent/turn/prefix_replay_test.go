@@ -212,7 +212,33 @@ func TestNativeHistoryColdWhenTranscriptEdited(t *testing.T) {
 	assertFlattened(t, followUpParams(t, &NativeHistory{}, edited).Messages)
 }
 
-// TestNativeHistoryColdOnModelSwitch: a native array belongs to the model that
+// TestNativeHistoryColdAfterFailedTurn: a failure invalidates the previous
+// successful prefix, even if the frontend restored the original prompt.
+func TestNativeHistoryColdAfterFailedTurn(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+	model := &prefixCaptureModel{}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return prefixCaptureProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+	hist := &NativeHistory{}
+	noBoundary := func() Boundary { return Boundary{} }
+	var out bytes.Buffer
+	if err := RunCached(context.Background(), "mock", "m1", Request{Messages: []Message{{Role: "user", Content: "go"}}}, &out, noBoundary, nil, hist); err != nil {
+		t.Fatal(err)
+	}
+	if len(hist.native) == 0 {
+		t.Fatal("successful turn did not populate history")
+	}
+	// Model construction fails before any output. The next turn must not
+	// continue the last good native array across that failed send.
+	if err := RunCached(context.Background(), "missing", "m1", Request{Messages: []Message{{Role: "user", Content: "fail"}}}, &out, noBoundary, nil, hist); err == nil {
+		t.Fatal("missing provider succeeded")
+	}
+	if len(hist.native) != 0 {
+		t.Fatal("failed turn retained native history")
+	}
+}
 // produced it; a different combo starts cold.
 func TestNativeHistoryColdOnModelSwitch(t *testing.T) {
 	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)

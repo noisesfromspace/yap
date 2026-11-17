@@ -58,11 +58,8 @@ local icons = require("harness").config.icons
 assert(bar:find("%#YapError#" .. icons.error, 1, true), "winbar has no error state: " .. bar)
 local text = table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n")
 assert(text:match("<!%-%- yap:error"), "no error marker in buffer")
-local err_lines = vim.api.nvim_buf_get_lines(buf2, 0, -1, false)
-assert(
-  err_lines[#err_lines - 1] == "# @user" and err_lines[#err_lines] == "",
-  "failed stream did not end in a closed user block"
-)
+assert(not text:find("# @assistant", 1, true), "failed turn left a phantom assistant reply: " .. text)
+assert(text:match("# @user\n\nhi$"), "failed turn did not restore the sent prompt: " .. text)
 -- Errors surface in the unified session picker with an error status icon.
 -- The active session is intentionally omitted, so inspect from another buffer.
 vim.cmd("enew")
@@ -86,8 +83,14 @@ assert(
 )
 -- next parse excludes the error
 local msgs2 = document.messages(buf2)
+assert(msgs2[#msgs2].content == "hi", "failed prompt was not restored: " .. vim.inspect(msgs2))
 for _, m in ipairs(msgs2) do
   assert(not m.content:match("unknown provider"), "error text leaks into messages")
 end
--- 3. winbar error clears on next send attempt start (will fail again, but transiently clears)
+-- An error remains visible after reopening, while the draft still sends cleanly.
+local path = vim.b[buf2].yap_path
+vim.api.nvim_buf_delete(buf2, { force = true })
+local reopened = yap.open(path)
+assert(require("harness.ui.picker").state(reopened) == "error", "reopened error lost its status")
+assert(document.messages(reopened)[#document.messages(reopened)].content == "hi", "reopened retry prompt changed")
 print("OK")

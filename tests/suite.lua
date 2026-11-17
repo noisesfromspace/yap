@@ -93,6 +93,7 @@ local CASES = {
   { name = "yap_fold_mouse_test", port = 18132 },
   { name = "yap_think_test", port = 18132 },
   { name = "yap_error_test", port = 18132 },
+  { name = "yap_turn_positions_test", port = 18132 },
   { name = "yap_ml_test", port = 18132 },
   { name = "yap_streamfold_test", port = 18132 },
   { name = "yap_marker_test", port = 18132 },

@@ -45,6 +45,7 @@ local pending_approvals = state.pending_approvals
 local close_after_turn = state.close_after_turn
 local follow_override = state.follow_override
 local stop_focus = {} -- buf -> window that pressed the stop key
+local turn_start_ns = vim.api.nvim_create_namespace("yap_turn_start")
 
 local function focus_stopped_prompt(buf, revise)
   local win = stop_focus[buf]
@@ -306,6 +307,24 @@ local function error_category(code)
   return nil
 end
 
+--- Remove the incomplete assistant turn and return to the prompt that
+--- started it. The extmark follows edits above the streaming reply.
+local function restore_prompt(buf, anchor)
+  local mark = vim.api.nvim_buf_get_extmark_by_id(buf, turn_start_ns, anchor, {})
+  vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
+  if #mark == 0 then
+    return
+  end
+  local first = mark[1]
+  if first > 0 and vim.api.nvim_buf_get_lines(buf, first - 1, first, false)[1] == "" then
+    first = first - 1 -- remove the separator inserted before # @assistant
+  end
+  local fold = require("harness.ui.fold")
+  fold.before_change(buf)
+  vim.api.nvim_buf_set_lines(buf, first, -1, false, {})
+  fold.after_append(buf)
+end
+
 --- Report an error and record it as a parse-excluded marker in the buffer.
 --- `code` is the wire error code (nil for a backend exit, which is
 --- classed as internal); it selects the notify category and is stored in
@@ -318,7 +337,27 @@ local function report_error(buf, err, code)
   local lines = { "<!-- yap:error" }
   vim.list_extend(lines, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(lines, "-->")
-  document.append_lines(buf, lines)
+  -- Keep the restored user prompt last, so the cursor lands in the draft,
+  -- not on the error record. The marker is never sent to the provider.
+  local headings = require("harness.model.structure").parse(buf).headings
+  local heading = headings[#headings]
+  if heading and heading.role == "user" then
+    local fold = require("harness.ui.fold")
+    fold.before_change(buf)
+    -- The heading already sits behind one blank line (R-blank-lines). Only
+    -- add a leading separator when a hand edit glued content to the heading.
+    local prev = vim.api.nvim_buf_get_lines(buf, heading.line - 2, heading.line - 1, false)[1]
+    local marker = {}
+    if prev and prev:match("%S") then
+      marker[#marker + 1] = ""
+    end
+    vim.list_extend(marker, lines)
+    marker[#marker + 1] = ""
+    vim.api.nvim_buf_set_lines(buf, heading.line - 1, heading.line - 1, false, marker)
+    fold.after_append(buf)
+  else
+    document.append_lines(buf, lines)
+  end
   -- A delegated failure is returned to the running parent as a tool result;
   -- a direct follow-up in the child should still report its own error.
   local parent = vim.b[buf].yap_subagent_parent
@@ -372,20 +411,36 @@ local function leave_undelivered_steer(buf)
   end
 end
 
---- Every stream exit, including errors and stop(), hands the buffer back
---- to the user in the same writable shape as a successful turn.
-local function close_stream(buf)
+--- Hand the buffer back to the user. Only a successful answer opens a new
+--- prompt; a failure or stop restores the sent prompt for retry/revision.
+local function close_stream(buf, outcome, anchor, err, code)
   repair_stream_tail(buf)
-  document.append_lines(buf, { "# @user", "" })
-  awaiting[buf] = true
+  if outcome == "ok" then
+    vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
+    document.append_lines(buf, { "# @user", "" })
+    awaiting[buf] = true
+    stopped[buf] = nil
+  else
+    -- A close_session request belongs to a successful turn only.
+    close_after_turn[buf] = nil
+    restore_prompt(buf, anchor)
+    awaiting[buf] = nil
+    stopped[buf] = nil -- the stop icon describes unwinding, not a finished draft
+    if outcome == "error" then
+      report_error(buf, err, code)
+    end
+  end
+  vim.b[buf].yap_turn_anchor = nil
   model_switch[buf] = nil
-  state.clear_queued[buf] = nil
+  if outcome ~= "ok" then
+    state.clear_queued[buf] = nil
+  end
   session.save(buf)
   leave_undelivered_steer(buf)
   if subagent_done[buf] then
     local done = subagent_done[buf]
     subagent_done[buf] = nil
-    done(false)
+    done(outcome == "ok")
   end
 end
 --- Serialize the current buffer and stream the assistant reply into it.
@@ -443,11 +498,8 @@ function M.send(buf)
   -- it never perturbs the prompt cache.
   local system_prompt = system.about(buf)
 
-  errors[buf] = nil
-  state.error_code[buf] = nil
-  stopped[buf] = nil
-  awaiting[buf] = nil
-  model_switch[buf] = nil
+  -- A refused pre-flight send has not started a turn: keep the previous
+  -- disposition until the cost guard has actually authorized this one.
   -- provider/model come from the buffer vars (set by new() /
   -- change_model()), falling back to config; sync them so the winbar
   -- and this send agree.
@@ -463,6 +515,11 @@ function M.send(buf)
   if not costguard.check(buf, provider .. "/" .. model, messages, fm ~= nil and fm.subagent_parent ~= nil) then
     return false
   end
+  errors[buf] = nil
+  state.error_code[buf] = nil
+  stopped[buf] = nil
+  awaiting[buf] = nil
+  model_switch[buf] = nil
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
@@ -479,8 +536,8 @@ function M.send(buf)
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
   document.append_lines(buf, { "# @assistant", "" })
-  local assistant_heading = vim.api.nvim_buf_line_count(buf) - 1
-  local assistant_activity = false
+  local turn_anchor = vim.api.nvim_buf_set_extmark(buf, turn_start_ns, vim.api.nvim_buf_line_count(buf) - 2, 0, { right_gravity = false })
+  vim.b[buf].yap_turn_anchor = turn_anchor
   follow_tail()
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
@@ -551,6 +608,10 @@ function M.send(buf)
       end
     end
     local function complete(result)
+      -- The serve process outlives a turn. Its stdout callback was created
+      -- on the first send, so read the current turn's anchor, not that
+      -- callback's captured first-turn local.
+      local turn_anchor = vim.b[buf].yap_turn_anchor
       if not result.cancelled then
         stop_focus[buf] = nil
       end
@@ -574,53 +635,13 @@ function M.send(buf)
       spinner.stop_if_idle()
       repair_stream_tail(buf)
       if result.cancelled then
-        local revise = not assistant_activity
-        if revise then
-          for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, assistant_heading, -1, false)) do
-            if line:match("%S") then
-              revise = false
-              break
-            end
-          end
-        end
-        if revise then
-          -- No reply or tool call landed: the last user message is still
-          -- the draft. Remove only the empty assistant heading and separator.
-          local fold = require("harness.ui.fold")
-          fold.before_change(buf)
-          vim.api.nvim_buf_set_lines(buf, assistant_heading - 2, -1, false, {})
-          if
-            document.trailing_role(buf) == "user"
-            and vim.api.nvim_buf_get_lines(buf, -2, -1, false)[1] == "# @user"
-          then
-            vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "" })
-          end
-          fold.after_append(buf)
-        end
-        -- A user-initiated stop: the turn was cancelled but the serve
-        -- process stays alive (tool state survives).
-        -- No error marker — the user asked for this. Clear any parked
-        -- approval so the guard board reflects the settled turn.
         pending_approvals[buf] = nil
         guard.touch()
         scratchmod.finish_queue(buf, false)
-        if revise then
-          awaiting[buf] = true
-          model_switch[buf] = nil
-          state.clear_queued[buf] = nil
-          session.save(buf)
-          leave_undelivered_steer(buf)
-          if subagent_done[buf] then
-            local done = subagent_done[buf]
-            subagent_done[buf] = nil
-            done(false)
-          end
-        else
-          close_stream(buf)
-          follow_tail()
-        end
+        close_stream(buf, "stopped", turn_anchor)
+        follow_tail()
         close_if_requested(buf)
-        focus_stopped_prompt(buf, revise)
+        focus_stopped_prompt(buf, true)
         return
       end
       if not result.ok then
@@ -630,55 +651,38 @@ function M.send(buf)
           code, err = err.code, err.message
         end
         err = err or stderr
-        report_error(buf, err ~= "" and err or "backend exited", code)
         scratchmod.finish_queue(buf, false)
-        close_stream(buf)
+        close_stream(buf, "error", turn_anchor, err ~= "" and err or "backend exited", code)
         follow_tail()
         close_if_requested(buf)
         return
       end
-      -- The binary can complete "successfully" with an embedded error
-      -- marker (e.g. empty completion, max tool iterations): surface it.
-      -- Read it from the structural parse, so a marker quoted inside a fenced
-      -- result is not mistaken for a real one.
+      local embedded_error
       do
         local p = require("harness.model.structure").parse(buf)
         local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-        local last_heading = p.headings[#p.headings]
-        local from = last_heading and last_heading.line or 0
-        local err
+        local anchor_line = vim.api.nvim_buf_get_extmark_by_id(buf, turn_start_ns, turn_anchor, {})[1] or #lines
         for _, r in ipairs(p.regions) do
-          if r.kind == "error" and r.start > from then
-            err = lines[r.start + 1] -- the marker's first content line
-          end
-        end
-        if err then
-          errors[buf] = err
-          local parent = vim.b[buf].yap_subagent_parent
-          if not (parent and running[parent]) then
-            vim.notify("yap: " .. err, vim.log.levels.WARN)
+          if r.kind == "error" and r.start > anchor_line then
+            embedded_error = lines[r.start + 1]
           end
         end
       end
-      -- A late steer was never injected: keep it as a draft, not an
-      -- automatically sent follow-up turn. An explicitly armed queue is
-      -- independent of that draft and may start the next turn.
-      document.append_lines(buf, { "# @user", "" })
-      leave_undelivered_steer(buf)
+      if embedded_error then
+        scratchmod.finish_queue(buf, false)
+        close_stream(buf, "error", turn_anchor, embedded_error)
+        follow_tail()
+        close_if_requested(buf)
+        return
+      end
+      close_stream(buf, "ok", turn_anchor)
       follow_tail()
-      awaiting[buf] = true
-      model_switch[buf] = nil
       local queued_clear = state.clear_queued[buf]
       if queued_clear ~= nil then
         state.clear_queued[buf] = nil
         maintain.clear(buf, queued_clear)
       end
       session.save(buf)
-      if subagent_done[buf] then
-        local done = subagent_done[buf]
-        subagent_done[buf] = nil
-        done(not errors[buf])
-      end
       describe.refresh(buf, "answer")
       -- A completed turn is a first-class event (herdr's "working → blocked
       -- → idle" notification). Fire it once the buffer is in its final state
@@ -701,19 +705,12 @@ function M.send(buf)
     end
     local function handle_frame(frame)
       if frame.type == "text" then
-        if (frame.text or ""):match("%S") then
-          assistant_activity = true
-        end
         append(frame.text or "")
         relay_subagent(buf, "text")
         return
       end
       sync_followers()
       if frame.type == "event" then
-        local kind = frame.event and frame.event.type
-        if kind == "tool_start" or kind == "tool_call" or kind == "tool_end" then
-          assistant_activity = true
-        end
         handle_event(buf, frame.event)
       elseif frame.type == "tool_output" then
         audit.tool_output(buf, frame.log, frame.delta)
@@ -726,11 +723,9 @@ function M.send(buf)
           l.ms, l.bytes, l.lines = frame.ms, frame.bytes, frame.lines
         end
       elseif frame.type == "approval_request" then
-        assistant_activity = true
         handle_approval_request(buf, frame)
         relay_subagent(buf, "approval", frame.tool or "tool")
       elseif frame.type == "subagent_request" then
-        assistant_activity = true
         subagent.start(buf, frame)
       elseif frame.type == "close_session" then
         -- Defer to turn completion so the reply streams out and the session
@@ -816,9 +811,10 @@ function M.send(buf)
       end)
     )
     if not ok then
+      running[buf] = nil
+      spinner.cancel(buf)
       spinner.stop_if_idle()
-      report_error(buf, tostring(started))
-      close_stream(buf)
+      close_stream(buf, "error", turn_anchor, tostring(started))
       return false
     end
     handle = started
@@ -862,7 +858,14 @@ function M.send(buf)
     process:write(payload)
   end)
   if not ok then
+    servers[buf] = nil
+    running[buf] = nil
     process:kill(15)
+    spinner.cancel(buf)
+    spinner.stop_if_idle()
+    lsp.notify_streaming(buf, false)
+    follow_override[buf] = nil
+    close_stream(buf, "error", turn_anchor, tostring(err))
     return false
   end
   return true
@@ -910,9 +913,8 @@ function M.stop(buf, opts)
       spinner.cancel(buf)
       pending_approvals[buf] = nil
       spinner.stop_if_idle()
-      repair_stream_tail(buf)
-      close_stream(buf)
-      focus_stopped_prompt(buf)
+      close_stream(buf, "stopped", vim.b[buf].yap_turn_anchor)
+      focus_stopped_prompt(buf, true)
     end
   end
 end

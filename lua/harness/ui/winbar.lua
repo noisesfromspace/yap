@@ -129,6 +129,27 @@ function M.seed_awaiting(buf)
   end
 end
 
+--- On reopen, restore the error signal only when its marker directly
+--- precedes the trailing user prompt. Older error markers remain historical.
+function M.seed_error(buf)
+  local parsed = require("harness.model.structure").parse(buf)
+  local last = parsed.headings[#parsed.headings]
+  if not last or last.role ~= "user" then
+    return
+  end
+  local previous = parsed.headings[#parsed.headings - 1]
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i = #parsed.regions, 1, -1 do
+    local r = parsed.regions[i]
+    if r.finish and r.finish < last.line then
+      if r.kind == "error" and (not previous or r.start > previous.line) then
+        state.errors[buf] = lines[r.start + 1]
+      end
+      return
+    end
+  end
+end
+
 --- The un-truncated generated `description`. Cached per changedtick;
 --- re-reading and re-parsing frontmatter on every redraw is wasted work.
 local title_cache = {} -- buf -> { tick, full }
