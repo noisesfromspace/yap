@@ -85,7 +85,7 @@ diagnostics. See |yap-lsp| for the optional completion source.
 
 `nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
 Icon keys include `since`, `total`, `cache`, `running`, `waiting`, `stopped`,
-`error`, `idle`, `done`, `steer`, `queue`, `approval`, `cap_l`, `cap_r`. Defaults are
+`error`, `idle`, `done`, `steer`, `queue`, `clear`, `approval`, `cap_l`, `cap_r`. Defaults are
 Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the
 typographic spinner and the block gauge. Explicit `icons` entries win; set one
 to `""` to drop it.
@@ -266,6 +266,9 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         placeholder naming the audit-log lines
                         (path:line-range) where the removed output lives.
                         Full output stays in the audit log (|yap-audit|).
+                        While a turn is running, :YapClear queues the clear
+                        to run when that turn completes (a broom icon shows
+                        in the winbar); a second :YapClear cancels it.
 *:YapCompact* *yap-compact*
 :YapCompact [instructions]
                         Insert the built-in compact prompt, append any custom
@@ -718,8 +721,9 @@ icon. When the window is inactive the beacon and the title disappear; the
 state icon stays.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
-(`bash 12s`); a queued `# @queue` follow-up and a pending `# @steer` add a
-tray icon and a steer icon immediately left of that beacon. Fold views remain
+(`bash 12s`); a queued `# @queue` follow-up, a queued :YapClear, and a pending
+`# @steer` add a tray icon, a broom icon and a steer icon immediately left of
+that beacon. Fold views remain
 available through <leader>1..3, but do not occupy the winbar. A rollup island
 totals ALL OTHER yap sessions by state (streaming, awaiting you, stopped,
 errored, idle). After the island: the

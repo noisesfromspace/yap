@@ -22,11 +22,20 @@ local running = state.running
 --- tool output is what keeps long sessions inside the context window.
 function M.clear(buf, keep)
   buf = (buf and buf ~= 0) and buf or vim.api.nvim_get_current_buf()
+  keep = keep or 2
   if running[buf] then
-    vim.notify("yap: turn running; stop it before clearing old tool output", vim.log.levels.WARN)
+    -- A running turn owns the buffer: queue the clear for its completion
+    -- instead of refusing, like a queued message or a pending model switch.
+    -- A second :YapClear while queued cancels it.
+    if state.clear_queued[buf] ~= nil then
+      state.clear_queued[buf] = nil
+      vim.notify("yap: queued clear cancelled", vim.log.levels.INFO)
+    else
+      state.clear_queued[buf] = keep
+      vim.notify("yap: clear queued — runs when the turn completes", vim.log.levels.INFO)
+    end
     return
   end
-  keep = keep or 2
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   -- Map tool-call ids to their JSONL line range (tool_call → tool_result)
   -- so each placeholder can point at the exact lines it replaced.

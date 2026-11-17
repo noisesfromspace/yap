@@ -329,6 +329,7 @@ function M.setup(opts)
       done = "✓",
       steer = "⌁",
       queue = "↧",
+      clear = "⌦",
       model_switch = "⇄",
       approval = "⚠", -- plain-Unicode backup for the shield_alert glyph
       fork = "⑂", -- plain-Unicode fork marker (OCR fork)
@@ -405,6 +406,7 @@ function M.setup(opts)
       end
       state.steer[args.buf] = nil
       state.model_switch[args.buf] = nil
+      state.clear_queued[args.buf] = nil
       running[args.buf] = nil
       pending_approvals[args.buf] = nil
       state.last_tool_call[args.buf] = nil

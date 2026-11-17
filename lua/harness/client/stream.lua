@@ -379,6 +379,7 @@ local function close_stream(buf)
   document.append_lines(buf, { "# @user", "" })
   awaiting[buf] = true
   model_switch[buf] = nil
+  state.clear_queued[buf] = nil
   session.save(buf)
   leave_undelivered_steer(buf)
   if subagent_done[buf] then
@@ -606,6 +607,7 @@ function M.send(buf)
         if revise then
           awaiting[buf] = true
           model_switch[buf] = nil
+          state.clear_queued[buf] = nil
           session.save(buf)
           leave_undelivered_steer(buf)
           if subagent_done[buf] then
@@ -666,6 +668,11 @@ function M.send(buf)
       follow_tail()
       awaiting[buf] = true
       model_switch[buf] = nil
+      local queued_clear = state.clear_queued[buf]
+      if queued_clear ~= nil then
+        state.clear_queued[buf] = nil
+        maintain.clear(buf, queued_clear)
+      end
       session.save(buf)
       if subagent_done[buf] then
         local done = subagent_done[buf]
