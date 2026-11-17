@@ -340,10 +340,11 @@ Set only in yap buffers, except +, g+ and <leader>g, which are global. Every bin
                         before another model step. While it unwinds, the
                         winbar shows a stop icon beside the spinner; press
                         again to terminate its backend and running tools.
-                        Once stopped, the incomplete assistant reply is
-                        removed and the sent user prompt is ready to edit or
-                        resend. A failed turn works the same way, with an
-                        error marker immediately above the restored prompt.
+                        A graceful stop keeps the partial answer and opens a
+                        fresh prompt; a hard stop returns to the sent prompt.
+                        A failed turn keeps the partial reply and an error
+                        marker as a record, excludes both from the next
+                        request, and opens a fresh prompt.
   <leader>m             Change model (picker, see change_model()).
   <leader>g             Open/close the guard board (see guard()).
   <leader>l             Watch the live tool tail (see live()).
@@ -451,8 +452,9 @@ buffer but are never sent to the provider as buffer text:
 
   <!-- yap:thinking   Provider-exposed reasoning (or summaries), streamed in.
                         Folded away with the assistant message.
-  <!-- yap:error      Backend error record, left above the restored user
-                        prompt after a failed send. It is not sent on retry.
+  <!-- yap:error      Backend error record, left after the partial reply of a
+                        failed send. It is not sent on retry, and it also
+                        excludes the partial reply that precedes it.
 
 Tool regions                                                *yap-tool-region*
 
@@ -720,9 +722,10 @@ inside a fenced tool result is literal content, never a message boundary.
 The winbar is the session dashboard. On the left sits the buffer's state icon:
 idle, awaiting your reply after success, stopped (a cancelled turn, shown
 until the next send), stopping while a turn unwinds, error, or done for a
-finished subagent. A cancelled or failed turn restores the sent prompt and
-does not leave an unfinished assistant reply; the error stays as a marker
-above the prompt and the stopped/error icon persists until you send again.
+finished subagent. A graceful stop keeps the partial answer; a hard stop
+restores the sent prompt; a failure keeps the partial and an error marker,
+and excludes both from the next request. The stopped/error icon persists
+until you send again.
 While a turn streams, an animated beacon replaces it: a fixed circle for
 half a second, then a random circle face every 180 ms, slowing to 420 ms once
 a tool has run 2s. When the turn ends the beacon gives way to the awaiting

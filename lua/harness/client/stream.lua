@@ -325,10 +325,29 @@ local function restore_prompt(buf, anchor)
   fold.after_append(buf)
 end
 
+--- Whether nothing streamed after the turn-start heading: an empty
+--- `# @assistant` block. An error with no partial reply falls back to
+--- restoring the prompt instead of leaving a phantom assistant heading.
+local function assistant_block_empty(buf, anchor)
+  local mark = vim.api.nvim_buf_get_extmark_by_id(buf, turn_start_ns, anchor, {})
+  if #mark == 0 then
+    return true
+  end
+  local lines = vim.api.nvim_buf_get_lines(buf, mark[1] + 1, -1, false)
+  for _, l in ipairs(lines) do
+    if l:match("%S") then
+      return false
+    end
+  end
+  return true
+end
+
 --- Report an error and record it as a parse-excluded marker in the buffer.
 --- `code` is the wire error code (nil for a backend exit, which is
 --- classed as internal); it selects the notify category and is stored in
---- state.error_code for programmatic consumers.
+--- state.error_code for programmatic consumers. The marker is appended after
+--- the failed reply (or in its place when nothing streamed); it is never
+--- sent to the provider.
 local function report_error(buf, err, code)
   errors[buf] = err
   state.error_code[buf] = code
@@ -337,27 +356,7 @@ local function report_error(buf, err, code)
   local lines = { "<!-- yap:error" }
   vim.list_extend(lines, vim.split(err:gsub("%-%->", "-- >"), "\n", { plain = true }))
   table.insert(lines, "-->")
-  -- Keep the restored user prompt last, so the cursor lands in the draft,
-  -- not on the error record. The marker is never sent to the provider.
-  local headings = require("harness.model.structure").parse(buf).headings
-  local heading = headings[#headings]
-  if heading and heading.role == "user" then
-    local fold = require("harness.ui.fold")
-    fold.before_change(buf)
-    -- The heading already sits behind one blank line (R-blank-lines). Only
-    -- add a leading separator when a hand edit glued content to the heading.
-    local prev = vim.api.nvim_buf_get_lines(buf, heading.line - 2, heading.line - 1, false)[1]
-    local marker = {}
-    if prev and prev:match("%S") then
-      marker[#marker + 1] = ""
-    end
-    vim.list_extend(marker, lines)
-    marker[#marker + 1] = ""
-    vim.api.nvim_buf_set_lines(buf, heading.line - 1, heading.line - 1, false, marker)
-    fold.after_append(buf)
-  else
-    document.append_lines(buf, lines)
-  end
+  document.append_lines(buf, lines)
   -- A delegated failure is returned to the running parent as a tool result;
   -- a direct follow-up in the child should still report its own error.
   local parent = vim.b[buf].yap_subagent_parent
@@ -411,28 +410,39 @@ local function leave_undelivered_steer(buf)
   end
 end
 
---- The three terminal dispositions are mutually exclusive and each persists
---- until the next send: awaiting (success), stopped (cancel), errors (failure).
---- `stopped` doubles as the unwinding signal while running[buf] is still set,
---- which is why the winbar reads `busy and stopped` and `not busy and stopped`
---- as two moments of the same stop.
+--- The terminal dispositions are mutually exclusive and each persists until
+--- the next send: awaiting (success), stopped (cancel), errors (failure).
+--- A graceful stop (the backend finished the current step and its tool batch)
+--- keeps its partial answer; a hard stop (the process was killed mid-stream)
+--- removes it and returns to the prompt that started the turn. A failure keeps
+--- the partial and the error marker as a visible record but excludes them from
+--- the next request (the error region poisons the assistant block it follows).
 local function close_stream(buf, outcome, anchor, err, code)
   repair_stream_tail(buf)
   awaiting[buf] = nil
+  stopped[buf] = nil
   if outcome == "ok" then
-    stopped[buf] = nil
     vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
     document.append_lines(buf, { "# @user", "" })
     awaiting[buf] = true
   elseif outcome == "stopped" then
+    close_after_turn[buf] = nil
+    vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
+    document.append_lines(buf, { "# @user", "" })
     stopped[buf] = true
+  elseif outcome == "killed" then
     close_after_turn[buf] = nil
     restore_prompt(buf, anchor)
+    stopped[buf] = true
   else -- "error"
-    stopped[buf] = nil
     close_after_turn[buf] = nil
-    restore_prompt(buf, anchor)
+    if assistant_block_empty(buf, anchor) then
+      restore_prompt(buf, anchor)
+    else
+      vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
+    end
     report_error(buf, err, code)
+    document.append_lines(buf, { "# @user", "" })
   end
   vim.b[buf].yap_turn_anchor = nil
   model_switch[buf] = nil
@@ -642,7 +652,11 @@ function M.send(buf)
         pending_approvals[buf] = nil
         guard.touch()
         scratchmod.finish_queue(buf, false)
-        close_stream(buf, "stopped", turn_anchor)
+        -- A graceful stop (the turn_complete frame) ends at a clean tool
+        -- boundary and keeps its partial answer; a hard kill (the process
+        -- exit callback) may be truncated anywhere and returns to the prompt
+        -- that started it.
+        close_stream(buf, result.graceful and "stopped" or "killed", turn_anchor)
         follow_tail()
         close_if_requested(buf)
         focus_stopped_prompt(buf, true)
@@ -740,6 +754,7 @@ function M.send(buf)
           ok = frame.ok == true,
           cancelled = frame.cancelled == true,
           error = frame.error,
+          graceful = true,
         })
         return
       end
@@ -810,6 +825,7 @@ function M.send(buf)
             ok = false,
             cancelled = stopped[buf] == true,
             error = stderr:match("%S") and stderr or ("exit " .. result.code),
+            graceful = false,
           })
         end
       end)
@@ -921,7 +937,7 @@ function M.stop(buf, opts)
       spinner.cancel(buf)
       pending_approvals[buf] = nil
       spinner.stop_if_idle()
-      close_stream(buf, "stopped", vim.b[buf].yap_turn_anchor)
+      close_stream(buf, "killed", vim.b[buf].yap_turn_anchor)
       focus_stopped_prompt(buf, true)
     end
   end

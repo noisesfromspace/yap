@@ -58,8 +58,9 @@ local icons = require("harness").config.icons
 assert(bar:find("%#YapError#" .. icons.error, 1, true), "winbar has no error state: " .. bar)
 local text = table.concat(vim.api.nvim_buf_get_lines(buf2, 0, -1, false), "\n")
 assert(text:match("<!%-%- yap:error"), "no error marker in buffer")
-assert(not text:find("# @assistant", 1, true), "failed turn left a phantom assistant reply: " .. text)
-assert(text:match("# @user\n\nhi$"), "failed turn did not restore the sent prompt: " .. text)
+assert(not text:find("# @assistant", 1, true), "empty failed turn left a phantom assistant reply: " .. text)
+assert(text:find("hi", 1, true), "sent prompt was lost: " .. text)
+assert(text:match("# @user\n$"), "failed turn did not open a fresh prompt: " .. text)
 -- Errors surface in the unified session picker with an error status icon.
 -- The active session is intentionally omitted, so inspect from another buffer.
 vim.cmd("enew")

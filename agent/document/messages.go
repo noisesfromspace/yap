@@ -152,6 +152,12 @@ func messagesFrom(doc *Document) []Message {
 				for k := first; k <= last && k <= len(lines); k++ {
 					acc = append(acc, lines[k-1])
 				}
+			} else if r.Kind == "error" && role == "assistant" {
+				// An error marker poisons the assistant block it follows: the
+				// partial before it is a failed attempt, never a real answer,
+				// so it is excluded from the request (R-error-surface). The
+				// marker itself is already skipped by this region branch.
+				acc = nil
 			}
 			i = finish + 1
 			continue

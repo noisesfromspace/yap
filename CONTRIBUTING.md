@@ -94,7 +94,7 @@ flowchart TD
     C --> D["Append transient context tail (from registered providers) to trailing user msg"]
     D --> E["Send one JSON Lines record per turn (full messages array) on stdin"]
     E --> F["Stream reply in — append-only, existing lines never rewritten"]
-    F --> G["Success: append # @user; error/stop: restore sent prompt, exclude partial reply"]
+    F --> G["Success/graceful stop: append # @user; hard stop: restore prompt; error: keep partial + marker, exclude from next request"]
     G --> A
 ```
 
@@ -213,9 +213,11 @@ winbar) rather than assuming. Why: caching is the dominant input-cost lever,
 and a regression here shows up only as higher spend, not as a test failure.
 
 Transient generation errors are retried only before the provider has emitted
-output. A failed or cancelled turn clears native history before the next send;
-its incomplete assistant output is removed from the transcript. The next turn
-starts cold rather than replaying a prefix across a failed attempt.
+output. A failed or cancelled turn clears native history before the next send,
+so the next turn starts cold rather than replaying a prefix across a failed
+attempt. A graceful stop keeps its partial answer as conversation history; a
+hard stop or a failure excludes the incomplete output from the next request
+(the error marker poisons the assistant block it follows).
 
 Measure with `usage` lines, not `turn_end`. Each `usage` line carries the
 per-step `step_cache_read` beside the cumulative totals, so a turn's flattening
@@ -303,13 +305,14 @@ message, streamed text → first tool header).
 giving two blank lines between tool calls.)
 
 A successful turn appends an empty `# @user` after its assistant reply. A
-cancelled or failed turn instead removes that turn's incomplete assistant
-reply and restores the sent user prompt for revision or retry. Failures leave
-a parse-excluded error marker immediately above the restored prompt; reopening
-the session restores its error indicator. The audit log keeps the turn's
-terminal status and tool events. No failed assistant fragment is sent as a
-completed answer on the next turn. A rejected pre-flight send changes neither
-the transcript nor the status; no turn started.
+graceful stop does the same, keeping the partial answer it finished as
+conversation history. A hard stop removes the incomplete reply and restores the
+sent prompt; a failure keeps the partial and an error marker as a visible
+record, opens a fresh prompt, and excludes both from the next request. The
+audit log keeps the turn's terminal status and tool events. No failed
+assistant fragment is sent as a completed answer on the next turn. A rejected
+pre-flight send changes neither the transcript nor the status; no turn
+started.
 
 A settled turn sets exactly one terminal disposition, and it persists until
 the next send: `awaiting` (success), `stopped` (cancel), or `errors` (failure).
@@ -726,10 +729,13 @@ makes slimmed headers (R-tool-region) and `:YapClear` lossless.
 
 `vim.notify` (transient), winbar error state (persistent until the next
 accepted send, restored when reopening a session), and a parse-excluded buffer
-marker before the original user prompt (record). Spawn failures of the binary
-are caught and reported the same way. Stopping shows an unwinding icon
-beside the spinner while the backend finishes the current step; a stopped turn
-returns to an editable draft and keeps the stop icon until the next send.
+marker after the partial reply (record). The marker poisons the assistant
+block it follows, so neither the marker nor the partial is re-sent on retry.
+Spawn failures of the binary are caught and reported the same way. Stopping
+shows an unwinding icon beside the spinner while the backend finishes the
+current step; a graceful stop keeps the partial answer and opens a fresh
+prompt, while a hard stop returns to the sent prompt. Both keep the stop icon
+until the next send.
 
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 

@@ -126,5 +126,33 @@
     "content": "Tool call: read\nArguments: {\"path\":\"/x\"}\nTool result:\nresult"
    }
   ]
+ },
+ {
+  "name": "error-poisons-assistant",
+  "text": "# @user\nfirst\n# @assistant\ngood answer\n# @user\nsecond\n# @assistant\npartial answer\n<!-- yap:error\nboom\n-->\n# @user\nretry\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "first"
+   },
+   {
+    "role": "assistant",
+    "content": "good answer"
+   },
+   {
+    "role": "user",
+    "content": "second\n\nretry"
+   }
+  ]
+ },
+ {
+  "name": "error-marker-trailing",
+  "text": "# @user\nhi\n# @assistant\npartial answer\n<!-- yap:error\nboom\n-->\n",
+  "messages": [
+   {
+    "role": "user",
+    "content": "hi"
+   }
+  ]
  }
 ]
