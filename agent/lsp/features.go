@@ -673,10 +673,6 @@ func fileCompletion(cwd, query string, line, start, char int) []completionItem {
 		} else if !strings.HasPrefix(p, query) {
 			continue
 		}
-		rank := "1"
-		if query == p || query == filter {
-			rank = "0"
-		}
 		insert := p
 		if strings.Contains(p, " ") {
 			insert = `"` + p + `"`
@@ -684,12 +680,13 @@ func fileCompletion(cwd, query string, line, start, char int) []completionItem {
 		out = append(out, completionItem{
 			Label:      p,
 			Kind:       complFile,
-			SortText:   rank + p,
+			SortText:   p,
 			FilterText: filter,
 			InsertText: insert,
 			TextEdit:   &textEdit{Range: r, NewText: insert},
 		})
 	}
+	// Keep surviving matches in the same order as the query narrows.
 	sort.Slice(out, func(i, j int) bool { return out[i].SortText < out[j].SortText })
 	if len(out) > 200 {
 		out = out[:200]

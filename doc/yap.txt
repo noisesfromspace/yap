@@ -1053,8 +1053,9 @@ are suppressed while a reply is streaming.
 
 File references match project-relative path prefixes. A query without `/`
 also matches filename prefixes, so `@sess` can complete to
-`@agent/tools/sessions.go`. With native completion, CTRL-E dismisses the
-menu; typing more of the reference can bring it back after a short pause.
+`@agent/tools/sessions.go`. Matches stay in project-relative path order as you
+type. With native completion, CTRL-E dismisses the menu; typing more of the
+reference can bring it back after a short pause.
 
 The built-in `vim.lsp.completion` is enabled on Yap buffers by default. Set
 `require("harness").setup({ builtin_completion = false })` when using an

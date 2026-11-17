@@ -628,7 +628,7 @@ func TestScratchCompletionOnlyFiles(t *testing.T) {
 	}
 }
 
-func TestFileCompletionMatchesAndRanksPaths(t *testing.T) {
+func TestFileCompletionMatchesAndSortsPaths(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{
 		"a/sessions.go.bak", "agent/tools/sessions.go", "b/sessions.go", "z/release notes.md",
@@ -651,10 +651,11 @@ func TestFileCompletionMatchesAndRanksPaths(t *testing.T) {
 			{"agent/tools/sessions.go", "sessions.go", "agent/tools/sessions.go"},
 			{"b/sessions.go", "sessions.go", "b/sessions.go"},
 		}},
+		// Typing through an exact basename must not move it above an earlier path.
 		{"sessions.go", []match{
+			{"a/sessions.go.bak", "sessions.go.bak", "a/sessions.go.bak"},
 			{"agent/tools/sessions.go", "sessions.go", "agent/tools/sessions.go"},
 			{"b/sessions.go", "sessions.go", "b/sessions.go"},
-			{"a/sessions.go.bak", "sessions.go.bak", "a/sessions.go.bak"},
 		}},
 		{"agent", []match{
 			{"agent/", "agent", "agent/"},
@@ -685,8 +686,8 @@ func TestFileCompletionMatchesAndRanksPaths(t *testing.T) {
 				if it.TextEdit == nil || it.TextEdit.Range != r || it.TextEdit.NewText != want.insert {
 					t.Fatalf("edit = %+v, want %+v replacing only the query", it.TextEdit, textEdit{Range: r, NewText: want.insert})
 				}
-				if i > 0 && items[i-1].SortText >= it.SortText {
-					t.Fatalf("sortText %q would not follow %q", it.SortText, items[i-1].SortText)
+				if it.SortText != want.label {
+					t.Fatalf("sortText = %q, want stable path %q", it.SortText, want.label)
 				}
 			}
 		})
