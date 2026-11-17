@@ -30,6 +30,7 @@ local function fake_client(id)
     id = id,
     exit_timeout = 0,
     rpc = { is_closing = function() return true end },
+    is_stopped = function() return false end,
     stop = function()
       detached.stop = (detached.stop or 0) + 1
     end,

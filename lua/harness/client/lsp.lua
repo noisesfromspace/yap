@@ -60,8 +60,11 @@ end
 --- warning); callers that represent a managed session actually needing LSP
 --- (M.attach) warn through M.warn_missing_bin.
 function M.ensure()
-  if client_id and vim.lsp.get_client_by_id(client_id) then
-    return client_id
+  if client_id then
+    local existing = vim.lsp.get_client_by_id(client_id)
+    if existing and not existing:is_stopped() then
+      return client_id
+    end
   end
   if not M.bin_available() then
     return nil
@@ -143,11 +146,21 @@ end
 -- language server at all (test doubles, a build predating `yap lsp`) there is
 -- nothing to wait for.
 local function attached_client(buf)
-  local id = client_id
-  if not id or not vim.api.nvim_buf_is_valid(buf) then
+  if not vim.api.nvim_buf_is_valid(buf) then
     return nil
   end
-  local client = vim.lsp.get_client_by_id(id)
+  local id = client_id
+  local client = id and vim.lsp.get_client_by_id(id) or nil
+  if not client or client:is_stopped() or not vim.lsp.buf_is_attached(buf, id) then
+    -- The client was never started, exited, or was stopped (a crash, :LspStop,
+    -- a stray detach), or this buffer lost its attach when the client was
+    -- restarted. M.attach is idempotent: it (re)starts the client, attaches
+    -- this buffer and resends the editor context, so symbols, completion and
+    -- the message preview keep working without re-adopting the session.
+    M.attach(buf)
+    id = client_id
+    client = id and vim.lsp.get_client_by_id(id) or nil
+  end
   if not client then
     return nil
   end
