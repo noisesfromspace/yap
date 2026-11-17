@@ -411,24 +411,28 @@ local function leave_undelivered_steer(buf)
   end
 end
 
---- Hand the buffer back to the user. Only a successful answer opens a new
---- prompt; a failure or stop restores the sent prompt for retry/revision.
+--- The three terminal dispositions are mutually exclusive and each persists
+--- until the next send: awaiting (success), stopped (cancel), errors (failure).
+--- `stopped` doubles as the unwinding signal while running[buf] is still set,
+--- which is why the winbar reads `busy and stopped` and `not busy and stopped`
+--- as two moments of the same stop.
 local function close_stream(buf, outcome, anchor, err, code)
   repair_stream_tail(buf)
+  awaiting[buf] = nil
   if outcome == "ok" then
+    stopped[buf] = nil
     vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
     document.append_lines(buf, { "# @user", "" })
     awaiting[buf] = true
-    stopped[buf] = nil
-  else
-    -- A close_session request belongs to a successful turn only.
+  elseif outcome == "stopped" then
+    stopped[buf] = true
     close_after_turn[buf] = nil
     restore_prompt(buf, anchor)
-    awaiting[buf] = nil
-    stopped[buf] = nil -- the stop icon describes unwinding, not a finished draft
-    if outcome == "error" then
-      report_error(buf, err, code)
-    end
+  else -- "error"
+    stopped[buf] = nil
+    close_after_turn[buf] = nil
+    restore_prompt(buf, anchor)
+    report_error(buf, err, code)
   end
   vim.b[buf].yap_turn_anchor = nil
   model_switch[buf] = nil
@@ -814,7 +818,9 @@ function M.send(buf)
       running[buf] = nil
       spinner.cancel(buf)
       spinner.stop_if_idle()
+      scratchmod.finish_queue(buf, false)
       close_stream(buf, "error", turn_anchor, tostring(started))
+      follow_tail()
       return false
     end
     handle = started
@@ -865,7 +871,9 @@ function M.send(buf)
     spinner.stop_if_idle()
     lsp.notify_streaming(buf, false)
     follow_override[buf] = nil
+    scratchmod.finish_queue(buf, false)
     close_stream(buf, "error", turn_anchor, tostring(err))
+    follow_tail()
     return false
   end
   return true

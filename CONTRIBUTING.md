@@ -311,6 +311,13 @@ terminal status and tool events. No failed assistant fragment is sent as a
 completed answer on the next turn. A rejected pre-flight send changes neither
 the transcript nor the status; no turn started.
 
+A settled turn sets exactly one terminal disposition, and it persists until
+the next send: `awaiting` (success), `stopped` (cancel), or `errors` (failure).
+The winbar, session picker and rollup all derive their glyph from that one
+fact (`picker.state()`), so a turn cannot read differently in two places.
+`stopped` is session-local: a cancelled turn leaves no marker, so reopening
+reads it as an unsent prompt (idle or waiting) rather than as stopped.
+
 Why: readable diffs, stable folds, gptel-like staticness. (Bug of record:
 hand-rolled `"\n"` prefixes broke separation when trailing-blank trimming was
 added; a buffer-wide normalize pass made every send rewrite the whole buffer
@@ -720,9 +727,9 @@ makes slimmed headers (R-tool-region) and `:YapClear` lossless.
 `vim.notify` (transient), winbar error state (persistent until the next
 accepted send, restored when reopening a session), and a parse-excluded buffer
 marker before the original user prompt (record). Spawn failures of the binary
-are caught and reported the same way. Stopping shows an unwinding icon only
-while the backend finishes the current step; a stopped turn returns to an
-editable draft without a lingering stop icon.
+are caught and reported the same way. Stopping shows an unwinding icon
+beside the spinner while the backend finishes the current step; a stopped turn
+returns to an editable draft and keeps the stop icon until the next send.
 
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 

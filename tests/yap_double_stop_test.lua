@@ -32,7 +32,7 @@ assert(vim.wait(5000, function() return not yap.is_running(buf) end, 10), "tool 
 local transcript = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not transcript:find("1\n2\n3\nfinished", 1, true), "incomplete tool result entered conversation history")
 assert(transcript:match("# @user\n\ngraceful$"), "stop did not restore the original prompt: " .. transcript)
-assert(state.servers[buf] == process and not state.stopped[buf], "graceful stop did not settle")
+assert(state.servers[buf] == process and state.stopped[buf], "graceful stop did not settle to stopped")
 vim.cmd("stopinsert")
 
 local hard, hard_stop = start("hard")

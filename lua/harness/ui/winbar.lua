@@ -143,7 +143,11 @@ function M.seed_error(buf)
     local r = parsed.regions[i]
     if r.finish and r.finish < last.line then
       if r.kind == "error" and (not previous or r.start > previous.line) then
-        state.errors[buf] = lines[r.start + 1]
+        local body = {}
+        for j = r.start + 1, r.finish - 1 do
+          body[#body + 1] = lines[j]
+        end
+        state.errors[buf] = table.concat(body, "\n")
       end
       return
     end
