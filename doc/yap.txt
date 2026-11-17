@@ -86,7 +86,7 @@ engine; its generic LSP source can consume Yap's completion items. See |yap-lsp|
 Icon keys include `since`, `total`, `cache`, `running`, `waiting`, `stopped`,
 `error`, `idle`, `done`, `steer`, `queue`, `clear`, `approval`, `cap_l`, `cap_r`. Defaults are
 Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the
-typographic spinner and the block gauge. Explicit `icons` entries win; set one
+typographic spinner. Explicit `icons` entries win; set one
 to `""` to drop it.
 
 `model_groups` has two tiers. `agent` starts regular conversations, including
@@ -731,18 +731,20 @@ While a turn streams, an animated beacon replaces it: a fixed circle for
 half a second, then a random circle face every 180 ms, slowing to 420 ms once
 a tool has run 2s. When the turn ends the beacon gives way to the awaiting
 icon. When the window is inactive the beacon and the title disappear; the
-state icon stays.
+state icon stays, and a streaming session keeps a static running icon in its
+place.
 
 Once a tool has run for 2s its name and elapsed time join the beacon
 (`bash 12s`); a queued `# @queue` follow-up, a queued :YapClear, and a pending
 `# @steer` add a tray icon, a broom icon and a steer icon immediately left of
 that beacon. Fold views remain
-available through <leader>1..3, but do not occupy the winbar. A rollup island
-totals ALL OTHER yap sessions by state (streaming, awaiting you, stopped,
-errored, idle). After the island: the
-session title (a renamed transcript's filename, else the generated
-description), truncated to 40 display columns. A provider/model island sits
-centered in the bar. Right: two usage chips and a context-fill meter.
+available through <leader>1..3, but do not occupy the winbar. The session
+title (a renamed transcript's filename, else the generated description),
+truncated to 40 display columns, sits before the rollup island so the
+island's changing counts never shift it. The rollup island totals ALL OTHER
+yap sessions by state (streaming, awaiting you, stopped, errored, idle). A
+provider/model island sits centered in the bar. Right: two usage chips, a
+context percentage, and a low-cache warning.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -752,22 +754,21 @@ Reading the numbers                                    *yap-winbar-numbers*
   󰆼 N        All-time: total tokens and cost for the whole session file,
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
-  █▍░░░      Context fill: the last turn's full prompt as a bar of the
-             model's context window. No label and no percentage sit beside
-             it; the exact size belongs in usage details. Green below 70%,
-             amber 70–90%, red 90%+.
-  󰃨 82%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
-             turn-wide. Green at >=70%, amber 40–70%, red below. Cache writes
-             count as input, not hits. Shown only when cache usage is reported;
-             a hidden chip does not prove 0% because some providers omit cache data.
+  ctx NN%     Context use: the last turn's full prompt as a percentage of the
+             model's context window, no meter. Green below 70%, amber 70–89%,
+             red 90%+.
+  󰃨 NN%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
+             turn-wide. A warning, not a permanent chip: it appears in the
+             warning color only while the rate is below 40%. Cache writes
+             count as input, not hits; absent cache data is never faked as 0%.
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`). On a freshly opened session
 the two chips are equal; after a reopen they diverge.
 
 The bar is width-aware and gives parts up in this order: cost detail, token
-counts (prices stay), cache read-hit chip, context meter, then the centered
-model island. The context meter outlives the cache chip. The model name is
+counts (prices stay), the cache warning, the context reading, then the centered
+model island. The context reading outlives the cache warning. The model name is
 this session's identity, so it outlives the right-side metrics; only a very
 narrow bar drops it. The title then shortens. In inactive windows, the
 centered session label drops when it no longer fits.

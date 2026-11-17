@@ -54,7 +54,7 @@ vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
 local titled_rollup = left_text(buf2)
 assert(
   titled_rollup:match(
-    "^" .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. "  second session $"
+    "^" .. icons.idle .. "  second session  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " $"
   ),
   "title gap differs from the rollup gap: " .. titled_rollup
 )

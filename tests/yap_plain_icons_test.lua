@@ -18,8 +18,12 @@ assert(rendered:find("[ ◉1 ]", 1, true), "plain island missing: " .. rendered)
 assert(yap.overview(buf) == "◉1")
 state.last_turn[buf] = { prompt = 23000, context_window = 250000 }
 bar = yap.winbar(buf)
-assert(bar:find("▊", 1, true) and bar:find("░", 1, true), "plain gauge missing: " .. bar)
-assert(not bar:find("", 1, true), "Nerd Font gauge in plain mode: " .. bar)
+rendered = vim.api.nvim_eval_statusline(bar, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+assert(rendered:find("ctx 9%", 1, true), "plain context percentage missing: " .. rendered)
+assert(
+  not rendered:find("▊", 1, true) and not rendered:find("░", 1, true),
+  "plain gauge cells survived: " .. rendered
+)
 state.running[buf] = {}
 bar = yap.winbar(buf)
 local plain_frames = require("harness.ui.spinner").plain_spinner_frames

@@ -164,13 +164,11 @@ for mask = 0, 15 do
   local other_running = state.running[other] and 1 or 0
   local waiting_n = state.awaiting[waiting] and 1 or 0
   local idle_n = (state.running[other] and 0 or 1) + (state.awaiting[waiting] and 0 or 1)
-  local expected = {
-    state.running[target] and "@" or icons.idle,
-    expected_rollup(other_running, waiting_n, 0, 0, idle_n),
-  }
+  local expected = { state.running[target] and "@" or icons.idle }
   if titled then
     expected[#expected + 1] = "Session title"
   end
+  expected[#expected + 1] = expected_rollup(other_running, waiting_n, 0, 0, idle_n)
   local actual = rendered_left()
   for _, g in ipairs(spinner_frames) do
     actual = actual:gsub(vim.pesc(g), "@")
@@ -305,9 +303,14 @@ assert(
 )
 state.stopped[target] = nil
 state.running[target] = {}
+local inactive_running = yap.winbar(target)
 assert(
-  not yap.winbar(target):find("%#YapBusySpin#", 1, true),
+  not inactive_running:find("%#YapBusySpin#", 1, true),
   "inactive generating session should drop the busy beacon"
+)
+assert(
+  inactive_running:find("%#YapBusy#" .. icons.running, 1, true) == 1,
+  "inactive generating session should keep a static running icon leftmost: " .. inactive_running
 )
 state.steer[target] = "check the tests"
 assert(

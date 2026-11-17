@@ -3,6 +3,7 @@
 :YapCompact	yap.txt	/*:YapCompact*
 :YapEval	yap.txt	/*:YapEval*
 :YapFork	yap.txt	/*:YapFork*
+harness.sessions()	yap.txt	/*harness.sessions()*
 yap-audit	yap.txt	/*yap-audit*
 yap-buffer	yap.txt	/*yap-buffer*
 yap-commands	yap.txt	/*yap-commands*
@@ -14,8 +15,11 @@ yap-glossary	yap.txt	/*yap-glossary*
 yap-guard-gate	yap.txt	/*yap-guard-gate*
 yap-introduction	yap.txt	/*yap-introduction*
 yap-keymaps	yap.txt	/*yap-keymaps*
+yap-lsp	yap.txt	/*yap-lsp*
 yap-lua-api	yap.txt	/*yap-lua-api*
 yap-markers	yap.txt	/*yap-markers*
+yap-prompt-cache	yap.txt	/*yap-prompt-cache*
+yap-sandbox	yap.txt	/*yap-sandbox*
 yap-sessions	yap.txt	/*yap-sessions*
 yap-skill	yap.txt	/*yap-skill*
 yap-template	yap.txt	/*yap-template*

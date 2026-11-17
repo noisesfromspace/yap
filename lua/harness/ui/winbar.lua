@@ -22,10 +22,9 @@ local clear_queued = state.clear_queued
 local sessions = state.sessions
 local pending_approvals = state.pending_approvals
 
--- Context meter: a fixed-width, eight-cell bar. Keeping its width
--- independent of the window layout avoids redraw/reflow surprises.
-local GAUGE_W = 8
-local GAUGE_EIGHTHS = { "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
+-- Context is a percentage (`ctx 78%`), not a meter. The cache read-hit rate
+-- earns a column only while it is unusually low.
+local CACHE_WARN_PCT = 40
 
 -- The winbar is a statusline: `%` starts a format item there, so any
 -- literal `%` in segment text (a session title that contains a percent sign)
@@ -304,10 +303,11 @@ local function render_winbar(buf)
       end
       local glyph = require("harness").config.nerd_font and spinner.glyph(buf) or spinner.plain_glyph(buf)
       state_icons[#state_icons + 1] = seg(glyph, "BusySpin")
-    elseif inactive and busy and (queued(buf) or clear_queued[buf] or steer[buf] or model_switch[buf]) then
-      -- A generating session drops its spinner when inactive, but a queued
-      -- message, a pending clear, a pending steer or a pending model switch
-      -- still advertises itself through the leftmost state icon.
+    elseif inactive and busy then
+      -- A generating session drops its animated beacon when inactive, but a
+      -- static running glyph keeps the window from looking dead, and any
+      -- queued message, pending clear, steer or model switch still
+      -- advertises itself left of it.
       if queued(buf) then
         state_icons[#state_icons + 1] = seg(icons.queue, "Needs")
       end
@@ -320,6 +320,7 @@ local function render_winbar(buf)
       if model_switch[buf] then
         state_icons[#state_icons + 1] = seg(icons.model_switch, "Needs")
       end
+      state_icons[#state_icons + 1] = seg(icons.running, "Busy")
     elseif not busy then
       if errors[buf] then
         state_icons[#state_icons + 1] = seg(icons.error, "Error")
@@ -339,7 +340,7 @@ local function render_winbar(buf)
     end
 
     local icon_width = width_of(state_icons)
-    if gutter > 0 then
+    if gutter > 0 and icon_width <= gutter then
       local lead = math.floor((gutter - icon_width) / 2)
       left[#left + 1] = seg(string.rep(" ", lead), "Idle")
       for _, s in ipairs(state_icons) do
@@ -350,7 +351,9 @@ local function render_winbar(buf)
         left[#left + 1] = seg(string.rep(" ", trail), "Idle")
       end
     elseif icon_width > 0 then
-      -- No gutter (e.g. line numbers off): the icon is the leftmost item.
+      -- No gutter (line numbers off), or the icon stack (pending actions plus
+      -- the beacon) is wider than the gutter: the icons become the leftmost
+      -- text item instead of overflowing the gutter and shifting the title.
       add_item(state_icons)
     end
 
@@ -363,6 +366,15 @@ local function render_winbar(buf)
         local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
         add_item({ seg(label, "BusyText") })
       end
+    end
+
+    -- The title anchors the left text edge. It sits before the rollup so the
+    -- island's changing width (a subagent's parent flipping running ->
+    -- waiting, a count crossing a digit boundary) can never shift the title
+    -- or the tool label; the island grows into the gap toward the center.
+    local title = not inactive and winbar_title(buf, desc_max) or nil
+    if title then
+      add_item({ seg(title, "Description", false, true) })
     end
 
     -- The rollup island totals every OTHER session by state. It is the
@@ -397,11 +409,6 @@ local function render_winbar(buf)
       end
     end
 
-    local title = not inactive and winbar_title(buf, desc_max) or nil
-    if title then
-      add_item({ seg(title, "Description", false, true) })
-    end
-
     if has_item then
       left[#left + 1] = seg(" ", "Idle")
     end
@@ -428,22 +435,21 @@ local function render_winbar(buf)
     return math.min(cache_read / total_input * 100, 100)
   end
 
-  -- Cache chip: the cached glyph plus the turn-wide read-hit rate. A high
-  -- rate is good, so the color is inverted from the context gauge: green at
-  -- >=70%, amber at 40-70%, red below.
+  -- Cache is a warning, not a permanent chip: `⧉ NN%` in the warning color
+  -- only while the read-hit rate is unusually low. A healthy cache is
+  -- invisible; absent cache data is never faked as 0%.
   local function cache_parts()
     local pct = cache_percent(state.live_usage[buf] or state.last_turn[buf])
-    if not pct then
+    if not pct or pct >= CACHE_WARN_PCT then
       return nil
     end
     local num = pct < 1 and string.format("%.1f%%", pct) or string.format("%.0f%%", pct)
-    local color = pct >= 70 and "GaugeLow" or (pct >= 40 and "GaugeMid" or "GaugeHigh")
-    return { { icons.cache .. " ", "Count" }, { num, color } }
+    return { { icons.cache .. " ", "Count" }, { num, "Needs" } }
   end
 
-  -- Fixed-width context meter: an occupancy bar in its own pill. Neither a
-  -- label nor a percentage sits beside it: the exact figure lives in usage
-  -- details, and the bar never shares a surface with the cache percentage.
+  -- Context as a percentage, not a meter: `ctx 78%`. The number carries the
+  -- reading, the label carries it without color. Green below 70%, amber
+  -- 70-89%, red 90%+.
   local function context_segment()
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
@@ -453,46 +459,13 @@ local function render_winbar(buf)
     end
 
     local pct = math.min(prompt / ctx * 100, 100)
-    local fill, track
-    if require("harness").config.nerd_font then
-      -- Nerd Font's progress cells have rounded ends but no fractional cell.
-      local cells = math.floor(pct / 100 * GAUGE_W + 0.5)
-      fill = ""
-      track = ""
-      local glyph = {
-        left = { "", "" },
-        mid = { "", "" },
-        right = { "", "" },
-      }
-      for i = 1, GAUGE_W do
-        local edge = i == 1 and "left" or (i == GAUGE_W and "right" or "mid")
-        if i <= cells then
-          fill = fill .. glyph[edge][2]
-        else
-          track = track .. glyph[edge][1]
-        end
-      end
-    else
-      local eighths = math.floor(pct / 100 * GAUGE_W * 8 + 0.5)
-      local full = math.floor(eighths / 8)
-      local tail = eighths % 8
-      fill = string.rep("█", full) .. (tail > 0 and GAUGE_EIGHTHS[tail] or "")
-      track = string.rep("░", GAUGE_W - full - (tail > 0 and 1 or 0))
-    end
+    local shown = math.max(0, math.floor(pct + 0.5))
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
-    local parts = { { " ", "GaugeEmpty", true } }
-    if fill ~= "" then
-      parts[#parts + 1] = { fill, color, true }
-    end
-    if track ~= "" then
-      parts[#parts + 1] = { track, "GaugeEmpty", true }
-    end
-    parts[#parts + 1] = { " ", "GaugeEmpty", true }
-    return parts
+    return { { " ", "GaugeEmpty", true }, { "ctx " .. shown .. "%", color, true }, { " ", "GaugeEmpty", true } }
   end
 
-  -- Usage counters and context meter stay right-aligned.
-  -- As the bar narrows, costs, tokens, cache and then the meter drop; the
+  -- Usage counters and the context reading stay right-aligned.
+  -- As the bar narrows, costs, tokens, cache and then the reading drop; the
   -- model name in the center outlives the right-side metrics.
   local function usage_segment(mode, show_context, show_cache)
     local chips = {} -- each chip: { { text, group }, ... }
