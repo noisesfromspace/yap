@@ -29,8 +29,14 @@ local function fake_client(id)
   return {
     id = id,
     exit_timeout = 0,
-    rpc = { is_closing = function() return true end },
-    is_stopped = function() return false end,
+    rpc = {
+      is_closing = function()
+        return true
+      end,
+    },
+    is_stopped = function()
+      return false
+    end,
     stop = function()
       detached.stop = (detached.stop or 0) + 1
     end,
@@ -72,7 +78,7 @@ vim.lsp.completion.get = function(opts)
   requested[#requested + 1] = opts.client_id
 end
 vim.lsp.completion.enable = function(on, id, buf, opts)
-  enabled[#enabled + 1] = { on = on, id = id, buf = buf, autotrigger = opts.autotrigger }
+  enabled[#enabled + 1] = { on = on, id = id, buf = buf, autotrigger = opts.autotrigger, convert = opts.convert }
 end
 
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
@@ -120,8 +126,20 @@ vim.api.nvim_exec_autocmds("LspAttach", {
   data = { client_id = yap_client_id },
 })
 assert(detached[yap_client_id] == nil, "LspAttach guard detached the yap client")
-assert(#enabled == 1 and enabled[1].on and enabled[1].id == yap_client_id
-  and enabled[1].buf == buf and enabled[1].autotrigger, "Yap autocompletion was not enabled")
+assert(
+  #enabled == 1
+    and enabled[1].on
+    and enabled[1].id == yap_client_id
+    and enabled[1].buf == buf
+    and enabled[1].autotrigger,
+  "Yap autocompletion was not enabled"
+)
+local nested = enabled[1].convert({
+  kind = vim.lsp.protocol.CompletionItemKind.File,
+  filterText = "sessions.go",
+  textEdit = { newText = "agent/tools/sessions.go" },
+})
+assert(nested.word == "agent/tools/sessions.go", "native menu would insert the basename instead of the path")
 
 -- 3. a non-yap buffer is left alone by the guard.
 local other = vim.api.nvim_create_buf(true, false)
@@ -136,12 +154,10 @@ assert(#enabled == 1, "completion enabled on a non-yap buffer")
 local function type_at(row, col, text)
   vim.api.nvim_set_current_buf(buf)
   vim.api.nvim_win_set_cursor(0, { row, col })
-  vim.api.nvim_feedkeys("i" .. text, "xt", false)
-  local real_mode = vim.api.nvim_get_mode
-  vim.api.nvim_get_mode = function() return { mode = "i" } end
-  flush()
-  vim.api.nvim_get_mode = real_mode
-  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
+  _G.yap_test_flush_completion = flush
+  local finish = vim.api.nvim_replace_termcodes("<Cmd>lua yap_test_flush_completion()<CR><Esc>", true, false, true)
+  vim.api.nvim_feedkeys("i" .. text .. finish, "xt", false)
+  _G.yap_test_flush_completion = nil
 end
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "---", "prov", "model: foo", "---", "# @user", "hello" })
 type_at(2, 3, "i")
@@ -150,6 +166,22 @@ type_at(3, 9, "i")
 type_at(6, 4, "i")
 assert(#requested == 1, "completion requested in frontmatter value or prose")
 
+-- Drive the debounce without wall-clock sleeps.
+local real_defer = vim.defer_fn
+vim.defer_fn = function(fn, delay)
+  if delay == 100 then
+    vim.schedule(fn)
+  else
+    return real_defer(fn, delay)
+  end
+end
+type_at(6, 0, "@sess")
+assert(#requested == 2 and requested[2] == yap_client_id, "typed file query did not request Yap completion once")
+vim.api.nvim_buf_set_lines(buf, 5, 6, false, { "name" })
+type_at(6, 4, "@example")
+type_at(5, 3, "us")
+assert(#requested == 2, "file retry triggered on an email address or role heading")
+
 -- With an external completion engine configured, Yap skips its native UI
 -- when future LspAttach events fire. The language server stays attached.
 yap.setup({ bin = ROOT .. "/yap", builtin_completion = false })
@@ -157,8 +189,10 @@ local enabled_before = #enabled
 local requested_before = #requested
 vim.api.nvim_exec_autocmds("LspAttach", { buffer = buf, data = { client_id = yap_client_id } })
 type_at(2, 3, "i")
+type_at(6, 0, "@sess")
 assert(#enabled == enabled_before, "builtin completion enabled despite opt-out")
-assert(#requested == requested_before, "builtin key completion requested despite opt-out")
+assert(#requested == requested_before, "builtin completion requested despite opt-out")
+vim.defer_fn = real_defer
 
 -- Restore the real functions before exit (see the comment at the top of the
 -- original test: core vim.lsp's VimLeavePre iterates get_clients()).
@@ -173,4 +207,4 @@ vim.lsp.completion.get = real.completion_get
 vim.schedule = real_schedule
 vim.fn.executable = real.executable
 
-print("yap LSP: completion triggers for sessions and frontmatter keys only")
+print("yap LSP: attachment, frontmatter keys and file query retries")

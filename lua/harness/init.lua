@@ -590,7 +590,17 @@ function M.setup(opts)
         -- Only Yap buffers get automatic popups; the server advertises @, #,
         -- : and - and returns items only in file, role or frontmatter contexts.
         if M.config.builtin_completion then
-          vim.lsp.completion.enable(true, id, args.buf, { autotrigger = true })
+          vim.lsp.completion.enable(true, id, args.buf, {
+            autotrigger = true,
+            convert = function(item)
+              -- Native completion can use filterText as the inserted word
+              -- when the path itself does not start with the query.
+              if item.kind == vim.lsp.protocol.CompletionItemKind.File and item.textEdit then
+                return { word = item.textEdit.newText }
+              end
+              return {}
+            end,
+          })
         end
         return
       end
@@ -604,8 +614,17 @@ function M.setup(opts)
       end)
     end,
   })
-  -- Punctuation triggers do not cover a partially typed frontmatter key.
-  -- Ask for completion only while typing a key, never in message prose.
+  -- Punctuation triggers do not cover a partially typed frontmatter key or
+  -- resume a file query after the native menu was dismissed.
+  local file_retry = 0
+  vim.api.nvim_create_autocmd({ "CompleteDone", "InsertLeave" }, {
+    group = group,
+    callback = function(args)
+      if args.event == "InsertLeave" or vim.v.event.reason == "cancel" then
+        file_retry = file_retry + 1
+      end
+    end,
+  })
   vim.api.nvim_create_autocmd("InsertCharPre", {
     group = group,
     callback = function(args)
@@ -615,12 +634,47 @@ function M.setup(opts)
       if not M.config.builtin_completion then
         return
       end
+      file_retry = file_retry + 1
       local char = vim.v.char
-      if not char:match("^[a-z_]$") then
+      if not char:match("^[a-zA-Z0-9_./%-]$") then
         return
       end
-      local cursor = vim.api.nvim_win_get_cursor(0)
+      local win = vim.api.nvim_get_current_win()
+      local cursor = vim.api.nvim_win_get_cursor(win)
       local row, col = cursor[1], cursor[2]
+      local line = vim.api.nvim_get_current_line()
+      local prefix = line:sub(1, col) .. char
+      -- Match the server's token boundary: @ must start the line or follow
+      -- a space or tab. A closing popup alone never schedules a retry.
+      local token = prefix:match("^(@[a-zA-Z0-9_./%-]+)$") or prefix:match("[ \t](@[a-zA-Z0-9_./%-]+)$")
+      local heading = (prefix .. line:sub(col + 1)):match("^# @[a-zA-Z]*$")
+      if token and #token >= 3 and not heading and vim.fn.pumvisible() == 0 then
+        local retry = file_retry
+        vim.defer_fn(function()
+          if
+            retry ~= file_retry
+            or not M.config.builtin_completion
+            or vim.api.nvim_get_current_win() ~= win
+            or vim.api.nvim_get_current_buf() ~= args.buf
+            or vim.api.nvim_get_mode().mode:sub(1, 1) ~= "i"
+            or vim.fn.pumvisible() ~= 0
+          then
+            return
+          end
+          local pos = vim.api.nvim_win_get_cursor(win)
+          if pos[1] ~= row or pos[2] ~= #prefix or vim.api.nvim_get_current_line():sub(1, pos[2]) ~= prefix then
+            return
+          end
+          local client = vim.lsp.get_clients({ bufnr = args.buf, name = "yap" })[1]
+          if client and lsp.is_yap_client(client.id) then
+            vim.lsp.completion.get({ client_id = client.id })
+          end
+        end, 100)
+        return
+      end
+      if not vim.b[args.buf].yap or not char:match("^[a-z_]$") then
+        return
+      end
       -- A frontmatter key only: the cursor sits between the opening `---` and
       -- the closing `---`. end_line() is a bounded 200-line read; the old
       -- scan read line 2 through the cursor and searched for `---` on every
@@ -629,8 +683,7 @@ function M.setup(opts)
       if not e or row < 2 or row >= e then
         return
       end
-      local line = vim.api.nvim_buf_get_lines(args.buf, row - 1, row, false)[1]
-      if not line or not (line:sub(1, col) .. char):match("^[a-z_]+$") or line:find(":", 1, true) then
+      if not prefix:match("^[a-z_]+$") or line:find(":", 1, true) then
         return
       end
       local client = vim.lsp.get_clients({ bufnr = args.buf, name = "yap" })[1]

@@ -1051,6 +1051,11 @@ Model completion reads the cached `yap models` list; it never hits the network, 
 starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
 are suppressed while a reply is streaming.
 
+File references match project-relative path prefixes. A query without `/`
+also matches filename prefixes, so `@sess` can complete to
+`@agent/tools/sessions.go`. With native completion, CTRL-E dismisses the
+menu; typing more of the reference can bring it back after a short pause.
+
 The built-in `vim.lsp.completion` is enabled on Yap buffers by default. Set
 `require("harness").setup({ builtin_completion = false })` when using an
 external completion engine so two popup menus do not compete. nvim-cmp and

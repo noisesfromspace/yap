@@ -555,10 +555,11 @@ func (s *Server) completionFor(p completionParams) any {
 		return map[string]any{"isIncomplete": false, "items": []any{}}
 	}
 	var items []completionItem
+	var incomplete bool
 	if d.scratch {
-		items = ScratchCompletion(d.text, p.Position.Line, p.Position.Character, d.cwd)
+		items, incomplete = scratchCompletion(d.text, p.Position.Line, p.Position.Character, d.cwd)
 	} else {
-		items = Completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
+		items, incomplete = completion(d.text, p.Position.Line, p.Position.Character, CompletionCtx{
 			Cwd:         d.cwd,
 			AgentsDir:   s.opts.AgentsDir,
 			ModelsCache: s.opts.ModelsCache,
@@ -569,7 +570,7 @@ func (s *Server) completionFor(p completionParams) any {
 		// CompletionList.items (expected a CompletionItem[]).
 		items = []completionItem{}
 	}
-	return map[string]any{"isIncomplete": false, "items": items}
+	return map[string]any{"isIncomplete": incomplete, "items": items}
 }
 
 // codeActionsFor offers only repairs whose insertion point is determined by

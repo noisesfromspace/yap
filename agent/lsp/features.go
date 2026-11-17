@@ -3,6 +3,7 @@ package lsp
 import (
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -343,9 +344,14 @@ type CompletionCtx struct {
 
 // Completion returns completion items for the cursor position.
 func Completion(text string, line, char int, ctx CompletionCtx) []completionItem {
+	items, _ := completion(text, line, char, ctx)
+	return items
+}
+
+func completion(text string, line, char int, ctx CompletionCtx) ([]completionItem, bool) {
 	lines := strings.Split(text, "\n")
 	if line < 0 || line >= len(lines) {
-		return nil
+		return nil, false
 	}
 	cur := lines[line]
 	if char < 0 {
@@ -359,26 +365,26 @@ func Completion(text string, line, char int, ctx CompletionCtx) []completionItem
 	for wordStart > 0 && isWordChar(cur[wordStart-1]) {
 		wordStart--
 	}
-	word := cur[wordStart:char]
-
 	if close := frontmatterClose(lines); close > 0 && line > 0 && line < close {
-		return frontmatterCompletion(lines, line, prefix, wordStart, char, ctx)
+		return frontmatterCompletion(lines, line, prefix, wordStart, char, ctx), false
 	}
 	if items, ok := roleCompletion(cur, char, line); ok {
-		return items
+		return items, false
 	}
-	if isFileRef(cur, wordStart) {
-		return fileCompletion(ctx.Cwd, word, line, wordStart, char)
-	}
-	return nil
+	return fileRefCompletion(ctx.Cwd, cur, line, wordStart, char)
 }
 
 // ScratchCompletion offers file references and the scratch's two control
 // headings, without treating the scratch as a transcript.
 func ScratchCompletion(text string, line, char int, cwd string) []completionItem {
+	items, _ := scratchCompletion(text, line, char, cwd)
+	return items
+}
+
+func scratchCompletion(text string, line, char int, cwd string) ([]completionItem, bool) {
 	lines := strings.Split(text, "\n")
 	if line < 0 || line >= len(lines) {
-		return nil
+		return nil, false
 	}
 	cur := lines[line]
 	if char < 0 {
@@ -396,16 +402,13 @@ func ScratchCompletion(text string, line, char int, cwd string) []completionItem
 				items = append(items, completionItem{Label: role, Kind: complKeyword, TextEdit: &textEdit{Range: r, NewText: role}})
 			}
 		}
-		return items
+		return items, false
 	}
 	wordStart := char
 	for wordStart > 0 && isWordChar(cur[wordStart-1]) {
 		wordStart--
 	}
-	if isFileRef(cur, wordStart) {
-		return fileCompletion(cwd, cur[wordStart:char], line, wordStart, char)
-	}
-	return nil
+	return fileRefCompletion(cwd, cur, line, wordStart, char)
 }
 
 // ─── Frontmatter completion ────────────────────────────────────────────────
@@ -646,30 +649,34 @@ func isFileRef(cur string, wordStart int) bool {
 	return wordStart == 0 || isSpace(cur[wordStart-1])
 }
 
-func fileCompletion(cwd, word string, line, wordStart, char int) []completionItem {
+func fileRefCompletion(cwd, cur string, line, wordStart, char int) ([]completionItem, bool) {
+	if wordStart >= char || !isFileRef(cur, wordStart) {
+		return nil, false
+	}
+	// Let clients refresh as the query changes, even if this list is empty.
+	start := wordStart + 1
+	return fileCompletion(cwd, cur[start:char], line, start, char), true
+}
+
+func fileCompletion(cwd, query string, line, start, char int) []completionItem {
 	if cwd == "" {
 		return nil
 	}
-	afterAt := strings.TrimPrefix(word, "@")
-	paths := listUnder(cwd, afterAt)
-	seen := map[string]bool{}
+	matchBasename := query != "" && !strings.Contains(query, "/")
 	var out []completionItem
-	// The inserted text replaces everything AFTER the `@`, which the client
-	// leaves in place. That keeps the completion start column at the path
-	// itself, so Neovim filters on what the user typed ("fla" against
-	// "flake.nix") instead of against a prefixed "@fla".
-	start := wordStart + 1
-	if start > char {
-		start = char
-	}
-	for _, p := range paths {
-		if !strings.HasPrefix(p, afterAt) {
+	// Replace only what follows the @, so client filtering starts at the query.
+	r := rng{Start: position{Line: line, Character: start}, End: position{Line: line, Character: char}}
+	for _, p := range listUnder(cwd) {
+		filter := p
+		if base := path.Base(p); matchBasename && strings.HasPrefix(base, query) {
+			filter = base
+		} else if !strings.HasPrefix(p, query) {
 			continue
 		}
-		if seen[p] {
-			continue
+		rank := "1"
+		if query == p || query == filter {
+			rank = "0"
 		}
-		seen[p] = true
 		insert := p
 		if strings.Contains(p, " ") {
 			insert = `"` + p + `"`
@@ -677,14 +684,15 @@ func fileCompletion(cwd, word string, line, wordStart, char int) []completionIte
 		out = append(out, completionItem{
 			Label:      p,
 			Kind:       complFile,
-			SortText:   p,
-			FilterText: p,
+			SortText:   rank + p,
+			FilterText: filter,
 			InsertText: insert,
-			TextEdit:   &textEdit{Range: rng{Start: position{Line: line, Character: start}, End: position{Line: line, Character: char}}, NewText: insert},
+			TextEdit:   &textEdit{Range: r, NewText: insert},
 		})
-		if len(out) >= 200 {
-			break
-		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].SortText < out[j].SortText })
+	if len(out) > 200 {
+		out = out[:200]
 	}
 	return out
 }
@@ -912,12 +920,9 @@ func listAgentStems(agentsDir string) []string {
 	return out
 }
 
-// listUnder lists files under root (bounded depth/result count) as paths
-// relative to root. Paths are relative to root even when prefix names a
-// subdirectory, so a caller filtering by prefix sees the whole relative path
-// and can insert it verbatim. Directories carry a trailing slash so the client
-// can complete further segments.
-func listUnder(root, prefix string) []string {
+// listUnder lists paths relative to root, with bounded depth and result count.
+// Directories carry a trailing slash so the client can complete further segments.
+func listUnder(root string) []string {
 	var out []string
 	var walk func(dir, rel string, depth int)
 	walk = func(dir, rel string, depth int) {
@@ -949,7 +954,6 @@ func listUnder(root, prefix string) []string {
 		}
 	}
 	walk(root, "", 0)
-	sort.Strings(out)
 	return out
 }
 

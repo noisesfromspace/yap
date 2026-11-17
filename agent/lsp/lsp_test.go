@@ -628,6 +628,116 @@ func TestScratchCompletionOnlyFiles(t *testing.T) {
 	}
 }
 
+func TestFileCompletionMatchesAndRanksPaths(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"a/sessions.go.bak", "agent/tools/sessions.go", "b/sessions.go", "z/release notes.md",
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	type match struct{ label, filter, insert string }
+	for _, tc := range []struct {
+		query string
+		want  []match
+	}{
+		{"sess", []match{
+			{"a/sessions.go.bak", "sessions.go.bak", "a/sessions.go.bak"},
+			{"agent/tools/sessions.go", "sessions.go", "agent/tools/sessions.go"},
+			{"b/sessions.go", "sessions.go", "b/sessions.go"},
+		}},
+		{"sessions.go", []match{
+			{"agent/tools/sessions.go", "sessions.go", "agent/tools/sessions.go"},
+			{"b/sessions.go", "sessions.go", "b/sessions.go"},
+			{"a/sessions.go.bak", "sessions.go.bak", "a/sessions.go.bak"},
+		}},
+		{"agent", []match{
+			{"agent/", "agent", "agent/"},
+			{"agent/tools/", "agent/tools/", "agent/tools/"},
+			{"agent/tools/sessions.go", "agent/tools/sessions.go", "agent/tools/sessions.go"},
+		}},
+		{"agent/tools/sess", []match{
+			{"agent/tools/sessions.go", "agent/tools/sessions.go", "agent/tools/sessions.go"},
+		}},
+		{"tools/sess", nil}, // A slash query cannot start inside a path.
+		{"release", []match{
+			{"z/release notes.md", "release notes.md", `"z/release notes.md"`},
+		}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			const prefix = "see @"
+			line := prefix + tc.query
+			items := Completion("# @user\n"+line, 1, len(line), CompletionCtx{Cwd: dir})
+			if len(items) != len(tc.want) {
+				t.Fatalf("items = %+v, want %+v", items, tc.want)
+			}
+			for i, it := range items {
+				want := tc.want[i]
+				if it.Label != want.label || it.FilterText != want.filter || it.InsertText != want.insert {
+					t.Fatalf("item %d = %+v, want %+v", i, it, want)
+				}
+				r := rng{Start: position{Line: 1, Character: len(prefix)}, End: position{Line: 1, Character: len(line)}}
+				if it.TextEdit == nil || it.TextEdit.Range != r || it.TextEdit.NewText != want.insert {
+					t.Fatalf("edit = %+v, want %+v replacing only the query", it.TextEdit, textEdit{Range: r, NewText: want.insert})
+				}
+				if i > 0 && items[i-1].SortText >= it.SortText {
+					t.Fatalf("sortText %q would not follow %q", it.SortText, items[i-1].SortText)
+				}
+			}
+		})
+	}
+}
+
+func TestCompletionIncompleteForFileReferences(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.Mkdir(filepath.Join(cwd, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "nested", "sessions.go"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := New(io.Discard, InitOptions{SessionsDir: "/tmp/sessions"})
+	const uri = "file:///tmp/sessions/a/session.md"
+	for _, tc := range []struct {
+		name, text string
+		line, char int
+		scratch    bool
+		incomplete bool
+		firstLabel string
+	}{
+		{"bare at", "# @user\n@", 1, 1, false, true, "nested/"},
+		{"query", "# @user\nsee @sess", 1, 9, false, true, "nested/sessions.go"},
+		{"no file matches", "# @user\n@missing", 1, 8, false, true, ""},
+		{"role", "# @u", 0, 4, false, false, "user"},
+		{"frontmatter", "---\n@\n---", 1, 1, false, false, ""},
+		{"email", "# @user\nme@sess", 1, 7, false, false, ""},
+		{"before at", "# @user\n@", 1, 0, false, false, ""},
+		{"scratch bare at", "@", 0, 1, true, true, "nested/"},
+		{"scratch query", "see @sess", 0, 9, true, true, "nested/sessions.go"},
+		{"scratch heading", "# @st", 0, 5, true, false, "steer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s.docs[uri] = &docState{text: tc.text, cwd: cwd, scratch: tc.scratch}
+			p := completionParams{Position: position{Line: tc.line, Character: tc.char}}
+			p.TextDocument.URI = uri
+			res := s.completionFor(p).(map[string]any)
+			if res["isIncomplete"] != tc.incomplete {
+				t.Fatalf("isIncomplete = %v, want %t", res["isIncomplete"], tc.incomplete)
+			}
+			items := res["items"].([]completionItem)
+			if items == nil || (tc.firstLabel == "" && len(items) != 0) ||
+				(tc.firstLabel != "" && (len(items) == 0 || items[0].Label != tc.firstLabel)) {
+				t.Fatalf("items = %+v, want non-nil list with first label %q (empty if blank)", items, tc.firstLabel)
+			}
+		})
+	}
+}
+
 func TestMessagesRequestServesGoConversion(t *testing.T) {
 	uri := "file:///tmp/sessions/a/renamed-transcript.md"
 	text := "# @user\nhello\n# @assistant\nreply\n"
