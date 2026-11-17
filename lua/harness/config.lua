@@ -288,6 +288,10 @@ function M.pick(cb)
   end
   if models_cache then
     pick(models_cache)
+    -- A cached list can be stale: a provider was briefly down, or its API
+    -- keys were not yet sourced, when setup() refreshed. Re-run discovery in
+    -- the background so the next open self-heals without a Neovim restart.
+    M.refresh_models()
     return
   end
   table.insert(models_waiters, function(combos, stderr)

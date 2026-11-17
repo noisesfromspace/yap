@@ -14,6 +14,16 @@ vim.system = function(cmd, opts, cb)
   end
 end
 
+-- Let a refresh's vim.schedule callback run so models_refreshing resets
+-- before the next discovery is triggered.
+local function yield()
+  vim.wait(100, function()
+    return false
+  end)
+end
+
+local JSON = '[{"name":"alpha/new"},{"name":"beta/new"}]'
+
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap" })
 assert(#callbacks == 1, "setup should refresh models in the background")
@@ -23,22 +33,28 @@ vim.ui.select = function(items, _, cb)
   table.insert(picked, vim.deepcopy(items))
   cb(items[1])
 end
+
+-- The cached list opens immediately, before the async refresh completes.
 yap.change_model()
 assert(vim.deep_equal(picked[1], { "alpha/old" }), "cached picker should open before refresh completes")
-callbacks[1]({ code = 0, stdout = "alpha/new\nbeta/new\n", stderr = "" })
+
+-- `yap models --json` returns one entry per combo; the cache keeps the names.
+callbacks[1]({ code = 0, stdout = JSON, stderr = "" })
 assert(vim.wait(1000, function()
   return vim.deep_equal(vim.fn.readfile(path), { "alpha/new", "beta/new" })
 end))
 assert(#picked == 1, "refresh should not reopen the picker")
+
+-- A populated cache still re-runs discovery in the background, so a stale
+-- list (a provider that was down when setup() refreshed) self-heals on the
+-- next open instead of persisting until Neovim restarts.
 yap.change_model()
 assert(vim.deep_equal(picked[2], { "alpha/new", "beta/new" }), "next picker should use refreshed list")
+assert(#callbacks == 2, "picker with a cache should still refresh in the background")
 
-yap.setup({ bin = ROOT .. "/yap" })
-assert(#callbacks == 2, "setup should retry discovery")
+-- A failed refresh keeps the last good list and its disk cache.
 callbacks[2]({ code = 1, stdout = "", stderr = "offline" })
-assert(vim.wait(1000, function()
-  return #callbacks == 2
-end))
+yield()
 yap.change_model()
 assert(vim.deep_equal(picked[3], { "alpha/new", "beta/new" }), "failure should keep last good list")
 assert(vim.deep_equal(vim.fn.readfile(path), { "alpha/new", "beta/new" }), "failure should keep disk cache")
