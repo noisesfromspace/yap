@@ -430,8 +430,10 @@ local function copy_bash_command(row)
   if row.tool ~= "bash" or row.raw_command == "" then
     return
   end
-  vim.fn.setreg('"', row.raw_command)
+  -- Set the clipboard first: with clipboard=unnamedplus, writing the unnamed
+  -- register afterward can otherwise leave Neovim's clipboard provider stale.
   vim.fn.setreg("+", row.raw_command)
+  vim.fn.setreg('"', row.raw_command)
 end
 
 -- ─── Board lifecycle ───────────────────────────────────────────────────────
