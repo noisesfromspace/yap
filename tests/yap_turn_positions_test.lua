@@ -35,7 +35,12 @@ end
 local buf
 local function finish(f)
   frame(f)
-  assert(vim.wait(3000, function() return not yap.is_running(buf) end, 10), "turn still running")
+  assert(
+    vim.wait(3000, function()
+      return not yap.is_running(buf)
+    end, 10),
+    "turn still running"
+  )
 end
 local function text()
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
@@ -68,9 +73,32 @@ assert(document.messages(buf)[#document.messages(buf)].content == "original requ
 
 -- 2. Graceful stop keeps the partial as conversation history and opens a
 --    fresh prompt.
+local reused = backend
 vim.api.nvim_buf_set_lines(buf, -1, -1, false, { "second request" })
 assert(yap.send(buf))
-frame({ type = "text", text = "second partial" })
+assert(backend == reused, "second turn did not reuse the backend")
+local win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
+local follow_windows = document.follow_windows
+local followed
+-- Guard-board inspection can pause a window even at the last line. The
+-- reused pipe must honor the new turn's pause, not the first turn's table.
+state.running[buf].paused_follow[win] = true
+document.follow_windows = function(target, wins, expected)
+  if target == buf then
+    followed = vim.tbl_contains(wins, win)
+  end
+  return follow_windows(target, wins, expected)
+end
+frame({ type = "text", text = "second partial\nmore output" })
+assert(
+  vim.wait(3000, function()
+    return followed ~= nil
+  end, 10),
+  "second turn did not flush"
+)
+document.follow_windows = follow_windows
+assert(not followed, "reused backend ignored this turn's paused follower")
 yap.stop(buf)
 assert(backend.cancelled and state.stopped[buf], "stop did not enter unwinding")
 finish({ type = "turn_complete", ok = false, cancelled = true })
@@ -88,7 +116,12 @@ assert(yap.send(buf))
 frame({ type = "text", text = "third partial" })
 yap.stop(buf) -- first press: graceful unwind
 backend.exit(15) -- the second press kills the backend
-assert(vim.wait(3000, function() return not yap.is_running(buf) end, 10), "hard stop did not finish")
+assert(
+  vim.wait(3000, function()
+    return not yap.is_running(buf)
+  end, 10),
+  "hard stop did not finish"
+)
 t = text()
 assert(not t:find("third partial", 1, true), "hard stop kept the partial reply:\n" .. t)
 assert(t:match("third request$"), "hard stop did not restore the prompt:\n" .. t)

@@ -40,8 +40,8 @@ Inspired by pi and gptel.
   OpenAI-compatible endpoint, or a ChatGPT plan login.
 - A session-only language server (`yap lsp`) for document symbols, completion
   and structural diagnostics, scoped to managed sessions. nvim-cmp and
-  blink.cmp can use it through their LSP source or an optional dedicated Yap
-  source (see `:help yap-lsp`).
+  blink.cmp can consume its completion through their generic LSP source
+  (see `:help yap-lsp`).
 - Fork a conversation into an independent session with `:YapFork`, then edit
   the transcript to change direction.
 - A session jail runs Neovim inside bubblewrap, limiting the files and tools

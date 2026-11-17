@@ -135,8 +135,6 @@ local last_turn = state.last_turn
 local awaiting = state.awaiting
 local servers = state.servers
 local pending_approvals = state.pending_approvals
-local close_after_turn = state.close_after_turn
-local follow_override = state.follow_override
 
 -- ─── User commands kept here (small, self-contained) ─────────────────────
 
@@ -288,7 +286,8 @@ function M.change_model(combo)
   -- A running turn adopts the new combo at its next model boundary; an idle
   -- buffer just uses it on the next send. The backend keeps native tool
   -- history intact, so no stop-and-resend is needed.
-  local proc = running[buf]
+  local turn = running[buf]
+  local proc = turn and turn.process
   if proc then
     local ok = pcall(function()
       proc:write(vim.json.encode({ type = "model", provider = provider, model = model }) .. "\n")
@@ -394,11 +393,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = adopt_group,
     callback = function(args)
-      local process = servers[args.buf]
-      if process then
-        process:kill(15)
-      end
-      servers[args.buf] = nil
+      stream.forget(args.buf)
       if vim.b[args.buf].yap_scratch and vim.api.nvim_buf_is_valid(vim.b[args.buf].yap_scratch) then
         vim.b[vim.b[args.buf].yap_scratch].yap_queue_armed = false
         vim.b[vim.b[args.buf].yap_scratch].yap_queue_dispatch = false
@@ -406,12 +401,9 @@ function M.setup(opts)
       state.steer[args.buf] = nil
       state.model_switch[args.buf] = nil
       state.clear_queued[args.buf] = nil
-      running[args.buf] = nil
       pending_approvals[args.buf] = nil
       state.last_tool_call[args.buf] = nil
       state.tool_call_counts[args.buf] = nil
-      follow_override[args.buf] = nil
-      close_after_turn[args.buf] = nil
       -- Release the per-buffer UI state so the winbar's rollup and cache
       -- don't iterate/retain entries for buffers that are gone.
       live[args.buf] = nil
@@ -691,7 +683,7 @@ function M.setup(opts)
       end
       -- The session is being closed by a tool call, so there is no waiting
       -- session to announce when this turn finishes.
-      if close_after_turn[data.buf] then
+      if data.close_requested then
         return
       end
       -- No toast if the user can already see the stream in another window.

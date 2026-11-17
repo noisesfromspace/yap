@@ -5,7 +5,7 @@
 
 local M = {
   sessions = {}, -- buf -> true (every open yap session, for the global rollup)
-  running = {}, -- buf -> vim.SystemObj (in-flight send process)
+  running = {}, -- buf -> active turn (owned by client.stream)
   servers = {}, -- buf -> vim.SystemObj (persistent serve backend)
   stopped = {}, -- buf -> true (manually interrupted turn)
   live = {}, -- buf -> most recently started running tool (winbar)
@@ -28,8 +28,6 @@ local M = {
   last_tool_call = {}, -- session buf -> { id, occurrence } of the most recent tool call
   tool_call_counts = {}, -- session buf -> { [tool call id] = occurrences }
   settled_approvals = {}, -- resolved guard rows (granted/denied/timeout) recorded this Neovim process
-  close_after_turn = {}, -- session buf -> true (a close_session side effect, honored on turn completion)
-  follow_override = {}, -- session buf -> windows deliberately focused during a turn (paused tail-following)
   auto_accept = false, -- approve incoming approval requests (guard board toggle)
 }
 

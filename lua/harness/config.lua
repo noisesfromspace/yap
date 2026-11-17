@@ -27,8 +27,7 @@ M.defaults = {
   -- vim.notify for a completed turn when its buffer is not visible
   -- (delegated child results go to the running parent instead).
   notify_done = true,
-  -- Turn off Neovim's built-in completion UI when using cmp/blink as the
-  -- completion engine (the Yap language server remains attached).
+  -- Neovim's built-in completion is enabled on Yap buffers by default.
   builtin_completion = true,
   -- Terminal glyph availability cannot be detected reliably; set false to use
   -- plain Unicode status glyphs, the original spinner and block gauge.

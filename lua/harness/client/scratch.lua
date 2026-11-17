@@ -146,7 +146,8 @@ end
 local function cancel_steer(buf)
   steer[buf] = nil
   M.refresh(vim.api.nvim_buf_is_valid(buf) and find_scratch(buf) or nil)
-  local proc = running[buf]
+  local turn = running[buf]
+  local proc = turn and turn.process
   if not proc then
     return
   end
@@ -169,7 +170,8 @@ function M.steer(buf, text)
   if steer[buf] == text then
     return true
   end
-  local proc = running[buf]
+  local turn = running[buf]
+  local proc = turn and turn.process
   local ok = pcall(function()
     proc:write(vim.json.encode({ type = "steer", text = text }) .. "\n")
   end)

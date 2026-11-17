@@ -11,8 +11,6 @@ local audit = require("harness.client.audit")
 local guard = require("harness.ui.guard")
 local buffers = require("harness.session.buffers")
 
-local follow_override = state.follow_override
-
 local function harness()
   return require("harness")
 end
@@ -116,7 +114,8 @@ local function focus_approval_call(buf, call)
         seen = seen + 1
         if seen == call.occurrence then
           -- A guard-board inspection wins over tail-following for this turn.
-          local paused = follow_override[buf]
+          local turn = state.running[buf]
+          local paused = turn and turn.paused_follow
           if paused then
             paused[win] = true
           end

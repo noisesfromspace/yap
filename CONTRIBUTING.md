@@ -168,9 +168,8 @@ and the provider/model/tool catalogs those features draw on. The Lua harness own
 the plumbing: starting the client, attaching it to `b:yap` buffers (never
 scratch notes or ordinary Markdown), and sending editor context (live cwd and
 streaming state) over `yap/context`. Neovim's built-in completion is enabled
-by default; the optional cmp/blink sources in `harness.client.complete` route
-requests to the same server and gate triggers outside Yap completion contexts,
-without computing items in Lua. Folding, text objects, navigation and
+by default; external completion engines can use their generic LSP source to
+consume the same server completions. Folding, text objects, navigation and
 their synchronous structural parse stay in Lua; the language server is
 optional and its failure or absence must not affect editing. Send-time
 transcript-to-request conversion is Go's (`agent/document.Messages`), reached
@@ -815,15 +814,21 @@ the stream, and nothing moves from a non-normal mode. (The one deliberate
 exception, unchanged: a completed turn puts the cursor on the new `# @user`
 heading, so the next prompt is ready to type.)
 
+A session's `serve` process decodes frames across turns. Each send creates a
+fresh active turn that owns its reply anchor, pending text and flush timer,
+follower state, and stop and close requests. Terminal frames, process exit
+and pipe failures finalize that turn through the same path. Wiping the buffer
+detaches the turn and cancels its timer before stopping the process.
+
 #### R-turn-complete-event — Turn completion is a first-class event
 
-When the binary exits successfully, the Lua side emits `User YapTurnDone` with
-`data = { buf, turn }` (turn is the binary's `turn_end` payload when usage was
-reported: model, prompt, completion, cost, ms). Hard backend/spawn errors do
-not emit the event. A successful binary exit can still contain an agent error
-marker (for example an empty completion or the tool-iteration bound); that
-state is surfaced as an error and the default completion notification is
-suppressed. The default handler (installed by setup(), disabled with
+After a successful terminal frame, the Lua side emits `User YapTurnDone` with
+`data = { buf, turn, close_requested }`. `turn` is the binary's `turn_end`
+payload when usage was reported: model, prompt, completion, cost, ms.
+`close_requested` is true when the buffer will be wiped after the event. Spawn
+errors, backend exits before completion, and replies with an agent error
+marker (for example an empty completion or the tool-iteration bound) do not
+emit the event. The default handler (installed by setup(), disabled with
 `notify_done = false`) calls vim.notify — only for a buffer not visible in any
 window, and never on the error path, which already notifies (R-error-surface). Delegated
 child results and failures are reported to the running parent, not toasted

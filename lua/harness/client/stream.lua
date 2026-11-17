@@ -42,14 +42,10 @@ local servers = state.servers
 local subagent_children = state.subagent_children
 local subagent_done = state.subagent_done
 local pending_approvals = state.pending_approvals
-local close_after_turn = state.close_after_turn
-local follow_override = state.follow_override
-local stop_focus = {} -- buf -> window that pressed the stop key
 local turn_start_ns = vim.api.nvim_create_namespace("yap_turn_start")
 
-local function focus_stopped_prompt(buf, revise)
-  local win = stop_focus[buf]
-  stop_focus[buf] = nil
+local function focus_stopped_prompt(turn, revise)
+  local buf, win = turn.buf, turn.stop_win
   if
     not win
     or not vim.api.nvim_win_is_valid(win)
@@ -85,9 +81,9 @@ end
 
 -- Honor a close_session request by wiping the buffer. The turn has already
 -- been saved by whichever completion path reached this point.
-local function close_if_requested(buf)
-  if close_after_turn[buf] then
-    close_after_turn[buf] = nil
+local function close_if_requested(turn)
+  local buf = turn.buf
+  if turn.close_requested and not running[buf] and vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_delete(buf, { force = true })
     -- Neovim reports success but keeps the sole buffer alive. Give any
     -- remaining windows an ordinary replacement, then wipe the session.
@@ -392,7 +388,8 @@ local function repair_stream_tail(buf)
 end
 
 -- An undelivered steer becomes a user draft so it cannot silently disappear.
-local function leave_undelivered_steer(buf)
+local function leave_undelivered_steer(turn)
+  local buf = turn.buf
   local text = steer[buf]
   steer[buf] = nil
   if not text then
@@ -400,7 +397,7 @@ local function leave_undelivered_steer(buf)
   end
   local scratch = vim.b[buf].yap_scratch
   -- A late user instruction outranks an agent's close_session request.
-  close_after_turn[buf] = nil
+  turn.close_requested = nil
   if scratch and vim.api.nvim_buf_is_valid(scratch) then
     vim.notify("yap: steer was not delivered; draft remains in scratch (send again with <C-s>)", vim.log.levels.WARN)
   else
@@ -417,8 +414,8 @@ end
 --- removes it and returns to the prompt that started the turn. A failure keeps
 --- the partial and the error marker as a visible record but excludes them from
 --- the next request (the error region poisons the assistant block it follows).
-local function close_stream(buf, outcome, anchor, err, code)
-  repair_stream_tail(buf)
+local function close_stream(turn, outcome, err, code)
+  local buf, anchor = turn.buf, turn.anchor
   awaiting[buf] = nil
   stopped[buf] = nil
   if outcome == "ok" then
@@ -426,16 +423,13 @@ local function close_stream(buf, outcome, anchor, err, code)
     document.append_lines(buf, { "# @user", "" })
     awaiting[buf] = true
   elseif outcome == "stopped" then
-    close_after_turn[buf] = nil
     vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
     document.append_lines(buf, { "# @user", "" })
     stopped[buf] = true
   elseif outcome == "killed" then
-    close_after_turn[buf] = nil
     restore_prompt(buf, anchor)
     stopped[buf] = true
   else -- "error"
-    close_after_turn[buf] = nil
     if assistant_block_empty(buf, anchor) then
       restore_prompt(buf, anchor)
     else
@@ -444,19 +438,307 @@ local function close_stream(buf, outcome, anchor, err, code)
     report_error(buf, err, code)
     document.append_lines(buf, { "# @user", "" })
   end
-  vim.b[buf].yap_turn_anchor = nil
   model_switch[buf] = nil
   if outcome ~= "ok" then
     state.clear_queued[buf] = nil
   end
   session.save(buf)
-  leave_undelivered_steer(buf)
+  leave_undelivered_steer(turn)
   if subagent_done[buf] then
     local done = subagent_done[buf]
     subagent_done[buf] = nil
     done(outcome == "ok")
   end
 end
+local function sync_followers(turn)
+  document.sync_followers(turn.buf, turn.followers, turn.expected_follow, turn.paused_follow)
+end
+
+local function follow_tail(turn)
+  document.follow_windows(turn.buf, turn.followers, turn.expected_follow)
+end
+
+local function flush_pending(turn, final)
+  if turn.pending == "" then
+    return
+  end
+  local data = turn.pending
+  turn.pending = ""
+  if not final then
+    data, turn.pending = document.split_stream_tail(turn.buf, data)
+  end
+  if data ~= "" then
+    sync_followers(turn)
+    document.append_text(turn.buf, data)
+    follow_tail(turn)
+  end
+end
+
+local function stop_flush(turn)
+  if turn.flush_timer then
+    turn.flush_timer:stop()
+    turn.flush_timer:close()
+    turn.flush_timer = nil
+  end
+end
+
+-- Batch tokens without postponing the flush on each arrival. Only a partial
+-- structural prefix waits for the next batch (or the terminal frame).
+local function append(turn, data)
+  if data == "" then
+    return
+  end
+  turn.pending = turn.pending .. data
+  if not turn.flush_timer then
+    turn.flush_timer = vim.uv.new_timer()
+    turn.flush_timer:start(
+      30,
+      0,
+      vim.schedule_wrap(function()
+        if running[turn.buf] == turn then
+          stop_flush(turn)
+          flush_pending(turn)
+        end
+      end)
+    )
+  end
+end
+
+local function disposition(turn, result)
+  if result.cancelled then
+    -- A cancelled frame ends at a clean boundary. Process exit can truncate
+    -- anywhere, so discard the partial and restore the sent prompt instead.
+    return result.graceful and "stopped" or "killed"
+  end
+  if not result.ok then
+    local err = result.error
+    if type(err) == "table" then
+      return "error", err.message or result.stderr or "backend exited", err.code
+    end
+    return "error", err or result.stderr or "backend exited"
+  end
+  local buf = turn.buf
+  local p = require("harness.model.structure").parse(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local anchor_line = vim.api.nvim_buf_get_extmark_by_id(buf, turn_start_ns, turn.anchor, {})[1] or #lines
+  local embedded_error
+  for _, r in ipairs(p.regions) do
+    if r.kind == "error" and r.start > anchor_line then
+      embedded_error = lines[r.start + 1]
+    end
+  end
+  if embedded_error then
+    return "error", embedded_error
+  end
+  return "ok"
+end
+
+local function complete(turn, result)
+  local buf = turn.buf
+  if running[buf] ~= turn then
+    return
+  end
+  stop_flush(turn)
+  flush_pending(turn, true)
+  sync_followers(turn)
+  running[buf] = nil
+  spinner.cancel(buf)
+  lsp.notify_streaming(buf, false)
+  scratchmod.refresh(vim.b[buf].yap_scratch)
+  local compact = vim.b[buf].yap_compact_pending
+  vim.b[buf].yap_compact_pending = nil
+  audit.flush(buf) -- emit any unterminated final line
+  for path in pairs(state.live_logs[buf] or {}) do
+    pcall(os.remove, path)
+  end
+  state.live_logs[buf] = nil
+  live[buf] = nil
+  spinner.stop_if_idle()
+  repair_stream_tail(buf)
+
+  local outcome, err, code = disposition(turn, result)
+  if outcome ~= "ok" then
+    if pending_approvals[buf] then
+      pending_approvals[buf] = nil
+      guard.touch()
+    end
+    scratchmod.finish_queue(buf, false)
+  end
+  close_stream(turn, outcome, err, code)
+  follow_tail(turn)
+  if outcome ~= "ok" then
+    if result.cancelled then
+      focus_stopped_prompt(turn, true)
+    end
+    return
+  end
+
+  local queued_clear = state.clear_queued[buf]
+  if queued_clear ~= nil then
+    state.clear_queued[buf] = nil
+    maintain.clear(buf, queued_clear)
+    session.save(buf)
+  end
+  describe.refresh(buf, "answer")
+  -- Emit after the fresh user prompt and any queued clear are saved.
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "YapTurnDone",
+    modeline = false,
+    data = { buf = buf, turn = last_turn[buf], close_requested = turn.close_requested },
+  })
+  if compact then
+    maintain.offer(buf)
+  end
+  close_if_requested(turn)
+  scratchmod.finish_queue(buf, not errors[buf])
+  util.redraw_status()
+end
+
+local function handle_frame(turn, frame, stderr)
+  local buf = turn.buf
+  if frame.type == "text" then
+    append(turn, frame.text or "")
+    relay_subagent(buf, "text")
+    return
+  end
+  sync_followers(turn)
+  if frame.type == "event" then
+    handle_event(buf, frame.event)
+  elseif frame.type == "tool_output" then
+    audit.tool_output(buf, frame.log, frame.delta)
+    relay_subagent(buf, "output", nil, frame.delta)
+  elseif frame.type == "progress" then
+    -- Throughput for the running tool, shown by the winbar beacon.
+    local logs = state.live_logs[buf]
+    local l = logs and logs[frame.log]
+    if l then
+      l.ms, l.bytes, l.lines = frame.ms, frame.bytes, frame.lines
+    end
+  elseif frame.type == "approval_request" then
+    handle_approval_request(buf, frame)
+    relay_subagent(buf, "approval", frame.tool or "tool")
+  elseif frame.type == "subagent_request" then
+    subagent.start(buf, frame)
+  elseif frame.type == "close_session" then
+    -- Defer to turn completion so the reply streams out and the session
+    -- file is saved before the buffer is wiped (complete()).
+    turn.close_requested = true
+  elseif frame.type == "turn_complete" then
+    complete(turn, {
+      ok = frame.ok == true,
+      cancelled = frame.cancelled == true,
+      error = frame.error,
+      stderr = stderr,
+      graceful = true,
+    })
+    return
+  end
+  follow_tail(turn)
+end
+
+-- Pipe framing belongs to the backend. Frames and flush timers belong to
+-- the currently active turn, which changes each time the pipe is reused.
+local function start_server(buf)
+  local partial, stderr_partial, stderr_chunks = "", "", {}
+  local handle
+  local ok, started = pcall(
+    vim.system,
+    { harness().config.bin, "serve" },
+    {
+      stdin = true,
+      text = true,
+      stdout = vim.schedule_wrap(function(_, data)
+        if not data or servers[buf] ~= handle then
+          return
+        end
+        partial = partial .. data
+        while servers[buf] == handle do
+          local i = partial:find("\n", 1, true)
+          if not i then
+            break
+          end
+          local line = partial:sub(1, i - 1)
+          partial = partial:sub(i + 1)
+          if line == "" then
+            -- skip an empty frame line
+          else
+            local ok, frame = pcall(vim.json.decode, line)
+            if ok and type(frame) == "table" and frame.type then
+              local turn = running[buf]
+              if turn then
+                local stderr
+                if frame.type == "turn_complete" then
+                  stderr = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
+                  stderr_chunks = {}
+                end
+                handle_frame(turn, frame, stderr ~= "" and stderr or nil)
+              end
+            else
+              -- A non-frame line on stdout is unexpected (the agent emits
+              -- only frames here); surface it as error text, never as buffer.
+              table.insert(stderr_chunks, line)
+            end
+          end
+        end
+      end),
+      stderr = vim.schedule_wrap(function(_, data)
+        if not data or servers[buf] ~= handle then
+          return
+        end
+        stderr_partial = stderr_partial .. data
+        while true do
+          local i = stderr_partial:find("\n", 1, true)
+          if not i then
+            break
+          end
+          local line = stderr_partial:sub(1, i - 1)
+          stderr_partial = stderr_partial:sub(i + 1)
+          table.insert(stderr_chunks, line)
+        end
+      end),
+    },
+    vim.schedule_wrap(function(result)
+      if servers[buf] ~= handle then
+        return
+      end
+      servers[buf] = nil
+      -- Discard any incomplete stdout frame at exit.
+      if stderr_partial ~= "" then
+        table.insert(stderr_chunks, stderr_partial)
+      end
+      local turn = running[buf]
+      if turn then
+        local stderr = table.concat(stderr_chunks, "\n")
+        complete(turn, {
+          ok = false,
+          cancelled = turn.stop_requested == true,
+          error = stderr:match("%S") and stderr or ("exit " .. result.code),
+          graceful = false,
+        })
+      end
+    end)
+  )
+  if not ok then
+    return nil, started
+  end
+  handle = started
+  servers[buf] = handle
+  return handle
+end
+
+-- Wiping the buffer abandons its turn; queued pipe/timer callbacks must
+-- not flush text or finalize it after the buffer is gone.
+function M.forget(buf)
+  local turn, process = running[buf], servers[buf]
+  running[buf], servers[buf] = nil, nil
+  if turn then
+    stop_flush(turn)
+  end
+  if process then
+    process:kill(15)
+  end
+end
+
 --- Serialize the current buffer and stream the assistant reply into it.
 function M.send(buf)
   buf = buf or vim.api.nvim_get_current_buf()
@@ -471,10 +753,6 @@ function M.send(buf)
     lsp.warn_missing_bin()
     return false
   end
-  -- A close request is scoped to the turn that made it: a stale flag from
-  -- a previous errored or stopped turn must not close a later turn.
-  close_after_turn[buf] = nil
-
   -- Import standalone photo paths before parsing or starting the turn. The
   -- resulting reference is visible in the buffer and survives later sends.
   local imported, attach_err = require("harness.client.attachment").import_paths(buf)
@@ -537,22 +815,20 @@ function M.send(buf)
 
   -- A window already watching the end keeps watching it while the reply
   -- streams (follow_windows); one parked elsewhere is not dragged along.
-  local follow = document.following_windows(buf)
-  local expected_follow = {}
-  local paused_follow = {}
-  follow_override[buf] = paused_follow
-  local function sync_followers()
-    document.sync_followers(buf, follow, expected_follow, paused_follow)
-  end
-  local function follow_tail()
-    document.follow_windows(buf, follow, expected_follow)
-  end
+  local turn = {
+    buf = buf,
+    followers = document.following_windows(buf),
+    expected_follow = {},
+    paused_follow = {},
+    pending = "",
+  }
   -- New assistant output adopts the current view: in view 1 it stays
   -- folded; in views 2/3 it is visible as it arrives.
   document.append_lines(buf, { "# @assistant", "" })
-  local turn_anchor = vim.api.nvim_buf_set_extmark(buf, turn_start_ns, vim.api.nvim_buf_line_count(buf) - 2, 0, { right_gravity = false })
-  vim.b[buf].yap_turn_anchor = turn_anchor
-  follow_tail()
+  turn.anchor =
+    vim.api.nvim_buf_set_extmark(buf, turn_start_ns, vim.api.nvim_buf_line_count(buf) - 2, 0, { right_gravity = false })
+  running[buf] = turn
+  follow_tail(turn)
   -- Sends never touch existing fold state or rewrite existing lines: the
   -- buffer is always in its final format, streaming only appends at the end,
   -- and new folds adopt the view's 'foldlevel' as they appear.
@@ -560,291 +836,14 @@ function M.send(buf)
 
   local process = servers[buf]
   if not process then
-    local partial = ""
-    local stderr_partial = ""
-    local stderr_chunks = {}
-    -- Coalesce rapid per-token stdout flushes into one buffer edit per
-    -- ~STREAM_FLUSH_MS: region parsing is O(n) per edit, so batching keeps a
-    -- fast stream smooth on large sessions instead of stalling per token.
-    -- This is a THROTTLE: the timer starts on the first token of a batch.
-    -- Only incomplete structural prefixes wait for classification; ordinary
-    -- prose flushes every tick even under continuous token flow.
-    local STREAM_FLUSH_MS = 30
-    local pending = ""
-    local flush_timer = nil
-    local function flush_pending(final)
-      if pending == "" then
-        return
-      end
-      local data = pending
-      pending = ""
-      if not final then
-        data, pending = document.split_stream_tail(buf, data)
-      end
-      if data == "" then
-        return
-      end
-      sync_followers()
-      document.append_text(buf, data)
-      follow_tail()
-    end
-    local function on_flush_tick(timer)
-      if flush_timer ~= timer then
-        return
-      end -- a final flush cancelled this tick
-      flush_timer = nil
-      timer:stop()
-      timer:close()
-      flush_pending()
-    end
-    -- uv timer callbacks run in a fast event context; schedule_wrap escapes
-    -- it so nvim_buf_set_text is legal inside flush_pending.
-    local on_flush_tick_wrapped = vim.schedule_wrap(on_flush_tick)
-    local function finish_flush()
-      if flush_timer then
-        flush_timer:stop()
-        flush_timer:close()
-        flush_timer = nil
-      end
-      flush_pending(true)
-    end
-    local function append(data)
-      if data == "" then
-        return
-      end
-      pending = pending .. data
-      if not flush_timer then
-        local timer = vim.uv.new_timer()
-        flush_timer = timer
-        timer:start(STREAM_FLUSH_MS, 0, function()
-          on_flush_tick_wrapped(timer)
-        end)
-      end
-    end
-    local function complete(result)
-      -- The serve process outlives a turn. Its stdout callback was created
-      -- on the first send, so read the current turn's anchor, not that
-      -- callback's captured first-turn local.
-      local turn_anchor = vim.b[buf].yap_turn_anchor
-      if not result.cancelled then
-        stop_focus[buf] = nil
-      end
-      finish_flush()
-      sync_followers()
-      running[buf] = nil
-      spinner.cancel(buf)
-      lsp.notify_streaming(buf, false)
-      follow_override[buf] = nil
-      scratchmod.refresh(vim.b[buf].yap_scratch)
-      local stderr = table.concat(stderr_chunks, "\n"):gsub("%s+$", "")
-      stderr_chunks = {}
-      local compact = vim.b[buf].yap_compact_pending
-      vim.b[buf].yap_compact_pending = nil
-      audit.flush(buf) -- emit any unterminated final line
-      for path in pairs(state.live_logs[buf] or {}) do
-        pcall(os.remove, path)
-      end
-      state.live_logs[buf] = nil
-      live[buf] = nil
-      spinner.stop_if_idle()
-      repair_stream_tail(buf)
-      if result.cancelled then
-        pending_approvals[buf] = nil
-        guard.touch()
-        scratchmod.finish_queue(buf, false)
-        -- A graceful stop (the turn_complete frame) ends at a clean tool
-        -- boundary and keeps its partial answer; a hard kill (the process
-        -- exit callback) may be truncated anywhere and returns to the prompt
-        -- that started it.
-        close_stream(buf, result.graceful and "stopped" or "killed", turn_anchor)
-        follow_tail()
-        close_if_requested(buf)
-        focus_stopped_prompt(buf, true)
-        return
-      end
-      if not result.ok then
-        local code
-        local err = result.error
-        if type(err) == "table" then
-          code, err = err.code, err.message
-        end
-        err = err or stderr
-        scratchmod.finish_queue(buf, false)
-        close_stream(buf, "error", turn_anchor, err ~= "" and err or "backend exited", code)
-        follow_tail()
-        close_if_requested(buf)
-        return
-      end
-      local embedded_error
-      do
-        local p = require("harness.model.structure").parse(buf)
-        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-        local anchor_line = vim.api.nvim_buf_get_extmark_by_id(buf, turn_start_ns, turn_anchor, {})[1] or #lines
-        for _, r in ipairs(p.regions) do
-          if r.kind == "error" and r.start > anchor_line then
-            embedded_error = lines[r.start + 1]
-          end
-        end
-      end
-      if embedded_error then
-        scratchmod.finish_queue(buf, false)
-        close_stream(buf, "error", turn_anchor, embedded_error)
-        follow_tail()
-        close_if_requested(buf)
-        return
-      end
-      close_stream(buf, "ok", turn_anchor)
-      follow_tail()
-      local queued_clear = state.clear_queued[buf]
-      if queued_clear ~= nil then
-        state.clear_queued[buf] = nil
-        maintain.clear(buf, queued_clear)
-      end
-      session.save(buf)
-      describe.refresh(buf, "answer")
-      -- A completed turn is a first-class event (herdr's "working → blocked
-      -- → idle" notification). Fire it once the buffer is in its final state
-      -- so handlers see the appended `# @user` and the saved session.
-      vim.api.nvim_exec_autocmds("User", {
-        pattern = "YapTurnDone",
-        modeline = false,
-        data = { buf = buf, turn = last_turn[buf] },
-      })
-      if compact then
-        maintain.offer(buf)
-      end
-      -- close_session is a frontend side effect: the agent asked to end the
-      -- session, so once the turn is fully done and the session file is
-      -- saved, wipe the buffer. The BufWipeout autocmd in
-      -- setup() tears down this buffer's serve backend.
-      close_if_requested(buf)
-      scratchmod.finish_queue(buf, not errors[buf])
-      util.redraw_status()
-    end
-    local function handle_frame(frame)
-      if frame.type == "text" then
-        append(frame.text or "")
-        relay_subagent(buf, "text")
-        return
-      end
-      sync_followers()
-      if frame.type == "event" then
-        handle_event(buf, frame.event)
-      elseif frame.type == "tool_output" then
-        audit.tool_output(buf, frame.log, frame.delta)
-        relay_subagent(buf, "output", nil, frame.delta)
-      elseif frame.type == "progress" then
-        -- Throughput for the running tool, shown by the winbar beacon.
-        local logs = state.live_logs[buf]
-        local l = logs and logs[frame.log]
-        if l then
-          l.ms, l.bytes, l.lines = frame.ms, frame.bytes, frame.lines
-        end
-      elseif frame.type == "approval_request" then
-        handle_approval_request(buf, frame)
-        relay_subagent(buf, "approval", frame.tool or "tool")
-      elseif frame.type == "subagent_request" then
-        subagent.start(buf, frame)
-      elseif frame.type == "close_session" then
-        -- Defer to turn completion so the reply streams out and the session
-        -- file is saved before the buffer is wiped (complete() below).
-        close_after_turn[buf] = true
-      elseif frame.type == "turn_complete" then
-        complete({
-          ok = frame.ok == true,
-          cancelled = frame.cancelled == true,
-          error = frame.error,
-          graceful = true,
-        })
-        return
-      end
-      follow_tail()
-    end
-    local handle
-    local ok, started = pcall(
-      vim.system,
-      { harness().config.bin, "serve" },
-      {
-        stdin = true,
-        text = true,
-        stdout = vim.schedule_wrap(function(_, data)
-          if not data or servers[buf] ~= handle then
-            return
-          end
-          partial = partial .. data
-          while true do
-            local i = partial:find("\n", 1, true)
-            if not i then
-              break
-            end
-            local line = partial:sub(1, i - 1)
-            partial = partial:sub(i + 1)
-            if line == "" then
-              -- skip an empty frame line
-            else
-              local ok, frame = pcall(vim.json.decode, line)
-              if ok and type(frame) == "table" and frame.type then
-                handle_frame(frame)
-              else
-                -- A non-frame line on stdout is unexpected (the agent emits
-                -- only frames here); surface it as error text, never as buffer.
-                table.insert(stderr_chunks, line)
-              end
-            end
-          end
-        end),
-        stderr = vim.schedule_wrap(function(_, data)
-          if not data or servers[buf] ~= handle then
-            return
-          end
-          stderr_partial = stderr_partial .. data
-          while true do
-            local i = stderr_partial:find("\n", 1, true)
-            if not i then
-              break
-            end
-            local line = stderr_partial:sub(1, i - 1)
-            stderr_partial = stderr_partial:sub(i + 1)
-            table.insert(stderr_chunks, line)
-          end
-        end),
-      },
-      vim.schedule_wrap(function(result)
-        if servers[buf] ~= handle then
-          return
-        end
-        servers[buf] = nil
-        pending_approvals[buf] = nil
-        partial = "" -- an incomplete frame at exit is discarded (killed process)
-        if stderr_partial ~= "" then
-          table.insert(stderr_chunks, stderr_partial)
-        end
-        if running[buf] then
-          local stderr = table.concat(stderr_chunks, "\n")
-          complete({
-            ok = false,
-            cancelled = stopped[buf] == true,
-            error = stderr:match("%S") and stderr or ("exit " .. result.code),
-            graceful = false,
-          })
-        end
-      end)
-    )
-    if not ok then
-      running[buf] = nil
-      spinner.cancel(buf)
-      spinner.stop_if_idle()
-      scratchmod.finish_queue(buf, false)
-      close_stream(buf, "error", turn_anchor, tostring(started))
-      follow_tail()
+    local err
+    process, err = start_server(buf)
+    if not process then
+      complete(turn, { error = tostring(err) })
       return false
     end
-    handle = started
-    servers[buf] = handle
-    process = handle
   end
-
-  running[buf] = process
+  turn.process = process
   spinner.begin(buf)
   lsp.notify_streaming(buf, true)
   scratchmod.refresh(vim.b[buf].yap_scratch)
@@ -881,15 +880,8 @@ function M.send(buf)
   end)
   if not ok then
     servers[buf] = nil
-    running[buf] = nil
-    process:kill(15)
-    spinner.cancel(buf)
-    spinner.stop_if_idle()
-    lsp.notify_streaming(buf, false)
-    follow_override[buf] = nil
-    scratchmod.finish_queue(buf, false)
-    close_stream(buf, "error", turn_anchor, tostring(err))
-    follow_tail()
+    pcall(process.kill, process, 15)
+    complete(turn, { error = tostring(err) })
     return false
   end
   return true
@@ -897,8 +889,9 @@ end
 --- Cancel the in-flight turn for the current buffer (the backend survives).
 function M.stop(buf, opts)
   buf = buf or vim.api.nvim_get_current_buf()
-  if opts and opts.focus and running[buf] then
-    stop_focus[buf] = vim.api.nvim_get_current_win()
+  local turn = running[buf]
+  if opts and opts.focus and turn then
+    turn.stop_win = vim.api.nvim_get_current_win()
   end
   local children = subagent_children[buf]
   if children then
@@ -907,9 +900,9 @@ function M.stop(buf, opts)
     end
   end
   scratchmod.finish_queue(buf, false) -- also retract a scheduled follow-up
-  local proc = running[buf]
+  local proc = turn and turn.process
   if proc then
-    if stopped[buf] then
+    if turn.stop_requested then
       -- The first stop asked the backend to unwind. Do not wait for a stuck
       -- tool or provider on the second press; the exit callback finishes the
       -- cancelled turn and the next send starts a fresh serve process.
@@ -917,12 +910,13 @@ function M.stop(buf, opts)
       -- exits; SIGKILL here would orphan a running bash command.
       proc:kill(15)
       vim.defer_fn(function()
-        if servers[buf] == proc and running[buf] == proc then
+        if servers[buf] == proc and running[buf] == turn then
           proc:kill(9) -- teardown itself is stuck; do not hold the session hostage
         end
       end, 500)
       return
     end
+    turn.stop_requested = true
     stopped[buf] = true
     -- Ask the backend to finish the current model step and its tool batch,
     -- then stop before starting another step. The turn context remains live,
@@ -933,12 +927,7 @@ function M.stop(buf, opts)
     if not ok then
       -- Backend gone (killed externally): fall back to the old hard cleanup.
       servers[buf] = nil
-      running[buf] = nil
-      spinner.cancel(buf)
-      pending_approvals[buf] = nil
-      spinner.stop_if_idle()
-      close_stream(buf, "killed", vim.b[buf].yap_turn_anchor)
-      focus_stopped_prompt(buf, true)
+      complete(turn, { cancelled = true })
     end
   end
 end
