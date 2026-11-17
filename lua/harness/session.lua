@@ -582,7 +582,9 @@ function M.list(scope)
         agents[owner] = (agents[owner] or 0) + 1
         if loaded[owner] then
           item.text = M.agent_label(role, M.file_title(path), description, M.task(lines), nil, M.label(path, description, nil))
-          item.icon = icons().agent
+          -- No type glyph: the row shows the subagent's own state icon in
+          -- its place (see pick below) and the nesting already says it is a
+          -- subagent.
           item.child_kind = "agent"
           children[path] = item
           owned_by[owner] = owned_by[owner] or {}
@@ -701,7 +703,8 @@ function M.pick(opts, on_choice)
   end
   -- Reserve the status column even for closed rows (and when every row is
   -- closed), so descendants never shift as sessions open and close.
-  local icon_width = picker.icon_width(picker.glyphs())
+  local glyphs = picker.glyphs()
+  local icon_width = picker.icon_width(glyphs)
   local multiple_projects = scope == "all" and vim.tbl_count(projects) > 1
   vim.ui.select(items, {
     prompt = "Pick yap session (" .. scope_label .. ")",
@@ -715,7 +718,15 @@ function M.pick(opts, on_choice)
       if scope == "all" and item.depth == 0 and vim.startswith(label, project .. "  ") then
         label = label:sub(#project + 3)
       end
-      label = (item.rail or "") .. (item.icon and item.icon .. " " or "") .. label
+      -- A subagent row carries its state glyph at the type-glyph position,
+      -- not in the left status column: the state (running, done, idle) is
+      -- what tells it apart from a fork.
+      local inline = item.icon
+      if item.child_kind == "agent" then
+        inline = icon or glyphs.idle
+        icon = nil
+      end
+      label = (item.rail or "") .. (inline and inline .. " " or "") .. label
       label = picker.prefix(icon, icon_width) .. label
       local counts = counts_label(item.turns, item.agents)
       if counts then

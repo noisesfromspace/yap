@@ -333,7 +333,6 @@ function M.setup(opts)
       model_switch = "⇄",
       approval = "⚠", -- plain-Unicode backup for the shield_alert glyph
       fork = "⑂", -- plain-Unicode fork marker (OCR fork)
-      agent = "◆", -- plain-Unicode subagent marker
       cap_l = "[",
       cap_r = "]",
     })

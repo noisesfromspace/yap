@@ -556,7 +556,9 @@ saved session across all projects under the sessions root, suffixing each root
 row with its project so sessions from different worktrees are distinguishable.
 Both scopes annotate open rows with a live status icon and nest forks (always)
 and subagents (only while their parent is open) under their parent, drawn as a
-box-drawing tree with a fork/agent glyph per row. Subagents (`b:yap_agent`)
+box-drawing tree with a fork glyph per row. A subagent row carries its own
+state glyph where a fork shows its fork glyph, so the tree reads as a state
+per row rather than a type per row. Subagents (`b:yap_agent`)
 remain unlisted and excluded from the winbar overview.
 
 File operations are the session operations:
