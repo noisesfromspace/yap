@@ -23,7 +23,7 @@ func TestLookup(t *testing.T) {
 		wantCtx         int
 	}{
 		{"openai", "gpt-4o", 2.5, 10, 1.25, 0, 128000},
-		{"moonshot", "kimi-k3", 3, 15, 0.3, 0, 1048576},
+		{"moonshot", "kimi-k3", 3, 15, 0.3, 3, 1048576},
 		{"deepseek", "deepseek-chat", 0.28, 0.42, 0.028, 0, 131072},
 		{"", "claude-sonnet-4-5", 3, 15, 0.3, 3.75, 200000},
 	}
