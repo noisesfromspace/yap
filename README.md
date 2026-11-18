@@ -32,9 +32,9 @@ Inspired by pi and gptel.
   trees through `vim.ui.select` (`+` for saved sessions).
 - A `sessions` tool to list, search, and read other saved sessions, so a
   conversation can pull context from past ones without loading them whole.
-- A winbar with the model centered on the midpoint, the title beside it, a
-  rollup of other sessions next to the state icon, and right-rail spend,
-  context and cache readings.
+- A winbar with a centered island holding the title and model (different
+  colors), a rollup of other sessions next to the state icon, and right-rail
+  spend, context and cache readings.
 - Per-session model switching (`<leader>m`).
 - `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
   with the model's output in any buffer.

@@ -734,23 +734,24 @@ icon. When the window is inactive the beacon and the title disappear; the
 state icon stays, and a streaming session keeps a static running icon in its
 place.
 
-Once a tool has run for 2s its name and elapsed time (`bash 12s`) joins the
-right rail ahead of the readings, so the beacon, the queued `# @queue`
-follow-up, a queued :YapClear, and a pending `# @steer` — tray, broom and
-steer icons immediately left of the beacon — never shift the rollup. Fold
-views remain available through <leader>1..3, but do not occupy the winbar.
-The rollup island sits right next to the state icon and totals ALL OTHER yap
-sessions by state (streaming, awaiting you, stopped, errored, idle).
+Once a tool has run for 2s its name and elapsed time hangs off the rollup
+after a muted middot (`[▶1] · bash 12s`), so the beacon, the queued
+`# @queue` follow-up, a queued :YapClear, and a pending `# @steer` — tray,
+broom and steer icons immediately left of the beacon — never shift the
+rollup. Fold views remain available through <leader>1..3, but do not occupy
+the winbar. The rollup island sits right next to the state icon and totals
+ALL OTHER yap sessions by state (streaming, awaiting you, stopped, errored,
+idle).
 
-The active window centers the model island on the window's midpoint — the
-model identifier only, never the provider prefix — and the session title (a
-renamed transcript's filename, else the generated description) hangs
-immediately to its left, shortened to whatever room the left half gives it
-(dropped below 8 columns). An inactive window centers the session label
-inside the island instead. Right of the midpoint: the live tool text, one
-spend island (since-open cost, all-time tokens and known cost) and one turn
-island holding the context reading, with the low-cache warning beside it
-when the read-hit rate drops.
+The active window centers a single fused island holding the session title (a
+renamed transcript's filename, else the generated description) and the model
+identifier — never the provider prefix — separated by a muted middot. The two
+differ by color, not surface: the title in the title color, the model in the
+keyword color, both italic. An inactive window centers the session label
+inside the island instead. Right of the midpoint: one spend island
+(since-open cost, all-time tokens and known cost) and one turn island holding
+the context reading, with the low-cache warning beside it when the read-hit
+rate drops.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -778,7 +779,7 @@ since-open cost, then all-time cost, then the island itself. The cache warning
 shares the turn island, so it gives way before the last cost figure and never
 hides the price; with the spend island gone it keeps the turn island company
 on its own. The context reading outlives both. The tool timer and rollup yield
-before context. The model island drops before the title shortens. In inactive
+before context. The model half drops before the title shortens. In inactive
 windows, the centered session label shortens, then drops when it no longer
 fits.
 

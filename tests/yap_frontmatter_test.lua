@@ -6,7 +6,7 @@ local document = require("harness.model.document")
 local session = require("harness.session")
 local frontmatter = require("harness.model.frontmatter")
 local paths = require("harness.path")
-yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "def/default-m", flash = "" }})
+yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "def/default-m", flash = "" } })
 
 -- 1. new() writes the frontmatter with the initial combo + history
 local buf = yap.new({ provider = "zeta", model = "m1" })
@@ -73,13 +73,14 @@ vim.api.nvim_buf_set_lines(
   })
 )
 bar = yap.winbar(buf)
--- The description is capped so it can hang beside the centered model island:
--- a 76-column description is shortened to an ellipsised head, never shown in
--- full and never wider than the 40-column cap.
-local shown = bar:match("%%#YapCursiveDescription#(.-)%%%*")
+-- The description is capped so it fits inside the fused identity island: a
+-- 76-column description is shortened to an ellipsised head, never shown in
+-- full and never wider than the 40-column cap (the island adds its own
+-- leading padding space).
+local shown = bar:match("%%#YapIslandCursiveDescription#(.-)%%%*")
 assert(shown and shown:find("…", 1, true), "description not truncated: " .. bar)
-assert(vim.fn.strdisplaywidth(shown) <= 40, "description exceeded its cap: " .. shown)
-assert(shown:sub(1, 19) == "Improve the session", "description lost its head: " .. shown)
+assert(vim.fn.strdisplaywidth(shown:gsub("^%s+", "")) <= 40, "description exceeded its cap: " .. shown)
+assert(shown:find("Improve the session", 1, true), "description lost its head: " .. shown)
 assert(not bar:find(long_description, 1, true), "full description leaked into winbar: " .. bar)
 vim.api.nvim_buf_set_lines(
   buf,
@@ -120,10 +121,7 @@ assert(
 -- 6. the picker shows only the description; model history remains metadata
 local items = session.list()
 assert(#items == 1, "expected 1 session, got " .. #items)
-assert(
-  items[1].text == "Implement session descriptions",
-  "description should be the whole label: " .. items[1].text
-)
+assert(items[1].text == "Implement session descriptions", "description should be the whole label: " .. items[1].text)
 assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
 
 -- Assets working files (e.g. a fetched .md) are never sessions: the list must
@@ -159,10 +157,7 @@ local links = frontmatter.parse(frontmatter.render({
   forked_from = "/tmp/source",
   subagent_parent = "/tmp/parent",
 }))
-assert(
-  links.forked_from == "/tmp/source" and links.subagent_parent == "/tmp/parent",
-  "links not roundtripped"
-)
+assert(links.forked_from == "/tmp/source" and links.subagent_parent == "/tmp/parent", "links not roundtripped")
 local tools_block = frontmatter.render({
   provider = "zeta",
   model = "m1",

@@ -56,15 +56,16 @@ vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
 local titled_bar = yap.winbar(buf2)
 local titled_plain = (titled_bar:match("^(.-)%%="):gsub("%%#.-#", ""):gsub("%%%*", ""))
 -- The state icon and rollup keep their two-column glue at the far left; the
--- pad after them is what holds the description against the centered island.
+-- description now lives inside the centered fused island, not the left rail.
 assert(
   titled_plain:match("^" .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " +"),
   "rollup cluster should stay glued to the state icon: " .. titled_plain
 )
-assert(titled_plain:find("second session%s*$"), "description missing beside the island: " .. titled_plain)
+assert(not titled_plain:find("second session", 1, true), "description leaked into the left cluster: " .. titled_plain)
 local titled_center = titled_bar:match("%%=(.-)%%=")
-assert(titled_center and titled_center:find(" m1 ", 1, true), "model missing from the center: " .. titled_bar)
-assert(not titled_center:find("second session", 1, true), "description should not sit in the center: " .. titled_bar)
+assert(titled_center and titled_center:find("m1", 1, true), "model missing from the fused island: " .. titled_bar)
+assert(titled_center:find("second session", 1, true), "description missing from the fused island: " .. titled_bar)
+assert(titled_center:find(" · ", 1, true), "fused island missing its separator: " .. titled_bar)
 
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.
