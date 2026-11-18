@@ -481,8 +481,8 @@ vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
 end
--- The title is cursive and the model reads bold (the island model drops its
--- italic so the two halves stay distinct even in a dim colorscheme); the
+-- The title is cursive and the model reads upright (the island model drops
+-- its italic so the two halves stay distinct even in a dim colorscheme); the
 -- right-side status groups suppress italics inherited from their linked theme
 -- groups.
 for _, group in ipairs({ "YapCursiveModel", "YapCursiveDescription" }) do
@@ -510,7 +510,7 @@ assert(
   "model island should share the rollup surface"
 )
 local island_model = vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false })
-assert(island_model.bold, "model text should be bold inside its island")
+assert(not island_model.bold, "model text should not be bold inside its island")
 assert(not island_model.italic, "model text should not be italic inside its island")
 -- Gutter alignment: the state icon (including the running animation) stays
 -- centered in the gutter while the rollup island starts at the text edge.

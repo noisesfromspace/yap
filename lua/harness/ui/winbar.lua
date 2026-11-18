@@ -532,7 +532,7 @@ local function render_winbar(buf)
 
   -- The identity is one fused island: the title and the model share a single
   -- pill, separated by a muted divider, and differ by color and weight rather
-  -- than by surface — the title italic, the model bold. An inactive window
+  -- than by surface — the title italic, the model upright. An inactive window
   -- keeps its label inside the island; a session with only one half renders
   -- that half alone.
   local function center_segments(title_max, show_model)
@@ -761,7 +761,7 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandApproval", { fg = attr("YapApproval", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandIdle", { fg = attr("YapIdle", "fg") or fg, bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes
-  -- stay intact while the title stays italic, the model reads bold, and
+  -- stay intact while the title stays italic, the model reads upright, and
   -- right-side items explicitly reset italics from linked theme groups.
   local function styled_hl(name, source, italic)
     local attrs = vim.api.nvim_get_hl(0, { name = source, link = false })
@@ -771,12 +771,11 @@ local function define_winbar_hl()
   for _, group in ipairs({ "Model", "Description" }) do
     styled_hl("YapCursive" .. group, "Yap" .. group, true)
   end
-  -- The model identifier is the anchor: bold and upright, so it stays
-  -- distinct from the italic title even when a colorscheme lets the two
-  -- foregrounds converge.
+  -- The model identifier stays upright so it stays distinct from the italic
+  -- title even when a colorscheme lets the two foregrounds converge.
   local model_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveModel", link = false })
   model_attrs.bg = bg
-  model_attrs.bold = true
+  model_attrs.bold = false
   model_attrs.italic = false
   vim.api.nvim_set_hl(0, "YapIslandCursiveModel", model_attrs)
   local desc_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveDescription", link = false })
