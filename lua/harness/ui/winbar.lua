@@ -427,7 +427,8 @@ local function render_winbar(buf)
   end
 
   -- The context icon and percentage share the warning color, without a meter.
-  local function context_segment()
+  -- This is the island body; the pill adds its own padding.
+  local function context_parts()
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
     local prompt = t and tonumber(t.context_prompt or t.prompt) or nil
@@ -439,7 +440,34 @@ local function render_winbar(buf)
     local shown = math.max(0, math.floor(pct + 0.5))
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
     local icon = icons.context ~= "" and icons.context .. " " or ""
-    return { { " " .. icon .. shown .. "% ", color } }
+    return { { icon .. shown .. "%", color } }
+  end
+
+  -- The context island carries the turn's token economy: the context reading
+  -- and, beside it, the cache warning once the read-hit rate drops. The
+  -- warning never gets an island of its own, so the right rail keeps one
+  -- surface for the turn. A warning with no context reading to join (a
+  -- provider that reported no window) still shows, alone in the island.
+  local function context_island(show_context, show_cache)
+    local body = {}
+    for _, part in ipairs((show_context and context_parts()) or {}) do
+      body[#body + 1] = part
+    end
+    local cache = show_cache and cache_parts() or nil
+    if cache then
+      if #body > 0 then
+        body[#body + 1] = { " │ ", "Sep" }
+      end
+      for _, part in ipairs(cache) do
+        body[#body + 1] = part
+      end
+    end
+    if #body == 0 then
+      return nil
+    end
+    table.insert(body, 1, { " ", "Count" })
+    body[#body + 1] = { " ", "Count" }
+    return body
   end
 
   local function phrase(icon, text)
@@ -478,9 +506,8 @@ local function render_winbar(buf)
       end
     end
 
-    local context = show_context and context_segment() or nil
-    local cache = show_cache and cache_parts() or nil
-    if #ledger == 0 and not context and not cache then
+    local island = context_island(show_context, show_cache)
+    if #ledger == 0 and not island then
       return nil
     end
     local segs = {}
@@ -497,11 +524,8 @@ local function render_winbar(buf)
       ledger[#ledger + 1] = { " ", "Count" }
       pill(ledger)
     end
-    if cache then
-      pill(cache)
-    end
-    if context then
-      pill(context)
+    if island then
+      pill(island)
     end
     segs[#segs + 1] = seg(" ", "Idle")
     return segs
@@ -560,14 +584,31 @@ local function render_winbar(buf)
     return table.concat(parts, "")
   end
 
+  -- Reading variants, richest first. The spend island thins before the context
+  -- reading: all-time tokens, then since-open cost, then all-time cost, then
+  -- the island itself. The cache warning rides inside the context island and
+  -- gives way before the last cost figure, so a warning never hides the price;
+  -- it returns alone only when nothing else fits. Each rung is narrower than
+  -- the one before, so a failed fit never hides a richer variant that would
+  -- have worked.
+  local VARIANTS = {
+    { mode = "full", cache = true },
+    { mode = "prices", cache = true },
+    { mode = "total", cache = true },
+    { mode = "total", cache = false },
+    { mode = "none", cache = true },
+    { mode = "none", cache = false },
+  }
+
   local show_tool, show_rollup = true, true
-  local show_model, show_cache, show_context = true, true, true
-  local title_max, mode = 40, "full"
+  local show_model, show_context = true, true
+  local title_max, variant = 40, 1
   local left = left_segments(show_tool, show_rollup)
   local left_width = width_of(left)
   while true do
+    local step = VARIANTS[variant] or { mode = "none", cache = false }
     local center = center_segments(title_max, show_model)
-    local right = not inactive and usage_segment(mode, show_context, show_cache) or nil
+    local right = not inactive and usage_segment(step.mode, show_context, step.cache) or nil
     local right_width = right and width_of(right) or 0
     local fits = left_width + right_width <= width
     if center then
@@ -576,14 +617,8 @@ local function render_winbar(buf)
     if fits then
       return render(left, center, right, left_width, right_width, center ~= nil)
     end
-    if show_cache then
-      show_cache = false
-    elseif mode == "full" then
-      mode = "prices"
-    elseif mode == "prices" then
-      mode = "total"
-    elseif mode == "total" then
-      mode = "none"
+    if VARIANTS[variant + 1] then
+      variant = variant + 1
     elseif show_tool then
       show_tool = false
       left = left_segments(show_tool, show_rollup)

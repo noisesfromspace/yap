@@ -66,6 +66,11 @@ state.live_usage[buf] = {
 bar = winbar_at(80)
 assert(plain(bar):find(icons.cache .. " 20%", 1, true), "low cache warning missing: " .. plain(bar))
 assert(bar:find("%#YapIslandUprightNeeds#", 1, true), "cache warning should use the warning color: " .. bar)
+-- The warning shares the context island instead of claiming one of its own.
+assert(
+  plain(bar):find(icons.context .. " 1% │ " .. icons.cache .. " 20%", 1, true),
+  "cache warning should sit inside the context island: " .. plain(bar)
+)
 
 state.live_usage[buf] = {
   prompt = 200,
@@ -101,6 +106,13 @@ state.live_usage[buf] = {
 }
 bar = winbar_at(80)
 assert(plain(bar):find(icons.cache .. " 10%", 1, true), "cache writes should reduce the read-hit rate: " .. plain(bar))
+
+-- A warning with no context reading to join (the provider reported no
+-- window) still shows, alone in the island.
+state.live_usage[buf] = { prompt = 1200, completion = 42, cache_read = 300, cache_write = 0 }
+bar = winbar_at(80)
+assert(not plain(bar):find(icons.context, 1, true), "context reading appeared without a window: " .. plain(bar))
+assert(plain(bar):find(icons.cache .. " 20%", 1, true), "standalone cache warning missing: " .. plain(bar))
 state.live_usage[buf] = nil
 
 -- ─── The model outlives the context reading ───────────────────────────────

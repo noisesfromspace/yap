@@ -745,8 +745,9 @@ The active window centers the session title (a renamed transcript's filename,
 else the generated description) as plain text, truncated to 40 display
 columns, with the model island beside it: the model identifier only, no
 provider prefix. An inactive window centers the session label island instead.
-Right: one spend island (since-open cost, all-time tokens and known cost),
-context as an icon and percentage, and a low-cache warning.
+Right: one spend island (since-open cost, all-time tokens and known cost) and
+one turn island holding the context reading, with the low-cache warning
+beside it when the read-hit rate drops.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -761,18 +762,22 @@ Reading the numbers                                    *yap-winbar-numbers*
              below 70%, amber 70–89%, red 90%+; Nerd Font 󰊚, plain ◔, honors
              `icons.context`.
   󰃨 NN%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
-             turn-wide. A warning, not a permanent field: it appears in the
-             warning color only while the rate is below 40%. Cache writes
-             count as input, not hits; absent cache data is never faked as 0%.
+             turn-wide. A warning, not a permanent field, and never an island
+             of its own: it joins the context island after a │ in the warning
+             color while the rate is below 40%. Cache writes count as input,
+             not hits; absent cache data is never faked as 0%.
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`).
 
-As the window narrows, the cache warning drops first. The spend island
-then drops all-time tokens, since-open cost, and finally all-time cost.
-The tool timer and rollup yield before context. The model island drops
-before the title shortens. In inactive windows, the centered session label
-shortens, then drops when it no longer fits.
+As the window narrows, the spend island thins first: all-time tokens, then
+since-open cost, then all-time cost, then the island itself. The cache warning
+shares the turn island, so it gives way before the last cost figure and never
+hides the price; with the spend island gone it keeps the turn island company
+on its own. The context reading outlives both. The tool timer and rollup yield
+before context. The model island drops before the title shortens. In inactive
+windows, the centered session label shortens, then drops when it no longer
+fits.
 
 For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
