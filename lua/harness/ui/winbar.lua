@@ -13,14 +13,22 @@ local session = require("harness.session")
 
 local running = state.running
 local live = state.live
+-- Last backend error per buffer; shown in the winbar until the next send.
 local errors = state.errors
 local stopped = state.stopped
+-- Set when a turn completes (a `# @user` heading is appended) and cleared on
+-- the next send; drives the "needs you" winbar state. A UI hint, not
+-- conversation state (R-buffer-only-state) — same drift tradeoff as yap_usage.
 local awaiting = state.awaiting
 local steer = state.steer
 local model_switch = state.model_switch
 local clear_queued = state.clear_queued
 local sessions = state.sessions
 local pending_approvals = state.pending_approvals
+
+-- Last completed turn per buffer (the binary's `turn_end` event), handed to
+-- the User YapTurnDone autocmd and read as state.last_turn (no local alias)
+-- by the context and cache readings. Ephemeral.
 
 -- Context is a percentage (`ctx 78%`), not a meter. The cache read-hit rate
 -- earns a column only while it is unusually low.
@@ -45,21 +53,6 @@ local function island_hl(text, group, style)
   return "%#YapIsland" .. (style or "") .. (group or "") .. "#" .. esc(text) .. "%*"
 end
 
--- Last backend error per buffer; shown in the winbar until the next send.
-
--- The agent is awaiting the user's next prompt: set when a turn
--- completes (a `# @user` heading is appended), cleared when the user
--- sends. Drives the herdr-style "needs you" winbar state. A UI hint,
--- not conversation state (R-buffer-only-state) — same drift tradeoff as yap_usage.
-
--- Data of the last completed turn per buffer (the binary's `turn_end`
--- event), handed to the User YapTurnDone autocmd. Ephemeral.
-
--- Other yap sessions (every buffer in `state.sessions` except the current
--- one, with subagents folded into their parent) classified into the five
--- picker states. Iterating a tiny module map, not a full buffer scan, keeps
--- the winbar cheap on every redraw; stale entries are skipped via the
--- validity check.
 -- A queued message: the session's scratch has an armed `# @queue`, sent when
 -- the running turn ends. Reading the scratch flag keeps one source of truth
 -- with the scratch's own "scheduled" label.
@@ -71,6 +64,11 @@ local function queued(buf)
   return vim.b[scratch].yap_queue_armed and true or false
 end
 
+-- Other yap sessions (every buffer in `state.sessions` except the current
+-- one, with subagents folded into their parent) classified into the five
+-- picker states. Iterating a tiny module map, not a full buffer scan, keeps
+-- the winbar cheap on every redraw; stale entries are skipped via the
+-- validity check.
 local function other_session_counts(buf)
   local counts = { running = 0, waiting = 0, stopped = 0, error = 0, idle = 0, approval = 0 }
   for b in pairs(sessions) do
@@ -229,9 +227,10 @@ local function render_winbar(buf)
   end
 
   local rollup_counts = not inactive and other_session_counts(buf) or nil
+  local busy = running and running[buf]
 
   -- State stays visible; the timer and rollup yield in crowded splits.
-  local function left_segments(show_tool, show_rollup)
+  local function left_segments(show_rollup)
     local left = {}
     local has_item = false
     local function add_item(item)
@@ -247,14 +246,13 @@ local function render_winbar(buf)
     end
 
     -- The buffer's own state is a one-cell icon centered in the gutter (the
-    -- line-number, sign and fold columns). Session content — tool text, the
+    -- line-number, sign and fold columns). Session content — the
     -- rollup island and the description — starts flush at the text edge. The
     -- animated busy beacon only shows while the session is active; an
     -- inactive session drops it (a generating session needs no attention) but
     -- keeps its state icon, so a waiting/errored/stopped/idle session stays
     -- visible at a glance from another window.
     local state_icons = {}
-    local busy = running and running[buf]
     if busy and stopped[buf] then
       -- The first stop is still unwinding. Keep the spinner visible, but
       -- distinguish cancellation from ordinary generation (even if an
@@ -343,17 +341,6 @@ local function render_winbar(buf)
       -- the beacon) is wider than the gutter: the icons become the leftmost
       -- text item instead of overflowing the gutter and shifting the title.
       add_item(state_icons)
-    end
-
-    -- Tool text belongs to the text region, ahead of the rollup. A queued
-    -- message, pending steer or stopping icon joins the leftmost state icon
-    -- (see above).
-    if show_tool and not inactive and busy and not stopped[buf] then
-      local l = live and live[buf]
-      if l and l.ms and l.ms >= 2000 then
-        local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
-        add_item({ seg(label, "BusyText") })
-      end
     end
 
     -- The rollup island totals every OTHER session by state. It is the
@@ -490,6 +477,24 @@ local function render_winbar(buf)
     + (usage.prompt or 0)
     + (usage.completion or 0)
 
+  -- Live tool text rides the right rail ahead of the readings. It changes
+  -- every few seconds, so keeping it away from the left cluster is what lets
+  -- the state icon and the rollup stay glued together and perfectly still.
+  local function tool_segment(show)
+    if not show or inactive or not busy or stopped[buf] then
+      return nil
+    end
+    local l = live and live[buf]
+    if not (l and l.ms and l.ms >= 2000) then
+      return nil
+    end
+    local text = seg(l.name .. " " .. math.floor(l.ms / 1000) .. "s", "BusyText")
+    -- Not island content: keep the italic beacon tint instead of the upright
+    -- styling the right rail applies to island interiors.
+    text.upright = false
+    return { text, seg(" ", "Idle") }
+  end
+
   local function usage_segment(mode, show_context, show_cache)
     local ledger = {}
     if (mode == "full" or mode == "prices") and opened_cost and opened_cost ~= lifetime_cost then
@@ -531,56 +536,79 @@ local function render_winbar(buf)
     return segs
   end
 
-  -- The visible title/model group is centered as a unit. Background windows
-  -- keep their own label island and static state, without the active readings.
-  local function center_segments(title_max, show_model)
-    local center = {}
-    local text = model
-    if inactive then
-      text = session.label(vim.b[buf].yap_path, title)
-    elseif title and title ~= "" and title_max > 0 then
-      local shortened = view.truncate_display(title, title_max)
-      if vim.fn.strdisplaywidth(shortened) > title_max then
-        shortened = "…"
-      end
-      center[1] = seg(shortened, "Description", false, true)
+  -- Identity placement. The model island is the anchor: it sits on the true
+  -- midpoint of the window, and the description hangs immediately to its
+  -- left, so the two travel together and the island never drifts when the
+  -- title changes length or another session changes state. When the left half
+  -- cannot hold the full description, the description is shortened into the
+  -- room that remains beside the island — the island itself stays on the
+  -- midpoint. Below a readable stub the description is dropped and the island
+  -- centers on its own. A background window has no description of its own
+  -- (its label lives inside the island), so its label simply sits on the
+  -- midpoint.
+  local TITLE_MAX, TITLE_GAP, TITLE_MIN = 40, 2, 8
+
+  local function identity_segments(title_max)
+    if inactive or not title or title == "" or title_max <= 0 then
+      return nil
     end
-    if show_model and text and text ~= "" then
-      if #center > 0 then
-        center[#center + 1] = seg("  ", "Idle")
-      end
-      center[#center + 1] = seg(icons.cap_l, "IslandCap")
-      center[#center + 1] =
-        seg(" " .. (inactive and view.truncate_display(text, title_max) or text) .. " ", "Model", true, true)
-      center[#center + 1] = seg(icons.cap_r, "IslandCap")
+    local shortened = view.truncate_display(title, title_max)
+    if vim.fn.strdisplaywidth(shortened) > title_max then
+      shortened = "…"
     end
-    return #center > 0 and center or nil
+    return { seg(shortened, "Description", false, true) }
   end
 
-  local function render(left, center, usage, left_width, right_width, centered)
-    local parts = {}
-    for _, s in ipairs(left) do
-      parts[#parts + 1] = render_seg(s)
+  -- The island holds the model identifier in an active window and the session
+  -- label in a background one.
+  local function model_island(limit)
+    local text = inactive and session.label(vim.b[buf].yap_path, title) or model
+    if not text or text == "" then
+      return nil
     end
-    -- Balance the side clusters so the island lands at the true midpoint.
-    if centered and left_width < right_width then
-      parts[#parts + 1] = string.rep(" ", right_width - left_width)
+    if vim.fn.strdisplaywidth(text) > limit then
+      text = view.truncate_display(text, limit)
+      if vim.fn.strdisplaywidth(text) > limit then
+        text = "…"
+      end
+    end
+    return {
+      seg(icons.cap_l, "IslandCap"),
+      seg(" " .. text .. " ", "Model", true, true),
+      seg(icons.cap_r, "IslandCap"),
+    }
+  end
+
+  local function render(left, identity, island, usage)
+    local parts = {}
+    local function put(segs, upright)
+      for _, s in ipairs(segs or {}) do
+        parts[#parts + 1] = render_seg(s, upright)
+      end
+    end
+    local left_width = width_of(left)
+    local right_width = usage and width_of(usage) or 0
+    local island_width = island and width_of(island) or 0
+    local gap = identity and island and TITLE_GAP or 0
+    local lead = identity and width_of(identity) + gap or 0
+    local block = island and island_width or lead
+    -- The island's left edge is the midpoint; it clamps right only when a
+    -- wide left cluster would otherwise overlap it.
+    local anchor = math.max(math.floor((width - block) / 2), left_width + 1 + (island and lead or 0))
+    put(left, nil)
+    parts[#parts + 1] = string.rep(" ", anchor - left_width - (island and lead or 0))
+    put(identity, true)
+    if gap > 0 then
+      parts[#parts + 1] = string.rep(" ", gap)
     end
     parts[#parts + 1] = "%="
-    if center then
-      for _, s in ipairs(center) do
-        parts[#parts + 1] = render_seg(s, true)
-      end
-      parts[#parts + 1] = "%="
-      if centered and right_width < left_width then
-        parts[#parts + 1] = string.rep(" ", left_width - right_width)
-      end
-    end
-    if usage then
-      for _, s in ipairs(usage) do
-        parts[#parts + 1] = render_seg(s, true)
-      end
-    end
+    put(island, true)
+    parts[#parts + 1] = "%="
+    -- Everything after the island belongs to the right cluster; the pad keeps
+    -- that cluster flush right without letting %= push the island off its
+    -- anchor.
+    parts[#parts + 1] = string.rep(" ", math.max(0, width - right_width - anchor - (island and island_width or 0)))
+    put(usage, true)
     return table.concat(parts, "")
   end
 
@@ -601,46 +629,66 @@ local function render_winbar(buf)
   }
 
   local show_tool, show_rollup = true, true
-  local show_model, show_context = true, true
-  local title_max, variant = 40, 1
-  local left = left_segments(show_tool, show_rollup)
+  local show_model, show_context, show_title = true, true, true
+  local variant = 1
+  local left = left_segments(show_rollup)
   local left_width = width_of(left)
   while true do
     local step = VARIANTS[variant] or { mode = "none", cache = false }
-    local center = center_segments(title_max, show_model)
-    local right = not inactive and usage_segment(step.mode, show_context, step.cache) or nil
-    local right_width = right and width_of(right) or 0
-    local fits = left_width + right_width <= width
-    if center then
-      fits = width_of(center) + 2 * (math.max(left_width, right_width) + 1) <= width
+    local usage
+    if not inactive then
+      usage = {}
+      for _, s in ipairs(tool_segment(show_tool) or {}) do
+        usage[#usage + 1] = s
+      end
+      for _, s in ipairs(usage_segment(step.mode, show_context, step.cache) or {}) do
+        usage[#usage + 1] = s
+      end
+      usage = #usage > 0 and usage or nil
     end
-    if fits then
-      return render(left, center, right, left_width, right_width, center ~= nil)
+    local right_width = usage and width_of(usage) or 0
+    local caps = vim.fn.strdisplaywidth(icons.cap_l .. icons.cap_r) + 2
+    local island_limit = math.max(0, width - 2 * (left_width + 1) - caps)
+    local island = show_model and model_island(inactive and island_limit or math.huge) or nil
+    -- The description's natural width, capped so a long title cannot claim
+    -- the whole left half on its own.
+    local natural = show_title and identity_segments(TITLE_MAX) or nil
+    local want = natural and width_of(natural) or 0
+
+    if island or natural then
+      local island_width = island and width_of(island) or 0
+      local block = island and island_width or want
+      local middle = math.floor((width - block) / 2)
+      -- Room the description has beside the island without moving it off the
+      -- midpoint, and the air the right cluster needs after the island.
+      local room = middle - left_width - 1 - (island and TITLE_GAP or 0)
+      local tail = width - right_width - middle - block
+      local keep = math.min(want, math.max(room, 0))
+      if tail >= (right_width > 0 and 1 or 0) and keep >= math.min(want, TITLE_MIN) then
+        return render(left, want > keep and identity_segments(keep) or natural, island, usage)
+      end
     end
+
     if VARIANTS[variant + 1] then
       variant = variant + 1
     elseif show_tool then
+      -- Tool text lives on the right rail, so dropping it does not touch the
+      -- left cluster.
       show_tool = false
-      left = left_segments(show_tool, show_rollup)
-      left_width = width_of(left)
     elseif show_rollup then
       show_rollup = false
-      left = left_segments(show_tool, show_rollup)
+      left = left_segments(show_rollup)
       left_width = width_of(left)
     elseif show_context then
       show_context = false
-    elseif show_model and not inactive then
+    elseif show_title then
+      -- The description keeps a readable stub beside the island; below that it
+      -- is dropped so the island can centre on its own.
+      show_title = false
+    elseif show_model then
       show_model = false
-    elseif title_max > 0 then
-      -- At this point there are no right-hand fields. Fit the title/label
-      -- directly into the space left by the centered layout.
-      local caps = inactive and (vim.fn.strdisplaywidth(icons.cap_l .. icons.cap_r) + 2) or 0
-      title_max = math.max(0, math.min(title_max - 1, width - 2 * (left_width + 1) - caps))
-      if title_max == 0 then
-        show_model = false
-      end
     else
-      return render(left, nil, nil, left_width, 0, false)
+      return render(left, nil, nil, nil)
     end
   end
 end

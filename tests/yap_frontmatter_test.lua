@@ -73,7 +73,13 @@ vim.api.nvim_buf_set_lines(
   })
 )
 bar = yap.winbar(buf)
-assert(bar:find("Improve the session toolbar without cro…", 1, true), "description not truncated: " .. bar)
+-- The description is capped so it can hang beside the centered model island:
+-- a 76-column description is shortened to an ellipsised head, never shown in
+-- full and never wider than the 40-column cap.
+local shown = bar:match("%%#YapCursiveDescription#(.-)%%%*")
+assert(shown and shown:find("…", 1, true), "description not truncated: " .. bar)
+assert(vim.fn.strdisplaywidth(shown) <= 40, "description exceeded its cap: " .. shown)
+assert(shown:sub(1, 19) == "Improve the session", "description lost its head: " .. shown)
 assert(not bar:find(long_description, 1, true), "full description leaked into winbar: " .. bar)
 vim.api.nvim_buf_set_lines(
   buf,

@@ -24,7 +24,9 @@ local buf2 = yap.new({ provider = "mock", model = "m1" })
 vim.api.nvim_buf_set_lines(buf2, 0, -1, false, { "# @user", "", "Second" })
 local function left_text(buf)
   local left = yap.winbar(buf):match("^(.-)%%=")
-  return left:gsub("%%#.-#", ""):gsub("%%%*", "")
+  -- The left section carries the pad that holds the description against the
+  -- centered model island; trailing blanks are not part of the cluster glue.
+  return (left:gsub("%%#.-#", ""):gsub("%%%*", ""):gsub("%s+$", " "))
 end
 local rollup_left = left_text(buf2)
 assert(
@@ -51,15 +53,18 @@ vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
   "---",
   "",
 })
-local titled_rollup = left_text(buf2)
+local titled_bar = yap.winbar(buf2)
+local titled_plain = (titled_bar:match("^(.-)%%="):gsub("%%#.-#", ""):gsub("%%%*", ""))
+-- The state icon and rollup keep their two-column glue at the far left; the
+-- pad after them is what holds the description against the centered island.
 assert(
-  titled_rollup:match("^" .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " $"),
-  "title should leave the left cluster to the state icon and rollup: " .. titled_rollup
+  titled_plain:match("^" .. icons.idle .. "  " .. icons.cap_l .. " " .. icons.running .. "1 " .. icons.cap_r .. " +"),
+  "rollup cluster should stay glued to the state icon: " .. titled_plain
 )
-assert(not titled_rollup:find("   ", 1, true), "titled left sections should have two-column gaps: " .. titled_rollup)
-local titled_center = yap.winbar(buf2):match("%%=(.-)%%=")
-assert(titled_center and titled_center:find("second session", 1, true), "title missing from the center: " .. yap.winbar(buf2))
-assert(titled_center:find(" m1 ", 1, true), "model missing from the center: " .. yap.winbar(buf2))
+assert(titled_plain:find("second session%s*$"), "description missing beside the island: " .. titled_plain)
+local titled_center = titled_bar:match("%%=(.-)%%=")
+assert(titled_center and titled_center:find(" m1 ", 1, true), "model missing from the center: " .. titled_bar)
+assert(not titled_center:find("second session", 1, true), "description should not sit in the center: " .. titled_bar)
 
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.

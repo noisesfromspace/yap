@@ -52,29 +52,41 @@ assert(
 )
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Centering must hold when the sides are asymmetric: `%=` centers between
--- the two side clusters, not at the window midpoint, so a lone description
--- (nothing on the right) or a gauge-heavy right side (done glyph left) would
--- otherwise push the island off the true midpoint. A fresh session has no
--- gauge yet; the first completed turn adds one.
+-- The model island is the anchor: it sits on the window's midpoint whatever
+-- the sides hold, and the description hangs immediately to its left. Both
+-- asymmetric cases matter — a lone description with nothing on the right, and
+-- a gauge-heavy right side with a done glyph on the left.
 local winbar_state = require("harness.state")
-local function group_center(cols, group)
-  local wb = winbar_at(cols)
-  local rendered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = cols }).str
-  local start = rendered:find(group, 1, true)
+local island_group = icons.cap_l .. " m1 " .. icons.cap_r
+local function island_center(cols)
+  vim.cmd("vsplit")
+  vim.api.nvim_win_set_width(0, cols)
+  local win = vim.api.nvim_get_current_win()
+  local width = vim.api.nvim_win_get_width(win)
+  local saved_winid = vim.g.statusline_winid
+  vim.g.statusline_winid = win
+  local rendered = vim.api.nvim_eval_statusline(yap.winbar(buf), { winid = win, use_winbar = true, maxwidth = width }).str
+  local start = rendered:find(island_group, 1, true)
+  vim.cmd("close")
+  -- Leave the harness as we found it: a stale g:statusline_winid would make
+  -- later winbar calls render as if the window were in the background.
+  vim.g.statusline_winid = saved_winid
   if not start then
-    return nil
+    return nil, width, rendered
   end
   local col = vim.fn.strdisplaywidth(rendered:sub(1, start - 1)) + 1
-  return col - 1 + vim.fn.strdisplaywidth(group) / 2
+  return col - 1 + vim.fn.strdisplaywidth(island_group) / 2, width, rendered
 end
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = nil, nil
 local saved_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 -- Right-heavy: done glyph left, context gauge right.
 winbar_state.awaiting[buf] = true
 winbar_state.last_turn[buf] = { prompt = 120000, context_window = 250000 }
-local c = group_center(100, " m1 ")
-assert(c and math.abs(c - 50) <= 1, "gauge island off center: " .. tostring(c))
+local c, cw, crendered = island_center(100)
+assert(
+  c and math.abs(c - cw / 2) <= 1,
+  "gauge island off the midpoint: " .. tostring(c) .. " of " .. tostring(cw) .. " | " .. tostring(crendered)
+)
 winbar_state.awaiting[buf] = nil
 winbar_state.last_turn[buf] = nil
 -- Left-heavy: description left, nothing right.
@@ -86,8 +98,15 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "---",
   "",
 })
-c = group_center(100, "A session title   m1 ")
-assert(c and math.abs(c - 50) <= 1, "title and model group off center: " .. tostring(c))
+c, cw, crendered = island_center(100)
+assert(
+  c and math.abs(c - cw / 2) <= 1,
+  "island off the midpoint under a lone description: " .. tostring(c) .. " of " .. tostring(cw) .. " | " .. tostring(crendered)
+)
+assert(
+  crendered:find("A session title  " .. island_group, 1, true),
+  "description should hang directly left of the island: " .. tostring(crendered)
+)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
@@ -141,9 +160,19 @@ for _, b in ipairs({ target, other, waiting }) do
 end
 vim.b[target].yap_provider = "mock"
 vim.b[target].yap_model = "m1"
-local function rendered_left()
+local function drawn_left()
   local left = assert(yap.winbar(target):match("^(.-)%%="))
   return vim.api.nvim_eval_statusline(left, { winid = 0, use_winbar = true, maxwidth = 200 }).str
+end
+-- The state icon and rollup are the cluster; whatever follows the pad that
+-- holds the description against the centered model island is not part of it.
+local function rendered_left()
+  local drawn = drawn_left()
+  local cluster = drawn:match("^(.-)%s%s%s")
+  if cluster then
+    return cluster .. " "
+  end
+  return (drawn:gsub("%s+$", " "))
 end
 local function expected_rollup(running_n, waiting_n, stopped_n, error_n, idle_n)
   local chips = {}
@@ -188,7 +217,10 @@ for mask = 0, 15 do
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
     assert(centered_text:find(" m1 ", 1, true), "model island missing: " .. centered_text)
     if titled then
-      assert(centered_text:find("Session title", 1, true), "title missing from center: " .. centered_text)
+      -- The description hangs left of the island, so it lives in the left
+      -- section rather than the centre one.
+      local full = drawn_left()
+      assert(full:find("Session title%s*$"), "title missing beside the island: " .. full)
     end
     assert(not centered_text:find("mock/m1", 1, true), "provider leaked into the center: " .. centered_text)
     assert(not centered_text:find(" 1  2  3 ", 1, true), "fold level leaked into winbar: " .. centered_text)
@@ -421,25 +453,28 @@ vim.cmd("close")
 vim.api.nvim_win_set_buf(0, buf)
 vim.api.nvim_buf_delete(left_buf, { force = true })
 vim.api.nvim_buf_delete(right_buf, { force = true })
--- Dropping the model must also drop its separator, leaving no orphan divider.
+-- At a sliver of a window the description yields and the model island keeps
+-- the midpoint: the model is the session's identity, the title is not. No
+-- orphan divider is left behind either way.
 vim.cmd("vsplit")
 vim.api.nvim_win_set_width(0, 12)
+local narrow_win = vim.api.nvim_get_current_win()
+local narrow_width = vim.api.nvim_win_get_width(narrow_win)
+local saved_winid = vim.g.statusline_winid
+vim.g.statusline_winid = narrow_win
 local narrow_bar = yap.winbar(target)
 local narrow_left, narrow_center = narrow_bar:match("^(.-)%%=(.-)%%=")
 assert(narrow_left and narrow_center, "narrow bar lost its centered section: " .. narrow_bar)
 assert(not narrow_left:find("Session title", 1, true), "title leaked into the left cluster: " .. narrow_bar)
+assert(narrow_bar:find("%#YapIslandCursiveModel#", 1, true), "narrow bar dropped the model island: " .. narrow_bar)
+assert(
+  not narrow_bar:find("%#YapCursiveDescription#", 1, true),
+  "narrow bar kept a description that cannot fit beside the island: " .. narrow_bar
+)
 local narrow_center_text =
-  vim.api.nvim_eval_statusline(narrow_center, { winid = 0, use_winbar = true, maxwidth = 12 }).str
-assert(narrow_center_text:find("…", 1, true), "narrow title was dropped: " .. narrow_bar)
-assert(not narrow_center_text:find("  ", 1, true), "narrow title has a dangling separator: " .. narrow_bar)
-assert(
-  narrow_bar:find("%#YapCursiveDescription#", 1, true),
-  "session title is not cursive: " .. narrow_bar
-)
-assert(
-  not narrow_bar:find("%#YapIslandCursiveModel#", 1, true),
-  "narrow title kept the model island: " .. narrow_bar
-)
+  vim.api.nvim_eval_statusline(narrow_center, { winid = narrow_win, use_winbar = true, maxwidth = narrow_width }).str
+assert(not narrow_center_text:find("  ", 1, true), "narrow island has a dangling separator: " .. narrow_bar)
+vim.g.statusline_winid = saved_winid
 vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
