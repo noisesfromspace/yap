@@ -21,7 +21,8 @@ end
 
 -- Without a pending steer the center island is the bare model pill.
 local rendered = vim.api.nvim_eval_statusline(winbar_at(60), { winid = 0, use_winbar = true, maxwidth = 60 }).str
-assert(rendered:find(" mock/m1 ", 1, true), "bare center island missing: " .. rendered)
+assert(rendered:find(" m1 ", 1, true), "bare center island missing: " .. rendered)
+assert(not rendered:find("mock/", 1, true), "model island should not show the provider: " .. rendered)
 assert(not rendered:find(icons.steer, 1, true), "steer icon without pending steer: " .. rendered)
 
 -- With a pending steer while running, the steer icon sits left of the
@@ -49,7 +50,7 @@ local beacon_at = rendered_left:find(glyph, 1, true)
 assert(steer_at, "steer icon missing from the left region: " .. rendered_left)
 assert(beacon_at, "running beacon missing from the left region: " .. rendered_left)
 assert(steer_at < beacon_at, "steer icon not left of the running beacon: " .. rendered_left)
-assert(rendered_center:find(" mock/m1 ", 1, true), "model island missing: " .. rendered_center)
+assert(rendered_center:find(" m1 ", 1, true), "model island missing: " .. rendered_center)
 assert(not rendered_center:find(icons.steer, 1, true), "steer icon leaked into the model island: " .. rendered_center)
 
 state.running[buf] = nil

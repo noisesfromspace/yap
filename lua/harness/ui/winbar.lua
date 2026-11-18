@@ -182,20 +182,10 @@ local function full_title(buf)
   return session.file_title(session.display_path(buf)) or full_description(buf)
 end
 
---- The session title for the winbar, truncated to `max` display columns so
---- a long phrase cannot crowd out the right-hand usage/state chips. The
---- description is cached (see full_description); only the cheap width
---- truncation and filename lookup run per call.
-local function winbar_title(buf, max)
-  local d = full_title(buf)
-  return d and view.truncate_display(d, max or 40) or nil
-end
-
--- Layout: state, other-session rollup and title on the left; a centered
--- model island (session label when inactive); usage, cache and context on
--- the right. When narrow, cache yields before context.
+-- State and rollup on the left, session identity centered, readings on the right.
 local function render_winbar(buf)
-  local provider, model = config.current_combo(buf)
+  local _, model = config.current_combo(buf)
+  local title = full_title(buf)
   local icons = require("harness").config.icons
   local win = tonumber(vim.g.statusline_winid) or vim.api.nvim_get_current_win()
   local inactive = win ~= vim.api.nvim_get_current_win()
@@ -221,7 +211,7 @@ local function render_winbar(buf)
     if s.group == "IslandCap" then
       text = winbar_hl(s.text, inactive and "IslandCapNC" or "IslandCap")
     else
-      local style = s.cursive and "Cursive" or (upright and "Upright" or nil)
+      local style = s.cursive and "Cursive" or (upright and s.group ~= "Sep" and "Upright" or nil)
       if s.island then
         text = island_hl(s.text, s.group, style)
       else
@@ -240,10 +230,8 @@ local function render_winbar(buf)
 
   local rollup_counts = not inactive and other_session_counts(buf) or nil
 
-  -- Mandatory left cluster (never dropped; the description shrinks). Build
-  -- logical items first, with breathing room between sections rather than
-  -- repeated dividers. The rollup uses lualine's bubbles-style rounded caps.
-  local function left_segments(desc_max)
+  -- State stays visible; the timer and rollup yield in crowded splits.
+  local function left_segments(show_tool, show_rollup)
     local left = {}
     local has_item = false
     local function add_item(item)
@@ -360,7 +348,7 @@ local function render_winbar(buf)
     -- Tool text belongs to the text region, ahead of the rollup. A queued
     -- message, pending steer or stopping icon joins the leftmost state icon
     -- (see above).
-    if not inactive and busy and not stopped[buf] then
+    if show_tool and not inactive and busy and not stopped[buf] then
       local l = live and live[buf]
       if l and l.ms and l.ms >= 2000 then
         local label = l.name .. " " .. math.floor(l.ms / 1000) .. "s"
@@ -368,20 +356,11 @@ local function render_winbar(buf)
       end
     end
 
-    -- The title anchors the left text edge. It sits before the rollup so the
-    -- island's changing width (a subagent's parent flipping running ->
-    -- waiting, a count crossing a digit boundary) can never shift the title
-    -- or the tool label; the island grows into the gap toward the center.
-    local title = not inactive and winbar_title(buf, desc_max) or nil
-    if title then
-      add_item({ seg(title, "Description", false, true) })
-    end
-
     -- The rollup island totals every OTHER session by state. It is the
     -- active session's dashboard, not this window's own signal, so an
     -- inactive window hides it entirely: the only thing a background
     -- session is allowed to advertise is its own leftmost state icon.
-    if not inactive then
+    if show_rollup and rollup_counts then
       local counts = rollup_counts
       local order = {
         { icons.approval, counts.approval, "Approval" },
@@ -447,9 +426,7 @@ local function render_winbar(buf)
     return { { icons.cache .. " ", "Count" }, { num, "Needs" } }
   end
 
-  -- Context as a percentage, not a meter: `ctx 78%`. The number carries the
-  -- reading, the label carries it without color. Green below 70%, amber
-  -- 70-89%, red 90%+.
+  -- The context icon and percentage share the warning color, without a meter.
   local function context_segment()
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
@@ -461,85 +438,64 @@ local function render_winbar(buf)
     local pct = math.min(prompt / ctx * 100, 100)
     local shown = math.max(0, math.floor(pct + 0.5))
     local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
-    return { { " ", "GaugeEmpty", true }, { "ctx " .. shown .. "%", color, true }, { " ", "GaugeEmpty", true } }
+    local icon = icons.context ~= "" and icons.context .. " " or ""
+    return { { " " .. icon .. shown .. "% ", color } }
   end
 
-  -- Usage counters and the context reading stay right-aligned.
-  -- As the bar narrows, costs, tokens, cache and then the reading drop; the
-  -- model name in the center outlives the right-side metrics.
+  local function phrase(icon, text)
+    return icon ~= "" and icon .. " " .. text or text
+  end
+
+  -- Accumulated usage excludes the live turn. Add it once and preserve the
+  -- distinction between a known zero and an unreported price.
+  local usage = state.live_usage[buf] or {}
+  local opened = vim.b[buf].yap_usage or {}
+  local lifetime = vim.b[buf].yap_session_usage or {}
+  local function cost(base)
+    if base.cost ~= nil or usage.cost ~= nil then
+      return string.format("$%.4g", (base.cost or 0) + (usage.cost or 0))
+    end
+  end
+  local opened_cost, lifetime_cost = cost(opened), cost(lifetime)
+  local lifetime_tokens = (lifetime.prompt or 0)
+    + (lifetime.completion or 0)
+    + (usage.prompt or 0)
+    + (usage.completion or 0)
+
   local function usage_segment(mode, show_context, show_cache)
-    local chips = {} -- each chip: { { text, group }, ... }
-    local live = state.live_usage[buf]
-    local function include_live(base)
-      if not live then
-        return base
-      end
-      base = base or { prompt = 0, completion = 0 }
-      return {
-        prompt = base.prompt + (live.prompt or 0),
-        completion = base.completion + (live.completion or 0),
-        cost = (base.cost or 0) + (live.cost or 0),
-      }
+    local ledger = {}
+    if (mode == "full" or mode == "prices") and opened_cost and opened_cost ~= lifetime_cost then
+      ledger[#ledger + 1] = { phrase(icons.since, opened_cost), "Count" }
     end
-    local u = include_live(vim.b[buf].yap_usage)
-    local s = include_live(vim.b[buf].yap_session_usage)
-    -- When both counters represent the same token total, the since-open
-    -- chip adds no information; keep the session's all-time chip only.
-    if u and s and (s.prompt + s.completion) > 0 and (u.prompt + u.completion) == (s.prompt + s.completion) then
-      u = nil
-    end
-
-    if (mode == "full" or mode == "compact") and u and (u.prompt > 0 or u.completion > 0) then
-      local text = icons.since .. " " .. util.fmt_tokens(u.prompt + u.completion)
-      if mode == "full" and u.cost then
-        text = text .. " · " .. string.format("$%.4g", u.cost)
-      end
-      chips[#chips + 1] = { { text, "Idle" } }
-    end
-
-    if (mode == "full" or mode == "compact") and s and (s.prompt > 0 or s.completion > 0) then
-      local text = icons.total .. " " .. util.fmt_tokens(s.prompt + s.completion)
-      if mode == "full" and s.cost then
-        text = text .. " · " .. string.format("$%.4g", s.cost)
-      end
-      chips[#chips + 1] = { { text, "Idle" } }
-    end
-
-    if mode == "prices" then
-      if u and u.cost then
-        chips[#chips + 1] = { { icons.since .. " " .. string.format("$%.4g", u.cost), "Idle" } }
-      end
-      if s and s.cost then
-        chips[#chips + 1] = { { icons.total .. " " .. string.format("$%.4g", s.cost), "Idle" } }
+    if mode ~= "none" then
+      local tokens = mode == "full" and lifetime_tokens > 0 and util.fmt_tokens(lifetime_tokens) or nil
+      local total = tokens and lifetime_cost and (tokens .. " · " .. lifetime_cost) or tokens or lifetime_cost
+      if total then
+        if #ledger > 0 then
+          ledger[#ledger + 1] = { " │ ", "Sep" }
+        end
+        ledger[#ledger + 1] = { phrase(icons.total, total), "Count" }
       end
     end
 
     local context = show_context and context_segment() or nil
     local cache = show_cache and cache_parts() or nil
-    if #chips == 0 and not context and not cache then
+    if #ledger == 0 and not context and not cache then
       return nil
     end
     local segs = {}
     local function pill(parts)
       segs[#segs + 1] = seg(" ", "Idle")
-      segs[#segs + 1] = seg("", "IslandCap")
+      segs[#segs + 1] = seg(icons.cap_l, "IslandCap")
       for _, part in ipairs(parts) do
         segs[#segs + 1] = seg(part[1], part[2], true, part[2] == "Model")
       end
-      segs[#segs + 1] = seg("", "IslandCap")
+      segs[#segs + 1] = seg(icons.cap_r, "IslandCap")
     end
-    if #chips > 0 then
-      local counters = { { " ", "Count" } }
-      for ci, chip in ipairs(chips) do
-        if ci > 1 then
-          counters[#counters + 1] = { "  ", "Count" }
-        end
-        for _, part in ipairs(chip) do
-          counters[#counters + 1] = { part[1], "Count" }
-        end
-      end
-      counters[#counters + 1] = { " ", "Count" }
-      pill(counters)
+    if #ledger > 0 then
+      table.insert(ledger, 1, { " ", "Count" })
+      ledger[#ledger + 1] = { " ", "Count" }
+      pill(ledger)
     end
     if cache then
       pill(cache)
@@ -551,25 +507,31 @@ local function render_winbar(buf)
     return segs
   end
 
-  -- Active windows center the model; inactive windows center the session label.
-  local function center_segments()
-    local text = provider .. "/" .. model
+  -- The visible title/model group is centered as a unit. Background windows
+  -- keep their own label island and static state, without the active readings.
+  local function center_segments(title_max, show_model)
+    local center = {}
+    local text = model
     if inactive then
-      local label = session.label(vim.b[buf].yap_path, full_title(buf))
-      text = view.truncate_display(label, 40)
+      text = session.label(vim.b[buf].yap_path, title)
+    elseif title and title ~= "" and title_max > 0 then
+      local shortened = view.truncate_display(title, title_max)
+      if vim.fn.strdisplaywidth(shortened) > title_max then
+        shortened = "…"
+      end
+      center[1] = seg(shortened, "Description", false, true)
     end
-    return {
-      seg(" ", "Idle"),
-      seg("", "IslandCap"),
-      seg(" ", "Count", true),
-      seg(text, "Model", true, true),
-      seg(" ", "Count", true),
-      seg("", "IslandCap"),
-    }
+    if show_model and text and text ~= "" then
+      if #center > 0 then
+        center[#center + 1] = seg("  ", "Idle")
+      end
+      center[#center + 1] = seg(icons.cap_l, "IslandCap")
+      center[#center + 1] =
+        seg(" " .. (inactive and view.truncate_display(text, title_max) or text) .. " ", "Model", true, true)
+      center[#center + 1] = seg(icons.cap_r, "IslandCap")
+    end
+    return #center > 0 and center or nil
   end
-
-  -- The state icon now lives on the left (see left_segments); the right
-  -- side keeps only the usage counters and the context meter.
 
   local function render(left, center, usage, left_width, right_width, centered)
     local parts = {}
@@ -598,55 +560,52 @@ local function render_winbar(buf)
     return table.concat(parts, "")
   end
 
-  -- Preserve real centering: drop the middle when either edge cluster
-  -- would collide with it, then degrade the right side.
-  -- Layout negotiation tries several widths synchronously. Only title limit,
-  -- model visibility and usage mode change between attempts; reuse segments.
-  local left_cache, center_cache, usage_cache = {}, {}, {}
-  local function cached(cache, key, build)
-    if cache[key] == nil then
-      cache[key] = build() or false
-    end
-    return cache[key] or nil
-  end
-  local desc_max, mode, show_model, show_cache, show_context = 40, "full", true, true, true
+  local show_tool, show_rollup = true, true
+  local show_model, show_cache, show_context = true, true, true
+  local title_max, mode = 40, "full"
+  local left = left_segments(show_tool, show_rollup)
+  local left_width = width_of(left)
   while true do
-    local left = cached(left_cache, desc_max, function()
-      return left_segments(desc_max)
-    end)
-    local center = show_model and cached(center_cache, true, center_segments) or nil
-    local usage = not inactive and cached(usage_cache, mode .. ":" .. tostring(show_cache) .. ":" .. tostring(show_context), function()
-      return usage_segment(mode, show_context, show_cache)
-    end) or nil
-    local left_width = width_of(left)
-    local right_width = usage and width_of(usage) or 0
-    local center_width = center and width_of(center) or 0
-    local total = left_width + center_width + right_width
-    -- Centering applies only while the model or inactive label is shown.
-    local fits = total <= width
-    if center and show_model then
-      fits = fits
-        and left_width <= math.floor((width - center_width) / 2)
-        and right_width <= math.floor((width - center_width) / 2)
+    local center = center_segments(title_max, show_model)
+    local right = not inactive and usage_segment(mode, show_context, show_cache) or nil
+    local right_width = right and width_of(right) or 0
+    local fits = left_width + right_width <= width
+    if center then
+      fits = width_of(center) + 2 * (math.max(left_width, right_width) + 1) <= width
     end
     if fits then
-      return render(left, center, usage, left_width, right_width, show_model)
+      return render(left, center, right, left_width, right_width, center ~= nil)
     end
-    -- Costs, token counts, cache, then context yield before the identity.
-    if mode == "full" then
-      mode = "compact"
-    elseif mode == "compact" then
-      mode = "prices"
-    elseif show_cache then
+    if show_cache then
       show_cache = false
+    elseif mode == "full" then
+      mode = "prices"
+    elseif mode == "prices" then
+      mode = "total"
+    elseif mode == "total" then
+      mode = "none"
+    elseif show_tool then
+      show_tool = false
+      left = left_segments(show_tool, show_rollup)
+      left_width = width_of(left)
+    elseif show_rollup then
+      show_rollup = false
+      left = left_segments(show_tool, show_rollup)
+      left_width = width_of(left)
     elseif show_context then
       show_context = false
-    elseif show_model then
+    elseif show_model and not inactive then
       show_model = false
-    elseif desc_max > 15 then
-      desc_max = desc_max - 5
+    elseif title_max > 0 then
+      -- At this point there are no right-hand fields. Fit the title/label
+      -- directly into the space left by the centered layout.
+      local caps = inactive and (vim.fn.strdisplaywidth(icons.cap_l .. icons.cap_r) + 2) or 0
+      title_max = math.max(0, math.min(title_max - 1, width - 2 * (left_width + 1) - caps))
+      if title_max == 0 then
+        show_model = false
+      end
     else
-      return render(left, nil, usage, left_width, right_width, false) -- smallest layout; let it clip
+      return render(left, nil, nil, left_width, 0, false)
     end
   end
 end
@@ -722,7 +681,7 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  -- The context meter is a raised pill, distinct from the surrounding bar.
+  -- The context percentage is a raised pill, distinct from the surrounding bar.
   -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
   for _, gauge in ipairs({
     { "GaugeEmpty", "NonText" },

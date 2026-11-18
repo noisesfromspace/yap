@@ -57,7 +57,7 @@ Lua setup (example; substitute your own model groups): >lua
       flash = "deepseek/deepseek-flash", -- :YapEval! and session titles
     },
     nerd_font = true,             -- false for plain-Unicode icons
-    icons = { since = "󰅐", total = "󰆼" }, -- winbar/picker glyph overrides
+    icons = { since = "󰅐", total = "󰆼", context = "󰊚" }, -- winbar/picker glyph overrides
     keymaps = { stop = "<C-c>" }, -- override any key; "" disables it
   })
 <
@@ -83,11 +83,11 @@ popup for Yap sessions. Set it to false when using an external completion
 engine; its generic LSP source can consume Yap's completion items. See |yap-lsp|.
 
 `nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
-Icon keys include `since`, `total`, `cache`, `running`, `waiting`, `stopped`,
-`error`, `idle`, `done`, `steer`, `queue`, `clear`, `approval`, `cap_l`, `cap_r`. Defaults are
-Nerd Font v3 glyphs; `nerd_font = false` selects plain-Unicode icons, the
-typographic spinner. Explicit `icons` entries win; set one
-to `""` to drop it.
+Icon keys include `since`, `total`, `context`, `cache`, `running`, `waiting`,
+`stopped`, `error`, `idle`, `done`, `steer`, `queue`, `clear`, `approval`,
+`cap_l`, `cap_r`. Defaults are Nerd Font v3 glyphs; `nerd_font = false`
+selects plain-Unicode icons, the typographic spinner. Explicit `icons` entries
+win; set one to `""` to drop it.
 
 `model_groups` has two tiers. `agent` starts regular conversations, including
 `:YapEval` sessions. `flash` handles one-shot, no-tools `:YapEval!` edits and
@@ -737,41 +737,42 @@ place.
 Once a tool has run for 2s its name and elapsed time join the beacon
 (`bash 12s`); a queued `# @queue` follow-up, a queued :YapClear, and a pending
 `# @steer` add a tray icon, a broom icon and a steer icon immediately left of
-that beacon. Fold views remain
-available through <leader>1..3, but do not occupy the winbar. The session
-title (a renamed transcript's filename, else the generated description),
-truncated to 40 display columns, sits before the rollup island so the
-island's changing counts never shift it. The rollup island totals ALL OTHER
-yap sessions by state (streaming, awaiting you, stopped, errored, idle). A
-provider/model island sits centered in the bar. Right: two usage chips, a
-context percentage, and a low-cache warning.
+that beacon. Fold views remain available through <leader>1..3, but do not
+occupy the winbar. The rollup island totals ALL OTHER yap sessions by state
+(streaming, awaiting you, stopped, errored, idle).
+
+The active window centers the session title (a renamed transcript's filename,
+else the generated description) as plain text, truncated to 40 display
+columns, with the model island beside it: the model identifier only, no
+provider prefix. An inactive window centers the session label island instead.
+Right: one spend island (since-open cost, all-time tokens and known cost),
+context as an icon and percentage, and a low-cache warning.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
-  󰅐 N        Since-open: total tokens (prompt + completion) and cost for this
-             buffer, accumulated since it was opened in this Neovim. Resets on
-             reopen.
-  󰆼 N        All-time: total tokens and cost for the whole session file,
+  󰅐 $N       Since-open: cost for this buffer, accumulated since it was opened
+             in this Neovim. Resets on reopen; on a fresh session it equals the
+             all-time cost, so identical spends are shown once.
+  󰆼 N · $N   All-time: token count and known cost for the whole session file,
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
-  ctx NN%     Context use: the last turn's full prompt as a percentage of the
-             model's context window, no meter. Green below 70%, amber 70–89%,
-             red 90%+.
+  󰊚 NN%      Context use: the last turn's full prompt as a percentage of the
+             model's context window, no meter. The gauge icon is colored green
+             below 70%, amber 70–89%, red 90%+; Nerd Font 󰊚, plain ◔, honors
+             `icons.context`.
   󰃨 NN%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
-             turn-wide. A warning, not a permanent chip: it appears in the
+             turn-wide. A warning, not a permanent field: it appears in the
              warning color only while the rate is below 40%. Cache writes
              count as input, not hits; absent cache data is never faked as 0%.
 
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
-committed catalog (`agent/price/pricing.json`). On a freshly opened session
-the two chips are equal; after a reopen they diverge.
+committed catalog (`agent/price/pricing.json`).
 
-The bar is width-aware and gives parts up in this order: cost detail, token
-counts (prices stay), the cache warning, the context reading, then the centered
-model island. The context reading outlives the cache warning. The model name is
-this session's identity, so it outlives the right-side metrics; only a very
-narrow bar drops it. The title then shortens. In inactive windows, the
-centered session label drops when it no longer fits.
+As the window narrows, the cache warning drops first. The spend island
+then drops all-time tokens, since-open cost, and finally all-time cost.
+The tool timer and rollup yield before context. The model island drops
+before the title shortens. In inactive windows, the centered session label
+shortens, then drops when it no longer fits.
 
 For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.

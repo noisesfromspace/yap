@@ -3,9 +3,9 @@ vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" } })
 
--- A completed turn shows a compact percentage (`ctx 9%`) instead of a graph
--- or a raw token ratio. The cache read-hit rate is a warning, not a chip: it
--- appears only while the rate is unusually low.
+-- A completed turn shows a compact, icon-led percentage (`󰊚 9%`) instead of
+-- a graph or a raw token ratio. The cache read-hit rate is a warning, not a
+-- chip: it appears only while the rate is unusually low.
 local state = require("harness.state")
 local icons = yap.config.icons
 local buf = yap.new({ provider = "mock", model = "m1" })
@@ -30,8 +30,9 @@ state.live_usage[buf] = {
   cost = 0.00342,
 }
 local bar = winbar_at(80)
-assert(plain(bar):find("1.5k", 1, true), "live usage missing: " .. plain(bar))
-assert(plain(bar):find("ctx 1%", 1, true), "context percentage missing: " .. plain(bar))
+assert(plain(bar):find(icons.total .. " 1.5k", 1, true), "all-time usage missing: " .. plain(bar))
+assert(not plain(bar):find(icons.since, 1, true), "duplicate spend should hide the since-open chip: " .. plain(bar))
+assert(plain(bar):find(icons.context .. " 1%", 1, true), "context percentage missing: " .. plain(bar))
 assert(not plain(bar):find("23k/250k", 1, true), "raw context sizes shown: " .. plain(bar))
 assert(not plain(bar):find("Context", 1, true), "context should carry no long label: " .. plain(bar))
 assert(not plain(bar):find(icons.cache, 1, true), "cache warning should hide when absent: " .. plain(bar))
@@ -39,10 +40,10 @@ state.live_usage[buf] = nil
 
 -- ─── Context bands ────────────────────────────────────────────────────────
 for _, case in ipairs({
-  { prompt = 23000, context_window = 250000, pct = "ctx 9%", hl = "YapIslandUprightGaugeLow" },
-  { prompt = 200000, context_window = 250000, pct = "ctx 80%", hl = "YapIslandUprightGaugeMid" },
-  { prompt = 240000, context_window = 250000, pct = "ctx 96%", hl = "YapIslandUprightGaugeHigh" },
-  { prompt = 250000, context_window = 250000, pct = "ctx 100%", hl = "YapIslandUprightGaugeHigh" },
+  { prompt = 23000, context_window = 250000, pct = icons.context .. " 9%", hl = "YapIslandUprightGaugeLow" },
+  { prompt = 200000, context_window = 250000, pct = icons.context .. " 80%", hl = "YapIslandUprightGaugeMid" },
+  { prompt = 240000, context_window = 250000, pct = icons.context .. " 96%", hl = "YapIslandUprightGaugeHigh" },
+  { prompt = 250000, context_window = 250000, pct = icons.context .. " 100%", hl = "YapIslandUprightGaugeHigh" },
 }) do
   state.last_turn[buf] = case
   local wb = winbar_at(60)
@@ -105,9 +106,9 @@ state.live_usage[buf] = nil
 -- ─── The model outlives the context reading ───────────────────────────────
 state.last_turn[buf] = { prompt = 23000, context_window = 250000 }
 local medium = winbar_at(25)
-assert(medium:find("mock/m1", 1, true), "context outlived the model: " .. medium)
-assert(not plain(medium):find("ctx ", 1, true), "context should yield before the model: " .. medium)
-assert(not winbar_at(12):find("mock/m1", 1, true), "model island survived a 12-column bar")
+assert(medium:find(" m1 ", 1, true), "context outlived the model: " .. medium)
+assert(not plain(medium):find(icons.context, 1, true), "context should yield before the model: " .. medium)
+assert(winbar_at(12):find(" m1 ", 1, true), "model island should survive a 12-column bar")
 state.last_turn[buf] = nil
 
 -- ─── Usage numbers and the cache warning follow the theme ─────────────────

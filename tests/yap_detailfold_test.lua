@@ -2,6 +2,7 @@ local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
 local yap = require("harness")
 local fold = require("harness.ui.fold")
+local icons = yap.config.icons
 
 -- The winbar assertions below read the model from the buffer, so pin a
 -- short combo: the default (anthropic/claude-sonnet-5-5) is long enough to
@@ -141,21 +142,21 @@ state.live[buf] = { since = os.time() - 3, name = "bash" }
 local bar = yap.winbar(buf)
 local left, center, right = bar:match("^(.-)%%=(.-)%%=(.*)$")
 assert(left and center and right, "winbar missing centered section: " .. bar)
-local provider, model = require("harness.config").current_combo(buf)
-local combo = provider .. "/" .. model
-assert(not left:find(combo, 1, true) and not right:find(combo, 1, true), "model outside center: " .. bar)
+local model = select(2, require("harness.config").current_combo(buf))
+assert(not left:find(model, 1, true) and not right:find(model, 1, true), "model outside center: " .. bar)
 local rendered_center = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered_center:find(" " .. combo .. " ", 1, true), "model island missing in center: " .. rendered_center)
+assert(rendered_center:find(" " .. model .. " ", 1, true), "model island missing in center: " .. rendered_center)
+assert(not rendered_center:find("mock/", 1, true), "provider leaked into the model island: " .. rendered_center)
 assert(not rendered_center:find("󰘖", 1, true), "fold island should be gone: " .. rendered_center)
-assert(right:find("GaugeEmpty", 1, true), "winbar missing the context meter: " .. right)
+assert(right:find(icons.context .. " 50%", 1, true), "winbar missing the context percentage: " .. right)
 -- With usage present, the cost detail yields first so the model island keeps
 -- its place in the center.
 vim.b[buf].yap_usage = { prompt = 1200, completion = 100, cost = 0.002 }
 bar = yap.winbar(buf)
-assert(bar:find("mock/m1", 1, true), "model island should outlive the usage detail: " .. bar)
+assert(bar:find(" m1 ", 1, true), "model island should outlive the usage detail: " .. bar)
 local tail = assert(bar:match(".*%%=(.*)$"))
-assert(tail:find("1.3k", 1, true), "right cluster lost its counters: " .. tail)
-assert(tail:find("GaugeEmpty", 1, true), "right cluster lost the context meter: " .. tail)
+assert(tail:find(icons.since .. " $0.002", 1, true), "right cluster lost the since-open cost: " .. tail)
+assert(tail:find(icons.context .. " 50%", 1, true), "right cluster lost the context percentage: " .. tail)
 vim.b[buf].yap_usage = nil
 state.running[buf], state.live[buf] = nil, nil
 fold.set_view_level(3)

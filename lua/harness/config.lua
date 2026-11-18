@@ -49,6 +49,7 @@ M.defaults = {
   icons = {
     since = "󰅐", -- nf-md-clock_outline (since-open token/cost chip)
     total = "󰆼", -- nf-md-database   (all-time token/cost chip)
+    context = "󰊚", -- nf-md-gauge
     cache = "󰃨", -- nf-md-cached     (winbar low cache read-hit warning)
     running = "", -- nf-cod-play (rollup: other sessions streaming)
     stopped = "󰓛", -- nf-md-stop (a manually stopped turn)

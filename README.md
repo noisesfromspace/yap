@@ -32,7 +32,8 @@ Inspired by pi and gptel.
   trees through `vim.ui.select` (`+` for saved sessions).
 - A `sessions` tool to list, search, and read other saved sessions, so a
   conversation can pull context from past ones without loading them whole.
-- A winbar with the session title, model, token totals, cost and context use.
+- A winbar with a centered title and model, a spend ledger (since-open cost,
+  all-time tokens and cost), and context and cache readings.
 - Per-session model switching (`<leader>m`).
 - `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
   with the model's output in any buffer.
@@ -221,7 +222,9 @@ The full vocabulary is in `:help yap-glossary`.
 
 ## Notes
 
-- yap uses a Nerd Font by default for winbar and picker glyphs. Set `nerd_font = false` in setup for plain Unicode.
+- yap uses a Nerd Font by default for winbar and picker glyphs, including the
+  context gauge (`󰊚`; plain `◔`). Set `nerd_font = false` in setup for plain
+  Unicode, and override any single glyph through `icons`.
 
 ## Session jail
 

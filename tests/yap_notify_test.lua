@@ -59,7 +59,8 @@ assert(bar2:match(icons.waiting .. "1"), "rollup chip missing on the other buffe
 assert(bar2:find(icons.idle, 1, true), "fresh second buffer should show idle: " .. bar2)
 -- The rollup island sits before the session's model info.
 local island_at = assert(bar2:find(icons.waiting .. "1", 1, true), "island missing: " .. bar2)
-local model_at = assert(bar2:find("mock/m1", 1, true), "model missing: " .. bar2)
+local model_at = assert(bar2:find(" m1 ", 1, true), "model missing: " .. bar2)
+assert(not bar2:find("mock/", 1, true), "model island should show the identifier only: " .. bar2)
 assert(island_at < model_at, "island should precede model: " .. bar2)
 assert(not yap.winbar(buf):match(icons.waiting .. "%d"), "rollup counts the current buffer: " .. yap.winbar(buf))
 assert(yap.overview(buf2) == icons.waiting .. "1", "overview() wrong: " .. tostring(yap.overview(buf2)))

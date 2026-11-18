@@ -319,6 +319,7 @@ function M.setup(opts)
     M.config.icons = vim.tbl_extend("force", M.config.icons, {
       since = "",
       total = "",
+      context = "◔",
       cache = "↻", -- plain-Unicode cache-reuse marker
       running = "▶",
       stopped = "⏹",

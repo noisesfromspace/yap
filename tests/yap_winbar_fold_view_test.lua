@@ -39,13 +39,15 @@ vim.wo[right_win].number = false
 vim.wo[right_win].signcolumn = "no"
 no_switch(right_win) -- no gutter required
 
--- Give the right edge priority when space is scarce.
+-- When space is scarce the ledger yields before the model, and the fold
+-- level never appears at all.
 vim.api.nvim_set_current_win(right_win)
 vim.b[buf].yap_usage = { prompt = 1000, completion = 100, cost = 0.02 }
 vim.b[buf].yap_session_usage = { prompt = 2500, completion = 100, cost = 0.04 }
 vim.api.nvim_win_set_width(right_win, 25)
 local narrow = bar(right_win)
-assert(narrow:find("$0.02", 1, true) and narrow:find("$0.04", 1, true), narrow)
+assert(not narrow:find("$", 1, true), "narrow bar kept the usage ledger: " .. narrow)
+assert(narrow:find(" m1 ", 1, true), "narrow bar dropped the model island: " .. narrow)
 assert(not narrow:find("YapViewActive", 1, true), "fold level appeared in a narrow bar: " .. narrow)
 
 -- The model island keeps the center as the bar narrows. Fold levels never
@@ -72,7 +74,7 @@ do
     vim.api.nvim_win_set_width(win, cols)
     local rendered =
       vim.api.nvim_eval_statusline(bar(win), { winid = win, use_winbar = true, maxwidth = cols }).str
-    if rendered:find("mock/m1", 1, true) then
+    if rendered:find(" m1 ", 1, true) then
       assert(
         not rendered:find(" 1  2  3 ", 1, true),
         "fold levels appeared at " .. cols .. " cols: " .. rendered

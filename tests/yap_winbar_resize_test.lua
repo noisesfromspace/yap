@@ -25,11 +25,16 @@ end
 -- Wide enough for both usage chips and the center island. The model name is
 -- the session's identity, so the cost detail yields before it does.
 local wb = winbar_at(80)
-assert(wb:match("mock/m1"), "80-col winbar dropped the model island: " .. wb)
+assert(wb:find(" m1 ", 1, true), "80-col winbar dropped the model island: " .. wb)
+assert(not wb:find("mock/m1", 1, true), "winbar should show the model identifier only: " .. wb)
 assert(wb:find("%#YapIslandUprightCount#", 1, true), "right usage is not upright in its island: " .. wb)
-assert(wb:match("1.5k") and wb:match("1.1k"), "wide winbar missing chips: " .. wb)
-assert(not wb:match("%$"), "costs should yield before the model name: " .. wb)
-assert(wb:match("󰅐") and wb:match("󰆼"), "wide winbar missing icons: " .. wb)
+assert(wb:match("1%.1k") and not wb:match("1%.5k"), "wide winbar should show all-time tokens only: " .. wb)
+assert(wb:find(icons.since .. " $0.00342", 1, true), "wide winbar missing since-open cost: " .. wb)
+assert(
+  wb:find(icons.total, 1, true) and wb:find("$0.51", 1, true),
+  "wide winbar missing all-time tokens and cost: " .. wb
+)
+assert(wb:find(icons.since, 1, true) and wb:find(icons.total, 1, true), "wide winbar missing icons: " .. wb)
 assert(wb:find(icons.idle, 1, true) and not wb:find(icons.waiting, 1, true), "wide winbar state icon wrong: " .. wb)
 
 -- With an empty right side, the model island occupies the physical center.
@@ -39,8 +44,8 @@ wb = winbar_at(78)
 assert(wb:find("%#YapIslandCursiveModel#", 1, true), "model is not cursive in its island: " .. wb)
 assert(select(2, wb:gsub("%%=", "")) == 2, "model should occupy the center section: " .. wb)
 local centered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = 78 }).str
-local model_start = assert(centered:find(" mock/m1 ", 1, true), "center island missing: " .. centered)
-local center_width = vim.fn.strdisplaywidth(" mock/m1 ")
+local model_start = assert(centered:find(" m1 ", 1, true), "center island missing: " .. centered)
+local center_width = vim.fn.strdisplaywidth(" m1 ")
 assert(
   math.abs(vim.fn.strdisplaywidth(centered:sub(1, model_start - 1)) + center_width / 2 - 39) <= 1,
   "model island is not centered in 78 columns: " .. centered
@@ -53,22 +58,22 @@ vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 -- otherwise push the island off the true midpoint. A fresh session has no
 -- gauge yet; the first completed turn adds one.
 local winbar_state = require("harness.state")
-local function island_center(cols)
+local function group_center(cols, group)
   local wb = winbar_at(cols)
   local rendered = vim.api.nvim_eval_statusline(wb, { winid = 0, use_winbar = true, maxwidth = cols }).str
-  local start = rendered:find(" mock/m1 ", 1, true)
+  local start = rendered:find(group, 1, true)
   if not start then
     return nil
   end
   local col = vim.fn.strdisplaywidth(rendered:sub(1, start - 1)) + 1
-  return col - 1 + vim.fn.strdisplaywidth(" mock/m1 ") / 2
+  return col - 1 + vim.fn.strdisplaywidth(group) / 2
 end
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = nil, nil
 local saved_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 -- Right-heavy: done glyph left, context gauge right.
 winbar_state.awaiting[buf] = true
 winbar_state.last_turn[buf] = { prompt = 120000, context_window = 250000 }
-local c = island_center(100)
+local c = group_center(100, " m1 ")
 assert(c and math.abs(c - 50) <= 1, "gauge island off center: " .. tostring(c))
 winbar_state.awaiting[buf] = nil
 winbar_state.last_turn[buf] = nil
@@ -81,39 +86,44 @@ vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
   "---",
   "",
 })
-c = island_center(100)
-assert(c and math.abs(c - 50) <= 1, "description-only island off center: " .. tostring(c))
+c = group_center(100, "A session title   m1 ")
+assert(c and math.abs(c - 50) <= 1, "title and model group off center: " .. tostring(c))
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- Narrower: tokens become prices, and only then does the center yield.
+-- Narrower: the token reading and the since-open cost yield before the
+-- model, leaving the all-time cost.
 wb = winbar_at(42)
-assert(not wb:match("mock/m1"), "42-col winbar kept the model: " .. wb)
-assert(not wb:match("1.5k") and not wb:match("1.1k"), "42-col winbar kept token counts: " .. wb)
-assert(wb:match("%$0.00342") and wb:match("%$0.51"), "42-col winbar missing prices: " .. wb)
+assert(wb:find(" m1 ", 1, true), "42-col winbar dropped the model island: " .. wb)
+assert(not wb:match("1%.1k"), "42-col winbar kept token counts: " .. wb)
+assert(not wb:find("$0.00342", 1, true), "42-col winbar kept the since-open cost: " .. wb)
+assert(wb:find("$0.51", 1, true), "42-col winbar missing the all-time cost: " .. wb)
 
--- Very narrow: the prices stay; only the title gives way now.
+-- Very narrow: the ledger yields, the model stays.
 wb = winbar_at(12)
-assert(not wb:match("1.5k") and not wb:match("1.1k"), "tiny winbar kept tokens: " .. wb)
-assert(wb:match("%$0.00342") and wb:match("%$0.51"), "tiny winbar missing prices: " .. wb)
+assert(not wb:find("%$", 1, true), "tiny winbar kept a cost: " .. wb)
+assert(wb:find(" m1 ", 1, true), "tiny winbar dropped the model island: " .. wb)
 
--- Equal token totals represent one session: keep only the session chip,
--- including in compact and price-only layouts. Compare raw totals rather
--- than rounded display strings.
+-- Equal spend to date hides the duplicate: the since-open chip adds no
+-- information, so only the all-time chip remains.
 vim.b[buf].yap_usage = { prompt = 1000, completion = 42, cost = 0.51 }
 vim.b[buf].yap_session_usage = { prompt = 999, completion = 43, cost = 0.51 }
-for _, cols in ipairs({ 80, 25, 12 }) do
+for _, cols in ipairs({ 80, 42 }) do
   wb = winbar_at(cols)
-  assert(not wb:find(icons.since, 1, true), "equal tokens kept since-open chip: " .. wb)
-  assert(wb:find(icons.total, 1, true), "equal tokens lost session chip: " .. wb)
+  assert(not wb:find(icons.since, 1, true), "equal spend kept since-open chip: " .. wb)
+  assert(wb:find(icons.total, 1, true), "equal spend lost session chip: " .. wb)
+  assert(wb:find("$0.51", 1, true), "equal spend lost the all-time cost: " .. wb)
 end
+-- The since-open chip is a cost only; different spend shows both ledgers.
 vim.b[buf].yap_usage = { prompt = 1000, completion = 42, cost = 0.51 }
-vim.b[buf].yap_session_usage = { prompt = 1000, completion = 43, cost = 0.51 }
+vim.b[buf].yap_session_usage = { prompt = 1000, completion = 43, cost = 0.52 }
 wb = winbar_at(80)
+assert(wb:find(icons.since .. " $0.51", 1, true), "different spend lost the since-open cost: " .. wb)
 assert(
-  wb:find(icons.since, 1, true) and wb:find(icons.total, 1, true),
-  "different raw token totals were merged: " .. wb
+  wb:find(icons.total, 1, true) and wb:find("$0.52", 1, true),
+  "different spend lost the all-time cost: " .. wb
 )
+assert(wb:find(icons.total .. " 1.0k · $0.52", 1, true), "all-time tokens and cost missing: " .. wb)
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
 -- Check Neovim's rendered columns, not just highlight markup. Every
@@ -165,9 +175,6 @@ for mask = 0, 15 do
   local waiting_n = state.awaiting[waiting] and 1 or 0
   local idle_n = (state.running[other] and 0 or 1) + (state.awaiting[waiting] and 0 or 1)
   local expected = { state.running[target] and "@" or icons.idle }
-  if titled then
-    expected[#expected + 1] = "Session title"
-  end
   expected[#expected + 1] = expected_rollup(other_running, waiting_n, 0, 0, idle_n)
   local actual = rendered_left()
   for _, g in ipairs(spinner_frames) do
@@ -179,11 +186,15 @@ for mask = 0, 15 do
   local center = bar:match("%%=(.-)%%=")
   if center then
     local centered_text = vim.api.nvim_eval_statusline(center, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-    assert(centered_text:find(" mock/m1 ", 1, true), "model island missing: " .. centered_text)
+    assert(centered_text:find(" m1 ", 1, true), "model island missing: " .. centered_text)
+    if titled then
+      assert(centered_text:find("Session title", 1, true), "title missing from center: " .. centered_text)
+    end
+    assert(not centered_text:find("mock/m1", 1, true), "provider leaked into the center: " .. centered_text)
     assert(not centered_text:find(" 1  2  3 ", 1, true), "fold level leaked into winbar: " .. centered_text)
     assert(center:find("%#YapIslandCursiveModel#", 1, true), "model missing island surface: " .. center)
   else
-    assert(not bar:find("mock/m1", 1, true), "center should disappear together when crowded: " .. bar)
+    assert(not bar:find(" m1 ", 1, true), "center should disappear together when crowded: " .. bar)
   end
 end
 -- Theme changes must keep the entire pill on one background, with caps
@@ -261,7 +272,7 @@ local inactive_center = inactive_bar:match("%%=(.-)%%=")
 assert(inactive_center, "inactive session name should occupy the center island: " .. inactive_bar)
 assert(inactive_center:find("Generated description"), "inactive session name missing from center: " .. inactive_center)
 assert(
-  not inactive_center:find("mock/m1", 1, true),
+  not inactive_center:find(" m1 ", 1, true),
   "inactive session shows model instead of name: " .. inactive_center
 )
 assert(inactive_center:find("%#YapIslandCapNC#", 1, true), "center island needs inactive caps: " .. inactive_center)
@@ -405,7 +416,7 @@ assert(
 )
 assert(not inactive_bar:find("1.1k", 1, true), "inactive winbar shows its own usage: " .. inactive_bar)
 assert(not inactive_bar:find("2.2k", 1, true), "inactive winbar leaks the active session usage: " .. inactive_bar)
-assert(not inactive_bar:find("mock/m2", 1, true), "inactive winbar leaks the active session model: " .. inactive_bar)
+assert(not inactive_bar:find(" m2 ", 1, true), "inactive winbar leaks the active session model: " .. inactive_bar)
 vim.cmd("close")
 vim.api.nvim_win_set_buf(0, buf)
 vim.api.nvim_buf_delete(left_buf, { force = true })
@@ -413,17 +424,21 @@ vim.api.nvim_buf_delete(right_buf, { force = true })
 -- Dropping the model must also drop its separator, leaving no orphan divider.
 vim.cmd("vsplit")
 vim.api.nvim_win_set_width(0, 12)
+local narrow_bar = yap.winbar(target)
+local narrow_left, narrow_center = narrow_bar:match("^(.-)%%=(.-)%%=")
+assert(narrow_left and narrow_center, "narrow bar lost its centered section: " .. narrow_bar)
+assert(not narrow_left:find("Session title", 1, true), "title leaked into the left cluster: " .. narrow_bar)
+local narrow_center_text =
+  vim.api.nvim_eval_statusline(narrow_center, { winid = 0, use_winbar = true, maxwidth = 12 }).str
+assert(narrow_center_text:find("…", 1, true), "narrow title was dropped: " .. narrow_bar)
+assert(not narrow_center_text:find("  ", 1, true), "narrow title has a dangling separator: " .. narrow_bar)
 assert(
-  rendered_left() == icons.idle .. "  Session title ",
-  "narrow title has a dangling separator: " .. rendered_left()
+  narrow_bar:find("%#YapCursiveDescription#", 1, true),
+  "session title is not cursive: " .. narrow_bar
 )
 assert(
-  yap.winbar(target):find("%#YapCursiveDescription#", 1, true),
-  "session title is not cursive: " .. yap.winbar(target)
-)
-assert(
-  not yap.winbar(target):find("%#YapIslandCursiveModel#", 1, true),
-  "narrow title kept the model island: " .. yap.winbar(target)
+  not narrow_bar:find("%#YapIslandCursiveModel#", 1, true),
+  "narrow title kept the model island: " .. narrow_bar
 )
 vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do

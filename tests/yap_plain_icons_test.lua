@@ -7,6 +7,7 @@ local icons = yap.config.icons
 assert(icons.running == "▶" and icons.stopped == "⏹" and icons.error == "✗" and icons.waiting == "◉")
 assert(icons.idle == "○" and icons.done == "✓" and icons.approval == "⚠")
 assert(icons.since == "" and icons.total == "" and icons.steer == "→")
+assert(icons.context == "◔", "plain mode should use a plain context icon")
 local state = require("harness.state")
 local buf, other = yap.new(), vim.api.nvim_create_buf(false, true)
 vim.b[other].yap = true
@@ -19,7 +20,7 @@ assert(yap.overview(buf) == "◉1")
 state.last_turn[buf] = { prompt = 23000, context_window = 250000 }
 bar = yap.winbar(buf)
 rendered = vim.api.nvim_eval_statusline(bar, { winid = 0, use_winbar = true, maxwidth = 200 }).str
-assert(rendered:find("ctx 9%", 1, true), "plain context percentage missing: " .. rendered)
+assert(rendered:find("◔ 9%", 1, true), "plain context percentage missing: " .. rendered)
 assert(
   not rendered:find("▊", 1, true) and not rendered:find("░", 1, true),
   "plain gauge cells survived: " .. rendered

@@ -4,7 +4,8 @@ vim.cmd("runtime! plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 local buf = yap.new({ provider = "mock", model = "m1" })
-assert(yap.winbar(buf):match("mock/m1"), "initial combo")
+assert(yap.winbar(buf):find(" m1 ", 1, true), "initial combo")
+assert(not yap.winbar(buf):find("mock/", 1, true), "winbar should show the model identifier only")
 -- direct argument
 local notices = {}
 local notify = vim.notify
@@ -15,7 +16,8 @@ yap.change_model("other/o1")
 vim.notify = notify
 assert(#notices == 0, "successful model change should not notify: " .. table.concat(notices, " | "))
 assert(vim.b[buf].yap_provider == "other" and vim.b[buf].yap_model == "o1", "vars not set")
-assert(yap.winbar(buf):match("other/o1"), "winbar not updated")
+assert(yap.winbar(buf):find(" o1 ", 1, true), "winbar not updated")
+assert(not yap.winbar(buf):find("other/", 1, true), "winbar kept the provider after a model change")
 -- Lua plumbing
 local command_notices = {}
 vim.notify = function(msg)
@@ -43,4 +45,9 @@ assert(
   vim.b[buf].yap_provider == "openrouter" and vim.b[buf].yap_model == "anthropic/claude-sonnet-5",
   "nested combo not applied: " .. tostring(vim.b[buf].yap_model)
 )
+assert(
+  yap.winbar(buf):find(" anthropic/claude-sonnet-5 ", 1, true),
+  "nested model identifier missing from winbar: " .. yap.winbar(buf)
+)
+assert(not yap.winbar(buf):find("openrouter/", 1, true), "winbar leaked the provider")
 print("OK model")
