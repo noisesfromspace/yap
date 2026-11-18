@@ -65,7 +65,7 @@ assert(not titled_plain:find("second session", 1, true), "description leaked int
 local titled_center = titled_bar:match("%%=(.-)%%=")
 assert(titled_center and titled_center:find("m1", 1, true), "model missing from the fused island: " .. titled_bar)
 assert(titled_center:find("second session", 1, true), "description missing from the fused island: " .. titled_bar)
-assert(titled_center:find(" · ", 1, true), "fused island missing its separator: " .. titled_bar)
+assert(titled_center:find(" │ ", 1, true), "fused island missing its separator: " .. titled_bar)
 
 -- A new session must still be able to send while the first streams: each
 -- buffer owns its backend, so turns from different sessions run at once.

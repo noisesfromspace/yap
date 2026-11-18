@@ -745,9 +745,9 @@ idle).
 
 The active window centers a single fused island holding the session title (a
 renamed transcript's filename, else the generated description) and the model
-identifier — never the provider prefix — separated by a muted middot. The two
-differ by color, not surface: the title in the title color, the model in the
-keyword color, both italic. An inactive window centers the session label
+identifier — never the provider prefix — separated by a muted divider. The two
+differ by color and weight, not surface: the title in the title color, italic,
+the model in the keyword color, bold. An inactive window centers the session label
 inside the island instead. Right of the midpoint: one spend island
 (since-open cost, all-time tokens and known cost) and one turn island holding
 the context reading, with the low-cache warning beside it when the read-hit

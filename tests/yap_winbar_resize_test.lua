@@ -52,7 +52,7 @@ assert(
 )
 vim.b[buf].yap_usage, vim.b[buf].yap_session_usage = saved_usage, saved_total
 
--- The identity is one fused island (title · model) centered on the window's
+-- The identity is one fused island (title │ model) centered on the window's
 -- midpoint whatever the sides hold. Both asymmetric cases matter — a lone
 -- description with nothing on the right, and a gauge-heavy right side with a
 -- done glyph on the left.
@@ -116,7 +116,7 @@ assert(
     .. tostring(crendered)
 )
 assert(
-  crendered:find("A session title · m1", 1, true),
+  crendered:find("A session title │ m1", 1, true),
   "description and model should share one island: " .. tostring(crendered)
 )
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, saved_lines)
@@ -228,7 +228,7 @@ for mask = 0, 15 do
     if titled then
       -- Title and model share one fused island, separated by a middot.
       assert(
-        centered_text:find("Session title · m1", 1, true),
+        centered_text:find("Session title │ m1", 1, true),
         "title should share the model island: " .. centered_text
       )
     end
@@ -481,8 +481,10 @@ vim.cmd("close")
 for _, b in ipairs({ target, other, waiting }) do
   vim.api.nvim_buf_delete(b, { force = true })
 end
--- The session title/model are cursive; right-side status groups explicitly
--- suppress italics inherited from their linked theme groups.
+-- The title is cursive and the model reads bold (the island model drops its
+-- italic so the two halves stay distinct even in a dim colorscheme); the
+-- right-side status groups suppress italics inherited from their linked theme
+-- groups.
 for _, group in ipairs({ "YapCursiveModel", "YapCursiveDescription" }) do
   assert(vim.api.nvim_get_hl(0, { name = group, link = false }).italic, group .. " should be cursive")
 end
@@ -507,10 +509,9 @@ assert(
     == vim.api.nvim_get_hl(0, { name = "YapIsland", link = false }).bg,
   "model island should share the rollup surface"
 )
-assert(
-  vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false }).italic,
-  "model text should remain italic inside its island"
-)
+local island_model = vim.api.nvim_get_hl(0, { name = "YapIslandCursiveModel", link = false })
+assert(island_model.bold, "model text should be bold inside its island")
+assert(not island_model.italic, "model text should not be italic inside its island")
 -- Gutter alignment: the state icon (including the running animation) stays
 -- centered in the gutter while the rollup island starts at the text edge.
 do

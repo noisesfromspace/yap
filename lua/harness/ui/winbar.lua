@@ -531,9 +531,10 @@ local function render_winbar(buf)
   end
 
   -- The identity is one fused island: the title and the model share a single
-  -- pill, separated by a muted middot, and differ by color rather than by
-  -- surface. An inactive window keeps its label inside the island; a session
-  -- with only one half renders that half alone.
+  -- pill, separated by a muted divider, and differ by color and weight rather
+  -- than by surface — the title italic, the model bold. An inactive window
+  -- keeps its label inside the island; a session with only one half renders
+  -- that half alone.
   local function center_segments(title_max, show_model)
     if inactive then
       local text = session.label(vim.b[buf].yap_path, title)
@@ -559,7 +560,7 @@ local function render_winbar(buf)
     if shortened and shortened ~= "" and show_model and model and model ~= "" then
       center[1] = seg(icons.cap_l, "IslandCap")
       center[2] = seg(" " .. shortened, "Description", true, true)
-      center[3] = seg(" · ", "Sep", true)
+      center[3] = seg(" │ ", "Sep", true)
       center[4] = seg(model .. " ", "Model", true, true)
       center[5] = seg(icons.cap_r, "IslandCap")
     elseif shortened and shortened ~= "" then
@@ -760,8 +761,8 @@ local function define_winbar_hl()
   vim.api.nvim_set_hl(0, "YapIslandApproval", { fg = attr("YapApproval", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandIdle", { fg = attr("YapIdle", "fg") or fg, bg = bg })
   -- Winbar text styles are aliases so theme colors and other attributes
-  -- stay intact while the session title/model are italic and right-side
-  -- items explicitly reset italics from linked theme groups.
+  -- stay intact while the title stays italic, the model reads bold, and
+  -- right-side items explicitly reset italics from linked theme groups.
   local function styled_hl(name, source, italic)
     local attrs = vim.api.nvim_get_hl(0, { name = source, link = false })
     attrs.italic = italic
@@ -770,8 +771,13 @@ local function define_winbar_hl()
   for _, group in ipairs({ "Model", "Description" }) do
     styled_hl("YapCursive" .. group, "Yap" .. group, true)
   end
+  -- The model identifier is the anchor: bold and upright, so it stays
+  -- distinct from the italic title even when a colorscheme lets the two
+  -- foregrounds converge.
   local model_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveModel", link = false })
   model_attrs.bg = bg
+  model_attrs.bold = true
+  model_attrs.italic = false
   vim.api.nvim_set_hl(0, "YapIslandCursiveModel", model_attrs)
   local desc_attrs = vim.api.nvim_get_hl(0, { name = "YapCursiveDescription", link = false })
   desc_attrs.bg = bg
