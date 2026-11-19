@@ -37,7 +37,7 @@ work into a conversation without loading every transcript.
 ## Change direction while it runs
 
 Replies stream into the conversation. You can stop a turn with `<C-c>`,
-inspect running tool output with `<leader>l`, or open the scratch buffer
+inspect running tool output with `<leader>t`, or open the scratch buffer
 with `<leader>j` to prepare what comes next:
 
 - **Steer:** submit a `# @steer` message to redirect the current turn at its
@@ -128,7 +128,7 @@ in the file. See `:help yap-configuration` for provider and MCP setup.
 | `<C-c>`     | Stop the current turn.                                                                 |
 | `<leader>j` | Open the scratch buffer to steer or queue. (You can just append # @user in the buffer) |
 | `<leader>m` | Change this session's model.                                                           |
-| `<leader>l` | Open the live tool tail.                                                               |
+| `<leader>t` | Open the live tool tail.                                                               |
 | `<leader>g` | Open or close the guard board.                                                         |
 | `+` / `g+`  | Pick a saved session in this project / all projects.                                   |
 | `<C-Enter>` | Pick and send a template in a session.                                                 |

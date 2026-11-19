@@ -243,17 +243,27 @@ text and dropping its reasoning items.
 
 That replay is now built, in memory, in the serve process (`agent/turn`
 `NativeHistory`, `RunCached`): one process serves every turn of a buffer, so the
-array it already built is kept and extended. It is a cache with two exact
-checks — the flattened input must still start with what the last turn sent, and
-the transcript must still show exactly the bytes that turn wrote (captured by
-teeing the turn's own output and re-parsing it). A hit replays the native array
-and converts only the new tail; any miss — an edit, `:YapClear`,
+array it already built is kept and extended. It is a cache with three checks —
+the flattened input must still start with what the last turn sent, the
+transcript must still show the output that turn wrote when re-parsed
+(`document.Messages`), and the visible transcript (thinking included, via
+`document.VisibleLines`) must still match. The third check is what makes
+thinking blocks hackable: `Messages` strips thinking before a send, so a
+thinking edit is invisible to the first two checks, yet it must still
+invalidate the cached reasoning items rather than replay them. A hit replays
+the native array and converts only the new tail; any miss — an edit to
+assistant prose, a tool result, or a thinking block, `:YapClear`,
 `:YapCompact`, a fork, a model switch, a mid-turn switch, a restart — falls back
 to the flattening path above, which is also what `Run` without a history does.
-Why in memory: the only thing the markdown cannot reconstruct is reasoning
-ciphertext, and losing it on restart costs one cold turn rather than a second
-history on disk (R-buffer-only-state). `agent/turn/prefix_replay_test.go` pins
-all four cases; it is the guardrail that fails if history is re-rendered again.
+The buffer is therefore fully editable: assistant prose, thinking blocks, and
+tool output are all visible, writable buffer content, and an edit to any of
+them takes effect on the next send (R-buffer-only-state) — the cache never
+silently re-sends the pre-edit bytes. Why in memory: the only thing the
+markdown cannot reconstruct is reasoning ciphertext, and losing it on restart
+costs one cold turn rather than a second history on disk (R-buffer-only-state).
+`agent/turn/prefix_replay_test.go` pins these cases; it is the guardrail that
+fails if history is re-rendered or a skipped region is edited without a cold
+start.
 
 #### R-cost-guard — Every send path goes through the pre-send cost guard, and a subagent is never blocked
 
@@ -682,7 +692,7 @@ intact and parked approvals are untouched.
 The buffer is the parseable conversation document (R-buffer-only-state); streaming command
 output into it forces incremental escaping, dangling-region repair and
 post-turn dedup (the yap:stream/keepstream design this rule replaced). Instead
-each session has ONE persistent live tail (`Yap Log: <session>`): bash
+each session has ONE persistent live tail (`Yap Tail: <session>`): bash
 announces its temp log via a `tool_start` frame and streams its output as
 `tool_output` delta frames on the single channel, the Lua side appends new
 bytes into the tail (a `$ command` header per call), and live() opens it.

@@ -502,7 +502,7 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 	if err != nil {
 		return err
 	}
-	if native, covered := hist.replay(key, base); native != nil {
+	if native, covered := hist.replay(key, base, document.VisibleLines(req.Transcript)); native != nil {
 		// Replay the items the provider already saw and convert only the new
 		// tail. That keeps the request a byte-prefix extension of the last one,
 		// which is the only thing prompt caching matches on.
@@ -847,7 +847,10 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 		// The transcript gained exactly this turn's assistant block; the parser
 		// turns it back into messages, so an edit anywhere in it makes the next
 		// replay fail its check rather than send history the user no longer sees.
-		hist.store(key, base, document.Messages("# @assistant\n"+written.String()), messages)
+		// VisibleLines is the second half of that proof: the flattened expect
+		// drops thinking, so the raw visible text (thinking included) is
+		// fingerprinted separately.
+		hist.store(key, base, document.Messages("# @assistant\n"+written.String()), document.VisibleLines(req.Transcript+"\n# @assistant\n"+written.String()), messages)
 	}
 	return nil
 }

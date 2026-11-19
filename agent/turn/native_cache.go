@@ -20,6 +20,7 @@ type NativeHistory struct {
 	key    string             // provider + model the array was built for
 	base   []document.Message // flattened input, before the request-only tail
 	expect []document.Message // what this turn's own output adds to the transcript
+	full   []string           // visible transcript up to this turn (thinking included)
 	native []llm.Message      // the exact array, provider metadata intact
 }
 
@@ -32,7 +33,10 @@ func cacheKey(provider, model string) string {
 // replay returns the native array to extend and how many leading elements of
 // base it already covers, or nil when this turn cannot replay: a different
 // model, a shorter history, an edited transcript, or a turn that never stored.
-func (h *NativeHistory) replay(key string, base []document.Message) ([]llm.Message, int) {
+// base is the flattened transcript (thinking stripped); full is VisibleLines
+// of the raw transcript, so edits to skipped regions — thinking above all —
+// also invalidate the entry.
+func (h *NativeHistory) replay(key string, base []document.Message, full []string) ([]llm.Message, int) {
 	if h == nil || h.key != key || len(h.native) == 0 || len(h.expect) == 0 {
 		return nil, 0
 	}
@@ -50,15 +54,26 @@ func (h *NativeHistory) replay(key string, base []document.Message) ([]llm.Messa
 			return nil, 0
 		}
 	}
+	if len(full) < len(h.full) {
+		return nil, 0
+	}
+	for i, line := range h.full {
+		if full[i] != line {
+			return nil, 0
+		}
+	}
 	return h.native, covered
 }
 
 // store records this turn's input and native array for the next turn. base is
 // the flattened input before the request-only tail; expect is what the turn's
-// own output adds to the transcript, so a later edit invalidates the entry.
-func (h *NativeHistory) store(key string, base, expect []document.Message, native []llm.Message) {
+// own output adds to the transcript; full is the visible transcript through
+// this turn (thinking included). A later edit to any of them invalidates the
+// entry.
+func (h *NativeHistory) store(key string, base, expect []document.Message, full []string, native []llm.Message) {
 	h.key = key
 	h.base = base
 	h.expect = expect
+	h.full = append([]string(nil), full...)
 	h.native = append([]llm.Message(nil), native...)
 }

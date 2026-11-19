@@ -143,19 +143,19 @@ yap.scratch_toggle()
 assert(#vim.fn.win_findbuf(reloaded) == 0, "scratch did not close from the vertical split")
 assert(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win()) == buf, "closing scratch did not refocus chat")
 
--- <leader>l in the notes opens the session's tail viewer: the scratch's owner
+-- <leader>t in the notes opens the session's tail viewer: the scratch's owner
 -- is the session buffer, so the live toggle targets the session, not the
 -- notes file.
 yap.scratch_toggle()
 assert(vim.api.nvim_get_current_buf() == reloaded, "scratch did not reopen for the live map")
-assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "scratch has no <leader>l map")
+assert(vim.fn.maparg("<leader>t", "n", false, true).buffer == 1, "scratch has no <leader>t map")
 local leader = vim.g.mapleader
 if leader == nil or leader == "" then
   leader = "\\"
 end
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
 local tail = vim.api.nvim_get_current_buf()
-assert(vim.fn.bufname(tail):match("^Yap Log: "), "scratch <leader>l did not open the tail viewer")
+assert(vim.fn.bufname(tail):match("^Yap Tail: "), "scratch <leader>t did not open the tail viewer")
 
 -- A session closed with :bd keeps its scratch. The scratch outlives the
 -- session (bufhidden = hide) with its draft, so reopening the session must

@@ -91,6 +91,26 @@ func Messages(text string) []Message {
 	return messagesFrom(Parse(text))
 }
 
+// VisibleLines returns every non-blank transcript line, trimmed, in document
+// order — a whitespace-normalized fingerprint of what the user sees. Unlike
+// Messages it does not skip marker regions, so thinking, error and ui text are
+// all present. The native-history cache uses it as a second check: the
+// flattened Messages comparison is blind to thinking edits (thinking is never
+// sent), and a cache hit replays the provider's own reasoning items, so a
+// thinking edit must invalidate the entry exactly like an edit to prose or a
+// tool result.
+func VisibleLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
 func messagesFrom(doc *Document) []Message {
 	lines := doc.Lines
 	headingAt := make(map[int]string, len(doc.Headings))

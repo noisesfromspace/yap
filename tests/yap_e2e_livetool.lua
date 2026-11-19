@@ -11,7 +11,7 @@ local document = require("harness.model.document")
 local state = require("harness.state")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
 
--- The persistent tail viewer buffer of a session buffer (`Yap Log: <session>`).
+-- The persistent tail viewer buffer of a session buffer (`Yap Tail: <session>`).
 local function tail_buf(chat)
   return require("harness.client.audit").view(chat).bufnr
 end
@@ -159,7 +159,7 @@ local tb2 = tail_buf(buf2)
 assert(tb2, "no tail viewer buffer for the second session")
 yap.live()
 assert(
-  vim.fn.bufname(vim.api.nvim_get_current_buf()):match("^Yap Log: "),
+  vim.fn.bufname(vim.api.nvim_get_current_buf()):match("^Yap Tail: "),
   "live() did not open the tail viewer"
 )
 assert(vim.api.nvim_win_get_cursor(0)[1] == vim.api.nvim_buf_line_count(0), "tail viewer window not at the bottom")

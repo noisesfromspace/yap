@@ -140,7 +140,7 @@ assert(vim.bo[buf].buflisted, "session buffer should be listed")
 assert(vim.bo[buf2].buflisted, "second session buffer should be listed")
 local tails_unlisted = true
 for _, b in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.fn.bufname(b):match("^Yap Log: ") then
+  if vim.fn.bufname(b):match("^Yap Tail: ") then
     tails_unlisted = tails_unlisted and not vim.bo[b].buflisted
   end
 end

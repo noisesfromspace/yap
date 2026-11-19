@@ -243,7 +243,7 @@ func TestServeReplaysNativeHistoryAcrossTurns(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- serve(r, out) }()
 
-	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","messages":[{"role":"user","content":"go"}]}`+"\n")
+	_, _ = io.WriteString(w, `{"type":"turn","v":1,"provider":"mock","model":"m1","transcript":`+quoteJSON("# @user\ngo\n")+"}\n")
 	deadline := time.Now().Add(10 * time.Second)
 	for !strings.Contains(out.String(), `"turn_complete"`) {
 		if time.Now().After(deadline) {

@@ -1,6 +1,6 @@
 -- The guard board and live tool tail form one canonical vertical stack per
 -- session: session → guard → log. The cross-toggles keep that order regardless
--- of which panel is opened first — <leader>l inside the board opens the log
+-- of which panel is opened first — <leader>t inside the board opens the log
 -- below it, <leader>g inside the log opens the board above it — and both
 -- shortcuts are bound in every yap panel (session, guard board, live tail,
 -- scratch).
@@ -34,7 +34,7 @@ local board = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
 local board_win = vim.api.nvim_get_current_win()
 assert(row(board_win) > row(chat_win), "board is not below the session")
-assert(vim.fn.maparg("<leader>l", "n", false, true).buffer == 1, "board has no <leader>l map")
+assert(vim.fn.maparg("<leader>t", "n", false, true).buffer == 1, "board has no <leader>t map")
 assert(vim.fn.maparg("<leader>g", "n", false, true).buffer == 1, "board has no <leader>g map")
 -- The board takes half the session window, leaving the session the other half
 -- (minus the separator).
@@ -43,7 +43,7 @@ assert(
   ("board did not split the session in half: %d of %d"):format(height(chat_win), full)
 )
 
--- <leader>l inside the board opens the log directly below it (canonical
+-- <leader>t inside the board opens the log directly below it (canonical
 -- session → guard → log).
 local leader = vim.g.mapleader
 if leader == nil or leader == "" then
@@ -51,7 +51,7 @@ if leader == nil or leader == "" then
 end
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
 local log = vim.api.nvim_get_current_buf()
-assert(vim.fn.bufname(log):match("^Yap Log: "), "board <leader>l did not open the log")
+assert(vim.fn.bufname(log):match("^Yap Tail: "), "board <leader>t did not open the log")
 local log_win = vim.api.nvim_get_current_win()
 assert(row(chat_win) < row(board_win), "session is not above the board")
 assert(row(board_win) < row(log_win), "log is not below the board")
@@ -72,7 +72,7 @@ assert(#vim.fn.win_findbuf(log) == 0, "log did not close")
 vim.api.nvim_set_current_win(chat_win)
 yap.live()
 local log_win2 = vim.api.nvim_get_current_win()
-assert(buf_name(log_win2):match("^Yap Log: "), "log did not reopen")
+assert(buf_name(log_win2):match("^Yap Tail: "), "log did not reopen")
 assert(vim.fn.maparg("<leader>g", "n", false, true).buffer == 1, "log has no <leader>g map")
 
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "g", true, false, true), "mtx", false)

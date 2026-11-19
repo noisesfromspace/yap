@@ -344,7 +344,7 @@ binding has a `keymaps` config key (|yap-configuration|). Defaults:
                         request, and opens a fresh prompt.
   <leader>m             Change model (picker, see change_model()).
   <leader>g             Open/close the guard board (see guard()).
-  <leader>l             Watch the live tool tail (see live()).
+  <leader>t             Watch the live tool tail (see live()).
   <leader>s             Pick a document symbol: messages newest-first, then the
                         frontmatter block at the bottom (see symbols()).
 
@@ -695,7 +695,7 @@ inside a fenced tool result is literal content, never a message boundary.
 
 Watching running sessions                              *yap-supervision*
 
-Use <leader>l for the current session's live tool output and <leader>g for
+Use <leader>t for the current session's live tool output and <leader>g for
 the guard board of approvals across open sessions. Both keys work in every
 Yap panel. The panels stay in session → guard → log order regardless of
 which you open first. Use <leader>j to steer or queue (|yap-scratch|), or

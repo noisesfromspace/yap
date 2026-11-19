@@ -32,7 +32,7 @@ function M.style(win, opts)
   vim.wo[win].winfixheight = true
   -- Panels are plain windows, never 'winfixbuf'-pinned: :e and file pickers
   -- must be able to reuse them like any other window. Their buffers survive
-  -- (bufhidden = hide) and reopen via their toggle (<leader>g / <leader>l /
+  -- (bufhidden = hide) and reopen via their toggle (<leader>g / <leader>t /
   -- <leader>j), so clobbering a panel view never loses data.
   vim.wo[win].winbar = "" -- the session winbar is for sessions; the guard sets its own
   if not opts.editable then

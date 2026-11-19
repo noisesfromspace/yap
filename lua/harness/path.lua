@@ -254,7 +254,7 @@ end
 --- the transcript filename and session directory are the fallbacks.
 function M.tail_buf_name(buf, label)
   local path = M.session_path(buf) or vim.api.nvim_buf_get_name(buf)
-  return "Yap Log: " .. (label or M.session_name(path))
+  return "Yap Tail: " .. (label or M.session_name(path))
 end
 
 --- The directory holding a session's sidecar data (audit log and assets).

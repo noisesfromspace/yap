@@ -16,7 +16,7 @@ local notes_path = vim.api.nvim_buf_get_name(scratch)
 vim.api.nvim_set_current_win(session_win)
 yap.live(session)
 local tail = vim.api.nvim_get_current_buf()
-assert(vim.fn.bufname(tail):match("^Yap Log: "), "live tail viewer did not open")
+assert(vim.fn.bufname(tail):match("^Yap Tail: "), "live tail viewer did not open")
 
 -- Replacing the session in its window does not close the scratch or tail.
 -- Listing the notes is a user choice and must survive a toggle/reopen.

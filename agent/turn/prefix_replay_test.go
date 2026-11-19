@@ -99,7 +99,7 @@ func followUpParams(t *testing.T, hist *NativeHistory, editBlock func(string) st
 	noBoundary := func() Boundary { return Boundary{} }
 
 	var firstOut bytes.Buffer
-	req := Request{Messages: []Message{{Role: "user", Content: "go"}}}
+	req := Request{Transcript: "# @user\ngo\n"}
 	if err := RunCached(context.Background(), "mock", "m1", req, &firstOut, noBoundary, nil, hist); err != nil {
 		t.Fatalf("first turn: %v", err)
 	}
@@ -239,6 +239,7 @@ func TestNativeHistoryColdAfterFailedTurn(t *testing.T) {
 		t.Fatal("failed turn retained native history")
 	}
 }
+
 // produced it; a different combo starts cold.
 func TestNativeHistoryColdOnModelSwitch(t *testing.T) {
 	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
@@ -262,4 +263,125 @@ func TestNativeHistoryColdOnModelSwitch(t *testing.T) {
 		t.Fatalf("second turn: %v", err)
 	}
 	assertFlattened(t, model.params[2].Messages)
+}
+
+// thinkingCaptureModel emits reasoning then a native tool call on step 0 —
+// so the reasoning item lands in the stored native array, which is the only
+// place a cache hit would replay it from — the final answer on step 1, and the
+// follow-up answer on step 2. It records every llm.Params so a test can tell
+// whether reasoning items were replayed natively.
+type thinkingCaptureModel struct {
+	mu     sync.Mutex
+	calls  int
+	params []llm.Params
+}
+
+func (m *thinkingCaptureModel) DoStream(_ context.Context, p llm.Params) (*llm.Stream, error) {
+	m.mu.Lock()
+	m.params = append(m.params, cloneParams(p))
+	call := m.calls
+	m.calls++
+	m.mu.Unlock()
+
+	events := make(chan llm.Event, 2)
+	stream := llm.NewStream(events)
+	switch call {
+	case 0:
+		events <- llm.Event{Type: llm.EventReasoning, Text: "hello"}
+		close(events)
+		stream.SetResult(llm.Result{
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "missing_test_tool", Input: json.RawMessage(`{}`)}},
+			FinishReason: "tool_calls",
+			ResponseMessages: []llm.Message{{
+				Role: llm.RoleAssistant,
+				Content: []llm.Part{
+					{Type: llm.PartReasoning, Text: "hello"},
+					{Type: llm.PartToolCall, ToolCallID: "c1", ToolName: "missing_test_tool", ToolInput: json.RawMessage(`{}`)},
+				},
+			}},
+		})
+	case 1:
+		events <- llm.Event{Type: llm.EventText, Text: "first turn done"}
+		close(events)
+		stream.SetResult(llm.Result{Text: "first turn done"})
+	case 2:
+		events <- llm.Event{Type: llm.EventText, Text: "second turn done"}
+		close(events)
+		stream.SetResult(llm.Result{Text: "second turn done"})
+	default:
+		close(events)
+		stream.SetResult(llm.Result{Text: "extra"})
+	}
+	return stream, nil
+}
+
+type thinkingCaptureProvider struct{ model *thinkingCaptureModel }
+
+func (p thinkingCaptureProvider) Model(string) llm.LanguageModel { return p.model }
+
+// thinkingFollowUp runs one thinking turn, then a follow-up whose transcript
+// is exactly what the first turn left in the buffer (optionally edited), and
+// returns the follow-up turn's params.
+func thinkingFollowUp(t *testing.T, hist *NativeHistory, editBlock func(string) string) llm.Params {
+	t.Helper()
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	model := &thinkingCaptureModel{}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return thinkingCaptureProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+	noBoundary := func() Boundary { return Boundary{} }
+
+	var firstOut bytes.Buffer
+	req := Request{Transcript: "# @user\ngo\n"}
+	if err := RunCached(context.Background(), "mock", "m1", req, &firstOut, noBoundary, nil, hist); err != nil {
+		t.Fatalf("first turn: %v", err)
+	}
+
+	block := strings.TrimRight(firstOut.String(), "\n")
+	if editBlock != nil {
+		block = editBlock(block)
+	}
+	transcript := "# @user\ngo\n\n# @assistant\n" + block + "\n\n# @user\nnext\n"
+
+	var secondOut bytes.Buffer
+	if err := RunCached(context.Background(), "mock", "m1", Request{Transcript: transcript}, &secondOut, noBoundary, nil, hist); err != nil {
+		t.Fatalf("second turn: %v", err)
+	}
+	if len(model.params) != 3 {
+		t.Fatalf("captured %d llm.Params calls, want 3", len(model.params))
+	}
+	return model.params[2]
+}
+
+// TestNativeHistoryReplaysThinking: with an unedited transcript the follow-up
+// replays the prior turn's native reasoning item.
+func TestNativeHistoryReplaysThinking(t *testing.T) {
+	msgs := thinkingFollowUp(t, &NativeHistory{}, nil).Messages
+	for _, m := range msgs {
+		for _, part := range m.Content {
+			if part.Type == llm.PartReasoning && part.Text == "hello" {
+				return
+			}
+		}
+	}
+	t.Fatalf("replayed history missing native reasoning: %#v", msgs)
+}
+
+// TestNativeHistoryColdWhenThinkingEdited: editing the thinking block must not
+// send the stale reasoning item the cache holds — a thinking edit falls back to
+// a cold, flattened start exactly like an edit to prose or a tool result.
+func TestNativeHistoryColdWhenThinkingEdited(t *testing.T) {
+	edited := func(block string) string {
+		return strings.Replace(block, "hello", "goodbye", 1)
+	}
+	msgs := thinkingFollowUp(t, &NativeHistory{}, edited).Messages
+	for _, m := range msgs {
+		for _, part := range m.Content {
+			if part.Type == llm.PartReasoning {
+				t.Fatalf("edited thinking must not replay stale reasoning: %#v", msgs)
+			}
+		}
+	}
 }

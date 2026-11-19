@@ -52,21 +52,21 @@ local function set_description(buf, description)
 end
 local first = yap.new()
 local first_tail = audit.ensure(first).bufnr
-local fallback = "Yap Log: " .. require("harness.path").session_name(vim.b[first].yap_path)
+local fallback = "Yap Tail: " .. require("harness.path").session_name(vim.b[first].yap_path)
 assert(vim.fn.bufname(first_tail) == fallback, "tail fallback name wrong: " .. vim.fn.bufname(first_tail) .. " expected " .. fallback)
 set_description(first, "Fix buffer picker")
-assert(vim.fn.bufname(first_tail) == "Yap Log: Fix buffer picker", "description did not rename tail")
+assert(vim.fn.bufname(first_tail) == "Yap Tail: Fix buffer picker", "description did not rename tail")
 local second = yap.new()
 local second_tail = audit.ensure(second).bufnr
 set_description(second, "Fix buffer picker")
 assert(
-  vim.fn.bufname(second_tail) == "Yap Log: Fix buffer picker [" .. second .. "]",
+  vim.fn.bufname(second_tail) == "Yap Tail: Fix buffer picker [" .. second .. "]",
   "duplicate tail name was not disambiguated: " .. vim.fn.bufname(second_tail)
 )
 frontmatter.update(second, { description = "" })
 vim.api.nvim_buf_set_name(second, vim.fn.fnamemodify(vim.b[second].yap_path, ":h") .. "/Named title.md")
 session.save(second)
-assert(vim.fn.bufname(second_tail) == "Yap Log: Named title", "filename title fallback wrong")
+assert(vim.fn.bufname(second_tail) == "Yap Tail: Named title", "filename title fallback wrong")
 
 -- A rule drawn with no window uses the background fallback width; once a
 -- window shows the tail, refresh() re-renders it to that window's width.
