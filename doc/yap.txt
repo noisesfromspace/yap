@@ -9,38 +9,35 @@ CONTENTS                                                     *yap-contents*
   5. Buffer format ........ |yap-buffer|
   6. Markers & tool regions |yap-markers|
   7. Sessions ............. |yap-sessions|
+     Name, save & reopen .. |yap-session-files|
+     Steer & queue ........ |yap-scratch|
+     Audit log & cache .... |yap-audit| |yap-prompt-cache|
   8. Folding & navigation . |yap-folding|
-  9. Winbar ............... |yap-winbar|
+  9. Winbar & supervision . |yap-winbar|
  10. Templates & skills ... |yap-templates|
  11. The guard gate ....... |yap-guard-gate|
  12. Tools ................ |yap-tools|
- 13. Language server ....... |yap-lsp|
+ 13. Language server ...... |yap-lsp|
  14. Glossary ............. |yap-glossary|
 
 ==============================================================================
 1. INTRODUCTION                                          *yap-introduction*
 
-yap is an LLM chat plugin where the conversation lives in a plain, editable
-markdown buffer. A small Go binary (`yap`) handles provider requests and the
-agent/tool loop: it reads the messages on stdin and streams the reply to
-stdout. There is no TUI and no hidden conversation state between turns.
+yap keeps an LLM conversation in an editable Markdown buffer. Start with
+`:Yap`, type under the user heading, and press <C-s>. The buffer is the history:
+edit or delete it to change the next request, write a `# @assistant` message to
+prefill a reply, and use undo to revisit a branch.
 
-To install: build the binary and put it on Neovim's PATH (see the README),
-configure a provider in ~/.config/yap/settings.json, then
-`require("harness").setup({...})` and run `:Yap`.
-
-Because the buffer is the conversation, ordinary editing changes it:
-
-- Deleting a region removes it from the conversation (branching).
-- Editing an assistant reply changes what the model "said".
-- Writing your own `# @assistant` message steers the model (prefill).
-- Yanking, undo, folds and rendering are just Neovim; `:undotree` is a
-  branch navigator.
+Install the `yap` binary on Neovim's PATH (see the README), configure a
+provider in `~/.config/yap/settings.json`, then call
+`require("harness").setup({...})`. See |yap-session-files| for saved
+transcripts and assets, |yap-scratch| for scratch buffers, and
+|yap-supervision| for running work and approvals.
 
 ==============================================================================
 2. SETUP & CONFIGURATION                                *yap-configuration*
 
-Lua setup (example; substitute your own model groups): >lua
+Configure the Neovim integration with `setup()`: >lua
 
   require("harness").setup({
     bin = "yap",                  -- path to the Go binary
@@ -62,70 +59,69 @@ Lua setup (example; substitute your own model groups): >lua
   })
 <
 
-`agents_file` is the system prompt for new buffers, read per buffer (edits
-apply to the next session). When missing or empty, `system` is used. Like the
-other data paths, a leading `~` resolves against your home directory; a
-relative path is refused. The default is
+`agents_file` supplies the system prompt for new buffers and is read per
+buffer, so edits apply to the next session. If it is missing or empty, Yap
+uses `system`. Like other data paths, it accepts a leading `~`, rejects a
+relative path, and uses an absolute path verbatim. The default is
 `$XDG_CONFIG_HOME/yap/AGENTS.md` (or `~/.config/yap/AGENTS.md`).
 
-`agents_dir` and `sessions_dir` locate yap's data under the XDG config home —
-`$XDG_CONFIG_HOME/yap/` (default `~/.config/yap/`); a leading `~` resolves
-to your home directory, an absolute path is used verbatim.
+`agents_dir` and `sessions_dir` default under `$XDG_CONFIG_HOME/yap/`
+(`~/.config/yap/`). A leading `~` resolves to your home directory; an absolute
+path is used verbatim.
 
-`notify_done` (default true) fires `vim.notify` when a turn completes in a
-buffer not visible in any window. The turn's `turn_end` payload (model,
-tokens, cost, ms) is also emitted on the `User YapTurnDone` autocmd so other
-plugins can hook completion (e.g. noice/nf-notify rendering, or chaining a
-next send). Disable with `notify_done = false` and hook that event yourself.
+`notify_done` defaults to true and calls `vim.notify` when a turn completes
+in a buffer no window shows. The `User YapTurnDone` event also carries the
+`turn_end` payload (model, tokens, cost, ms). Set `notify_done = false` to
+replace the notification with your own event handler.
 
-`builtin_completion` (default true) enables Neovim's native LSP completion
-popup for Yap sessions. Set it to false when using an external completion
-engine; its generic LSP source can consume Yap's completion items. See |yap-lsp|.
+`builtin_completion` defaults to true and enables Neovim's native LSP
+completion popup in Yap sessions. Set it to false for an external completion
+engine whose generic LSP source consumes Yap completion items. See |yap-lsp|.
 
-`nerd_font`/`icons` control the winbar and picker glyphs (|yap-winbar|).
-Icon keys include `since`, `total`, `context`, `cache`, `running`, `waiting`,
+`nerd_font` and `icons` control winbar and picker glyphs (|yap-winbar|).
+Icon keys are `since`, `total`, `context`, `cache`, `running`, `waiting`,
 `stopped`, `error`, `idle`, `done`, `steer`, `queue`, `clear`, `approval`,
 `cap_l`, `cap_r`. Defaults are Nerd Font v3 glyphs; `nerd_font = false`
-selects plain-Unicode icons, the typographic spinner. Explicit `icons` entries
-win; set one to `""` to drop it.
+selects plain-Unicode icons and the typographic spinner. Explicit `icons`
+entries win; set one to `""` to omit it.
+
+MODEL GROUPS                                                *yap-models*
 
 `model_groups` has two tiers. `agent` starts regular conversations, including
 `:YapEval` sessions. `flash` handles one-shot, no-tools `:YapEval!` edits and
 short session titles (the initial label and updates after each turn). Set
 `flash = ""` to disable automatic titles and use `agent` for `:YapEval!`.
-Rename `session.md` to give the session a permanent title; descriptions are
-regenerated automatically after every turn and are only a label, never an
-title you can set by hand. A renamed transcript shows its filename in every
-session view.
-The per-session |change_model()| picker discovers available models through
-`yap models`, which queries configured backend providers with their current
-credentials. It does not change the configured default for new sessions. The
-row is just the combo name; the preview shows that model's rate per 1M tokens
-(input, output, cached input) and its context window, so an accidental switch
-to a top-tier model is visible before it costs anything.
+Changing the session model                              *change_model()*
 
-`price_guard` is the same information as a speed bump. Before a turn is sent,
-`stream.send()` prices it as `context x 2 steps x the model's uncached input
-rate` and, when that exceeds `max_usd`, asks once:
+Use <leader>m or `require("harness").change_model(combo)`. While idle, the
+change applies to the next send. During a turn, it takes effect at the next
+model boundary without interrupting the current model step or tool call.
+It does not change the default for new sessions.
 
-```lua
-price_guard = { enabled = true, max_usd = 2.0 },  -- default
-```
+The picker queries configured providers through `yap models`. Its preview
+shows input, output, cached-input rates per 1M tokens, and the context window.
+For permanent session titles, see |yap-session-files|.
 
-"Send anyway" approves that model for the rest of the session, so a repeated
-expensive turn does not ask again; switching model re-arms it, because the
-approval is keyed by combo. A subagent is never blocked (nobody could answer),
-and a model missing from the price catalog is never guessed at. The estimate
-errs high on purpose — caching only makes the real bill smaller — and the audit
-log, not this number, is the accounting record.
+`price_guard` prompts before `stream.send()` sends a turn when `context x 2
+steps x the model's uncached input rate` exceeds `max_usd`: >lua
+
+  price_guard = { enabled = true, max_usd = 2.0 },  -- default
+<
+
+“Send anyway” approves that combo for the session. Switching models re-arms
+the prompt. Subagents are never blocked, and models absent from the price
+catalog are never estimated. The estimate intentionally errs high because
+caching can only lower the bill; use the audit log for accounting.
 
 `keymaps` maps each action in |yap-keymaps| to its key; set one to `""` to
 disable it. `templates_dir`/`skills_dir` configure
 |yap-templates|.
 
-Config and data files (defaults shown; the config home is
-`$XDG_CONFIG_HOME/yap` — `~/.config/yap` unless `$XDG_CONFIG_HOME` is set —
-and each path is configurable via `setup()`):
+CONFIGURATION FILES                                         *yap-setup*
+
+Config and data files default under `$XDG_CONFIG_HOME/yap`
+(`~/.config/yap` unless `$XDG_CONFIG_HOME` is set). Configure each path with
+`setup()`:
 
   ~/.config/yap/settings.json   Providers: >json
 
@@ -156,36 +152,41 @@ and each path is configurable via `setup()`):
                 openrouter https://openrouter.ai/api/v1,
                 z.ai, local servers, ...)
 
-  Native providers need no `base_url` (set one only for a proxy; Anthropic's
-  takes no `/v1`, Google's no `/v1beta`). Direct Anthropic ids use dashes
-  (`claude-sonnet-5-5`), OpenRouter's dots. API keys come from the named env
-  vars; API keys come from the named env vars. Prices come from
-  `agent/price/pricing.json`.
+  Native providers need no `base_url`; set one only for a proxy. Anthropic's
+  URL takes no `/v1`, and Google's takes no `/v1beta`. Direct Anthropic IDs
+  use dashes (`claude-sonnet-5-5`); OpenRouter uses dots. API keys come from
+  the named environment variables. Prices come from `agent/price/pricing.json`.
 
-  A provider can authenticate with a subscription login instead of an API
-  key: set `"auth"` to a login method (`"chatgpt"` today) and drop
-  `api_key_env`. `yap login [METHOD]` runs the browser sign-in once; login
-  methods self-register, so adding one needs only a new file in agent/auth.
+AUTHENTICATION                                               *yap-auth*
+
+A provider can use a subscription login instead of an API key. Set `"auth"`
+to a login method (`"chatgpt"` today) and omit `api_key_env`. Run
+`yap login [METHOD]` once to sign in through a browser.
+
+>json
 
     {
       "providers": {
         "openai": { "auth": "chatgpt" }
       }
     }
+<
 
-  The `chatgpt` method charges requests to a ChatGPT Plus/Pro plan through
-  OpenAI's "Sign in with ChatGPT" flow, authorized once with
-  `yap login chatgpt` (~/.config/yap/chatgpt.json, mode 0600, access token
-  refreshed automatically). Requests go to the public Responses API with the
-  same model ids as an API key (`gpt-5.4`); `store` is forced to false, as
-  that route requires. Manage how much of the plan yap may use in ChatGPT
-  settings → Usage → App limits. `yap login chatgpt` again to reauthorize, or
-  delete the file to forget the account.
+  `chatgpt` charges requests to a ChatGPT Plus/Pro plan through OpenAI's
+  “Sign in with ChatGPT” flow. Authorize it once with `yap login chatgpt`;
+  Yap stores `~/.config/yap/chatgpt.json` mode 0600 and refreshes its access
+  token automatically. Requests use the public Responses API and the same
+  model IDs as an API key (`gpt-5.4`); that route forces `store` to false.
+  Set the plan limit in ChatGPT settings → Usage → App limits. Run
+  `yap login chatgpt` again to reauthorize, or delete the file to forget the
+  account.
 
-  All auth methods serialize login and token renewal across Yap processes.
-  Each method uses a persistent lock file under the Yap config directory;
-  waiting requests can be canceled, and process exit releases the lock.
-  Restart existing backends after upgrading so they also use this locking.
+  Auth methods serialize login and token renewal across Yap processes. Each
+  uses a persistent lock file under the Yap config directory; waiting requests
+  can be canceled and process exit releases the lock. Restart existing
+  backends after upgrading so they use this locking.
+
+MCP SERVERS                                                   *yap-mcp*
 
   The `mcp` block configures external MCP servers, whose tools are exposed to
   the model as `mcp_<server>_<tool>`. Each entry is a stdio server (a local
@@ -217,26 +218,23 @@ and each path is configurable via `setup()`):
       }
     }
 <
-  MCP servers stay connected for the backend's lifetime; a stop() cancels the
-  in-flight call without closing them. MCP calls are not guarded by the
-  static gate: their reach is whatever the server and its credentials
-  permit. A server can still gate its own side effects by asking for
-  approval — its MCP elicitation request is routed through the same
-  Run/Deny the guard gate uses (accept = approve, decline = deny), so a
-  server that prompts (ssh-mcp's destructive and privileged commands) parks
-  the turn for the human rather than running.
+  MCP servers stay connected for the backend's lifetime; `stop()` cancels an
+  in-flight call without closing them. MCP calls bypass the static gate, so
+  their reach is limited only by the server and its credentials. A server can
+  still request approval for its own side effects. Yap routes an MCP
+  elicitation through the guard gate's Run/Deny control (accept approves,
+  decline denies), parking the turn until the human decides.
+
+SANDBOX CONFIGURATION
 
   The `sandbox` block configures the bash tool's bubblewrap sandbox (Linux
-  only; see |yap-sandbox|). `enabled` defaults to true — the sandbox is on
-  unless the file sets `enabled: false`; on a machine without bubblewrap
-  (or off Linux) it silently falls back to running bash unsandboxed.
-  `allow_write` adds directories to the writable allowlist beyond the
-  always-writable project dir (the live |:pwd|, so it follows |:cd|) and the
-  session's assets dir — the same allowlist that bounds the `write` and
-  `edit` tools. `deny_read` adds paths to shadow with empty mounts beyond the
-  built-in secret directories (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/sops`,
-  `/etc/ssh`, `/run/agenix`), which are always shadowed so bash cannot read
-  them.
+  only; see |yap-sandbox|). It defaults to enabled; set `enabled: false` to
+  disable it. Without bubblewrap or off Linux, bash runs unsandboxed.
+  `allow_write` extends the writable allowlist beyond the live project
+  directory (|:pwd|, so it follows |:cd|) and the session assets directory.
+  The same list bounds `write` and `edit`. `deny_read` adds empty mounts beyond
+  the built-in, always-shadowed secret directories (`~/.ssh`, `~/.gnupg`,
+  `~/.aws`, `~/.config/sops`, `/etc/ssh`, `/run/agenix`).
 
   ~/.config/yap/AGENTS.md  Default system prompt (see above).
   ~/.config/yap/templates/ insert() template files (|yap-templates|).
@@ -331,8 +329,8 @@ appending/sending. See |yap-keymaps| for the default shortcuts that call these.
 ==============================================================================
 4. KEYMAPS                                                    *yap-keymaps*
 
-Set only in yap buffers, except +, g+ and <leader>g, which are global. Every binding is a `keymaps` config key
-(see |yap-configuration|); the defaults are shown below.
+Set only in Yap buffers, except +, g+ and <leader>g, which are global. Every
+binding has a `keymaps` config key (|yap-configuration|). Defaults:
 
   <C-s> (n, i)          Send the buffer. The reply streams in.
   <C-c>                 Finish the current response and tool calls, then stop
@@ -350,12 +348,7 @@ Set only in yap buffers, except +, g+ and <leader>g, which are global. Every bin
   <leader>s             Pick a document symbol: messages newest-first, then the
                         frontmatter block at the bottom (see symbols()).
 
-Inside the guard board, <leader>l opens the live tail directly below it;
-inside the live tail, <leader>g opens the guard board directly above it.
-Both bindings are present in every yap panel (session, guard, live tail and
-scratch), so the two stay stacked in the fixed session → guard → log order
-regardless of which one you open first.
-  <leader>j             Toggle the scratch buffer (see |yap-sessions|).
+  <leader>j             Toggle the scratch buffer (see |yap-scratch|).
   <C-Enter> (n, i)      Pick a template (see insert()). A template is inserted
                         and sent; to merge a skill, call insert(name) instead.
                         In scratch, insert the raw file at the cursor instead.
@@ -418,12 +411,9 @@ as YAML frontmatter: >
   ---
 <
 
-`description` is the generated summary, refreshed after every turn; it is a
-label for the conversation, not a title — yap regenerates it, so a hand edit
-stays only until the next turn. The transcript filename is the session's
-permanent title: rename `session.md` with |:file|, |:saveas| or your file
-explorer, and views show that filename instead of the description. The rest
-of the frontmatter:
+`description` is a generated summary, refreshed after every turn. To set a
+permanent title, rename the transcript instead; see |yap-session-files|.
+The other frontmatter fields:
 
   `provider`/`model`      The combo to resume with.
   `created_cwd`           The exact directory the session was created in.
@@ -498,162 +488,153 @@ write/edit return short confirmations and stay bare.
 ==============================================================================
 7. SESSIONS                                                  *yap-sessions*
 
-A session is the conversation markdown file plus sidecar data: a file-backed
-`notes.md` scratch buffer, an append-only audit log and an `assets/` folder holding
-photos the conversation references, the backend's transient tool files, and
-the agent's throwaway scripts, fetched downloads and generated artifacts.
+A session is a Markdown transcript with sidecar files for drafts, tool
+history, and working files. Ordinary sessions are listed Neovim buffers;
+subagent buffers remain unlisted.
 
-`:Yap` sessions live in their own directory under
-~/.config/yap/sessions/<cwd-slug>/: auto-named sessions and subagent children
-group by month (<yy-mm>/<dd>-<sequence>/), and named forks live at
-<cwd-slug>/<name>/. Older timestamp-named sessions (<yy-mm>/<dd-hh.mm.ss>/)
-remain in place and open normally. Each has session.md (the conversation), notes.md (the
-scratch buffer), audit.jsonl (the audit log) and assets/ (photos, fetched downloads
-and working files).
-Yap creates notes.md with the session, even if you never open the scratch buffer.
+NAME, SAVE & REOPEN                                    *yap-session-files*
 
-Every session records a `data_dir` in its frontmatter: the directory holding
-its audit.jsonl, notes.md and assets/. For a transcript under the sessions
-root it is the transcript's own directory; for one anywhere else (a project folder,
-~/.yap, /tmp) it is a central directory under ~/.config/yap/sessions/, so the
-transcript itself is the only file placed in the project. Because the tie is
-recorded, a transcript can be moved out of its directory and still find its
-audit log and assets. Yap recognises and adopts a yap-shaped markdown file
-(yap frontmatter or a `# @system` heading) anywhere it is opened, while
-ordinary markdown is left alone.
-Sessions are saved after every turn and when the buffer stops being displayed
-in any window; the file is created when the buffer opens. A native |:w| is
-routed to that same save path (BufWriteCmd), so 'modified', |:w| and the exit
-prompt behave normally.
+  Name      Use |:file| (short form :f), |:saveas|, or a file explorer to
+            rename session.md. Views then show the filename instead of the
+            generated description, which is refreshed after every turn.
+  Save      Use |:write|. Yap also saves after each turn and when the buffer
+            is no longer displayed in any window. The file is created when
+            the buffer opens; normal modified-state and exit prompts apply.
+  Reopen    Use |:edit| or `nvim <file>.md`, or pick a session with + / g+.
+            Yap adopts files with Yap frontmatter or a `# @system` heading;
+            ordinary Markdown is left alone.
+  Fork      Use |:YapFork| to copy the current conversation into an independent
+            session. Edit or delete messages and send to take another path.
+  Close     Use normal buffer commands. Deleting a buffer follows Neovim's
+            replacement-buffer behavior, without favoring running sessions.
 
-Opening a session file directly — plain |:edit| or `nvim <file>.md` — adopts
-it as a managed session (listed, keymapped, live tool tail attached), the same
-as sessions() resume. A portable transcript counts as an ordinary open
-session everywhere: it appears in the sessions() picker and in other
-sessions' winbar rollup. The cwd picker also lists any session whose buffer is
-open, including one opened directly from another project's folder — so
-browsing ~/.config/yap/sessions/ and opening a transcript makes it show up in
-sessions() for as long as it stays open. To browse every saved session across
-all projects without opening files, use sessions("all") (`g+`). A next-to-file
-or custom-path transcript is only listed while it is open — its location is
-otherwise undiscoverable, so reopening it means opening the file.
+Storage
 
-The saved-session picker includes an ordinary blank session while its buffer
-is loaded. Once unloaded, it is hidden unless it has a prompt, completed turn,
-description or renamed transcript. An empty `:YapEval` is hidden even while
-loaded; typing a question or completing a turn makes it visible.
+Each session has these sidecar files in its frontmatter `data_dir`:
 
-Ordinary sessions are listed buffers backed by writable markdown files.
-Rename `session.md` to set a title without losing normal file operations.
-Deleting a session buffer uses Neovim's ordinary replacement
-buffer behavior, without preferring waiting or running sessions.
+  notes.md      File-backed scratch buffer, created with the session.
+  audit.jsonl   Append-only tool and turn history; see |yap-audit|.
+  assets/       Referenced images, downloads, generated artifacts, throwaway
+                scripts, and transient tool files.
 
-                                                    *harness.sessions()*
-require("harness").sessions(scope) is the session picker. `"cwd"` (the
-default) lists saved sessions for the current project; `"all"` lists every
-saved session across all projects under the sessions root, suffixing each root
-row with its project so sessions from different worktrees are distinguishable.
-Both scopes nest forks (always) and subagents (only while their parent is
-open) under their parent. Forks have a fork glyph after the tree branch.
-Open rows show a live status icon, in the left column for ordinary sessions
-and forks, and after the tree branch for subagents. Closed subagents show no
-status icon. Subagents (`b:yap_agent`) remain unlisted and excluded from the
+By default, transcripts live under ~/.config/yap/sessions/<cwd-slug>/.
+Auto-named sessions and subagents use <yy-mm>/<dd>-<sequence>/; named forks
+use <name>/. Older <yy-mm>/<dd-hh.mm.ss>/ directories still open normally.
+The transcript starts as session.md, alongside its sidecar files.
+
+For transcripts outside the sessions root, `data_dir` points to a central
+session directory. Only the transcript is placed at the chosen path. Moving
+a transcript preserves its link to its audit log and assets through this
+field. Scratch is never adopted as a transcript.
+
+SESSION PICKER                                        *harness.sessions()*
+
+`require("harness").sessions(scope)` opens the picker:
+
+  +    sessions()        Saved sessions for the current project ("cwd").
+  g+   sessions("all")   Saved sessions across all projects. Root rows include
+                         the project to distinguish worktrees.
+
+Open ordinary sessions appear in the current-project picker even if their
+files belong to another project. Custom-path transcripts appear only while
+open: Yap cannot discover their locations after closing, so reopen the file
+directly. They otherwise behave like ordinary sessions, including in the
 winbar overview.
 
-File operations are the session operations:
+Forks always nest under their parent. Subagents nest while their parent is
+open and remain reachable through the session link in the tool result.
+Open rows carry live status icons; closed subagents do not. Subagents are
+excluded from the winbar overview.
 
-  rename the transcript   Rename `session.md` to set the session title. It
-                         remains an ordinary writable markdown file.
-  |:YapFork|              Copy the conversation into a new session directory.
-  delete a region + send  Branch the conversation within the active session.
+A blank ordinary session appears while loaded. After unloading, it is hidden
+unless it has a prompt, completed turn, description, or renamed transcript.
+An empty :YapEval stays hidden even while loaded; adding a question or
+completing a turn makes it visible.
 
-SCRATCH BUFFER
+SCRATCH, STEER & QUEUE                                        *yap-scratch*
 
-<leader>j toggles the scratch buffer, an ordinary file-backed Markdown buffer at
-`<data_dir>/notes.md`, with spell checking in its window. It starts unlisted;
-`:setlocal buflisted` in the scratch buffer adds it to |:ls|, and
-`:setlocal nobuflisted` removes it. The choice persists while the buffer is
-loaded, including across scratch buffer toggles. Leaving the session does not close
-the scratch buffer, live tail or guard board. Close them with their toggles or ordinary
-Neovim window commands.
-Yap creates the file with the session and private permissions. Opening the
-scratch buffer loads it. Native |:write| saves unsent drafts; Neovim's modified-buffer
-and exit behavior applies. Consuming a section writes the whole scratch buffer
-immediately, so a restart cannot resend the draft. A reopened session loads
-its saved scratch buffer; within an editor instance the live buffer (including unsaved
-edits) is reused. The scratch buffer is not a transcript and is excluded from session
-discovery. Its two sections fold independently and carry an inline, display-only
-state label preceded by a `·` so it reads as an annotation rather than buffer
-text. A section handed to a turn also shows its icon in the winbar:
+<leader>j toggles the scratch buffer. Write under `# @steer` or `# @queue`,
+then press <C-s> with the cursor in that section:
 
-  uncommitted   The body is typed but not handed to a turn yet.
-  pending       (steer) Submitted to the running turn.
-  scheduled     (queue) Authorized to send when that turn ends.
+  Section    Session idle             Turn running
+  steer      Send as next message     Steer at the next model boundary
+  queue      Send as next message     Queue one follow-up after success
 
-An empty section shows no label.
+Typing alone never sends. While running, a second <C-s> retracts the pending
+steer or unschedules the queue without deleting the draft. Editing an armed
+section cancels its submission; press <C-s> again to authorize the revision.
+Outside either section, <C-s> shows a hint. There is no selection-only send.
 
-Only these two headings delimit sections; other `# @...` lines are
-ordinary scratch content, including when pasted inside a queue or steer.
-When sent, role headings and yap marker lines are Markdown-escaped in the
-session transcript so they cannot split the message. Each queue or steer
-body is one message, and clearing a sent section leaves a blank line
-beneath its heading.
+Steer                                                       *yap-steer*
 
-  # @steer    While running, <C-s> submits a replaceable pending message
-              for the next model boundary. Press <C-s> again to retract it
-              without deleting the draft. Once delivered, it is cleared.
-              If the turn ends first (a <C-c> stop included) it stays as a
-              draft; pressing <C-s> here while idle sends it as the next
-              message, even when queue has text. Editing the steer after
-              submitting cancels it, so the sent text is always the text
-              <C-s> saw: press <C-s> again to submit the revision.
-  # @queue    While idle, <C-s> sends the whole body as one message. While
-              running, <C-s> schedules one follow-up; press it again to
-              unschedule without deleting the draft. The body is sent when
-              that turn ends successfully. Editing the queue after
-              scheduling cancels the follow-up, so the sent text is always
-              the text <C-s> saw: press <C-s> again to schedule the revision.
-              It never auto-sends merely because text was typed, or after a
-              stop, failure, or session close.
+A submitted steer replaces the pending message for the next model boundary.
+Once delivered, its section is cleared. If the turn ends first, including a
+<C-c> stop, the text remains a draft. While idle, <C-s> in steer sends that
+section even if queue also has text.
 
-<C-s> toggles a pending steer or scheduled queue while the turn runs; while
-idle it sends the section under the cursor. Outside a section it only displays
-a hint; move to steer or queue to send.
-There is no selection-specific send. <C-Enter> in normal or insert mode picks a
-template and inserts it at the cursor without sending it. The scratch buffer
-is intentionally ephemeral — no file backs it, and it is dropped when Neovim
-exits — but closing the session with |:bdelete| does not discard it: the
-draft survives, comes back with the session, and its |<C-s>| still dispatches
-to that session. |:write| {path} persists a draft explicitly.
+Queue                                                       *yap-queue*
+
+A scheduled queue sends one follow-up only after the running turn finishes
+successfully. It never auto-sends after a stop, failure, or session close.
+
+Sections and state
+
+Only `# @steer` and `# @queue` delimit scratch sections. Other role headings
+are ordinary content. When sent, embedded role headings and Yap marker lines
+are Markdown-escaped so they cannot split the message. Each section becomes
+one message; consuming it leaves a blank line beneath its heading.
+
+The sections fold independently. Display-only state labels follow a middot:
+
+  uncommitted   Text is present but has not been submitted.
+  pending       Steer is submitted to the running turn.
+  scheduled     Queue is authorized to send after successful completion.
+
+Empty sections have no label. Pending steer and queue also appear in the
+winbar. <C-Enter> inserts a template at the cursor without sending it.
+
+Saving drafts
+
+Scratch is a file-backed Markdown buffer at `<data_dir>/notes.md`, created
+with private permissions when the session is created. |:write| saves drafts;
+normal modified-buffer and exit prompts apply. Consuming a section writes
+the whole scratch buffer immediately so reopening cannot resend that draft.
+A reopened session loads the saved file; within Neovim, its existing live
+buffer, including unsaved edits, is reused. Closing the session with
+|:bdelete| does not discard the scratch draft.
+
+Scratch starts unlisted and is excluded from session discovery. Use
+`:setlocal buflisted` to include it in |:ls|, or `:setlocal nobuflisted` to
+hide it again. This choice persists while the buffer is loaded. Its window
+has spell checking enabled. Leaving a session does not close scratch, the
+live tail, or the guard board; use their toggles or normal window commands.
 
 AUDIT LOG                                                        *yap-audit*
 
-audit.jsonl in the session's data directory (recorded as the frontmatter
-`data_dir`: the transcript's own directory for `:Yap` sessions, or the
-central directory for a transcript elsewhere) is
-an append-only, JSON Lines record that survives restarts: every tool call
-(full arguments), full tool results, image attachments, approval requests and
-their Run/Deny answers, a retry line for each transient generation error, an
-`error` line for a failed send (classified code + message), one `usage` line
-per model step, and one `turn_end`
-line per send regardless of outcome — model, prompt, completion,
-`context_prompt` (the full last-step prompt size, including cached input),
-optional cumulative `cache_read`/`cache_write` (present after nonzero cache
-usage), cost, ms, and a `status` of `ok`, `error`, or
-`cancelled`. Each generated session
+audit.jsonl is an append-only JSON Lines record in the session's `data_dir`.
+It survives restarts and records tool calls with arguments, tool results,
+image attachments, approval requests and Run/Deny answers. |:YapClear|
+placeholders point to the exact lines holding removed output.
 
-description is also recorded as a `summary` line (`kind` `user` or `answer`
-plus the `description`), so the history of auto-generated titles survives even
-though the frontmatter keeps only the current label.
+  retry       One record for each transient generation error.
+  error       A failed send's classified code and message.
+  usage       One record per model step. Includes `step` (1-based), cumulative
+              `prompt`/`completion`/`cache_read`/`cache_write`, and per-step
+              `step_prompt`/`step_completion`/`step_cache_read`/`step_cache_write`.
+  turn_end    One record per send, regardless of outcome. Includes model,
+              prompt, completion, cost, ms, and status (`ok`, `error`, or
+              `cancelled`). `context_prompt` is the full last-step prompt,
+              including cached input. Cumulative `cache_read`/`cache_write`
+              appear after nonzero cache usage.
+  summary     Generated description, with `kind` (`user` or `answer`). The
+              history remains here when frontmatter gets a new description.
 
-A `usage` line is one model step of one turn: `step` (1-based), the cumulative
-`prompt`/`completion`/`cache_read`/`cache_write` the winbar chips read, and the
-per-step `step_prompt`/`step_completion`/`step_cache_read`/`step_cache_write`.
-The per-step split is what distinguishes reuse from re-billing. Step 1 of a turn
-can only reuse the previous turn's history; every later step of the same turn
-reuses what that turn already sent. So `step_cache_read` low on step 1 and high
-on the rest means the turn's own output caches well but the previous turn's
-output was re-sent fresh. See |yap-prompt-cache|.
+The winbar uses cumulative usage while a turn runs and `turn_end` records
+for session totals (|yap-winbar-numbers|). Per-step fields distinguish reuse
+within a turn from reuse across turns; see |yap-prompt-cache|.
+
+LIVE TOOL OUTPUT                                             *yap-live*
+
 
 The live tool tail (live()) is a separate, plain buffer that follows the
 running tool's output — a `$ command` header per bash call plus its streamed
@@ -662,34 +643,26 @@ output) to the unnamed (`"`) and clipboard (`+`) registers. It is never
 rebuilt from the audit log; the full streamed output lives in the tool's temp
 log, and the audit log carries the tail-truncated result. A tail lives only
 as long as its session: wiping the session buffer wipes the tail with it.
-guard() lists every open session's parked approvals and the settled decision
-history recorded since this Neovim started, and jumps to the matching tool
-region in the session. |:YapClear| placeholders point back at the exact
-audit-log lines they replaced.
+guard() opens the cross-session approval board; see |yap-guard-board|.
 
 The session directory is kept mode 0700 and its files mode 0600 — transcripts
 and tool output routinely contain secrets.
 
 PROMPT CACHE                                            *yap-prompt-cache*
 
-Providers reuse a request only where it matches an earlier one from the first
-token, so anything that reshapes already-sent history re-bills it. Inside a
-turn the agent loop sends native items (tool calls, tool results, reasoning)
-and extends them per step, which caches well. Across turns the markdown used to
-be re-flattened into assistant text — the previous turn's tool round and
-reasoning re-sent as new input.
+Providers can reuse matching request prefixes. Within a turn, Yap extends
+the model's native history of tool calls, results, and reasoning. Between
+turns, the backend retains that history while the transcript is unchanged.
 
-The serve process now keeps that native array in memory and extends it, because
-one `yap serve` process serves every turn of a buffer. Two exact checks gate a
-replay: the flattened input must still start with what the previous turn sent,
-and the transcript must still show exactly the bytes that turn wrote. Anything
-else — an edit anywhere in the history, |:YapClear|, |:YapCompact|, a fork, a
-model switch, or a restart — falls back to flattening the markdown, which is
-exactly the behaviour without the cache. A restart therefore costs one cold
-turn, not correctness.
+Replay requires both the previous input prefix and the exact transcript
+bytes written by the previous turn to match. Editing history, |:YapClear|,
+|:YapCompact|, a fork, model switch, or restart invalidates replay. Yap then
+rebuilds the request from Markdown. Your edits take precedence over caching;
+a restart loses reuse, not conversation correctness.
 
-To see it working, read the per-step `usage` lines: `step_cache_read` low on
-step 1 and high on later steps is the signature described above.
+Inspect per-step `usage` records to see reuse: low `step_cache_read` on step
+1 and high values on later steps mean the current turn caches well, but the
+previous turn's output was sent fresh. See |yap-audit|.
 
 ==============================================================================
 8. FOLDING & NAVIGATION                                        *yap-folding*
@@ -718,40 +691,36 @@ text objects follow the same structural parse as folding, so a `# @user` line
 inside a fenced tool result is literal content, never a message boundary.
 
 ==============================================================================
-9. WINBAR                                                      *yap-winbar*
+9. WINBAR & SUPERVISION                                      *yap-winbar*
 
-The winbar is the session dashboard. On the left sits the buffer's state icon:
-idle, awaiting your reply after success, stopped (a cancelled turn, shown
-until the next send), stopping while a turn unwinds, error, or done for a
+Watching running sessions                              *yap-supervision*
+
+Use <leader>l for the current session's live tool output and <leader>g for
+the guard board of approvals across open sessions. Both keys work in every
+Yap panel. The panels stay in session → guard → log order regardless of
+which you open first. Use <leader>j to steer or queue (|yap-scratch|), or
+<leader>m to change the model (|change_model()|).
+
+The winbar keeps the session's state and work needing your attention visible. Its
+left icon shows idle, awaiting your reply, stopped, stopping, error, or a
 finished subagent. A graceful stop keeps the partial answer; a hard stop
-restores the sent prompt; a failure keeps the partial and an error marker,
-and excludes both from the next request. The stopped/error icon persists
-until you send again.
-While a turn streams, an animated beacon replaces it: a fixed circle for
-half a second, then a random circle face every 180 ms, slowing to 420 ms once
-a tool has run 2s. When the turn ends the beacon gives way to the awaiting
-icon. When the window is inactive the beacon and the title disappear; the
-state icon stays, and a streaming session keeps a static running icon in its
-place.
+restores the sent prompt. A failed turn keeps its partial reply and error
+marker, and excludes both from the next request. Stopped and error remain
+visible until the next send. While a turn streams, the icon animates; an
+inactive window uses a static running icon instead.
 
-Once a tool has run for 2s its name and elapsed time hangs off the rollup
-after a muted middot (`[▶1] · bash 12s`), so the beacon, the queued
-`# @queue` follow-up, a queued :YapClear, and a pending `# @steer` — tray,
-broom and steer icons immediately left of the beacon — never shift the
-rollup. Fold views remain available through <leader>1..3, but do not occupy
-the winbar. The rollup island sits right next to the state icon and totals
-ALL OTHER yap sessions by state (streaming, awaiting you, stopped, errored,
-idle).
+A running tool appears with its name and elapsed time after two seconds. The
+icons beside the state show a pending `# @steer`, queued `# @queue`, or queued
+`:YapClear`. The nearby rollup summarizes every other yap session by state:
+streaming, awaiting you, stopped, errored, or idle. Subagents are excluded;
+their activity appears in the parent instead. Fold views remain available
+through <leader>1..3 and do not occupy the winbar.
 
-The active window centers a single fused island holding the session title (a
-renamed transcript's filename, else the generated description) and the model
-identifier — never the provider prefix — separated by a muted divider. The two
-differ by color and weight, not surface: the title in the title color, the
-model in the keyword color, both italic, the model bold. An inactive window centers the session label
-inside the island instead. Right of the midpoint: one spend island
-(since-open cost, all-time tokens and known cost) and one turn island holding
-the context reading, with the low-cache warning beside it when the read-hit
-rate drops.
+The active window shows the session title (a renamed transcript's filename,
+otherwise its generated description) and model name, without the provider
+prefix. An inactive window shows the session label. The right side shows
+since-open and all-time spend, context use, and, when it is below 40%, the
+cache read-hit warning.
 
 Reading the numbers                                    *yap-winbar-numbers*
 
@@ -774,14 +743,11 @@ Reading the numbers                                    *yap-winbar-numbers*
 Suffixes: `k` = thousands, `m` = millions. Costs are USD, computed from the
 committed catalog (`agent/price/pricing.json`).
 
-As the window narrows, the spend island thins first: all-time tokens, then
-since-open cost, then all-time cost, then the island itself. The cache warning
-shares the turn island, so it gives way before the last cost figure and never
-hides the price; with the spend island gone it keeps the turn island company
-on its own. The context reading outlives both. The tool timer and rollup yield
-before context. The model half drops before the title shortens. In inactive
-windows, the centered session label shortens, then drops when it no longer
-fits.
+As space runs out, spend drops all-time tokens, then since-open cost, then
+all-time cost, and finally the spend field. The cache warning yields before
+the last cost figure; once spend is gone it stays beside context. The tool
+timer and rollup yield before context. The model name drops before the title
+shortens. An inactive session label shortens and then disappears.
 
 For a global segment independent of yap buffers, use
 `%!v:lua.require('harness').overview()` in a statusline or tabline.
@@ -864,19 +830,22 @@ Plain templates send immediately; snippets, skills and raw at-cursor inserts
 do not. While a send is in flight a template or skill steers instead: its body
 (a leading `# @role` heading stripped) is injected at the running turn's next
 tool boundary as a `# @user` message, exactly like a <C-s> steer
-(|yap-sessions|). Raw insertion at the cursor is refused mid-turn.
+(|yap-scratch|). Raw insertion at the cursor is refused mid-turn.
 The `## Skills` section of the About Yap prefix lists names + descriptions,
 refreshed on every send.
 
 ==============================================================================
 11. THE GUARD GATE                                        *yap-guard-gate*
 
-Every tool call passes a pre-execution approval gate made of static rules.
-Each rule is declared in the tool's own source file, next to the tool it
-guards (see tools.Gate and safety.Rule in the agent source), and is compiled
-into the binary. `yap guard` prints the complete current list as JSON. When
-a rule matches, the turn pauses for a Run/Deny confirmation; otherwise the
-call runs.
+A static guard match pauses the turn for Run/Deny; otherwise the tool runs.
+A sandboxed bash write that hits the read-only filesystem instead offers
+Run/Deny to rerun the whole command unsandboxed. Deny returns the failure to
+the model. The static gate asks about operations the sandbox cannot safely
+contain; the sandbox enforces its filesystem boundary (|yap-sandbox|).
+
+Rules are compiled into the binary beside the tools they guard (see
+`tools.Gate` and `safety.Rule` in the agent source). `yap guard` prints the
+complete current list as JSON.
 
 bash is the one tool whose rules read the command line structurally: the
 command is parsed (mvdan.cc/sh, the shfmt parser) and a rule matches on the
@@ -974,8 +943,11 @@ config mounted (so nothing else of the home directory is reachable); see the
 "Session jail" section of the README. The two compose: the per-tool
 sandbox still applies inside the jail.
 
-The guard board is bound to this Neovim process: it lists every open
-session's parked approvals and the settled decision history (granted/denied/
+GUARD BOARD                                              *yap-guard-board*
+
+<leader>g opens the board and jumps to the matching tool region when you
+inspect an approval. The board lists every open session's parked approvals
+and the settled decision history (granted/denied/
 timed-out) recorded since Neovim started. Parked approvals are live state,
 answered via Run/Deny. Once answered, the outcome is recorded in memory as
 settled history — the board never reads the audit log back, so it is empty on
@@ -1031,9 +1003,9 @@ parent's context — progress is UI and liveness, never re-sent to the model.
 ==============================================================================
 13. LANGUAGE SERVER                                            *yap-lsp*
 
-A managed session buffer carries one language server, `yap lsp`, started and
-attached by the harness. It provides four language features over standard
-LSP, backed by the Go document parser (agent/document):
+Yap starts `yap lsp` for managed session buffers. It gives you conversation
+symbols, completion, structural diagnostics, and repairs while you edit. The
+Go document parser (`agent/document`) backs the standard LSP features:
 
   Document symbols  An outline of the conversation: one symbol per message
                     (newest first), then the frontmatter block at the bottom
@@ -1052,15 +1024,14 @@ LSP, backed by the Go document parser (agent/document):
   Code actions      Quick fixes for an unterminated frontmatter block or an
                     unclosed tool region with a complete header.
 
-The server attaches to session buffers for symbols, diagnostics and
-completion. The scratch buffer gets `@path` and `# @steer`/`# @queue` completion,
-without transcript diagnostics or symbols. Ordinary Markdown is left alone.
-The `symbols()` picker (and its `<leader>s` keymap) presents the outline in the
-server's order. Generic `document_symbol` pickers (e.g. mini.extra) re-sort by
-line number and would put the frontmatter back on top, so yap ships its own.
-Model completion reads the cached `yap models` list; it never hits the network, and opening a session never
-starts an MCP server. Diagnostics are debounced and incomplete-tail warnings
-are suppressed while a reply is streaming.
+The server attaches to sessions for symbols, diagnostics, and completion. A
+scratch buffer gets `@path` and `# @steer`/`# @queue` completion, not
+transcript diagnostics or symbols. Ordinary Markdown is unchanged. The
+`symbols()` picker and `<leader>s` keep the server's newest-first order;
+generic `document_symbol` pickers may sort by line number instead. Model
+completion reads the cached `yap models` list, never the network. Opening a
+session does not start an MCP server. Diagnostics are debounced, and
+incomplete-tail warnings stay suppressed while a reply streams.
 
 File references match project-relative path prefixes. A query without `/`
 also matches filename prefixes, so `@sess` can complete to

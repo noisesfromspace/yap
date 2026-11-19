@@ -1,100 +1,91 @@
 # yap
 
-An LLM agent that lives in a Neovim buffer. You chat with it, and it can
-edit files, run commands, search the web, and delegate to subagents. The
-conversation is a plain Markdown buffer you edit like any other file.
+An LLM agent whose conversation is an editable Neovim buffer. Yap can edit
+files, run commands, and delegate to subagents. You work on the conversation
+with the same editor you use for the code.
 
-Chat APIs are stateless: every request resends the whole conversation.
-Delete a message and the next request won't include it. Edit a reply and the
-model continues from your version. Branching, prefill and undo navigation are
-just editing.
+The Markdown buffer is the source of truth. Delete a message and the next
+send leaves it out. Edit a reply and the model continues from your version.
+Use undo to revisit a direction, or `:YapFork` to try another in a separate
+session.
 
 Inspired by pi and gptel.
 
-## What you get
+## A conversation is a file
 
-- Text objects and motions: edit a message, a thinking block or a tool region
-  as text (`dam`, `]m`, `]u`, `]t`).
-- Folding that collapses agent output or tool calls (`<leader>1/2/3`).
-- Model replies stream into the session buffer and can be stopped mid-turn
-  (`<C-c>`). Running tool output streams to a separate live tail (`<leader>l`).
-- Approvals: destructive commands and secret paths pause for Run/Deny, and bash
-  runs inside a bubblewrap sandbox on Linux.
-- Context control: `:YapClear` swaps old tool output for audit-log pointers and
-  `:YapCompact` folds the history into a summary.
-- Prompt-cache breakpoints on the stable history, so a caching provider does
-  not re-bill the whole prefix every turn.
-- Templates and skills, injected into a conversation even while it runs.
-- A file-backed scratch buffer that queues one follow-up and steers the current turn
-  (`<leader>j`).
-- Subagents, each a markdown file that behaves like any other session.
-- Listed session buffers for normal buffer navigation; open and saved session
-  trees through `vim.ui.select` (`+` for saved sessions).
-- A `sessions` tool to list, search, and read other saved sessions, so a
-  conversation can pull context from past ones without loading them whole.
-- A winbar with a centered island holding the title and model (different
-  colors), a rollup of other sessions next to the state icon, and right-rail
-  spend, context and cache readings.
-- Per-session model switching (`<leader>m`).
-- `:YapEval` to discuss a selection in a new session, `:YapEval!` to replace it
-  with the model's output in any buffer.
-- Providers: native OpenAI, Anthropic, Gemini and DeepSeek, any
-  OpenAI-compatible endpoint, or a ChatGPT plan login.
-- A session-only language server (`yap lsp`) for document symbols, completion
-  and structural diagnostics, scoped to managed sessions. nvim-cmp and
-  blink.cmp can consume its completion through their generic LSP source
-  (see `:help yap-lsp`).
-- Fork a conversation into an independent session with `:YapFork`, then edit
-  the transcript to change direction.
-- A session jail runs Neovim inside bubblewrap, limiting the files and tools
-  available to the whole session.
-- Lazy MCP servers keep tool definitions out of context until the agent loads
-  that server.
+Sessions are writable Markdown files and ordinary listed buffers. Switch
+between them with your usual buffer navigation, arrange them in splits, and
+save with `:write`. Rename a transcript with `:file` (`:f`) and write it to
+give the session a permanent title instead of its generated description.
 
-## Tools
+The editing details follow Neovim's conventions:
 
-The agent ships with a fixed set of built-in tools, plus any tools exposed by
-configured MCP servers (named `mcp_<server>_<tool>`). It reads and edits
-files, runs bash, fetches URLs, delegates to subagents in separate sessions,
-and lists, searches, and reads other saved sessions. Web search, GitHub access
-and browser control require separately configured MCP servers. Independent
-read-only calls in one round run concurrently (up to four). See `:help yap-tools`.
+- Move between messages and tool regions with `]m`, `]u`, and `]t`; use text
+  objects such as `dam` to edit whole messages.
+- Fold replies, thinking, and tool output with `<leader>1/2/3`.
+- Complete `@path` file references through LSP, alongside role headings and
+  frontmatter. Built-in completion works by default; nvim-cmp and blink.cmp
+  can use their LSP source.
+- Use `:YapEval` to discuss a selection from any buffer, or `:YapEval!` to
+  replace it with the model's output.
 
-A turn is an agent loop: the model proposes the next action, the backend
-runs it, and the result feeds back until the model stops asking. The loop
-lives in a Go backend (`yap serve`), one per session, driven from a Lua
-frontend in Neovim:
+Open saved sessions with `+` for the current project or `g+` for all projects.
+The picker shows live status and groups forks and subagents under their
+parent. The agent can also search and read past sessions, bringing earlier
+work into a conversation without loading every transcript.
 
-```mermaid
-flowchart LR
-    subgraph FE["Neovim (Lua frontend)"]
-        A["Session buffer: editable Markdown, the conversation"]
-    end
-    subgraph BE["yap serve (Go backend)"]
-        B["Agent loop: propose, run, feed back"]
-        C["Tools: files, bash, MCP, subagents"]
-    end
-    subgraph P["Provider API"]
-        D["The model"]
-    end
-    A -->|"turn (full transcript)"| B
-    B <-->|"streamed completion + tool calls"| D
-    B --> C
-    C -->|"results"| B
-    B -->|"streamed reply"| A
-```
+## Change direction while it runs
+
+Replies stream into the conversation. You can stop a turn with `<C-c>`,
+inspect running tool output with `<leader>l`, or open the scratch buffer
+with `<leader>j` to prepare what comes next:
+
+- **Steer:** submit a `# @steer` message to redirect the current turn at its
+  next model boundary.
+- **Queue:** submit a `# @queue` message to send one follow-up when the current
+  turn finishes successfully.
+- **Switch models:** use `<leader>m` to change this session's model, including
+  during a turn. The change takes effect at the next model boundary without
+  interrupting the current model step or tool call.
+
+Submit scratch messages with `<C-s>`. Merely typing does not send them, and
+editing an armed steer or queue cancels its authorization until you submit
+it again. Transcript edits affect subsequent turns; steering is how you
+change the instructions for a turn already in progress.
+
+The winbar keeps the current task, model, spend, and context usage in view.
+It also summarizes other sessions by state, so you can work in one buffer
+while noticing which agents are running or waiting for attention. Subagent
+activity appears in the parent's winbar and live tool tail.
+
+## Tools and context
+
+Built-in tools read and edit files, run bash, fetch URLs, and delegate work
+to subagents with their own session files. Independent read-only calls can
+run concurrently. MCP servers add tools such as web search, GitHub access,
+and browser control. Mark a server `lazy` to keep its tool definitions out
+of context until the agent loads it.
+
+Templates and skills supply reusable instructions, even during a running
+session. `:YapClear` replaces older tool output with audit-log references;
+`:YapCompact` summarizes history. Provider-supported prompt caching reuses
+stable history, while transcript edits remain authoritative.
+
+Destructive commands and secret paths pause for Run/Deny approval. On Linux,
+bash runs inside bubblewrap when it is installed; **without bubblewrap, bash
+runs unsandboxed**. The optional session jail contains the editor, backend,
+and other tools too. See the jail setup below.
 
 ## First run
 
-Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
+You need Neovim 0.11 or newer, Go to build the backend, and `rg` (ripgrep) on
+`PATH`. Install `bwrap` (bubblewrap) on Linux for the bash sandbox.
 
-- `rg` (ripgrep) — the `search` and `glob` tools shell out to it.
-- `bwrap` (bubblewrap) — the bash sandbox (Linux). Optional: without it the
-  bash tool falls back to running unsandboxed.
-
-1. Build the backend and put `yap` on Neovim's `PATH`:
+1. From this repository, build the backend into a directory on Neovim's
+   `PATH`:
 
    ```sh
+   mkdir -p ~/.local/bin
    CGO_ENABLED=0 go build -o ~/.local/bin/yap ./agent
    ```
 2. Configure a provider in `~/.config/yap/settings.json`:
@@ -103,136 +94,67 @@ Yap needs Neovim 0.11 or newer, plus these programs on `PATH`:
    {
      "providers": {
        "anthropic": {
-         "base_url": "https://api.anthropic.com",
          "api_key_env": "ANTHROPIC_API_KEY"
-       }
-     },
-     "mcp": {
-       "exa": {
-         "url": "https://mcp.exa.ai/mcp",
-         "headers": { "x-api-key": "EXA_API_KEY" }
        }
      }
    }
    ```
 
-   MCP servers expose their tools as `mcp_<server>_<tool>`. Each entry is a
-   local stdio server (`command`, optional `args`/`cwd`) or an HTTP server
-   (`url`); credentials are referenced through `env` (child var → Yap env var)
-   or `headers` (header → Yap env var), never stored in the file. A header
-   value may carry a literal scheme prefix, e.g. `"Bearer CENSYS_API_KEY"`
-   sends `Authorization: Bearer <value>`. Set `"lazy": true` on a situational
-   server to keep its tool definitions out of context: it exposes a single
-   `mcp_<server>` loader tool that summarizes what the server offers, and the
-   definitions enter context only when needed. Calling a listed tool directly
-   works too: the call loads the server and then runs. Activation lasts for
-   the session's backend, and changing the server's config re-arms it.
-
-   Native providers (no `base_url` needed): `openai`, `anthropic`,
-   `google`/`gemini`, `deepseek`. Any other name (`moonshot`, `openrouter`,
-   z.ai, local servers) is OpenAI-compatible and requires a `base_url`.
-   See `:help yap-configuration` for the full table.
-
-   Export the key before starting Neovim: `export ANTHROPIC_API_KEY=<your-api-key>`.
-
-   To bill a ChatGPT Plus/Pro plan instead of an API key, drop `api_key_env`
-   and use `{"openai": {"auth": "chatgpt"}}`, then run `yap login chatgpt`
-   once and approve access in the browser. Credentials land in
-   `~/.config/yap/chatgpt.json` and refresh themselves. Login and token renewal
-   are serialized across Yap processes for each auth method, so sessions can
-   safely share rotating refresh tokens.
-3. Install this repo as a Neovim plugin, or append
-   `vim.opt.rtp:append("/path/to/yap")` to your config, then:
+   Set `ANTHROPIC_API_KEY` in your environment before starting Neovim.
+3. Install this repository as a Neovim plugin, or append
+   `vim.opt.rtp:append("/path/to/yap")` to your config, then configure a model:
 
    ```lua
-   require("harness").setup({ model_groups = { agent = "anthropic/claude-sonnet-5-5" } })
+   require("harness").setup({
+     model_groups = { agent = "anthropic/claude-sonnet-5-5" },
+   })
    ```
-4. Run `:Yap`, type under `# @user`, and press `<C-s>`.
+4. Run `:Yap`, type under the user heading, and press `<C-s>`.
 
-## Commands
+Native providers include OpenAI, Anthropic, Gemini, and DeepSeek. Other
+OpenAI-compatible endpoints work with a `base_url`. For a ChatGPT plan
+login, configure `{"providers": {"openai": {"auth": "chatgpt"}}}`, run
+`yap login chatgpt`, and choose an OpenAI model in setup.
 
-| Command                      | Purpose                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `:Yap`                       | Start a session.                                                                            |
-| `:YapClear [keep]`           | Replace older tool output with audit-log references.                                        |
-| `:YapCompact [instructions]` | Summarize with optional custom instructions, then optionally drop superseded history.       |
-| `:YapEval[!] [instruction]`  | Discuss the selection in a new session. `!` replaces the selection with the model's output. |
-| `:YapFork [name]`            | Copy the conversation to an independent buffer; edit it to branch.                          |
+MCP is optional. Configure local stdio or HTTP servers in `settings.json`;
+credentials are referenced through environment variables rather than stored
+in the file. See `:help yap-configuration` for provider and MCP setup.
 
-## Lua API
+## Controls to start with
 
-| Function                                 | Shortcut    | Purpose                                                         |
-| ---------------------------------------- | ----------- | --------------------------------------------------------------- |
-| `require("harness").send()`              | `<C-s>`     | send the transcript                                             |
-| `require("harness").stop()`              | `<C-c>`     | stop the in-flight request                                      |
-| `require("harness").live()`              | `<leader>l` | open the live tool tail                                         |
-| `require("harness").guard()`             | `<leader>g` | open/close the guard board                                      |
-| `require("harness").change_model(combo)` | `<leader>m` | set this session's provider/model                               |
-| `require("harness").sessions()`          | `+`         | pick a saved session (current project)                            |
-| `require("harness").sessions("all")`     | `g+`        | pick a saved session from any project (all projects)              |
-| `require("harness").insert(name)`        | `<C-Enter>` | insert a template (and send it); merge a skill via insert(name) |
+| Key         | Action                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------- |
+| `<C-s>`     | Send the conversation or submit a scratch message.                                     |
+| `<C-c>`     | Stop the current turn.                                                                 |
+| `<leader>j` | Open the scratch buffer to steer or queue. (You can just append # @user in the buffer) |
+| `<leader>m` | Change this session's model.                                                           |
+| `<leader>l` | Open the live tool tail.                                                               |
+| `<leader>g` | Open or close the guard board.                                                         |
+| `+` / `g+`  | Pick a saved session in this project / all projects.                                   |
+| `<C-Enter>` | Pick and send a template in a session.                                                 |
 
-All shortcuts are configurable via `setup({ keymaps = ... })`; see `:help yap-keymaps`.
-In a session buffer `<C-Enter>` calls `insert()`: it picks from the templates
-and appends the chosen one as a message and sends it; skills are merged into
-`# @system` with `insert(name)` instead. In the scratch buffer it calls
-`insert(nil, { at_cursor = true })`, which drops the raw file at the cursor
-without sending it.
+In scratch, `<C-Enter>` inserts template text at the cursor without sending.
+All shortcuts are configurable through `setup({ keymaps = ... })`.
+See `:help yap-keymaps` for the full set.
 
-Ordinary sessions are listed buffers backed by writable markdown files.
-Rename `session.md` to set a permanent title (views then show that filename
-instead of the auto-generated description); use your normal buffer navigation,
-file explorer, and Neovim deletion commands. Subagent buffers stay unlisted and do
-not count in the winbar overview.
+## Display
 
-`sessions()` is the session picker for the current project; `sessions("all")`
-lists every saved session across all projects under the sessions root. Both
-mark open rows with a live status icon and nest forks and subagents under
-their parent in a box-drawing tree; the all-project picker suffixes each root
-with its project so sessions from different worktrees are distinguishable.
+Yap writes Markdown, so your renderer applies. Plugins that process entire
+Markdown buffers can slow down on large transcripts.
+[touchup](https://git.boers.email/martijn/touchup.nvim) understands Yap's
+markers and renders each tool region as one block.
 
-## Rendering
+A Nerd Font is used by default. Set `nerd_font = false` in setup for plain
+Unicode glyphs.
 
-yap writes plain markdown, so your renderer applies. Not all renderers are
-written to handle 50k-line buffers, so there might be performance issues. Same
-for other plugin that hook into Markdown files.
+<details>
+<summary>Optional Linux session jail</summary>
 
-[touchup](https://git.boers.email/martijn/touchup.nvim) understands yap's
-markers: it colors the `yap:thinking` / `tool` / `error` / `usage` labels and
-draws each tool region as one block.
-
-## Terminology
-
-| Term             | Meaning                                                                      |
-| ---------------- | ---------------------------------------------------------------------------- |
-| session          | one conversation: Markdown file + audit log + notes.md scratch buffer        |
-| session buffer   | the Neovim buffer editing a session                                          |
-| message          | a `# @role` heading plus its body                                            |
-| region           | a marker-delimited span: tool, thinking, error, or ui                        |
-| tool region      | one tool call + its result                                                   |
-| turn             | one completed send → one assistant reply                                     |
-| send             | the action and in-flight request (`send()` / `<C-s>`)                        |
-| prefill          | hand-writing an `# @assistant` message to continue from it                   |
-| steer            | mid-turn injection of a `# @steer` body at a model boundary                  |
-| approval         | the static rule that pauses a tool call for a Run/Deny answer                |
-| agent definition | a `~/.config/yap/agents/<name>.md` file describing a subagent (not a “role”) |
-| audit log        | the append-only `.jsonl` record                                              |
-| tail view        | the `live()` tool-tail buffer                                                |
-
-The full vocabulary is in `:help yap-glossary`.
-
-## Notes
-
-- yap uses a Nerd Font by default for winbar and picker glyphs, including the
-  context gauge (`󰊚`; plain `◔`). Set `nerd_font = false` in setup for plain
-  Unicode, and override any single glyph through `icons`.
-
-## Session jail
-
-On Linux, `programs.yap.jail` runs Neovim under bubblewrap with only the launch
-directory, Yap config and configured paths mounted. Unlike the per-command
-bash sandbox, it contains the editor, backend and other tools too. It does not
-restrict network access by default; set `network = false` to disable egress.
+`programs.yap.jail` runs Neovim under bubblewrap with only the launch
+directory, Yap config, and configured paths mounted. Unlike the per-command
+bash sandbox, it contains the editor, backend, and other tools too. It does
+not restrict network access by default; set `network = false` to disable
+egress.
 
 ```nix
 programs.yap = {
@@ -251,10 +173,37 @@ Start the launcher from the case directory; it becomes `:pwd`. See the
 `programs.yap.jail.*` options for credential forwarding, extra paths, and
 session-directory configuration.
 
-## Documentation
+</details>
 
-The full reference is in `:help yap` (`doc/yap.txt`). Before changing behavior,
-anyone editing this repo, human or AI, should read `CONTRIBUTING.md`. It covers
-the Lua \<-> Go wire protocol, the `R-...` design rules, and how to run the
-tests (`tests/run.sh`). Update that file when your change affects those
-details.
+## How the agent works
+
+Each session has a Lua frontend in Neovim and its own Go backend
+(`yap serve`). On send, Yap reads the conversation from the buffer. The
+backend calls the model, runs the tools it requests, and feeds their results
+back until the model finishes. Replies stream into the same buffer.
+
+```mermaid
+flowchart LR
+    A["Neovim buffer<br/>Editable Markdown conversation"]
+    subgraph Backend["yap serve · one per session"]
+        B["Agent loop"]
+        C["Tools<br/>Files, bash, MCP, subagents"]
+    end
+    D["Provider API<br/>Selected model"]
+    A -->|"Send conversation"| B
+    B -->|"Request with conversation + results"| D
+    D -->|"Stream reply + tool calls"| B
+    B -->|"Run requested tools"| C
+    C -->|"Return results"| B
+    B -->|"Stream reply + tool output"| A
+```
+
+## Reference and contributing
+
+The full reference is in [`doc/yap.txt`](doc/yap.txt), available in Neovim as
+`:help yap`. Start with `yap-configuration`, `yap-keymaps`, `yap-lsp`, or
+`yap-tools` for the details behind the workflows above.
+
+Before changing behavior, read [CONTRIBUTING.md](CONTRIBUTING.md) for the wire
+protocol, design rules, and test instructions. Update it when a change
+affects those contracts.
