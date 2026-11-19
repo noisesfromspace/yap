@@ -1,22 +1,13 @@
 -- Small presentation helpers shared by the session UI, guard board and live
--- tail. The guard owns manual folds and a two-line header; the tail does not.
+-- tail. The guard owns manual folds; the tail does not.
 
 local M = {}
-
--- Common highlight groups: the header title and its counts line.
-M.hl = {
-  header = "YapViewHeader",
-  meta = "YapViewMeta",
-}
 
 --- Register a linked highlight group. `link = to` (not a fixed color) keeps
 --- every colorscheme working; `default = true` keeps user overrides.
 function M.link(name, to)
   vim.api.nvim_set_hl(0, name, { link = to, default = true })
 end
-
-M.link(M.hl.header, "Title")
-M.link(M.hl.meta, "Comment")
 
 --- Flatten embedded newlines in a free-text field into spaces, so one logical
 --- field can never inject extra buffer lines.
@@ -52,12 +43,6 @@ function M.truncate_display(text, max)
     truncated = vim.fn.strcharpart(text, 0, chars)
   end
   return truncated .. "…"
-end
-
---- Two header lines used by the guard board: a title and a counts summary.
---- Highlight line 1 with M.hl.header and line 2 with M.hl.meta.
-function M.header_lines(title, counts)
-  return { title, ("  " .. counts) }
 end
 
 --- Break a shell command into display lines at top-level operators (`&&`,

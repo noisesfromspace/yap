@@ -5,6 +5,10 @@
 -- audit log back, so it only ever shows what happened while this Neovim was
 -- open. `c` clears the in-memory history. It opens as the same bottom drawer
 -- as the live tool tail; actions are direct keys on the cursor row.
+--
+-- The cwd and the live counts are window chrome, not rows: they ride a
+-- window-local 'winbar', and the shortcut line is the window's 'statusline',
+-- so neither scrolls away however many rows the board holds.
 
 local M = {}
 
@@ -20,6 +24,16 @@ end
 
 local BOARD_NAME = "Yap Guard"
 local MAX_HISTORY_ROWS = 30 -- cap the settled-history list
+
+-- The shortcut line. It lives in the window's statusline so it cannot scroll
+-- out of view; when the window-local statusline is not drawn (see render) it
+-- falls back to the last buffer line.
+local HINTS = "a auto-accept · r/x run·deny · i inspect · Y copy · c clear · q close"
+
+--- Double a literal `%` so it cannot start a statusline format item.
+local function esc(text)
+  return (text or ""):gsub("%%", "%%%%")
+end
 
 -- Highlight groups: structure is colored, content stays default. Linked
 -- (not fixed colors) so every colorscheme renders them.
@@ -39,6 +53,21 @@ view.link(HL.meta, "Comment")
 view.link(HL.hint, "Comment")
 view.link(HL.tool, "Title")
 view.link(HL.command, "String")
+
+-- Highlight groups for the window-local 'winbar' strip that carries the cwd
+-- and the live counts above the rows.
+local BAR = {
+  title = "YapGuardBarTitle",
+  sep = "YapGuardBarSep",
+  cwd = "YapGuardBarCwd",
+  parked = "YapGuardBarParked",
+  meta = "YapGuardBarMeta",
+}
+view.link(BAR.title, "Title")
+view.link(BAR.sep, "Comment")
+view.link(BAR.cwd, "Directory")
+view.link(BAR.parked, "DiagnosticWarn")
+view.link(BAR.meta, "Comment")
 
 local ns = vim.api.nvim_create_namespace("yap.guard.hl")
 
@@ -265,7 +294,9 @@ local function detail_lines(row)
   return out
 end
 
---- Rebuild the board buffer from live approvals + settled history.
+--- Rebuild the board buffer from live approvals + settled history. The cwd and
+--- the counts are not buffer lines: they live in the window's 'winbar' (see
+--- M.winbar), so they stay on screen however far the rows scroll.
 local function render()
   local buf = ensure_board()
   local rows, approval_count, history_count = build_rows()
@@ -284,22 +315,6 @@ local function render()
     end
   end
 
-  local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
-  local parts = {}
-  if approval_count > 0 then
-    parts[#parts + 1] = ("Parked %d"):format(approval_count)
-  end
-  if history_count > 0 then
-    parts[#parts + 1] = ("History %d"):format(history_count)
-  end
-  if state.auto_accept then
-    parts[#parts + 1] = "auto-accept on"
-  end
-  local counts = table.concat(parts, " · ")
-  local hdr = view.header_lines(("Guard Board · %s"):format(project), counts)
-  add(hdr[1], view.hl.header)
-  add(hdr[2], view.hl.meta)
-
   local function emit_segments(segs)
     local line = #lines -- 0-based index of the line about to be appended
     local text = {}
@@ -314,7 +329,6 @@ local function render()
     lines[#lines + 1] = table.concat(text)
   end
 
-  add("")
   for _, row in ipairs(rows) do
     local start = #lines + 1
     if not first_row_line then
@@ -331,8 +345,13 @@ local function render()
       row_map[ln] = row
     end
   end
-  add("")
-  add("a auto-accept · r/x run·deny · i inspect · Y copy bash command · c clear history · q close", HL.hint)
+  -- 'laststatus' 0 draws no statusline and 3 draws one for the whole editor,
+  -- so a window-local one is not shown: keep the shortcuts in the buffer then
+  -- rather than losing them.
+  if vim.o.laststatus == 0 or vim.o.laststatus == 3 then
+    add("")
+    add(HINTS, HL.hint)
+  end
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -359,6 +378,75 @@ local function render()
     focus_key = focus_key,
     focus_line = focus_line,
   }
+end
+
+--- The window a 'winbar' (or 'statusline') expression is being evaluated for:
+--- the statusline context when Neovim supplies one, else the board itself.
+local function bar_target()
+  local win = tonumber(vim.g.statusline_winid)
+  if win and vim.api.nvim_win_is_valid(win) then
+    return win, vim.api.nvim_win_get_buf(win)
+  end
+  return nil, board_buf
+end
+
+--- Live counts for the winbar. The winbar expression runs on every redraw, so
+--- this must stay cheap: no sorting, no row building.
+local function live_counts()
+  local parked = 0
+  for buf in pairs(state.pending_approvals) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      parked = parked + 1
+    end
+  end
+  return parked, math.min(#state.settled_approvals, MAX_HISTORY_ROWS)
+end
+
+local function bar_hl(text, group)
+  return "%#" .. group .. "#" .. esc(text) .. "%*"
+end
+
+--- The board's window-local 'winbar': the full cwd on the left, the live
+--- counts on the right. It is set as a `%!` expression (see M.toggle), so
+--- Neovim re-evaluates it on redraw rather than the board re-rendering text.
+--- Returns "" whenever the window is showing something other than the board,
+--- so a panel reused by :e never wears the guard bar.
+function M.winbar()
+  local win, buf = bar_target()
+  local board = M.buf()
+  if not board or buf ~= board then
+    return ""
+  end
+
+  local cwd = vim.fs.normalize(vim.fn.getcwd())
+  local left_text = " Yap Guard · " .. cwd
+  local left = bar_hl(" Yap Guard ", BAR.title) .. bar_hl("· ", BAR.sep) .. bar_hl(cwd, BAR.cwd)
+
+  local parked, history = live_counts()
+  local right, right_text = {}, {}
+  if parked > 0 then
+    right[#right + 1] = bar_hl(("Parked %d"):format(parked), BAR.parked)
+    right_text[#right_text + 1] = ("Parked %d"):format(parked)
+  end
+  if history > 0 then
+    right[#right + 1] = bar_hl(("History %d"):format(history), BAR.meta)
+    right_text[#right_text + 1] = ("History %d"):format(history)
+  end
+  if state.auto_accept then
+    right[#right + 1] = bar_hl("auto-accept on", BAR.parked)
+    right_text[#right_text + 1] = "auto-accept on"
+  end
+
+  -- The cwd wins the space: drop the counts when the two would not fit.
+  local width = win and vim.api.nvim_win_get_width(win) or vim.o.columns
+  local sep = bar_hl(" · ", BAR.sep)
+  local right_w = #right_text > 0
+      and vim.fn.strdisplaywidth(table.concat(right_text, " · ")) + #right_text - 1
+    or 0
+  if right_w == 0 or vim.fn.strdisplaywidth(left_text) + right_w + 2 > width then
+    return left
+  end
+  return left .. "%=" .. table.concat(right, sep) .. " "
 end
 
 --- The row under a board buffer line, or nil. `row_map` is a sparse map keyed
@@ -523,13 +611,19 @@ function M.toggle()
     split, anchor = "below", vim.api.nvim_get_current_win()
   end
 
-  if not drawer.open_at(buf, drawer.half_screen(anchor), nil, split, anchor) then
+  local win = drawer.open_at(buf, drawer.half_screen(anchor), nil, split, anchor)
+  if not win then
     return
   end
+  -- The cwd and the counts are window chrome, not rows: the winbar keeps them
+  -- on screen while the rows scroll, and the statusline keeps the shortcuts
+  -- visible at the bottom.
+  vim.wo[win].winbar = "%!v:lua.require'harness.ui.guard'.winbar()"
+  vim.wo[win].statusline = " " .. esc(HINTS) .. " "
   local result = render()
   install_keymaps(buf)
   apply_folds(buf, result)
-  vim.api.nvim_win_set_cursor(0, { result.focus_line or result.first_row_line or 1, 0 })
+  vim.api.nvim_win_set_cursor(win, { result.focus_line or result.first_row_line or 1, 0 })
 end
 
 --- Clear the settled decision history recorded this Neovim process. The
@@ -581,6 +675,7 @@ function M.touch()
   -- was on (so a live update never jumps them away from a history row).
   local line = result.focus_line or (key and result.key_lines[key]) or result.first_row_line or 1
   vim.api.nvim_win_set_cursor(win, { line, 0 })
+  util.redraw_status() -- re-evaluates the winbar and statusline expressions
 end
 
 return M

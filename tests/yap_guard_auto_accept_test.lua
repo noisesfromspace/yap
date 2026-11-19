@@ -1,5 +1,5 @@
 -- `a` on the guard board toggles auto-accept: it sweeps any parked approvals
--- as Run, shows the mode in the header, and (until toggled off) answers
+-- as Run, shows the mode in the board's winbar, and (until toggled off) answers
 -- incoming approval requests Run immediately instead of parking them.
 local ROOT = vim.env.YAP_ROOT or vim.fn.getcwd()
 vim.opt.rtp:prepend(ROOT)
@@ -16,6 +16,12 @@ local function board_text()
   return table.concat(vim.api.nvim_buf_get_lines(vim.fn.bufnr("Yap Guard"), 0, -1, false), "\n")
 end
 
+-- The counts and the auto-accept marker live in the board's winbar, which is a
+-- `%!` expression rather than buffer text; call the renderer directly.
+local function bar_text()
+  return guard.winbar()
+end
+
 -- Park an approval with no backend so the `a` sweep clears it without
 -- recording a settled row in the board history (which would pollute the later
 -- real-turn assertions).
@@ -30,23 +36,27 @@ state.pending_approvals[chat] = {
 guard.toggle()
 local board = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(board) == "Yap Guard", "guard board did not open")
-local text = board_text()
-assert(text:find("Parked 1", 1, true), "header missing parked approval count")
-assert(not text:find("auto-accept on", 1, true), "auto-accept marker shown while off")
+-- The cwd and the counts ride the window chrome, so the board window carries a
+-- guard winbar and the shortcut line as its statusline.
+local board_win = vim.api.nvim_get_current_win()
+assert(vim.wo[board_win].winbar:find("guard'.winbar()", 1, true), "board window has no guard winbar")
+assert(vim.wo[board_win].statusline:find("auto-accept", 1, true), "board window has no shortcut statusline")
+assert(bar_text():find(vim.fs.normalize(vim.fn.getcwd()), 1, true), "winbar missing the cwd: " .. bar_text())
+assert(bar_text():find("Parked 1", 1, true), "winbar missing parked approval count: " .. bar_text())
+assert(not bar_text():find("auto-accept on", 1, true), "auto-accept marker shown while off")
 
 -- `a` toggles on and sweeps the parked approval.
 vim.api.nvim_feedkeys("a", "mtx", false)
 assert(state.auto_accept == true, "`a` did not enable auto-accept")
 assert(state.pending_approvals[chat] == nil, "auto-accept did not sweep the parked approval")
-text = board_text()
-assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after toggle on")
+local text = board_text()
+assert(bar_text():find("auto-accept on", 1, true), "winbar missing auto-accept marker after toggle on")
 assert(not text:find("sweep me", 1, true), "swept approval still listed: " .. text)
 
--- `a` toggles off and the marker leaves the header.
+-- `a` toggles off and the marker leaves the winbar.
 vim.api.nvim_feedkeys("a", "mtx", false)
 assert(state.auto_accept == false, "`a` did not disable auto-accept")
-text = board_text()
-assert(not text:find("auto-accept on", 1, true), "auto-accept marker shown while off")
+assert(not bar_text():find("auto-accept on", 1, true), "auto-accept marker shown while off")
 
 -- Back on for the live turn: an incoming approval is answered immediately.
 vim.api.nvim_feedkeys("a", "mtx", false)
@@ -63,10 +73,9 @@ assert(
 )
 assert(state.pending_approvals[chat] == nil, "auto-accept left the approval parked")
 
--- The header still shows the mode is on after the live turn.
+-- The winbar still shows the mode is on after the live turn.
 guard.toggle()
-text = board_text()
-assert(text:find("auto-accept on", 1, true), "header missing auto-accept marker after live turn")
+assert(bar_text():find("auto-accept on", 1, true), "winbar missing auto-accept marker after live turn")
 
 guard.toggle() -- close
 print("OK guard auto-accept")

@@ -34,7 +34,7 @@ function M.style(win, opts)
   -- must be able to reuse them like any other window. Their buffers survive
   -- (bufhidden = hide) and reopen via their toggle (<leader>g / <leader>l /
   -- <leader>j), so clobbering a panel view never loses data.
-  vim.wo[win].winbar = "" -- the yap winbar is for sessions, not panels
+  vim.wo[win].winbar = "" -- the session winbar is for sessions; the guard sets its own
   if not opts.editable then
     vim.wo[win].number = false
     vim.wo[win].relativenumber = false
