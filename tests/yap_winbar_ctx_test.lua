@@ -38,17 +38,17 @@ assert(not plain(bar):find("Context", 1, true), "context should carry no long la
 assert(not plain(bar):find(icons.cache, 1, true), "cache warning should hide when absent: " .. plain(bar))
 state.live_usage[buf] = nil
 
--- ─── Context bands ────────────────────────────────────────────────────────
+-- ─── Context is a dim reading across fullness ─────────────────────────────
 for _, case in ipairs({
-  { prompt = 23000, context_window = 250000, pct = icons.context .. " 9%", hl = "YapIslandUprightGaugeLow" },
-  { prompt = 200000, context_window = 250000, pct = icons.context .. " 80%", hl = "YapIslandUprightGaugeMid" },
-  { prompt = 240000, context_window = 250000, pct = icons.context .. " 96%", hl = "YapIslandUprightGaugeHigh" },
-  { prompt = 250000, context_window = 250000, pct = icons.context .. " 100%", hl = "YapIslandUprightGaugeHigh" },
+  { prompt = 23000, context_window = 250000, pct = icons.context .. " 9%" },
+  { prompt = 200000, context_window = 250000, pct = icons.context .. " 80%" },
+  { prompt = 240000, context_window = 250000, pct = icons.context .. " 96%" },
+  { prompt = 250000, context_window = 250000, pct = icons.context .. " 100%" },
 }) do
   state.last_turn[buf] = case
   local wb = winbar_at(60)
   assert(plain(wb):find(case.pct, 1, true), "wrong context percentage: " .. plain(wb))
-  assert(wb:find("%#" .. case.hl .. "#", 1, true), "wrong context band at " .. case.pct .. ": " .. wb)
+  assert(wb:find("%#YapIslandUprightCount#", 1, true), "context should use the dim count color: " .. wb)
 end
 state.last_turn[buf] = nil
 
@@ -126,14 +126,19 @@ state.last_turn[buf] = nil
 -- ─── Usage numbers and the cache warning follow the theme ─────────────────
 vim.api.nvim_set_hl(0, "Keyword", { fg = 0xdddddd })
 vim.api.nvim_set_hl(0, "Comment", { fg = 0x333333 })
+vim.api.nvim_set_hl(0, "Title", { fg = 0x777777 })
 vim.api.nvim_exec_autocmds("ColorScheme", {})
 local model_fg = vim.api.nvim_get_hl(0, { name = "YapCursiveModel", link = false }).fg
 assert(model_fg == 0xdddddd, "theme change did not update model color")
-for _, group in ipairs({ "YapUprightIdle", "YapIslandUprightCount" }) do
-  assert(
-    vim.api.nvim_get_hl(0, { name = group, link = false }).fg == model_fg,
-    group .. " should use the model's readable foreground"
-  )
-end
+assert(
+  vim.api.nvim_get_hl(0, { name = "YapUprightIdle", link = false }).fg == model_fg,
+  "YapUprightIdle should use the model's readable foreground"
+)
+-- Spend and context figures share the description's Title foreground, so
+-- the stats rail reads in the same voice as the session title.
+assert(
+  vim.api.nvim_get_hl(0, { name = "YapIslandUprightCount", link = false }).fg == 0x777777,
+  "YapIslandUprightCount should use the description's Title foreground"
+)
 
 print("OK winbar_ctx")

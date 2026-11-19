@@ -731,8 +731,7 @@ Reading the numbers                                    *yap-winbar-numbers*
              summed from every `turn_end` journal entry (|yap-audit|).
              Survives restarts; answers "what has this session cost".
   󰊚 NN%      Context use: the last turn's full prompt as a percentage of the
-             model's context window, no meter. The gauge icon is colored green
-             below 70%, amber 70–89%, red 90%+; Nerd Font 󰊚, plain ◔, honors
+             model's context window, no meter; Nerd Font 󰊚, plain ◔, honors
              `icons.context`.
   󰃨 NN%      Cache read-hit rate = cache_read / (prompt + cache_read + cache_write),
              turn-wide. A warning, not a permanent field, and never an island
@@ -956,6 +955,11 @@ guard board clears that in-memory history; the audit log is left intact.
 Parked approvals are not touched by `c`. `Y` copies the bash command on the
 cursor row to the unnamed (`"`) and clipboard (`+`) registers, including when
 the row is folded.
+
+The project cwd and the live counts (parked, history, auto-accept) sit in the
+board window's 'winbar', and the shortcut line is its 'statusline', so neither
+scrolls out of view. With 'laststatus' 0 or 3 no window-local statusline is
+drawn; the shortcuts then fall back to the last buffer line.
 
 ==============================================================================
 12. TOOLS                                                      *yap-tools*

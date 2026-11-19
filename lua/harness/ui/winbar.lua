@@ -425,8 +425,9 @@ local function render_winbar(buf)
     return { { icons.cache .. " ", "Count" }, { num, "Needs" } }
   end
 
-  -- The context icon and percentage share the warning color, without a meter.
-  -- This is the island body; the pill adds its own padding.
+  -- The context percentage is a muted reading, not a meter or a warning: it
+  -- shares the spend island's dim Count color so the stats rail recedes
+  -- behind the identity. This is the island body; the pill adds its padding.
   local function context_parts()
     local t = state.live_usage[buf] or state.last_turn[buf]
     local ctx = t and tonumber(t.context_window) or nil
@@ -437,9 +438,8 @@ local function render_winbar(buf)
 
     local pct = math.min(prompt / ctx * 100, 100)
     local shown = math.max(0, math.floor(pct + 0.5))
-    local color = pct >= 90 and "GaugeHigh" or (pct >= 70 and "GaugeMid" or "GaugeLow")
     local icon = icons.context ~= "" and icons.context .. " " or ""
-    return { { icon .. shown .. "%", color } }
+    return { { icon .. shown .. "%", "Count" } }
   end
 
   -- The context island carries the turn's token economy: the context reading
@@ -706,10 +706,6 @@ local function define_winbar_hl()
     Error = "DiagnosticError",
     Approval = "DiagnosticError",
     Needs = "DiagnosticWarn",
-    GaugeEmpty = "NonText",
-    GaugeLow = "DiagnosticOk",
-    GaugeMid = "DiagnosticWarn",
-    GaugeHigh = "DiagnosticError",
   }
   for name, link in pairs(links) do
     view.link("Yap" .. name, link)
@@ -732,19 +728,6 @@ local function define_winbar_hl()
   local bar_bg = attr("WinBar", "bg") or attr("Normal", "bg")
   local inactive_bg = attr("WinBarNC", "bg") or attr("Normal", "bg")
   local fg = attr("WinBar", "fg") or attr("StatusLine", "fg")
-  -- The context percentage is a raised pill, distinct from the surrounding bar.
-  -- Keep its semantic foregrounds while recomputing the surface per colorscheme.
-  for _, gauge in ipairs({
-    { "GaugeEmpty", "NonText" },
-    { "GaugeLow", "DiagnosticOk" },
-    { "GaugeMid", "DiagnosticWarn" },
-    { "GaugeHigh", "DiagnosticError" },
-  }) do
-    vim.api.nvim_set_hl(0, "Yap" .. gauge[1], {
-      fg = attr("Yap" .. gauge[1], "fg") or attr(gauge[2], "fg"),
-      bg = bg,
-    })
-  end
   -- Recompute theme-owned surfaces on ColorScheme: caps use the bar's
   -- background, while padding and both counts share one opaque pill.
   vim.api.nvim_set_hl(0, "YapIslandCap", { fg = bg, bg = bar_bg })
@@ -753,7 +736,9 @@ local function define_winbar_hl()
   -- The rollup chip divider recedes behind the semantic chip colors: the
   -- same raised surface, but a quiet Comment/NonText foreground.
   vim.api.nvim_set_hl(0, "YapIslandSep", { fg = attr("Comment", "fg") or attr("NonText", "fg") or fg, bg = bg })
-  vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapModel", "fg") or fg, bg = bg })
+  -- Spend and context figures share the description's Title foreground, so
+  -- the stats rail reads in the same voice as the session title.
+  vim.api.nvim_set_hl(0, "YapIslandUprightCount", { fg = attr("YapDescription", "fg") or attr("Title", "fg") or fg, bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandBusy", { fg = attr("YapBusy", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
   vim.api.nvim_set_hl(0, "YapIslandUprightNeeds", { fg = attr("YapNeeds", "fg"), bg = bg })
@@ -782,11 +767,8 @@ local function define_winbar_hl()
   desc_attrs.bg = bg
   vim.api.nvim_set_hl(0, "YapIslandCursiveDescription", desc_attrs)
   styled_hl("YapUprightIdle", "YapModel", false)
-  for _, group in ipairs({ "Error", "Needs", "GaugeEmpty", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
+  for _, group in ipairs({ "Error", "Needs" }) do
     styled_hl("YapUpright" .. group, "Yap" .. group, false)
-  end
-  for _, group in ipairs({ "GaugeEmpty", "GaugeLow", "GaugeMid", "GaugeHigh" }) do
-    styled_hl("YapIslandUpright" .. group, "Yap" .. group, false)
   end
 end
 

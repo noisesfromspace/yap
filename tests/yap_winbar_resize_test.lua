@@ -255,8 +255,6 @@ for _, colors in ipairs({ { 0x222222, 0x111111 }, { 0xdddddd, 0xffffff } }) do
     "YapIslandIdle",
     "YapIslandCursiveModel",
     "YapIslandUprightCount",
-    "YapIslandUprightGaugeEmpty",
-    "YapIslandUprightGaugeLow",
   }) do
     assert(
       vim.api.nvim_get_hl(0, { name = group, link = false }).bg == colors[1],
@@ -491,14 +489,6 @@ for _, group in ipairs({
   "YapUprightIdle",
   "YapUprightError",
   "YapUprightNeeds",
-  "YapUprightGaugeEmpty",
-  "YapUprightGaugeLow",
-  "YapUprightGaugeMid",
-  "YapUprightGaugeHigh",
-  "YapIslandUprightGaugeEmpty",
-  "YapIslandUprightGaugeLow",
-  "YapIslandUprightGaugeMid",
-  "YapIslandUprightGaugeHigh",
 }) do
   assert(not vim.api.nvim_get_hl(0, { name = group, link = false }).italic, group .. " should not be cursive")
 end
