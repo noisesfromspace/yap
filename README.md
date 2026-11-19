@@ -144,6 +144,21 @@ Markdown buffers can slow down on large transcripts.
 [touchup](https://git.boers.email/martijn/touchup.nvim) understands Yap's
 markers and renders each tool region as one block.
 
+Tool and thinking regions are delimited by `<!-- yap:* -->` HTML comments,
+which are display-only and never sent to the provider. In a plain buffer
+they read as comment text, but
+[render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
+conceals HTML comments by default, hiding the marker lines and the thinking
+or tool-header text inside them. Keep them visible with:
+
+```lua
+require('render-markdown').setup({
+    html = {
+        comment = { conceal = false },
+    },
+})
+```
+
 A Nerd Font is used by default. Set `nerd_font = false` in setup for plain
 Unicode glyphs.
 
