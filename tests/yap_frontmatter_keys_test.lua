@@ -14,7 +14,8 @@ f:close()
 local keys = vim.json.decode(data)
 assert(#keys > 0, "frontmatter keys fixture is empty")
 
-local list_keys = { models = true, tools = true }
+local list_keys = { tools = true }
+local map_keys = { previous = true }
 
 -- Build a frontmatter carrying every canonical key, parse it back and assert
 -- each key survives, so the Lua writer cannot drift from the Go side.
@@ -23,6 +24,9 @@ for _, k in ipairs(keys) do
   if list_keys[k] then
     lines[#lines + 1] = k .. ":"
     lines[#lines + 1] = "- item"
+  elseif map_keys[k] then
+    lines[#lines + 1] = k .. ":"
+    lines[#lines + 1] = "  key: value"
   elseif k == "turns" then
     lines[#lines + 1] = "turns: 3"
   else
@@ -40,6 +44,9 @@ for _, k in ipairs(keys) do
   elseif list_keys[k] then
     local v = fm[k]
     assert(v and #v == 1 and v[1] == "item", k .. " list not recovered: " .. vim.inspect(v))
+  elseif map_keys[k] then
+    local v = fm[k]
+    assert(v and vim.tbl_count(v) == 1 and v["key"] == "value", k .. " map not recovered: " .. vim.inspect(v))
   else
     assert(fm[k] == "value", k .. " not recovered: " .. vim.inspect(fm[k]))
   end

@@ -405,9 +405,9 @@ as YAML frontmatter: >
   turns: 14
   created_at: 2025-09-29T19:22:33Z
   updated_at: 2025-09-29T19:24:01Z
-  models:
-    - moonshot/kimi-k3
-    - deepseek/deepseek-v4-pro
+  previous:
+    moonshot/kimi-k3: 2025-09-29T19:22:33Z
+    deepseek/deepseek-v4-pro: 2025-09-29T19:24:01Z
   tools:
     - read
     - search
@@ -421,7 +421,8 @@ The other frontmatter fields:
 
   `provider`/`model`      The combo to resume with.
   `created_cwd`           The exact directory the session was created in.
-  `models`                The combos used, most recent last.
+  `previous`              The combos used, each with its last-used timestamp,
+                          most recent last.
   `tools`                 The per-session tool allowlist. Remove a line to
                           retract that tool on the next send.
   `turns`                 Completed `# @assistant` replies, so the picker can

@@ -432,7 +432,7 @@ var fields = []fieldDef{
 	{"turns", "int", "completed replies"},
 	{"created_at", "text", "creation timestamp"},
 	{"updated_at", "text", "last write timestamp"},
-	{"models", "combos", "combo history"},
+	{"previous", "text", "combos used, with last-used timestamps"},
 	{"forked_from", "text", "fork source directory"},
 	{"subagent_parent", "text", "owner session directory"},
 	{"tools", "tools", "tool allowlist"},
@@ -455,6 +455,10 @@ func frontmatterCompletion(lines []string, line int, prefix string, wordStart, c
 		key := listKeyAbove(lines, line)
 		return listValueCompletion(key, wordStart, char, line, ctx)
 	}
+	if isMapEntry(prefix) {
+		key := listKeyAbove(lines, line)
+		return mapValueCompletion(key, wordStart, char, line, ctx)
+	}
 	return fieldKeyCompletion(lines, line, wordStart, char, strings.TrimSpace(prefix))
 }
 
@@ -475,6 +479,17 @@ func splitKeyValue(s string) (string, int) {
 func isListItem(s string) bool {
 	t := strings.TrimLeft(s, " \t")
 	return strings.HasPrefix(t, "-")
+}
+
+// isMapEntry reports whether s is an indented `key: value` line under a map
+// field such as `previous:` (as opposed to a top-level key or a `- item` list
+// line). It also matches while the key is still being typed, before its colon.
+func isMapEntry(s string) bool {
+	if s == "" || (s[0] != ' ' && s[0] != '\t') {
+		return false
+	}
+	t := strings.TrimLeft(s, " \t")
+	return t != "" && t[0] != '-' && t[0] != '#'
 }
 
 // listKeyAbove finds the list field a list item belongs to by scanning upward.
@@ -553,10 +568,19 @@ func listValueCompletion(key string, startCol, char, line int, ctx CompletionCtx
 	switch key {
 	case "tools":
 		return toolCompletion(r)
-	case "models":
-		return combosCompletion(ctx.ModelsCache, r)
 	case "agent":
 		return agentCompletion(ctx.AgentsDir, r)
+	}
+	return nil
+}
+
+// mapValueCompletion completes the combo key of a `combo: timestamp` entry
+// under a map field such as `previous:`.
+func mapValueCompletion(key string, startCol, char, line int, ctx CompletionCtx) []completionItem {
+	r := rng{Start: position{Line: line, Character: startCol}, End: position{Line: line, Character: char}}
+	switch key {
+	case "previous":
+		return combosCompletion(ctx.ModelsCache, r)
 	}
 	return nil
 }

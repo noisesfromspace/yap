@@ -415,7 +415,8 @@ never make yap write its data folder into the project directory
 The frontmatter holds `provider`/`model` (the combo to resume with),
 `created_cwd` (the
 exact working directory the session was created in — the session dir slug is
-lossy), `models` (the ordered history of combos used), `created_at`/
+lossy), `previous` (the combos used, each stamped with its last-used
+timestamp), `created_at`/
 `updated_at` timestamps, `turns` (the count of completed replies, stamped
 on save for the picker), and `tools` (the per-session tool allowlist: absent
 means unrestricted — every tool including runtime-discovered MCP tools; list

@@ -18,7 +18,7 @@ assert(fm and fm.provider == "zeta" and fm.model == "m1", "combo: " .. vim.inspe
 assert(fm.created_at and fm.created_at ~= "", "created_at missing: " .. vim.inspect(fm))
 assert(fm.updated_at and fm.updated_at ~= "", "updated_at missing: " .. vim.inspect(fm))
 assert(fm.created_cwd == vim.fs.normalize(vim.fn.getcwd()), "cwd not recorded: " .. vim.inspect(fm.created_cwd))
-assert(vim.deep_equal(fm.models, { "zeta/m1" }), "history: " .. vim.inspect(fm and fm.models))
+assert(fm.previous and fm.previous["zeta/m1"] == fm.created_at, "history: " .. vim.inspect(fm and fm.previous))
 local created = fm.created_at
 
 -- descriptions survive ordinary frontmatter rewrites
@@ -34,7 +34,7 @@ vim.api.nvim_buf_set_lines(
   frontmatter.render({
     provider = "zeta",
     model = "m1",
-    models = fm.models,
+    previous = fm.previous,
     created_at = created,
     description = "Implement session descriptions",
   })
@@ -55,7 +55,9 @@ assert(
   "cwd not preserved across a rewrite: " .. vim.inspect(fm.created_cwd)
 )
 assert(fm.description == "Implement session descriptions", "description lost: " .. vim.inspect(fm))
-assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "history not appended: " .. vim.inspect(fm.models))
+assert(fm.previous and fm.previous["zeta/m1"] == created, "initial combo lost its timestamp: " .. vim.inspect(fm.previous))
+assert(fm.previous and fm.previous["alpha/m2"] and fm.previous["alpha/m2"] ~= "", "switch not stamped: " .. vim.inspect(fm.previous))
+assert(vim.tbl_count(fm.previous) == 2, "history not appended: " .. vim.inspect(fm.previous))
 local bar = yap.winbar(buf)
 assert(bar:find("Implement session descriptions", 1, true), "description missing from winbar: " .. bar)
 local long_description = "Improve the session toolbar without crowding out important status information"
@@ -67,7 +69,7 @@ vim.api.nvim_buf_set_lines(
   frontmatter.render({
     provider = "alpha",
     model = "m2",
-    models = fm.models,
+    previous = fm.previous,
     created_at = created,
     description = long_description,
   })
@@ -90,7 +92,7 @@ vim.api.nvim_buf_set_lines(
   frontmatter.render({
     provider = "alpha",
     model = "m2",
-    models = fm.models,
+    previous = fm.previous,
     created_at = created,
     description = "Implement session descriptions",
   })
@@ -100,7 +102,7 @@ vim.api.nvim_buf_set_lines(
 yap.change_model("alpha/m2")
 lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 fm = frontmatter.parse(lines)
-assert(vim.deep_equal(fm.models, { "zeta/m1", "alpha/m2" }), "duplicate combo: " .. vim.inspect(fm.models))
+assert(vim.tbl_count(fm.previous) == 2, "duplicate combo: " .. vim.inspect(fm.previous))
 
 -- 5. the session file persists it, and open restores the combo
 session.save(buf)
@@ -122,7 +124,7 @@ assert(
 local items = session.list()
 assert(#items == 1, "expected 1 session, got " .. #items)
 assert(items[1].text == "Implement session descriptions", "description should be the whole label: " .. items[1].text)
-assert(items[1].models and #items[1].models == 2, "history not surfaced: " .. vim.inspect(items[1].models))
+assert(items[1].previous and vim.tbl_count(items[1].previous) == 2, "history not surfaced: " .. vim.inspect(items[1].previous))
 
 -- Assets working files (e.g. a fetched .md) are never sessions: the list must
 -- not grow when a stray markdown lands inside a session's assets folder.
@@ -134,7 +136,7 @@ assert(#session.list() == 1, "assets markdown leaked into the session list")
 local updated_block = frontmatter.render({
   provider = "zeta",
   model = "m1",
-  models = { "zeta/m1" },
+  previous = { ["zeta/m1"] = created },
   created_at = created,
   updated_at = "2025-09-29T19:24:01Z",
   turns = 14,
@@ -150,7 +152,7 @@ assert(updated_fm.turns == 14, "turns not roundtripped: " .. vim.inspect(updated
 local links = frontmatter.parse(frontmatter.render({
   provider = "zeta",
   model = "m1",
-  models = {},
+  previous = {},
   created_at = created,
   turns = 0,
   created_cwd = "/tmp/project",
@@ -161,7 +163,7 @@ assert(links.forked_from == "/tmp/source" and links.subagent_parent == "/tmp/par
 local tools_block = frontmatter.render({
   provider = "zeta",
   model = "m1",
-  models = {},
+  previous = {},
   created_at = created,
   tools = { "read", "search", "glob" },
   turns = 0,

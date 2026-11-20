@@ -245,6 +245,19 @@ func TestModelCompletionFromCache(t *testing.T) {
 	}
 }
 
+func TestPreviousMapCompletion(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "models")
+	if err := os.WriteFile(cache, []byte("openai/gpt-6.1-sol\ndeepseek/deepseek-flash\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A `previous:` entry completes the combo key from the cached list.
+	text := "---\nprevious:\n  openai/g\n---\n# @user\nhi\n"
+	items := Completion(text, 2, 10, CompletionCtx{ModelsCache: cache})
+	if len(items) != 2 || items[0].Label != "openai/gpt-6.1-sol" || items[1].Label != "deepseek/deepseek-flash" {
+		t.Fatalf("previous completion = %+v, want both cached combos", items)
+	}
+}
+
 func TestDiagnostics(t *testing.T) {
 	// Unterminated frontmatter.
 	text := "---\ntitle: x\n# @user\nhi\n"

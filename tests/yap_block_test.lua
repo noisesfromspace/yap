@@ -48,8 +48,8 @@ vim.api.nvim_buf_set_lines(buf2, 0, 0, false, {
   "provider: mock",
   "model: m1",
   "description: second session",
-  "models:",
-  "  - mock/m1",
+  "previous:",
+  "  mock/m1: 2025-09-29T19:22:33Z",
   "---",
   "",
 })

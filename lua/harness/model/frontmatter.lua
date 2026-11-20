@@ -15,9 +15,9 @@
 --   turns: 14
 --   created_at: 2025-09-29T19:22:33Z
 --   updated_at: 2025-09-29T19:24:01Z
---   models:
---     - moonshot/kimi-k3
---     - deepseek/deepseek-v4-pro
+--   previous:
+--     moonshot/kimi-k3: 2025-09-29T19:22:33Z
+--     deepseek/deepseek-v4-pro: 2025-09-29T19:24:01Z
 --   forked_from: ~/.config/yap/sessions/.../source/
 --   subagent_parent: ~/.config/yap/sessions/.../parent/
 --   ---
@@ -36,12 +36,16 @@ local M = {}
 local config = require("harness.config")
 
 local function is_list_key(k)
-  return k == "models"
+  return k == "tools"
+end
+
+local function is_map_key(k)
+  return k == "previous"
 end
 
 --- Parse frontmatter from a Lua list of lines. Returns
 --- { provider, model, created_cwd, created_at, updated_at, turns, description, agent,
----   tools = {name,...}, models = {combo,...}, forked_from = dir?, subagent_parent = dir? }
+---   tools = {name,...}, previous = {[combo] = timestamp,...}, forked_from = dir?, subagent_parent = dir? }
 --- or nil when there is none (or it is unterminated). Tolerant on read:
 --- unknown keys and comments are ignored, so a hand-edited frontmatter does not
 --- break resuming.
@@ -49,8 +53,8 @@ function M.parse(lines)
   if not lines or not lines[1] or not lines[1]:match("^%-%-%-%s*$") then
     return nil
   end
-  local fm = { models = {} }
-  local list_key = nil
+  local fm = { previous = {} }
+  local list_key, map_key = nil, nil
   for i = 2, #lines do
     local line = lines[i]
     if line:match("^%-%-%-%s*$") then
@@ -58,7 +62,7 @@ function M.parse(lines)
     end
     local k, v = line:match("^(%S+):%s*(.-)%s*$")
     if k then
-      list_key = nil
+      list_key, map_key = nil, nil
       if k == "provider" then
         fm.provider = v
       elseif k == "model" then
@@ -85,27 +89,28 @@ function M.parse(lines)
         fm.description = v
       elseif k == "agent" then
         fm.agent = v
-      elseif k == "tools" then
-        list_key = "tools"
       elseif is_list_key(k) then
         list_key = k
+      elseif is_map_key(k) then
+        map_key = k
       end
     elseif list_key then
       local item = line:match("^%s*%-%s*(.-)%s*$")
-      if item and item ~= "" then
-        if list_key == "models" then
-          fm.models[#fm.models + 1] = item
-        elseif list_key == "tools" then
-          fm.tools = fm.tools or {}
-          fm.tools[#fm.tools + 1] = item
-        end
+      if item and item ~= "" and list_key == "tools" then
+        fm.tools = fm.tools or {}
+        fm.tools[#fm.tools + 1] = item
+      end
+    elseif map_key then
+      local mk, mv = line:match("^%s*(%S+):%s*(.-)%s*$")
+      if mk and mk ~= "" and map_key == "previous" then
+        fm.previous[mk] = mv
       end
     end
   end
   return nil -- unterminated
 end
 
---- Render the frontmatter for a combo + ordered history. The
+--- Render the frontmatter for a combo + previous-model map. The
 --- returned table has no trailing blank line (see module comment).
 function M.render(fm)
   local lines = { "---" }
@@ -132,10 +137,15 @@ function M.render(fm)
   if fm.updated_at then
     lines[#lines + 1] = "updated_at: " .. fm.updated_at
   end
-  if fm.models and #fm.models > 0 then
-    lines[#lines + 1] = "models:"
-    for _, c in ipairs(fm.models) do
-      lines[#lines + 1] = "  - " .. c
+  if fm.previous and vim.tbl_count(fm.previous) > 0 then
+    local prev = {}
+    for combo, ts in pairs(fm.previous) do
+      prev[#prev + 1] = { combo = combo, ts = ts }
+    end
+    table.sort(prev, function(a, b) return a.ts < b.ts end)
+    lines[#lines + 1] = "previous:"
+    for _, entry in ipairs(prev) do
+      lines[#lines + 1] = "  " .. entry.combo .. ": " .. entry.ts
     end
   end
   if fm.kind then
@@ -218,29 +228,29 @@ function M.update(buf, changes)
   return true
 end
 
---- Rewrite the buffer's frontmatter to match the current combo, growing
---- the `models` history. Called only from new()/change_model() — never
---- during a send (R-blank-lines: sends only append).
+--- Rewrite the buffer's frontmatter to match the current combo, stamping
+--- the `previous` map with each combo's last-used timestamp. Called only
+--- from new()/change_model() — never during a send (R-blank-lines: sends
+--- only append).
 function M.sync(buf)
   local provider, model = config.current_combo(buf)
   local combo = provider .. "/" .. model
   local e = M.end_line(buf)
   local fm = e and M.parse(vim.api.nvim_buf_get_lines(buf, 0, e, false)) or nil
-  local models = fm and fm.models or {}
-  if #models == 0 and fm and fm.provider and fm.model then
-    table.insert(models, fm.provider .. "/" .. fm.model)
+  local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  local previous = fm and fm.previous or {}
+  if vim.tbl_count(previous) == 0 and fm and fm.provider and fm.model then
+    previous[fm.provider .. "/" .. fm.model] = fm.created_at or now
   end
-  if models[#models] ~= combo then
-    table.insert(models, combo)
-  end
-  local created_at = (fm and fm.created_at) or os.date("!%Y-%m-%dT%H:%M:%SZ")
+  previous[combo] = now
+  local created_at = (fm and fm.created_at) or now
   -- The exact cwd is recorded once, when the session is created; later
   -- rewrites preserve it (the session dir slug alone is lossy).
   local created_cwd = (fm and fm.created_cwd) or vim.b[buf].yap_project_cwd
   local merged = vim.tbl_extend("force", fm or {}, {
     provider = provider,
     model = model,
-    models = models,
+    previous = previous,
     created_at = created_at,
     agent = (fm and fm.agent) or vim.b[buf].yap_agent,
     tools = (fm and fm.tools) or vim.b[buf].yap_tools,

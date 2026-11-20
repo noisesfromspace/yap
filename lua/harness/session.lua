@@ -501,8 +501,8 @@ end
 
 --- List saved sessions. scope = "cwd" (default) or "all" (every project
 --- under the sessions root).
---- Items: { path, mtime, text, model, models?, turns, agents } sorted by parent
---- recency; `model`/`models` and the turn and agent counts come from the
+--- Items: { path, mtime, text, model, previous?, turns, agents } sorted by parent
+--- recency; `model`/`previous` and the turn and agent counts come from the
 --- session frontmatter. Forks always nest under their parent; subagents nest
 --- only while their parent is open.
 function M.list(scope)
@@ -570,7 +570,7 @@ function M.list(scope)
       mtime = vim.fn.getftime(path),
       text = M.label(path, description, entry.project),
       model = fm and fm.provider and fm.model and (fm.provider .. "/" .. fm.model) or nil,
-      models = fm and #fm.models > 1 and fm.models or nil,
+      previous = fm and vim.tbl_count(fm.previous) > 1 and fm.previous or nil,
       turns = fm and fm.turns,
     }
     if fm and fm.kind == "eval" then
