@@ -6,6 +6,10 @@ vim.opt.rtp:prepend(ROOT)
 vim.cmd("runtime plugin/yap.lua")
 local yap = require("harness")
 yap.setup({ bin = ROOT .. "/yap", model_groups = { agent = "mock/m1", flash = "" }})
+-- The winbar drops its right-side counts when the cwd + counts cannot fit the
+-- window (the cwd wins the space); widen the nominal width so the counts are
+-- always rendered however deep the checkout's path is (e.g. on the runner).
+vim.o.columns = 200
 local state = require("harness.state")
 local guard = require("harness.ui.guard")
 
