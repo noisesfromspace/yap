@@ -362,17 +362,30 @@ end
 --- audit log (not the session file) is the durable source of truth.
 function M.seed_session_usage(buf)
   local su = { prompt = 0, completion = 0 }
+  local last, legacy_model
   local path = paths.audit_path(buf)
   if vim.fn.filereadable(path) == 1 then
     for _, line in ipairs(vim.fn.readfile(path)) do
       if line ~= "" then
         local ok, ev = pcall(vim.json.decode, line)
-        if ok and type(ev) == "table" and ev.type == "turn_end" then
-          fold_usage(su, ev)
+        if ok and type(ev) == "table" then
+          if ev.type == "turn_start" then
+            last = { combo = ev.combo, cwd = ev.cwd }
+          elseif ev.type == "model_change" and not ev.error and ev.to then
+            last = { combo = ev.to, cwd = last and last.cwd }
+          elseif ev.type == "turn_end" then
+            legacy_model = ev.model
+            fold_usage(su, ev)
+          end
         end
       end
     end
   end
+  -- Old journals recorded the final model but not its provider or cwd.
+  if not last and legacy_model and legacy_model == vim.b[buf].yap_model and vim.b[buf].yap_provider then
+    last = { combo = vim.b[buf].yap_provider .. "/" .. legacy_model }
+  end
+  vim.b[buf].yap_last_send = last
   vim.b[buf].yap_session_usage = su
   vim.b[buf].yap_usage = nil
 end

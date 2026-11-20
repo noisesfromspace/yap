@@ -50,6 +50,11 @@ assert(
 assert(text(original_buf):match("fork%-only unsaved change"), "source changed")
 assert(vim.fn.filereadable(fork) == 1 and not vim.bo[fork_buf].modified, "fork should be a clean file-backed buffer")
 assert(text(fork_buf):match("fork%-only unsaved change"), "unsaved source text was not copied")
+assert(not text(original_buf):find("session_forked", 1, true), "fork marker leaked into the source")
+assert(not vim.b[fork_buf].yap_resume_pending, "a fresh fork was marked as resumed")
+local fork_marker = assert(text(fork_buf):match("<!%-%- yap:event (.-) %-%->"), "fork marker missing")
+local fork_event = vim.json.decode(fork_marker)
+assert(fork_event.type == "session_forked" and fork_event.source == vim.uri_from_fname(original))
 assert(
   table.concat(vim.fn.readfile(original), "\n"):match("fork%-only unsaved change"),
   "source was not saved with fork links"

@@ -250,6 +250,7 @@ local function adopt(buf, path)
     return buf
   end
   vim.b[buf].yap_path = path
+  vim.b[buf].yap_resume_pending = true
   -- Resume durable per-session state from frontmatter. The originating cwd
   -- and data directory are recorded there. Inside the sessions root the
   -- sidecars sit beside the transcript, so the parent wins over the record —
@@ -356,6 +357,7 @@ function M.fork(name)
   vim.fn.bufload(buf)
   focus_buf(buf)
   adopt(buf, path)
+  vim.b[buf].yap_resume_pending = nil -- creation is a fork, not a reopen
   -- bufload may have adopted the fork while the source was still current;
   -- winbar is window/buffer-local, so set it on the now-visible fork too.
   vim.wo.winbar = "%!v:lua.require'harness'.winbar()"

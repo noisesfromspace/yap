@@ -11,6 +11,7 @@ local M = {}
 
 local state = require("harness.state")
 local document = require("harness.model.document")
+local event = require("harness.model.event")
 local audit = require("harness.client.audit")
 local costguard = require("harness.client.costguard")
 local guard = require("harness.ui.guard")
@@ -96,7 +97,7 @@ local function close_if_requested(turn)
     end
   end
 end
-local function answer_approval(buf, approved)
+local function answer_approval(buf, approved, auto)
   local ev = pending_approvals[buf]
   if not ev then
     return
@@ -104,8 +105,19 @@ local function answer_approval(buf, approved)
   pending_approvals[buf] = nil
   local process = servers[buf]
   if process then
+    -- Toggling auto-accept also sweeps already parked requests through here.
+    if auto == nil then
+      auto = state.auto_accept
+    end
     -- backend stopped or timed out; never approve a stale call
-    process:write(vim.json.encode({ type = "approval_result", id = ev.id, approved = approved }) .. "\n")
+    local ts = event.now()
+    process:write(vim.json.encode({
+      type = "approval_result",
+      id = ev.id,
+      approved = approved,
+      auto = auto or false,
+      ts = ts,
+    }) .. "\n")
     audit.append_event(
       buf,
       { type = "approval_result", id = ev.id, approved = approved, ts = os.date("%Y-%m-%dT%H:%M:%S") }
@@ -138,7 +150,7 @@ local function handle_approval_request(buf, ev)
   audit.append_event(buf, ev)
   pending_approvals[buf] = ev
   if state.auto_accept then
-    answer_approval(buf, true)
+    answer_approval(buf, true, true)
   else
     notify_approval(buf, ev)
     guard.touch()
@@ -254,6 +266,11 @@ local function handle_event(buf, ev)
     audit.append_event(buf, ev) -- audit trail: a steering message landed mid-turn
   elseif ev.type == "model_change" then
     model_switch[buf] = nil -- delivered (or failed): the pending-switch icon clears
+    if not ev.error and ev.to then
+      local last = vim.b[buf].yap_last_send or {}
+      last.combo = ev.to
+      vim.b[buf].yap_last_send = last
+    end
     audit.append_event(buf, ev) -- audit trail: a model switch landed mid-turn
   elseif ev.type == "tool_text_warning" then
     audit.append_event(buf, ev) -- the model emitted a tool call as text; nothing ran
@@ -740,7 +757,40 @@ function M.forget(buf)
 end
 
 --- Serialize the current buffer and stream the assistant reply into it.
-function M.send(buf)
+local function send_markers(buf, combo, cwd, override, ts)
+  local lines = {}
+  local last = vim.b[buf].yap_last_send or {}
+  if vim.b[buf].yap_resume_pending then
+    lines[#lines + 1] = event.line("session_resumed", "Session resumed", { ts = ts })
+  end
+  if last.combo and last.combo ~= combo then
+    lines[#lines + 1] = event.line("model_change", "Model changed: " .. last.combo .. " → " .. combo, {
+      from = last.combo,
+      to = combo,
+      ts = ts,
+    })
+  end
+  if last.cwd and last.cwd ~= cwd then
+    lines[#lines + 1] = event.line("cwd_change", "Working directory changed: " .. last.cwd .. " → " .. cwd, {
+      from = last.cwd,
+      to = cwd,
+      ts = ts,
+    })
+  end
+  if override and override.combo == combo then
+    lines[#lines + 1] = event.line(
+      "cost_override",
+      ("Cost warning accepted: %s (estimated $%.2f)"):format(combo, override.cost),
+      { combo = combo, estimate_usd = override.cost, ts = ts }
+    )
+  end
+  if #lines > 0 then
+    lines[#lines + 1] = ""
+  end
+  return lines
+end
+
+function M.send(buf, override)
   buf = buf or vim.api.nvim_get_current_buf()
   if running[buf] then
     vim.notify("yap: turn already running; press <C-c> (or call stop()) to interrupt it", vim.log.levels.WARN)
@@ -804,7 +854,8 @@ function M.send(buf)
   -- would cost more than the configured threshold asks first and spends
   -- nothing when the answer is no. Every send route funnels through here; a
   -- subagent is never blocked because it has nobody to answer (R-cost-guard).
-  if not costguard.check(buf, provider .. "/" .. model, messages, fm ~= nil and fm.subagent_parent ~= nil) then
+  local combo = provider .. "/" .. model
+  if not costguard.check(buf, combo, messages, fm ~= nil and fm.subagent_parent ~= nil) then
     return false
   end
   errors[buf] = nil
@@ -851,6 +902,13 @@ function M.send(buf)
   -- (remove lines) to retract tools, effective on this send. A missing or
   -- empty list means unrestricted (all tools).
   local tools = fm and fm.tools and #fm.tools > 0 and fm.tools or nil
+  local cwd, ts = vim.fn.getcwd(), event.now()
+  local markers = send_markers(buf, combo, cwd, override, ts)
+  local transcript = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local heading = #transcript - 1
+  for i = #markers, 1, -1 do
+    table.insert(transcript, heading, markers[i])
+  end
   local payload = vim.json.encode({
     type = "turn",
     v = 1,
@@ -860,14 +918,14 @@ function M.send(buf)
     -- send conversion (R-single-reader). System is the About Yap prefix;
     -- context is the transient tail appended to the trailing user
     -- message by the backend (R-request-context-tail).
-    transcript = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"),
+    transcript = table.concat(transcript, "\n"),
     system = system_prompt,
     context = extra,
     tools = tools,
     -- Request-only (like the context tail): the backend's own cwd is fixed
     -- when the buffer spawns it, so the live cwd keeps the tools' documented
     -- "default: the Neovim cwd" true after a :cd.
-    cwd = vim.fn.getcwd(),
+    cwd = cwd,
     -- The session's assets/ folder: transient tool files (live-tail logs,
     -- inline scripts, header files) land here instead of /tmp.
     assets_dir = paths.assets_dir(buf),
@@ -884,6 +942,20 @@ function M.send(buf)
     complete(turn, { error = tostring(err) })
     return false
   end
+  -- Insert the exact prelude sent above before any scheduled stream callback
+  -- can run. It precedes the assistant anchor, so hard stop keeps the events.
+  if #markers > 0 then
+    local fold = require("harness.ui.fold")
+    local mark = heading - 1
+    fold.before_change(buf)
+    vim.api.nvim_buf_set_lines(buf, mark, mark, false, markers)
+    vim.api.nvim_buf_set_extmark(buf, turn_start_ns, mark + #markers, 0, { id = turn.anchor, right_gravity = false })
+    fold.after_append(buf)
+    follow_tail(turn)
+  end
+  vim.b[buf].yap_resume_pending = nil
+  vim.b[buf].yap_last_send = { combo = combo, cwd = cwd }
+  audit.append_event(buf, { type = "turn_start", combo = combo, cwd = cwd, ts = ts })
   return true
 end
 --- Cancel the in-flight turn for the current buffer (the backend survives).

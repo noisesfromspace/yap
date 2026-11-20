@@ -2,6 +2,7 @@ package wire
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,9 +19,62 @@ var ApprovalReplies chan ApprovalReply
 type ApprovalReply struct {
 	ID       string `json:"id"`
 	Approved bool   `json:"approved"`
+	Auto     bool   `json:"auto,omitempty"`
+	TS       string `json:"ts,omitempty"`
 }
 
 var approvalSeq atomic.Uint64
+
+// ApprovalDecision is transcript-only metadata, never part of a native tool
+// result. TS records the decision, not when the tool eventually finishes.
+type ApprovalDecision struct {
+	Type    string `json:"type"`
+	TS      string `json:"ts"`
+	Text    string `json:"text"`
+	ID      string `json:"id"`
+	Tool    string `json:"tool"`
+	Reason  string `json:"reason"`
+	Outcome string `json:"outcome"`
+}
+
+var decisionMu sync.Mutex
+var decisionCapture *[]ApprovalDecision
+
+// CaptureApprovalDecisions scopes collection to one serial tool call, including
+// approvals requested by MCP callback goroutines. Parallel built-in reads cannot
+// request approval. Finish must be called before starting the next serial call.
+func CaptureApprovalDecisions() (finish func() []ApprovalDecision) {
+	decisionMu.Lock()
+	var decisions []ApprovalDecision
+	previous := decisionCapture
+	decisionCapture = &decisions
+	decisionMu.Unlock()
+	return func() []ApprovalDecision {
+		decisionMu.Lock()
+		defer decisionMu.Unlock()
+		decisionCapture = previous
+		return decisions
+	}
+}
+
+func recordApprovalDecision(id, tool, reason, outcome, ts string) {
+	label := map[string]string{
+		"approved": "Approved by you", "denied": "Denied by you",
+		"auto-approved": "Auto-approved", "timeout": "Approval timed out",
+	}[outcome]
+	if ts == "" {
+		ts = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	decision := ApprovalDecision{
+		Type: "guard_decision", TS: ts,
+		Text: label + " · " + tool, ID: id, Tool: tool, Reason: reason, Outcome: outcome,
+	}
+	decisionMu.Lock()
+	defer decisionMu.Unlock()
+	if decisionCapture != nil {
+		*decisionCapture = append(*decisionCapture, decision)
+	}
+}
 
 // approvalTimeout is how long a turn waits for the human before denying.
 var approvalTimeout = 5 * time.Minute
@@ -45,6 +99,14 @@ func RequestApproval(command, tool, reason string) (bool, error) {
 		select {
 		case r := <-ApprovalReplies:
 			if r.ID == id {
+				outcome := "denied"
+				if r.Approved {
+					outcome = "approved"
+					if r.Auto {
+						outcome = "auto-approved"
+					}
+				}
+				recordApprovalDecision(id, tool, reason, outcome, r.TS)
 				return r.Approved, nil
 			}
 			// A reply for a stale request (shouldn't happen: one turn at a
@@ -52,6 +114,7 @@ func RequestApproval(command, tool, reason string) (bool, error) {
 		case <-TurnContext().Done():
 			return false, fmt.Errorf("approval cancelled")
 		case <-timer.C:
+			recordApprovalDecision(id, tool, reason, "timeout", "")
 			EmitEvent(map[string]any{"type": "approval_timeout", "id": id})
 			return false, fmt.Errorf("approval timed out after %s", approvalTimeout)
 		}

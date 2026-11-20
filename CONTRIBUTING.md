@@ -128,6 +128,19 @@ starts with a yap marker opener as `\<!-- yap:…`, and escapes `<style>` /
 `<script>` open tags, so character-based markdown renderers show the literal
 text and the line-start-anchored parser never matches.
 
+#### R-session-events: Record meaningful boundaries without changing the request
+
+Dated `yap:event` lines are display-only. Guard decisions follow the matching
+tool region and carry the decision time, even when the tool takes longer to
+finish. Auto-approval is recorded per decision, not per mode toggle.
+
+A reopened session records its first send. Between-turn model and working
+directory changes compare against the previous dispatch, including any model
+switch that took effect mid-turn. Selecting a model or viewing a saved
+transcript does not add an event. Only a dispatch authorized by a cost override
+carries that override. The fork marker belongs to the child. A clear marker
+counts results actually replaced.
+
 #### R-single-reader — One structural parser per runtime
 
 `harness.model.structure` (Lua) and `agent/document` (Go) are the two readers

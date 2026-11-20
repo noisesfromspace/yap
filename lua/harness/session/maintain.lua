@@ -8,6 +8,8 @@ local M = {}
 
 local state = require("harness.state")
 local structure = require("harness.model.structure")
+local event = require("harness.model.event")
+local document = require("harness.model.document")
 local template = require("harness.client.template")
 local paths = require("harness.path")
 local session = require("harness.session")
@@ -89,6 +91,8 @@ function M.clear(buf, keep)
     end
   end
   if cleared > 0 then
+    local label = ("Cleared %d tool result%s"):format(cleared, cleared == 1 and "" or "s")
+    document.append_lines(buf, { event.line("tool_output_cleared", label, { count = cleared }), "" })
     session.save(buf)
   end
 end

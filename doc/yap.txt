@@ -444,6 +444,17 @@ buffer but are never sent to the provider as buffer text:
   <!-- yap:error      Backend error record, left after the partial reply of a
                         failed send. It is not sent on retry, and it also
                         excludes the partial reply that precedes it.
+  <!-- yap:event      Dated session history. Yap records a guard decision
+                        after its tool result, using the time of the decision.
+                        Auto-accept marks the affected decisions; toggling it
+                        adds nothing to the transcript.
+
+Yap marks the first send after reopening a saved session. Opening it to read
+or returning to a loaded buffer leaves no trace. A send also marks a new
+model or working directory relative to the previous send, and a cost warning
+accepted for that send. Mid-turn model switches keep their own `yap:model`
+marker. A fork records its source in the child, and an effective |:YapClear|
+records how many results it replaced.
 
 Tool regions                                                *yap-tool-region*
 

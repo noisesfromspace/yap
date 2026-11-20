@@ -810,13 +810,23 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 			// headers and :YapClear lossless.
 			wire.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": safety.Scrub(string(call.Input))})
 			var value taskResult
+			var decisions []wire.ApprovalDecision
 			if parallel {
 				value = results[i]
 			} else {
+				finish := wire.CaptureApprovalDecisions()
 				value = callTool(call, req.Tools)
+				decisions = finish()
 			}
 			result, ui := value.result, value.ui
 			render.EmitToolResult(out, result, ui)
+			for _, decision := range decisions {
+				fmt.Fprintf(out, "<!-- yap:event %s -->\n", render.MarshalCommentJSON(decision, ""))
+			}
+			if len(decisions) > 0 {
+				out.WriteString("\n")
+				out.Flush()
+			}
 			wire.EmitEvent(map[string]any{"type": "tool_result", "id": call.ID, "name": call.Name, "bytes": len(result), "result": result})
 			wrote, trail = true, 2 // regions self-terminate with a blank line
 			messages = append(messages, llm.Message{

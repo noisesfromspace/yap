@@ -77,9 +77,9 @@ function M.ask(buf, combo, ctx, cost)
   local question =
     string.format("%s · %s context × %d steps ≈ $%.2f", combo, require("harness.util").fmt_tokens(ctx), STEPS, cost)
   vim.ui.select({ "Send anyway", "Switch model…", "Cancel" }, { prompt = question }, function(choice)
-    if choice == "Send anyway" then
+    if choice == "Send anyway" and vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
       vim.b[buf][APPROVED] = combo
-      require("harness.client.stream").send(buf)
+      require("harness.client.stream").send(buf, { combo = combo, cost = cost })
     elseif choice == "Switch model…" then
       require("harness").change_model(nil)
     end

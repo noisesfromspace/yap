@@ -28,6 +28,19 @@ func TestElicitApproval(t *testing.T) {
 	oldWriter := wire.SetFrameWriter(&events)
 	defer wire.SetFrameWriter(oldWriter)
 
+	finish := wire.CaptureApprovalDecisions()
+	defer func() {
+		decisions := finish()
+		if len(decisions) != 2 || decisions[0].Outcome != "approved" || decisions[1].Outcome != "denied" {
+			t.Errorf("elicitation decisions: %#v", decisions)
+		}
+		for _, d := range decisions {
+			if d.Tool != "mcp:ssh" || d.Reason != "MCP elicitation" || d.TS == "" {
+				t.Errorf("elicitation metadata: %#v", d)
+			}
+		}
+	}()
+
 	// Approved -> accept, with the server's message surfaced as the command
 	// the human reads.
 	go func() { wire.ApprovalReplies <- wire.ApprovalReply{ID: "approval-1", Approved: true} }()

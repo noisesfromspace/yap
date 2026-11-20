@@ -25,5 +25,10 @@ assert(not yap.winbar(buf):find(icons.clear, 1, true), "queued clear icon linger
 local t = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(not t:find("tool%-done", 1, true), "tool output was not cleared after the queued clear:\n" .. t)
 assert(t:find("[output cleared", 1, true), "no placeholder after the queued clear:\n" .. t)
+local json = assert(t:match("<!%-%- yap:event (.-) %-%->"), "clear marker missing")
+local event = vim.json.decode(json)
+assert(event.type == "tool_output_cleared" and event.count == 1 and event.ts:match("Z$"))
+yap.clear(buf, 0)
+assert(t == table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"), "no-op clear left a trace")
 
 print("OK queued clear")

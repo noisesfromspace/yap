@@ -17,6 +17,7 @@ local view = require("harness.ui.view")
 local M = {}
 
 local frontmatter = require("harness.model.frontmatter")
+local event = require("harness.model.event")
 local structure = require("harness.model.structure")
 local paths = require("harness.path")
 local picker = require("harness.ui.picker")
@@ -285,6 +286,16 @@ function M.fork(buf, name, running)
         return dst_uri
       end)
     end
+  end
+  local source = vim.uri_from_fname(vim.b[buf].yap_path)
+  local marker = event.line("session_forked", "Session forked", { source = source })
+  local headings = structure.scan_lines(lines).headings
+  local tail = headings[#headings]
+  if tail and tail.role == "user" then
+    table.insert(lines, tail.line, "")
+    table.insert(lines, tail.line, marker)
+  else
+    vim.list_extend(lines, { "", marker })
   end
   local written, write_err = vim.uv.fs_write(fd, table.concat(lines, "\n") .. "\n", 0)
   vim.uv.fs_close(fd)

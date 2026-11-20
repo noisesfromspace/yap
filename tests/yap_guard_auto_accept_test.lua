@@ -72,6 +72,10 @@ assert(
   "turn did not complete after auto-accept"
 )
 assert(state.pending_approvals[chat] == nil, "auto-accept left the approval parked")
+local transcript = table.concat(vim.api.nvim_buf_get_lines(chat, 0, -1, false), "\n")
+local json = assert(transcript:match("<!%-%- /yap:tool %-%->%s+<!%-%- yap:event (.-) %-%->"))
+local decision = vim.json.decode(json)
+assert(decision.type == "guard_decision" and decision.outcome == "auto-approved" and decision.ts:match("Z$"))
 
 -- The winbar still shows the mode is on after the live turn.
 guard.toggle()

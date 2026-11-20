@@ -17,7 +17,8 @@ class H(BaseHTTPRequestHandler):
             ]
         else:
             chunks = [
-                {'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call_approval_safe', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': 'echo shutdown'})}}]}}]},
+                # The guard sees the git push, but this branch never executes.
+                {'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'call_approval_safe', 'type': 'function', 'function': {'name': 'bash', 'arguments': json.dumps({'command': 'if false; then git -C /dev/null push; fi; echo approved'})}}]}}]},
                 {'choices': [{'delta': {}, 'finish_reason': 'tool_calls'}]},
                 {'choices': [], 'usage': {'prompt_tokens': 40, 'completion_tokens': 8}},
             ]

@@ -456,6 +456,7 @@ function M.setup(opts)
     callback = function(args)
       local buf = args.buf
       if vim.b[buf].yap then
+        vim.b[buf].yap_resume_pending = true
         subagent.close_children(buf)
         M.stop(buf)
       end

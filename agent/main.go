@@ -297,13 +297,10 @@ func serve(in io.Reader, out io.Writer) error {
 					tools.DeliverSubagentProgress(sp)
 					continue
 				case "approval_result":
-					var ar struct {
-						ID       string `json:"id"`
-						Approved bool   `json:"approved"`
-					}
+					var ar wire.ApprovalReply
 					_ = json.Unmarshal(line, &ar)
 					select {
-					case wire.ApprovalReplies <- wire.ApprovalReply{ID: ar.ID, Approved: ar.Approved}:
+					case wire.ApprovalReplies <- ar:
 					default:
 					}
 					continue
