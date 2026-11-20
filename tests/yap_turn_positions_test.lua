@@ -45,6 +45,10 @@ end
 local function text()
   return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 end
+local function last_line()
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  return lines[#lines]
+end
 local function has_msg(substr)
   for _, m in ipairs(document.messages(buf)) do
     if m.content:find(substr, 1, true) then
@@ -65,6 +69,7 @@ local t = text()
 assert(t:find("partial answer", 1, true), "error dropped the partial reply:\n" .. t)
 assert(t:find("<!-- yap:error", 1, true), "error marker missing:\n" .. t)
 assert(t:match("# @user\n$"), "error did not open a fresh prompt:\n" .. t)
+assert(last_line() == "", "error did not leave a blank line after # @user:\n" .. t)
 assert(state.errors[buf] == "connection reset" and state.error_code[buf] == -32003)
 assert(picker.state(buf) == "error", "picker did not report the failed turn")
 assert(yap.winbar(buf):find(yap.config.icons.error, 1, true), "winbar missing the error icon")
@@ -105,6 +110,7 @@ finish({ type = "turn_complete", ok = false, cancelled = true })
 t = text()
 assert(t:find("second partial", 1, true), "graceful stop dropped the partial:\n" .. t)
 assert(t:match("# @user\n$"), "graceful stop did not open a fresh prompt:\n" .. t)
+assert(last_line() == "", "graceful stop did not leave a blank line after # @user:\n" .. t)
 assert(state.stopped[buf] and not state.awaiting[buf] and not state.errors[buf], "cancel did not settle to stopped")
 assert(picker.state(buf) == "stopped", "picker did not report the cancelled turn")
 assert(yap.winbar(buf):find(yap.config.icons.stopped, 1, true), "winbar missing the stopped icon")
@@ -124,7 +130,9 @@ assert(
 )
 t = text()
 assert(not t:find("third partial", 1, true), "hard stop kept the partial reply:\n" .. t)
-assert(t:match("third request$"), "hard stop did not restore the prompt:\n" .. t)
+assert(t:find("third request", 1, true), "hard stop did not restore the prompt:\n" .. t)
+assert(t:find("Turn force-stopped", 1, true), "hard stop did not record the force-stop marker:\n" .. t)
+assert(last_line() == "", "hard stop did not leave a writable trailing line:\n" .. t)
 assert(state.stopped[buf] and not state.errors[buf], "hard stop did not settle to stopped")
 
 -- 4. Success opens the next prompt.
@@ -133,6 +141,7 @@ assert(yap.send(buf))
 frame({ type = "text", text = "complete answer" })
 finish({ type = "turn_complete", ok = true })
 assert(state.awaiting[buf] and document.trailing_role(buf) == "user", "success did not open next prompt")
+assert(last_line() == "", "success did not leave a blank line after # @user")
 assert(picker.state(buf) == "waiting", "picker did not report the completed turn")
 assert(yap.winbar(buf):find(yap.config.icons.waiting, 1, true), "winbar missing the waiting icon")
 assert(document.messages(buf)[#document.messages(buf)].content == "complete answer")

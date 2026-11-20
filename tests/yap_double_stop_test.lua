@@ -67,6 +67,13 @@ local hard_marker = assert(hard_transcript:match("<!%-%- yap:event (.-) %-%->"),
 local hard_event = vim.json.decode(hard_marker)
 assert(hard_event.type == "turn_stopped" and hard_event.outcome == "killed", "wrong hard marker: " .. hard_marker)
 assert(require("harness.model.document").trailing_role(hard) == "user", "no writable prompt")
+-- A hard stop restores the original message, so the cursor returns to it for
+-- editing rather than landing on the force-stopped marker appended below it.
+local hard_cursor = vim.api.nvim_win_get_cursor(0)[1]
+assert(
+  vim.api.nvim_buf_get_lines(hard, hard_cursor - 1, hard_cursor, false)[1] == "hard",
+  "hard stop did not return the cursor to the restored message"
+)
 assert(not yap.winbar(hard):find("YapBusySpin", 1, true), "stopping spinner lingered")
 vim.cmd("stopinsert")
 vim.api.nvim_buf_set_lines(hard, -1, -1, false, { "restart" })

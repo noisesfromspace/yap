@@ -145,6 +145,21 @@ function M.trailing_role(buf)
   return headings[#headings] and headings[#headings].role or nil
 end
 
+--- Guarantee a trailing `# @user` prompt is followed by a blank line, so the
+--- user can start typing with `i`/`p` instead of `o`. A session saved by an
+--- older build (or a hand edit) can end on the heading itself; repairing it
+--- here keeps every adopted and completed session writable.
+function M.ensure_prompt_blank(buf)
+  if not vim.api.nvim_buf_is_valid(buf) or M.trailing_role(buf) ~= "user" then
+    return
+  end
+  local n = vim.api.nvim_buf_line_count(buf)
+  local last = vim.api.nvim_buf_get_lines(buf, n - 1, n, false)[1]
+  if last ~= "" then
+    vim.api.nvim_buf_set_lines(buf, n, n, false, { "" })
+  end
+end
+
 --- Append `lines` as a `# @<role>` message. If the buffer's last heading
 --- is already that role (e.g. the empty `# @user` prompt a completed turn
 --- leaves behind), the lines fill that message — merging with any body the

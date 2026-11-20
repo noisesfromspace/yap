@@ -7,6 +7,7 @@ local M = {}
 
 local state = require("harness.state")
 local config = require("harness.config")
+local document = require("harness.model.document")
 local frontmatter = require("harness.model.frontmatter")
 local audit = require("harness.client.audit")
 local winbar = require("harness.ui.winbar")
@@ -288,6 +289,7 @@ local function adopt(buf, path)
   winbar.seed_awaiting(buf)
   winbar.seed_error(buf)
   setup_buffer(buf)
+  document.ensure_prompt_blank(buf)
   require("harness.client.scratch").ensure_file(buf)
   audit.ensure(buf) -- the live tool tail (empty until a tool runs)
   audit.seed_session_usage(buf) -- durable all-time totals from the audit log

@@ -45,7 +45,11 @@ local subagent_done = state.subagent_done
 local pending_approvals = state.pending_approvals
 local turn_start_ns = vim.api.nvim_create_namespace("yap_turn_start")
 
-local function focus_stopped_prompt(turn, revise)
+--- Place the cursor where the user resumes after a cancelled turn: on the
+--- fresh prompt's input line for a graceful stop, or on the restored original
+--- message for a hard stop (the force-stopped marker below it is a record,
+--- not an input line).
+local function focus_stopped_prompt(turn)
   local buf, win = turn.buf, turn.stop_win
   if
     not win
@@ -55,9 +59,9 @@ local function focus_stopped_prompt(turn, revise)
   then
     return
   end
-  local row = vim.api.nvim_buf_line_count(buf)
+  local row = turn.restored_line or vim.api.nvim_buf_line_count(buf)
   local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ""
-  local col = revise and math.max(0, #line - 1) or 0
+  local col = line == "" and 0 or math.max(0, #line - 1)
   vim.api.nvim_win_set_cursor(win, { row, col })
   -- Cancellation completes asynchronously. Don't pull the user back if they
   -- navigated away before entering insert mode.
@@ -69,7 +73,7 @@ local function focus_stopped_prompt(turn, revise)
       and not running[buf]
       and vim.deep_equal(vim.api.nvim_win_get_cursor(win), { row, col })
     then
-      vim.cmd(revise and line ~= "" and "startinsert!" or "startinsert")
+      vim.cmd(line == "" and "startinsert" or "startinsert!")
     end
   end)
 end
@@ -336,6 +340,9 @@ local function restore_prompt(buf, anchor)
   fold.before_change(buf)
   vim.api.nvim_buf_set_lines(buf, first, -1, false, {})
   fold.after_append(buf)
+  -- 1-based line of the restored prompt's last line, so a hard stop can
+  -- return the cursor to the original message for editing.
+  return first
 end
 
 --- Whether nothing streamed after the turn-start heading: an empty
@@ -449,7 +456,7 @@ local function close_stream(turn, outcome, err, code)
     })
     stopped[buf] = true
   elseif outcome == "killed" then
-    restore_prompt(buf, anchor)
+    turn.restored_line = restore_prompt(buf, anchor)
     stopped[buf] = true
     document.append_lines(buf, { event.line("turn_stopped", "Turn force-stopped", { outcome = "killed" }) })
   else -- "error"
@@ -465,6 +472,7 @@ local function close_stream(turn, outcome, err, code)
   if outcome ~= "ok" then
     state.clear_queued[buf] = nil
   end
+  document.ensure_prompt_blank(buf)
   session.save(buf)
   leave_undelivered_steer(turn)
   if subagent_done[buf] then
@@ -591,7 +599,7 @@ local function complete(turn, result)
   follow_tail(turn)
   if outcome ~= "ok" then
     if result.cancelled then
-      focus_stopped_prompt(turn, true)
+      focus_stopped_prompt(turn)
     end
     return
   end

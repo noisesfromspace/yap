@@ -100,12 +100,35 @@ function M.is_running(buf)
   return state.is_running(buf)
 end
 
+--- Badge labels for the events that name a reply: a stopped turn and an
+--- accepted cost warning. Both come from the same parser that renders the
+--- fold badges, so the picker and the fold labels can never disagree. Keyed
+--- by the owning `# @assistant` heading line.
+local function symbol_badges(buf)
+  local badges = {}
+  for _, ev in ipairs(require("harness.model.structure").parse(buf).events) do
+    local label
+    if ev.assistant and ev.kind == "cost_override" then
+      label = "[Cost override]"
+    elseif ev.assistant and ev.kind == "turn_stopped" then
+      label = ev.outcome == "killed" and "[Force-stopped]" or "[Stopped]"
+    end
+    if label then
+      local list = badges[ev.assistant] or {}
+      list[#list + 1] = label
+      badges[ev.assistant] = list
+    end
+  end
+  return badges
+end
+
 --- Document-symbol picker: one symbol per message (newest first), then the
 --- frontmatter block last, in the server's order. Subagent tool calls are
---- children of their message and are flattened into the list. Generic
---- document_symbol pickers (e.g. mini.extra) re-sort by line number, which
---- would put the frontmatter back on top, so yap presents the outline itself
---- through |vim.ui.select|.
+--- children of their message and are flattened into the list. Events that
+--- badge a closed fold (a stopped turn, an accepted cost warning) also suffix
+--- the matching message symbol. Generic document_symbol pickers (e.g.
+--- mini.extra) re-sort by line number, which would put the frontmatter back on
+--- top, so yap presents the outline itself through |vim.ui.select|.
 function M.symbols(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   local syms = lsp.symbols(buf)
@@ -113,7 +136,16 @@ function M.symbols(buf)
     vim.notify("yap: no symbols in this buffer", vim.log.levels.WARN, { title = "yap" })
     return
   end
-  vim.ui.select(syms, {
+  local badges = symbol_badges(buf)
+  local items = {}
+  for _, sym in ipairs(syms) do
+    local labels = badges[sym.line]
+    items[#items + 1] = {
+      name = labels and (sym.name .. "  " .. table.concat(labels, " ")) or sym.name,
+      line = sym.line,
+    }
+  end
+  vim.ui.select(items, {
     prompt = "yap symbols",
     format_item = function(item)
       return item.name
