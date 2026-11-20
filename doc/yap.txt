@@ -566,7 +566,8 @@ winbar overview.
 Forks always nest under their parent. Subagents nest while their parent is
 open and remain reachable through the session link in the tool result.
 Open rows carry live status icons; closed subagents do not. Subagents are
-excluded from the winbar overview.
+excluded from the winbar overview. Closed rows append a relative age to their
+counts clause (`(14 turns · 2d ago)`); open rows omit it.
 
 A blank ordinary session appears while loaded. After unloading, it is hidden
 unless it has a prompt, completed turn, description, or renamed transcript.

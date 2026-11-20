@@ -686,6 +686,31 @@ local function preview_item(item)
   return M.preview(vim.fn.readfile(item.path))
 end
 
+--- Relative "how long ago" from a file mtime (getftime epoch seconds):
+--- "2d ago", "3h5m ago", "42m ago", "10s ago". Empty when the time is
+--- missing or in the future. The picker sorts by mtime, so the age reads in
+--- the same recency order the rows are already in.
+local function rel_age(epoch)
+  if not epoch or epoch <= 0 then
+    return ""
+  end
+  local diff = os.difftime(os.time(), epoch)
+  if diff < 0 then
+    return ""
+  end
+  local unit
+  if diff < 60 then
+    unit = string.format("%ds", diff)
+  elseif diff < 3600 then
+    unit = string.format("%dm", math.floor(diff / 60))
+  elseif diff < 86400 then
+    unit = string.format("%dh%dm", math.floor(diff / 3600), math.floor(diff % 3600 / 60))
+  else
+    unit = string.format("%dd", math.floor(diff / 86400))
+  end
+  return unit .. " ago"
+end
+
 --- "3 turns & 2 subagents" for a picker row: completed replies plus the agent
 --- sessions this conversation spawned. A zero count is omitted, and the whole
 --- clause disappears when both are zero.
@@ -723,6 +748,9 @@ function M.pick(opts, on_choice)
     kind = "yap_session",
     format_item = function(item)
       local icon = opts.status and opts.status(item.path)
+      -- Only closed rows show a relative age: an open session's age is not
+      -- meaningful, and the subagent branch below moves `icon` into `inline`.
+      local active = icon ~= nil
       local project = paths.project_cwd(item.path)
       local label = item.text
       -- list("all") prefixes roots for callers; move that identity to a
@@ -739,8 +767,13 @@ function M.pick(opts, on_choice)
       label = (item.rail or "") .. (inline and inline .. " " or "") .. label
       label = picker.prefix(icon, icon_width) .. label
       local counts = counts_label(item.turns, item.agents)
-      if counts then
-        label = label .. "  (" .. counts .. ")"
+      local age = not active and rel_age(item.mtime) or nil
+      if counts or age then
+        local clause = counts or age
+        if counts and age then
+          clause = counts .. " · " .. age
+        end
+        label = label .. "  (" .. clause .. ")"
       end
       if multiple_projects and item.depth == 0 then
         label = label .. "  " .. project
