@@ -441,11 +441,17 @@ local function close_stream(turn, outcome, err, code)
     awaiting[buf] = true
   elseif outcome == "stopped" then
     vim.api.nvim_buf_del_extmark(buf, turn_start_ns, anchor)
-    document.append_lines(buf, { "# @user", "" })
+    document.append_lines(buf, {
+      event.line("turn_stopped", "Turn stopped", { outcome = "stopped" }),
+      "",
+      "# @user",
+      "",
+    })
     stopped[buf] = true
   elseif outcome == "killed" then
     restore_prompt(buf, anchor)
     stopped[buf] = true
+    document.append_lines(buf, { event.line("turn_stopped", "Turn force-stopped", { outcome = "killed" }) })
   else -- "error"
     if assistant_block_empty(buf, anchor) then
       restore_prompt(buf, anchor)

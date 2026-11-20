@@ -86,6 +86,7 @@ local CASES = {
   { name = "yap_fold_test", port = 18132 },
   { name = "yap_fold_frontmatter_test", port = 18132 },
   { name = "yap_detailfold_test", port = 18132 },
+  { name = "yap_event_badges_test", port = 18132 },
   { name = "yap_fold_peek_test", port = 18132 },
   { name = "yap_fold_za_test", port = 18132 },
   { name = "yap_fold_reconcile_test", port = 18132 },

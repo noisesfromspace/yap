@@ -454,11 +454,13 @@ or returning to a loaded buffer leaves no trace. A send also marks a new
 model or working directory relative to the previous send, and a cost warning
 accepted for that send. Mid-turn model switches keep their own `yap:model`
 marker. A fork records its source in the child, and an effective |:YapClear|
-records how many results it replaced.
+records how many results it replaced. Stopping a turn records the stop in the
+reply; a hard stop records it after the restored prompt.
 
 Closed tool folds show guard decision badges and the latest decision time in
 muted text; the decision markers fold into the tool. Closed assistant folds
-show the decisions in that reply, grouped by outcome. The badges follow the
+group those decisions by outcome and also badge a cost override and a stopped
+turn in that reply. A fork badges the frontmatter fold. Badges follow the
 colorscheme.
 
 Tool regions                                                *yap-tool-region*

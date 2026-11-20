@@ -54,6 +54,7 @@ end
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
 --   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
+--   events   = { {line, kind, outcome?, ts?, assistant?}, … } (in order)
 --   guard_decisions = { {line, tool_start, outcome, ts}, … } (in order)
 --
 -- The scanner keeps its mutable state (open fence/comment/tool region) in a
@@ -67,6 +68,7 @@ local function new_ctx()
   return {
     headings = {},
     regions = {},
+    events = {},
     guard_decisions = {},
     guard_tool = nil, -- start of the just-closed tool, before any other content
     region = nil, -- "tool" while a yap:tool region is open, else nil
@@ -104,22 +106,29 @@ end
 
 -- One line of the forward pass.
 local function step(ctx, i, line)
+  local json = line:match("^<!%-%- yap:event (.-) %-%->%s*$")
+  if json and not ctx.fence and not ctx.comment and not ctx.tool then
+    local ok, ev = pcall(vim.json.decode, json)
+    if ok and type(ev) == "table" and type(ev.type) == "string" then
+      local ts = type(ev.ts) == "string" and ev.ts:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d") or nil
+      if ev.type == "guard_decision" and type(ev.outcome) == "string" then
+        -- A guard decision trails its tool's closer. Keep the tool armed so a
+        -- run of consecutive decisions all share it.
+        ctx.guard_decisions[#ctx.guard_decisions + 1] = {
+          line = i,
+          tool_start = ctx.guard_tool,
+          outcome = ev.outcome,
+          ts = ts,
+        }
+      else
+        ctx.events[#ctx.events + 1] = { line = i, kind = ev.type, outcome = ev.outcome, ts = ts }
+        ctx.guard_tool = nil -- a non-guard event breaks the trailing run
+      end
+      return
+    end
+  end
   if ctx.guard_tool and not line:match("^%s*$") then
-    local json = line:match("^<!%-%- yap:event (.-) %-%->%s*$")
-    local ok, ev
-    if json then
-      ok, ev = pcall(vim.json.decode, json)
-    end
-    if ok and type(ev) == "table" and ev.type == "guard_decision" and type(ev.outcome) == "string" then
-      ctx.guard_decisions[#ctx.guard_decisions + 1] = {
-        line = i,
-        tool_start = ctx.guard_tool,
-        outcome = ev.outcome,
-        ts = type(ev.ts) == "string" and ev.ts:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d") or nil,
-      }
-    else
-      ctx.guard_tool = nil
-    end
+    ctx.guard_tool = nil
   end
   if ctx.fence then
     local c, n, tail = fence_run(line)
@@ -224,6 +233,7 @@ local function snapshot(ctx)
   return {
     headings_n = #ctx.headings,
     regions_n = #ctx.regions,
+    events_n = #ctx.events,
     guard_decisions_n = #ctx.guard_decisions,
     guard_tool = ctx.guard_tool,
     region = ctx.region,
@@ -246,6 +256,9 @@ local function restore(ctx, cp)
   end
   for i = #ctx.regions, cp.regions_n + 1, -1 do
     ctx.regions[i] = nil
+  end
+  for i = #ctx.events, cp.events_n + 1, -1 do
+    ctx.events[i] = nil
   end
   for i = #ctx.guard_decisions, cp.guard_decisions_n + 1, -1 do
     ctx.guard_decisions[i] = nil
@@ -295,6 +308,30 @@ local function frontmatter_end(lines)
   return nil
 end
 
+-- Attach each event to the assistant fold that owns it. An event inside a
+-- reply (a stop marker) belongs to that reply; an event in a user block (a
+-- cost override) belongs to the reply that follows it. `assistant` is the
+-- owning `# @assistant` heading line, or nil when none follows.
+local function attach_assistant(ctx)
+  local headings = ctx.headings
+  local h = 1
+  for _, d in ipairs(ctx.events) do
+    while h <= #headings and headings[h].line <= d.line do
+      h = h + 1
+    end
+    local owner = headings[h - 1]
+    if owner and owner.role == "assistant" then
+      d.assistant = owner.line
+    else
+      local j = h
+      while j <= #headings and headings[j].role ~= "assistant" do
+        j = j + 1
+      end
+      d.assistant = headings[j] and headings[j].line or nil
+    end
+  end
+end
+
 -- The parse result callers see. An unclosed tool region is malformed (a
 -- killed stream, or a hand-edited buffer): bound it at its first inner heading
 -- and restore that heading as a real message boundary, so it can never swallow
@@ -321,6 +358,7 @@ local function view(ctx, count, frontmatter)
       r.fold_finish = math.max(r.fold_finish or r.finish or 0, d.line)
     end
   end
+  attach_assistant(ctx)
   local open
   for i = #ctx.regions, 1, -1 do
     local r = ctx.regions[i]
@@ -336,6 +374,7 @@ local function view(ctx, count, frontmatter)
       regions = ctx.regions,
       count = count,
       frontmatter = frontmatter,
+      events = ctx.events,
       guard_decisions = ctx.guard_decisions,
     }
   end
@@ -372,6 +411,7 @@ local function view(ctx, count, frontmatter)
     regions = regions,
     count = count,
     frontmatter = frontmatter,
+    events = ctx.events,
     guard_decisions = ctx.guard_decisions,
   }
 end

@@ -538,27 +538,34 @@ local guard_badges = {
   { "approved", "Approved", "Comment" },
 }
 
-local function guard_foldtext(text, start, finish, tool)
-  local decisions = parse(vim.api.nvim_get_current_buf()).guard_decisions
-  local key = tool and "tool_start" or "line"
-  -- Both keys are ordered. Find the first relevant decision without scanning
-  -- the whole session on redraw, then visit only this fold's decisions.
-  local lo, hi = 1, #decisions + 1
+-- First index whose `key` is >= start (both event lists are ordered by line).
+local function lower_bound(list, key, start)
+  local lo, hi = 1, #list + 1
   while lo < hi do
     local mid = math.floor((lo + hi) / 2)
-    if decisions[mid][key] < start then
+    if list[mid][key] < start then
       lo = mid + 1
     else
       hi = mid
     end
   end
+  return lo
+end
+
+-- Guard decision badges for a closed tool fold (keyed by tool start) or a
+-- closed assistant fold (keyed by line within its range). Returns a chunk list
+-- or nil when the fold has no decisions.
+local function guard_badges_for(start, finish, tool)
+  local list = parse(vim.api.nvim_get_current_buf()).guard_decisions
+  local key = tool and "tool_start" or "line"
+  local lo = lower_bound(list, key, start)
   local last = tool and start or finish
-  if not decisions[lo] or decisions[lo][key] > last then
-    return text
+  if not list[lo] or list[lo][key] > last then
+    return nil
   end
   local counts, date = {}, nil
-  for i = lo, #decisions do
-    local d = decisions[i]
+  for i = lo, #list do
+    local d = list[i]
     if d[key] > last then
       break
     end
@@ -574,13 +581,38 @@ local function guard_foldtext(text, start, finish, tool)
     end
   end
   if #chunks == 0 then
-    return text
+    return nil
   end
-  chunks[#chunks + 1] = { text, "Folded" }
-  if tool and date then
-    chunks[#chunks + 1] = { "  " .. date:gsub("T", " ") .. " UTC", "Comment" }
+  return chunks, tool and date or nil
+end
+
+-- Events that badge a closed assistant fold. A stop marker lands inside the
+-- reply it cut short; a cost override sits in the user block that precedes the
+-- reply it authorized.
+local function assistant_event_badges(start, finish)
+  local chunks = {}
+  for _, d in ipairs(parse(vim.api.nvim_get_current_buf()).events) do
+    if d.kind == "cost_override" and d.assistant == start then
+      chunks[#chunks + 1] = { "[Cost override] ", "DiagnosticWarn" }
+    elseif d.kind == "turn_stopped" and d.line >= start and d.line <= finish then
+      if d.outcome == "killed" then
+        chunks[#chunks + 1] = { "[Force-stopped] ", "DiagnosticError" }
+      else
+        chunks[#chunks + 1] = { "[Stopped] ", "DiagnosticWarn" }
+      end
+    end
   end
   return chunks
+end
+
+-- A fork is a session-level fact, so it badges the frontmatter fold.
+local function frontmatter_badges()
+  for _, d in ipairs(parse(vim.api.nvim_get_current_buf()).events) do
+    if d.kind == "session_forked" then
+      return { { "[Forked] ", "Comment" } }
+    end
+  end
+  return {}
 end
 
 -- Evaluated by Vim for every visible closed fold on every screen draw.
@@ -590,9 +622,14 @@ function M.text(start, finish)
 
   local first = vim.fn.getline(start)
   local text
+  local chunks = {}
+  local date
 
   if first:match("^%-%-%-%s*$") then
     text = string.format("▸ options (%d lines)", finish - start + 1)
+    for _, c in ipairs(frontmatter_badges()) do
+      chunks[#chunks + 1] = c
+    end
   elseif first:match(TOOL_OPEN) then
     -- The name is on the opener line (single-line header) or in the
     -- pretty JSON below (multi-line header).
@@ -603,12 +640,14 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    return guard_foldtext(
-      string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1),
-      start,
-      finish,
-      true
-    )
+    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
+    local guard, tool_date = guard_badges_for(start, finish, true)
+    if guard then
+      for _, c in ipairs(guard) do
+        chunks[#chunks + 1] = c
+      end
+    end
+    date = tool_date
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
@@ -630,12 +669,27 @@ function M.text(start, finish)
       end
       text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
       if role == "assistant" then
-        return guard_foldtext(text, start, finish, false)
+        local guard = guard_badges_for(start, finish, false)
+        if guard then
+          for _, c in ipairs(guard) do
+            chunks[#chunks + 1] = c
+          end
+        end
+        for _, c in ipairs(assistant_event_badges(start, finish)) do
+          chunks[#chunks + 1] = c
+        end
       end
     end
   end
 
-  return text
+  if #chunks == 0 then
+    return text
+  end
+  chunks[#chunks + 1] = { text, "Folded" }
+  if date then
+    chunks[#chunks + 1] = { "  " .. date:gsub("T", " ") .. " UTC", "Comment" }
+  end
+  return chunks
 end
 
 --- Drop a buffer's per-buffer state (BufWipeout). The tick checks already
