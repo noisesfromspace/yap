@@ -263,15 +263,18 @@ transcript must still show the output that turn wrote when re-parsed
 `document.VisibleLines`) must still match. The third check is what makes
 thinking blocks hackable: `Messages` strips thinking before a send, so a
 thinking edit is invisible to the first two checks, yet it must still
-invalidate the cached reasoning items rather than replay them. A hit replays
-the native array and converts only the new tail; any miss — an edit to
-assistant prose, a tool result, or a thinking block, `:YapClear`,
-`:YapCompact`, a fork, a model switch, a mid-turn switch, a restart — falls back
-to the flattening path above, which is also what `Run` without a history does.
-The buffer is therefore fully editable: assistant prose, thinking blocks, and
-tool output are all visible, writable buffer content, and an edit to any of
-them takes effect on the next send (R-buffer-only-state) — the cache never
-silently re-sends the pre-edit bytes. Why in memory: the only thing the
+invalidate the cached reasoning items rather than replay them. The stored
+native array ends with the turn's final assistant answer — the text-only step
+is appended before store — so a hit replays the complete assistant block and a
+plain-text reply is never dropped from history. A hit replays the native array
+and converts only the new tail; any miss — an edit to assistant prose, a tool
+result, or a thinking block, `:YapClear`, `:YapCompact`, a fork, a model
+switch, a mid-turn switch, a restart — falls back to the flattening path above,
+which is also what `Run` without a history does. The buffer is therefore fully
+editable: assistant prose, thinking blocks, and tool output are all visible,
+writable buffer content, and an edit to any of them takes effect on the next
+send (R-buffer-only-state) — the cache never silently re-sends the pre-edit
+bytes nor drops the post-edit answer. Why in memory: the only thing the
 markdown cannot reconstruct is reasoning ciphertext, and losing it on restart
 costs one cold turn rather than a second history on disk (R-buffer-only-state).
 `agent/turn/prefix_replay_test.go` pins these cases; it is the guardrail that

@@ -385,3 +385,85 @@ func TestNativeHistoryColdWhenThinkingEdited(t *testing.T) {
 		}
 	}
 }
+
+// textOnlyModel answers with plain prose and no tool call, so the turn's
+// native array must still end with the assistant answer on replay (the final
+// answer is not produced by a tool round).
+type textOnlyModel struct {
+	mu     sync.Mutex
+	calls  int
+	params []llm.Params
+}
+
+func (m *textOnlyModel) DoStream(_ context.Context, p llm.Params) (*llm.Stream, error) {
+	m.mu.Lock()
+	m.params = append(m.params, cloneParams(p))
+	call := m.calls
+	m.calls++
+	m.mu.Unlock()
+
+	events := make(chan llm.Event, 1)
+	stream := llm.NewStream(events)
+	if call == 0 {
+		events <- llm.Event{Type: llm.EventText, Text: "Dog"}
+		close(events)
+		stream.SetResult(llm.Result{
+			Text: "Dog",
+			ResponseMessages: []llm.Message{{
+				Role:    llm.RoleAssistant,
+				Content: []llm.Part{{Type: llm.PartText, Text: "Dog"}},
+			}},
+		})
+	} else {
+		events <- llm.Event{Type: llm.EventText, Text: "second"}
+		close(events)
+		stream.SetResult(llm.Result{Text: "second"})
+	}
+	return stream, nil
+}
+
+type textOnlyProvider struct{ model *textOnlyModel }
+
+func (p textOnlyProvider) Model(string) llm.LanguageModel { return p.model }
+
+// TestNativeHistoryReplaysTextOnlyAnswer: a turn with no tool call still
+// replays its assistant answer natively — the final answer must not be dropped
+// from history just because no tool round carried it.
+func TestNativeHistoryReplaysTextOnlyAnswer(t *testing.T) {
+	testutil.WriteConfig(t, `"mock": {"base_url": "http://127.0.0.1:1/v1", "api_key_env": "YAP_TEST_KEY"}`)
+	t.Setenv("YAP_TEST_KEY", "k")
+
+	model := &textOnlyModel{}
+	oldFactory := providerFactory
+	providerFactory = func(string, config.Provider) (llm.Provider, error) { return textOnlyProvider{model}, nil }
+	defer func() { providerFactory = oldFactory }()
+	noBoundary := func() Boundary { return Boundary{} }
+
+	hist := &NativeHistory{}
+	var firstOut bytes.Buffer
+	if err := RunCached(context.Background(), "mock", "m1", Request{Transcript: "# @user\nSay cat\n"}, &firstOut, noBoundary, nil, hist); err != nil {
+		t.Fatalf("first turn: %v", err)
+	}
+
+	transcript := "# @user\nSay cat\n\n# @assistant\n" + strings.TrimRight(firstOut.String(), "\n") + "\n\n# @user\nWhat did you say\n"
+	var secondOut bytes.Buffer
+	if err := RunCached(context.Background(), "mock", "m1", Request{Transcript: transcript}, &secondOut, noBoundary, nil, hist); err != nil {
+		t.Fatalf("second turn: %v", err)
+	}
+
+	msgs := model.params[1].Messages
+	var sawAnswer bool
+	for _, m := range msgs {
+		if m.Role != llm.RoleAssistant {
+			continue
+		}
+		for _, part := range m.Content {
+			if part.Type == llm.PartText && strings.Contains(part.Text, "Dog") {
+				sawAnswer = true
+			}
+		}
+	}
+	if !sawAnswer {
+		t.Fatalf("text-only assistant answer was dropped from follow-up: %#v", msgs)
+	}
+}

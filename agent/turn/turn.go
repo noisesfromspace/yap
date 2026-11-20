@@ -754,6 +754,20 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 				fmt.Fprintf(out, "<!-- yap:error\nmodel returned an empty completion (finish_reason: %s)\n-->\n\n", reason)
 				turnError = fmt.Errorf("model returned an empty completion (finish_reason: %s)", reason)
 			}
+			// The final answer was streamed as prose and is not yet part of
+			// messages; append it so the native array the next turn replays
+			// covers the whole assistant block (R-prompt-cache). Prefer the
+			// provider's verbatim message (reasoning and metadata intact);
+			// fall back to the streamed text when the adapter reports no
+			// replayable message.
+			if len(t.responseMessages) > 0 {
+				messages = append(messages, t.responseMessages...)
+			} else if strings.TrimSpace(t.text) != "" {
+				messages = append(messages, llm.Message{
+					Role:    llm.RoleAssistant,
+					Content: []llm.Part{{Type: llm.PartText, Text: t.text}},
+				})
+			}
 			if shouldStop != nil && shouldStop() {
 				return context.Canceled
 			}
