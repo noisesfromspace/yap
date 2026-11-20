@@ -823,6 +823,10 @@ classifiable. Hidden sessions are reconciled synchronously on window entry.
 Unchanged ranges are not recreated. Arbitrary edits/undo reconcile too.
 Cursor/scroll restoration is distinct from the explicit follow-tail behavior.
 The winbar displays the applied view, not the number of currently open folds.
+Closed tool and assistant folds show guard decision badges from the transcript.
+A tool fold grows to hide its decision markers; pending requests are never
+included. A tool fold shows the decision time in muted text; an assistant fold
+groups decisions by outcome.
 
 #### R-async-stream — Streaming appends at the end of the buffer, fully async
 

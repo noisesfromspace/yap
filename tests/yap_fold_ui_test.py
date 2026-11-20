@@ -149,6 +149,38 @@ vim.api.nvim_set_current_buf(buf)
             + json.dumps(part) + '); append(ready)',
             hidden=('<!', 'PREFIX_HIDDEN'),
         )
-    print("OK fold_ui: closed arrivals/growth never painted open; open growth and hidden return preserved")
+    # Guard decisions stream after the tool closer and update its closed label.
+    ui.check(r'''
+fresh()
+append('<!-- yap:tool {"id":"a","name":"bash"} -->\nGUARDED_RESULT\n<!-- /yap:tool -->\n\n')
+''', hidden=('GUARDED_RESULT', '[Auto-approved]'), visible=('tool: bash',))
+    ui.check(r'''
+append('<!-- yap:event {"type":"guard_decision","outcome":"auto-approved",')
+''', hidden=('GUARDED_RESULT', '[Auto-approved]'))
+    ui.check(r'''
+append('"ts":"2025-09-29T19:22:33.125Z"} -->\n\n')
+''', hidden=('GUARDED_RESULT', '<!-- yap:event'), visible=('[Auto-approved] ▸ tool: bash', '2025-09-29 19:22:33 UTC'))
+    ui.check(r'''
+append([=[<!-- yap:tool {"id":"b","name":"read"} -->
+```
+<!-- yap:event {"type":"guard_decision","outcome":"approved"} -->
+```
+<!-- /yap:tool -->
+
+<!-- yap:event {"type":"guard_decision","outcome":"denied"} -->
+<!-- yap:event {"type":"guard_decision","outcome":"timeout"} -->
+<!-- yap:event {"type":"guard_decision","outcome":"denied"} -->
+
+]=])
+local tools = require('harness.model.structure').parse(buf).regions
+local bash = fold.text(tools[1].start, tools[1].finish)
+assert(bash[1][2] == 'DiagnosticWarn' and bash[#bash][2] == 'Comment')
+local read = fold.text(tools[2].start, tools[2].finish)
+assert(read[1][2] == 'DiagnosticError' and read[2][2] == 'DiagnosticWarn')
+''', hidden=('<!-- yap:event',), visible=('[Auto-approved] ▸ tool: bash', '[Denied ×2] [Timed out] ▸ tool: read'))
+    ui.check('fold.set_view_level(1)', hidden=('GUARDED_RESULT', '2025-09-29', '[Approved]'),
+             visible=('[Denied ×2] [Timed out] [Auto-approved] ▸ @assistant',))
+    ui.check('fold.set_view_level(3)', hidden=('[Denied ×2]', '[Auto-approved]'), visible=('GUARDED_RESULT',))
+    print("OK fold_ui: closed arrivals/growth never painted open; open growth, hidden return, and guard badges verified")
 finally:
     ui.close()

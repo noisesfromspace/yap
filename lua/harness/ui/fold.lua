@@ -231,7 +231,7 @@ local function identify(buf, s, p)
       add("message:" .. h[hi].role, h[hi].line, h[hi + 1] and h[hi + 1].line - 1 or p.count)
       hi = hi + 1
     else
-      add("region:" .. r[ri].kind, r[ri].start, r[ri].finish or p.count)
+      add("region:" .. r[ri].kind, r[ri].start, r[ri].fold_finish or r[ri].finish or p.count)
       ri = ri + 1
     end
   end
@@ -531,9 +531,59 @@ vim.api.nvim_create_autocmd("WinClosed", {
 
 -- ─── foldtext ──────────────────────────────────────────────────────────────
 
+local guard_badges = {
+  { "denied", "Denied", "DiagnosticError" },
+  { "timeout", "Timed out", "DiagnosticWarn" },
+  { "auto-approved", "Auto-approved", "DiagnosticWarn" },
+  { "approved", "Approved", "Comment" },
+}
+
+local function guard_foldtext(text, start, finish, tool)
+  local decisions = parse(vim.api.nvim_get_current_buf()).guard_decisions
+  local key = tool and "tool_start" or "line"
+  -- Both keys are ordered. Find the first relevant decision without scanning
+  -- the whole session on redraw, then visit only this fold's decisions.
+  local lo, hi = 1, #decisions + 1
+  while lo < hi do
+    local mid = math.floor((lo + hi) / 2)
+    if decisions[mid][key] < start then
+      lo = mid + 1
+    else
+      hi = mid
+    end
+  end
+  local last = tool and start or finish
+  if not decisions[lo] or decisions[lo][key] > last then
+    return text
+  end
+  local counts, date = {}, nil
+  for i = lo, #decisions do
+    local d = decisions[i]
+    if d[key] > last then
+      break
+    end
+    counts[d.outcome] = (counts[d.outcome] or 0) + 1
+    date = d.ts or date
+  end
+  local chunks = {}
+  for _, badge in ipairs(guard_badges) do
+    local outcome, label, hl = unpack(badge)
+    local n = counts[outcome]
+    if n then
+      chunks[#chunks + 1] = { "[" .. label .. (n > 1 and " ×" .. n or "") .. "] ", hl }
+    end
+  end
+  if #chunks == 0 then
+    return text
+  end
+  chunks[#chunks + 1] = { text, "Folded" }
+  if tool and date then
+    chunks[#chunks + 1] = { "  " .. date:gsub("T", " ") .. " UTC", "Comment" }
+  end
+  return chunks
+end
+
 -- Evaluated by Vim for every visible closed fold on every screen draw.
--- Measured at ~0.0003ms per fold, so a few dozen visible folds cost ~0.01ms
--- of a redraw — below the cost of the lookup a cache would need.
 function M.text(start, finish)
   start = start or vim.v.foldstart
   finish = finish or vim.v.foldend
@@ -553,7 +603,12 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
+    return guard_foldtext(
+      string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1),
+      start,
+      finish,
+      true
+    )
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
@@ -574,6 +629,9 @@ function M.text(start, finish)
         preview = "(empty)"
       end
       text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
+      if role == "assistant" then
+        return guard_foldtext(text, start, finish, false)
+      end
     end
   end
 

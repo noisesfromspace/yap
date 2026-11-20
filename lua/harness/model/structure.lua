@@ -54,6 +54,7 @@ end
 --   headings = { {role="system"|"user"|"assistant", line}, … }  (in order)
 --   regions  = { {kind="tool"|"thinking"|"error"|…, start, finish}, … }
 --              finish is nil while a region is still open (streaming).
+--   guard_decisions = { {line, tool_start, outcome, ts}, … } (in order)
 --
 -- The scanner keeps its mutable state (open fence/comment/tool region) in a
 -- `ctx` table so a pure tail append can resume from a checkpoint instead of
@@ -66,6 +67,8 @@ local function new_ctx()
   return {
     headings = {},
     regions = {},
+    guard_decisions = {},
+    guard_tool = nil, -- start of the just-closed tool, before any other content
     region = nil, -- "tool" while a yap:tool region is open, else nil
     fence = nil, -- { char, n } while inside a fenced code block
     comment = nil, -- { kind, region? } while inside a multi-line marker
@@ -101,6 +104,23 @@ end
 
 -- One line of the forward pass.
 local function step(ctx, i, line)
+  if ctx.guard_tool and not line:match("^%s*$") then
+    local json = line:match("^<!%-%- yap:event (.-) %-%->%s*$")
+    local ok, ev
+    if json then
+      ok, ev = pcall(vim.json.decode, json)
+    end
+    if ok and type(ev) == "table" and ev.type == "guard_decision" and type(ev.outcome) == "string" then
+      ctx.guard_decisions[#ctx.guard_decisions + 1] = {
+        line = i,
+        tool_start = ctx.guard_tool,
+        outcome = ev.outcome,
+        ts = type(ev.ts) == "string" and ev.ts:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d") or nil,
+      }
+    else
+      ctx.guard_tool = nil
+    end
+  end
   if ctx.fence then
     local c, n, tail = fence_run(line)
     if c == ctx.fence.char and n >= ctx.fence.n and tail:match("^%s*$") then
@@ -139,6 +159,7 @@ local function step(ctx, i, line)
     -- is tool *content* (a model quoting a heading), recorded as an inner
     -- heading so view() can bound the region only when it never closes.
     if line:match(TOOL_CLOSE) then
+      ctx.guard_tool = ctx.tool.start
       end_tool(ctx, i)
       ctx.region = nil
     elseif line:match(TOOL_OPEN) then
@@ -203,6 +224,8 @@ local function snapshot(ctx)
   return {
     headings_n = #ctx.headings,
     regions_n = #ctx.regions,
+    guard_decisions_n = #ctx.guard_decisions,
+    guard_tool = ctx.guard_tool,
     region = ctx.region,
     fence = ctx.fence and { char = ctx.fence.char, n = ctx.fence.n } or nil,
     comment_kind = ctx.comment and ctx.comment.kind or nil,
@@ -224,6 +247,10 @@ local function restore(ctx, cp)
   for i = #ctx.regions, cp.regions_n + 1, -1 do
     ctx.regions[i] = nil
   end
+  for i = #ctx.guard_decisions, cp.guard_decisions_n + 1, -1 do
+    ctx.guard_decisions[i] = nil
+  end
+  ctx.guard_tool = cp.guard_tool
   ctx.region = cp.region
   ctx.fence = cp.fence
   if cp.comment_kind then
@@ -275,6 +302,25 @@ end
 -- content — a model quoting `# @user` inside a tool result must not split the
 -- message (R-markers-not-sent: the result is ordinary transcript text).
 local function view(ctx, count, frontmatter)
+  -- Guard decisions trail their tool's closer and belong to its fold: extend
+  -- the tool's fold extent so the decision markers hide with the tool instead
+  -- of lingering as visible prose. Recompute from scratch every call so a tail
+  -- edit that adds, changes or drops a decision is reflected.
+  local ri = 1
+  for _, r in ipairs(ctx.regions) do
+    if r.kind == "tool" then
+      r.fold_finish = nil
+    end
+  end
+  for _, d in ipairs(ctx.guard_decisions) do
+    while ri <= #ctx.regions and ctx.regions[ri].start < d.tool_start do
+      ri = ri + 1
+    end
+    local r = ctx.regions[ri]
+    if r and r.start == d.tool_start then
+      r.fold_finish = math.max(r.fold_finish or r.finish or 0, d.line)
+    end
+  end
   local open
   for i = #ctx.regions, 1, -1 do
     local r = ctx.regions[i]
@@ -285,7 +331,13 @@ local function view(ctx, count, frontmatter)
   end
   local inner = open and open.inner
   if not inner or #inner == 0 then
-    return { headings = ctx.headings, regions = ctx.regions, count = count, frontmatter = frontmatter }
+    return {
+      headings = ctx.headings,
+      regions = ctx.regions,
+      count = count,
+      frontmatter = frontmatter,
+      guard_decisions = ctx.guard_decisions,
+    }
   end
   local cut = inner[1].line
   local regions = {}
@@ -315,7 +367,13 @@ local function view(ctx, count, frontmatter)
   table.sort(headings, function(a, b)
     return a.line < b.line
   end)
-  return { headings = headings, regions = regions, count = count, frontmatter = frontmatter }
+  return {
+    headings = headings,
+    regions = regions,
+    count = count,
+    frontmatter = frontmatter,
+    guard_decisions = ctx.guard_decisions,
+  }
 end
 
 local function parse(buf)

@@ -456,6 +456,11 @@ accepted for that send. Mid-turn model switches keep their own `yap:model`
 marker. A fork records its source in the child, and an effective |:YapClear|
 records how many results it replaced.
 
+Closed tool folds show guard decision badges and the latest decision time in
+muted text; the decision markers fold into the tool. Closed assistant folds
+show the decisions in that reply, grouped by outcome. The badges follow the
+colorscheme.
+
 Tool regions                                                *yap-tool-region*
 
 A tool call and its result are ONE region inside an assistant message: >
