@@ -38,7 +38,9 @@ Skills are reusable on-demand instructions in Markdown files under ]] .. harness
   if skills then
     about = about .. "\n\n" .. table.concat(skills, "\n")
   end
-  about = about .. "\n\n" .. [[## Parallel tool calls
+  about = about
+    .. "\n\n"
+    .. [[## Parallel tool calls
 
 When you need several independent read-only results (read, search, glob, fetch, models, sessions), request them all in one message — they run concurrently. Batch your reads: opening two files at once is faster than opening them one after another.
 

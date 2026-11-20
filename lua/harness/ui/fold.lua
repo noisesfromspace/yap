@@ -305,26 +305,36 @@ local function apply(buf, win, w, list)
       -- every flush — that up-and-back was the streaming flicker.
       vim.cmd("normal! zE")
       w.installed = {}
+      local parts = {}
       for _, b in ipairs(list) do
-        vim.cmd(("%d,%dfold"):format(b.start, b.finish))
         -- :fold creates a closed fold, so only explicitly opened folds need
         -- an extra command; the old :foldclose for every other fold was a
-        -- no-op C round-trip per fold on every rebuild.
+        -- no-op C round-trip per fold on every rebuild. Batching the whole
+        -- projection into one `|`-joined Ex command keeps the rebuild off the
+        -- O(folds) nvim_exec2 round-trip path as well.
+        parts[#parts + 1] = ("%d,%dfold"):format(b.start, b.finish)
         if w.intent[b.id] == true then
-          vim.cmd(("%dfoldopen"):format(b.start))
+          parts[#parts + 1] = ("%dfoldopen"):format(b.start)
         end
         w.installed[b.id] = { start = b.start, finish = b.finish }
       end
+      if #parts > 0 then
+        vim.cmd(table.concat(parts, " | "))
+      end
     else
       -- Nothing moved: only install folds that are new to this window.
+      local parts = {}
       for _, b in ipairs(list) do
         if not w.installed[b.id] then
-          vim.cmd(("%d,%dfold"):format(b.start, b.finish))
+          parts[#parts + 1] = ("%d,%dfold"):format(b.start, b.finish)
           if w.intent[b.id] == true then
-            vim.cmd(("%dfoldopen"):format(b.start))
+            parts[#parts + 1] = ("%dfoldopen"):format(b.start)
           end
           w.installed[b.id] = { start = b.start, finish = b.finish }
         end
+      end
+      if #parts > 0 then
+        vim.cmd(table.concat(parts, " | "))
       end
     end
     w.rebuild, w.reset, w.restore = false, false, false
