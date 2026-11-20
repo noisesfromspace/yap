@@ -273,16 +273,13 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         streamed in — offer to delete the superseded history.
 *:YapEval*
 :YapEval [instruction]
-                        Open an interactive eval session in a split about
-                        the selected lines (or about the current file with no
-                        range). It is a regular session (default system
-                        prompt, tools, follow-ups). An eval without a selection
-                        or instruction stays out of saved history until you
-                        add a prompt or complete a turn.
-                        The selection is quoted as context and the
-                        source buffer is never changed. With an instruction
-                        the first turn is sent at once; without one the
-                        cursor waits in the user turn for your question.
+                        Run an agent turn about the selected lines (or current
+                        file with no range) in a saved, hidden session. The
+                        selection is quoted as context; the source buffer
+                        and window stay untouched. With no instruction, Yap
+                        prompts for one before starting. The session can be
+                        opened directly by path later, but stays out of + /
+                        g+ and the winbar overview.
 :YapEval! [instruction]
                         Replace the selected lines with the model's output: a
                         one-shot, no-tools call to `model_groups.flash` (or
@@ -296,8 +293,12 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         summarize them); in any other buffer it is plain text
                         (refactor a function in place). With no range, the
                         output is inserted at the cursor as new lines
-                        (generate content into a fresh, empty buffer). No
-                        default keymap for either form.
+                        (generate content into a fresh, empty buffer). Each
+                        invocation saves a separate, timestamp-named Yap
+                        session file containing its request, answer or error,
+                        and apply status. It can be reopened directly with
+                        :edit, but is omitted from + / g+ and the winbar
+                        overview. No default keymap for either form.
 *:YapFork*
 :YapFork [name]       Copy the current in-memory conversation into a new,
                         independent session in the same project. The original
@@ -566,8 +567,9 @@ excluded from the winbar overview.
 
 A blank ordinary session appears while loaded. After unloading, it is hidden
 unless it has a prompt, completed turn, description, or renamed transcript.
-An empty :YapEval stays hidden even while loaded; adding a question or
-completing a turn makes it visible.
+Eval sessions (`kind: eval`) are omitted from both pickers even when opened;
+use :edit on their transcript paths to revisit them. Neither form changes the
+source window. Plain :YapEval prompts for an instruction if none is supplied.
 
 SCRATCH, STEER & QUEUE                                        *yap-scratch*
 
@@ -1036,7 +1038,9 @@ Go document parser (`agent/document`) backs the standard LSP features:
                     "agent · task". Other tool calls, thinking and machine
                     regions are not symbols; empty messages are dropped, and a
                     turn that only ran tools and then failed names itself by
-                    its error.
+                    its error. A message whose reply was stopped or accepted
+                    a cost warning carries the same badge as its closed fold
+                    (`[Stopped]`, `[Force-stopped]`, `[Cost override]`).
   Completion        Frontmatter keys and values (`provider`, `model`,
                     `agent`, `tools`, ...), role headings, and `@path` file
                     references.

@@ -391,9 +391,9 @@ while its parent is open, keeping an inactive conversation's row lean.
 Sessions belong in ordinary buffer navigation without sacrificing
 real file paths or the session trees. The saved picker lists an ordinary
 blank session while its buffer is loaded and hides it once unloaded unless it
-has a prompt, a completed turn, a description or a renamed transcript. A
-scaffold-only `:YapEval` (no selection, no instruction) stays hidden until a
-question is typed or a turn completes.
+has a prompt, a completed turn, a description or a renamed transcript. Eval
+sessions (`kind: eval`) remain hidden from the picker and overview even while
+loaded, but can be opened by their file path.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -428,7 +428,9 @@ change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
 metadata). It reads the frontmatter on open and surfaces it in the
-sessions() picker. Token/cost totals are deliberately NOT frontmatter:
+sessions() picker. `kind: eval` marks a one-shot transcript for picker and
+overview exclusion; `eval_status` records whether its output was applied.
+Token/cost totals are deliberately NOT frontmatter:
 they accumulate in per-buffer memory for the winbar and reset on reopen. The
 earlier frontmatter design got this wrong by folding per-reply usage into the
 header, which made every metadata update a non-local buffer edit that fought
@@ -481,7 +483,13 @@ visible buffer — not a stale disk snapshot — is the control surface.
 `:YapEval!` sends the selected lines to `model_groups.flash` through the one-shot
 `yap send` path (`tools: []`, so the model cannot call tools or touch other
 files) and replaces the selection with the response. It never runs the agent
-loop, the guard gate, or a serve process. `<!-- yap:* -->` markers and the
+loop, the guard gate, or a serve process. Each invocation also creates a
+normal, timestamp-named session file in its own numbered session directory,
+with `kind: eval` and the captured request, reply (or error), and
+`eval_status` (`running`, `applied`, `failed`, `source_changed`, or
+`source_closed`). It is reopenable directly as a session, but excluded from
+both saved session pickers and the winbar overview, including while loaded.
+The source edit and one-shot no-tools call stay unchanged. `<!-- yap:* -->` markers and the
 binary's framing newlines are stripped from the response. In a session buffer
 the replacement is wrapped as a single `# @assistant` message (so a selection
 of turns collapses to a summary, like compaction scoped to a range); in any
@@ -493,13 +501,16 @@ with no instruction is transformed with a default instruction (the selection is
 the input, so a visual-mode `:YapEval!` never prompts), while generate mode still
 prompts. `model_groups.flash` defaults to `deepseek/deepseek-flash`; set it
 to `""` to use `model_groups.agent` and disable automatic session titles.
-Why: an eval is a stateless filter (`!`-semantics), not a conversation,
-so it must not accumulate tool state or history.
+Why: an eval remains a one-shot filter (`!`-semantics), not a conversation
+in the source buffer. Its separate file makes the request and answer
+recoverable without adding it to normal session supervision.
 
-Plain `:YapEval` is the interactive counterpart and does not fall under the
-one-shot rule: it opens a regular session (default system prompt, tools,
-listed in sessions()) on `model_groups.agent`, with the selection quoted as context. It never edits
-the source buffer.
+Plain `:YapEval` runs a regular agent turn (default system prompt and tools)
+on `model_groups.agent` in a hidden, saved eval session. It quotes the
+selection as context and never edits the source buffer or opens a window.
+Without an instruction, it prompts before creating the session. Its file
+can be reopened directly for inspection or follow-ups, but is excluded from
+the picker and cross-session overview like `:YapEval!` records.
 
 ### Backend and wire protocol
 

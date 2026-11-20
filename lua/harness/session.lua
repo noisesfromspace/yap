@@ -573,7 +573,9 @@ function M.list(scope)
       models = fm and #fm.models > 1 and fm.models or nil,
       turns = fm and fm.turns,
     }
-    if fm and fm.forked_from then
+    if fm and fm.kind == "eval" then
+      -- One-shot evals are files, not entries in the conversation picker.
+    elseif fm and fm.forked_from then
       -- A fork always nests: it is part of the conversation's lineage. The
       -- type glyph (fork icon) replaces the old "↳ fork · " wording.
       item.text = M.label(path, description, nil)

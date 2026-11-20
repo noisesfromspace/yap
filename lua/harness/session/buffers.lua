@@ -276,6 +276,9 @@ local function adopt(buf, path)
     if fm.tools then
       vim.b[buf].yap_tools = fm.tools
     end
+    if fm.kind then
+      vim.b[buf].yap_kind = fm.kind
+    end
     if fm.agent then
       vim.b[buf].yap_agent = fm.agent
     end

@@ -71,6 +71,10 @@ function M.parse(lines)
         fm.created_at = v
       elseif k == "updated_at" then
         fm.updated_at = v
+      elseif k == "kind" then
+        fm.kind = v
+      elseif k == "eval_status" then
+        fm.eval_status = v
       elseif k == "subagent_parent" then
         fm.subagent_parent = v
       elseif k == "forked_from" then
@@ -133,6 +137,12 @@ function M.render(fm)
     for _, c in ipairs(fm.models) do
       lines[#lines + 1] = "  - " .. c
     end
+  end
+  if fm.kind then
+    lines[#lines + 1] = "kind: " .. fm.kind
+  end
+  if fm.eval_status then
+    lines[#lines + 1] = "eval_status: " .. fm.eval_status
   end
   if fm.forked_from then
     lines[#lines + 1] = "forked_from: " .. fm.forked_from

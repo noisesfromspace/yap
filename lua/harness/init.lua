@@ -90,8 +90,8 @@ function M.eval(opts)
   return require("harness.client.eval").eval(opts)
 end
 
---- Open an interactive eval session about a selection: a regular session that
---- is listed in sessions(). The source buffer is not changed. See |:YapEval|.
+--- Run a background eval about a selection in a saved session. The source
+--- buffer and window stay untouched. See |:YapEval|.
 function M.eval_session(opts)
   return require("harness.client.eval").session(opts)
 end

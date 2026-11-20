@@ -1,4 +1,5 @@
--- :YapEval! — a one-shot, stateless filter over the current selection.
+-- :YapEval! — a one-shot filter over the current selection. Each call also
+-- leaves a quiet, reopenable session file with its request and answer.
 -- The selected lines are sent to the eval model with no tools; the returned
 -- text replaces the selection in place (`!`-semantics, but asynchronous and
 -- undoable like any other buffer edit).
@@ -12,11 +13,12 @@
 -- With no range, the model's output is inserted at the cursor as new lines —
 -- "generate three fake addresses" fills a fresh, empty (No Name) buffer.
 --
--- :YapEval (no bang) is the interactive counterpart: see M.session.
+-- :YapEval (no bang) runs a separate session in the background; see M.session.
 
 local M = {}
 
 local structure = require("harness.model.structure")
+local frontmatter = require("harness.model.frontmatter")
 
 local function config()
   return require("harness").config
@@ -78,16 +80,16 @@ end
 --- selection having changed while the eval was in flight.
 function M.finish(buf, line1, line2, sent, result)
   if not vim.api.nvim_buf_is_valid(buf) then
-    return
+    return "source_closed"
   end
   local body = M.decode(result)
   if not body then
-    return
+    return "failed"
   end
   local now = vim.api.nvim_buf_get_lines(buf, line1 - 1, line2, false)
   if not vim.deep_equal(now, sent) then
     vim.notify("yap eval: selection changed while it ran; result not applied", vim.log.levels.WARN)
-    return
+    return "source_changed"
   end
   local replacement
   if vim.b[buf].yap then
@@ -98,23 +100,25 @@ function M.finish(buf, line1, line2, sent, result)
     replacement = body
   end
   vim.api.nvim_buf_set_lines(buf, line1 - 1, line2, false, replacement)
+  return "applied"
 end
 
 --- Insert the completed response as new lines before `row` (0-based).
 function M.insert(buf, row, result)
   if not vim.api.nvim_buf_is_valid(buf) then
-    return
+    return "source_closed"
   end
   local body = M.decode(result)
   if not body then
-    return
+    return "failed"
   end
   vim.api.nvim_buf_set_lines(buf, row, row, false, body)
+  return "applied"
 end
 
 --- The opening user turn of an interactive eval session: the file context
 --- and the selected lines in a fence (longer than any backtick run inside),
---- then the instruction — or a blank line for the user to write one.
+--- then the instruction. The caller prompts for an instruction when absent.
 function M.session_user(buf, line1, line2, instruction)
   local parts = {}
   local name = vim.api.nvim_buf_get_name(buf)
@@ -146,11 +150,9 @@ function M.session_user(buf, line1, line2, instruction)
   return parts
 end
 
---- :YapEval — open an interactive eval session in a split: a regular yap
---- session (default system prompt, tools, follow-ups, listed in
---- sessions()). The selection is context only; the source buffer is never
---- changed. With an instruction the first turn is sent immediately,
---- otherwise the cursor waits at the end of the user turn.
+--- :YapEval — send a regular agent turn in a hidden session. Its quoted
+--- selection is context only; the source buffer and window stay untouched.
+--- When no instruction is given, ask for one before creating the session.
 function M.session(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -161,25 +163,62 @@ function M.session(opts)
   if line1 and line2 and line1 > line2 then
     line1, line2 = line2, line1
   end
-  local instruction = opts.instruction ~= "" and opts.instruction or nil
-  local user = M.session_user(buf, line1, line2, instruction)
-  local yap = require("harness")
-  local sbuf = yap.new({ hidden = true })
-  vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
-  -- Save the quoted selection now so the session is listed in sessions()
-  -- before its first send.
-  require("harness.session").save(sbuf)
-  vim.cmd("botright split")
-  vim.api.nvim_win_set_buf(0, sbuf)
-  -- Switching the buffer into the split resets the window-local 'winbar' to
-  -- its global default, and the session was created hidden (so setup_buffer
-  -- never set it here). Set it on the now-visible session.
-  vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
-  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(sbuf), 0 })
-  if instruction then
+  local function run(instruction)
+    if not instruction or instruction == "" or not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    local user = M.session_user(buf, line1, line2, instruction)
+    local yap = require("harness")
+    local sbuf = yap.new({ hidden = true })
+    frontmatter.update(sbuf, { kind = "eval" })
+    vim.b[sbuf].yap_kind = "eval"
+    vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
+    require("harness.session").save(sbuf)
     yap.send(sbuf)
+    return sbuf
   end
-  return sbuf
+  if opts.instruction and opts.instruction ~= "" then
+    return run(opts.instruction)
+  end
+  vim.ui.input({ prompt = "yap eval: " }, run)
+end
+
+-- Keep the request in a normal session file without opening another window.
+-- The hidden buffer owns its file until the one-shot call completes.
+local function record(provider, model, user)
+  local buf = require("harness").new({ hidden = true, provider = provider, model = model, system = EVAL_SYSTEM })
+  frontmatter.update(buf, { kind = "eval", eval_status = "running" })
+  vim.b[buf].yap_kind = "eval"
+  local path = vim.b[buf].yap_path
+  local named = vim.fn.fnamemodify(path, ":h") .. "/eval-" .. os.date("!%Y%m%dT%H%M%SZ") .. ".md"
+  vim.api.nvim_buf_set_name(buf, named)
+  local longest = 2
+  for run in user:gmatch("`+") do
+    longest = math.max(longest, #run)
+  end
+  local fence = string.rep("`", longest + 1)
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { fence .. "text" })
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, vim.split(user, "\n", { plain = true }))
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, { fence, "" })
+  require("harness.session").save(buf)
+  return buf
+end
+
+local function finish_record(buf, result, status)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  frontmatter.update(buf, { eval_status = status })
+  local answer = structure.strip_markers(result.stdout or ""):gsub("^\n+", ""):gsub("\n+$", "")
+  local lines = { "# @assistant", "" }
+  if result.code == 0 then
+    vim.list_extend(lines, vim.split(answer, "\n", { plain = true }))
+  else
+    vim.list_extend(lines, { "<!-- yap:error", (result.stderr or "eval failed"):gsub("%s+$", ""), "-->" })
+  end
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, lines)
+  require("harness.session").save(buf)
+  vim.api.nvim_buf_delete(buf, { force = true })
 end
 
 --- Evaluate lines line1..line2 (1-based, inclusive) in `buf` (defaults to the
@@ -223,10 +262,12 @@ function M.eval(opts)
       vim.notify("yap eval: no model configured (set model_groups.flash)", vim.log.levels.ERROR)
       return
     end
+    local user = M.build_user(buf, instruction, selected)
+    local record_buf = record(provider, model, user)
     local payload = vim.json.encode({
       messages = {
         { role = "system", content = EVAL_SYSTEM },
-        { role = "user", content = M.build_user(buf, instruction, selected) },
+        { role = "user", content = user },
       },
       tools = {},
     }) .. "\n"
@@ -235,11 +276,13 @@ function M.eval(opts)
       { config().bin, "send", "--provider", provider, "--model", model },
       { stdin = payload, text = true },
       vim.schedule_wrap(function(result)
+        local status
         if replace then
-          M.finish(buf, line1, line2, sent, result)
+          status = M.finish(buf, line1, line2, sent, result)
         else
-          M.insert(buf, insert_row, result)
+          status = M.insert(buf, insert_row, result)
         end
+        finish_record(record_buf, result, status)
       end)
     )
   end

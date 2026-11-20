@@ -77,6 +77,7 @@ local function other_session_counts(buf)
       and vim.api.nvim_buf_is_valid(b)
       and vim.b[b].yap
       and not (vim.b[b].yap_subagent_parent or picker.agent(nil, b))
+      and vim.b[b].yap_kind ~= "eval"
     then
       if pending_approvals[b] then
         counts.approval = counts.approval + 1
