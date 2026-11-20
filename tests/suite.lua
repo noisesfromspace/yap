@@ -294,6 +294,15 @@ local function run(case)
   local saved = isolate(dir)
   local ok, err = pcall(function()
     child.start({ "--cmd", "set rtp^=" .. ROOT })
+    -- A headless runner (no $DISPLAY/$WAYLAND_DISPLAY) has no clipboard
+    -- provider, so the `+`/`*` registers silently no-op and any test
+    -- asserting a clipboard copy fails. Back them with a per-case file so
+    -- clipboard copies are testable everywhere.
+    local clip = dir .. "/clipboard.txt"
+    child.lua(
+      ("vim.g.clipboard = { name = 'yap-test', copy = { ['+'] = 'tee %s', ['*'] = 'tee %s' }, paste = { ['+'] = 'cat %s', ['*'] = 'cat %s' }, cache_enabled = 0 }")
+        :format(clip, clip, clip, clip)
+    )
     child.lua(("dofile(%q)"):format(TESTS .. "/" .. case.name .. ".lua"))
   end)
   pcall(child.stop)
