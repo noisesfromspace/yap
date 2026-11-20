@@ -3,7 +3,7 @@
 -- symbols, completion and diagnostics; this module owns only the plumbing —
 -- client lifecycle, attachment scope and editor context — none of the parsing
 -- or feature logic. Folding, text objects and navigation stay local and
--- synchronous (see CONTRIBUTING.md R-single-reader / R-language-intelligence).
+-- synchronous (see AGENTS.md R-single-reader / R-language-intelligence).
 
 local M = {}
 

@@ -219,6 +219,8 @@ The full reference is in [`doc/yap.txt`](doc/yap.txt), available in Neovim as
 `:help yap`. Start with `yap-configuration`, `yap-keymaps`, `yap-lsp`, or
 `yap-tools` for the details behind the workflows above.
 
-Before changing behavior, read [CONTRIBUTING.md](CONTRIBUTING.md) for the wire
-protocol, design rules, and test instructions. Update it when a change
-affects those contracts.
+Before changing behavior, read [AGENTS.md](CONTRIBUTING.md) for business rules
+like the wire protocol, design rules, and test instructions. Update it when a
+change affects those contracts.
+
+For contributing to the project read CONTRIBUTING.md

@@ -22,7 +22,7 @@
 --   subagent_parent: ~/.config/yap/sessions/.../parent/
 --   ---
 --
--- Field semantics and the write rules: R-frontmatter (CONTRIBUTING.md) and
+-- Field semantics and the write rules: R-frontmatter (AGENTS.md) and
 -- section 5 of doc/yap.txt. The session title is the transcript's filename;
 -- token and cost totals are not here — the winbar accumulates them per buffer
 -- and the durable total is derived from the audit log.

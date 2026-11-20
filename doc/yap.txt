@@ -1069,7 +1069,7 @@ blink.cmp can consume Yap's completion items through their generic LSP source.
 The language server is optional: if the binary is unavailable (or predates
 `yap lsp`), editing is unaffected and the features simply stay off. Folding,
 text objects and navigation remain local and synchronous; the server does not
-participate in them. See R-language-intelligence in CONTRIBUTING.md for the
+participate in them. See R-language-intelligence in AGENTS.md for the
 Lua/Go ownership boundary.
 
 ==============================================================================

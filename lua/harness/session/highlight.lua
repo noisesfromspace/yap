@@ -10,7 +10,7 @@
 --
 -- Why the parser and its injections stay: decoration renderers read the
 -- parsed tree, not the highlighter. The measurements, and the alternatives that
--- were tried and rejected, are in R-presentation-hygiene (CONTRIBUTING.md).
+-- were tried and rejected, are in R-presentation-hygiene (AGENTS.md).
 --
 -- The rest of the file repairs what the syntax engine gets wrong on a
 -- transcript: unlinked groups, fences inside thinking comments, syntax sync.
