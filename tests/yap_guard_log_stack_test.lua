@@ -49,7 +49,7 @@ local leader = vim.g.mapleader
 if leader == nil or leader == "" then
   leader = "\\"
 end
-vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "t", true, false, true), "mtx", false)
 local log = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(log):match("^Yap Tail: "), "board <leader>t did not open the log")
 local log_win = vim.api.nvim_get_current_win()

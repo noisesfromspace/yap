@@ -70,12 +70,12 @@ assert(
 )
 
 -- :YapClear points each placeholder at the exact JSONL lines it replaced
--- (tool_call → tool_result for the write call; that step's usage line comes
--- first, so the two records are lines 2-3)
+-- (tool_call → tool_result for the write call; turn_start opens the log and
+-- that step's usage line follows, so the two records are lines 3-4)
 yap.clear(buf, 0)
 local cleared = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
 assert(
-  cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:2%-3%]"),
+  cleared:match("%[output cleared — full output in the audit log: .-%.jsonl:3%-4%]"),
   "placeholder missing exact line ref: " .. cleared
 )
 print("OK audit")

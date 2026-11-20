@@ -49,8 +49,10 @@ local closed_row = assert(rows().agent, "closed subagent missing from the picker
 local closed_item = vim.iter(session.list()):find(function(item)
   return item.child_kind == "agent"
 end)
+-- Closed rows keep rail + text (with the closed-row relative-age clause
+-- appended) but drop the status glyph entirely.
 assert(
-  closed_row == picker.prefix(nil, picker.icon_width(glyphs)) .. closed_item.rail .. closed_item.text,
+  vim.startswith(closed_row, picker.prefix(nil, picker.icon_width(glyphs)) .. closed_item.rail .. closed_item.text),
   "closed subagent should show no status glyph: " .. closed_row
 )
 print("OK picker tree")

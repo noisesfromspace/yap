@@ -193,9 +193,9 @@ assert(
   "saved subagent not nested beneath its open parent: " .. vim.inspect(captured.items)
 )
 -- The row counts completed replies and the agent sessions the conversation
--- spawned, each with its own unit.
+-- spawned, each with its own unit; the closed-row relative age follows.
 local saved_row = captured.opts.format_item(captured.items[saved_index])
-assert(saved_row:find("(1 turn & 1 subagent)", 1, true), "counts label wrong: " .. saved_row)
+assert(saved_row:find("(1 turn & 1 subagent", 1, true), "counts label wrong: " .. saved_row)
 captured.on_choice(captured.items[saved_index])
 -- A subagent's identity is never cut off however long the task is.
 local child_label = session.live_label(saved_child, true)

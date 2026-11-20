@@ -153,7 +153,7 @@ local leader = vim.g.mapleader
 if leader == nil or leader == "" then
   leader = "\\"
 end
-vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "l", true, false, true), "mtx", false)
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(leader .. "t", true, false, true), "mtx", false)
 local tail = vim.api.nvim_get_current_buf()
 assert(vim.fn.bufname(tail):match("^Yap Tail: "), "scratch <leader>t did not open the tail viewer")
 
