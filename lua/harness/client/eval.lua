@@ -118,7 +118,7 @@ end
 
 --- The opening user turn of an interactive eval session: the file context
 --- and the selected lines in a fence (longer than any backtick run inside),
---- then the instruction. The caller prompts for an instruction when absent.
+--- then the instruction, or a blank line for the user to write one.
 function M.session_user(buf, line1, line2, instruction)
   local parts = {}
   local name = vim.api.nvim_buf_get_name(buf)
@@ -150,9 +150,11 @@ function M.session_user(buf, line1, line2, instruction)
   return parts
 end
 
---- :YapEval — send a regular agent turn in a hidden session. Its quoted
---- selection is context only; the source buffer and window stay untouched.
---- When no instruction is given, ask for one before creating the session.
+--- :YapEval — open an interactive eval session in a split: a regular yap
+--- session (default system prompt, tools, follow-ups, listed in
+--- sessions()). The selection is context only; the source buffer is never
+--- changed. With an instruction the first turn is sent immediately,
+--- otherwise the cursor waits at the end of the user turn.
 function M.session(opts)
   opts = opts or {}
   local buf = opts.buf or vim.api.nvim_get_current_buf()
@@ -163,24 +165,25 @@ function M.session(opts)
   if line1 and line2 and line1 > line2 then
     line1, line2 = line2, line1
   end
-  local function run(instruction)
-    if not instruction or instruction == "" or not vim.api.nvim_buf_is_valid(buf) then
-      return
-    end
-    local user = M.session_user(buf, line1, line2, instruction)
-    local yap = require("harness")
-    local sbuf = yap.new({ hidden = true })
-    frontmatter.update(sbuf, { kind = "eval" })
-    vim.b[sbuf].yap_kind = "eval"
-    vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
-    require("harness.session").save(sbuf)
+  local instruction = opts.instruction ~= "" and opts.instruction or nil
+  local user = M.session_user(buf, line1, line2, instruction)
+  local yap = require("harness")
+  local sbuf = yap.new({ hidden = true })
+  vim.api.nvim_buf_set_lines(sbuf, -2, -1, false, user)
+  -- Save the quoted selection now so the session is listed in sessions()
+  -- before its first send.
+  require("harness.session").save(sbuf)
+  vim.cmd("botright split")
+  vim.api.nvim_win_set_buf(0, sbuf)
+  -- Switching the buffer into the split resets the window-local 'winbar' to
+  -- its global default, and the session was created hidden (so setup_buffer
+  -- never set it here). Set it on the now-visible session.
+  vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
+  vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(sbuf), 0 })
+  if instruction then
     yap.send(sbuf)
-    return sbuf
   end
-  if opts.instruction and opts.instruction ~= "" then
-    return run(opts.instruction)
-  end
-  vim.ui.input({ prompt = "yap eval: " }, run)
+  return sbuf
 end
 
 -- Keep the request in a normal session file without opening another window.

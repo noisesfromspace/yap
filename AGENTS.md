@@ -391,9 +391,11 @@ while its parent is open, keeping an inactive conversation's row lean.
 Sessions belong in ordinary buffer navigation without sacrificing
 real file paths or the session trees. The saved picker lists an ordinary
 blank session while its buffer is loaded and hides it once unloaded unless it
-has a prompt, a completed turn, a description or a renamed transcript. Eval
-sessions (`kind: eval`) remain hidden from the picker and overview even while
-loaded, but can be opened by their file path.
+has a prompt, a completed turn, a description or a renamed transcript. A
+scaffold-only `:YapEval` (no selection, no instruction) stays hidden until a
+question is typed or a turn completes. One-shot eval records (`kind: eval`)
+remain hidden from the picker and overview even while loaded, but can be
+opened by their file path.
 
 #### R-data-paths — Data directories resolve against the real home directory, never the project
 
@@ -428,8 +430,9 @@ change_model() — never during a send, so the append-only rule holds
 (R-blank-lines) — and
 stamps `updated_at` on every save (one line after the turn, not per-reply
 metadata). It reads the frontmatter on open and surfaces it in the
-sessions() picker. `kind: eval` marks a one-shot transcript for picker and
-overview exclusion; `eval_status` records whether its output was applied.
+sessions() picker. `kind: eval` marks a one-shot `:YapEval!` transcript
+for picker and overview exclusion; `eval_status` records whether its output
+was applied.
 Token/cost totals are deliberately NOT frontmatter:
 they accumulate in per-buffer memory for the winbar and reset on reopen. The
 earlier frontmatter design got this wrong by folding per-reply usage into the
@@ -505,12 +508,10 @@ Why: an eval remains a one-shot filter (`!`-semantics), not a conversation
 in the source buffer. Its separate file makes the request and answer
 recoverable without adding it to normal session supervision.
 
-Plain `:YapEval` runs a regular agent turn (default system prompt and tools)
-on `model_groups.agent` in a hidden, saved eval session. It quotes the
-selection as context and never edits the source buffer or opens a window.
-Without an instruction, it prompts before creating the session. Its file
-can be reopened directly for inspection or follow-ups, but is excluded from
-the picker and cross-session overview like `:YapEval!` records.
+Plain `:YapEval` is the interactive counterpart and does not fall under the
+one-shot rule: it opens a regular session (default system prompt, tools,
+listed in sessions()) on `model_groups.agent`, with the selection quoted as context. It never edits
+the source buffer.
 
 ### Backend and wire protocol
 

@@ -273,13 +273,16 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         streamed in — offer to delete the superseded history.
 *:YapEval*
 :YapEval [instruction]
-                        Run an agent turn about the selected lines (or current
-                        file with no range) in a saved, hidden session. The
-                        selection is quoted as context; the source buffer
-                        and window stay untouched. With no instruction, Yap
-                        prompts for one before starting. The session can be
-                        opened directly by path later, but stays out of + /
-                        g+ and the winbar overview.
+                        Open an interactive eval session in a split about
+                        the selected lines (or about the current file with no
+                        range). It is a regular session (default system
+                        prompt, tools, follow-ups). An eval without a selection
+                        or instruction stays out of saved history until you
+                        add a prompt or complete a turn.
+                        The selection is quoted as context and the
+                        source buffer is never changed. With an instruction
+                        the first turn is sent at once; without one the
+                        cursor waits in the user turn for your question.
 :YapEval! [instruction]
                         Replace the selected lines with the model's output: a
                         one-shot, no-tools call to `model_groups.flash` (or
@@ -567,9 +570,9 @@ excluded from the winbar overview.
 
 A blank ordinary session appears while loaded. After unloading, it is hidden
 unless it has a prompt, completed turn, description, or renamed transcript.
-Eval sessions (`kind: eval`) are omitted from both pickers even when opened;
-use :edit on their transcript paths to revisit them. Neither form changes the
-source window. Plain :YapEval prompts for an instruction if none is supplied.
+An empty :YapEval stays hidden even while loaded; adding a question or
+completing a turn makes it visible. One-shot :YapEval! files are omitted
+from both pickers even when opened; use :edit on their paths to revisit them.
 
 SCRATCH, STEER & QUEUE                                        *yap-scratch*
 

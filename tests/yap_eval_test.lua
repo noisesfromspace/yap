@@ -123,49 +123,88 @@ assert(eval.finish(changed, 1, 1, { "old text" }, { code = 0, stdout = "answer" 
 assert(vim.api.nvim_buf_get_lines(changed, 0, -1, false)[1] == "new text", "stale eval overwrote source")
 vim.api.nvim_buf_delete(changed, { force = true })
 
--- :YapEval (no bang) sends from a hidden, saved session and never edits
--- the source or opens a window. The no-instruction form prompts first.
+-- :YapEval (no bang): an interactive, regular session in a split, listed in
+-- sessions(). The selection is fenced context, nothing is sent without an
+-- instruction, and the source buffer is left alone.
 local src = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(src)
 vim.bo[src].filetype = "go"
 vim.api.nvim_buf_set_lines(src, 0, -1, false, { "a", "x := `y`", "c" })
 vim.api.nvim_buf_set_name(src, vim.fn.tempname() .. ".go")
 local session = require("harness.session")
-local before = vim.api.nvim_get_current_win()
-local wins_before = #vim.api.nvim_tabpage_list_wins(0)
-local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2, instruction = "Explain this" })
-assert(vim.api.nvim_get_current_win() == before and vim.api.nvim_get_current_buf() == src, "eval moved focus")
-assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before, "eval opened a window")
-assert(vim.b[sbuf].yap_provider == "mock" and vim.b[sbuf].yap_model == "m1", "eval did not use agent")
-assert(vim.b[sbuf].yap_kind == "eval", "eval kind missing from buffer")
-assert(vim.wait(10000, function() return not require("harness.state").running[sbuf] end, 50), "eval did not finish")
-assert(vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }), "eval changed source")
-local spath = vim.b[sbuf].yap_path
-assert(spath and vim.fn.filereadable(spath) == 1, "eval session not saved")
-local stext = table.concat(vim.fn.readfile(spath), "\n")
-assert(stext:find("kind: eval", 1, true), "eval kind not saved")
-assert(stext:find("```go\nx := `y`\n```", 1, true), "selection not quoted: " .. stext)
-assert(stext:find("summarized output", 1, true), "eval answer not saved: " .. stext)
-assert(not stext:find("return ONLY the result", 1, true), "eval used one-shot system prompt")
-assert(not vim.tbl_contains(vim.tbl_map(function(item) return item.path end, session.list()), spath), "eval listed")
-assert(not vim.tbl_contains(vim.tbl_map(function(item) return item.path end, session.list("all")), spath), "eval listed globally")
-assert(yap.overview(src) == "", "eval leaked into overview")
-vim.api.nvim_buf_delete(sbuf, { force = true })
-assert(vim.fn.filereadable(spath) == 1, "closing eval lost its session")
-local prompted
-local original_input = vim.ui.input
-vim.ui.input = function(_, callback) prompted = callback end
-assert(yap.eval_session({ buf = src }) == nil, "no-instruction eval created a session")
-vim.ui.input = original_input
-assert(prompted, "eval did not prompt for an instruction")
-prompted("Explain the file")
-assert(vim.wait(10000, function()
-  for _, path in ipairs(vim.fn.glob(require("harness.path").session_dir(vim.fn.getcwd()) .. "/**/session.md", false, true)) do
-    if path ~= spath and table.concat(vim.fn.readfile(path), "\n"):find("Explain the file", 1, true) then
+local function is_listed(path)
+  for _, item in ipairs(session.list()) do
+    if item.path == path then
       return true
     end
   end
-end, 50), "prompted eval did not create a session")
+  return false
+end
+
+-- A file-only eval is just scaffolding, not a prompt. It stays hidden even
+-- while loaded; typing anything beyond the scaffold makes it discoverable
+-- without requiring a save, and clearing the text hides it again.
+local blank = yap.eval_session({ buf = src })
+local blank_path = vim.b[blank].yap_path
+assert(not is_listed(blank_path), "empty eval unexpectedly listed")
+local last = vim.api.nvim_buf_line_count(blank) - 1
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "What does this file do?" })
+assert(is_listed(blank_path), "typed eval prompt missing before save")
+session.save(blank)
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "" })
+session.save(blank)
+assert(not is_listed(blank_path), "cleared eval prompt still listed")
+-- Sending an eval is a completed conversation, even if it has no description.
+vim.api.nvim_buf_set_lines(blank, last, last + 1, false, { "What does this file do?" })
+yap.send(blank)
+assert(vim.wait(10000, function()
+  return not require("harness.state").running[blank]
+end, 50), "eval turn did not finish")
+assert(is_listed(blank_path), "completed eval session missing")
+vim.api.nvim_buf_delete(blank, { force = true })
+assert(is_listed(blank_path), "completed eval hidden after unloading")
+
+local wins_before = #vim.api.nvim_tabpage_list_wins(0)
+local sbuf = yap.eval_session({ buf = src, line1 = 2, line2 = 2 })
+assert(#vim.api.nvim_tabpage_list_wins(0) == wins_before + 1, "eval session did not open a split")
+assert(vim.api.nvim_get_current_buf() == sbuf, "focus did not move to the eval session")
+assert(vim.wo.winbar == "%!v:lua.require'harness'.winbar()", "eval split has no yap winbar")
+local src_win = vim.fn.win_findbuf(src)[1]
+assert(src_win, "source buffer not shown in any window")
+assert(vim.wo[src_win].winbar == "", "eval session leaked the yap winbar onto the source window")
+assert(vim.b[sbuf].yap_provider == "mock" and vim.b[sbuf].yap_model == "m1", "eval session did not use agent")
+assert(vim.b[sbuf].yap, "eval split is not a yap session")
+-- The eval session is created hidden (no window for fold.setup_buffer to
+-- project), then shown in the split: its default view 2 must still fold the
+-- system prompt.
+local sys_line = nil
+for i, l in ipairs(vim.api.nvim_buf_get_lines(sbuf, 0, -1, false)) do
+  if l:match("^# @system%s*$") then
+    sys_line = i
+    break
+  end
+end
+assert(sys_line, "eval session has no # @system heading")
+assert(fold.level() == 2, "eval session default view is not 2")
+assert(vim.fn.foldclosed(sys_line) == sys_line, "eval session system prompt is not folded at view 2")
+assert(
+  vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }),
+  "eval session changed the source buffer"
+)
+local stext = table.concat(vim.api.nvim_buf_get_lines(sbuf, 0, -1, false), "\n")
+assert(stext:find("\n```go\nx := `y`\n```\n\n$"), "selection not fenced at the end of the user turn: " .. stext)
+assert(not stext:find("# @assistant"), "eval session sent without an instruction: " .. stext)
+assert(not stext:find("return ONLY the result", 1, true), "eval session kept the one-shot system prompt")
+local spath = vim.b[sbuf].yap_path
+assert(spath and vim.fn.filereadable(spath) == 1, "eval session not saved: " .. tostring(spath))
+assert(is_listed(spath), "eval session missing from sessions()")
+local sent_buf = yap.eval_session({ buf = src, instruction = "Explain the file" })
+assert(vim.api.nvim_get_current_buf() == sent_buf, "instructed eval did not open its session")
+assert(vim.wait(10000, function()
+  return not require("harness.state").running[sent_buf]
+end, 50), "instructed eval turn did not finish")
+assert(is_listed(vim.b[sent_buf].yap_path), "instructed eval missing from sessions()")
+assert(vim.deep_equal(vim.api.nvim_buf_get_lines(src, 0, -1, false), { "a", "x := `y`", "c" }), "instructed eval changed source")
 yap.config.model_groups.flash = ""
 assert(select(2, eval.combo()) == "m1", "empty flash should use agent")
 
