@@ -838,8 +838,7 @@ Closed tool and assistant folds show one leading badge, chosen by precedence:
 an abnormal outcome (Error, Timed out, exit code) beats a guard refusal
 (Denied), which beats a stopped turn (Stopped/Force-stopped) and the muted
 context badges (Cost override, Approved, Auto-approved, Cleared, Resumed). A
-fork badges the frontmatter fold. A tool fold also names its target (path,
-range, scrubbed command head, or agent · task), shows the latest guard
+fork badges the frontmatter fold. A tool fold shows the latest guard
 decision time and a long bash call's duration, and annotates an edit or
 write's added/removed line counts (+3/-2) in diff colors. Badges follow the
 colorscheme. A settled fold omits its line count; only a block still

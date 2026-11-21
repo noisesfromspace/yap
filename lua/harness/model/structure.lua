@@ -597,23 +597,17 @@ end
 ---@param lines string[]
 ---@param r table a region from parse()/scan_lines()
 ---@return table|nil
--- decode_header(lines, r, base): lines[base+i] is buffer line i. base is 0
--- for a full line list; fold.lua passes a header slice with base = r.start-1.
-local function decode_header(lines, r, base)
-  base = base or 0
+local function decode_header(lines, r)
   if not r.header_finish then
     return nil
   end
-  local function L(i)
-    return lines[i - base]
-  end
   local text
   if r.header_finish == r.start then
-    text = (L(r.start) or ""):match("^<!%-%- yap:tool (.+) %-%->%s*$")
+    text = (lines[r.start] or ""):match("^<!%-%- yap:tool (.+) %-%->%s*$")
   else
     local acc = {}
     for i = r.start + 1, r.header_finish - 1 do
-      acc[#acc + 1] = L(i)
+      acc[#acc + 1] = lines[i]
     end
     text = table.concat(acc, "\n")
   end
@@ -621,7 +615,7 @@ local function decode_header(lines, r, base)
     return nil
   end
   local ok, h = pcall(vim.json.decode, text)
-  if ok and type(h) == "table" and h.name then
+  if ok and type(h) == "table" and h.id and h.name then
     return h
   end
   return nil
@@ -778,7 +772,6 @@ M.MARKER_LINE = MARKER_LINE
 M.TOOL_OPEN = TOOL_OPEN
 M.TOOL_CLOSE = TOOL_CLOSE
 M.COMMENT_OPEN = COMMENT_OPEN
-M.decode_header = decode_header
 M.fence_run = fence_run
 
 return M

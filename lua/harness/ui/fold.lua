@@ -669,18 +669,6 @@ local function tool_region(p, start)
   return nil
 end
 
---- Decode a tool region's JSON header (id, name, arguments). Reading the
---- header slice and decoding it once per visible closed fold keeps foldtext
---- off the audit log; the same decoder serves :YapClear.
-local function tool_header(buf, p, start)
-  local r = tool_region(p, start)
-  if not r or not r.header_finish then
-    return nil
-  end
-  local slice = vim.api.nvim_buf_get_lines(buf, r.start - 1, r.header_finish, false)
-  return structure.decode_header(slice, r, r.start - 1)
-end
-
 --- An abnormal tool outcome's candidate badge, or nil when the tool completed
 --- normally. Keyed by the tool region's start line.
 local function outcome_candidate(p, tool_start)
@@ -728,59 +716,6 @@ local function diff_chunks(p, tool_start)
     out[#out + 1] = { (plus > 0 and "/-" or "-") .. minus, "DiffDelete" }
   end
   return out
-end
-
---- A short, scrubbed target string for a tool fold, or nil. Derived from the
---- already-scrubbed header arguments, never from result text.
-local function tool_target(h)
-  local a = h.arguments
-  if type(a) ~= "table" then
-    return nil
-  end
-  local name = h.name
-  if name == "read" then
-    if type(a.path) ~= "string" then
-      return nil
-    end
-    local t = a.path
-    if type(a.range) == "string" and a.range ~= "" then
-      t = t .. ":" .. a.range
-    elseif type(a.offset) == "number" then
-      t = t .. ":" .. a.offset
-      if type(a.limit) == "number" then
-        t = t .. "-" .. (a.offset + a.limit - 1)
-      end
-    end
-    return t
-  elseif name == "edit" or name == "write" then
-    return type(a.path) == "string" and a.path or nil
-  elseif name == "search" then
-    if type(a.pattern) ~= "string" then
-      return nil
-    end
-    local t = '"' .. a.pattern .. '"'
-    if type(a.path) == "string" and a.path ~= "" then
-      t = t .. " " .. a.path
-    end
-    return t
-  elseif name == "glob" then
-    return type(a.pattern) == "string" and a.pattern or nil
-  elseif name == "bash" then
-    if type(a.command) ~= "string" or a.command == "" then
-      return nil
-    end
-    return view.clip(view.collapse(a.command), 40)
-  elseif name == "subagent" then
-    if type(a.agent) == "string" and type(a.task) == "string" then
-      return a.agent .. " · " .. view.clip(view.collapse(a.task), 40)
-    end
-    return type(a.agent) == "string" and a.agent or nil
-  elseif name == "fetch" then
-    return type(a.url) == "string" and view.clip(a.url, 60) or nil
-  elseif name == "models" then
-    return type(a.filter) == "string" and a.filter ~= "" and a.filter or nil
-  end
-  return nil
 end
 
 -- Events that badge a closed assistant fold. A stop marker lands inside the
@@ -840,7 +775,6 @@ function M.text(start, finish)
   local first = vim.fn.getline(start)
 
   local identity
-  local target
   local dur
   local diff
   local cands = {}
@@ -858,11 +792,16 @@ function M.text(start, finish)
       cands[#cands + 1] = c
     end
   elseif first:match(TOOL_OPEN) then
-    local h = tool_header(buf, p, start)
-    identity = "▸ tool: " .. (h and h.name or "?")
-    if h then
-      target = tool_target(h)
+    -- The name is on the opener line (single-line header) or in the
+    -- pretty JSON below (multi-line header).
+    local name = first:match('"name":%s*"([^"]+)"')
+    for lnum = start + 1, math.min(finish, start + 12) do
+      if name then
+        break
+      end
+      name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
+    identity = "▸ tool: " .. (name or "?")
     dur = duration_for(p, start)
     diff = diff_chunks(p, start)
     local outcome = outcome_candidate(p, start)
@@ -920,9 +859,6 @@ function M.text(start, finish)
     out[#out + 1] = { win.label, win.hl }
   end
   out[#out + 1] = { identity, "Folded" }
-  if target then
-    out[#out + 1] = { " · " .. target, "Comment" }
-  end
   if dur then
     out[#out + 1] = { " · " .. format_duration(dur), "Comment" }
   end

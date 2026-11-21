@@ -476,8 +476,7 @@ precedence: an abnormal outcome (`[Error]`, `[Timed out]`, `[exit N]`) wins
 over a guard refusal (`[Denied]`), which wins over a stopped turn
 (`[Stopped]`, `[Force-stopped]`) and the muted context badges (`[Cost
 override]`, `[Approved]`, `[Auto-approved]`, `[Cleared]`, `[Resumed]`). A fork
-badges the frontmatter fold. A tool fold also names its target (path, range,
-scrubbed command head, or `agent · task`) and shows the latest guard decision
+badges the frontmatter fold. A tool fold shows the latest guard decision
 time in muted text, a long bash call's duration, and an edit or write's
 added/removed line counts (`+3/-2`) in diff colors. Badges follow the
 colorscheme.

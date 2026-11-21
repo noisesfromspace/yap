@@ -92,12 +92,11 @@ local error_chunks = fold.text(errored.start, errored.fold_finish)
 assert(error_chunks[1][1] == "[Error] " and error_chunks[1][2] == "DiagnosticError", vim.inspect(error_chunks[1]))
 
 -- An edit's display diff counts added/removed lines as colored chunks
--- (DiffAdd for additions, DiffDelete for removals) after the target path.
+-- (DiffAdd for additions, DiffDelete for removals).
 local edit = region_by_name(p, "edit")
 local edit_chunks = fold.text(edit.start, edit.finish)
 assert(type(edit_chunks) == "table", "edit size should be colored chunks, not a badge")
 assert(edit_chunks[1][1] == "▸ tool: edit" and edit_chunks[1][2] == "Folded", vim.inspect(edit_chunks))
-assert(edit_chunks[2][1] == " · f", "edit target path missing: " .. vim.inspect(edit_chunks))
 local plus, minus
 for _, c in ipairs(edit_chunks) do
   if c[1] == "+3" then
