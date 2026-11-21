@@ -32,6 +32,7 @@ import (
 	schema "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"boers.email/yap/agent/safety"
+	"boers.email/yap/agent/wire"
 )
 
 // Tool is a single callable tool. result is sent back to the model; ui is
@@ -41,6 +42,7 @@ type Tool struct {
 	Description string
 	Schema      json.RawMessage // generated from the tool's Args struct
 	run         func(args json.RawMessage) (result, ui string, err error)
+	runOutcome  func(json.RawMessage) (string, string, *wire.ToolOutcome, error)
 }
 
 var registryMu sync.RWMutex
@@ -52,10 +54,19 @@ func (t *Tool) Run(args json.RawMessage) (result, ui string, err error) {
 	return t.run(args)
 }
 
+// RunOutcome executes a tool with optional display-only execution metadata.
+func (t *Tool) RunOutcome(args json.RawMessage) (string, string, *wire.ToolOutcome, error) {
+	if t.runOutcome != nil {
+		return t.runOutcome(args)
+	}
+	result, ui, err := t.Run(args)
+	return result, ui, nil, err
+}
+
 // Register adds a tool; called from each tool file's init(). T is the
 // tool's argument struct: json tags name the parameters (omitempty =
 // optional), jsonschema tags carry descriptions.
-func Register[T any](name, description string, run func(args *T) (result, ui string, err error)) {
+func Register[T any](name, description string, run func(args *T) (result, ui string, err error), outcomeRun ...func(*T, **wire.ToolOutcome) (string, string, error)) {
 	// Inline every nested struct; do not emit $defs/$ref. Moonshot's
 	// schema validator rejects $ref to $defs as "infinite recursion
 	// without termination condition".
@@ -80,6 +91,21 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		}
 		return run(&args)
 	}
+	var runOutcome func(json.RawMessage) (string, string, *wire.ToolOutcome, error)
+	if len(outcomeRun) > 0 {
+		runOutcome = func(raw json.RawMessage) (string, string, *wire.ToolOutcome, error) {
+			if err := validate(raw); err != nil {
+				return "", "", nil, err
+			}
+			var args T
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return "", "", nil, err
+			}
+			var outcome *wire.ToolOutcome
+			result, ui, err := outcomeRun[0](&args, &outcome)
+			return result, ui, outcome, err
+		}
+	}
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registry[name] = &Tool{
@@ -87,6 +113,7 @@ func Register[T any](name, description string, run func(args *T) (result, ui str
 		Description: description,
 		Schema:      schemaJSON,
 		run:         validated,
+		runOutcome:  runOutcome,
 	}
 }
 

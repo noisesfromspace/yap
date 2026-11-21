@@ -856,6 +856,18 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 					"ms":   duration.Milliseconds(),
 				})
 			}
+			if value.outcome != nil {
+				// Denials/timeouts are already represented by guard decisions.
+				guarded := false
+				for _, decision := range decisions {
+					if decision.Outcome == "denied" || decision.Outcome == "timeout" {
+						guarded = true
+					}
+				}
+				if !guarded {
+					events = append(events, value.outcome)
+				}
+			}
 			for _, ev := range events {
 				fmt.Fprintf(out, "<!-- yap:event %s -->\n", render.MarshalCommentJSON(ev, ""))
 			}

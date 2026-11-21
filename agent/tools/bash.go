@@ -28,7 +28,7 @@ func init() {
 			"Non-interactive: stdin is /dev/null. Default timeout 120s. "+
 			"Runs in the Neovim working directory already — change it with `cwd`, never prefix `cd`. "+
 			"To read files or list the project, prefer the `read`, `search`, or `glob` tools over `cat`/`ls`/`find`.",
-		func(a *bashArgs) (string, string, error) { return runBash(a) })
+		runBash, runBashOutcome)
 	Gate("bash", func(a *bashArgs) string { return a.Command }, bashRules...)
 }
 
@@ -355,6 +355,10 @@ func powerControl(c safety.ShellCmd) bool {
 }
 
 func runBash(a *bashArgs) (string, string, error) {
+	return runBashOutcome(a, nil)
+}
+
+func runBashOutcome(a *bashArgs, outcome **wire.ToolOutcome) (string, string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
@@ -398,11 +402,11 @@ func runBash(a *bashArgs) (string, string, error) {
 	}
 
 	if safety.SandboxActive() && !preApproved {
-		text, err := runSandboxed(a.Command, projectDir, buildCmd, timeout)
+		text, err := runSandboxed(a.Command, projectDir, buildCmd, timeout, outcome)
 		return text, "", err
 	}
 
-	text, _, err := wire.RunStreamed("bash", a.Command, buildCmd(), timeout)
+	text, _, err := wire.RunStreamedOutcome("bash", a.Command, buildCmd(), timeout, outcome)
 	if err != nil {
 		return "", "", err
 	}
@@ -414,8 +418,8 @@ func runBash(a *bashArgs) (string, string, error) {
 // Run/Deny approval the static guard rules use — whether to re-run the command
 // unsandboxed; approval re-runs it, denial returns the sandboxed failure. A
 // deny-read shadow is silent by design and never escalates.
-func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout time.Duration) (string, error) {
-	text, exit, err := wire.RunStreamed("bash", command, safety.SandboxWrap(command, projectDir), timeout)
+func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout time.Duration, outcome **wire.ToolOutcome) (string, error) {
+	text, exit, err := wire.RunStreamedOutcome("bash", command, safety.SandboxWrap(command, projectDir), timeout, outcome)
 	if err != nil {
 		return text, err // bwrap start failure (should not happen: Active() probed it)
 	}
@@ -423,12 +427,15 @@ func runSandboxed(command, projectDir string, buildCmd func() *exec.Cmd, timeout
 		return text, nil
 	}
 	approved, aerr := wire.RequestApproval(command, "bash", "bash hit read-only filesystem; rerun unsandboxed")
+	if outcome != nil {
+		*outcome = nil
+	} // Approval failures already have guard badges.
 	if aerr != nil {
 		return text, aerr // no serve process (yap send), cancelled, or timed out
 	}
 	if !approved {
 		return text + "\n[sandbox: write blocked by read-only filesystem; approval denied]", nil
 	}
-	text, _, err = wire.RunStreamed("bash", command, buildCmd(), timeout)
+	text, _, err = wire.RunStreamedOutcome("bash", command, buildCmd(), timeout, outcome)
 	return text, err
 }

@@ -71,6 +71,7 @@ local function new_ctx()
     events = {},
     guard_decisions = {},
     tool_durations = {},
+    tool_outcomes = {},
     guard_tool = nil, -- start of the just-closed tool, before any other content
     region = nil, -- "tool" while a yap:tool region is open, else nil
     fence = nil, -- { char, n } while inside a fenced code block
@@ -127,6 +128,15 @@ local function step(ctx, i, line)
           line = i,
           tool_start = ctx.guard_tool,
           ms = ev.ms,
+        }
+      elseif ev.type == "tool_outcome" and type(ev.outcome) == "string" then
+        -- An abnormal result (error, timeout, nonzero exit) trails its tool's
+        -- closer, like a guard decision or a duration.
+        ctx.tool_outcomes[#ctx.tool_outcomes + 1] = {
+          line = i,
+          tool_start = ctx.guard_tool,
+          outcome = ev.outcome,
+          code = type(ev.code) == "number" and ev.code or nil,
         }
       else
         ctx.events[#ctx.events + 1] = { line = i, kind = ev.type, outcome = ev.outcome, ts = ts }
@@ -210,6 +220,18 @@ local function step(ctx, i, line)
         ctx.tool.inner = inner
       end
       inner[#inner + 1] = { role = line:match(HEAD), line = i }
+    else
+      -- Plain content inside the tool region. Between the paired yap:ui
+      -- markers this is the display diff; count its added/removed lines so an
+      -- edit/write fold can show its size.
+      if ctx.tool.ui_start and not ctx.tool.ui_finish then
+        local c = line:sub(1, 1)
+        if c == "+" and line:sub(1, 3) ~= "+++" then
+          ctx.tool.diff_plus = (ctx.tool.diff_plus or 0) + 1
+        elseif c == "-" and line:sub(1, 3) ~= "---" then
+          ctx.tool.diff_minus = (ctx.tool.diff_minus or 0) + 1
+        end
+      end
     end
   else
     local c, n = fence_run(line)
@@ -244,6 +266,7 @@ local function snapshot(ctx)
     events_n = #ctx.events,
     guard_decisions_n = #ctx.guard_decisions,
     tool_durations_n = #ctx.tool_durations,
+    tool_outcomes_n = #ctx.tool_outcomes,
     guard_tool = ctx.guard_tool,
     region = ctx.region,
     fence = ctx.fence and { char = ctx.fence.char, n = ctx.fence.n } or nil,
@@ -256,6 +279,8 @@ local function snapshot(ctx)
     tool_ui_start = ctx.tool and ctx.tool.ui_start or nil,
     tool_ui_finish = ctx.tool and ctx.tool.ui_finish or nil,
     tool_inner_n = ctx.tool and ctx.tool.inner and #ctx.tool.inner or 0,
+    tool_diff_plus = ctx.tool and ctx.tool.diff_plus or nil,
+    tool_diff_minus = ctx.tool and ctx.tool.diff_minus or nil,
   }
 end
 
@@ -274,6 +299,9 @@ local function restore(ctx, cp)
   end
   for i = #ctx.tool_durations, cp.tool_durations_n + 1, -1 do
     ctx.tool_durations[i] = nil
+  end
+  for i = #ctx.tool_outcomes, cp.tool_outcomes_n + 1, -1 do
+    ctx.tool_outcomes[i] = nil
   end
   ctx.guard_tool = cp.guard_tool
   ctx.region = cp.region
@@ -295,6 +323,8 @@ local function restore(ctx, cp)
     ctx.tool.header_finish = cp.tool_header_finish
     ctx.tool.ui_start = cp.tool_ui_start
     ctx.tool.ui_finish = cp.tool_ui_finish
+    ctx.tool.diff_plus = cp.tool_diff_plus
+    ctx.tool.diff_minus = cp.tool_diff_minus
     if ctx.tool.inner then
       for i = #ctx.tool.inner, cp.tool_inner_n + 1, -1 do
         ctx.tool.inner[i] = nil
@@ -374,6 +404,7 @@ local function view(ctx, count, frontmatter)
   end
   extend_tool_folds(ctx.guard_decisions)
   extend_tool_folds(ctx.tool_durations)
+  extend_tool_folds(ctx.tool_outcomes)
   attach_assistant(ctx)
   local open
   for i = #ctx.regions, 1, -1 do
@@ -393,6 +424,7 @@ local function view(ctx, count, frontmatter)
       events = ctx.events,
       guard_decisions = ctx.guard_decisions,
       tool_durations = ctx.tool_durations,
+      tool_outcomes = ctx.tool_outcomes,
     }
   end
   local cut = inner[1].line
@@ -431,6 +463,7 @@ local function view(ctx, count, frontmatter)
     events = ctx.events,
     guard_decisions = ctx.guard_decisions,
     tool_durations = ctx.tool_durations,
+    tool_outcomes = ctx.tool_outcomes,
   }
 end
 

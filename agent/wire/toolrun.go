@@ -43,11 +43,36 @@ func (p *progressTracker) snapshot() (int64, int64) {
 	return p.bytes.Load(), p.lines.Load()
 }
 
+// ToolOutcome is display-only metadata, separate from provider tool output.
+// A nil outcome means normal completion (or a guard decision, badged separately).
+type ToolOutcome struct {
+	Type    string `json:"type"`
+	Outcome string `json:"outcome"`
+	Code    *int   `json:"code,omitempty"`
+}
+
+func AbnormalOutcome(outcome string) *ToolOutcome {
+	return &ToolOutcome{Type: "tool_outcome", Outcome: outcome}
+}
+
 // RunStreamed runs a tool process with stdout and stderr merged into a temp
 // log that the Lua side follows live (tool_start/tool_end announce the log path).
 // stdin is /dev/null. On timeout the whole process group is SIGKILLed. cmd
 // must already have SysProcAttr.Setpgid set and its Dir validated.
 func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (text string, exitCode int, err error) {
+	return RunStreamedOutcome(name, command, cmd, timeout, nil)
+}
+
+// RunStreamedOutcome also reports typed execution status without inspecting output.
+func RunStreamedOutcome(name, command string, cmd *exec.Cmd, timeout time.Duration, outcome **ToolOutcome) (text string, exitCode int, err error) {
+	if outcome != nil {
+		*outcome = nil
+		defer func() {
+			if err != nil {
+				*outcome = AbnormalOutcome("error")
+			}
+		}()
+	}
 	out, err := os.CreateTemp(utils.AssetsBase(), "yap-"+name+"-*.log")
 	if err != nil {
 		return "", -1, err
@@ -180,6 +205,14 @@ func RunStreamed(name, command string, cmd *exec.Cmd, timeout time.Duration) (te
 	}
 	if exit != 0 {
 		text += fmt.Sprintf("\n[exit code %d]", exit)
+	}
+	if outcome != nil {
+		if timedOut {
+			*outcome = AbnormalOutcome("timeout")
+		} else if exit != 0 {
+			*outcome = AbnormalOutcome("exit")
+			(*outcome).Code = &exit
+		}
 	}
 	return text, exit, nil
 }

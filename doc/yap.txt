@@ -468,13 +468,16 @@ accepted for that send. Mid-turn model switches keep their own `yap:model`
 marker. A fork records its source in the child, and an effective |:YapClear|
 records how many results it replaced. Stopping a turn records the stop in the
 reply; a hard stop records it after the restored prompt. A bash call that runs
-longer than ten seconds records its duration after its tool result.
+longer than ten seconds records its duration after its tool result, and a bash
+call that exits nonzero or times out records its outcome the same way.
 
 Closed tool folds show guard decision badges and the latest decision time in
 muted text; the decision markers fold into the tool. A long bash call shows
-its duration next to the tool name. Closed assistant folds group those
-decisions by outcome and also badge a cost override and a stopped turn in
-that reply. A fork badges the frontmatter fold. Badges follow the
+its duration next to the tool name, and an abnormal result badges with its
+outcome (`[Error]`, `[Timed out]`, or `[exit N]`). An edit or write fold shows
+its display diff's added/removed line counts (`+3/-2`). Closed assistant folds
+group those decisions by outcome and also badge a cost override and a stopped
+turn in that reply. A fork badges the frontmatter fold. Badges follow the
 colorscheme.
 
 Tool regions                                                *yap-tool-region*

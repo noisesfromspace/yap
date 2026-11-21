@@ -17,7 +17,10 @@ var parallelTools = map[string]bool{
 
 const maxConcurrentTasks = 4
 
-type taskResult struct{ result, ui string }
+type taskResult struct {
+	result, ui string
+	outcome    *wire.ToolOutcome
+}
 
 // staticGate runs a tool's deterministic guard rules before it executes. A
 // matching rule pauses for approval; no rule means the call runs. It returns
@@ -49,27 +52,30 @@ func allowedTool(name string, allowed *[]string) bool {
 }
 
 func runTool(tool *tools.Tool, call llm.ToolCall) taskResult {
-	result, ui, err := tool.Run(call.Input)
+	result, ui, outcome, err := tool.RunOutcome(call.Input)
 	if err != nil {
 		result, ui = "error: "+err.Error(), ""
+		if outcome == nil {
+			outcome = wire.AbnormalOutcome("error")
+		}
 	} else {
 		result = render.FenceResult(call.Name, string(call.Input), result)
 	}
-	return taskResult{safety.Scrub(result), ui}
+	return taskResult{result: safety.Scrub(result), ui: ui, outcome: outcome}
 }
 
 func callTool(call llm.ToolCall, allowed *[]string) taskResult {
 	if !allowedTool(call.Name, allowed) {
-		return taskResult{result: "error: unknown tool " + call.Name}
+		return taskResult{result: "error: unknown tool " + call.Name, outcome: wire.AbnormalOutcome("error")}
 	}
 	tool, ok := tools.Get(call.Name)
 	if !ok {
 		if err := autoactivateMCP(call.Name); err != nil {
-			return taskResult{result: safety.Scrub("error: " + err.Error())}
+			return taskResult{result: safety.Scrub("error: " + err.Error()), outcome: wire.AbnormalOutcome("error")}
 		}
 		tool, ok = tools.Get(call.Name)
 		if !ok {
-			return taskResult{result: "error: unknown tool " + call.Name}
+			return taskResult{result: "error: unknown tool " + call.Name, outcome: wire.AbnormalOutcome("error")}
 		}
 	}
 	if denial := staticGate(call); denial != "" {
