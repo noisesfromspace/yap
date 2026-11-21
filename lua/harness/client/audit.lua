@@ -373,6 +373,11 @@ function M.seed_session_usage(buf)
             last = { combo = ev.combo, cwd = ev.cwd }
           elseif ev.type == "model_change" and not ev.error and ev.to then
             last = { combo = ev.to, cwd = last and last.cwd }
+          elseif ev.type == "session_forked" then
+            -- A fork inherits its parent's journal, but its all-time accounting
+            -- restarts here: the totals count only this branch, not the history
+            -- it was forked from (see session.fork).
+            su = { prompt = 0, completion = 0 }
           elseif ev.type == "turn_end" then
             legacy_model = ev.model
             fold_usage(su, ev)

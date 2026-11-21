@@ -471,13 +471,15 @@ reply; a hard stop records it after the restored prompt. A bash call that runs
 longer than ten seconds records its duration after its tool result, and a bash
 call that exits nonzero or times out records its outcome the same way.
 
-Closed tool folds show guard decision badges and the latest decision time in
-muted text; the decision markers fold into the tool. A long bash call shows
-its duration next to the tool name, and an abnormal result badges with its
-outcome (`[Error]`, `[Timed out]`, or `[exit N]`). An edit or write fold shows
-its display diff's added/removed line counts (`+3/-2`). Closed assistant folds
-group those decisions by outcome and also badge a cost override and a stopped
-turn in that reply. A fork badges the frontmatter fold. Badges follow the
+Closed tool and assistant folds show one leading badge, the highest by
+precedence: an abnormal outcome (`[Error]`, `[Timed out]`, `[exit N]`) wins
+over a guard refusal (`[Denied]`), which wins over a stopped turn
+(`[Stopped]`, `[Force-stopped]`) and the muted context badges (`[Cost
+override]`, `[Approved]`, `[Auto-approved]`, `[Cleared]`, `[Resumed]`). A fork
+badges the frontmatter fold. A tool fold also names its target (path, range,
+scrubbed command head, or `agent · task`) and shows the latest guard decision
+time in muted text, a long bash call's duration, and an edit or write's
+added/removed line counts (`+3/-2`) in diff colors. Badges follow the
 colorscheme.
 
 Tool regions                                                *yap-tool-region*
@@ -767,9 +769,11 @@ Reading the numbers                                    *yap-winbar-numbers*
   󰅐 $N       Since-open: cost for this buffer, accumulated since it was opened
              in this Neovim. Resets on reopen; on a fresh session it equals the
              all-time cost, so identical spends are shown once.
-  󰆼 N · $N   All-time: token count and known cost for the whole session file,
-             summed from every `turn_end` journal entry (|yap-audit|).
-             Survives restarts; answers "what has this session cost".
+  󰆼 N · $N   All-time: token count and known cost for this session, summed
+             from every `turn_end` journal entry (|yap-audit|). A fork's
+             total restarts at the fork point, counting only the turns made
+             in that branch. Survives restarts; answers "what has this
+             session cost".
   󰊚 NN%      Context use: the last turn's full prompt as a percentage of the
              model's context window, no meter; Nerd Font 󰊚, plain ◔, honors
              `icons.context`.

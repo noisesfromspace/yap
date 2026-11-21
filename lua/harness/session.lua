@@ -287,6 +287,17 @@ function M.fork(buf, name, running)
       end)
     end
   end
+  -- Re-point :YapClear placeholders at the fork's own audit log. They embed
+  -- the source's tilde audit path; the copy is append-only so line numbers
+  -- match, but the path must follow the copy or deleting the parent dangles
+  -- them.
+  local src_audit_ref = vim.fn.fnamemodify(paths.audit_path(buf), ":~")
+  local dst_audit_ref = vim.fn.fnamemodify(vim.fn.fnamemodify(path, ":h") .. "/audit.jsonl", ":~")
+  if src_audit_ref ~= dst_audit_ref then
+    for i, l in ipairs(lines) do
+      lines[i] = l:gsub(vim.pesc(src_audit_ref), dst_audit_ref)
+    end
+  end
   local source = vim.uri_from_fname(vim.b[buf].yap_path)
   local marker = event.line("session_forked", "Session forked", { source = source })
   local headings = structure.scan_lines(lines).headings
@@ -336,6 +347,20 @@ function M.fork(buf, name, running)
       return nil, "cannot copy fork audit: " .. tostring(copy_err)
     end
     vim.fn.setfperm(dest, "rw-------") -- the copied journal holds the same secrets
+    -- Record the fork boundary in the copy: seed_session_usage restarts its
+    -- running total at this marker, so the fork's all-time counter counts
+    -- only this branch, not the history it was forked from.
+    vim.fn.writefile(
+      {
+        vim.json.encode({
+          type = "session_forked",
+          ts = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+          forked_from = vim.fn.fnamemodify(vim.b[buf].yap_path, ":h"),
+        }),
+      },
+      dest,
+      "a"
+    )
   end
   return path
 end

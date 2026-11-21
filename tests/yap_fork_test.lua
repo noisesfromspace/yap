@@ -34,6 +34,15 @@ vim.api.nvim_buf_set_lines(
   false,
   { "", "![FILE: photo.png](" .. vim.uri_from_fname(src_image) .. ")" }
 )
+-- A :YapClear placeholder names the audit log it points at. A fork must
+-- re-point it at its own copy, or deleting the parent dangles it.
+vim.api.nvim_buf_set_lines(
+  original_buf,
+  -1,
+  -1,
+  false,
+  { "", "[output cleared — full output in the audit log: " .. vim.fn.fnamemodify(original_audit, ":~") .. ":1]" }
+)
 
 vim.cmd("YapFork forked")
 local fork_buf = vim.api.nvim_get_current_buf()
@@ -74,6 +83,11 @@ assert(
   "fork asset reference was not re-pointed at the copy"
 )
 assert(not text(fork_buf):find(vim.uri_from_fname(src_image), 1, true), "fork still points at the source asset")
+local fork_audit_ref = vim.fn.fnamemodify(paths.audit_path(fork_buf), ":~")
+assert(
+  text(fork_buf):find(fork_audit_ref, 1, true) and not text(fork_buf):find(vim.fn.fnamemodify(original_audit, ":~"), 1, true),
+  "fork did not re-point cleared placeholder at its own audit log"
+)
 local saved_items = require("harness.session").list()
 local source_index, fork_index
 for i, item in ipairs(saved_items) do
@@ -95,7 +109,19 @@ assert(frontmatter.parse(vim.fn.readfile(fork)).created_at, "fork frontmatter mi
 
 local fork_audit = paths.audit_path(fork_buf)
 assert(fork_audit ~= original_audit and vim.fn.filereadable(fork_audit) == 1, "audit not copied independently")
-assert(vim.fn.readfile(fork_audit)[1] == vim.fn.readfile(original_audit)[1], "audit history differs")
+local fork_audit_lines = vim.fn.readfile(fork_audit)
+assert(fork_audit_lines[1] == vim.fn.readfile(original_audit)[1], "audit history differs")
+assert(
+  #fork_audit_lines == 2 and vim.json.decode(fork_audit_lines[2]).type == "session_forked",
+  "fork audit missing fork marker: " .. vim.inspect(fork_audit_lines)
+)
+-- The fork inherits the journal, but its all-time accounting restarts at the
+-- fork marker: the inherited turn is history, not this branch's spend.
+local fork_usage = vim.b[fork_buf].yap_session_usage
+assert(
+  fork_usage and (fork_usage.prompt or 0) == 0 and (fork_usage.cost or 0) == 0,
+  "fork inherited parent usage: " .. vim.inspect(fork_usage)
+)
 vim.fn.writefile({ '{"type":"turn_end","prompt":1,"completion":1}' }, fork_audit, "a")
 assert(#vim.fn.readfile(original_audit) == 1, "fork wrote into source audit")
 
@@ -201,7 +227,13 @@ assert(
 assert(not running_text:find("The slow", 1, true), "partial reply leaked into fork")
 assert(running_text:match("# @user%s*$"), "fork lacks a fresh prompt")
 assert(frontmatter.parse(vim.fn.readfile(running_fork)).turns == 1, "fork turn count wrong")
-assert(#vim.fn.readfile(paths.audit_path(running_buf)) == 1, "in-flight audit leaked into fork")
+local running_audit = vim.fn.readfile(paths.audit_path(running_buf))
+assert(
+  #running_audit == 2
+    and vim.json.decode(running_audit[1]).type == "turn_end"
+    and vim.json.decode(running_audit[2]).type == "session_forked",
+  "in-flight audit leaked into fork: " .. vim.inspect(running_audit)
+)
 assert(
   vim.wait(10000, function()
     return not yap.is_running(active)
