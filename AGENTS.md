@@ -842,7 +842,9 @@ with its outcome (Error, Timed out, or exit code). An edit or write fold
 annotates the display diff's added/removed line counts. An assistant fold
 groups decisions by outcome and also badges a cost override and a stopped turn
 in that reply. A fork badges the frontmatter fold. Badges follow the
-colorscheme.
+colorscheme. A settled fold omits its line count; only a block still
+streaming in (its fold reaches the last buffer line) shows one, as a live
+progress readout.
 
 #### R-async-stream — Streaming appends at the end of the buffer, fully async
 

@@ -708,7 +708,9 @@ previous turn's output was sent fresh. See |yap-audit|.
 `# @role` headings are folds; a closed fold shows the role and the first
 content line. A whole yap:tool region folds to one `▸ tool: <name>` line;
 thinking and error comment regions fold likewise. The YAML frontmatter folds
-to a single `▸ options` line.
+to a single `▸ options` line. A settled fold shows no line count; only a
+block that is still streaming in (its fold reaches the last buffer line)
+shows one, as a live progress readout.
 
 Three views, bound to <leader>1..3:
 

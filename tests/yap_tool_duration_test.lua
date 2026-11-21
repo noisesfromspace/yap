@@ -28,7 +28,7 @@ local tool = p.regions[1]
 assert(tool.kind == "tool" and tool.fold_finish == 6, "tool fold did not grow: " .. vim.inspect(tool))
 
 -- The closed tool fold shows the duration next to the tool name.
-assert(fold.text(3, 6) == "▸ tool: bash · 42s (4 lines)", "foldtext: " .. vim.inspect(fold.text(3, 6)))
+assert(fold.text(3, 6) == "▸ tool: bash · 42s", "foldtext: " .. vim.inspect(fold.text(3, 6)))
 
 -- Minutes render as m + padded seconds; hours render as h + minutes.
 local minutes = vim.api.nvim_create_buf(false, true)
@@ -50,6 +50,6 @@ vim.api.nvim_buf_set_lines(plain, 0, -1, false, {
   "<!-- /yap:tool -->",
   "",
 })
-assert(fold.text(1, 3) == "▸ tool: bash (3 lines)", "foldtext: " .. vim.inspect(fold.text(1, 3)))
+assert(fold.text(1, 3) == "▸ tool: bash", "foldtext: " .. vim.inspect(fold.text(1, 3)))
 
 print("OK tool duration")

@@ -720,9 +720,15 @@ function M.text(start, finish)
   local text
   local chunks = {}
   local date
+  -- The line count is a live progress readout: it appears only while the
+  -- block is still streaming in (its fold reaches the last line), then the
+  -- settled fold drops it.
+  local lines = finish == vim.api.nvim_buf_line_count(vim.api.nvim_get_current_buf())
+      and (" (%d lines)"):format(finish - start + 1)
+    or ""
 
   if first:match("^%-%-%-%s*$") then
-    text = string.format("▸ options (%d lines)", finish - start + 1)
+    text = "▸ options" .. lines
     for _, c in ipairs(frontmatter_badges()) do
       chunks[#chunks + 1] = c
     end
@@ -745,12 +751,7 @@ function M.text(start, finish)
     if size then
       ann[#ann + 1] = size
     end
-    text = string.format(
-      "▸ tool: %s%s (%d lines)",
-      name or "?",
-      #ann > 0 and (" · " .. table.concat(ann, " · ")) or "",
-      finish - start + 1
-    )
+    text = ("▸ tool: %s%s%s"):format(name or "?", #ann > 0 and (" · " .. table.concat(ann, " · ")) or "", lines)
     local outcome_label, outcome_hl = outcome_badge(start)
     if outcome_label then
       table.insert(chunks, 1, { outcome_label, outcome_hl })
@@ -765,7 +766,7 @@ function M.text(start, finish)
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
-      text = string.format("▸ yap: %s (%d lines)", region, finish - start + 1)
+      text = "▸ yap: " .. region .. lines
     else
       local role = first:match(HEAD) or "?"
       local preview = ""
@@ -781,7 +782,7 @@ function M.text(start, finish)
       elseif preview == "" then
         preview = "(empty)"
       end
-      text = string.format("▸ @%s │ %s (%d lines)", role, preview, finish - start + 1)
+      text = ("▸ @%s │ %s%s"):format(role, preview, lines)
       if role == "assistant" then
         local guard = guard_badges_for(start, finish, false)
         if guard then

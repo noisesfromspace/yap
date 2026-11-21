@@ -67,7 +67,7 @@ assert(vim.fn.foldclosed(9) == -1, "view 3 folds assistant")
 assert(fold.level() == 3, "view 3 reports level 3")
 
 -- foldtext
-assert(fold.text(9, 12) == "▸ @assistant │ Answer one. (4 lines)", "foldtext: " .. fold.text(9, 12))
+assert(fold.text(9, 12) == "▸ @assistant │ Answer one.", "foldtext: " .. fold.text(9, 12))
 
 -- navigation
 vim.api.nvim_win_set_cursor(0, { 1, 0 })

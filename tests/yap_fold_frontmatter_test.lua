@@ -36,7 +36,7 @@ assert(vim.fn.foldclosed(1) == 1, "frontmatter should be folded by default")
 assert(vim.fn.foldclosed(6) == 6, "system should be folded by default")
 assert(vim.fn.foldclosed(10) == -1, "user 1 should be open")
 assert(vim.fn.foldclosed(14) == -1, "assistant should be open by default")
-assert(fold.text(1, 4) == "▸ options (4 lines)", "foldtext: " .. fold.text(1, 4))
+assert(fold.text(1, 4) == "▸ options", "foldtext: " .. fold.text(1, 4))
 
 -- view 1 folds assistant messages too; frontmatter/system stay folded.
 fold.set_view_level(1)

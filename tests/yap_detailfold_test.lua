@@ -94,9 +94,9 @@ assert(vim.fn.foldclosed(ui) == tool, "ui not folded with tool region")
 assert(vim.fn.foldclosed(single) == single, "view 2 does not fold single-line tool region")
 assert(vim.fn.foldclosed(single + 1) == single, "single-line result not folded with region")
 assert(fold.level() == 2, "view 2 reports level 2")
-assert(fold.text(opener, 14) == "▸ yap: thinking (4 lines)", "foldtext: " .. fold.text(opener, 14))
-assert(fold.text(tool, 32) == "▸ tool: write · +1 (15 lines)", "foldtext: " .. fold.text(tool, 32))
-assert(fold.text(single, 38) == "▸ tool: bash (3 lines)", "foldtext: " .. fold.text(single, 38))
+assert(fold.text(opener, 14) == "▸ yap: thinking", "foldtext: " .. fold.text(opener, 14))
+assert(fold.text(tool, 32) == "▸ tool: write · +1", "foldtext: " .. fold.text(tool, 32))
+assert(fold.text(single, 38) == "▸ tool: bash", "foldtext: " .. fold.text(single, 38))
 
 -- view 3 unfolds everything including the system prompt, deterministically
 fold.set_view_level(3)

@@ -61,7 +61,7 @@ assert(chunks[2][1] == "[Stopped] " and chunks[2][2] == "DiagnosticWarn", vim.in
 assert(chunks[3][1]:find("▸ @assistant", 1, true), vim.inspect(chunks[3]))
 
 -- No fork marker here: the frontmatter fold stays a plain string.
-assert(fold.text(1, 3) == "▸ options (3 lines)", "frontmatter badge without fork: " .. vim.inspect(fold.text(1, 3)))
+assert(fold.text(1, 3) == "▸ options", "frontmatter badge without fork: " .. vim.inspect(fold.text(1, 3)))
 
 -- A fork is a session-level fact and badges the frontmatter fold.
 local fork_buf = vim.api.nvim_create_buf(false, true)
