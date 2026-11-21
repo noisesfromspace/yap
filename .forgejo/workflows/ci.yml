@@ -14,6 +14,9 @@ jobs:
   test:
     runs-on: native
     timeout-minutes: 60
+    env:
+      # tests/run.sh builds the agent itself; skip the devShell's eager build.
+      YAP_SKIP_BUILD: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -31,6 +34,8 @@ jobs:
     if: ${{ forgejo.event_name == 'push' && (forgejo.ref == 'refs/heads/main' || startsWith(forgejo.ref, 'refs/tags/')) }}
     needs: test
     runs-on: native
+    env:
+      YAP_SKIP_BUILD: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

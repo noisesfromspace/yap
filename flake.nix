@@ -157,10 +157,16 @@
                 export YAP_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/yap"
                 export YAP_BIN="$YAP_CACHE/bin/yap"
                 mkdir -p "$YAP_CACHE/bin"
-                if ( cd "$YAP_ROOT" && CGO_ENABLED=0 ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
-                  echo "yap: built agent -> $YAP_BIN"
-                else
-                  echo "yap: agent build failed (see above); Neovim still usable, send() will not work" >&2
+                # tests/run.sh (and tests/fast.sh) build the agent themselves,
+                # so CI steps that call them set YAP_SKIP_BUILD=1 to avoid a
+                # redundant eager build. Interactive dev shells keep the build
+                # so `yap send` works without an explicit build step.
+                if [ -z "''${YAP_SKIP_BUILD:-}" ]; then
+                  if ( cd "$YAP_ROOT" && CGO_ENABLED=0 ${pkgs.go}/bin/go build -o "$YAP_BIN" ./agent ); then
+                    echo "yap: built agent -> $YAP_BIN"
+                  else
+                    echo "yap: agent build failed (see above); Neovim still usable, send() will not work" >&2
+                  fi
                 fi
                 export PATH="$YAP_CACHE/bin:$PATH"
               else

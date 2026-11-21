@@ -4,4 +4,5 @@
 /result
 /result-*
 tests/logs/
+/nvim.log
 /.yap/
