@@ -907,7 +907,7 @@ The set today:
                 (`git push`, a registry publish/push, a `gh` merge or
                 release); local destruction the sandbox permits (`git reset
                 --hard`, `git clean -f`); data leaving the machine (`curl`
-                with a local-file flag, an `env`/`printenv` dump); machine
+                with a local-file READ flag, an `env`/`printenv` dump); machine
                 state and privilege (`shutdown`, `systemctl reboot`, `sudo`);
                 fork bombs; and secret-reveal commands — decrypting
                 (age/gpg/sops/openssl), generating or exporting a private
@@ -950,10 +950,13 @@ THE SANDBOX                                                     *yap-sandbox*
 
 bash runs inside a bubblewrap (bwrap) sandbox on Linux. The whole
 filesystem is bind-mounted read-only, a small allowlist of directories is
-re-mounted writable, `/tmp` is a private tmpfs, and the secret directories are
-shadowed with empty mounts so the sandboxed process cannot read them. The
-writable allowlist is the live |:pwd| (so it follows |:cd|), the session's
-assets dir, and any `allow_write` entries from the `sandbox` config block.
+re-mounted writable, `/tmp` is a private temp dir that persists for the
+session (scratch files written there survive to the next call), and the secret
+directories are shadowed with empty mounts so the sandboxed process cannot
+read them. The writable allowlist is the live |:pwd| (so it follows |:cd|),
+the session's assets dir, the Go and Nix build caches (so `go test`/`nix`
+don't trip the barrier), and any `allow_write` entries from the `sandbox`
+config block.
 The same allowlist also bounds the `write` and `edit` tools (see above), so
 every mutating path — bash, write, edit — shares one definition of "where the
 agent may write".

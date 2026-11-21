@@ -1,11 +1,12 @@
 // The bash sandbox: a bubblewrap (bwrap) execution barrier that turns bash
 // from "unsandboxed by design" into "least-privilege by default". The whole
 // filesystem is bind-mounted read-only, a small allowlist of directories (the
-// project dir and the session assets dir) is re-mounted writable, /tmp is a
-// private tmpfs, and the secret directories are shadowed by empty mounts so
-// they cannot be read. A write the kernel refuses (EROFS) escalates to the
-// human through the normal approval gate — the same Run/Deny the static guard
-// rules use.
+// project dir, the session assets dir, and the Go/Nix build caches) is
+// re-mounted writable, /tmp is a private temp dir that persists for the
+// session, and the secret directories are shadowed by empty mounts so they
+// cannot be read. A write the kernel refuses (EROFS) escalates to the human
+// through the normal approval gate — the same Run/Deny the static guard rules
+// use.
 //
 // This is the write/read barrier. It is NOT a network or confidentiality
 // boundary: the network namespace is shared, so a command can still reach the
@@ -105,10 +106,33 @@ func sandboxSetup(projectDir string) []string {
 		"--ro-bind", "/", "/",
 		"--dev", "/dev",
 		"--proc", "/proc",
-		"--tmpfs", os.TempDir(),
+	}
+	// Temp is writable and persists across calls within a session: a fresh
+	// tmpfs made `curl -o /tmp/x` in one call vanish in the next — the exact
+	// "write scratch to /tmp" habit that never took. Binding a session-scoped
+	// temp dir over the temp paths keeps them writable and persistent while
+	// still hiding the host's real /tmp. With no session assets dir (a one-shot
+	// `yap send`) there is nothing to persist into, so the old private tmpfs
+	// stays.
+	if tmp := persistentTmp(); tmp != "" {
+		for _, t := range tempPaths() {
+			args = append(args, "--bind", tmp, t)
+		}
+	} else {
+		args = append(args, "--tmpfs", os.TempDir())
 	}
 	for _, dir := range WritableDirs(projectDir) {
 		args = append(args, "--bind", dir, dir)
+	}
+	// Build caches (Go, Nix) are writable so `go test`/`nix` don't trip the
+	// read-only barrier and escalate to an unsandboxed re-run on every build.
+	for _, dir := range buildCacheDirs() {
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o700); err == nil {
+			args = append(args, "--bind", dir, dir)
+		}
 	}
 	for _, path := range shadowPaths() {
 		st, err := os.Stat(path)
@@ -122,6 +146,72 @@ func sandboxSetup(projectDir string) []string {
 		}
 	}
 	return args
+}
+
+// tempPaths returns the temp locations the sandbox rebinds to the persistent
+// per-session temp dir: the conventional /tmp, plus os.TempDir() when TMPDIR
+// points elsewhere (a `nix develop` shell sets it to a per-shell dir). The
+// bind hides the host's real temp files and makes temp writes land in the
+// session assets dir, so they survive to the next call.
+func tempPaths() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = filepath.Clean(p)
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	add("/tmp")
+	if t := os.TempDir(); t != "" && t != "/tmp" {
+		add(t)
+	}
+	return out
+}
+
+// persistentTmp is the per-session temp dir the sandbox binds over /tmp, so a
+// command's temp files survive to the next call instead of vanishing with the
+// per-call tmpfs. It lives under the session assets dir (cleaned with the
+// session). Returns "" for a one-shot `yap send`, which has no session dir to
+// persist into.
+func persistentTmp() string {
+	base := utils.AssetsBase()
+	if base == "" || base == os.TempDir() {
+		return ""
+	}
+	d := filepath.Join(base, "tmp")
+	_ = os.MkdirAll(d, 0o700)
+	return d
+}
+
+// buildCacheDirs returns the host cache directories Go and Nix write into
+// from inside the sandbox. They are per-user caches (not secret material), and
+// binding them writable stops `go test`/`nix` from tripping the read-only
+// barrier and escalating to an unsandboxed re-run on every build. They are
+// sandbox-only: the write/edit allowlist (IsWritablePath) deliberately does
+// not include them, since no purpose-built file tool targets a build cache.
+func buildCacheDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	userCache, _ := os.UserCacheDir()
+	if userCache == "" {
+		userCache = filepath.Join(home, ".cache")
+	}
+	out := []string{
+		filepath.Join(userCache, "go-build"),    // go build cache (GOCACHE)
+		filepath.Join(userCache, "nix"),         // nix fetcher/store cache
+		filepath.Join(home, "go", "pkg", "mod"), // go module cache (GOMODCACHE)
+	}
+	if g := os.Getenv("GOCACHE"); g != "" {
+		out = append(out, g)
+	}
+	if g := os.Getenv("GOMODCACHE"); g != "" {
+		out = append(out, g)
+	}
+	return out
 }
 
 // SandboxWrap builds the bwrap-wrapped command for `command`. projectDir is
@@ -155,12 +245,13 @@ func SandboxViolated(text string, exitCode int) bool {
 // WritableDirs returns the directories re-mounted writable inside the
 // sandbox: the project dir, the session assets dir, and any configured
 // extras, deduplicated and as absolute paths. "/" stays read-only, and the
-// temp dir itself (os.TempDir(), normally /tmp) is skipped because it is
-// already the private tmpfs — binding it would re-expose the host's temp
-// files. A project or assets dir UNDER the temp dir is still bound (the bind
-// overrides the tmpfs at that subpath), so `go test` running from a temp
-// checkout keeps working. This list is the canonical "where the agent may
-// write" policy: IsWritablePath and the write/edit guard rules read it too.
+// temp dir itself (os.TempDir(), normally /tmp) is skipped here — the sandbox
+// handles temp separately (see tempPaths/persistentTmp), and adding it to
+// this list would let write/edit target the host's real /tmp. A project or
+// assets dir UNDER the temp dir is still bound (the bind overrides whatever
+// the sandbox mounts at /tmp), so `go test` running from a temp checkout
+// keeps working. This list is the canonical "where the agent may write"
+// policy: IsWritablePath and the write/edit guard rules read it too.
 func WritableDirs(projectDir string) []string {
 	var dirs []string
 	seen := map[string]bool{}

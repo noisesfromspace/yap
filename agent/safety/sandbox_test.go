@@ -160,6 +160,56 @@ func TestSandboxWrapArgs(t *testing.T) {
 	}
 }
 
+// With a session assets dir, the sandbox binds a persistent temp dir over /tmp
+// instead of a fresh tmpfs, so scratch files survive across calls.
+func TestSandboxSetupBindsPersistentTemp(t *testing.T) {
+	reset()
+	assets := t.TempDir()
+	utils.SetAssetsBase(assets)
+	defer utils.SetAssetsBase("")
+
+	args := sandboxSetup("/srv/proj")
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--tmpfs "+os.TempDir()) {
+		t.Fatalf("persistent temp must not use a fresh tmpfs: %v", args)
+	}
+	if !strings.Contains(joined, "--bind "+filepath.Join(assets, "tmp")+" /tmp") {
+		t.Fatalf("missing persistent temp bind: %v", args)
+	}
+}
+
+// A scratch file written to /tmp in one sandboxed call must still be there in
+// the next — the old per-call tmpfs made `curl -o /tmp/x` vanish between
+// turns.
+func TestSandboxTempPersists(t *testing.T) {
+	requireBwrap(t)
+	reset()
+	project := t.TempDir()
+	assets := t.TempDir()
+	utils.SetAssetsBase(assets)
+	defer utils.SetAssetsBase("")
+	SetSandboxConfig(SandboxConfig{Enabled: true})
+
+	if out, err := SandboxWrap("echo hello > /tmp/persist.txt", project).CombinedOutput(); err != nil {
+		t.Fatalf("write to /tmp: %q %v", out, err)
+	}
+	out, err := SandboxWrap("cat /tmp/persist.txt", project).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "hello") {
+		t.Fatalf("temp did not persist across calls: %q %v", out, err)
+	}
+}
+
+func TestBuildCacheDirs(t *testing.T) {
+	dirs := buildCacheDirs()
+	if len(dirs) == 0 {
+		t.Skip("no home dir")
+	}
+	joined := strings.Join(dirs, " ")
+	if !strings.Contains(joined, "go-build") || !strings.Contains(joined, "nix") || !strings.Contains(joined, filepath.Join("go", "pkg", "mod")) {
+		t.Fatalf("buildCacheDirs missing expected caches: %v", dirs)
+	}
+}
+
 // TestWrapEnforcesWriteBarrier runs bwrap end to end: writes outside the
 // allowlist fail with EROFS, writes to the project dir succeed.
 func TestWrapEnforcesWriteBarrier(t *testing.T) {

@@ -577,7 +577,7 @@ func readSession(a *sessionsArgs) (string, string, error) {
 	text := strings.TrimSpace(b.String())
 	text, truncated := truncateHead(text)
 	if truncated {
-		text += "\n[truncated: page with start/count, or read path offset=LINE limit=N for raw lines]"
+		text += "\n[truncated: page with start/count, or read file_path offset=LINE limit=N for raw lines]"
 	}
 	return text, "", nil
 }

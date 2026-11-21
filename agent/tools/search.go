@@ -38,6 +38,7 @@ func init() {
 	Register("search",
 		"Search files with ripgrep. Returns matching lines as path:line:content, one per line "+
 			"(files_with_matches returns paths only; count returns per-file counts). "+
+			"Pattern is a ripgrep (PCRE2) regex — not Vim regex: use `(` not `%(`, `|` not `\\|`. "+
 			"Output is truncated to the first 2000 lines / 50KB.",
 		func(a *searchArgs) (string, string, error) { return runSearch(a) })
 	// `path` can point anywhere; a secret directory is approvable, not
@@ -49,6 +50,7 @@ func runSearch(a *searchArgs) (string, string, error) {
 	if strings.TrimSpace(a.Pattern) == "" {
 		return "", "", fmt.Errorf("empty pattern")
 	}
+	a.Pattern = vimToPCRE(a.Pattern)
 	a.Path = utils.ExpandHome(a.Path)
 	args := []string{"--line-number", "--no-heading", "--color", "never"}
 	if a.CaseInsensitive {
@@ -84,7 +86,7 @@ func runSearch(a *searchArgs) (string, string, error) {
 
 	ctx, cancel := context.WithTimeout(wire.TurnContext(), searchTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "rg", args...).Output()
+	out, err := exec.CommandContext(ctx, "rg", args...).CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", "", fmt.Errorf("rg timed out")
@@ -92,7 +94,13 @@ func runSearch(a *searchArgs) (string, string, error) {
 		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
 			return "(no matches)", "", nil // rg exits 1 on "no matches"
 		}
-		return "", "", fmt.Errorf("rg: %w", err)
+		// rg exit 2 is an error (bad regex, bad flag, missing file). Surface
+		// rg's own message instead of the opaque "exit status 2".
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", "", fmt.Errorf("rg: %s (pattern %q — ripgrep uses PCRE2, not Vim regex)", msg, a.Pattern)
 	}
 	text := strings.TrimSuffix(string(out), "\n")
 	if text == "" {
@@ -103,6 +111,43 @@ func runSearch(a *searchArgs) (string, string, error) {
 		text += "\n[truncated: narrow the search or raise max_count]"
 	}
 	return text, "", nil
+}
+
+// vimEscapes are the Vim "magic" backslash escapes that have no PCRE meaning.
+// They are translated only when at least one is present, so a plain PCRE
+// pattern (which would never contain `\(`, `\|`, …) passes through untouched.
+var vimEscapes = []struct{ from, to string }{
+	{`\%(`, `(?:`},
+	{`\(`, `(`},
+	{`\)`, `)`},
+	{`\|`, `|`},
+	{`\{`, `{`},
+	{`\}`, `}`},
+	{`\<`, `\b`},
+	{`\>`, `\b`},
+	{`\+`, `+`},
+	{`\?`, `?`},
+	{`\=`, `?`},
+}
+
+// vimToPCRE translates the common Vim magic escapes into PCRE equivalents. It
+// only fires when the pattern contains a Vim-specific escape, so it cannot
+// mangle a valid PCRE pattern.
+func vimToPCRE(p string) string {
+	hasVim := false
+	for _, e := range vimEscapes {
+		if strings.Contains(p, e.from) {
+			hasVim = true
+			break
+		}
+	}
+	if !hasVim {
+		return p
+	}
+	for _, e := range vimEscapes {
+		p = strings.ReplaceAll(p, e.from, e.to)
+	}
+	return p
 }
 
 // truncateHead caps s at read's limits (readMaxLines / readMaxBytes)

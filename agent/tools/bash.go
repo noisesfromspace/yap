@@ -73,8 +73,13 @@ var bashRules = append([]safety.Rule{
 	safety.ShellAny("irreversible git operation", rewritesGit),
 
 	// Data leaving the machine: a fetch whose flags read a local file (an
-	// `@file` upload, a cookie jar, a client cert), and an environment dump.
-	safety.ShellAny("reads or writes a local file", curlTouchesLocalFile),
+	// `@file` upload, a cookie file, a client cert), and an environment dump.
+	safety.ShellAny("reads a local file", curlReadsLocalFile),
+	// A fetch whose flags write a file: gated only when the target is outside
+	// the writable allowlist, mirroring the sandbox's write barrier (curl's own
+	// EROFS message is "client returned ERROR on write", not the barrier's
+	// phrase), so `curl -o ./file` into the project never prompts.
+	safety.ShellAny("writes a local file outside the sandbox", curlWritesOutside),
 	safety.ShellAny("pipes the environment out", dumpsEnvironment),
 
 	// Machine state and privilege, neither of which is a filesystem write.
@@ -250,26 +255,95 @@ func rewritesGit(c safety.ShellCmd) bool {
 	return false
 }
 
-// curlTouchesLocalFile reports whether a bash curl/wget names an option that
-// reads or writes a local file, including the `@file` marker.
-func curlTouchesLocalFile(c safety.ShellCmd) bool {
-	return fetchTools[c.Name] && flagsTouchLocalFiles(strings.Join(c.Args, " "))
+// curlReadsLocalFile reports whether a bash curl/wget names an option that
+// reads a local file, including the `@file` marker. Write-side options are a
+// separate, target-aware rule (curlWritesOutside): a write into the project
+// never prompts, and only a write outside the allowlist does.
+func curlReadsLocalFile(c safety.ShellCmd) bool {
+	return fetchTools[c.Name] && flagsReadLocalFiles(strings.Join(c.Args, " "))
 }
 
-// curlFileLong / curlFileShort are the curl options that read or write a
-// local file (including the `@file` marker). Each has a legitimate use — save
-// a download, POST a file, present a client cert — but a prompt-injected
-// command could use one to read a file (including a secret) and send it off
-// the machine. They are therefore approval-gated rather than hard-blocked: the
-// human sees the exact flags and decides.
+// curlWriteLong are the curl/wget long options whose value is a file or
+// directory the command writes. A target outside the writable allowlist is
+// gated pre-run — the sandbox refuses the write, but curl reports it as
+// "client returned ERROR on write" (not "Read-only file system"), which the
+// barrier's phrase-match does not recognize, so the gate gives a readable
+// prompt instead of a silent failure. `-O`/`--remote-name` (curl) writes to
+// cwd with no value and is never gated.
+var curlWriteLong = []string{
+	"--output", "--output-dir", "--dump-header", "--cookie-jar",
+	"--output-document", // wget -O
+}
+
+// curlWritesOutside reports whether a curl/wget command writes a file to a
+// location outside the writable allowlist (the project, the assets dir, /tmp).
+// It is the write-side counterpart to curlReadsLocalFile: reads are always
+// gated (they can exfiltrate a secret), writes only when the target is not
+// writable.
+func curlWritesOutside(c safety.ShellCmd) bool {
+	if !fetchTools[c.Name] {
+		return false
+	}
+	for i := 0; i < len(c.Args); i++ {
+		a := c.Args[i]
+		var target string
+		switch {
+		case strings.HasPrefix(a, "--"):
+			name, val, hasEq := strings.Cut(a, "=")
+			if isCurlWriteFlag(name) {
+				if hasEq {
+					target = val
+				} else if i+1 < len(c.Args) {
+					target = c.Args[i+1]
+					i++
+				}
+			}
+		case len(a) == 2 && curlWriteShort(c.Name, a[1]):
+			if i+1 < len(c.Args) {
+				target = c.Args[i+1]
+				i++
+			}
+		case len(a) > 2 && a[0] == '-' && a[1] != '-' && curlWriteShort(c.Name, a[1]):
+			target = a[2:] // glued -oFILE
+		}
+		if target == "" || target == "-" {
+			continue // stdout/stderr, or no value given
+		}
+		if !safety.IsWritablePath(target) {
+			return true
+		}
+	}
+	return false
+}
+
+// curlWriteShort reports whether a single-letter flag takes a file value for
+// the given tool: curl -o (output) -D (dump-header) -c (cookie-jar); wget
+// -O (output-document). curl's -O is remote-name (no value) and never gated.
+func curlWriteShort(tool string, c byte) bool {
+	if tool == "wget" {
+		return c == 'O'
+	}
+	return c == 'o' || c == 'D' || c == 'c'
+}
+
+// isCurlWriteFlag reports whether name is a curl/wget long output flag.
+func isCurlWriteFlag(name string) bool {
+	for _, f := range curlWriteLong {
+		if name == f {
+			return true
+		}
+	}
+	return false
+}
+
+// curlReadLong / curlReadShort are the curl options that READ a local file
+// (including the `@file` marker). Each has a legitimate use — POST a file,
+// present a client cert — but a prompt-injected command could use one to read
+// a file (including a secret) and send it off the machine. They are therefore
+// approval-gated rather than hard-blocked: the human sees the exact flags and
+// decides.
 var (
-	curlFileLong = []string{
-		// Local-file writes: responses, headers, traces, cookies, caches,
-		// generated code.
-		"--output", "--output-dir", "--remote-name", "--remote-name-all",
-		"--remote-header-name", "--dump-header", "--trace", "--trace-ascii",
-		"--stderr", "--cookie-jar", "--alt-svc", "--etag-save", "--libcurl",
-		"--hsts",
+	curlReadLong = []string{
 		// Local-file reads and request bodies from files: uploads, cookies,
 		// credentials, TLS client material, and the body flags whose values
 		// may be `@file`.
@@ -280,17 +354,17 @@ var (
 		"--proxy-cert", "--proxy-key", "--proxy-cacert", "--proxy-capath",
 		"--proxy-crlfile",
 	}
-	curlFileShort = "dFbcoODTw" // -d -F -b -c -o -O -D -T -w
+	curlReadShort = "dFbTw" // -d -F -b -T -w (the read-side short flags)
 )
 
-// flagsTouchLocalFiles reports whether `flags` names an option that reads or
-// writes a local file, or uses the `@file` marker. It drives the "reads or
-// writes a local file" guard rule: the option itself is allowed, but the
-// human must approve it because a prompt-injected curl could use it to read a
-// file — including a secret — and send it off the machine.
-func flagsTouchLocalFiles(flags string) bool {
+// flagsReadLocalFiles reports whether `flags` names an option that reads a
+// local file, or uses the `@file` marker. It drives the "reads a local file"
+// guard rule: the option itself is allowed, but the human must approve it
+// because a prompt-injected curl could use it to read a file — including a
+// secret — and send it off the machine.
+func flagsReadLocalFiles(flags string) bool {
 	for _, f := range strings.Fields(flags) {
-		for _, d := range curlFileLong {
+		for _, d := range curlReadLong {
 			if f == d || strings.HasPrefix(f, d+"=") {
 				return true
 			}
@@ -310,7 +384,7 @@ func flagsTouchLocalFiles(flags string) bool {
 			continue
 		}
 		for _, c := range shortFlagLetters(f) {
-			if strings.ContainsRune(curlFileShort, c) {
+			if strings.ContainsRune(curlReadShort, c) {
 				return true
 			}
 		}

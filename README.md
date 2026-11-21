@@ -34,9 +34,6 @@ The picker shows live status and groups forks and subagents under their
 parent. The agent can also search and read past sessions, bringing earlier
 work into a conversation without loading every transcript.
 
-`:YapDelete` permanently removes the current session and its files without
-confirmation. Stop any running turn first.
-
 ## Change direction while it runs
 
 Replies stream into the conversation. You can stop a turn with `<C-c>`,

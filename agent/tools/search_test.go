@@ -109,6 +109,40 @@ func TestSearchNoMatches(t *testing.T) {
 	}
 }
 
+func TestVimToPCRE(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain pattern", "plain pattern"},
+		{`foo\(bar\|baz\)`, `foo(bar|baz)`},
+		{`\<word\>`, `\bword\b`},
+		{`a\+b`, `a+b`},
+		{`\%(ab\)`, `(?:ab)`},
+		{`\d{2}`, `\d{2}`}, // no Vim escape: untouched
+	}
+	for _, c := range cases {
+		if got := vimToPCRE(c.in); got != c.want {
+			t.Fatalf("vimToPCRE(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestSearchVimEscapesTranslated(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not available")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("foo bar\nfoo baz\nfoo qux\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Vim alternation `\|` must become PCRE `|` before ripgrep sees it.
+	r, _, err := run(t, "search", `{"pattern":"bar\\|baz","path":"`+dir+`"}`)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if !strings.Contains(r, "foo bar") || !strings.Contains(r, "foo baz") || strings.Contains(r, "foo qux") {
+		t.Fatalf("vim alternation not translated: %q", r)
+	}
+}
+
 // `path` can point anywhere, so searching a secret directory must hit the
 // same secret-path rule read does (approvable, not silently searched).
 func TestSearchSecretPathRule(t *testing.T) {

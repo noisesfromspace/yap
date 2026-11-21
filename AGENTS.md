@@ -612,9 +612,10 @@ the normal tool-result scrubbing like any read-only tool.
 
 bash runs inside a bubblewrap (bwrap) sandbox on Linux
 (agent/safety/sandbox.go): the filesystem is bind-mounted read-only, a small
-allowlist (the live :pwd, the session assets dir, plus `sandbox.allow_write`)
-is re-mounted writable, /tmp is a private tmpfs, and the secret directories are
-shadowed with empty mounts so the sandboxed process cannot read them. A write
+allowlist (the live :pwd, the session assets dir, the Go/Nix build caches,
+plus `sandbox.allow_write`) is re-mounted writable, /tmp is a private temp dir
+that persists for the session, and the secret directories are shadowed with
+empty mounts so the sandboxed process cannot read them. A write
 outside the allowlist is refused by the kernel (EROFS); if bash output
 contains "Read-only file system", the guard says "bash hit read-only
 filesystem; rerun unsandboxed" — approve to re-run the entire command
@@ -633,7 +634,7 @@ receives it (`curl … | sh`, `$(curl …)`), reaching another host (`ssh`, `scp
 `rsync host:`, `nc`), side effects on a remote (`git push`, a registry
 publish/push, a `gh` merge/release), local destruction the barrier permits
 (`git reset --hard`, `git clean -f`), data leaving the machine (`curl` with a
-local-file flag, an `env`/`printenv` dump), machine state and privilege
+local-file READ flag, an `env`/`printenv` dump), machine state and privilege
 (`shutdown`, `systemctl reboot`, `sudo`), fork bombs, and secret-reveal
 commands — decrypting with age/gpg/sops/openssl, generating or exporting a
 private key, reading a file under a secret directory. A command that matches
