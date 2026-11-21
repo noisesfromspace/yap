@@ -485,10 +485,9 @@ function M.after_append(buf, incremental)
   end
 end
 
--- Session return must be synchronous: deferring it permits one unfolded
--- frame before repair. Mark a returning window for rebuild, because Neovim
--- may have restored different native folds while the buffer was hidden.
-vim.api.nvim_create_autocmd("BufWinLeave", {
+-- BufWinLeave does not fire if another split still shows this buffer.
+-- Capture the departing window's native choices before they get replaced.
+vim.api.nvim_create_autocmd("BufLeave", {
   group = group,
   callback = function(args)
     local s = sessions[args.buf]
@@ -498,6 +497,9 @@ vim.api.nvim_create_autocmd("BufWinLeave", {
     end
   end,
 })
+-- Session return must be synchronous: deferring it permits one unfolded
+-- frame before repair. Mark a returning window for rebuild, because Neovim
+-- may have restored different native folds while the buffer was hidden.
 vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
   group = group,
   callback = function(args)

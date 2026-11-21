@@ -123,6 +123,18 @@ assert(fn.foldclosed(3) == -1 and fn.foldclosed(7) == 7, "W2 intent leaked into 
 fold.set_view_level(1)
 api.nvim_set_current_win(w2)
 assert(fold.level() == 2 and fn.foldclosed(7) == -1, "view reset affected another window")
+
+-- Switching buffers in one split must capture native choices even while
+-- another split still displays the session.
+fold.set_view_level(2)
+native(3, "zo")
+fold.toggle(7) -- record an open that the next native command overrides
+native(7, "zc")
+api.nvim_set_current_buf(other)
+api.nvim_set_current_buf(b)
+assert(fn.foldclosed(7) == 7, "return to split reopened a native close")
+assert(fn.foldclosed(3) == -1, "return to split lost native open")
+
 api.nvim_win_close(w2, true)
 
 -- Native removal cannot leave the installed-fold cache pretending to exist.
