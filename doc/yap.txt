@@ -18,7 +18,8 @@ CONTENTS                                                     *yap-contents*
  11. The guard gate ....... |yap-guard-gate|
  12. Tools ................ |yap-tools|
  13. Language server ...... |yap-lsp|
- 14. Glossary ............. |yap-glossary|
+ 14. Troubleshooting ...... |yap-health|
+ 15. Glossary ............. |yap-glossary|
 
 ==============================================================================
 1. INTRODUCTION                                          *yap-introduction*
@@ -1103,7 +1104,36 @@ participate in them. See R-language-intelligence in AGENTS.md for the
 Lua/Go ownership boundary.
 
 ==============================================================================
-14. GLOSSARY                                                *yap-glossary*
+14. TROUBLESHOOTING                                            *yap-health*
+
+`:checkhealth harness` reports the environment yap runs in, one line per check,
+with the fix when something is missing. It reads only what the plugin itself
+reads, so it works before the first session exists. The checks:
+
+  Neovim             version 0.11 or newer (folding, winbar, LSP)
+  yap binary         executable, and `yap tools` answers
+  Provider settings  the settings file (|yap-setup|) parses and names
+                     providers; each api_key_env is marked set or NOT set
+  Model group        model_groups.agent is a provider/model combo whose
+                     provider is configured
+  ripgrep            rg on PATH (search, glob, sessions)
+  bash sandbox       bubblewrap present and able to create namespaces, or an
+                     explicit warning that bash runs UNSANDBOXED
+  Session data       the sessions root exists and is writable; a sample of
+                     the session directories is mode 0700
+  Model cache        the cached combo list (stdpath("cache")/yap/models), with
+                     its age
+  MCP servers        configured servers and which are lazy
+
+The backend names the same file in its own first-run errors: a missing
+settings.json reports the path, a working example, and this section.
+
+When a session fails to send, the order to check is: the binary (a rebuild
+is needed after a plugin update), the provider key for the chosen combo, and
+the sandbox line (an UNSANDBOXED fallback is a warning, not an error).
+
+==============================================================================
+15. GLOSSARY                                                *yap-glossary*
 
 The canonical vocabulary for yap's features and mechanisms. Use these names in
 code, docs, and conversation; the right-hand column names the terms each

@@ -81,21 +81,51 @@ type Config struct {
 }
 
 func configPath() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+	// A relative $XDG_CONFIG_HOME is ignored, matching the XDG spec and the
+	// Lua side (harness.path): a bad value must never move yap's config into
+	// the project directory.
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" && filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, "yap", "settings.json")
 	}
 	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
 	return filepath.Join(home, ".config", "yap", "settings.json")
 }
 
+// configHelp is the first-run advice attached to a missing or empty settings
+// file. A new user's first `yap models` (or first send) is where this lands,
+// so it carries the whole answer: the file to create, a working example, and
+// where the details are.
+const configHelp = `Create it with at least one provider, for example:
+
+  {
+    "providers": {
+      "openai": { "api_key_env": "OPENAI_API_KEY" }
+    }
+  }
+
+Then export that variable and pick a model with <leader>m. Other providers
+(anthropic, google, deepseek, any OpenAI-compatible base_url) work the same
+way. See :help yap-configuration, and run :checkhealth harness to inspect what
+yap currently sees.`
+
 func LoadConfig() (*Config, error) {
-	data, err := os.ReadFile(configPath())
+	path := configPath()
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", configPath(), err)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no settings file at %s\n\n%s", path, configHelp)
+		}
+		return nil, fmt.Errorf("read %s: %w (see :help yap-configuration)", path, err)
 	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", configPath(), err)
+		return nil, fmt.Errorf("parse %s: %w (see :help yap-configuration)", path, err)
+	}
+	if len(cfg.Providers) == 0 {
+		return nil, fmt.Errorf("%s configures no providers\n\n%s", path, configHelp)
 	}
 	for name, prov := range cfg.Providers {
 		if prov.Auth != "" {

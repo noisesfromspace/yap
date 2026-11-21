@@ -774,6 +774,19 @@ current step; a graceful stop keeps the partial answer and opens a fresh
 prompt, while a hard stop returns to the sent prompt. Both keep the stop icon
 until the next send.
 
+#### R-health-check — Every silent environment fallback is visible in one place
+
+`:checkhealth harness` reports the environment the plugin runs in: the Neovim
+version, the backend binary (and whether `yap tools` answers), the settings
+file and each provider's credential, the model group's provider, `rg`, the
+bash sandbox (installed, usable, or explicitly UNSANDBOXED), the session data
+root, the model cache and the configured MCP servers. Every failing check
+carries its fix, so a bug report starts from self-service.
+Why: the sandbox (`agent/safety/sandbox.go`) falls back to unsandboxed bash
+with a single warning on the backend's stderr, invisible from Neovim, and a
+missing settings file first appeared as a raw wire error mid-turn. A new
+silent fallback or first-run failure gets a check here in the same change.
+
 #### R-presentation-hygiene — Session buffers opt out of redraw-heavy tooling
 
 Session buffers set `b:minidiff_disable = true` so mini.diff does not attach

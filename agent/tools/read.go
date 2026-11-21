@@ -52,13 +52,26 @@ func init() {
 				return "", "", err
 			}
 			text := strings.Join(lines[start:end], "\n")
+			last := end // 1-based line number of the last line in the result
 			if len(text) > readMaxBytes {
 				text = capBytes(text, readMaxBytes)
+				// Recount from the capped text: the byte cap can stop inside
+				// the window, and the offset in the note must be where the
+				// returned text actually ends.
+				last = start + strings.Count(text, "\n") + 1
+				if last > end {
+					last = end
+				}
 				truncated = true
 			}
-			if truncated {
-				text += fmt.Sprintf("\n[truncated: use offset/limit; file has %d lines total]", total)
-			} else if start > 0 || end < total {
+			switch {
+			case truncated && last < total:
+				// Name the next call: the model paged a file and needs to know
+				// where to continue, not that offset/limit exist.
+				text += fmt.Sprintf("\n[truncated: lines %d-%d of %d; continue with offset=%d]", start+1, last, total, last+1)
+			case truncated:
+				text += fmt.Sprintf("\n[truncated: lines %d-%d of %d]", start+1, last, total)
+			case start > 0 || end < total:
 				// A page that fit: report the window so the model knows where it
 				// is and whether it has reached the end without a truncation note.
 				text += fmt.Sprintf("\n[lines %d-%d of %d]", start+1, end, total)

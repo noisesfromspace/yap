@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -19,7 +21,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if !strings.HasPrefix(r, "two\nthree") || !strings.Contains(r, "5 lines total") {
+	if !strings.HasPrefix(r, "two\nthree") || !strings.Contains(r, "lines 2-3 of 5; continue with offset=4") {
 		t.Fatalf("offset/limit: %q", r)
 	}
 
@@ -72,11 +74,42 @@ func TestReadTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if !strings.Contains(r, "[truncated: use offset/limit; file has 2005 lines total]") {
-		t.Fatalf("truncation note missing: %.120q", r)
+	if !strings.Contains(r, "[truncated: lines 1-2000 of 2005; continue with offset=2001]") {
+		t.Fatalf("truncation note missing the next offset: %.160q", r)
 	}
 	if strings.Count(r, "\n") != 2000 { // 2000 body lines + the note's own newline
 		t.Fatalf("expected 2000 body lines, got %d", strings.Count(r, "\n"))
+	}
+}
+
+// The byte cap can stop inside the window: the note must point at the line the
+// returned text actually ends on, not at the end of the window.
+func TestReadByteCapReportsRealLastLine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "wide.txt")
+	line := strings.Repeat("x", 200)
+	lines := make([]string, 400) // 400 x 201 bytes > readMaxBytes
+	for i := range lines {
+		lines[i] = line
+	}
+	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _, err := run(t, "read", `{"file_path":"`+p+`"}`)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	m := regexp.MustCompile(`\[truncated: lines 1-(\d+) of 400; continue with offset=(\d+)\]`).FindStringSubmatch(r)
+	if m == nil {
+		t.Fatalf("byte-cap note missing: %.160q", r)
+	}
+	last, _ := strconv.Atoi(m[1])
+	next, _ := strconv.Atoi(m[2])
+	if next != last+1 {
+		t.Fatalf("offset %d does not continue after line %d", next, last)
+	}
+	if last >= 400 {
+		t.Fatalf("reported last line %d, but the response was capped", last)
 	}
 }
 

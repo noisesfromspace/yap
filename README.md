@@ -111,6 +111,11 @@ You need Neovim 0.11 or newer, Go to build the backend, and `rg` (ripgrep) on
    ```
 4. Run `:Yap`, type under the user heading, and press `<C-s>`.
 
+If anything is off, run `:checkhealth harness`. It reports the editor version,
+the backend binary, the provider settings and credentials, `rg`, the bash
+sandbox, the session data directory and the model cache, each with the fix
+when something is missing.
+
 Native providers include OpenAI, Anthropic, Gemini, and DeepSeek. Other
 OpenAI-compatible endpoints work with a `base_url`. For a ChatGPT plan
 login, configure `{"providers": {"openai": {"auth": "chatgpt"}}}`, run
@@ -219,8 +224,7 @@ The full reference is in [`doc/yap.txt`](doc/yap.txt), available in Neovim as
 `:help yap`. Start with `yap-configuration`, `yap-keymaps`, `yap-lsp`, or
 `yap-tools` for the details behind the workflows above.
 
-Before changing behavior, read [AGENTS.md](CONTRIBUTING.md) for business rules
-like the wire protocol, design rules, and test instructions. Update it when a
-change affects those contracts.
-
-For contributing to the project read CONTRIBUTING.md
+Before changing behavior, read [AGENTS.md](AGENTS.md) for business rules like
+the wire protocol, design rules, and test instructions. Update it when a change
+affects those contracts. For contributing to the project, read
+[CONTRIBUTING.md](CONTRIBUTING.md).
