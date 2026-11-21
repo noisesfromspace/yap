@@ -712,8 +712,11 @@ local function diff_chunks(p, tool_start)
   if plus > 0 then
     out[#out + 1] = { "+" .. plus, "DiffAdd" }
   end
+  if plus > 0 and minus > 0 then
+    out[#out + 1] = { "/", "Comment" }
+  end
   if minus > 0 then
-    out[#out + 1] = { (plus > 0 and "/-" or "-") .. minus, "DiffDelete" }
+    out[#out + 1] = { "-" .. minus, "DiffDelete" }
   end
   return out
 end

@@ -97,15 +97,18 @@ local edit = region_by_name(p, "edit")
 local edit_chunks = fold.text(edit.start, edit.finish)
 assert(type(edit_chunks) == "table", "edit size should be colored chunks, not a badge")
 assert(edit_chunks[1][1] == "▸ tool: edit" and edit_chunks[1][2] == "Folded", vim.inspect(edit_chunks))
-local plus, minus
+local plus, slash, minus
 for _, c in ipairs(edit_chunks) do
   if c[1] == "+3" then
     plus = c[2]
-  elseif c[1] == "/-2" then
+  elseif c[1] == "/" then
+    slash = c[2]
+  elseif c[1] == "-2" then
     minus = c[2]
   end
 end
 assert(plus == "DiffAdd" and minus == "DiffDelete", "edit size colors: " .. vim.inspect(edit_chunks))
+assert(slash == "Comment", "diff separator must stay neutral: " .. vim.inspect(edit_chunks))
 
 -- A :YapClear placeholder badges the tool fold `[Cleared]` (muted: the local
 -- output is gone, but the audit log still has it).
