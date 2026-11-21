@@ -93,6 +93,7 @@ local CASES = {
   { name = "yap_clear_queue_test", port = 18171, mock = "mock_clear_queue.py", tier = "slow" },
   { name = "yap_context_test", port = 18132, tier = "fast" },
   { name = "yap_session_path_test", port = 18132, tier = "fast" },
+  { name = "yap_delete_test", port = 18132, tier = "fast" },
   { name = "yap_fork_test", port = 18164, mock = "mock_fork.py", tier = "slow" },
   { name = "yap_fork_shared_agents_test", port = 18132, tier = "fast" },
   { name = "yap_picker_tree_test", port = 18132, tier = "fast" },

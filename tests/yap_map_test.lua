@@ -36,7 +36,7 @@ for _, name in ipairs({
 }) do
   assert(vim.fn.exists(":" .. name) == 0, name .. " should not be an Ex command")
 end
-for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork" }) do
+for _, name in ipairs({ "Yap", "YapClear", "YapCompact", "YapEval", "YapFork", "YapDelete" }) do
   assert(vim.fn.exists(":" .. name) == 2, name .. " should remain an Ex command")
 end
 for _, name in ipairs({ "send", "stop", "live", "guard", "insert", "change_model", "sessions", "symbols" }) do

@@ -1,4 +1,4 @@
--- Session buffer lifecycle: create, open, adopt, fork, focus and teardown.
+-- Session buffer lifecycle: create, open, adopt, fork, focus, delete and teardown.
 --
 -- Conversations are listed, file-backed buffers. Delegated agents remain
 -- unlisted and are reachable through the session tree.
@@ -368,6 +368,79 @@ function M.fork(name)
   vim.wo.winbar = "%!v:lua.require'harness'.winbar()"
   vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(buf), 0 })
   return path
+end
+
+--- Find an unshared data directory inside Yap's storage. A portable
+--- transcript can record an arbitrary data_dir, which is not authority to
+--- delete project files. Resolve symlinks before checking the boundary.
+local function deletable_data_dir(buf, path)
+  local root = vim.uv.fs_realpath(paths.sessions_root())
+  local dir = vim.uv.fs_realpath(paths.data_dir(buf))
+  if not root or not dir or dir:sub(1, #root + 1) ~= root .. "/" then
+    return
+  end
+  local transcript = vim.uv.fs_realpath(path) or path
+  for name, kind in vim.fs.dir(dir) do
+    if kind ~= "directory" and name ~= "notes.md" and name:match("%.md$") and dir .. "/" .. name ~= transcript then
+      return
+    end
+  end
+  for other in pairs(state.sessions) do
+    if other ~= buf and vim.api.nvim_buf_is_loaded(other) and vim.uv.fs_realpath(paths.data_dir(other)) == dir then
+      return
+    end
+  end
+  return dir
+end
+
+--- Wipe the current session before unlinking its files so buffer teardown
+--- cannot save the transcript or dispatch a queued scratch message afterward.
+function M.delete()
+  local buf = vim.api.nvim_get_current_buf()
+  local path = paths.session_path(buf)
+  if not vim.b[buf].yap or not path then
+    return nil, ":YapDelete only works in a yap session"
+  end
+  if running[buf] then
+    return nil, "stop the running turn before deleting the session"
+  end
+  local dir = deletable_data_dir(buf, path)
+  local notes
+  if dir then
+    local notes_path = paths.notes_path(buf)
+    for _, other in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_get_name(other) == notes_path then
+        notes = other
+        break
+      end
+    end
+  end
+  local ok, err = pcall(function()
+    vim.api.nvim_buf_delete(buf, { force = true })
+    if notes and vim.api.nvim_buf_is_valid(notes) then
+      vim.api.nvim_buf_delete(notes, { force = true })
+    end
+  end)
+  if not ok then
+    return nil, "cannot wipe session buffers: " .. err
+  end
+  if dir then
+    for _, name in ipairs({ "notes.md", "audit.jsonl", "assets" }) do
+      local sidecar = dir .. "/" .. name
+      local stat, stat_err, code = vim.uv.fs_lstat(sidecar)
+      if (not stat and code ~= "ENOENT") or (stat and vim.fn.delete(sidecar, name == "assets" and "rf" or "") ~= 0) then
+        return nil, "cannot delete " .. sidecar .. (stat_err and (": " .. stat_err) or "")
+      end
+    end
+  end
+  local deleted, unlink_err, code = vim.uv.fs_unlink(path)
+  if not deleted and code ~= "ENOENT" then
+    return nil, "cannot delete transcript: " .. unlink_err
+  end
+  if dir then
+    vim.uv.fs_rmdir(dir) -- leave the directory if it still holds other files
+  end
+  return true
 end
 
 --- Open a saved session file as a yap buffer.

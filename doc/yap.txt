@@ -302,6 +302,13 @@ success: visible edits, the winbar and pickers confirm ordinary actions.
                         and apply status. It can be reopened directly with
                         :edit, but is omitted from + / g+ and the winbar
                         overview. No default keymap for either form.
+*:YapDelete*
+:YapDelete             Permanently delete the current session's transcript,
+                        scratch notes, audit log and assets without
+                        confirmation. Stop any running turn first. Yap leaves
+                        shared data directories and data outside its sessions
+                        root alone. Forks and subagent transcripts are separate
+                        sessions and are not deleted.
 *:YapFork*
 :YapFork [name]       Copy the current in-memory conversation into a new,
                         independent session in the same project. The original
@@ -532,6 +539,7 @@ NAME, SAVE & REOPEN                                    *yap-session-files*
             session. Edit or delete messages and send to take another path.
   Close     Use normal buffer commands. Deleting a buffer follows Neovim's
             replacement-buffer behavior, without favoring running sessions.
+  Delete    Use |:YapDelete| to remove the current session from disk.
 
 Storage
 

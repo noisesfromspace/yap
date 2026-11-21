@@ -75,3 +75,10 @@ end, {
   nargs = "?",
   desc = "Copy this conversation into a new independent session and open it",
 })
+
+vim.api.nvim_create_user_command("YapDelete", function()
+  local _, err = require("harness").delete()
+  if err then
+    vim.notify("yap: " .. err, vim.log.levels.WARN)
+  end
+end, { desc = "Permanently delete this session and its files" })

@@ -61,6 +61,7 @@ M.guard = guard.toggle
 -- Buffer lifecycle (buffers).
 M.new = buffers.new
 M.fork = buffers.fork
+M.delete = buffers.delete
 M.open = buffers.open
 M.adopt = buffers.adopt
 
