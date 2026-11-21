@@ -53,9 +53,15 @@ for _, l in ipairs({ "let me think\n", "about this\n", "a bit more\n" }) do
   assert(v.topline == v0.topline, "topline moved while streaming a closed fold")
   assert(vim.fn.foldclosed(opener) == opener, "thinking fold reopened while streaming")
   -- The fold label shows a live line count while the block grows, so the
-  -- user can watch the fold's size increase as content streams in.
+  -- user can watch the fold's size increase as content streams in. The count
+  -- is a colored suffix chunk; flatten the label to read it back.
   local label = fold.text(opener, vim.fn.line("$"))
-  assert(label:match("%d+ lines"), "streaming foldtext missing line count: " .. label)
+  local parts = {}
+  for _, c in ipairs(label) do
+    parts[#parts + 1] = c[1]
+  end
+  local text = table.concat(parts)
+  assert(text:match("%d+ lines"), "streaming foldtext missing line count: " .. text)
 end
 
 -- Open fold: the user za-opens the block to watch it stream. The fold stays

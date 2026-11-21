@@ -543,14 +543,29 @@ vim.api.nvim_create_autocmd("WinClosed", {
 
 -- ─── foldtext ──────────────────────────────────────────────────────────────
 
-local guard_badges = {
-  { "denied", "Denied", "DiagnosticError" },
-  { "timeout", "Timed out", "DiagnosticWarn" },
-  { "auto-approved", "Auto-approved", "DiagnosticWarn" },
-  { "approved", "Approved", "Comment" },
+-- Badge precedence: one leading badge per fold, the highest wins. Lower rank
+-- wins; a fold that qualifies for several shows only the one that matters
+-- most. The split between `denied` and `stopped` is the status/provenance
+-- line: an abnormal outcome always beats a context badge, so an
+-- auto-approved bash that exited 1 shows `[exit 1]`, never `[Auto-approved]`.
+local RANK = {
+  error = 1,
+  timeout = 2,
+  exit = 3,
+  denied = 4,
+  stopped = 5,
+  cost_override = 6,
+  approved = 7,
+  cleared = 8,
+  resumed = 9,
+  forked = 10,
 }
 
--- First index whose `key` is >= start (both event lists are ordered by line).
+local function badge(label, hl, rank)
+  return { label = label, hl = hl, rank = rank }
+end
+
+-- First index whose `key` is >= start (all event lists are ordered by line).
 local function lower_bound(list, key, start)
   local lo, hi = 1, #list + 1
   while lo < hi do
@@ -564,16 +579,26 @@ local function lower_bound(list, key, start)
   return lo
 end
 
--- Guard decision badges for a closed tool fold (keyed by tool start) or a
--- closed assistant fold (keyed by line within its range). Returns a chunk list
--- or nil when the fold has no decisions.
-local function guard_badges_for(start, finish, tool)
-  local list = parse(vim.api.nvim_get_current_buf()).guard_decisions
+local function pick_badge(cands)
+  local best
+  for _, c in ipairs(cands) do
+    if c and (not best or c.rank < best.rank) then
+      best = c
+    end
+  end
+  return best
+end
+
+-- Guard decisions keyed by tool start (tool folds) or line within a range
+-- (assistant folds). Returns candidate badges and, for tool folds, the latest
+-- decision timestamp. A guard timeout and a process timeout share one color.
+local function guard_candidates(p, start, finish, tool)
+  local list = p.guard_decisions
   local key = tool and "tool_start" or "line"
   local lo = lower_bound(list, key, start)
   local last = tool and start or finish
   if not list[lo] or list[lo][key] > last then
-    return nil
+    return nil, nil
   end
   local counts, date = {}, nil
   for i = lo, #list do
@@ -584,25 +609,25 @@ local function guard_badges_for(start, finish, tool)
     counts[d.outcome] = (counts[d.outcome] or 0) + 1
     date = d.ts or date
   end
-  local chunks = {}
-  for _, badge in ipairs(guard_badges) do
-    local outcome, label, hl = unpack(badge)
+  local cands = {}
+  local function add(outcome, label, hl, rank)
     local n = counts[outcome]
     if n then
-      chunks[#chunks + 1] = { "[" .. label .. (n > 1 and " ×" .. n or "") .. "] ", hl }
+      cands[#cands + 1] = badge("[" .. label .. (n > 1 and " ×" .. n or "") .. "] ", hl, rank)
     end
   end
-  if #chunks == 0 then
-    return nil
-  end
-  return chunks, tool and date or nil
+  add("timeout", "Timed out", "DiagnosticError", RANK.timeout)
+  add("denied", "Denied", "DiagnosticError", RANK.denied)
+  add("auto-approved", "Auto-approved", "Comment", RANK.approved)
+  add("approved", "Approved", "Comment", RANK.approved)
+  return cands, tool and date or nil
 end
 
 --- A long bash call's recorded duration in milliseconds, or nil when the
 --- tool fold has none. Keyed by the tool region's start line, like guard
 --- decisions.
-local function duration_for(tool_start)
-  local list = parse(vim.api.nvim_get_current_buf()).tool_durations
+local function duration_for(p, tool_start)
+  local list = p.tool_durations
   local i = lower_bound(list, "tool_start", tool_start)
   if list[i] and list[i].tool_start == tool_start then
     return list[i].ms
@@ -626,8 +651,8 @@ end
 
 --- The tool region whose fold starts at `start`, or nil. Regions are ordered
 --- by start line, so a binary search finds it without scanning the session.
-local function tool_region(start)
-  local regions = parse(vim.api.nvim_get_current_buf()).regions
+local function tool_region(p, start)
+  local regions = p.regions
   local lo, hi = 1, #regions + 1
   while lo < hi do
     local mid = math.floor((lo + hi) / 2)
@@ -644,28 +669,50 @@ local function tool_region(start)
   return nil
 end
 
---- An abnormal tool outcome's badge and highlight, or nil when the tool
---- completed normally. Keyed by the tool region's start line.
-local function outcome_badge(tool_start)
-  local list = parse(vim.api.nvim_get_current_buf()).tool_outcomes
+--- Decode a tool region's JSON header (id, name, arguments). Reading the
+--- header slice and decoding it once per visible closed fold keeps foldtext
+--- off the audit log; the same decoder serves :YapClear.
+local function tool_header(buf, p, start)
+  local r = tool_region(p, start)
+  if not r or not r.header_finish then
+    return nil
+  end
+  local slice = vim.api.nvim_buf_get_lines(buf, r.start - 1, r.header_finish, false)
+  return structure.decode_header(slice, r, r.start - 1)
+end
+
+--- An abnormal tool outcome's candidate badge, or nil when the tool completed
+--- normally. Keyed by the tool region's start line.
+local function outcome_candidate(p, tool_start)
+  local list = p.tool_outcomes
   local i = lower_bound(list, "tool_start", tool_start)
   local d = list[i]
   if d and d.tool_start == tool_start then
     if d.outcome == "error" then
-      return "[Error] ", "DiagnosticError"
+      return badge("[Error] ", "DiagnosticError", RANK.error)
     elseif d.outcome == "timeout" then
-      return "[Timed out] ", "DiagnosticError"
+      return badge("[Timed out] ", "DiagnosticError", RANK.timeout)
     elseif d.outcome == "exit" then
-      return ("[exit %d] "):format(d.code or 0), "DiagnosticWarn"
+      return badge(("[exit %d] "):format(d.code or 0), "DiagnosticWarn", RANK.exit)
     end
   end
   return nil
 end
 
---- Added/removed line counts of a tool's display diff, or nil when it has no
---- diff (or the diff added and removed nothing).
-local function diff_size(start)
-  local r = tool_region(start)
+--- `[Cleared]` when :YapClear replaced this tool's result body.
+local function cleared_candidate(p, tool_start)
+  local r = tool_region(p, tool_start)
+  if r and r.cleared then
+    return badge("[Cleared] ", "Comment", RANK.cleared)
+  end
+  return nil
+end
+
+--- Added/removed line counts of a tool's display diff as colored chunks
+--- (DiffAdd for additions, DiffDelete for removals), or nil when the diff
+--- added and removed nothing.
+local function diff_chunks(p, tool_start)
+  local r = tool_region(p, tool_start)
   if not r then
     return nil
   end
@@ -673,100 +720,170 @@ local function diff_size(start)
   if plus == 0 and minus == 0 then
     return nil
   end
-  if minus == 0 then
-    return "+" .. plus
+  local out = {}
+  if plus > 0 then
+    out[#out + 1] = { "+" .. plus, "DiffAdd" }
   end
-  if plus == 0 then
-    return "-" .. minus
+  if minus > 0 then
+    out[#out + 1] = { (plus > 0 and "/-" or "-") .. minus, "DiffDelete" }
   end
-  return ("+%d/-%d"):format(plus, minus)
+  return out
+end
+
+--- A short, scrubbed target string for a tool fold, or nil. Derived from the
+--- already-scrubbed header arguments, never from result text.
+local function tool_target(h)
+  local a = h.arguments
+  if type(a) ~= "table" then
+    return nil
+  end
+  local name = h.name
+  if name == "read" then
+    if type(a.path) ~= "string" then
+      return nil
+    end
+    local t = a.path
+    if type(a.range) == "string" and a.range ~= "" then
+      t = t .. ":" .. a.range
+    elseif type(a.offset) == "number" then
+      t = t .. ":" .. a.offset
+      if type(a.limit) == "number" then
+        t = t .. "-" .. (a.offset + a.limit - 1)
+      end
+    end
+    return t
+  elseif name == "edit" or name == "write" then
+    return type(a.path) == "string" and a.path or nil
+  elseif name == "search" then
+    if type(a.pattern) ~= "string" then
+      return nil
+    end
+    local t = '"' .. a.pattern .. '"'
+    if type(a.path) == "string" and a.path ~= "" then
+      t = t .. " " .. a.path
+    end
+    return t
+  elseif name == "glob" then
+    return type(a.pattern) == "string" and a.pattern or nil
+  elseif name == "bash" then
+    if type(a.command) ~= "string" or a.command == "" then
+      return nil
+    end
+    return view.clip(view.collapse(a.command), 40)
+  elseif name == "subagent" then
+    if type(a.agent) == "string" and type(a.task) == "string" then
+      return a.agent .. " · " .. view.clip(view.collapse(a.task), 40)
+    end
+    return type(a.agent) == "string" and a.agent or nil
+  elseif name == "fetch" then
+    return type(a.url) == "string" and view.clip(a.url, 60) or nil
+  elseif name == "models" then
+    return type(a.filter) == "string" and a.filter ~= "" and a.filter or nil
+  end
+  return nil
 end
 
 -- Events that badge a closed assistant fold. A stop marker lands inside the
--- reply it cut short; a cost override sits in the user block that precedes the
--- reply it authorized.
-local function assistant_event_badges(start, finish)
-  local chunks = {}
-  for _, d in ipairs(parse(vim.api.nvim_get_current_buf()).events) do
+-- reply it cut short; a cost override and a resume marker sit in the block
+-- that precedes the reply they describe.
+local function assistant_candidates(p, start, finish)
+  local cands = {}
+  for _, d in ipairs(p.events) do
     if d.kind == "cost_override" and d.assistant == start then
-      chunks[#chunks + 1] = { "[Cost override] ", "DiagnosticWarn" }
+      cands[#cands + 1] = badge("[Cost override] ", "DiagnosticWarn", RANK.cost_override)
     elseif d.kind == "turn_stopped" and d.line >= start and d.line <= finish then
       if d.outcome == "killed" then
-        chunks[#chunks + 1] = { "[Force-stopped] ", "DiagnosticError" }
+        cands[#cands + 1] = badge("[Force-stopped] ", "DiagnosticError", RANK.stopped)
       else
-        chunks[#chunks + 1] = { "[Stopped] ", "DiagnosticWarn" }
+        cands[#cands + 1] = badge("[Stopped] ", "DiagnosticWarn", RANK.stopped)
       end
+    elseif d.kind == "session_resumed" and d.assistant == start then
+      cands[#cands + 1] = badge("[Resumed] ", "Comment", RANK.resumed)
     end
   end
-  return chunks
+  return cands
 end
 
 -- A fork is a session-level fact, so it badges the frontmatter fold.
-local function frontmatter_badges()
-  for _, d in ipairs(parse(vim.api.nvim_get_current_buf()).events) do
+local function frontmatter_candidates(p)
+  for _, d in ipairs(p.events) do
     if d.kind == "session_forked" then
-      return { { "[Forked] ", "Comment" } }
+      return { badge("[Forked] ", "Comment", RANK.forked) }
     end
   end
   return {}
+end
+
+--- The single leading badge for a closed assistant fold. Exported so the
+--- symbol picker and the fold renderer never disagree.
+function M.assistant_badge(buf, start, finish)
+  local p = parse(buf)
+  local cands = {}
+  local guard = guard_candidates(p, start, finish, false)
+  if guard then
+    for _, c in ipairs(guard) do
+      cands[#cands + 1] = c
+    end
+  end
+  for _, c in ipairs(assistant_candidates(p, start, finish)) do
+    cands[#cands + 1] = c
+  end
+  return pick_badge(cands)
 end
 
 -- Evaluated by Vim for every visible closed fold on every screen draw.
 function M.text(start, finish)
   start = start or vim.v.foldstart
   finish = finish or vim.v.foldend
-
+  local buf = vim.api.nvim_get_current_buf()
+  local p = parse(buf)
   local first = vim.fn.getline(start)
-  local text
-  local chunks = {}
+
+  local identity
+  local target
+  local dur
+  local diff
+  local cands = {}
   local date
   -- The line count is a live progress readout: it appears only while the
   -- block is still streaming in (its fold reaches the last line), then the
   -- settled fold drops it.
-  local lines = finish == vim.api.nvim_buf_line_count(vim.api.nvim_get_current_buf())
+  local lines = finish == vim.api.nvim_buf_line_count(buf)
       and (" (%d lines)"):format(finish - start + 1)
-    or ""
+    or nil
 
   if first:match("^%-%-%-%s*$") then
-    text = "▸ options" .. lines
-    for _, c in ipairs(frontmatter_badges()) do
-      chunks[#chunks + 1] = c
+    identity = "▸ options"
+    for _, c in ipairs(frontmatter_candidates(p)) do
+      cands[#cands + 1] = c
     end
   elseif first:match(TOOL_OPEN) then
-    -- The name is on the opener line (single-line header) or in the
-    -- pretty JSON below (multi-line header).
-    local name = first:match('"name":%s*"([^"]+)"')
-    for lnum = start + 1, math.min(finish, start + 12) do
-      if name then
-        break
-      end
-      name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
+    local h = tool_header(buf, p, start)
+    identity = "▸ tool: " .. (h and h.name or "?")
+    if h then
+      target = tool_target(h)
     end
-    local ann = {}
-    local dur = duration_for(start)
-    if dur then
-      ann[#ann + 1] = format_duration(dur)
+    dur = duration_for(p, start)
+    diff = diff_chunks(p, start)
+    local outcome = outcome_candidate(p, start)
+    if outcome then
+      cands[#cands + 1] = outcome
     end
-    local size = diff_size(start)
-    if size then
-      ann[#ann + 1] = size
-    end
-    text = ("▸ tool: %s%s%s"):format(name or "?", #ann > 0 and (" · " .. table.concat(ann, " · ")) or "", lines)
-    local outcome_label, outcome_hl = outcome_badge(start)
-    if outcome_label then
-      table.insert(chunks, 1, { outcome_label, outcome_hl })
-    end
-    local guard, tool_date = guard_badges_for(start, finish, true)
+    local guard, tool_date = guard_candidates(p, start, finish, true)
     if guard then
       for _, c in ipairs(guard) do
-        chunks[#chunks + 1] = c
+        cands[#cands + 1] = c
       end
     end
     date = tool_date
+    local cleared = cleared_candidate(p, start)
+    if cleared then
+      cands[#cands + 1] = cleared
+    end
   else
     local region = first:match("^<!%-%-.*yap:(%a+)")
     if region then
-      text = "▸ yap: " .. region .. lines
+      identity = "▸ yap: " .. region
     else
       local role = first:match(HEAD) or "?"
       local preview = ""
@@ -782,29 +899,49 @@ function M.text(start, finish)
       elseif preview == "" then
         preview = "(empty)"
       end
-      text = ("▸ @%s │ %s%s"):format(role, preview, lines)
+      identity = ("▸ @%s │ %s"):format(role, preview)
       if role == "assistant" then
-        local guard = guard_badges_for(start, finish, false)
+        local guard = guard_candidates(p, start, finish, false)
         if guard then
           for _, c in ipairs(guard) do
-            chunks[#chunks + 1] = c
+            cands[#cands + 1] = c
           end
         end
-        for _, c in ipairs(assistant_event_badges(start, finish)) do
-          chunks[#chunks + 1] = c
+        for _, c in ipairs(assistant_candidates(p, start, finish)) do
+          cands[#cands + 1] = c
         end
       end
     end
   end
 
-  if #chunks == 0 then
-    return text
+  local out = {}
+  local win = pick_badge(cands)
+  if win then
+    out[#out + 1] = { win.label, win.hl }
   end
-  chunks[#chunks + 1] = { text, "Folded" }
+  out[#out + 1] = { identity, "Folded" }
+  if target then
+    out[#out + 1] = { " · " .. target, "Comment" }
+  end
+  if dur then
+    out[#out + 1] = { " · " .. format_duration(dur), "Comment" }
+  end
+  if diff then
+    out[#out + 1] = { " · ", "Comment" }
+    for _, c in ipairs(diff) do
+      out[#out + 1] = c
+    end
+  end
+  if lines then
+    out[#out + 1] = { lines, "Comment" }
+  end
   if date then
-    chunks[#chunks + 1] = { "  " .. date:gsub("T", " ") .. " UTC", "Comment" }
+    out[#out + 1] = { "  " .. date:gsub("T", " ") .. " UTC", "Comment" }
   end
-  return chunks
+  if #out == 1 then
+    return out[1][1]
+  end
+  return out
 end
 
 --- Drop a buffer's per-buffer state (BufWipeout). The tick checks already

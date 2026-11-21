@@ -101,23 +101,20 @@ function M.is_running(buf)
   return state.is_running(buf)
 end
 
---- Badge labels for the events that name a reply: a stopped turn and an
---- accepted cost warning. Both come from the same parser that renders the
---- fold badges, so the picker and the fold labels can never disagree. Keyed
---- by the owning `# @assistant` heading line.
+--- The single leading badge for each reply, computed by the same resolver
+--- that renders the closed-fold label, so the picker and the fold can never
+--- disagree. Keyed by the owning `# @assistant` heading line.
 local function symbol_badges(buf)
+  local fold = require("harness.ui.fold")
+  local p = require("harness.model.structure").parse(buf)
   local badges = {}
-  for _, ev in ipairs(require("harness.model.structure").parse(buf).events) do
-    local label
-    if ev.assistant and ev.kind == "cost_override" then
-      label = "[Cost override]"
-    elseif ev.assistant and ev.kind == "turn_stopped" then
-      label = ev.outcome == "killed" and "[Force-stopped]" or "[Stopped]"
-    end
-    if label then
-      local list = badges[ev.assistant] or {}
-      list[#list + 1] = label
-      badges[ev.assistant] = list
+  for i, h in ipairs(p.headings) do
+    if h.role == "assistant" then
+      local finish = p.headings[i + 1] and (p.headings[i + 1].line - 1) or p.count
+      local b = fold.assistant_badge(buf, h.line, finish)
+      if b then
+        badges[h.line] = b.label:gsub("%s+$", "")
+      end
     end
   end
   return badges
@@ -140,9 +137,9 @@ function M.symbols(buf)
   local badges = symbol_badges(buf)
   local items = {}
   for _, sym in ipairs(syms) do
-    local labels = badges[sym.line]
+    local label = badges[sym.line]
     items[#items + 1] = {
-      name = labels and (sym.name .. "  " .. table.concat(labels, " ")) or sym.name,
+      name = label and (sym.name .. "  " .. label) or sym.name,
       line = sym.line,
     }
   end

@@ -95,7 +95,10 @@ assert(vim.fn.foldclosed(single) == single, "view 2 does not fold single-line to
 assert(vim.fn.foldclosed(single + 1) == single, "single-line result not folded with region")
 assert(fold.level() == 2, "view 2 reports level 2")
 assert(fold.text(opener, 14) == "▸ yap: thinking", "foldtext: " .. fold.text(opener, 14))
-assert(fold.text(tool, 32) == "▸ tool: write · +1", "foldtext: " .. fold.text(tool, 32))
+local write_chunks = fold.text(tool, 32)
+assert(type(write_chunks) == "table", "write diff should color its +1 chunk")
+assert(write_chunks[1][1] == "▸ tool: write" and write_chunks[1][2] == "Folded", vim.inspect(write_chunks))
+assert(write_chunks[2][1] == " · " and write_chunks[3][1] == "+1" and write_chunks[3][2] == "DiffAdd", vim.inspect(write_chunks))
 assert(fold.text(single, 38) == "▸ tool: bash", "foldtext: " .. fold.text(single, 38))
 
 -- view 3 unfolds everything including the system prompt, deterministically

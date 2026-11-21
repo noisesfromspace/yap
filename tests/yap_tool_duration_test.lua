@@ -6,6 +6,19 @@ vim.opt.rtp:prepend(ROOT)
 local fold = require("harness.ui.fold")
 local structure = require("harness.model.structure")
 
+-- Render a fold label to plain text for readable assertions (the colored
+-- chunks concatenate in order).
+local function flat(label)
+  if type(label) == "string" then
+    return label
+  end
+  local out = {}
+  for _, c in ipairs(label) do
+    out[#out + 1] = c[1]
+  end
+  return table.concat(out)
+end
+
 local buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_set_current_buf(buf)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -28,7 +41,7 @@ local tool = p.regions[1]
 assert(tool.kind == "tool" and tool.fold_finish == 6, "tool fold did not grow: " .. vim.inspect(tool))
 
 -- The closed tool fold shows the duration next to the tool name.
-assert(fold.text(3, 6) == "▸ tool: bash · 42s", "foldtext: " .. vim.inspect(fold.text(3, 6)))
+assert(flat(fold.text(3, 6)) == "▸ tool: bash · 42s", "foldtext: " .. vim.inspect(fold.text(3, 6)))
 
 -- Minutes render as m + padded seconds; hours render as h + minutes.
 local minutes = vim.api.nvim_create_buf(false, true)
@@ -39,7 +52,7 @@ vim.api.nvim_buf_set_lines(minutes, 0, -1, false, {
   "<!-- /yap:tool -->",
   '<!-- yap:event {"type":"tool_duration","name":"bash","ms":65000} -->',
 })
-assert(fold.text(1, 4) == "▸ tool: bash · 1m 05s (4 lines)", "foldtext: " .. vim.inspect(fold.text(1, 4)))
+assert(flat(fold.text(1, 4)) == "▸ tool: bash · 1m 05s (4 lines)", "foldtext: " .. vim.inspect(fold.text(1, 4)))
 
 -- A tool without a duration marker keeps its plain label.
 local plain = vim.api.nvim_create_buf(false, true)

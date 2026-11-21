@@ -91,10 +91,37 @@ assert(errored, "broken region missing")
 local error_chunks = fold.text(errored.start, errored.fold_finish)
 assert(error_chunks[1][1] == "[Error] " and error_chunks[1][2] == "DiagnosticError", vim.inspect(error_chunks[1]))
 
--- An edit's display diff counts added/removed lines and annotates the fold.
+-- An edit's display diff counts added/removed lines as colored chunks
+-- (DiffAdd for additions, DiffDelete for removals) after the target path.
 local edit = region_by_name(p, "edit")
-local edit_text = fold.text(edit.start, edit.finish)
-assert(type(edit_text) == "string", "edit size should be an annotation, not a badge")
-assert(edit_text:find("· +3/-2", 1, true), "edit size: " .. vim.inspect(edit_text))
+local edit_chunks = fold.text(edit.start, edit.finish)
+assert(type(edit_chunks) == "table", "edit size should be colored chunks, not a badge")
+assert(edit_chunks[1][1] == "▸ tool: edit" and edit_chunks[1][2] == "Folded", vim.inspect(edit_chunks))
+assert(edit_chunks[2][1] == " · f", "edit target path missing: " .. vim.inspect(edit_chunks))
+local plus, minus
+for _, c in ipairs(edit_chunks) do
+  if c[1] == "+3" then
+    plus = c[2]
+  elseif c[1] == "/-2" then
+    minus = c[2]
+  end
+end
+assert(plus == "DiffAdd" and minus == "DiffDelete", "edit size colors: " .. vim.inspect(edit_chunks))
+
+-- A :YapClear placeholder badges the tool fold `[Cleared]` (muted: the local
+-- output is gone, but the audit log still has it).
+local cleared_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(cleared_buf)
+vim.api.nvim_buf_set_lines(cleared_buf, 0, -1, false, {
+  '<!-- yap:tool {"id":"c","name":"read","arguments":{"path":"/f"}} -->',
+  "[output cleared — full output in the audit log: ~/audit:12]",
+  "<!-- /yap:tool -->",
+  "",
+})
+local cp = structure.parse(cleared_buf)
+assert(cp.regions[1].cleared == true, "cleared flag not parsed")
+local cleared_chunks = fold.text(cp.regions[1].start, cp.regions[1].finish)
+assert(type(cleared_chunks) == "table", "cleared badge missing")
+assert(cleared_chunks[1][1] == "[Cleared] " and cleared_chunks[1][2] == "Comment", vim.inspect(cleared_chunks[1]))
 
 print("OK tool outcome and edit size")

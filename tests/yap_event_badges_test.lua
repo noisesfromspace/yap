@@ -53,12 +53,15 @@ assert(
   "stop: " .. vim.inspect(stop)
 )
 
--- The assistant fold badges the cost override (warning) and the stop (warning).
+-- The assistant fold shows one leading badge: `[Stopped]` outranks
+-- `[Cost override]`, so the override is dropped.
 local chunks = fold.text(assistant, finish)
 assert(type(chunks) == "table", "assistant fold returned no badges")
-assert(chunks[1][1] == "[Cost override] " and chunks[1][2] == "DiagnosticWarn", vim.inspect(chunks[1]))
-assert(chunks[2][1] == "[Stopped] " and chunks[2][2] == "DiagnosticWarn", vim.inspect(chunks[2]))
-assert(chunks[3][1]:find("▸ @assistant", 1, true), vim.inspect(chunks[3]))
+assert(chunks[1][1] == "[Stopped] " and chunks[1][2] == "DiagnosticWarn", vim.inspect(chunks[1]))
+assert(chunks[2][1]:find("▸ @assistant", 1, true), vim.inspect(chunks[2]))
+for _, c in ipairs(chunks) do
+  assert(not c[1]:find("Cost override", 1, true), "cost override should be dropped by the stop badge: " .. vim.inspect(chunks))
+end
 
 -- No fork marker here: the frontmatter fold stays a plain string.
 assert(fold.text(1, 3) == "▸ options", "frontmatter badge without fork: " .. vim.inspect(fold.text(1, 3)))
@@ -86,5 +89,24 @@ local fork_chunks = fold.text(1, 3)
 assert(type(fork_chunks) == "table", "fork badge missing")
 assert(fork_chunks[1][1] == "[Forked] " and fork_chunks[1][2] == "Comment", vim.inspect(fork_chunks[1]))
 assert(fork_chunks[2][1]:find("▸ options", 1, true), vim.inspect(fork_chunks[2]))
+
+-- A reopened session badges its first reply with `[Resumed]`.
+local resume_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(resume_buf)
+vim.api.nvim_buf_set_lines(resume_buf, 0, -1, false, {
+  "# @user",
+  "",
+  "continue",
+  "",
+  '<!-- yap:event {"type":"session_resumed","text":"Session resumed","ts":"2025-09-29T19:22:33Z"} -->',
+  "",
+  "# @assistant",
+  "",
+  "answer",
+  "",
+})
+local resume_chunks = fold.text(heading(structure.parse(resume_buf), "assistant"), vim.api.nvim_buf_line_count(resume_buf))
+assert(type(resume_chunks) == "table", "resume badge missing")
+assert(resume_chunks[1][1] == "[Resumed] " and resume_chunks[1][2] == "Comment", vim.inspect(resume_chunks[1]))
 
 print("OK event badges")

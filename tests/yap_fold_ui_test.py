@@ -174,12 +174,12 @@ append([=[<!-- yap:tool {"id":"b","name":"read"} -->
 ]=])
 local tools = require('harness.model.structure').parse(buf).regions
 local bash = fold.text(tools[1].start, tools[1].finish)
-assert(bash[1][2] == 'DiagnosticWarn' and bash[#bash][2] == 'Comment')
+assert(bash[1][1] == '[Auto-approved] ' and bash[1][2] == 'Comment')
 local read = fold.text(tools[2].start, tools[2].finish)
-assert(read[1][2] == 'DiagnosticError' and read[2][2] == 'DiagnosticWarn')
-''', hidden=('<!-- yap:event',), visible=('[Auto-approved] ▸ tool: bash', '[Denied ×2] [Timed out] ▸ tool: read'))
-    ui.check('fold.set_view_level(1)', hidden=('GUARDED_RESULT', '2025-09-29', '[Approved]'),
-             visible=('[Denied ×2] [Timed out] [Auto-approved] ▸ @assistant',))
+assert(read[1][1] == '[Timed out] ' and read[1][2] == 'DiagnosticError')
+''', hidden=('<!-- yap:event',), visible=('[Auto-approved] ▸ tool: bash', '[Timed out] ▸ tool: read'))
+    ui.check('fold.set_view_level(1)', hidden=('GUARDED_RESULT', '2025-09-29', '[Approved]', '[Auto-approved]', '[Denied'),
+             visible=('[Timed out] ▸ @assistant',))
     ui.check('fold.set_view_level(3)', hidden=('[Denied ×2]', '[Auto-approved]'), visible=('GUARDED_RESULT',))
     print("OK fold_ui: closed arrivals/growth never painted open; open growth, hidden return, and guard badges verified")
 finally:

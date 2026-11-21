@@ -221,9 +221,12 @@ local function step(ctx, i, line)
       end
       inner[#inner + 1] = { role = line:match(HEAD), line = i }
     else
-      -- Plain content inside the tool region. Between the paired yap:ui
-      -- markers this is the display diff; count its added/removed lines so an
-      -- edit/write fold can show its size.
+      -- Plain content inside the tool region. A :YapClear placeholder marks a
+      -- replaced result body; between the paired yap:ui markers this is the
+      -- display diff, counted so an edit/write fold can show its size.
+      if line:match("^%[output cleared") then
+        ctx.tool.cleared = true
+      end
       if ctx.tool.ui_start and not ctx.tool.ui_finish then
         local c = line:sub(1, 1)
         if c == "+" and line:sub(1, 3) ~= "+++" then
@@ -281,6 +284,7 @@ local function snapshot(ctx)
     tool_inner_n = ctx.tool and ctx.tool.inner and #ctx.tool.inner or 0,
     tool_diff_plus = ctx.tool and ctx.tool.diff_plus or nil,
     tool_diff_minus = ctx.tool and ctx.tool.diff_minus or nil,
+    tool_cleared = ctx.tool and ctx.tool.cleared or nil,
   }
 end
 
@@ -325,6 +329,7 @@ local function restore(ctx, cp)
     ctx.tool.ui_finish = cp.tool_ui_finish
     ctx.tool.diff_plus = cp.tool_diff_plus
     ctx.tool.diff_minus = cp.tool_diff_minus
+    ctx.tool.cleared = cp.tool_cleared
     if ctx.tool.inner then
       for i = #ctx.tool.inner, cp.tool_inner_n + 1, -1 do
         ctx.tool.inner[i] = nil
@@ -592,17 +597,23 @@ end
 ---@param lines string[]
 ---@param r table a region from parse()/scan_lines()
 ---@return table|nil
-local function decode_header(lines, r)
+-- decode_header(lines, r, base): lines[base+i] is buffer line i. base is 0
+-- for a full line list; fold.lua passes a header slice with base = r.start-1.
+local function decode_header(lines, r, base)
+  base = base or 0
   if not r.header_finish then
     return nil
   end
+  local function L(i)
+    return lines[i - base]
+  end
   local text
   if r.header_finish == r.start then
-    text = (lines[r.start] or ""):match("^<!%-%- yap:tool (.+) %-%->%s*$")
+    text = (L(r.start) or ""):match("^<!%-%- yap:tool (.+) %-%->%s*$")
   else
     local acc = {}
     for i = r.start + 1, r.header_finish - 1 do
-      acc[#acc + 1] = lines[i]
+      acc[#acc + 1] = L(i)
     end
     text = table.concat(acc, "\n")
   end
@@ -610,7 +621,7 @@ local function decode_header(lines, r)
     return nil
   end
   local ok, h = pcall(vim.json.decode, text)
-  if ok and type(h) == "table" and h.id and h.name then
+  if ok and type(h) == "table" and h.name then
     return h
   end
   return nil
@@ -767,6 +778,7 @@ M.MARKER_LINE = MARKER_LINE
 M.TOOL_OPEN = TOOL_OPEN
 M.TOOL_CLOSE = TOOL_CLOSE
 M.COMMENT_OPEN = COMMENT_OPEN
+M.decode_header = decode_header
 M.fence_run = fence_run
 
 return M

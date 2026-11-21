@@ -834,14 +834,14 @@ classifiable. Hidden sessions are reconciled synchronously on window entry.
 Unchanged ranges are not recreated. Arbitrary edits/undo reconcile too.
 Cursor/scroll restoration is distinct from the explicit follow-tail behavior.
 The winbar displays the applied view, not the number of currently open folds.
-Closed tool and assistant folds show guard decision badges from the transcript.
-A tool fold grows to hide its decision markers; pending requests are never
-included. A tool fold shows the decision time in muted text, a long bash
-call shows its duration next to the tool name, and an abnormal result badges
-with its outcome (Error, Timed out, or exit code). An edit or write fold
-annotates the display diff's added/removed line counts. An assistant fold
-groups decisions by outcome and also badges a cost override and a stopped turn
-in that reply. A fork badges the frontmatter fold. Badges follow the
+Closed tool and assistant folds show one leading badge, chosen by precedence:
+an abnormal outcome (Error, Timed out, exit code) beats a guard refusal
+(Denied), which beats a stopped turn (Stopped/Force-stopped) and the muted
+context badges (Cost override, Approved, Auto-approved, Cleared, Resumed). A
+fork badges the frontmatter fold. A tool fold also names its target (path,
+range, scrubbed command head, or agent · task), shows the latest guard
+decision time and a long bash call's duration, and annotates an edit or
+write's added/removed line counts (+3/-2) in diff colors. Badges follow the
 colorscheme. A settled fold omits its line count; only a block still
 streaming in (its fold reaches the last buffer line) shows one, as a live
 progress readout.
