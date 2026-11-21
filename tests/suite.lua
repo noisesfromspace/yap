@@ -104,6 +104,7 @@ local CASES = {
   { name = "yap_detailfold_test", port = 18132, tier = "fast" },
   { name = "yap_symbol_badges_test", port = 18132, tier = "fast" },
   { name = "yap_event_badges_test", port = 18132, tier = "fast" },
+  { name = "yap_tool_duration_test", port = 18132, tier = "fast" },
   { name = "yap_fold_peek_test", port = 18132, tier = "fast" },
   { name = "yap_fold_za_test", port = 18132, tier = "fast" },
   { name = "yap_fold_reconcile_test", port = 18132, tier = "fast" },

@@ -836,9 +836,10 @@ Cursor/scroll restoration is distinct from the explicit follow-tail behavior.
 The winbar displays the applied view, not the number of currently open folds.
 Closed tool and assistant folds show guard decision badges from the transcript.
 A tool fold grows to hide its decision markers; pending requests are never
-included. A tool fold shows the decision time in muted text; an assistant fold
-groups decisions by outcome and also badges a cost override and a stopped turn
-in that reply. A fork badges the frontmatter fold. Badges follow the
+included. A tool fold shows the decision time in muted text and a long bash
+call shows its duration next to the tool name; an assistant fold groups
+decisions by outcome and also badges a cost override and a stopped turn in
+that reply. A fork badges the frontmatter fold. Badges follow the
 colorscheme.
 
 #### R-async-stream — Streaming appends at the end of the buffer, fully async

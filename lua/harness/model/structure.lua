@@ -70,6 +70,7 @@ local function new_ctx()
     regions = {},
     events = {},
     guard_decisions = {},
+    tool_durations = {},
     guard_tool = nil, -- start of the just-closed tool, before any other content
     region = nil, -- "tool" while a yap:tool region is open, else nil
     fence = nil, -- { char, n } while inside a fenced code block
@@ -119,6 +120,13 @@ local function step(ctx, i, line)
           tool_start = ctx.guard_tool,
           outcome = ev.outcome,
           ts = ts,
+        }
+      elseif ev.type == "tool_duration" and type(ev.ms) == "number" then
+        -- A long bash call records its duration right after its tool result.
+        ctx.tool_durations[#ctx.tool_durations + 1] = {
+          line = i,
+          tool_start = ctx.guard_tool,
+          ms = ev.ms,
         }
       else
         ctx.events[#ctx.events + 1] = { line = i, kind = ev.type, outcome = ev.outcome, ts = ts }
@@ -235,6 +243,7 @@ local function snapshot(ctx)
     regions_n = #ctx.regions,
     events_n = #ctx.events,
     guard_decisions_n = #ctx.guard_decisions,
+    tool_durations_n = #ctx.tool_durations,
     guard_tool = ctx.guard_tool,
     region = ctx.region,
     fence = ctx.fence and { char = ctx.fence.char, n = ctx.fence.n } or nil,
@@ -262,6 +271,9 @@ local function restore(ctx, cp)
   end
   for i = #ctx.guard_decisions, cp.guard_decisions_n + 1, -1 do
     ctx.guard_decisions[i] = nil
+  end
+  for i = #ctx.tool_durations, cp.tool_durations_n + 1, -1 do
+    ctx.tool_durations[i] = nil
   end
   ctx.guard_tool = cp.guard_tool
   ctx.region = cp.region
@@ -339,25 +351,29 @@ end
 -- content — a model quoting `# @user` inside a tool result must not split the
 -- message (R-markers-not-sent: the result is ordinary transcript text).
 local function view(ctx, count, frontmatter)
-  -- Guard decisions trail their tool's closer and belong to its fold: extend
-  -- the tool's fold extent so the decision markers hide with the tool instead
-  -- of lingering as visible prose. Recompute from scratch every call so a tail
-  -- edit that adds, changes or drops a decision is reflected.
-  local ri = 1
+  -- Guard decisions and durations trail their tool's closer and belong to its
+  -- fold: extend the tool's fold extent so those markers hide with the tool
+  -- instead of lingering as visible prose. Recompute from scratch every call
+  -- so a tail edit that adds, changes or drops one is reflected.
   for _, r in ipairs(ctx.regions) do
     if r.kind == "tool" then
       r.fold_finish = nil
     end
   end
-  for _, d in ipairs(ctx.guard_decisions) do
-    while ri <= #ctx.regions and ctx.regions[ri].start < d.tool_start do
-      ri = ri + 1
-    end
-    local r = ctx.regions[ri]
-    if r and r.start == d.tool_start then
-      r.fold_finish = math.max(r.fold_finish or r.finish or 0, d.line)
+  local function extend_tool_folds(list)
+    local ri = 1
+    for _, d in ipairs(list) do
+      while ri <= #ctx.regions and ctx.regions[ri].start < d.tool_start do
+        ri = ri + 1
+      end
+      local r = ctx.regions[ri]
+      if r and r.start == d.tool_start then
+        r.fold_finish = math.max(r.fold_finish or r.finish or 0, d.line)
+      end
     end
   end
+  extend_tool_folds(ctx.guard_decisions)
+  extend_tool_folds(ctx.tool_durations)
   attach_assistant(ctx)
   local open
   for i = #ctx.regions, 1, -1 do
@@ -376,6 +392,7 @@ local function view(ctx, count, frontmatter)
       frontmatter = frontmatter,
       events = ctx.events,
       guard_decisions = ctx.guard_decisions,
+      tool_durations = ctx.tool_durations,
     }
   end
   local cut = inner[1].line
@@ -413,6 +430,7 @@ local function view(ctx, count, frontmatter)
     frontmatter = frontmatter,
     events = ctx.events,
     guard_decisions = ctx.guard_decisions,
+    tool_durations = ctx.tool_durations,
   }
 end
 

@@ -598,6 +598,32 @@ local function guard_badges_for(start, finish, tool)
   return chunks, tool and date or nil
 end
 
+--- A long bash call's recorded duration in milliseconds, or nil when the
+--- tool fold has none. Keyed by the tool region's start line, like guard
+--- decisions.
+local function duration_for(tool_start)
+  local list = parse(vim.api.nvim_get_current_buf()).tool_durations
+  local i = lower_bound(list, "tool_start", tool_start)
+  if list[i] and list[i].tool_start == tool_start then
+    return list[i].ms
+  end
+  return nil
+end
+
+--- Render a millisecond duration as a compact wall-clock label (42s,
+--- 1m 05s, 2h 03m).
+local function format_duration(ms)
+  local s = math.floor(ms / 1000 + 0.5)
+  if s < 60 then
+    return s .. "s"
+  end
+  local m = math.floor(s / 60)
+  if m < 60 then
+    return ("%dm %02ds"):format(m, s % 60)
+  end
+  return ("%dh %02dm"):format(math.floor(m / 60), m % 60)
+end
+
 -- Events that badge a closed assistant fold. A stop marker lands inside the
 -- reply it cut short; a cost override sits in the user block that precedes the
 -- reply it authorized.
@@ -652,7 +678,13 @@ function M.text(start, finish)
       end
       name = vim.fn.getline(lnum):match('"name":%s*"([^"]+)"')
     end
-    text = string.format("▸ tool: %s (%d lines)", name or "?", finish - start + 1)
+    local dur = duration_for(start)
+    text = string.format(
+      "▸ tool: %s%s (%d lines)",
+      name or "?",
+      dur and (" · " .. format_duration(dur)) or "",
+      finish - start + 1
+    )
     local guard, tool_date = guard_badges_for(start, finish, true)
     if guard then
       for _, c in ipairs(guard) do

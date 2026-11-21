@@ -460,12 +460,14 @@ model or working directory relative to the previous send, and a cost warning
 accepted for that send. Mid-turn model switches keep their own `yap:model`
 marker. A fork records its source in the child, and an effective |:YapClear|
 records how many results it replaced. Stopping a turn records the stop in the
-reply; a hard stop records it after the restored prompt.
+reply; a hard stop records it after the restored prompt. A bash call that runs
+longer than ten seconds records its duration after its tool result.
 
 Closed tool folds show guard decision badges and the latest decision time in
-muted text; the decision markers fold into the tool. Closed assistant folds
-group those decisions by outcome and also badge a cost override and a stopped
-turn in that reply. A fork badges the frontmatter fold. Badges follow the
+muted text; the decision markers fold into the tool. A long bash call shows
+its duration next to the tool name. Closed assistant folds group those
+decisions by outcome and also badge a cost override and a stopped turn in
+that reply. A fork badges the frontmatter fold. Badges follow the
 colorscheme.
 
 Tool regions                                                *yap-tool-region*

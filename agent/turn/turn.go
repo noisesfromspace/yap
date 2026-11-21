@@ -339,6 +339,11 @@ func detectTextToolCall(text string) (string, bool) {
 // forever.
 const maxToolIterations = 300
 
+// toolDurationThreshold is the wall-clock time a bash call must exceed before
+// its transcript records the duration (shown on the closed tool fold). A var
+// so tests can lower it without sleeping ten seconds.
+var toolDurationThreshold = 10 * time.Second
+
 // retryMaxAttempts bounds transient server-error retries (on top of the
 // initial request) when the failed step emitted nothing.
 const retryMaxAttempts = 2
@@ -825,19 +830,36 @@ func RunCached(ctx context.Context, providerName, model string, req Request, out
 			wire.EmitEvent(map[string]any{"type": "tool_call", "id": call.ID, "name": call.Name, "args": safety.Scrub(string(call.Input))})
 			var value taskResult
 			var decisions []wire.ApprovalDecision
+			var duration time.Duration
 			if parallel {
 				value = results[i]
 			} else {
+				start := time.Now()
 				finish := wire.CaptureApprovalDecisions()
 				value = callTool(call, req.Tools)
 				decisions = finish()
+				duration = time.Since(start)
 			}
 			result, ui := value.result, value.ui
 			render.EmitToolResult(out, result, ui)
+			var events []any
 			for _, decision := range decisions {
-				fmt.Fprintf(out, "<!-- yap:event %s -->\n", render.MarshalCommentJSON(decision, ""))
+				events = append(events, decision)
 			}
-			if len(decisions) > 0 {
+			// A long bash call records its duration in the transcript so the
+			// closed tool fold can show it. The marker is display-only: the
+			// document parser skips yap:event lines (R-markers-not-sent).
+			if call.Name == "bash" && duration >= toolDurationThreshold {
+				events = append(events, map[string]any{
+					"type": "tool_duration",
+					"name": "bash",
+					"ms":   duration.Milliseconds(),
+				})
+			}
+			for _, ev := range events {
+				fmt.Fprintf(out, "<!-- yap:event %s -->\n", render.MarshalCommentJSON(ev, ""))
+			}
+			if len(events) > 0 {
 				out.WriteString("\n")
 				out.Flush()
 			}
